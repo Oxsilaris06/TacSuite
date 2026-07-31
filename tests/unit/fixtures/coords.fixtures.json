@@ -1,0 +1,442 @@
+[
+  {
+    "name": "null-island",
+    "lat": 0,
+    "lon": 0,
+    "utm": {
+      "zone": 31,
+      "band": "N",
+      "easting": 166021.44317933184,
+      "northing": 0,
+      "hemisphere": "N"
+    },
+    "mgrs": {
+      "value": "31N AA 66021 00000",
+      "threw": false
+    },
+    "clipboard": "0.000000, 0.000000\n0°00′00.0″N  0°00′00.0″E\nMGRS 31N AA 66021 00000",
+    "short": "31N AA 66021 00000"
+  },
+  {
+    "name": "paris-N-E",
+    "lat": 48.856614,
+    "lon": 2.352222,
+    "utm": {
+      "zone": 31,
+      "band": "U",
+      "easting": 452484.1596895512,
+      "northing": 5411718.719758873,
+      "hemisphere": "N"
+    },
+    "mgrs": {
+      "value": "31U DQ 52484 11718",
+      "threw": false
+    },
+    "clipboard": "48.856614, 2.352222\n48°51′23.8″N  2°21′08.0″E\nMGRS 31U DQ 52484 11718",
+    "short": "31U DQ 52484 11718"
+  },
+  {
+    "name": "sydney-S-E",
+    "lat": -33.8688,
+    "lon": 151.2093,
+    "utm": {
+      "zone": 56,
+      "band": "H",
+      "easting": 334368.6336466522,
+      "northing": 6250948.345329111,
+      "hemisphere": "S"
+    },
+    "mgrs": {
+      "value": "56H LH 34368 50948",
+      "threw": false
+    },
+    "clipboard": "-33.868800, 151.209300\n33°52′07.7″S  151°12′33.5″E\nMGRS 56H LH 34368 50948",
+    "short": "56H LH 34368 50948"
+  },
+  {
+    "name": "new-york-N-W",
+    "lat": 40.7128,
+    "lon": -74.006,
+    "utm": {
+      "zone": 18,
+      "band": "T",
+      "easting": 583959.3723241151,
+      "northing": 4507350.998397536,
+      "hemisphere": "N"
+    },
+    "mgrs": {
+      "value": "18T WL 83959 07350",
+      "threw": false
+    },
+    "clipboard": "40.712800, -74.006000\n40°42′46.1″N  74°00′21.6″W\nMGRS 18T WL 83959 07350",
+    "short": "18T WL 83959 07350"
+  },
+  {
+    "name": "buenos-aires-S-W",
+    "lat": -34.6037,
+    "lon": -58.3816,
+    "utm": {
+      "zone": 21,
+      "band": "H",
+      "easting": 373317.5022543717,
+      "northing": 6170036.171231814,
+      "hemisphere": "S"
+    },
+    "mgrs": {
+      "value": "21H UB 73317 70036",
+      "threw": false
+    },
+    "clipboard": "-34.603700, -58.381600\n34°36′13.3″S  58°22′53.8″W\nMGRS 21H UB 73317 70036",
+    "short": "21H UB 73317 70036"
+  },
+  {
+    "name": "utm-zone-edge-31-32-below",
+    "lat": 0,
+    "lon": 5.999999,
+    "utm": {
+      "zone": 31,
+      "band": "N",
+      "easting": 833978.4453919667,
+      "northing": 0,
+      "hemisphere": "N"
+    },
+    "mgrs": {
+      "value": "31N HA 33978 00000",
+      "threw": false
+    },
+    "clipboard": "0.000000, 5.999999\n0°00′00.0″N  6°00′00.0″E\nMGRS 31N HA 33978 00000",
+    "short": "31N HA 33978 00000"
+  },
+  {
+    "name": "utm-zone-edge-31-32-above",
+    "lat": 0,
+    "lon": 6.000001,
+    "utm": {
+      "zone": 32,
+      "band": "N",
+      "easting": 166021.55460803333,
+      "northing": 0,
+      "hemisphere": "N"
+    },
+    "mgrs": {
+      "value": "32N JF 66021 00000",
+      "threw": false
+    },
+    "clipboard": "0.000000, 6.000001\n0°00′00.0″N  6°00′00.0″E\nMGRS 32N JF 66021 00000",
+    "short": "32N JF 66021 00000"
+  },
+  {
+    "name": "norway-exception-zone32",
+    "lat": 60,
+    "lon": 5,
+    "utm": {
+      "zone": 32,
+      "band": "V",
+      "easting": 276979.92641721596,
+      "northing": 6658157.203168716,
+      "hemisphere": "N"
+    },
+    "mgrs": {
+      "value": "32V KM 76979 58157",
+      "threw": false
+    },
+    "clipboard": "60.000000, 5.000000\n60°00′00.0″N  5°00′00.0″E\nMGRS 32V KM 76979 58157",
+    "short": "32V KM 76979 58157"
+  },
+  {
+    "name": "norway-exception-boundary-out",
+    "lat": 55.999,
+    "lon": 5,
+    "utm": {
+      "zone": 31,
+      "band": "U",
+      "easting": 624729.3731186229,
+      "northing": 6207773.331684728,
+      "hemisphere": "N"
+    },
+    "mgrs": {
+      "value": "31U FC 24729 07773",
+      "threw": false
+    },
+    "clipboard": "55.999000, 5.000000\n55°59′56.4″N  5°00′00.0″E\nMGRS 31U FC 24729 07773",
+    "short": "31U FC 24729 07773"
+  },
+  {
+    "name": "svalbard-exception-zone33",
+    "lat": 75,
+    "lon": 10,
+    "utm": {
+      "zone": 33,
+      "band": "X",
+      "easting": 355706.5666673254,
+      "northing": 8329692.651651091,
+      "hemisphere": "N"
+    },
+    "mgrs": {
+      "value": "33X UD 55706 29692",
+      "threw": false
+    },
+    "clipboard": "75.000000, 10.000000\n75°00′00.0″N  10°00′00.0″E\nMGRS 33X UD 55706 29692",
+    "short": "33X UD 55706 29692"
+  },
+  {
+    "name": "svalbard-exception-zone31",
+    "lat": 75,
+    "lon": 5,
+    "utm": {
+      "zone": 31,
+      "band": "X",
+      "easting": 557770.7282228109,
+      "northing": 8324580.858122537,
+      "hemisphere": "N"
+    },
+    "mgrs": {
+      "value": "31X ED 57770 24580",
+      "threw": false
+    },
+    "clipboard": "75.000000, 5.000000\n75°00′00.0″N  5°00′00.0″E\nMGRS 31X ED 57770 24580",
+    "short": "31X ED 57770 24580"
+  },
+  {
+    "name": "lat-max-domain-included",
+    "lat": 83.9999,
+    "lon": 10,
+    "utm": {
+      "zone": 33,
+      "band": "X",
+      "easting": 441720.9509774681,
+      "northing": 9330613.281146143,
+      "hemisphere": "N"
+    },
+    "mgrs": {
+      "value": "33X VP 41720 30613",
+      "threw": false
+    },
+    "clipboard": "83.999900, 10.000000\n83°59′59.6″N  10°00′00.0″E\nMGRS 33X VP 41720 30613",
+    "short": "33X VP 41720 30613"
+  },
+  {
+    "name": "lat-just-above-domain-excluded",
+    "lat": 84,
+    "lon": 10,
+    "utm": {
+      "zone": 32,
+      "band": "X",
+      "easting": 511669.520760185,
+      "northing": 9328195.111669052,
+      "hemisphere": "N"
+    },
+    "mgrs": {
+      "value": null,
+      "threw": true,
+      "errorName": "RangeError",
+      "errorMessage": "MGRS hors domaine (lat 84)"
+    },
+    "clipboard": "84.000000, 10.000000\n84°00′00.0″N  10°00′00.0″E",
+    "short": "84.00000, 10.00000"
+  },
+  {
+    "name": "lat-min-domain-included",
+    "lat": -80,
+    "lon": 10,
+    "utm": {
+      "zone": 32,
+      "band": "C",
+      "easting": 519384.80329597223,
+      "northing": 1118247.58443328,
+      "hemisphere": "S"
+    },
+    "mgrs": {
+      "value": "32C NS 19384 18247",
+      "threw": false
+    },
+    "clipboard": "-80.000000, 10.000000\n80°00′00.0″S  10°00′00.0″E\nMGRS 32C NS 19384 18247",
+    "short": "32C NS 19384 18247"
+  },
+  {
+    "name": "lat-just-below-domain-excluded",
+    "lat": -80.0001,
+    "lon": 10,
+    "utm": {
+      "zone": 32,
+      "band": "C",
+      "easting": 519384.6114580444,
+      "northing": 1118236.4245030545,
+      "hemisphere": "S"
+    },
+    "mgrs": {
+      "value": null,
+      "threw": true,
+      "errorName": "RangeError",
+      "errorMessage": "MGRS hors domaine (lat -80.0001)"
+    },
+    "clipboard": "-80.000100, 10.000000\n80°00′00.4″S  10°00′00.0″E",
+    "short": "-80.00010, 10.00000"
+  },
+  {
+    "name": "lon-wraparound-190",
+    "lat": 10,
+    "lon": 190,
+    "utm": {
+      "zone": 2,
+      "band": "P",
+      "easting": 609600.77251439,
+      "northing": 1105578.5891924175,
+      "hemisphere": "N"
+    },
+    "mgrs": {
+      "value": "2P PS 09600 05578",
+      "threw": false
+    },
+    "clipboard": "10.000000, -170.000000\n10°00′00.0″N  170°00′00.0″W\nMGRS 2P PS 09600 05578",
+    "short": "2P PS 09600 05578"
+  },
+  {
+    "name": "lon-wraparound-neg190",
+    "lat": 10,
+    "lon": -190,
+    "utm": {
+      "zone": 59,
+      "band": "P",
+      "easting": 390399.22748561006,
+      "northing": 1105578.5891924175,
+      "hemisphere": "N"
+    },
+    "mgrs": {
+      "value": "59P LM 90399 05578",
+      "threw": false
+    },
+    "clipboard": "10.000000, 170.000000\n10°00′00.0″N  170°00′00.0″E\nMGRS 59P LM 90399 05578",
+    "short": "59P LM 90399 05578"
+  },
+  {
+    "name": "lon-boundary-180",
+    "lat": 10,
+    "lon": 180,
+    "utm": {
+      "zone": 1,
+      "band": "P",
+      "easting": 171071.26400910044,
+      "northing": 1106908.8542407374,
+      "hemisphere": "N"
+    },
+    "mgrs": {
+      "value": "1P AM 71071 06908",
+      "threw": false
+    },
+    "clipboard": "10.000000, -180.000000\n10°00′00.0″N  180°00′00.0″W\nMGRS 1P AM 71071 06908",
+    "short": "1P AM 71071 06908"
+  },
+  {
+    "name": "lon-boundary-neg180",
+    "lat": 10,
+    "lon": -180,
+    "utm": {
+      "zone": 1,
+      "band": "P",
+      "easting": 171071.26400910044,
+      "northing": 1106908.8542407374,
+      "hemisphere": "N"
+    },
+    "mgrs": {
+      "value": "1P AM 71071 06908",
+      "threw": false
+    },
+    "clipboard": "10.000000, -180.000000\n10°00′00.0″N  180°00′00.0″W\nMGRS 1P AM 71071 06908",
+    "short": "1P AM 71071 06908"
+  },
+  {
+    "name": "dms-seconds-carry",
+    "lat": 45.999998333333,
+    "lon": 2.999998333333,
+    "utm": {
+      "zone": 31,
+      "band": "T",
+      "easting": 499999.8709461137,
+      "northing": 5094047.307184913,
+      "hemisphere": "N"
+    },
+    "mgrs": {
+      "value": "31T DL 99999 94047",
+      "threw": false
+    },
+    "clipboard": "45.999998, 2.999998\n46°00′00.0″N  3°00′00.0″E\nMGRS 31T DL 99999 94047",
+    "short": "31T DL 99999 94047"
+  },
+  {
+    "name": "equator-south-band",
+    "lat": -1,
+    "lon": 2,
+    "utm": {
+      "zone": 31,
+      "band": "M",
+      "easting": 388736.18772118486,
+      "northing": 9889452.894299552,
+      "hemisphere": "S"
+    },
+    "mgrs": {
+      "value": "31M CU 88736 89452",
+      "threw": false
+    },
+    "clipboard": "-1.000000, 2.000000\n1°00′00.0″S  2°00′00.0″E\nMGRS 31M CU 88736 89452",
+    "short": "31M CU 88736 89452"
+  },
+  {
+    "name": "mgrs-digits-3",
+    "lat": 48.856614,
+    "lon": 2.352222,
+    "digits": 3,
+    "utm": {
+      "zone": 31,
+      "band": "U",
+      "easting": 452484.1596895512,
+      "northing": 5411718.719758873,
+      "hemisphere": "N"
+    },
+    "mgrs": {
+      "value": "31U DQ 524 117",
+      "threw": false
+    },
+    "clipboard": "48.856614, 2.352222\n48°51′23.8″N  2°21′08.0″E\nMGRS 31U DQ 52484 11718",
+    "short": "31U DQ 52484 11718"
+  },
+  {
+    "name": "mgrs-digits-1",
+    "lat": 48.856614,
+    "lon": 2.352222,
+    "digits": 1,
+    "utm": {
+      "zone": 31,
+      "band": "U",
+      "easting": 452484.1596895512,
+      "northing": 5411718.719758873,
+      "hemisphere": "N"
+    },
+    "mgrs": {
+      "value": "31U DQ 5 1",
+      "threw": false
+    },
+    "clipboard": "48.856614, 2.352222\n48°51′23.8″N  2°21′08.0″E\nMGRS 31U DQ 52484 11718",
+    "short": "31U DQ 52484 11718"
+  },
+  {
+    "name": "out-of-domain-far-north-pole",
+    "lat": 89,
+    "lon": 45,
+    "utm": {
+      "zone": 38,
+      "band": "X",
+      "easting": 500000,
+      "northing": 9886315.75592991,
+      "hemisphere": "N"
+    },
+    "mgrs": {
+      "value": null,
+      "threw": true,
+      "errorName": "RangeError",
+      "errorMessage": "MGRS hors domaine (lat 89)"
+    },
+    "clipboard": "89.000000, 45.000000\n89°00′00.0″N  45°00′00.0″E",
+    "short": "89.00000, 45.00000"
+  }
+]
