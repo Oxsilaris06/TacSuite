@@ -115,21 +115,90 @@ Playwright e2e des phases suivantes (P2.E), pas des baselines visuelles P0.
 ## Zones à MASQUER dans les comparaisons visuelles FUTURES
 
 Les baselines de ce dossier NE masquent rien elles-mêmes (première capture
-de référence — les tuiles telles que chargées au moment du run font partie
-intégrante du PNG). Pour les diffs ultérieurs (TacSuite porté vs baseline),
-masquer impérativement :
+de référence — les tuiles telles que chargées au moment du run, ainsi que
+les boutons BETA d'origine, font partie intégrante du PNG). Pour les diffs
+ultérieurs (TacSuite porté vs baseline), masquer impérativement :
 
 | App | État(s) concerné(s) | Élément à masquer | Raison |
 |---|---|---|---|
 | PC-Tac | `tab-plan`, `tab-plan-panneau-*` | `canvas.maplibregl-canvas` dans `#plan_map` | Tuiles IGN/ESRI/OpenFreeMap chargées en réseau au moment du test — rendu non déterministe (cache CDN, disponibilité tuile, angle de éclairage/saison des couches satellite) |
 | OI | `cartography-modal` | `canvas.maplibregl-canvas` dans `#oi_carto_map` | Idem — cartographie OI (`oi_cartographie.js`), tuiles réseau |
+| PC-Tac | Tous les états pctac (10 états / 20 captures — élément d'en-tête, présent sur toutes) | `#version-toggle-btn` | Élément supprimé du portage (écart admis, cf. `docs/DECISIONS-DOM-ECARTS.md` §1), présent dans la baseline (original) mais absent du porté (TacSuite) |
+| OI | Tous les états oi (9 états / 18 captures — élément d'en-tête, présent sur toutes) | `#beta-button` | Idem, cf. `docs/DECISIONS-DOM-ECARTS.md` §2 |
 
-Recommandation pour les phases suivantes (P2.F, P3.D) : utiliser l'option
-`mask: [page.locator('canvas.maplibregl-canvas')]` de
-`page.screenshot()` / `expect(page).toHaveScreenshot()` sur ces états
-précis ; les autres captures (wizard OI, onglets non-Plan de PC-Tac) ne
-contiennent aucun élément réseau-dépendant et peuvent être comparées
-pixel à pixel sans masque.
+**Correction (P0.FIX reprise 2)** — la phrase précédente de cette section
+affirmait à tort que les captures hors carte pouvaient être comparées
+« pixel à pixel sans masque ». C'est FAUX : les états carte (`tab-plan*`,
+`cartography-modal`) nécessitent le masque `canvas.maplibregl-canvas`
+ci-dessus, et **toutes les autres captures des deux apps** (donc les 38
+baselines sans exception, chaque état contenant l'en-tête) montrent le
+bouton BETA (`#version-toggle-btn` côté PC-Tac, `#beta-button` côté OI),
+absent du porté. Son masque est donc également OBLIGATOIRE, sur 100 % des
+états, pas seulement sur les états carte.
+
+### Forme d'appel à utiliser en P2.F / P3.D
+
+```ts
+// Côté PC-Tac
+await page.screenshot({
+  mask: [page.locator('#version-toggle-btn'), page.locator('canvas.maplibregl-canvas')],
+});
+
+// Côté OI
+await page.screenshot({
+  mask: [page.locator('#beta-button'), page.locator('canvas.maplibregl-canvas')],
+});
+```
+
+**Piège à éviter** : cette forme, prise telle quelle, ne suffit PAS pour
+`#version-toggle-btn` / `#beta-button`. Playwright peint le masque sur la
+capture de la page **effectivement screenshotée au moment de l'appel** —
+ici la page COMPARÉE, c'est-à-dire le porté servi sur 9678. Or
+`#version-toggle-btn` / `#beta-button` n'existent PLUS dans le DOM du porté
+(c'est précisément l'écart admis) : `page.locator(...)` y résout 0 élément,
+donc `mask` n'y peint rien pour ces deux sélecteurs. Et la baseline en face
+est un PNG déjà enregistré sur disque (`tests/visual/baseline/...png`), pas
+une page vivante — impossible d'y appliquer un `Locator` Playwright au
+moment du diff. En s'arrêtant à la forme ci-dessus, la zone du bouton BETA
+resterait donc intégralement visible (bouton réel) côté baseline et
+intégralement vide côté porté → diff garanti à ~100 % des pixels de cette
+zone sur les 38 états, quel que soit le seuil retenu.
+
+**Stratégie retenue : masquage par RECTANGLE FIXE**, appliqué identiquement
+aux DEUX images (baseline ET capture du porté) par le script de comparaison
+de P2.F/P3.D, indépendamment de la présence du sélecteur DOM. Concrètement :
+avant `pixelmatch` (ou équivalent), peindre le même rectangle (couleur
+unie) aux mêmes coordonnées pixel sur les deux images — une copie en
+mémoire de la baseline, le fichier `.png` sur disque restant intact — puis
+differ normalement. Coordonnées mesurées au navigateur sur l'original
+(127.0.0.1:9679, `devices['Desktop Chrome']` sans override de
+`deviceScaleFactor` → 1, cf. `playwright.config.ts` racine et
+`tests/visual/playwright.config.ts`) :
+
+| Sélecteur (original) | Viewport | x | y | w | h |
+|---|---|---:|---:|---:|---:|
+| `#version-toggle-btn` (`pctac2.html`) | desktop 1440×900 | 1144 | 45 | 61 | 36 |
+| `#version-toggle-btn` (`pctac2.html`) | mobile 390×844 | 324 | 30 | 46 | 28 |
+| `#beta-button` (`4.html`) | desktop 1440×900 | 1066 | 66 | 68 | 46 |
+| `#beta-button` (`4.html`) | mobile 390×844 | 332 | 24 | 40 | 26 |
+
+Ces 4 rectangles sont des CONSTANTES (pas de bounding box interrogée en
+direct), à la différence de `canvas.maplibregl-canvas` qui existe des deux
+côtés (bounding box interrogeable en direct sur le porté et réutilisable
+telle quelle sur la baseline, layout DOM/CSS identique par protocole) : il
+n'y a côté porté aucun élément équivalent à `#version-toggle-btn` /
+`#beta-button` à partir duquel dériver une position. Elles restent valables
+tant que la mise en page de l'en-tête ne change pas — à revérifier si P2.F
+/ P3.E (modernisation CSS) déplacent les éléments d'en-tête adjacents.
+
+**Alternative écartée** : re-capturer les 38 baselines avec les boutons
+BETA neutralisés (ex. `display:none` injecté) dans l'original. Rejetée
+pour ne pas invalider/refaire les 38 captures déjà produites et validées
+(gate P0.A6), et parce que la neutralisation via CSS provoquerait un
+reflow de l'en-tête sur l'original (les éléments voisins du bouton BETA
+se repositionneraient), ce qui changerait la baseline au-delà de la seule
+zone du bouton — effet de bord non maîtrisé que le rectangle fixe évite
+totalement.
 
 ## États inatteignables / notes d'exécution
 

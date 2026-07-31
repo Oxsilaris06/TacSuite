@@ -22,6 +22,14 @@ reecrits en absolu)".
   ex-lignes 399, 421, 429, 738 au moment de cette note) restent presentes car
   `styles/pctac.css` est une extraction VERBATIM (cf. en-tete du fichier) —
   purge prevue en **P2.F** (modernisation CSS pctac), pas avant.
+- **Consequence visuelle** : `#version-toggle-btn` est visible dans les 20
+  captures baseline pctac (10 etats x 2 viewports — element d'en-tete,
+  present dans toutes), alors qu'il est absent du porte. Strategie de
+  comparaison retenue : masquage par RECTANGLE FIXE (constantes px,
+  independantes de la presence du selecteur DOM cote porte), applique
+  identiquement aux deux images par le script de diff P2.F — cf.
+  `tests/visual/README.md` § "Zones a MASQUER" / "Forme d'appel a utiliser
+  en P2.F / P3.D" pour la forme d'appel exacte et les coordonnees.
 
 ## 2. OI : suppression du bouton BETA (pont vers la page legacy `1.html`)
 
@@ -42,6 +50,14 @@ reecrits en absolu)".
   3503, 3546, 3559 au moment de cette note) restent presentes pour la meme
   raison d'extraction verbatim — purge prevue en **P3.E** (modernisation CSS
   oi.css), pas avant.
+- **Consequence visuelle** : `#beta-button` est visible dans les 18 captures
+  baseline oi (9 etats x 2 viewports — element d'en-tete, present dans
+  toutes), alors qu'il est absent du porte. Meme strategie que le point 1 :
+  masquage par RECTANGLE FIXE (constantes px, independantes de la presence
+  du selecteur DOM cote porte), applique identiquement aux deux images par
+  le script de diff P3.D — cf. `tests/visual/README.md` § "Zones a MASQUER"
+  / "Forme d'appel a utiliser en P2.F / P3.D" pour la forme d'appel exacte
+  et les coordonnees.
 
 ## Portee de ce document
 
