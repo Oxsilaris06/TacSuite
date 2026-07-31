@@ -142,15 +142,15 @@ Tous sous `src/apps/pctac/planmap/`.
 | 5 | `state.ts` | `createPlanMapState`, `SafeMethods` | 1 | 28 | État initial complet (déclaré + ad hoc) + garde `_safe` | `./types.js` |
 | 6 | `map-core.ts` | `MapCoreMethods` | 15 | — | Cycle de vie carte, vue persistée, 3D/relief, overlay noms de rues, pré-cache France | `./types.js`, `./constants.js`, `./tiles.js` |
 | 7 | `chrome.ts` | `ChromeMethods` | 9 | — | Toolbar 6 FABs, plein écran, panneau de recherche + Nominatim, marqueur de recherche, dock dessin, hint | `./types.js`, `./constants.js`, `./geo.js` |
-| 8 | `ping-modal.ts` | `PingModalMethods` | 8 | — | Modale « Ping » hybride : liste d'entités, picker d'icônes, armement du placement libre | `./types.js`, `./constants.js` |
-| 9 | `pins.ts` | `PinsMethods` | 15 | — | Pings : CRUD, persistance, réconciliation des markers, cadenas, décorations. **Invariants 1 & 2** | `./types.js`, `./constants.js`, `./geo.js` |
+| 8 | `ping-modal.ts` | `PingModalMethods` | 8 | — | Modale « Ping » hybride : liste d'entités, picker d'icônes, armement du placement libre | `./types.js`, `./constants.js`, `@pctac/storage.js` (`:985-987`), `@pctac/config.js` (`ADVERSARIES_KEY`, `HOSTAGES_KEY`, `FRIENDS_KEY`, `PIN_ICONS`, `suggestPinIcons` — `:985-987, 1044, 1074`) |
+| 9 | `pins.ts` | `PinsMethods` | 15 | — | Pings : CRUD, persistance, réconciliation des markers, cadenas, décorations. **Invariants 1 & 2** | `./types.js`, `./constants.js`, `./geo.js`, `@shared/persist.js` (`:1206, 1213`), `@pctac/storage.js` + `@pctac/config.js` (`:1220-1221`) |
 | 10 | `draw-layers.ts` | `DrawLayersMethods` | 3 | — | Création des sources/couches GeoJSON + bâtiments 3D, câblage du dock de dessin, long-press création de ping | `./types.js` |
 | 11 | `draw-tools.ts` | `DrawToolsMethods` | 16 | — | Outils de tracé (trait/rect/cercle/texte), undo/redo, preview, persistance des formes | `./types.js`, `./constants.js`, `./geo.js` |
 | 12 | `measure.ts` | `MeasureMethods` | 15 | — | Mesure distance/azimut (machine d'états), anneaux d'engagement, étiquettes persistées | `./types.js`, `./geo.js` |
 | 13 | `shapes-render.ts` | `ShapesRenderMethods` | 12 | — | Rendu des formes/textes/diamètres/cadenas + verrous global & par-forme | `./types.js`, `./geo.js` |
 | 14 | `shapes-gestures.ts` | `ShapesGesturesMethods` | 15 | — | Gestes sur formes : tap/drag/pinch, sélection, poignées | `./types.js`, `./geo.js` |
 | 15 | `wheels.ts` | `WheelsMethods` | 7 | — | Roues contextuelles (création ping, options ping, options forme), copie de coordonnées | `./types.js`, `@pctac/wheel.js`, `@pctac/config.js`, `@shared/coords.js` |
-| 16 | `panels.ts` | `PanelsMethods` | 7 | — | Mini-panneaux flottants inline (texte, diamètre, catalogue d'icônes, couleur) | `./types.js` |
+| 16 | `panels.ts` | `PanelsMethods` | 7 | — | Mini-panneaux flottants inline (texte, diamètre, catalogue d'icônes, couleur) | `./types.js`, `@pctac/config.js` (`suggestPinIcons` `:3921` ; `PIN_ICONS` `:4119, 4206, 4227`) |
 | 17 | `text-modal.ts` | `TextModalMethods` | 7 | — | Modale `#planTextModal` + reparentage plein écran + texte libre | `./types.js` |
 | 18 | `capture.ts` | `CaptureMethods` | 2 | — | **Chaîne `captureToDataUrl` — PORT QUASI VERBATIM** + téléchargement PNG | `./types.js` |
 | 19 | `aoi.ts` | `AoiMethods` | 5 | 2 | Zone d'opération hors-ligne : cadrage, estimation, quota, téléchargement, barre de progression | `./types.js`, `./constants.js`, `./tiles.js`, `./geo.js` |
