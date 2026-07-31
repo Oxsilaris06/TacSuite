@@ -1,0 +1,35 @@
+{
+  "name": "tacsuite",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "TacSuite - portage TypeScript de PC-Tac et du Generateur d'OI (GStart-main)",
+  "scripts": {
+    "dev": "vite --port 9678 --strictPort",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:e2e": "playwright test",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint ."
+  },
+  "dependencies": {
+    "maplibre-gl": "4.7.1",
+    "html2canvas": "1.4.1",
+    "jszip": "3.10.1",
+    "pdf-lib": "1.17.1",
+    "html5-qrcode": "2.3.8",
+    "qrcodejs": "1.0.0",
+    "jspdf": "2.5.1"
+  },
+  "devDependencies": {
+    "vite": "^8.2.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.10",
+    "jsdom": "^30.0.1",
+    "@playwright/test": "^1.62.1",
+    "eslint": "^10.8.0",
+    "typescript-eslint": "^8.65.0",
+    "@types/node": "^26.1.2"
+  }
+}
