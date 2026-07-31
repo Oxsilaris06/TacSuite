@@ -14,6 +14,32 @@ puis verification croisee des versions publiees sur le registre npm.
 | qrcode (davidshimjs QRCode.js) | 1.0.0 (non versionne dans le header du fichier vendorise ; API `_htOption`/`makeCode`/`QRCode.prototype` confirmee identique au paquet npm `qrcodejs@1.0.0`) | non charge par 4.html | **qrcodejs@1.0.0** | Aucun (lib PC-Tac uniquement). Nom du paquet npm officiel du mirror = `qrcodejs`, pas `qrcode` (paquet npm distinct, incompatible API). |
 | jspdf | non present dans vendor/ (PC-Tac n'utilise pas jsPDF, seulement pdf-lib) | 2.5.1 (cdnjs, 4.html:4511), usage confirme dans `modules/pdf_engine_v2.js` (moteur PDF actif de l'OI) | **2.5.1** | Aucun (lib OI uniquement). Ajoutee suite a la verification demandee par la mission P0.A1 (§3) : confirmee utilisee, donc incluse. |
 
+## Polices (ajout P0.FIX, reprise 1 — correction du defaut "polices absentes")
+
+Les deux originaux chargent, au `<head>`, DEUX feuilles Google Fonts distantes
+(`pctac2.html:33-41`, `4.html:33-39`) : Material Symbols Outlined (icones) et
+le trio Oswald/Inter/JetBrains Mono. `docs/PLAN.md` §2 impose "zero CDN a
+l'execution" ; ces feuilles n'avaient pourtant pas ete reportees lors du
+scaffold initial (P0.A5), laissant `document.fonts` vide en dev. Corrige en
+auto-hebergeant des paquets npm epingles sur les MEMES familles/graisses que
+les `<link>` d'origine, importes une seule fois depuis `src/shared/fonts.ts`
+(charge par `src/apps/pctac/main.ts` ET `src/apps/oi/main.ts`).
+
+| Lib | Graisses/axes demandes par les originaux | Version npm retenue | Ecart ? |
+|---|---|---|---|
+| `material-symbols` | `opsz,wght,FILL,GRAD@24,400,0..1,0` (pctac) / `@24,400,0,0` (oi) — meme famille "Material Symbols Outlined" dans les deux cas, difference uniquement sur la plage FILL exposee | **0.45.10** (derniere stable au moment du correctif) | Le paquet fournit une police variable wght 100..700 avec FILL/GRAD/opsz par defaut a 0 dans les deux apps (aucune n'anime l'axe FILL au runtime — verifie par grep `font-variation-settings`/`'FILL'` sur les deux sources, zero occurrence) : une seule police variable sert donc les deux apps sans perte fonctionnelle. |
+| `@fontsource/oswald` | `wght@500;600;700` | **5.3.0** | Aucun (memes 3 graisses importees : `500.css`, `600.css`, `700.css`) |
+| `@fontsource/inter` | `wght@400;500;600;700` | **5.3.0** | Aucun (4 graisses importees) |
+| `@fontsource/jetbrains-mono` | `wght@500;600;700` | **5.3.0** | Aucun (3 graisses importees) |
+
+Regle de base `.material-symbols-outlined` (font-family, taille par defaut,
+ligatures) : absente du `<style>` inline des deux originaux (elle etait
+fournie par la feuille Google elle-meme, jamais recopiee) donc absente aussi
+de `styles/pctac.css`/`styles/oi.css` apres l'extraction verbatim P0.A5.
+Rajoutee en tete de chacun des deux fichiers, copie conforme de
+`node_modules/material-symbols/outlined.css` — voir commentaire "Source 0" en
+tete de chaque fichier CSS.
+
 ## CDN charges par 4.html mais NON retenus (code mort verifie)
 
 - `marked@4.0.10` (cdn.jsdelivr.net) - grep exhaustif (`marked(`) sur `modules/*.js` et
