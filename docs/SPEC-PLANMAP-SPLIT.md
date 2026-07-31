@@ -135,7 +135,7 @@ Tous sous `src/apps/pctac/planmap/`.
 
 | # | Fichier | Export(s) | Méthodes | Props | Responsabilité | Dépendances internes |
 |---:|---|---|---:|---:|---|---|
-| 1 | `types.ts` | *types uniquement* | — | — | Modèle de données (`PlanPin`, `PlanShape`…), `PlanMapState`, `PlanMapInternal` | — |
+| 1 | `types.ts` | *types uniquement* | — | — | Modèle de données (`PlanPin`, `PlanShape`…), `PlanMapState`, `PlanMapInternal`, `PlanWheel` | — (feuille : aucun import de paquet PC-Tac) |
 | 2 | `constants.ts` | `PINS_KEY`, `VIEW_KEY`, `SHAPES_KEY`, `ENTITY_COLORS`, `RASTER_STYLE`, `OFFLINE_MAP_CACHE`, `SAT_TILE_TEMPLATE`, `FRANCE_BBOX`, `AOI_INDEX_KEY`, `AOI_MAX_TILES`, `escHtml` | — | — | Constantes de module (`planMap.js:23-130`) | `./types.js`, `@shared/ui-platform` |
 | 3 | `geo.ts` | 14 fonctions pures + `GeoMethods` | 12 | — | Géodésie, formats, géométrie de forme (aucun DOM, aucune carte) | `./types.js` |
 | 4 | `tiles.ts` | 9 fonctions | — | — | Énumération/estimation/pré-téléchargement de tuiles XYZ (`planMap.js:140-299`) | `./types.js`, `./constants.js` |
@@ -149,7 +149,7 @@ Tous sous `src/apps/pctac/planmap/`.
 | 12 | `measure.ts` | `MeasureMethods` | 15 | — | Mesure distance/azimut (machine d'états), anneaux d'engagement, étiquettes persistées | `./types.js`, `./geo.js` |
 | 13 | `shapes-render.ts` | `ShapesRenderMethods` | 12 | — | Rendu des formes/textes/diamètres/cadenas + verrous global & par-forme | `./types.js`, `./geo.js` |
 | 14 | `shapes-gestures.ts` | `ShapesGesturesMethods` | 15 | — | Gestes sur formes : tap/drag/pinch, sélection, poignées | `./types.js`, `./geo.js` |
-| 15 | `wheels.ts` | `WheelsMethods` | 7 | — | Roues contextuelles (création ping, options ping, options forme), copie de coordonnées | `./types.js`, `./geo.js` |
+| 15 | `wheels.ts` | `WheelsMethods` | 7 | — | Roues contextuelles (création ping, options ping, options forme), copie de coordonnées | `./types.js`, `@pctac/wheel.js`, `@pctac/config.js`, `@shared/coords.js` |
 | 16 | `panels.ts` | `PanelsMethods` | 7 | — | Mini-panneaux flottants inline (texte, diamètre, catalogue d'icônes, couleur) | `./types.js` |
 | 17 | `text-modal.ts` | `TextModalMethods` | 7 | — | Modale `#planTextModal` + reparentage plein écran + texte libre | `./types.js` |
 | 18 | `capture.ts` | `CaptureMethods` | 2 | — | **Chaîne `captureToDataUrl` — PORT QUASI VERBATIM** + téléchargement PNG | `./types.js` |
@@ -172,7 +172,20 @@ C'est le **pivot** : tous les autres sous-modules n'en dépendent que par
 ```ts
 import type { Map as MapLibreMap, Marker, LngLat, LngLatLike, MapMouseEvent, MapTouchEvent } from 'maplibre-gl';
 import type { PlanMapContract, PlanMapPinSummary } from '@shared/types/contracts.js';
-import type { Wheel } from '@pctac/wheel.js';
+
+/**
+ * Surface de `Wheel` (@pctac/wheel.js) RÉELLEMENT utilisée par planMap.
+ * Déclarée structurellement ICI, et NON importée, pour que `types.ts` reste
+ * une feuille sans dépendance de paquet (`new Wheel(...)` y est assignable
+ * par typage structurel). Sites : planMap.js:3523-3534, 3618-3625, 3716-3723,
+ * 4308-4315, 5093, 2828, 3525.
+ */
+export interface PlanWheel {
+    lngLat: LngLatObj | null;
+    element: HTMLElement | null;
+    open(): void;
+    destroy(): void;
+}
 
 /** Couple [longitude, latitude] tel que persisté. Tuple → non affecté par `noUncheckedIndexedAccess`. */
 export type LngLatTuple = [number, number];
@@ -408,7 +421,7 @@ export interface PlanMapState {
     _measurePointBtn: HTMLButtonElement | null;      // :2470, 2492
     _measureUndoBtn: HTMLButtonElement | null;       // :2474, 2493
     _textMarkersById: Record<string, Marker> | null; // :2772, 4775, 4851
-    _activeWheel: Wheel | null;             // :3523-3534, 3618, 4308
+    _activeWheel: PlanWheel | null;         // :3523-3534, 3618, 4308
     _wheelJustClosed: number;               // :1811, 3535, 3750
     _lastShapeTap: { id: string; t: number } | null; // :2965-2970
     _dblZoomTimer: ReturnType<typeof setTimeout> | null; // :2994-2996
