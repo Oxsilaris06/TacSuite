@@ -220,9 +220,44 @@ CSS/JS equivalent est bien charge par une autre voie.
   absente.
 - **Mission P3B.C.**
 
+## 10. PC-Tac : `<style id="tl-orbat-style">` inline — relocalise dans `styles/pctac.css`
+
+- **Original** : `pctac2.html:1926-1959` (bloc identique dans `GStart-main/pctac.html:1926`)
+  — une balise `<style id="tl-orbat-style">` INLINE, imbriquee au milieu du
+  markup du bandeau Tchap live (`#tl_bar`), entre le bouton `#tl_toggle` et
+  le panneau `#tl_panel`. Contient 35 regles CSS (34 selecteurs + 1
+  `@keyframes tlDotPulse`) stylant la liste operateurs (tableau d'ordre de
+  bataille par fonction/cellule) : `#tl_ops`, `.tl-ops-bar`, `.tl-batch-*`,
+  `.tl-grp*`, `.tl-op*`, `.tl-empty`, etc.
+- **TacSuite** : `pctac/index.html` — la balise `<style id="tl-orbat-style">`
+  elle-meme est ABSENTE (aucun `<style>` inline dans le squelette porte).
+  Les 35 regles sont neanmoins TOUTES presentes, verbatim, dans
+  `styles/pctac.css` (extraction concatenee, cf. en-tete de ce fichier) — 0
+  selecteur manquant (verifie par correspondance exacte des 34 selecteurs +
+  `@keyframes tlDotPulse` contre le contenu de `styles/pctac.css`).
+  `src/apps/pctac/tchap-live.ts:430` documente egalement ce choix dans son
+  propre commentaire : *« les styles de la LISTE operateurs (.tl-ops-bar/
+  .tl-grp/.tl-op…) sont definis statiquement dans pctac2.html
+  (#tl-orbat-style). On ne garde ici que le marqueur carte. »* — le module
+  TS ne recree QUE le style du marqueur cartographique (`.tl-icon`/`.tl-glyph`/
+  `.tl-label`, injecte dynamiquement en JS, verbatim planMap-equivalent),
+  pas le bloc `#tl-orbat-style` qui n'a jamais eu besoin d'etre dynamique.
+- **Justification** : meme categorie que le point 4 ci-dessus (feuilles
+  `<link>`/`<style>` retirees du DOM mais dont le contenu est concatene
+  VERBATIM dans `styles/pctac.css`) — relocalisation, pas suppression.
+  Aucun ecart de contenu CSS, uniquement de VEHICULE (balise `<style>`
+  inline au milieu du body vs feuille externe concatenee dans `<head>`).
+- **Consequence visuelle** : aucune — les 35 regles s'appliquent de facon
+  identique une fois chargees, peu importe le vehicule ; aucune baseline
+  visuelle (`tests/visual/baseline/pctac/`) ne differencie les deux formes.
+- **Trouve et documente par la mission P3B.FIX (reprise 1), MINEUR R4** —
+  ecart reel mais benin, non trace jusqu'ici alors que ses deux voisins
+  DOM immediats (`#version-toggle-btn`, point 1 ; `#beta-button`, point 2)
+  l'etaient deja.
+
 ## Portee de ce document
 
-Les ecarts DOM ci-dessus (points 1 a 9) sont, a la date du 2026-08-01, la
+Les ecarts DOM ci-dessus (points 1 a 10) sont, a la date du 2026-08-01, la
 liste exhaustive des divergences constatees entre le DOM des originaux et
 celui des squelettes portes. Toute divergence future devra etre ajoutee ici
 avant d'etre acceptee par un gate.
