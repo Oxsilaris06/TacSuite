@@ -119,9 +119,110 @@ Ces trois ecarts sont deja couverts par la documentation existante (CSS
 concatene ou dependances npm) — aucun n'affecte le rendu visuel puisque le
 CSS/JS equivalent est bien charge par une autre voie.
 
+## 5. OI : `#pctacLink` — cible legacy `pctac.html` → chemin absolu `/pctac/`
+
+- **Original** : `4.html` (dock) — `<a href="pctac.html" id="pctacLink">`.
+- **TacSuite** : `oi/index.html` — `<a href="/pctac/" id="pctacLink">`.
+- **Justification** : `pctac.html` n'existe pas dans l'arborescence portee
+  (page PC-Tac deplacee sous `/pctac/`, cf. `vite.config.ts` multi-page).
+  Alignement sur la convention de chemins absolus racine deja actee pour les
+  assets (P0.A5) et pour PC-Tac lui-meme.
+- **Mission P3B.C.**
+
+## 6. OI et PC-Tac : ajout de `#portalLink` (retour au portail TacSuite)
+
+- **OI** (`oi/index.html`, dock) : `<a href="/" id="portalLink" title="Retour
+  au portail TacSuite"><span class="material-symbols-outlined">home</span></a>`
+  insere entre `#dockToggleBtn` et `#pctacLink` (portee decroissante : portail
+  = retour au plus haut niveau, puis PC-Tac = app soeur, puis outils internes
+  a l'OI).
+- **PC-Tac** (`pctac/index.html`, dock) : meme markup (`style="text-decoration:
+  none;"` en plus, coherence avec le lien OI voisin), insere entre
+  `#dockToggleBtn` et le lien vers l'OI.
+- **Justification** : lien de retour vers le portail TacSuite (`/`), absent
+  des deux originaux (`4.html`/`pctac2.html`) qui n'avaient pas de portail —
+  ajout pur, decision utilisateur, hors perimetre du portage 1:1. Icone
+  `home` (Material Symbols deja chargee, aucun nouvel asset), id `portalLink`
+  identique cote OI et PC-Tac.
+- **Consequence visuelle PC-Tac** : `#dockMenu` porte la classe `collapsed`
+  par defaut (`pctac/index.html`), et `.dock-menu.collapsed
+  .dock-menu-item:not(#dockToggleBtn) { display: none; }` (`styles/pctac.css`)
+  masque tous les items sauf le toggle. Aucun des 10 etats/20 captures de
+  `tests/visual/compare.mjs pctac` n'ouvre le dock (aucun `run()` ne clique
+  `#dockToggleBtn`) : `#portalLink` n'est visible dans AUCUNE des captures
+  baseline ni portees → 0 pixel affecte, aucun masque necessaire. Verifie a
+  la mission P3B.C (`npm run test:visual -- pctac` → 20/20 sans modification
+  de `tests/visual/compare.mjs`).
+- **Consequence visuelle OI** : a la difference de PC-Tac, `#dockMenu` de
+  `oi/index.html` n'a PAS la classe `collapsed` par defaut (dock deploye au
+  chargement) — `#portalLink` y est donc visible des le premier rendu. Les
+  baselines `tests/visual/baseline/oi/` (18 captures, Phase 0) ne le
+  contiennent pas. `compare.mjs oi` n'est PAS un gate de la mission P3B.C
+  (seul `compare.mjs pctac` est requis) et n'a pas ete relance ici ; si/quand
+  le regression visuel OI redevient un gate actif, un masque cible (meme
+  forme que `HEADER_MASK`) devra etre ajoute pour la zone de `#portalLink`
+  sur les captures OI, ou les baselines OI devront etre re-capturees.
+- **Mission P3B.C**, symetrique OI/PC-Tac.
+
+## 7. PC-Tac : lien dock vers l'OI — cible legacy `1.html` → chemin absolu `/oi/`
+
+- **Original** : `pctac2.html` (dock) — `<a href="1.html">` (pas d'id).
+- **TacSuite** : `pctac/index.html` — `<a href="/oi/">` (id toujours absent,
+  ecart pre-existant non lie a cette correction).
+- **Justification** : `1.html` est une page legacy hors perimetre du portage
+  (`docs/PLAN.md` §2), absente de l'arborescence `TacSuite` — lien mort avant
+  correction, meme nature de probleme que le point 5 ci-dessus (`#pctacLink`
+  cote OI). Corrige dans la meme passe que l'ajout de `#portalLink` (§6),
+  directive orchestrateur P3B.C (meme zone du DOM, evite un second
+  aller-retour sur ce fichier).
+- **Mission P3B.C.**
+
+## 8. OI : délégation `data-action` — 63 attributs statiques retirés
+
+- **Original** : `4.html` — 37 `onclick` + 19 `oninput` + 7 `onchange`
+  statiques (inline JS) sur les elements du wizard OI.
+- **TacSuite** : `oi/index.html` — les 63 attributs `on*="..."` sont
+  remplaces par un attribut `data-action="<nom>"` (+ `data-*` complementaires
+  selon les cas : `data-format`, `data-color`, `data-step`, `data-target`,
+  `data-preview-container`, `data-single`). Trois listeners delegues
+  (`click`/`input`/`change`) poses une seule fois sur `document` dans
+  `src/apps/oi/main.ts`, table `action → handler`. Decision identique a
+  `SPEC-PCTAC-CONVERSION.md` §3.2, portee par `SPEC-OI-CONVERSION.md` §12.4.
+- **Hors perimetre** : les `onclick` GENERES dynamiquement en `innerHTML` par
+  `formulaires.ts`/`patrac.ts`/`articulation.ts`/`medias.ts`/`dessin.ts`
+  restent VERBATIM — retrait differe (§12.4), non traite par cette mission.
+- **Asymetrie assumee avec PC-Tac** : `src/apps/pctac/main.ts` documente en
+  tete (§3.2) que sa PROPRE delegation `data-action` reste differee au-dela
+  de P2.D — `pctac/index.html` porte donc encore ses 5 `onclick` statiques
+  (hors la correction ponctuelle du point 7 et l'ajout du point 6, qui ne
+  sont pas des `on*` a convertir). `SPEC-OI-CONVERSION.md` §12.4 scope
+  explicitement la delegation `data-action` de l'OI a cette mission (P3B.C) ;
+  celle de PC-Tac reste hors mandat ici. Assume et documente, pas de passe
+  d'alignement retroactive sur PC-Tac dans cette mission.
+- **Mission P3B.C.**
+
+## 9. OI : manifest dynamique (4.html:5-13) — non porte dans `main.ts`
+
+- **Original** : `4.html:5-13` — injection JS d'un `<link rel="manifest"
+  href="manifest.json">`, sous garde `location.protocol.startsWith('http')`
+  (evite une erreur CORS en contexte `file://`). Fait partie du meme bloc que
+  le filet `error`/`unhandledrejection` (`4.html:14-23`), lui-meme porte
+  verbatim dans `src/apps/oi/main.ts`.
+- **TacSuite** : `oi/index.html:8` porte deja, de facon STATIQUE (decision
+  P0.A5, anterieure a cette mission), `<link rel="manifest"
+  href="/manifest.webmanifest">`. Rejouer le bloc dynamique de l'original
+  ajouterait un DEUXIEME `<link rel="manifest">` pointant vers un chemin
+  relatif `manifest.json` inexistant dans l'arborescence Vite (404) :
+  regression, pas fidelite.
+- **Decision** : omission VALIDEE — directive orchestrateur P3B.C. Seul le
+  filet d'erreurs (`4.html:14-23`) est repris dans `src/apps/oi/main.ts`
+  (etape 0) ; la partie manifest (`4.html:5-13`) reste volontairement
+  absente.
+- **Mission P3B.C.**
+
 ## Portee de ce document
 
-Les ecarts DOM ci-dessus (points 1 a 4) sont, a la date du 2026-08-01, la
+Les ecarts DOM ci-dessus (points 1 a 9) sont, a la date du 2026-08-01, la
 liste exhaustive des divergences constatees entre le DOM des originaux et
 celui des squelettes portes. Toute divergence future devra etre ajoutee ici
 avant d'etre acceptee par un gate.

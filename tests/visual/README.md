@@ -136,6 +136,33 @@ bouton BETA (`#version-toggle-btn` côté PC-Tac, `#beta-button` côté OI),
 absent du porté. Son masque est donc également OBLIGATOIRE, sur 100 % des
 états, pas seulement sur les états carte.
 
+### Écart volontaire : lien portail (`#portalLink`, mission P3B.C)
+
+`P3B.C` ajoute un lien de retour vers le portail TacSuite (`#portalLink`,
+icône `home`) dans les docks PC-Tac et OI — absent des originaux (aucun
+portail n'existait), cf. `docs/DECISIONS-DOM-ECARTS.md` §6. Analyse de
+l'impact sur `tests/visual/compare.mjs pctac` (seul gate visuel requis par
+cette mission) :
+
+- **PC-Tac** : `#dockMenu` porte `class="dock-menu collapsed"` par défaut, et
+  `.dock-menu.collapsed .dock-menu-item:not(#dockToggleBtn) { display:
+  none; }` (`styles/pctac.css`) masque tous les items du dock sauf le
+  toggle. Aucun des 10 états de `compare.mjs pctac` (`APP_CONFIG.pctac`
+  ci-dessus) ne clique `#dockToggleBtn` : `#portalLink` reste `display:none`
+  dans les 20 captures (2 viewports), donc invisible et sans impact sur le
+  diff pixel. **Aucun masque ajouté à `HEADER_MASK`/`compare.mjs` — vérifié
+  inutile, pas un oubli.**
+- **OI** : à la différence de PC-Tac, `#dockMenu` de `oi/index.html` N'A PAS
+  la classe `collapsed` par défaut (dock déployé au premier rendu) —
+  `#portalLink` y est donc visible dès le chargement, sur les 9 états / 18
+  captures de baseline OI. `compare.mjs oi` n'est PAS un gate de la mission
+  P3B.C (seul `compare.mjs pctac` est requis par le mandat) et n'a pas été
+  relancé/corrigé ici. **Si `compare.mjs oi` redevient un gate actif**, un
+  rectangle de masque dédié à `#portalLink` (même mécanisme que
+  `HEADER_MASK`) devra être mesuré et ajouté à `tests/visual/compare.mjs`
+  pour l'app `oi`, ou les baselines OI devront être re-capturées avec le
+  lien en place.
+
 ### Forme naïve envisagée puis REJETÉE (piège documenté ci-dessous)
 
 ```ts
