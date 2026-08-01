@@ -25,8 +25,8 @@
             <div class="pdf-format-toggle">
                 <span class="toggle-label">Format PDF</span>
                 <div class="pdf-format-track" id="pdfFormatTrack">
-                    <button type="button" id="btnFormatA4" class="active" onclick="setPdfFormat('a4')">A4 Paysage</button>
-                    <button type="button" id="btnFormat169" onclick="setPdfFormat('16:9')">16:9</button>
+                    <button type="button" id="btnFormatA4" class="active" data-action="set-pdf-format" data-format="a4">A4 Paysage</button>
+                    <button type="button" id="btnFormat169" data-action="set-pdf-format" data-format="16:9">16:9</button>
                 </div>
                 <span id="pdfFormatDims" class="toggle-label" style="color: var(--text-muted); font-size:0.72em;">297×210 mm</span>
             </div>
@@ -41,7 +41,7 @@
                     style="font-size: 1.2em;">picture_as_pdf</span>
             </button>
             <button id="closePresentationModalBtn" type="button" class="wizard-nav-btn"
-                onclick="const m = document.getElementById('presentationModal'); if(m) { if(typeof m.close === 'function') m.close(); else m.style.display = 'none'; }"
+                data-action="close-presentation-modal"
                 style="background-color: var(--danger-red); color: white;">
                 Fermer
             </button>
@@ -80,7 +80,7 @@
         <div class="modal-form">
             <div class="modal-header">
                 <h3 id="quick_modal_title">Édition rapide</h3>
-                <button type="button" class="close-modal-btn" onclick="document.getElementById('quickEditModal').close(); document.body.classList.remove('modal-open');" style="background:none; border:none; color:var(--text-secondary); cursor:pointer;">
+                <button type="button" class="close-modal-btn" data-action="close-quick-edit-modal" style="background:none; border:none; color:var(--text-secondary); cursor:pointer;">
                     <span class="material-symbols-outlined">close</span>
                 </button>
             </div>
@@ -105,7 +105,7 @@
             <div class="modal-header">
                 <h3>Configuration Unité</h3>
                 <button type="button" class="close-modal-btn"
-                    onclick="document.getElementById('uniteConfigModal').close(); document.body.classList.remove('modal-open');"
+                    data-action="close-unite-config-modal"
                     style="background:none; border:none; color:var(--text-secondary); cursor:pointer;">
                     <span class="material-symbols-outlined">close</span>
                 </button>
@@ -119,7 +119,7 @@
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn-cancel"
-                    onclick="document.getElementById('uniteConfigModal').close(); document.body.classList.remove('modal-open');">
+                    data-action="close-unite-config-modal">
                     <span class="material-symbols-outlined">undo</span> Retour
                 </button>
                 <button type="button" id="unite_config_saveBtn" class="btn-save">
@@ -167,16 +167,16 @@
                     <span class="material-symbols-outlined">edit</span> Annotation Photo
                 </h3>
                 <div class="header-actions" style="display: flex; gap: 10px; margin-left: auto;">
-                    <button type="button" id="annotation_cancel_header" class="btn-cancel compact wizard-nav-btn" style="border-radius: 8px;" onclick="closeAnnotationModal()">Annuler</button>
+                    <button type="button" id="annotation_cancel_header" class="btn-cancel compact wizard-nav-btn" style="border-radius: 8px;" data-action="close-annotation-modal">Annuler</button>
                     <button type="button" id="annotation_save_header" class="btn-save compact wizard-nav-btn" style="border-radius: 8px;">Valider</button>
                 </div>
-                <button type="button" class="close-modal-btn" onclick="closeAnnotationModal()" style="margin-left: 10px;">
+                <button type="button" class="close-modal-btn" data-action="close-annotation-modal" style="margin-left: 10px;">
                     <span class="material-symbols-outlined">close</span>
                 </button>
             </div>
             
             <div class="modal-body annotation-wrapper">
-                <button id="mobile-dock-fab" type="button" onclick="toggleMobileDock()" class="tool-btn icon-only" title="Outils" style="position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 1000; width: 50px; height: 50px; border-radius: 50%; padding: 0; display: flex; justify-content: center; align-items: center; background: var(--accent-blue); box-shadow: 0 4px 15px rgba(0,0,0,0.5);">
+                <button id="mobile-dock-fab" type="button" data-action="toggle-mobile-dock" class="tool-btn icon-only" title="Outils" style="position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 1000; width: 50px; height: 50px; border-radius: 50%; padding: 0; display: flex; justify-content: center; align-items: center; background: var(--accent-blue); box-shadow: 0 4px 15px rgba(0,0,0,0.5);">
                     <span class="material-symbols-outlined" style="margin: 0; font-size: 24px; color: white;">build</span>
                 </button>
                 
@@ -197,13 +197,13 @@
                     <div id="dock-right" class="mobile-dock vertical">
                         <div class="sheet-grabber" aria-hidden="true"></div>
                         <div class="sheet-title">Réglages</div>
-                        <button type="button" onclick="closeMobileSheet()" class="tool-btn icon-only danger close-dock-btn" style="width: 26px; height: 26px; min-width: 26px; position: absolute; top: 8px; left: 50%; transform: translateX(-50%); z-index: 1001;" title="Fermer">
+                        <button type="button" data-action="close-mobile-sheet" class="tool-btn icon-only danger close-dock-btn" style="width: 26px; height: 26px; min-width: 26px; position: absolute; top: 8px; left: 50%; transform: translateX(-50%); z-index: 1001;" title="Fermer">
                             <span class="material-symbols-outlined" style="font-size: 15px;">close</span>
                         </button>
                         <div id="contextual_tools" class="toolbar-vertical-group" style="margin-top: 45px; width: 100%; display: flex; flex-direction: column; align-items: center;">
                             <div class="tool-settings-group vertical-slider-group" title="Rotation">
                                 <span class="material-symbols-outlined" style="font-size: 16px; color: var(--text-secondary);">rotate_right</span>
-                                <input type="range" id="rotation_input_slider" min="0" max="360" value="0" class="vertical-slider" oninput="document.getElementById('rotation_input').value=this.value; document.getElementById('rotation_input').dispatchEvent(new Event('change'))">
+                                <input type="range" id="rotation_input_slider" min="0" max="360" value="0" class="vertical-slider" data-action="sync-rotation-slider">
                                 <input type="hidden" id="rotation_input" value="0">
                             </div>
                             <div class="tool-settings-group vertical-slider-group" title="Trait">
@@ -228,11 +228,11 @@
                     <!-- 3. Couleurs et Actions (Bas) -->
                     <div id="dock-bottom" class="mobile-dock horizontal">
                         <div class="color-picker horizontal" style="display: flex; gap: 10px; justify-content: center; align-items: center;">
-                            <div class="color-circle active" style="background:#c0392b" onclick="setAnnotationColor('#c0392b', this)"></div>
-                            <div class="color-circle" style="background:#2ecc71" onclick="setAnnotationColor('#2ecc71', this)"></div>
-                            <div class="color-circle" style="background:#3498db" onclick="setAnnotationColor('#3498db', this)"></div>
-                            <div class="color-circle" style="background:#f1c40f" onclick="setAnnotationColor('#f1c40f', this)"></div>
-                            <div class="color-circle" style="background:#ffffff; border:1px solid #777;" onclick="setAnnotationColor('#ffffff', this)"></div>
+                            <div class="color-circle active" style="background:#c0392b" data-action="set-annotation-color" data-color="#c0392b"></div>
+                            <div class="color-circle" style="background:#2ecc71" data-action="set-annotation-color" data-color="#2ecc71"></div>
+                            <div class="color-circle" style="background:#3498db" data-action="set-annotation-color" data-color="#3498db"></div>
+                            <div class="color-circle" style="background:#f1c40f" data-action="set-annotation-color" data-color="#f1c40f"></div>
+                            <div class="color-circle" style="background:#ffffff; border:1px solid #777;" data-action="set-annotation-color" data-color="#ffffff"></div>
                         </div>
                         
                         <div style="width: 1px; height: 30px; background: rgba(255,255,255,0.2); margin: 0 10px;"></div>
@@ -254,27 +254,27 @@
     </dialog>
 
     <div class="container">
-        <button type="button" id="log-button" onclick="openLogs()">
+        <button type="button" id="log-button" data-action="open-logs">
             <span class="material-symbols-outlined" style="font-size: 1.25em;">terminal</span> LOG
         </button>
         <h1>Générateur d'OI</h1>
 
         <ul class="wizard-progress">
-            <li class="wizard-progress-step" onclick="goToStep(0)"><span class="material-symbols-outlined"
+            <li class="wizard-progress-step" data-action="go-to-step" data-step="0"><span class="material-symbols-outlined"
                     style="font-size: 1.2em; margin-right: 5px;">info</span>1. Situation</li>
-            <li class="wizard-progress-step" onclick="goToStep(1)"><span class="material-symbols-outlined"
+            <li class="wizard-progress-step" data-action="go-to-step" data-step="1"><span class="material-symbols-outlined"
                     style="font-size: 1.2em; margin-right: 5px;">person_search</span>2. Adversaire</li>
-            <li class="wizard-progress-step" onclick="goToStep(2)"><span class="material-symbols-outlined"
+            <li class="wizard-progress-step" data-action="go-to-step" data-step="2"><span class="material-symbols-outlined"
                     style="font-size: 1.2em; margin-right: 5px;">landscape</span>3. Environnement</li>
-            <li class="wizard-progress-step" onclick="goToStep(3)"><span class="material-symbols-outlined"
+            <li class="wizard-progress-step" data-action="go-to-step" data-step="3"><span class="material-symbols-outlined"
                     style="font-size: 1.2em; margin-right: 5px;">flag</span>4. Mission</li>
-            <li class="wizard-progress-step" onclick="goToStep(4)"><span class="material-symbols-outlined"
+            <li class="wizard-progress-step" data-action="go-to-step" data-step="4"><span class="material-symbols-outlined"
                     style="font-size: 1.2em; margin-right: 5px;">schedule</span>5. Exécution</li>
-            <li class="wizard-progress-step" onclick="goToStep(5)"><span class="material-symbols-outlined"
+            <li class="wizard-progress-step" data-action="go-to-step" data-step="5"><span class="material-symbols-outlined"
                     style="font-size: 1.2em; margin-right: 5px;">route</span>6. Articulation</li>
-            <li class="wizard-progress-step" onclick="goToStep(6)"><span class="material-symbols-outlined"
+            <li class="wizard-progress-step" data-action="go-to-step" data-step="6"><span class="material-symbols-outlined"
                     style="font-size: 1.2em; margin-right: 5px;">directions_car</span>7. PATRACDVR</li>
-            <li class="wizard-progress-step" onclick="goToStep(7)"><span class="material-symbols-outlined"
+            <li class="wizard-progress-step" data-action="go-to-step" data-step="7"><span class="material-symbols-outlined"
                     style="font-size: 1.2em; margin-right: 5px;">check_circle</span>8. Finalisation</li>
         </ul>
 
@@ -282,16 +282,16 @@
             <div class="wizard-content">
                 <div class="wizard-step oi-grid">
                     <h2>1. Situation</h2>
-                    <label for="date_op">Date de l'opération:</label><input type="date" id="date_op" onchange="syncDomToStore()">
-                    <label for="situation_generale">1.1 Générale:</label><textarea id="situation_generale" oninput="syncDomToStore()"></textarea>
+                    <label for="date_op">Date de l'opération:</label><input type="date" id="date_op" data-action="sync-dom-to-store">
+                    <label for="situation_generale">1.1 Générale:</label><textarea id="situation_generale" data-action="sync-dom-to-store"></textarea>
                     <label for="situation_particuliere">1.2 Particulière:</label><textarea
-                        id="situation_particuliere" oninput="syncDomToStore()"></textarea>
+                        id="situation_particuliere" data-action="sync-dom-to-store"></textarea>
                 </div>
 
                 <div class="wizard-step">
                     <h2>2. Adversaire(s)</h2>
                     <div id="adversaries_container"></div>
-                    <button type="button" id="createAdversaryBtn" class="add-btn" onclick="addAdversary()"
+                    <button type="button" id="createAdversaryBtn" class="add-btn" data-action="add-adversary"
                         style="margin-top: 10px; width: 100%; justify-content: center; font-weight: bold;">
                         <span class="material-symbols-outlined">person_add</span> Créer Adversaire
                     </button>
@@ -299,20 +299,20 @@
 
                 <div class="wizard-step oi-grid">
                     <h2>3. Environnement</h2>
-                    <label>Ami(e)s (Unités en soutien):</label><input type="text" id="amies" oninput="syncDomToStore()">
-                    <label>Terrain / Météo:</label><input type="text" id="terrain_info" oninput="syncDomToStore()">
-                    <label>Éclairage:</label><input type="text" id="eclairage" oninput="syncDomToStore()">
-                    <label>Lever du soleil (Heure prévisionnelle):</label><input type="time" id="lever_soleil" onchange="syncDomToStore()">
-                    <label>Population:</label><input type="text" id="population" oninput="syncDomToStore()">
-                    <label>Faune / Animaux:</label><input type="text" id="faune_animaux" oninput="syncDomToStore()">
-                    <label>Accès Principal:</label><textarea id="acces_principal" rows="2" oninput="syncDomToStore()"></textarea>
-                    <label>Cheminement initial:</label><textarea id="cheminement_initial" rows="2" oninput="syncDomToStore()"></textarea>
-                    <label for="cadre_juridique">Cadre juridique:</label><input type="text" id="cadre_juridique" oninput="syncDomToStore()">
+                    <label>Ami(e)s (Unités en soutien):</label><input type="text" id="amies" data-action="sync-dom-to-store">
+                    <label>Terrain / Météo:</label><input type="text" id="terrain_info" data-action="sync-dom-to-store">
+                    <label>Éclairage:</label><input type="text" id="eclairage" data-action="sync-dom-to-store">
+                    <label>Lever du soleil (Heure prévisionnelle):</label><input type="time" id="lever_soleil" data-action="sync-dom-to-store">
+                    <label>Population:</label><input type="text" id="population" data-action="sync-dom-to-store">
+                    <label>Faune / Animaux:</label><input type="text" id="faune_animaux" data-action="sync-dom-to-store">
+                    <label>Accès Principal:</label><textarea id="acces_principal" rows="2" data-action="sync-dom-to-store"></textarea>
+                    <label>Cheminement initial:</label><textarea id="cheminement_initial" rows="2" data-action="sync-dom-to-store"></textarea>
+                    <label for="cadre_juridique">Cadre juridique:</label><input type="text" id="cadre_juridique" data-action="sync-dom-to-store">
                 </div>
 
                 <div class="wizard-step">
                     <h2>4. Mission de l'unité</h2>
-                    <textarea id="missions_psig" rows="8" oninput="syncDomToStore()">
+                    <textarea id="missions_psig" rows="8" data-action="sync-dom-to-store">
 
 INTERPELLER L'OBJECTIF.
 
@@ -324,20 +324,20 @@ CONDUITE AU LIEU DE GAV.</textarea>
                 <div class="wizard-step">
                     <h2>5. Exécution</h2>
                     <div class="oi-fields-grid">
-                        <label for="date_execution">Date d'exécution:</label><input type="date" id="date_execution" onchange="syncDomToStore()">
+                        <label for="date_execution">Date d'exécution:</label><input type="date" id="date_execution" data-action="sync-dom-to-store">
                         <label for="heure_execution">Heure d'exécution (H):</label><input type="time" id="heure_execution"
-                            value="06:00" onchange="syncDomToStore()">
+                            value="06:00" data-action="sync-dom-to-store">
                         <label for="action_body_text">Corps de la mission (Exécution):</label>
-                        <textarea id="action_body_text" rows="4" oninput="syncDomToStore()">En vue d'appréhender le(s) mis en cause et empêcher la déperdition des preuves,
+                        <textarea id="action_body_text" rows="4" data-action="sync-dom-to-store">En vue d'appréhender le(s) mis en cause et empêcher la déperdition des preuves,
 Je veux, le (date) à partir de (heure), pour une action (type d'action) investir le domicile
 présumé de (Nom Adversaire 1) et (Nom Adversaire 2) après avoir bouclé celui-ci.</textarea>
                     </div>
                     <h3>Chronologie</h3>
                     <div id="time_events_container"></div><button type="button" class="add-btn"
-                        onclick="addTimeEvent()"><span class="material-symbols-outlined">add_box</span> Ajouter Événement</button>
+                        data-action="add-time-event"><span class="material-symbols-outlined">add_box</span> Ajouter Événement</button>
                     <h3>Hypothèses</h3>
                     <div id="hypotheses_container"></div>
-                    <button type="button" class="add-btn" onclick="addHypothesis()"
+                    <button type="button" class="add-btn" data-action="add-hypothesis"
                         style="margin-top: 10px; width: 100%; justify-content: center; font-weight: bold; background-color: var(--bg-interactive);">
                         <span class="material-symbols-outlined">add_box</span> Créer Hypothèse
                     </button>
@@ -345,20 +345,20 @@ présumé de (Nom Adversaire 1) et (Nom Adversaire 2) après avoir bouclé celui
                     <h3 style="margin-top: 20px;"><span class="material-symbols-outlined">photo_camera</span> Cheminement</h3>
                     <div style="display: flex; gap: 10px; flex-wrap: wrap;">
                         <button type="button" class="add-btn" style="flex: 1; justify-content: center;"
-                            onclick="document.getElementById('photo_container_transport_pr_input').click()">
+                            data-action="trigger-file-input" data-target="photo_container_transport_pr_input">
                             <span class="material-symbols-outlined">photo_camera</span> Transport PSIG → PR
                         </button>
                         <input type="file" id="photo_container_transport_pr_input" class="photo-input"
                             class="sr-only-input" accept="image/*" multiple
-                            onchange="handleFileChange(this, 'photo_container_transport_pr_preview_container', false)">
+                            data-action="handle-file-change" data-preview-container="photo_container_transport_pr_preview_container" data-single="false">
 
                         <button type="button" class="add-btn" style="flex: 1; justify-content: center;"
-                            onclick="document.getElementById('photo_container_transport_domicile_input').click()">
+                            data-action="trigger-file-input" data-target="photo_container_transport_domicile_input">
                             <span class="material-symbols-outlined">photo_camera</span> Transport PR → Domicile/LE
                         </button>
                         <input type="file" id="photo_container_transport_domicile_input" class="photo-input"
                             class="sr-only-input" accept="image/*" multiple
-                            onchange="handleFileChange(this, 'photo_container_transport_domicile_preview_container', false)">
+                            data-action="handle-file-change" data-preview-container="photo_container_transport_domicile_preview_container" data-single="false">
                     </div>
                     <div id="photo_container_transport_pr_preview_container" class="image-preview-container"></div>
                     <div id="photo_container_transport_domicile_preview_container" class="image-preview-container">
@@ -367,7 +367,7 @@ présumé de (Nom Adversaire 1) et (Nom Adversaire 2) après avoir bouclé celui
 
                 <div class="wizard-step">
                     <h2>6. Articulation (MOIPC/ZMSPCP)</h2>
-                    <label for="place_chef">Place du Chef (Générale):</label><input type="text" id="place_chef" oninput="syncDomToStore()">
+                    <label for="place_chef">Place du Chef (Générale):</label><input type="text" id="place_chef" data-action="sync-dom-to-store">
 
                     <!-- Ordre de la rame VL -->
                     <div class="collapsible-container">
@@ -579,13 +579,13 @@ présumé de (Nom Adversaire 1) et (Nom Adversaire 2) après avoir bouclé celui
                             </p>
                             <div style="display: flex; gap: 10px;">
                                 <button type="button" class="add-btn"
-                                    onclick="document.getElementById('custom_bg_input').click()">📂 Choisir
+                                    data-action="trigger-file-input" data-target="custom_bg_input">📂 Choisir
                                     Image</button>
-                                <button type="button" class="remove-btn" onclick="removeCustomBackground()"><span class="material-symbols-outlined">restore</span> Rétablir
+                                <button type="button" class="remove-btn" data-action="remove-custom-background"><span class="material-symbols-outlined">restore</span> Rétablir
                                     Défaut</button>
                             </div>
                             <input type="file" id="custom_bg_input" class="photo-input sr-only-input"
-                                accept="image/jpeg, image/png, image/jpg" onchange="handleCustomBackgroundChange(this)">
+                                accept="image/jpeg, image/png, image/jpg" data-action="handle-custom-background-change">
                             <div id="custom_bg_preview_container" class="image-preview-container"
                                 style="margin-top: 10px;"></div>
                         </div>
@@ -596,25 +596,25 @@ présumé de (Nom Adversaire 1) et (Nom Adversaire 2) après avoir bouclé celui
                         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-top: 10px;">
                             <div>
                                 <label for="trigramme_redacteur">Trigramme Rédacteur (ex: ABC):</label>
-                                <input type="text" id="trigramme_redacteur" placeholder="ABC" oninput="syncDomToStore()">
+                                <input type="text" id="trigramme_redacteur" placeholder="ABC" data-action="sync-dom-to-store">
                             </div>
                             <div>
                                 <label for="unite_redacteur">Unité (ex: PSIG ...):</label>
-                                <input type="text" id="unite_redacteur" placeholder="PSIG ..." oninput="syncDomToStore()">
+                                <input type="text" id="unite_redacteur" placeholder="PSIG ..." data-action="sync-dom-to-store">
                             </div>
                         </div>
                     </div>
 
                     <h3 style="margin-top: 25px;">Conduites à tenir (CAT) Générales</h3>
-                    <textarea id="cat_generales" rows="6" oninput="syncDomToStore()">- Si rébellion, user du strict niveau de force nécessaire
+                    <textarea id="cat_generales" rows="6" data-action="sync-dom-to-store">- Si rébellion, user du strict niveau de force nécessaire
 - Si retranché, alerter en mesure de se ré-articuler
 - Si tente de fuir, alerter en mesure de jalonner/interpeller
 - UDA : Article L435-1 du CSI + légitime défense</textarea>
 
                     <h3>NO GO</h3>
-                    <textarea id="no_go" rows="3" placeholder="Saisir les conditions de désengagement..." oninput="syncDomToStore()"></textarea>
+                    <textarea id="no_go" rows="3" placeholder="Saisir les conditions de désengagement..." data-action="sync-dom-to-store"></textarea>
                     <h3>Liaison</h3>
-                    <textarea id="cat_liaison" rows="4" oninput="syncDomToStore()">TOM: 
+                    <textarea id="cat_liaison" rows="4" data-action="sync-dom-to-store">TOM: 
 DIR: 
 Gestuelle et visuelle entre les éléments INDIA</textarea>
 
@@ -656,7 +656,11 @@ Gestuelle et visuelle entre les éléments INDIA</textarea>
             <span class="material-symbols-outlined">expand_more</span>
         </div>
 
-        <a href="pctac.html" class="dock-menu-item" id="pctacLink" title="Accéder à PCTAC">
+        <a href="/" class="dock-menu-item" id="portalLink" title="Retour au portail TacSuite">
+            <span class="material-symbols-outlined">home</span>
+        </a>
+
+        <a href="/pctac/" class="dock-menu-item" id="pctacLink" title="Accéder à PCTAC">
             <span class="material-symbols-outlined">alt_route</span>
         </a>
 
@@ -694,7 +698,7 @@ Gestuelle et visuelle entre les éléments INDIA</textarea>
                 <h3 style="color: var(--effraction-gold);">
                     <span class="material-symbols-outlined">hardware</span> Outils Effraction
                 </h3>
-                <button type="button" class="close-modal-btn" onclick="document.getElementById('effractionToolsModal').close(); document.body.classList.remove('modal-open');">
+                <button type="button" class="close-modal-btn" data-action="close-effraction-tools-modal">
                     <span class="material-symbols-outlined">close</span>
                 </button>
             </div>
@@ -734,10 +738,10 @@ Gestuelle et visuelle entre les éléments INDIA</textarea>
             </div>
 
             <div class="modal-footer">
-                <button type="button" class="btn-cancel" onclick="document.getElementById('effractionToolsModal').close(); document.body.classList.remove('modal-open');">
+                <button type="button" class="btn-cancel" data-action="close-effraction-tools-modal">
                     <span class="material-symbols-outlined">undo</span> Retour
                 </button>
-                <button type="button" class="btn-save" style="background-color: var(--effraction-gold) !important; color: white;" onclick="saveEffractionTools()">
+                <button type="button" class="btn-save" style="background-color: var(--effraction-gold) !important; color: white;" data-action="save-effraction-tools">
                     <span class="material-symbols-outlined">check_circle</span> Valider
                 </button>
             </div>
@@ -757,15 +761,15 @@ Gestuelle et visuelle entre les éléments INDIA</textarea>
             </div>
             <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px;">
                 <button type="button" class="remove-btn"
-                    onclick="document.getElementById('memberSelectionModalCanvas').close()">Annuler</button>
+                    data-action="close-member-selection-modal">Annuler</button>
             </div>
         </div>
     </dialog>
     <div id="memberContextMenu" class="context-menu" style="display:none; position:fixed; z-index:9999; background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 8px; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); padding: 5px;">
-        <button type="button" onclick="window.cloneMemberFromContext()" style="display:flex; align-items:center; gap:8px; width:100%; padding:8px 12px; background:none; border:none; color:var(--text-primary); cursor:pointer; text-align:left;">
+        <button type="button" data-action="clone-member-from-context" style="display:flex; align-items:center; gap:8px; width:100%; padding:8px 12px; background:none; border:none; color:var(--text-primary); cursor:pointer; text-align:left;">
             <span class="material-symbols-outlined" style="font-size:18px;">content_copy</span> Cloner
         </button>
-        <button type="button" onclick="window.deleteMemberFromContext()" style="display:flex; align-items:center; gap:8px; width:100%; padding:8px 12px; background:none; border:none; color:var(--danger-red); cursor:pointer; text-align:left;">
+        <button type="button" data-action="delete-member-from-context" style="display:flex; align-items:center; gap:8px; width:100%; padding:8px 12px; background:none; border:none; color:var(--danger-red); cursor:pointer; text-align:left;">
             <span class="material-symbols-outlined" style="font-size:18px;">delete</span> Supprimer
         </button>
     </div>
