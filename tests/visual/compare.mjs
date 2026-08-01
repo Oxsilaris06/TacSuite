@@ -145,13 +145,29 @@ function parseArgs(argv) {
   return { app, viewports };
 }
 
-/** Peint un rectangle plein (couleur unie) directement dans un buffer PNG décodé. */
+/**
+ * Peint un rectangle plein (couleur unie) directement dans un buffer PNG décodé.
+ *
+ * Accepte DEUX formes de rectangle : `{x, y, w, h}` (HEADER_MASK, littéraux
+ * ci-dessus) ET `{x, y, width, height}` (retour de Playwright `boundingBox()`,
+ * utilisé pour `canvasBox`). Avant correctif, `rect.w`/`rect.h` valaient
+ * `undefined` pour un `boundingBox()` → `x1`/`y1` = NaN → toute comparaison
+ * `y < y1` est fausse → boucle jamais exécutée → 0 pixel peint, SANS ERREUR
+ * (le masque carte était donc inerte pour tous les états `canvas:true`).
+ *
+ * @returns {number} nombre de pixels effectivement peints (0 si rect
+ *   manquant/invalide) — permet à l'appelant de détecter un masque inerte.
+ */
 function paintMask(png, rect) {
-  if (!rect) return;
+  if (!rect) return 0;
+  const w = rect.w ?? rect.width;
+  const h = rect.h ?? rect.height;
+  if (![rect.x, rect.y, w, h].every(Number.isFinite)) return 0;
   const x0 = Math.max(0, Math.floor(rect.x));
   const y0 = Math.max(0, Math.floor(rect.y));
-  const x1 = Math.min(png.width, Math.ceil(rect.x + rect.w));
-  const y1 = Math.min(png.height, Math.ceil(rect.y + rect.h));
+  const x1 = Math.min(png.width, Math.ceil(rect.x + w));
+  const y1 = Math.min(png.height, Math.ceil(rect.y + h));
+  let painted = 0;
   for (let y = y0; y < y1; y++) {
     for (let x = x0; x < x1; x++) {
       const idx = (png.width * y + x) << 2;
@@ -159,8 +175,10 @@ function paintMask(png, rect) {
       png.data[idx + 1] = MASK_COLOR.g;
       png.data[idx + 2] = MASK_COLOR.b;
       png.data[idx + 3] = MASK_COLOR.a;
+      painted++;
     }
   }
+  return painted;
 }
 
 async function captureState(page, app, entryUrl, state, viewportName) {
@@ -251,8 +269,22 @@ async function run() {
 
         if (state.canvas) {
           if (canvasBox) {
-            paintMask(basePng, canvasBox);
-            paintMask(actualPng, canvasBox);
+            const paintedBase = paintMask(basePng, canvasBox);
+            const paintedActual = paintMask(actualPng, canvasBox);
+            // Garde-fou : un état canvas:true DOIT masquer au moins 1 pixel
+            // des deux côtés. 0 pixel peint = masque inerte (bug de forme du
+            // rectangle, cf. commentaire paintMask() ci-dessus) — on sort en
+            // ERROR explicite plutôt que de laisser passer un PASS/FAIL
+            // trompeur (diff carte non déterministe compté comme un vrai diff,
+            // ou pire, un FAIL fantôme masquant en fait un masque cassé).
+            if (paintedBase === 0 || paintedActual === 0) {
+              results.push({
+                label,
+                status: 'ERROR',
+                detail: `masque carte inerte (0 pixel peint, base=${paintedBase} actual=${paintedActual}) pour un état canvas:true — canvasBox=${JSON.stringify(canvasBox)}`,
+              });
+              continue;
+            }
           } else {
             results.push({
               label,
