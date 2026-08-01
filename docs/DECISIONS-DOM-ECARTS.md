@@ -220,7 +220,12 @@ CSS/JS equivalent est bien charge par une autre voie.
   absente.
 - **Mission P3B.C.**
 
-## 10. PC-Tac : `<style id="tl-orbat-style">` inline — relocalise dans `styles/pctac.css`
+## 10. PC-Tac : les DEUX `<style>` inline du body — relocalises dans `styles/pctac.css`
+
+`pctac2.html` contient DEUX balises `<style>` inline dans le `<body>`, pas une
+seule : celle ci-dessous, `#tl-orbat-style` (avec id), ET une seconde,
+ANONYME (sans id), non documentee jusqu'ici bien que deja relocalisee — cf.
+sous-section "10bis" apres celle-ci pour cette seconde balise.
 
 - **Original** : `pctac2.html:1926-1959` (bloc identique dans `GStart-main/pctac.html:1926`)
   — une balise `<style id="tl-orbat-style">` INLINE, imbriquee au milieu du
@@ -255,9 +260,39 @@ CSS/JS equivalent est bien charge par une autre voie.
   DOM immediats (`#version-toggle-btn`, point 1 ; `#beta-button`, point 2)
   l'etaient deja.
 
+## 10bis. PC-Tac : second `<style>` inline (ANONYME) — relocalise dans `styles/pctac.css:1706`
+
+- **Original** : `pctac2.html:1916` — `<style>#plan_legend > summary::-webkit-details-marker,
+  #plan_legend > summary::marker { display: none; }</style>`, imbriquee juste
+  apres la fermeture de `<details id="plan_legend">` (masque le marqueur natif
+  du `<summary>` de la legende carte). Contrairement au point 10 ci-dessus,
+  cette balise ne porte AUCUN id — c'est le second `<style>` inline du body,
+  distinct de `#tl-orbat-style`, que le point 10 ne couvrait pas explicitement
+  (son titre et son texte ne visaient que la balise AVEC id).
+- **TacSuite** : `pctac/index.html` — balise absente (aucun `<style>` inline
+  dans le squelette porte, comme pour le point 10). La regle unique est
+  neanmoins presente VERBATIM dans `styles/pctac.css:1706`, sous le
+  commentaire `Source 3/4 : <style> inline de pctac2.html, ligne 1916`.
+- **Justification** : meme categorie que le point 10 (relocalisation, pas
+  suppression) — seul le VEHICULE change (balise `<style>` inline au milieu
+  du body vs feuille externe concatenee dans `<head>`), le contenu CSS est
+  identique.
+- **Consequence visuelle** : aucune — la regle s'applique de facon identique
+  une fois chargee, peu importe le vehicule ; aucune baseline visuelle
+  (`tests/visual/baseline/pctac/`) ne differencie les deux formes.
+- **Bilan DOM body PC-Tac desormais complet** : avec ce point, la categorie
+  "`<style>` inline retires du body" est entierement tracee (2/2, points 10 et
+  10bis) — le delta d'elements body entre `pctac2.html` et `pctac/index.html`
+  est alors integralement explique : -3 `<script>`, -2 `<style>` (points
+  10/10bis), +1 `<span>` (point 6, imbrique dans le `<a id="portalLink">`) —
+  soit -4 elements nets.
+- **Trouve et documente par la mission P3B.FIX (reprise 3), MINEUR R3** — le
+  point 10 (mission precedente) ne couvrait que la balise AVEC id, laissant
+  le document incomplet sur la categorie qu'il venait precisement d'ouvrir.
+
 ## Portee de ce document
 
-Les ecarts DOM ci-dessus (points 1 a 10) sont, a la date du 2026-08-01, la
+Les ecarts DOM ci-dessus (points 1 a 10, plus 10bis) sont, a la date du 2026-08-01, la
 liste exhaustive des divergences constatees entre le DOM des originaux et
 celui des squelettes portes. Toute divergence future devra etre ajoutee ici
 avant d'etre acceptee par un gate.
