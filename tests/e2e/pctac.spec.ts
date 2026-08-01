@@ -49,6 +49,48 @@ async function clickTab(page: Page, viewId: string): Promise<void> {
 }
 
 /**
+ * P3B.FIX (reprise 3), BLOQUANT R2 : point de synchronisation RÉEL avant
+ * d'interagir avec le dock dessin de la vue Plan, remplaçant un
+ * `page.waitForTimeout(1800)` fixe (posé en P3B.FIX reprise 1). Mesuré sur 2
+ * runs complets de la suite (130 tests, `workers: 1`) : 1 échec sur 2 de
+ * « Plan — dessin … » en `chromium-mobile`, cascade lue dans
+ * error-context.md remontant à `PlanMap.init()` pas encore prêt au moment du
+ * clic sur `.plan-draw-btn[data-tool="rectangle"]` (`style.background`
+ * jamais posé) — le budget fixe de 1800ms peut être dépassé par la charge
+ * CUMULÉE du serveur dev sur une suite longue, avec ou sans parallélisme
+ * inter-workers.
+ *
+ * `PlanMapContract` (`docs/SPEC-CONTRATS.md:162`) expose `map` et
+ * `initialized` : on attend l'état interne réel plutôt qu'un délai —
+ * `window.PlanMap.initialized` (fin d'`init()` réussi) ET `map.loaded()` +
+ * `map.areTilesLoaded()` (API MapLibre publique, mêmes garanties que
+ * `waitForMapIdle` dans `tests/visual/compare.mjs`) — avant de considérer le
+ * dock dessin interactif. Vérifié en direct sur 127.0.0.1:9678/pctac/ :
+ * `{hasPlanMap:true, initialized:true, hasMap:true, loaded:true, tiles:true}`.
+ *
+ * ⚠ `waitForFunction(pageFunction, arg, options)` : l'`arg` (2e paramètre)
+ * est requis pour que Playwright résolve le 3e comme `options` — l'omettre
+ * (forme à 2 arguments `waitForFunction(fn, { timeout })`) fait passer
+ * l'objet `{ timeout }` comme `arg`, PAS comme `options` (confirmé : la
+ * 1re version de ce correctif time out à 3000ms — `use.actionTimeout` de
+ * `playwright.config.ts` — au lieu des 15000ms demandés, cause du FAIL
+ * `chromium-desktop` de « Plan — mesure de distance / azimut » constaté sur
+ * le 2e run complet de validation de cette même reprise). `undefined`
+ * ci-dessous est cet `arg` explicite, obligatoire pour que `{ timeout: 15000 }`
+ * soit bien reçu comme `options`.
+ */
+async function waitForPlanMapReady(page: Page): Promise<void> {
+  await page.waitForFunction(
+    () => {
+      const pm = window.PlanMap;
+      return !!pm && pm.initialized && !!pm.map && pm.map.loaded() && pm.map.areTilesLoaded();
+    },
+    undefined,
+    { timeout: 15000 }
+  );
+}
+
+/**
  * R7 (P2.FIX reprise 1) — CHECKLIST-PCTAC.md item #30 : construit un fixture
  * `.pctac.zip` minimal mais réaliste (manifest.json + data.json), au format
  * strictement attendu par `Archive.importFile` (archive.ts) : `data.json` est
@@ -512,16 +554,14 @@ test.describe('PC-Tac — Checklist fonctionnelle (docs/recon-pctac.md §6)', ()
       // cf. test « Plan — verrouillage » : laisser PlanMap.init() se stabiliser
       // avant d'interagir avec le dock dessin (flaky sous charge parallèle sans
       // cette attente).
-      // P3B.FIX (reprise 1), BLOQUANT R2 : releve de 1000 a 1800ms - mesure
-      // (playwright.config.ts workers=1, aucune contention entre workers
-      // possible) : ce test echoue encore parfois seul dans la suite COMPLETE
-      // (130 tests), jamais isole (3/3 vert en isolation). La contention
-      // inter-workers n'est donc pas l'unique cause - le budget fixe de
-      // 1000ms pour l'init asynchrone de PlanMap (tuiles reseau + WebGL)
-      // peut aussi etre depasse par la charge CUMULEE du serveur dev sur une
-      // suite longue (memoire/GC), meme sans parallelisme. Marge relevee en
-      // consequence.
-      await page.waitForTimeout(1800);
+      // P3B.FIX (reprise 3), BLOQUANT R2 : `waitForTimeout` fixe remplacé par
+      // le vrai point de synchronisation (`waitForPlanMapReady`, cf. sa
+      // JSDoc) — la reprise 1 avait relevé ce délai de 1000 à 1800ms mais son
+      // propre commentaire admettait que ce test échouait encore parfois
+      // seul dans la suite COMPLÈTE (130 tests), jamais isolé : un budget
+      // FIXE, quelle que soit sa valeur, reste par nature sujet à la charge
+      // cumulée (mémoire/GC) du serveur dev sur une suite longue.
+      await waitForPlanMapReady(page);
       await page.locator('#plan_btn_draw').click();
       await expect.soft(page.locator('#plan_draw_dock')).toHaveClass(/open/, { timeout: 1500 });
       for (const tool of ['line', 'rectangle', 'circle', 'text', 'measure']) {
@@ -603,9 +643,10 @@ test.describe('PC-Tac — Checklist fonctionnelle (docs/recon-pctac.md §6)', ()
   test('Plan — mesure de distance / azimut', async ({ page }) => {
     await step('outil mesure : deux clics sur la carte affichent une distance', async () => {
       await clickTab(page, 'view-plan');
-      // P3B.FIX (reprise 1), BLOQUANT R2 : releve de 1000 a 1800ms, meme
-      // justification que le test « Plan — dessin » ci-dessus.
-      await page.waitForTimeout(1800);
+      // P3B.FIX (reprise 3), BLOQUANT R2 : `waitForPlanMapReady` (vrai point
+      // de synchronisation), même justification que le test « Plan — dessin »
+      // ci-dessus.
+      await waitForPlanMapReady(page);
       await page.locator('#plan_btn_draw').click();
       await page.locator('.plan-draw-btn[data-tool="measure"]').click();
       // P3B.FIX (reprise 1), BLOQUANT R2 : petite marge après la sélection de
@@ -644,9 +685,10 @@ test.describe('PC-Tac — Checklist fonctionnelle (docs/recon-pctac.md §6)', ()
     // câblage du dock dessin se stabiliser avant d'interagir — sans cette
     // attente, le clic sur #plan_draw_lock arrive parfois avant que son
     // `onclick` soit posé (flaky sous charge parallèle constatée).
-    // P3B.FIX (reprise 1), BLOQUANT R2 : releve de 1000 a 1800ms, meme
-    // justification que le test « Plan — dessin » ci-dessus.
-    await page.waitForTimeout(1800);
+    // P3B.FIX (reprise 3), BLOQUANT R2 : `waitForPlanMapReady` (vrai point de
+    // synchronisation), même justification que le test « Plan — dessin »
+    // ci-dessus.
+    await waitForPlanMapReady(page);
     await page.locator('#plan_btn_draw').click();
     await step('verrou global (#plan_draw_lock)', async () => {
       await page.locator('#plan_draw_lock').click();
