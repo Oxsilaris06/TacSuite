@@ -396,6 +396,13 @@ test.describe('PC-Tac — Checklist fonctionnelle (docs/recon-pctac.md §6)', ()
       await expect
         .soft(page.locator('#photo-board .photo-card', { hasText: 'Photo E2E' }))
         .toBeVisible({ timeout: 1500 });
+      // Point de synchronisation : renderPhotos() pose la classe `active` (DOM,
+      // synchrone) puis `localStorage.setItem('lastPhotoFilter', …)` sans await
+      // entre les deux (ui.ts renderPhotos) - attendre le DOM garantit que le
+      // localStorage est déjà écrit avant le reload qui suit immédiatement.
+      await expect(page.locator('#photo-filter-container button.active')).toContainText('Otages', {
+        timeout: 1500,
+      });
       await page.reload();
       await clickTab(page, 'view-photos');
       await expect
