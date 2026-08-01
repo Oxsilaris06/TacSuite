@@ -179,7 +179,7 @@ body.up-scroll-locked {
     opacity: 0.85;
     transform: scale(1.02);
     box-shadow: 0 10px 24px rgba(0, 0, 0, 0.45);
-    z-index: 5;
+    z-index: var(--z-raised);
     pointer-events: none;
 }
 .up-sort-placeholder {
@@ -201,7 +201,6 @@ body.up-kb-open .up-kb-aware {
  * Source 2/4 : <style> inline principal de pctac2.html, lignes 58-1530
  * Theme "Tactical Glass" (variables --bg-*, --accent-*, --font-*, --space-*...)
  * ------------------------------------------------------------------------- */
-        /* --- THEME TACTICAL GLASS --- */
         /* --- THEME TACTICAL GLASS --- */
         :root {
             /* Graphite Liquide — substrat near-black NEUTRE (gunmetal, zéro bleu) */
@@ -303,6 +302,30 @@ body.up-kb-open .up-kb-aware {
             /* Voiles "métal liquide" neutres (identique OI) */
             --canvas-glow: radial-gradient(120% 80% at 50% -8%, rgba(255, 255, 255, 0.05) 0%, transparent 55%);
             --metal-sheen: linear-gradient(180deg, rgba(255, 255, 255, 0.045) 0%, rgba(255, 255, 255, 0) 22%, rgba(0, 0, 0, 0.06) 100%);
+
+            /* ────────────────────────────────────────────────────────────
+               Échelle z-index (P2.F) — recense les valeurs déjà utilisées
+               PLUS BAS dans ce fichier telles quelles (aucune valeur modifiée,
+               uniquement nommée) pour éviter les collisions futures de couches. */
+            --z-raised: 5;          /* éléments en cours de tri/drag (ui-platform) */
+            --z-overlay: 10;        /* petits repères superposés (réticule dessin, badges photo) */
+            --z-panel: 11;          /* panneaux flottants carte (dock dessin, recherche) */
+            --z-toolbar: 12;        /* barres d'outils flottantes carte */
+            --z-sticky: 1000;       /* barres persistantes (onglets, dock menu) */
+            --z-scrim: 2000;        /* voile derrière une modale */
+            --z-dialog: 2001;       /* modale */
+            --z-top: 3000;          /* lightbox, au-dessus de tout */
+
+            /* Rayons additionnels (P2.F) — complètent --radius-sm/md/lg/full ci-dessus,
+               valeurs déjà utilisées telles quelles, uniquement nommées. */
+            --radius-badge: 4px;    /* badges de statut (photo-card) */
+            --radius-icon: 8px;     /* boutons icône carrés (delete/action, lightbox img) */
+            --radius-pill: 999px;   /* pastilles/segments panneau Tchap live */
+
+            /* Ombre et transition ponctuelles réutilisées à l'identique (P2.F) */
+            --shadow-panel-float: 0 4px 15px rgba(0, 0, 0, 0.4);
+            --shadow-glow-accent: 0 0 15px var(--accent-glow);
+            --transition-quick: 0.2s;
         }
 
         body.light-mode {
@@ -371,6 +394,9 @@ body.up-kb-open .up-kb-aware {
             color: #000;
         }
 
+        /* ════════════════════════════════════════════════════════════════
+         * SECTION : LAYOUT — reset, en-tête, conteneur, barre d'onglets
+         * ════════════════════════════════════════════════════════════════ */
         /* --- RESET & GLOBAL LAYOUT --- */
         * {
             box-sizing: border-box;
@@ -395,44 +421,11 @@ body.up-kb-open .up-kb-aware {
             line-height: 1.6;
         }
 
-        /* --- BOUTON VERSION STABLE/BETA --- */
-        #version-toggle-btn {
-            position: absolute;
-            top: 25px;
-            right: 15px;
-            background: var(--bg-glass);
-            color: var(--ao-green);
-            border: 1px solid var(--ao-green);
-            padding: 6px 12px;
-            border-radius: var(--radius-sm);
-            font-family: var(--font-ui);
-            font-size: 0.85em;
-            text-decoration: none;
-            display: flex;
-            align-items: center;
-            gap: 5px;
-            transition: transform 0.3s var(--ease-out-spring), background 0.3s, color 0.3s, box-shadow 0.3s;
-            z-index: 100;
-            box-shadow: 0 0 10px rgba(34, 197, 94, 0.2);
-            text-transform: uppercase;
-            font-weight: 500;
-        }
-
-        #version-toggle-btn:hover {
-            transform: scale(1.05);
-            background: var(--ao-green);
-            color: black;
-            box-shadow: 0 0 20px rgba(34, 197, 94, 0.4);
-        }
-
-        @media (max-width: 600px) {
-            #version-toggle-btn {
-                top: 10px;
-                right: 10px;
-                padding: 4px 8px;
-                font-size: 0.7em;
-            }
-        }
+        /* --- BOUTON VERSION STABLE/BETA ---
+           Supprime du DOM porte (ecart assume, cf. docs/DECISIONS-DOM-ECARTS.md §1) ;
+           regles CSS mortes (#version-toggle-btn) purgees ici comme prevu par cette
+           note ("purge prevue en P2.F, pas avant"). Sans effet visuel : le
+           selecteur ne correspondait deja plus a aucun element dans TacSuite. --- */
 
         .container {
             max-width: 1000px;
@@ -464,7 +457,7 @@ body.up-kb-open .up-kb-aware {
             border-radius: var(--radius-md);
             position: sticky;
             top: 10px;
-            z-index: 1000;
+            z-index: var(--z-sticky);
             backdrop-filter: blur(10px);
         }
 
@@ -518,6 +511,10 @@ body.up-kb-open .up-kb-aware {
             }
         }
 
+        /* ════════════════════════════════════════════════════════════════
+         * SECTION : PANNEAUX — formulaire de saisie Main Courante, champs,
+         * boutons génériques, tableau, sélecteurs
+         * ════════════════════════════════════════════════════════════════ */
         .log-entry-form {
             background: var(--bg-glass);
             /* Voile « métal liquide » OI par-dessus le verre (sheen + grain neutre) */
@@ -557,7 +554,7 @@ body.up-kb-open .up-kb-aware {
             color: var(--text-main);
             font-family: var(--font-data);
             font-size: 0.9em;
-            transition: all 0.2s;
+            transition: all var(--transition-quick);
         }
 
         input:focus,
@@ -615,6 +612,8 @@ body.up-kb-open .up-kb-aware {
             box-shadow: var(--focus-ring);
         }
 
+        /* Sélecteur de catégorie PAX (Adversaire/Otage/Inter/Oscar) — couleurs
+           de statut partagées avec les annotations carte/photos ci-dessous. */
         .pax-select {
             display: flex;
             gap: 8px;
@@ -679,7 +678,7 @@ body.up-kb-open .up-kb-aware {
             font-size: 0.9em;
             font-weight: bold;
             text-transform: uppercase;
-            transition: all 0.2s;
+            transition: all var(--transition-quick);
             display: flex;
             align-items: center;
             justify-content: center;
@@ -698,7 +697,7 @@ body.up-kb-open .up-kb-aware {
 
         .add-btn:hover {
             background: var(--accent-hover);
-            box-shadow: 0 0 15px var(--accent-glow);
+            box-shadow: var(--shadow-glow-accent);
         }
 
         .mode-toggle-btn.active {
@@ -719,12 +718,12 @@ body.up-kb-open .up-kb-aware {
             font-size: 1em;
             font-weight: bold;
             text-transform: uppercase;
-            transition: all 0.2s;
+            transition: all var(--transition-quick);
         }
 
         .add-log-btn:hover {
             background: var(--accent-hover);
-            box-shadow: 0 0 15px var(--accent-glow);
+            box-shadow: var(--shadow-glow-accent);
         }
 
         /* Anneau de focus clavier net sur tous les boutons (WCAG 2.4.7) */
@@ -735,7 +734,6 @@ body.up-kb-open .up-kb-aware {
         .pax-select-option:focus-visible,
         .delete-btn:focus-visible,
         .action-btn-small:focus-visible,
-        #version-toggle-btn:focus-visible,
         .plan-tool-fab:focus-visible {
             outline: none;
             box-shadow: var(--focus-ring);
@@ -766,6 +764,7 @@ body.up-kb-open .up-kb-aware {
             padding-right: 30px;
         }
 
+        /* Tableau Main Courante */
         .collection-list-container {
             background: var(--bg-glass);
             border: 1px solid var(--border-glass);
@@ -798,6 +797,10 @@ body.up-kb-open .up-kb-aware {
             vertical-align: middle;
         }
 
+        /* ════════════════════════════════════════════════════════════════
+         * SECTION : ANNOTATIONS — galerie photos & badges de statut néon
+         * (Adversaires/Otages : actif/neutralisé/ok/préoccupant/blessé/DCD)
+         * ════════════════════════════════════════════════════════════════ */
         .photo-grid {
             display: grid;
             grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
@@ -848,10 +851,10 @@ body.up-kb-open .up-kb-aware {
             background: var(--danger-red);
             color: white;
             padding: 4px 10px;
-            border-radius: 4px;
+            border-radius: var(--radius-badge);
             font-size: 0.7em;
             font-weight: bold;
-            z-index: 10;
+            z-index: var(--z-overlay);
             box-shadow: 0 0 15px var(--danger-red);
             text-transform: uppercase;
             letter-spacing: 1px;
@@ -865,10 +868,10 @@ body.up-kb-open .up-kb-aware {
             background: var(--ao-green);
             color: black;
             padding: 4px 10px;
-            border-radius: 4px;
+            border-radius: var(--radius-badge);
             font-size: 0.7em;
             font-weight: bold;
-            z-index: 10;
+            z-index: var(--z-overlay);
             box-shadow: 0 0 15px var(--ao-green);
             text-transform: uppercase;
             letter-spacing: 1px;
@@ -904,7 +907,7 @@ body.up-kb-open .up-kb-aware {
             top: 10px;
             right: 10px;
             padding: 4px 8px;
-            border-radius: 4px;
+            border-radius: var(--radius-badge);
             font-size: 0.7em;
             font-weight: bold;
         }
@@ -917,7 +920,7 @@ body.up-kb-open .up-kb-aware {
             top: 10px;
             right: 10px;
             padding: 4px 8px;
-            border-radius: 4px;
+            border-radius: var(--radius-badge);
             font-size: 0.7em;
             font-weight: bold;
         }
@@ -930,7 +933,7 @@ body.up-kb-open .up-kb-aware {
             top: 10px;
             right: 10px;
             padding: 4px 8px;
-            border-radius: 4px;
+            border-radius: var(--radius-badge);
             font-size: 0.7em;
             font-weight: bold;
         }
@@ -943,7 +946,7 @@ body.up-kb-open .up-kb-aware {
             top: 10px;
             right: 10px;
             padding: 4px 8px;
-            border-radius: 4px;
+            border-radius: var(--radius-badge);
             font-size: 0.7em;
             font-weight: bold;
             border: 1px solid #ef4444;
@@ -969,12 +972,12 @@ body.up-kb-open .up-kb-aware {
             color: var(--text-muted);
             width: 32px;
             height: 32px;
-            border-radius: 8px;
+            border-radius: var(--radius-icon);
             display: flex;
             align-items: center;
             justify-content: center;
             cursor: pointer;
-            transition: all 0.2s;
+            transition: all var(--transition-quick);
             box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
         }
 
@@ -1004,7 +1007,7 @@ body.up-kb-open .up-kb-aware {
             padding: 10px;
             cursor: pointer;
             color: var(--accent-blue);
-            transition: all 0.2s;
+            transition: all var(--transition-quick);
             height: 100%;
             min-height: 45px;
         }
@@ -1012,7 +1015,7 @@ body.up-kb-open .up-kb-aware {
         .custom-file-upload:hover {
             background: rgba(59, 130, 246, 0.1);
             border-color: var(--accent-blue);
-            box-shadow: 0 0 15px var(--accent-glow);
+            box-shadow: var(--shadow-glow-accent);
         }
 
         .color-palette {
@@ -1029,7 +1032,7 @@ body.up-kb-open .up-kb-aware {
             border-radius: 50%;
             border: 2px solid rgba(255, 255, 255, 0.1);
             cursor: pointer;
-            transition: all 0.2s;
+            transition: all var(--transition-quick);
             box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3);
             display: block;
         }
@@ -1070,6 +1073,10 @@ body.up-kb-open .up-kb-aware {
             box-shadow: 0 0 15px rgba(255, 255, 255, 0.4);
         }
 
+        /* ════════════════════════════════════════════════════════════════
+         * SECTION : MODALES — backdrop, boîte de dialogue générique, variantes
+         * d'édition, modale Ping, lightbox image
+         * ════════════════════════════════════════════════════════════════ */
         /* Modal / Lightbox */
         .modal-backdrop {
             position: fixed;
@@ -1079,7 +1086,7 @@ body.up-kb-open .up-kb-aware {
             height: 100%;
             background: rgba(0, 0, 0, 0.8);
             backdrop-filter: blur(8px);
-            z-index: 2000;
+            z-index: var(--z-scrim);
             display: none;
         }
 
@@ -1095,7 +1102,7 @@ body.up-kb-open .up-kb-aware {
             border: 1px solid var(--border-glass);
             border-radius: var(--radius-md);
             padding: 30px;
-            z-index: 2001;
+            z-index: var(--z-dialog);
             display: none;
             box-shadow: var(--shadow-float), var(--inner-glow);
         }
@@ -1230,7 +1237,7 @@ body.up-kb-open .up-kb-aware {
             width: 100%;
             height: 100%;
             background: rgba(0, 0, 0, 0.95);
-            z-index: 3000;
+            z-index: var(--z-top);
             display: none;
             flex-direction: column;
             align-items: center;
@@ -1247,7 +1254,7 @@ body.up-kb-open .up-kb-aware {
             max-width: 100%;
             max-height: 80vh;
             object-fit: contain;
-            border-radius: 8px;
+            border-radius: var(--radius-icon);
             box-shadow: 0 0 50px rgba(0, 0, 0, 0.8);
             border: 1px solid var(--border-glass);
         }
@@ -1262,6 +1269,9 @@ body.up-kb-open .up-kb-aware {
             text-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
         }
 
+        /* ════════════════════════════════════════════════════════════════
+         * SECTION : DOCK FLOTTANT — menu d'actions globales (bas d'écran)
+         * ════════════════════════════════════════════════════════════════ */
         /* --- DOCK MENU GLASS --- */
         .dock-menu {
             position: fixed;
@@ -1271,7 +1281,7 @@ body.up-kb-open .up-kb-aware {
             display: flex;
             gap: 10px;
             padding: 8px 15px;
-            z-index: 1000;
+            z-index: var(--z-sticky);
             background: var(--bg-glass-heavy);
             backdrop-filter: blur(15px);
             border: 1px solid var(--border-glass);
@@ -1300,7 +1310,7 @@ body.up-kb-open .up-kb-aware {
             color: var(--text-muted);
             border: none;
             cursor: pointer;
-            transition: all 0.2s;
+            transition: all var(--transition-quick);
             text-decoration: none;
             box-shadow: none;
         }
@@ -1332,12 +1342,16 @@ body.up-kb-open .up-kb-aware {
             color: var(--danger-red);
         }
 
+        /* ════════════════════════════════════════════════════════════════
+         * SECTION : CARTE — onglet Plan (barre d'outils, dock dessin,
+         * panneau recherche, réticule, cadenas d'annotation)
+         * ════════════════════════════════════════════════════════════════ */
         /* --- TOOLBAR UNIFIÉE PLAN (mobile-friendly) --- */
         #plan_unified_toolbar {
             position: absolute;
             top: 10px;
             right: 10px;
-            z-index: 12;
+            z-index: var(--z-toolbar);
             display: flex;
             flex-direction: column;
             gap: 8px;
@@ -1355,7 +1369,7 @@ body.up-kb-open .up-kb-aware {
             align-items: center;
             justify-content: center;
             cursor: pointer;
-            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4);
+            box-shadow: var(--shadow-panel-float);
             transition: transform 0.15s, background 0.2s;
         }
 
@@ -1381,7 +1395,7 @@ body.up-kb-open .up-kb-aware {
             position: absolute;
             top: 10px;
             right: 70px;
-            z-index: 11;
+            z-index: var(--z-panel);
             display: none;
             flex-direction: column;
             align-items: center;
@@ -1391,7 +1405,7 @@ body.up-kb-open .up-kb-aware {
             border: 1px solid var(--border-glass);
             border-radius: var(--radius-sm);
             padding: 6px;
-            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4);
+            box-shadow: var(--shadow-panel-float);
             max-height: calc(100% - 20px);
             overflow-y: auto;
         }
@@ -1442,14 +1456,14 @@ body.up-kb-open .up-kb-aware {
             top: 10px;
             left: 10px;
             right: 70px;
-            z-index: 11;
+            z-index: var(--z-panel);
             display: none;
             background: var(--bg-glass-heavy);
             backdrop-filter: blur(10px);
             border: 1px solid var(--border-glass);
             border-radius: var(--radius-sm);
             padding: 10px;
-            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4);
+            box-shadow: var(--shadow-panel-float);
         }
 
         #plan_search_panel.open {
@@ -1531,7 +1545,7 @@ body.up-kb-open .up-kb-aware {
             top: 50%;
             left: 50%;
             transform: translate(-50%, -50%);
-            z-index: 10;
+            z-index: var(--z-overlay);
             pointer-events: none;
             display: none;
             align-items: center;
@@ -1580,7 +1594,7 @@ body.up-kb-open .up-kb-aware {
             bottom: 75px;
             left: 50%;
             transform: translateX(-50%);
-            z-index: 12;
+            z-index: var(--z-toolbar);
             gap: 10px;
         }
 
@@ -1689,7 +1703,7 @@ body.up-kb-open .up-kb-aware {
                 #tl_ops { display: flex; flex-direction: column; gap: 6px; }
                 .tl-ops-bar { display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding: 0 2px 6px; position: sticky; top: 0; background: var(--bg-glass-heavy); z-index: 2; }
                 .tl-ops-states { display: inline-flex; gap: 9px; font-size: 11px; color: var(--text-muted); white-space: nowrap; }
-                .tl-batch-toggle { flex: 0 0 auto; appearance: none; border: 1px solid var(--border-glass); background: var(--bg-input); color: var(--text-muted); font: 600 11px/1 inherit; padding: 5px 12px; border-radius: 999px; cursor: pointer; }
+                .tl-batch-toggle { flex: 0 0 auto; appearance: none; border: 1px solid var(--border-glass); background: var(--bg-input); color: var(--text-muted); font: 600 11px/1 inherit; padding: 5px 12px; border-radius: var(--radius-pill); cursor: pointer; }
                 .tl-batch-toggle.active { background: var(--inter-blue, #4f8dff); color: #fff; border-color: var(--inter-blue, #4f8dff); }
                 .tl-batch-bar { display: flex; align-items: center; gap: 6px; padding: 0 2px 8px; }
                 .tl-batch-bar .tl-batch-fn { flex: 1 1 auto; min-width: 0; font-size: 11px; background: var(--bg-input); color: var(--text-main); border: 1px solid var(--border-glass); border-radius: 5px; padding: 3px 5px; }
@@ -1704,8 +1718,8 @@ body.up-kb-open .up-kb-aware {
                 .tl-grp-caret { font-size: 10px; color: var(--text-muted); width: 10px; flex: 0 0 auto; }
                 .tl-grp-icon { font-size: 18px; color: var(--text-main); flex: 0 0 auto; }
                 .tl-grp-name { font-weight: 700; font-size: 12.5px; color: var(--text-main); white-space: nowrap; }
-                .tl-grp-count { font-size: 11px; color: var(--text-muted); background: var(--bg-input); border-radius: 999px; padding: 1px 7px; flex: 0 0 auto; }
-                .tl-grp-gauge { flex: 1 1 auto; display: flex; height: 5px; border-radius: 999px; overflow: hidden; background: rgba(255,255,255,.07); min-width: 28px; }
+                .tl-grp-count { font-size: 11px; color: var(--text-muted); background: var(--bg-input); border-radius: var(--radius-pill); padding: 1px 7px; flex: 0 0 auto; }
+                .tl-grp-gauge { flex: 1 1 auto; display: flex; height: 5px; border-radius: var(--radius-pill); overflow: hidden; background: rgba(255,255,255,.07); min-width: 28px; }
                 .tl-grp-gauge i { display: block; height: 100%; }
                 .tl-grp-follow { flex: 0 0 auto; appearance: none; border: 1px solid var(--border-glass); background: var(--bg-input); color: var(--text-muted); border-radius: 6px; width: 28px; height: 24px; cursor: pointer; font-size: 13px; line-height: 1; }
                 .tl-grp-follow:hover { color: #fff; border-color: var(--inter-blue, #4f8dff); }
