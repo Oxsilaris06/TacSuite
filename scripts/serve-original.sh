@@ -12,7 +12,7 @@
 set -e
 
 # Determine log file location
-LOG_FILE="${1:-.tmp/serve-original.log}"
+LOG_FILE="${1:-/tmp/tacsuite-serve-original.log}"
 GSTART_DIR="/home/nico/Bureau/Web/GStart-main"
 
 # Ensure directory exists

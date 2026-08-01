@@ -12,8 +12,8 @@
 set -e
 
 # Determine log file location
-LOG_FILE="${1:-.tmp/serve-tacsuite.log}"
 TACSUITE_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+LOG_FILE="${1:-/tmp/tacsuite-serve-dev.log}"
 
 # Ensure directory exists
 mkdir -p "$(dirname "$LOG_FILE")"
