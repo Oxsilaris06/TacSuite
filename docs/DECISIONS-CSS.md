@@ -302,3 +302,150 @@ chromium-mobile).
   §1.2/§3 et des chiffres §2/§3 (13 → 14 variables, 62 → 76, +14).
 - `docs/DECISIONS-DOM-ECARTS.md` — conséquence supplémentaire tracée au §1
   (texte du tutoriel décrivant `#version-toggle-btn`, absent du portage).
+
+---
+
+## 7. OI (`styles/oi.css`, P3B.E)
+
+Mission : moderniser `styles/oi.css` (3928 lignes, verbatim P0.A5) sous
+contrôle visuel strict, en suivant `.tacsuite-prep/plan-css-oi.md` (analyse
+préparatoire en lecture seule, méthode identique à P2.F ci-dessus). Gate
+fonctionnel déjà vert (P3.D, 130/130 e2e oi+pctac) — à ne pas casser.
+Protocole zéro régression `docs/PLAN.md` §4 respecté à l'identique de
+§1 ci-dessus : aucun renommage de sélecteur, aucune spécificité modifiée,
+aucun réordonnancement de règle significative pour la cascade.
+
+### 7.1 Lots exécutés
+
+**Lot 1 — Dédoublonnage strict + purge CSS morte `#beta-button`.**
+Suppression du mini-bloc `:root { --moicp-zmspcp-purple: #7c6ce0; }`
+(redéclaration exacte de la valeur déjà posée dans le `:root` du thème
+principal — la bannière de section qui le précédait est conservée comme
+repère de navigation) et des 3 points de retouche `#beta-button`
+(`docs/DECISIONS-DOM-ECARTS.md` §2 : sélecteur absent du DOM porté) :
+règle entière (état desktop), entrée `#beta-button:hover` retirée de la
+liste partagée avec `#log-button:hover` (`#log-button:hover` conservé seul),
+règle entière en `@media (max-width: 600px)`. 0 règle strictement dupliquée
+trouvée par ailleurs (même constat qu'en P2.F).
+
+**Lot 2 — Substitution mécanique des espacements vers le barème `--space-N`
+existant.** Recherche exhaustive par regex plein-texte (pas seulement
+ligne-à-ligne, pour couvrir aussi les règles compactes sur une seule ligne
+type `.adv-section { margin-block-end: 4px; }`) de toute déclaration
+`padding*/margin*/gap` (formes physiques ET logiques —
+`padding-inline(-start/-end)`, `margin-block(-start/-end)`, etc.) dont
+**tous** les tokens de la valeur correspondent exactement à un cran du
+barème `--space-1..8` (4/8/12/16/24/32/48/64px) déjà déclaré dans `:root`.
+**78 occurrences substituées** (valeur calculée strictement identique par
+construction, `!important` préservé où présent) — chaque remplacement
+vérifié par diff ligne-à-ligne avant/après (156 lignes de diff = 78 paires
+retrait/ajout, aucune ligne inattendue). Écart avec l'estimation
+préparatoire (71, §b.5 du plan) : l'analyse préparatoire ne comptait que les
+formes physiques sur leur propre ligne ; l'exécution réelle, plus
+exhaustive, couvre en plus 6 déclarations en propriétés logiques
+(`margin-block-end`/`-start`, `padding-inline`/`-block-end`) et 2 déclarations
+compactes multi-règles sur une même ligne — mêmes garanties de sûreté
+(substitution 1:1 valeur→variable), pas un changement de méthode. Valeurs
+récurrentes hors barème (`10px`, `6px`, `20px`, `15px`, `5px`, `14px`,
+`22px`, `30px`) volontairement **non touchées** — même principe qu'en P2.F
+§1.6/§1.7 : forcer un arrondi dans `--space-N` romprait la fidélité visuelle
+pour un gain cosmétique.
+
+**Lot 3 — Nouveaux tokens à correspondance EXACTE avec `styles/pctac.css`
+(même valeur, même rôle sémantique).** 7 tokens réutilisant le nom pctac,
+déclarés dans le `:root` du thème OI : `--z-raised`(5), `--z-panel`(11),
+`--z-toolbar`(12), `--z-sticky`(1000), `--z-scrim`(2000), `--radius-pill`
+(999px), `--transition-quick`(0.2s). 12 occurrences substituées (6 z-index +
+4× `border-radius:999px` + 2× `transition:all 0.2s` bare). Aucun de ces 7
+tokens n'imbrique de `var()` themé (`--accent-*`/`--border-*`/etc.) — donc
+aucun risque de la classe de bug `--shadow-glow-accent` (§6.1) : tous
+déclarés uniquement dans le `:root` sombre, sans besoin de réaffectation en
+`body.light-mode`.
+
+**Lot 4 — Nouveaux tokens OI-exclusifs (z-index atelier d'annotation photo +
+modales, substitution `border-radius:12px` → `--radius-md`).** 6 nouveaux
+tokens propres à OI (échelle structurellement distincte de celle de pctac,
+cf. plan §b.1) : `--z-drag-raised`(100, `.draggable.dragging` +
+`.annotation-toolbar` + `#log-button`), `--z-annot-dock`(1100, `#dock-left`/
+`#dock-bottom`), `--z-annot-header`(1200, en-tête collant
+`#annotationModal .modal-header`), `--z-annot-panel`(1300, `#dock-right`),
+`--z-modal-dialog`(9999, `#quickEditModal`/`#settingsModal`), `--z-modal-top`
+(10000, `#annotationModal`/`#pdfLoadingModal`). 10 occurrences z-index
+substituées + 7 occurrences `border-radius:12px`/`12px !important` →
+`var(--radius-md)` (déjà présent en `:root`, aucun nouveau token requis).
+
+**Portée volontairement NON exécutée dans ce lot** (le plan préparatoire
+qualifie ces 2 valeurs de « à confirmer en séance », en dehors de la portée
+explicitement chiffrée du Lot 4 — cf. plan §b.1/Lot 4) : z-index `10` (5
+occurrences — `.modal-header`×2/`.modal-footer`×2/`.modal-actions-pdf`,
+rôle « en-tête/pied sticky de modale », **distinct** du rôle pctac de
+`--z-overlay`=10 malgré la valeur identique, cf. plan) et z-index `13` (1
+occurrence, `#oi_carto_hint`, sans équivalent pctac). Laissés littéraux —
+décision de nommage à trancher par l'utilisateur, pas par cette exécution
+autonome. De même pour z-index `2`/`3`/`40` (occurrence unique chacune) et
+`border-radius:10px`/`8px`/`4px`/`50%` (hors barème ou occurrence trop
+faible) : non touchés, conformément au principe « ne variabiliser que les
+valeurs réellement récurrentes ET porteuses de sens » (§1.6/§1.7).
+
+**Lot 5 — Couleurs récurrentes (glass white, rouge corbeille) — NON
+exécuté.** Le plan qualifie ce lot d'« optionnel, à valider en séance »,
+« le plus cosmétique du plan », à faire « seulement si le gain de
+lisibilité est jugé suffisant ». Aucune séance de validation utilisateur
+n'a eu lieu pendant cette exécution autonome ; par cohérence avec le
+principe « changements chirurgicaux » (n'éditer que le strict nécessaire),
+ce lot n'a pas été exécuté. Les ~10 valeurs candidates restent documentées
+dans `.tacsuite-prep/plan-css-oi.md` §b.6 si une exécution future est
+souhaitée.
+
+### 7.2 Bilan chiffré
+
+| Mesure | Avant (P0.A5, verbatim) | Après (P3B.E) |
+|---|---:|---:|
+| LOC `styles/oi.css` | 3928 | 3918 |
+| Noms de custom properties distincts (`:root` thème OI) | 57 | 70 (+13) |
+| Occurrences littérales → `var(--token)` (Lot 2, espacement) | 0 | 78 |
+| Occurrences littérales → `var(--token)` (Lot 3, correspondance exacte pctac) | 0 | 12 |
+| Occurrences littérales → `var(--token)` (Lot 4, tokens OI-exclusifs) | 0 | 17 |
+| **Total substitutions mécaniques** | **0** | **107** |
+| Doublons de déclaration supprimés | — | 1 (`--moicp-zmspcp-purple`) |
+| Points de purge CSS morte (`#beta-button`) | — | 3 (2 blocs + 1 entrée de liste) |
+| Sélecteurs renommés | — | **0** (interdit respecté) |
+| Règles réordonnées | — | **0** (interdit respecté) |
+| Spécificité effective modifiée | — | **0** (interdit respecté) |
+
+### 7.3 Validation
+
+- `node tests/visual/compare.mjs oi` (mode sombre, 18 états) : **18/18 PASS**
+  à chaque checkpoint de lot (1 à 4), pourcentages de diff **strictement
+  identiques** d'un lot à l'autre (ex. `step0-situation-desktop` à 0,012 %
+  aux 3 checkpoints intermédiaires) — preuve directe qu'aucune substitution
+  n'a changé une seule valeur calculée. Détail du run final :
+  0,001–0,047 % selon l'état (desktop 1296000 px, mobile 329160 px).
+- `node tests/visual/compare.mjs oi-light` (mode clair, 18 états, baselines
+  `.tacsuite-prep/oi-baseline-light/` intégrées en P3.D) : **18/18 PASS** à
+  chaque checkpoint, mêmes constats de stabilité (0,001–0,052 %). Confirme
+  qu'aucun des 7 tokens Lot 3 (theme-agnostiques, cf. §7.1) n'a introduit de
+  divergence clair/sombre — vigilance dédiée du plan (piège
+  `--shadow-glow-accent`, §6.1 ci-dessus) validée : aucun nouveau token créé
+  ne contient de `var()` imbriqué référençant une variable elle-même thémée.
+- Les 2 divergences clair/sombre pré-existantes documentées par le plan
+  (`--focus-ring`, `--field-border`, non réaffectées dans `body.light-mode`
+  — présentes dans l'original `4.html` avant tout portage) : **non
+  corrigées**, conformément à la décision du plan (corriger changerait le
+  rendu clair par rapport à la baseline figée, hors périmètre « fidélité
+  avant élégance »).
+- `npx tsc --noEmit` : 0 erreur. `npm run lint` (eslint) : 0 erreur.
+- `npm run build` : succès (avertissement taille de chunk JS pré-existant,
+  sans rapport avec ce CSS).
+- `npx playwright test tests/e2e/oi.spec.ts tests/e2e/pctac.spec.ts` :
+  **130/130 verts** (chromium-desktop + chromium-mobile), incluant les
+  checklists fonctionnelles qui exercent l'atelier d'annotation photo
+  (`#annotationModal`, `#dock-left/-right/-bottom`) et les modales
+  `#quickEditModal`/`#settingsModal`/`#pdfLoadingModal` couvertes par les
+  nouveaux tokens Lot 4 mais absentes des 9 états `compare.mjs oi` (cf.
+  plan, ces états n'ont pas de capture pixel dédiée — gate fonctionnel
+  plutôt que visuel, comme pour PC-Tac).
+
+### 7.4 Fichier modifié
+
+- `styles/oi.css` (seul fichier touché par cette mission P3B.E).

@@ -184,7 +184,7 @@ body.up-scroll-locked {
     opacity: 0.85;
     transform: scale(1.02);
     box-shadow: 0 10px 24px rgba(0, 0, 0, 0.45);
-    z-index: 5;
+    z-index: var(--z-raised);
     pointer-events: none;
 }
 .up-sort-placeholder {
@@ -299,6 +299,30 @@ body.up-kb-open .up-kb-aware {
             --canvas-glow: radial-gradient(120% 80% at 50% -8%, rgba(255, 255, 255, 0.05) 0%, transparent 55%);
             /* Reflet « métal liquide » subtil pour les surfaces de carte. */
             --metal-sheen: linear-gradient(180deg, rgba(255, 255, 255, 0.045) 0%, rgba(255, 255, 255, 0) 22%, rgba(0, 0, 0, 0.06) 100%);
+
+            /* ────────────────────────────────────────────────────────────
+               Échelle z-index (P3B.E) — recense des valeurs déjà utilisées
+               PLUS BAS dans ce fichier telles quelles (aucune valeur modifiée,
+               uniquement nommée). Noms partagés avec styles/pctac.css UNIQUEMENT
+               pour les 5 cas à correspondance exacte valeur+rôle démontrée. */
+            --z-raised: 5;          /* élément en cours de tri/drag (ui-platform) */
+            --z-panel: 11;          /* panneaux flottants carte (dock dessin, recherche) */
+            --z-toolbar: 12;        /* barre d'outils flottante carte */
+            --z-sticky: 1000;       /* barre persistante (dock menu) */
+            --z-scrim: 2000;        /* voile derrière une modale */
+
+            /* Échelle z-index OI-exclusive (atelier d'annotation photo + modales) —
+               structurellement distincte de l'échelle pctac ci-dessus, ne pas fusionner. */
+            --z-drag-raised: 100;   /* élément en cours de drag (draggable), toolbar annotation */
+            --z-annot-dock: 1100;   /* barres d'outils flottantes du canvas d'annotation */
+            --z-annot-header: 1200; /* en-tête collant de la modale d'annotation */
+            --z-annot-panel: 1300;  /* panneau latéral de l'atelier d'annotation */
+            --z-modal-dialog: 9999; /* modales quickEdit/settings */
+            --z-modal-top: 10000;   /* sommet de la pile (annotation, chargement PDF) */
+
+            /* Rayon et transition ponctuels réutilisés à l'identique (P3B.E) */
+            --radius-pill: 999px;   /* pastilles (chips PATRACDVR) */
+            --transition-quick: 0.2s;
         }
 
         /* Utilities */
@@ -502,7 +526,7 @@ body.up-kb-open .up-kb-aware {
 
         label {
             display: inline-block;
-            margin-block-end: 8px;
+            margin-block-end: var(--space-2);
             font-weight: 500;
             color: var(--text-secondary);
             font-size: 0.9em;
@@ -643,7 +667,7 @@ body.up-kb-open .up-kb-aware {
             .wizard-step.oi-grid.active > label,
             .oi-fields-grid > label {
                 align-self: center;
-                margin-block-end: 24px;
+                margin-block-end: var(--space-5);
                 text-align: right;
             }
             /* Un label qui précède une zone de texte passe pleine largeur, à gauche,
@@ -655,7 +679,7 @@ body.up-kb-open .up-kb-aware {
                 grid-column: 1 / -1;
                 text-align: left;
                 align-self: end;
-                margin-block-end: 8px;
+                margin-block-end: var(--space-2);
             }
         }
 
@@ -678,7 +702,7 @@ body.up-kb-open .up-kb-aware {
             margin-block-start: clamp(30px, 8vw, 50px);
             border-top: 1px solid var(--border-color);
             padding-block-start: clamp(20px, 5vw, 30px);
-            gap: 16px;
+            gap: var(--space-4);
         }
 
         /* ==========================================================================
@@ -742,8 +766,8 @@ body.up-kb-open .up-kb-aware {
             display: flex;
             flex-direction: column;
             align-items: stretch;
-            gap: 12px;
-            margin-block-end: 16px;
+            gap: var(--space-3);
+            margin-block-end: var(--space-4);
             animation: slideUp 0.3s ease-out;
         }
 
@@ -774,7 +798,7 @@ body.up-kb-open .up-kb-aware {
             display: inline-flex;
             align-items: center;
             justify-content: center;
-            gap: 8px;
+            gap: var(--space-2);
             font-weight: 500;
             text-transform: uppercase;
             letter-spacing: 0.5px;
@@ -895,8 +919,8 @@ body.up-kb-open .up-kb-aware {
             min-height: 48px;
             border-radius: var(--radius-md);
             border: 1px solid var(--border-color);
-            padding-inline: 16px;
-            gap: 8px;
+            padding-inline: var(--space-4);
+            gap: var(--space-2);
         }
 
         /* Icônes Material calées dans tout bouton — currentColor = couleur du bouton. */
@@ -949,10 +973,10 @@ body.up-kb-open .up-kb-aware {
            FICHE ADVERSAIRE — même grammaire visuelle que les autres étapes :
            sections sémantiques, titres discrets, et champs alignés via .oi-fields-grid.
            ========================================================================== */
-        .adv-section { margin-block-end: 4px; }
+        .adv-section { margin-block-end: var(--space-1); }
         /* Séparateur fin entre sections (au lieu de <hr> ponctuels). */
         .adv-section + .adv-section {
-            margin-block-start: 24px;
+            margin-block-start: var(--space-5);
             padding-block-start: 22px;
             border-top: 1px solid var(--border-light);
         }
@@ -985,7 +1009,7 @@ body.up-kb-open .up-kb-aware {
         .adv-duo {
             display: flex;
             align-items: stretch;
-            gap: 12px;
+            gap: var(--space-3);
             margin-block-end: var(--space-5);
         }
         .adv-duo > input,
@@ -1004,14 +1028,14 @@ body.up-kb-open .up-kb-aware {
         .adv-section .vehicules-container + .add-btn {
             width: 100%;
             justify-content: center;
-            margin-block-start: 8px;
+            margin-block-start: var(--space-2);
         }
 
         /* Boutons d'ajout photo : pleine largeur, sobres, alignés sous la dropzone. */
         .adv-photo-btn {
             width: 100%;
             justify-content: center;
-            margin-block-end: 16px;
+            margin-block-end: var(--space-4);
         }
         /* Libellé « Renforts potentiels » : icône + ton danger, sans casser la grille. */
         .adv-sublabel-danger {
@@ -1026,7 +1050,7 @@ body.up-kb-open .up-kb-aware {
         /* Libellés de blocs « liste » (ME, Véhicules) hors grille : pleine largeur. */
         .adv-block-label {
             display: block;
-            margin-block-end: 8px;
+            margin-block-end: var(--space-2);
             font-weight: 600;
             color: var(--text-primary);
         }
@@ -1196,7 +1220,7 @@ body.up-kb-open .up-kb-aware {
             gap: 6px;
             width: 100%;
             margin-top: 6px;
-            padding-top: 8px;
+            padding-top: var(--space-2);
             border-top: 1px solid var(--border-color, #333);
         }
         .patrac-batch-targets .patrac-batch-target-btn { width: auto; min-height: 40px; }
@@ -1228,7 +1252,7 @@ body.up-kb-open .up-kb-aware {
         /* Modale « Configuration Unité » : grille de textareas d'options (style 4.html). */
         #uniteConfigModal .unite-config-grid { display: grid; gap: var(--space-4); }
         #uniteConfigModal .unite-config-group label {
-            display: block; margin-bottom: 4px; color: var(--accent-blue);
+            display: block; margin-bottom: var(--space-1); color: var(--accent-blue);
             font-weight: 600; font-size: 0.9em;
         }
         #uniteConfigModal .unite-config-group textarea {
@@ -1328,7 +1352,7 @@ body.up-kb-open .up-kb-aware {
             opacity: 1;
             visibility: visible;
             padding-block-start: 20px;
-            padding-block-end: 24px;
+            padding-block-end: var(--space-5);
             border-top: 1px solid var(--border-light);
         }
 
@@ -1353,7 +1377,7 @@ body.up-kb-open .up-kb-aware {
             justify-content: center;
             text-align: center;
             width: 100%;
-            margin-block-end: 12px;
+            margin-block-end: var(--space-3);
             font-weight: 500;
         }
 
@@ -1366,7 +1390,7 @@ body.up-kb-open .up-kb-aware {
         .photo-display-area {
             display: flex;
             flex-wrap: wrap;
-            gap: 16px;
+            gap: var(--space-4);
             padding: clamp(12px, 3vw, 20px);
             min-height: 110px;
             background: var(--bg-body);
@@ -1379,8 +1403,8 @@ body.up-kb-open .up-kb-aware {
         .image-preview-container {
             display: flex;
             flex-wrap: wrap;
-            gap: 16px;
-            margin-block-start: 12px;
+            gap: var(--space-4);
+            margin-block-start: var(--space-3);
         }
 
         .image-preview-item {
@@ -1449,7 +1473,7 @@ body.up-kb-open .up-kb-aware {
             opacity: 0.6;
             transform: scale(1.05) rotate(2deg);
             box-shadow: var(--shadow-float);
-            z-index: 100;
+            z-index: var(--z-drag-raised);
         }
 
         /* ==========================================================================
@@ -1460,7 +1484,7 @@ body.up-kb-open .up-kb-aware {
         #vehicle_creation_buttons {
             display: grid !important;
             grid-template-columns: repeat(2, 1fr) !important;
-            gap: 12px !important;
+            gap: var(--space-3) !important;
             width: 100%;
         }
 
@@ -1474,7 +1498,7 @@ body.up-kb-open .up-kb-aware {
         #unassigned_members_container {
             display: flex;
             flex-wrap: wrap;
-            gap: 16px;
+            gap: var(--space-4);
             padding: clamp(12px, 3vw, 20px);
             min-height: 120px;
             background: var(--bg-interactive);
@@ -1489,8 +1513,8 @@ body.up-kb-open .up-kb-aware {
             container-type: inline-size;
             display: flex;
             flex-direction: column;
-            gap: 12px;
-            padding: 16px;
+            gap: var(--space-3);
+            padding: var(--space-4);
             padding-block-start: 50px;
             border: 1px solid var(--border-color);
             background-color: var(--bg-container);
@@ -1509,10 +1533,10 @@ body.up-kb-open .up-kb-aware {
             border-radius: var(--radius-md);
             min-height: 70px;
             width: 100%;
-            padding: 12px;
+            padding: var(--space-3);
             display: flex;
             flex-wrap: wrap;
-            gap: 12px;
+            gap: var(--space-3);
             align-content: flex-start;
         }
 
@@ -1520,7 +1544,7 @@ body.up-kb-open .up-kb-aware {
             background-color: var(--bg-container);
             border: 1px solid var(--border-color);
             color: var(--text-primary);
-            padding: 12px 16px;
+            padding: var(--space-3) var(--space-4);
             border-radius: var(--radius-md);
             text-align: center;
             cursor: grab;
@@ -1578,7 +1602,7 @@ body.up-kb-open .up-kb-aware {
             overflow: hidden;
             white-space: nowrap;
             text-overflow: ellipsis;
-            margin-block-start: 4px;
+            margin-block-start: var(--space-1);
         }
 
         .patracdvr-member-btn .dir-info {
@@ -1597,7 +1621,7 @@ body.up-kb-open .up-kb-aware {
         @container (max-width: 250px) {
             .patracdvr-member-btn {
                 width: 100%;
-                padding: 8px;
+                padding: var(--space-2);
             }
         }
 
@@ -1666,7 +1690,7 @@ body.up-kb-open .up-kb-aware {
 
         #trashCan .material-symbols-outlined {
             font-size: 56px;
-            margin-block-end: 12px;
+            margin-block-end: var(--space-3);
             transition: transform 0.4s var(--ease-out-spring);
         }
 
@@ -1685,12 +1709,8 @@ body.up-kb-open .up-kb-aware {
         /* ==========================================================================
    ARTICULATION — MOICP / ZMSPCP / Ordres
    ========================================================================== */
-        :root {
-            --moicp-zmspcp-purple: #7c6ce0;
-        }
-
         .articulation-block {
-            margin-bottom: 24px;
+            margin-bottom: var(--space-5);
             border: 1px solid var(--border-light);
             border-radius: var(--radius-lg);
             overflow: hidden;
@@ -1777,13 +1797,13 @@ body.up-kb-open .up-kb-aware {
         .rame-vl-zone {
             display: flex;
             flex-direction: column;
-            gap: 8px;
+            gap: var(--space-2);
         }
 
         .rame-vl-chip {
             display: flex;
             align-items: center;
-            gap: 12px;
+            gap: var(--space-3);
             padding: 10px 16px;
             border: 1px solid var(--border-color);
             border-radius: var(--radius-md);
@@ -1921,7 +1941,7 @@ body.up-kb-open .up-kb-aware {
             display: none;
             background: var(--bg-body);
             flex-direction: column;
-            z-index: 9999;
+            z-index: var(--z-modal-dialog);
         }
 
         #annotationModal {
@@ -1934,7 +1954,7 @@ body.up-kb-open .up-kb-aware {
             display: none;
             background: #000; /* Fond noir par défaut pour l'immersion photo */
             flex-direction: column;
-            z-index: 10000;
+            z-index: var(--z-modal-top);
             padding: 0;
             margin: 0;
         }
@@ -2048,7 +2068,7 @@ body.up-kb-open .up-kb-aware {
         .modal-body {
             flex: 1;
             overflow-y: auto;
-            padding: 24px;
+            padding: var(--space-5);
             -webkit-overflow-scrolling: touch;
         }
 
@@ -2063,7 +2083,7 @@ body.up-kb-open .up-kb-aware {
             bottom: 0;
             z-index: 10;
             display: flex;
-            gap: 12px;
+            gap: var(--space-3);
         }
 
         .modal-body {
@@ -2081,7 +2101,7 @@ body.up-kb-open .up-kb-aware {
             bottom: 0;
             z-index: 10;
             display: flex;
-            gap: 12px;
+            gap: var(--space-3);
         }
 
         .modal-footer button {
@@ -2095,7 +2115,7 @@ body.up-kb-open .up-kb-aware {
             display: flex;
             align-items: center;
             justify-content: center;
-            gap: 8px;
+            gap: var(--space-2);
         }
 
         .btn-cancel {
@@ -2135,7 +2155,7 @@ body.up-kb-open .up-kb-aware {
             padding: clamp(14px, 3vw, 22px);
             border: 1px solid var(--border-color);
             border-radius: var(--radius-lg);
-            margin-block-start: 24px;
+            margin-block-start: var(--space-5);
             background: var(--bg-container);
             box-shadow: var(--shadow-md), var(--inner-glow);
             display: flex;
@@ -2155,7 +2175,7 @@ body.up-kb-open .up-kb-aware {
         .qe-autosave {
             display: inline-flex;
             align-items: center;
-            gap: 4px;
+            gap: var(--space-1);
             font-size: 0.75em;
             font-weight: 600;
             color: var(--success-green);
@@ -2198,7 +2218,7 @@ body.up-kb-open .up-kb-aware {
         .qe-row.is-open .qe-row-body { max-height: 480px; }
         .qe-row-body .quick-edit-options { padding: var(--space-1) var(--space-2) var(--space-4); }
 
-        .quick-edit-options { display: flex; flex-wrap: wrap; gap: 8px; }
+        .quick-edit-options { display: flex; flex-wrap: wrap; gap: var(--space-2); }
         .quick-edit-btn {
             background-color: var(--bg-body);
             border: 1px solid var(--border-color);
@@ -2240,12 +2260,12 @@ body.up-kb-open .up-kb-aware {
         .annotation-toolbar {
             display: flex;
             flex-direction: column;
-            gap: 8px; /* Compaction maximale */
-            padding: 12px;
+            gap: var(--space-2); /* Compaction maximale */
+            padding: var(--space-3);
             background: var(--bg-container) !important;
             border-right: 1px solid var(--border-color) !important;
             flex-shrink: 0;
-            z-index: 100;
+            z-index: var(--z-drag-raised);
             box-shadow: var(--shadow-lg);
             overflow: hidden; /* Désactivation du scroll par défaut */
             color: var(--text-primary) !important;
@@ -2338,7 +2358,7 @@ body.up-kb-open .up-kb-aware {
             align-items: center;
             justify-content: center;
             background: rgba(255,255,255,0.03);
-            padding: 4px;
+            padding: var(--space-1);
             border-radius: 8px;
             border: 1px solid rgba(255,255,255,0.05);
         }
@@ -2379,10 +2399,10 @@ body.up-kb-open .up-kb-aware {
         .annotation-toolbar .annotation-actions {
             display: flex;
             flex-direction: column;
-            gap: 12px;
+            gap: var(--space-3);
             margin-top: auto;
             border-top: 1px solid rgba(255,255,255,0.1);
-            padding-top: 24px;
+            padding-top: var(--space-5);
         }
 
         .annotation-toolbar .tool-btn-danger {
@@ -2391,8 +2411,8 @@ body.up-kb-open .up-kb-aware {
             background: rgba(239, 68, 68, 0.15) !important;
             color: #fca5a5 !important;
             border: 1px solid rgba(239, 68, 68, 0.2) !important;
-            padding: 12px;
-            border-radius: 12px;
+            padding: var(--space-3);
+            border-radius: var(--radius-md);
             font-weight: 700;
         }
 
@@ -2405,7 +2425,7 @@ body.up-kb-open .up-kb-aware {
         .annotation-toolbar .btn-cancel,
         .annotation-toolbar .btn-save {
             padding: 12px 20px;
-            border-radius: 12px;
+            border-radius: var(--radius-md);
             font-weight: 600;
             text-transform: uppercase;
             letter-spacing: 0.5px;
@@ -2450,7 +2470,7 @@ body.up-kb-open .up-kb-aware {
             align-items: center;
             justify-content: center;
             cursor: pointer;
-            transition: all 0.2s;
+            transition: all var(--transition-quick);
             padding: 0;
         }
 
@@ -2493,7 +2513,7 @@ body.up-kb-open .up-kb-aware {
 
         .annotation-toolbar {
             background: var(--bg-container);
-            padding: 12px;
+            padding: var(--space-3);
             display: flex;
             flex-direction: column;
             gap: 15px;
@@ -2506,13 +2526,13 @@ body.up-kb-open .up-kb-aware {
         .toolbar-row {
             display: flex;
             align-items: center;
-            gap: 12px;
+            gap: var(--space-3);
             flex-wrap: wrap;
         }
 
         .toolbar-main-tools, .toolbar-contextual-tools {
             display: flex;
-            gap: 8px;
+            gap: var(--space-2);
             flex-wrap: wrap;
         }
 
@@ -2612,8 +2632,8 @@ body.up-kb-open .up-kb-aware {
                 max-height: none;
                 border-bottom: none;
                 border-right: 1px solid var(--border-color);
-                padding: 24px 16px;
-                gap: 24px;
+                padding: var(--space-5) var(--space-4);
+                gap: var(--space-5);
             }
 
             .close-dock-btn {
@@ -2685,10 +2705,10 @@ body.up-kb-open .up-kb-aware {
             #annotationModal .modal-header {
                 position: absolute !important;
                 top: 0; left: 0; right: 0;
-                z-index: 1200;
+                z-index: var(--z-annot-header);
                 display: flex !important;
                 align-items: center;
-                gap: 8px;
+                gap: var(--space-2);
                 padding: 10px 12px !important;
                 padding-top: calc(10px + env(safe-area-inset-top, 0px)) !important;
                 background: linear-gradient(180deg, rgba(9,9,11,0.92) 0%, rgba(9,9,11,0.78) 70%, rgba(9,9,11,0) 100%) !important;
@@ -2723,8 +2743,8 @@ body.up-kb-open .up-kb-aware {
             #annotationModal .modal-header #annotation_cancel_header,
             #annotationModal .modal-header #annotation_save_header {
                 min-height: 40px;
-                padding: 8px 16px !important;
-                border-radius: 12px !important;
+                padding: var(--space-2) var(--space-4) !important;
+                border-radius: var(--radius-md) !important;
                 font-size: 0.85rem !important;
                 font-weight: 600;
                 letter-spacing: 0.2px;
@@ -2791,16 +2811,16 @@ body.up-kb-open .up-kb-aware {
                 position: absolute !important;
                 left: 8px; right: 8px;
                 bottom: calc(132px + env(safe-area-inset-bottom, 0px));
-                z-index: 1100;
+                z-index: var(--z-annot-dock);
                 display: block !important;
                 pointer-events: none;
             }
             #dock-left .toolbar-vertical-group {
                 display: flex !important;
                 flex-direction: row !important;
-                gap: 8px;
+                gap: var(--space-2);
                 width: 100%;
-                padding: 8px;
+                padding: var(--space-2);
                 overflow-x: auto;
                 overflow-y: hidden;
                 scrollbar-width: none;
@@ -2860,7 +2880,7 @@ body.up-kb-open .up-kb-aware {
                 position: absolute !important;
                 left: 8px; right: 8px;
                 bottom: calc(8px + env(safe-area-inset-bottom, 0px));
-                z-index: 1100;
+                z-index: var(--z-annot-dock);
                 display: flex !important;
                 flex-direction: row !important;
                 align-items: center !important;
@@ -2951,12 +2971,12 @@ body.up-kb-open .up-kb-aware {
                 position: absolute !important;
                 left: 8px; right: 8px;
                 bottom: calc(76px + env(safe-area-inset-bottom, 0px));
-                z-index: 1300;
+                z-index: var(--z-annot-panel);
                 /* Barre SLIM sur une seule ligne : masque le minimum de photo. */
                 display: flex !important;
                 flex-direction: row !important;
                 align-items: center !important;
-                gap: 8px !important;
+                gap: var(--space-2) !important;
                 width: auto !important;
                 height: auto !important;
                 max-height: none !important;
@@ -3022,7 +3042,7 @@ body.up-kb-open .up-kb-aware {
                 flex-direction: row !important;
                 align-items: center !important;
                 flex-wrap: nowrap !important;
-                gap: 8px !important;
+                gap: var(--space-2) !important;
                 overflow-x: auto !important;
                 overflow-y: hidden !important;
                 scrollbar-width: none !important;
@@ -3039,15 +3059,15 @@ body.up-kb-open .up-kb-aware {
                 display: flex;
                 flex-direction: row !important;
                 align-items: center !important;
-                gap: 8px !important;
+                gap: var(--space-2) !important;
                 flex: 0 0 auto !important;
                 width: auto !important;
                 min-width: 0 !important;
                 height: 44px !important;
-                padding: 8px 12px !important;
+                padding: var(--space-2) var(--space-3) !important;
                 background: rgba(255,255,255,0.05) !important;
                 border: 1px solid rgba(255,255,255,0.08) !important;
-                border-radius: 12px !important;
+                border-radius: var(--radius-md) !important;
             }
             #dock-right .tool-settings-group .material-symbols-outlined {
                 font-size: 20px !important;
@@ -3071,12 +3091,12 @@ body.up-kb-open .up-kb-aware {
             }
             #dock-right .vertical-slider::-webkit-slider-runnable-track {
                 height: 6px;
-                border-radius: 999px;
+                border-radius: var(--radius-pill);
                 background: rgba(255,255,255,0.14);
             }
             #dock-right .vertical-slider::-moz-range-track {
                 height: 6px;
-                border-radius: 999px;
+                border-radius: var(--radius-pill);
                 background: rgba(255,255,255,0.14);
             }
             #dock-right .vertical-slider::-webkit-slider-thumb {
@@ -3105,14 +3125,14 @@ body.up-kb-open .up-kb-aware {
                 width: auto !important;
                 height: 44px !important;
                 padding: 0 16px !important;
-                border-radius: 12px !important;
+                border-radius: var(--radius-md) !important;
                 background: rgba(255,255,255,0.06) !important;
                 border: 1px solid rgba(255,255,255,0.10) !important;
                 color: var(--text-primary) !important;
                 display: flex !important;
                 align-items: center !important;
                 justify-content: center !important;
-                gap: 8px !important;
+                gap: var(--space-2) !important;
                 white-space: nowrap !important;
             }
             #dock-right #edit_text_btn .material-symbols-outlined { font-size: 22px !important; }
@@ -3166,8 +3186,8 @@ body.up-kb-open .up-kb-aware {
             display: flex;
             flex-direction: column;
             /* Toujours empilé sur mobile */
-            gap: 12px;
-            padding: 16px;
+            gap: var(--space-3);
+            padding: var(--space-4);
             background: var(--bg-interactive);
             border-top: 1px solid var(--border-color);
             box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.3);
@@ -3197,7 +3217,7 @@ body.up-kb-open .up-kb-aware {
             width: 100%;
             background: rgba(255,255,255,0.05);
             border: 1px solid var(--border-color);
-            border-radius: 12px;
+            border-radius: var(--radius-md);
             padding: 6px 10px;
         }
         .pdf-format-toggle .toggle-label {
@@ -3211,7 +3231,7 @@ body.up-kb-open .up-kb-aware {
         .pdf-format-track {
             display: flex;
             background: var(--bg-body);
-            border-radius: 999px;
+            border-radius: var(--radius-pill);
             border: 1px solid var(--border-color);
             padding: 3px;
             gap: 2px;
@@ -3220,7 +3240,7 @@ body.up-kb-open .up-kb-aware {
             all: unset;
             cursor: pointer;
             padding: 5px 14px;
-            border-radius: 999px;
+            border-radius: var(--radius-pill);
             font-size: 0.8em;
             font-weight: 700;
             color: var(--text-secondary);
@@ -3240,7 +3260,7 @@ body.up-kb-open .up-kb-aware {
             border: 1px solid rgba(239, 68, 68, 0.2);
             padding: 16px 20px;
             border-radius: var(--radius-md);
-            margin-block-end: 16px;
+            margin-block-end: var(--space-4);
             display: flex;
             align-items: center;
             font-size: 1em;
@@ -3248,7 +3268,7 @@ body.up-kb-open .up-kb-aware {
         }
 
         .coherence-alert .material-symbols-outlined {
-            margin-right: 16px;
+            margin-right: var(--space-4);
             font-size: 24px;
         }
 
@@ -3264,7 +3284,7 @@ body.up-kb-open .up-kb-aware {
             display: flex;
             gap: 14px;
             padding: 12px 20px;
-            z-index: 1000;
+            z-index: var(--z-sticky);
             background: rgba(24, 24, 27, 0.75);
             /* Zinc 900 semi-transparent */
             border: 1px solid rgba(255, 255, 255, 0.1);
@@ -3395,7 +3415,7 @@ body.up-kb-open .up-kb-aware {
             }
 
             .container {
-                padding: 16px;
+                padding: var(--space-4);
                 border-radius: var(--radius-md);
             }
 
@@ -3408,7 +3428,7 @@ body.up-kb-open .up-kb-aware {
             }
 
             .modal-content {
-                padding: 16px !important;
+                padding: var(--space-4) !important;
             }
 
             .modal-content .effrac-tool-grid {
@@ -3451,8 +3471,8 @@ body.up-kb-open .up-kb-aware {
         }
         @media (max-width: 600px) {
             .dock-menu {
-                padding: 8px 12px;
-                gap: 8px;
+                padding: var(--space-2) var(--space-3);
+                gap: var(--space-2);
                 bottom: 16px;
                 border-radius: 24px;
                 max-width: calc(100vw - 32px);
@@ -3470,7 +3490,7 @@ body.up-kb-open .up-kb-aware {
                 width: 44px;
                 height: 44px;
                 font-size: 22px;
-                border-radius: 12px;
+                border-radius: var(--radius-md);
             }
 
             /* FIX: Force les attributs collapsés sur mobile également */
@@ -3496,29 +3516,8 @@ body.up-kb-open .up-kb-aware {
             }
 
             .photo-display-area {
-                padding: 12px;
+                padding: var(--space-3);
             }
-        }
-
-        #beta-button {
-            position: absolute;
-            top: 25px;
-            right: 25px;
-            background: var(--bg-interactive);
-            color: var(--success-green);
-            padding: 8px 15px;
-            font-family: 'Oswald', sans-serif;
-            text-decoration: none;
-            border: 2px solid var(--success-green);
-            border-radius: var(--radius-sm);
-            font-size: 1em;
-            letter-spacing: 1px;
-            box-shadow: 0 4px 15px rgba(16, 185, 129, 0.2);
-            transition: all var(--transition-fast);
-            z-index: 100;
-            display: flex;
-            align-items: center;
-            gap: 5px;
         }
 
         #log-button {
@@ -3535,7 +3534,7 @@ body.up-kb-open .up-kb-aware {
             letter-spacing: 1px;
             box-shadow: 0 4px 15px rgba(59, 130, 246, 0.2);
             transition: all var(--transition-fast);
-            z-index: 100;
+            z-index: var(--z-drag-raised);
             cursor: pointer;
             display: flex;
             align-items: center;
@@ -3543,7 +3542,7 @@ body.up-kb-open .up-kb-aware {
             text-transform: uppercase;
         }
 
-        #log-button:hover, #beta-button:hover {
+        #log-button:hover {
             transform: scale(1.05);
             background: var(--bg-interactive-hover);
         }
@@ -3556,19 +3555,10 @@ body.up-kb-open .up-kb-aware {
                 margin-block-end: 20px;
             }
 
-            #beta-button {
-                top: 8px;
-                right: 8px;
-                padding: 4px 8px;
-                font-size: 0.7em;
-                border-width: 1px;
-                letter-spacing: 1px;
-            }
-
             #log-button {
                 top: 8px;
                 left: 8px;
-                padding: 4px 8px;
+                padding: var(--space-1) var(--space-2);
                 font-size: 0.7em;
                 border-width: 1px;
                 letter-spacing: 1px;
@@ -3582,7 +3572,7 @@ body.up-kb-open .up-kb-aware {
             top: 0; left: 0; width: 100%; height: 100%;
             background: rgba(0, 0, 0, 0.7);
             backdrop-filter: blur(10px);
-            z-index: 10000;
+            z-index: var(--z-modal-top);
             align-items: center; justify-content: center;
             flex-direction: column;
             color: var(--text-primary);
@@ -3639,7 +3629,7 @@ body.up-kb-open .up-kb-aware {
             display: grid;
             grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
             /* Réduit min-width pour mobile */
-            gap: 8px;
+            gap: var(--space-2);
             margin-top: 10px;
         }
 
@@ -3647,11 +3637,11 @@ body.up-kb-open .up-kb-aware {
             background: var(--bg-interactive);
             border: 1px solid var(--border-color);
             color: var(--text-primary);
-            padding: 8px;
+            padding: var(--space-2);
             border-radius: var(--radius-sm);
             cursor: pointer;
             font-size: 0.9em;
-            transition: all 0.2s;
+            transition: all var(--transition-quick);
             display: flex;
             align-items: center;
             gap: 5px;
@@ -3671,7 +3661,7 @@ body.up-kb-open .up-kb-aware {
         .modal {
             display: none;
             position: fixed;
-            z-index: 2000;
+            z-index: var(--z-scrim);
             left: 0;
             top: 0;
             width: 100%;
@@ -3737,10 +3727,10 @@ body.up-kb-open .up-kb-aware {
             position: absolute;
             top: 12px;
             right: 12px;
-            z-index: 12;
+            z-index: var(--z-toolbar);
             display: flex;
             flex-direction: column;
-            gap: 8px;
+            gap: var(--space-2);
         }
 
         .oi-carto-fab {
@@ -3787,7 +3777,7 @@ body.up-kb-open .up-kb-aware {
             left: 12px;
             right: 74px;
             max-width: 480px;
-            z-index: 11;
+            z-index: var(--z-panel);
             display: none;
             background: var(--bg-container);
             border: 1px solid var(--border-color);
@@ -3822,7 +3812,7 @@ body.up-kb-open .up-kb-aware {
             position: absolute;
             top: 12px;
             right: 74px;
-            z-index: 11;
+            z-index: var(--z-panel);
             display: none;
             flex-direction: column;
             align-items: center;
@@ -3864,7 +3854,7 @@ body.up-kb-open .up-kb-aware {
             display: flex;
             flex-wrap: wrap;
             justify-content: center;
-            gap: 4px;
+            gap: var(--space-1);
             width: 48px;
         }
 
@@ -3893,7 +3883,7 @@ body.up-kb-open .up-kb-aware {
             display: none;
             background: var(--accent-blue);
             color: #fff;
-            padding: 8px 16px;
+            padding: var(--space-2) var(--space-4);
             border-radius: var(--radius-sm);
             font-size: 0.85em;
             box-shadow: var(--shadow-lg);
@@ -3916,7 +3906,7 @@ body.up-kb-open .up-kb-aware {
         .oi-carto-ping-list {
             display: flex;
             flex-wrap: wrap;
-            gap: 8px;
+            gap: var(--space-2);
         }
 
         @media (max-width: 768px) {
