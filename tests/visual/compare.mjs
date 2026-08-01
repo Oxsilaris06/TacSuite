@@ -192,7 +192,31 @@ const APP_CONFIG = {
         // ce sélecteur (mêmes garanties verbatim que `CANVAS_SELECTOR`),
         // pour lui redonner un statut d'assertion réelle plutôt que de la
         // noyer dans un masque inerte.
-        unmaskSelector: '.oi-carto-toolbar',
+        //
+        // P3B.FIX (reprise 2), BLOQUANT R3bis : la reprise 1 démasquait le
+        // rectangle ENGLOBANT de `.oi-carto-toolbar` (50×456) — or c'est une
+        // COLONNE DE FABS CIRCULAIRES (`.oi-carto-fab`, ⌀50px) séparées par
+        // des interstices TRANSPARENTS : le canvas MapLibre reste visible à
+        // travers ces interstices, réintroduisant exactement le
+        // non-déterminisme que le masque canvas existe pour supprimer
+        // (mesuré sur 8 exécutions du dépôt : 6 PASS à 332px quand les
+        // tuiles sont déjà chargées au moment de la capture, 2 FAIL à
+        // 8036px = bbox ENTIÈRE de la toolbar quand elles ne le sont pas
+        // encore). Correctif à deux volets :
+        //   1. `unmaskSelector` cible désormais CHAQUE bouton individuellement
+        //      (`.oi-carto-fab`, 8 éléments) plutôt que le conteneur — les
+        //      interstices retombent dans le masque canvas (magenta, non
+        //      comparés), seuls les 8 disques de 50×50 restent des pixels
+        //      réellement comparés (cf. `paintMask()`, tableau d'exclusions).
+        //   2. `waitForMapIdle` (cf. `captureState()`) élimine le résidu de
+        //      non-déterminisme qui subsisterait dans les coins non
+        //      circulaires de chaque rectangle 50×50 (le cercle n'occupe que
+        //      ~78,5% de son bounding box) si les tuiles n'étaient pas
+        //      garanties chargées avant la capture — vérifié : 5 captures
+        //      consécutives avec cette attente produisent un crop toolbar
+        //      strictement identique au pixel près (md5 identique).
+        unmaskSelector: '.oi-carto-toolbar .oi-carto-fab',
+        waitForMapIdle: true,
         run: async (page) => {
           page.once('dialog', (d) => void d.dismiss().catch(() => {}));
           await page.locator('#cartographyBtn').click();
@@ -229,16 +253,20 @@ function parseArgs(argv) {
  * (le masque carte était donc inerte pour tous les états `canvas:true`).
  *
  * @param {{x:number,y:number,w?:number,h?:number,width?:number,height?:number}|null} rect
- * @param {{x:number,y:number,w?:number,h?:number,width?:number,height?:number}|null} [excludeRect]
- *   P3B.FIX (reprise 1), BLOQUANT R3 : trou rectangulaire optionnel dans le
- *   masque — les pixels dans `excludeRect` ne sont PAS peints (donc restent
- *   comparables), utilisé pour `unmaskSelector` (cf. état `cartography-modal`,
- *   APP_CONFIG.oi) : un élément de chrome déterministe qui flotte par-dessus
- *   un `canvasBox` par ailleurs masqué en totalité.
+ * @param {Array<{x:number,y:number,w?:number,h?:number,width?:number,height?:number}>} [excludeRects]
+ *   P3B.FIX (reprise 2), BLOQUANT R3bis : trous rectangulaires optionnels dans
+ *   le masque — les pixels dans N'IMPORTE LEQUEL des rects de ce tableau ne
+ *   sont PAS peints (donc restent comparables). Un rect PAR ÉLÉMENT (pas un
+ *   seul rect englobant l'ensemble) : utilisé pour `unmaskSelector` (cf. état
+ *   `cartography-modal`, APP_CONFIG.oi) afin de ne redonner un statut
+ *   d'assertion réelle qu'aux pixels des éléments de chrome eux-mêmes, jamais
+ *   aux interstices entre eux (cf. commentaire `unmaskSelector` pour la
+ *   justification complète — reprise 1 utilisait un seul rect englobant,
+ *   `excludeRect` singulier, remplacé ici par ce tableau).
  * @returns {number} nombre de pixels effectivement peints (0 si rect
  *   manquant/invalide) — permet à l'appelant de détecter un masque inerte.
  */
-function paintMask(png, rect, excludeRect) {
+function paintMask(png, rect, excludeRects) {
   if (!rect) return 0;
   const w = rect.w ?? rect.width;
   const h = rect.h ?? rect.height;
@@ -247,17 +275,18 @@ function paintMask(png, rect, excludeRect) {
   const y0 = Math.max(0, Math.floor(rect.y));
   const x1 = Math.min(png.width, Math.ceil(rect.x + w));
   const y1 = Math.min(png.height, Math.ceil(rect.y + h));
-  const ew = excludeRect ? (excludeRect.w ?? excludeRect.width) : undefined;
-  const eh = excludeRect ? (excludeRect.h ?? excludeRect.height) : undefined;
-  const hasExclude = excludeRect && [excludeRect.x, excludeRect.y, ew, eh].every(Number.isFinite);
-  const ex0 = hasExclude ? excludeRect.x : NaN;
-  const ey0 = hasExclude ? excludeRect.y : NaN;
-  const ex1 = hasExclude ? excludeRect.x + ew : NaN;
-  const ey1 = hasExclude ? excludeRect.y + eh : NaN;
+  const excludes = (excludeRects || [])
+    .map((r) => {
+      const ew = r?.w ?? r?.width;
+      const eh = r?.h ?? r?.height;
+      if (![r?.x, r?.y, ew, eh].every(Number.isFinite)) return null;
+      return { x0: r.x, y0: r.y, x1: r.x + ew, y1: r.y + eh };
+    })
+    .filter(Boolean);
   let painted = 0;
   for (let y = y0; y < y1; y++) {
     for (let x = x0; x < x1; x++) {
-      if (hasExclude && x >= ex0 && x < ex1 && y >= ey0 && y < ey1) continue;
+      if (excludes.some((e) => x >= e.x0 && x < e.x1 && y >= e.y0 && y < e.y1)) continue;
       const idx = (png.width * y + x) << 2;
       png.data[idx] = MASK_COLOR.r;
       png.data[idx + 1] = MASK_COLOR.g;
@@ -298,6 +327,37 @@ async function captureState(page, app, entryUrl, state, viewportName, theme) {
     await page.waitForTimeout(500);
   }
 
+  // P3B.FIX (reprise 2), BLOQUANT R3bis : `networkidle` ci-dessus porte sur
+  // les requêtes RÉSEAU du document — il se résout dès que les octets des
+  // tuiles ont fini d'arriver, PAS quand MapLibre a fini de les décoder et
+  // peindre sur le canvas. `waitForMapIdle` attend en plus l'état interne
+  // « idle » réel de la carte OI (aucun rendu ni tuile en attente — API
+  // publique `Map#loaded()` + `Map#areTilesLoaded()`, maplibre-gl.d.ts), pour
+  // que le fond de carte visible à travers `unmaskSelector` (cf. état
+  // `cartography-modal`, APP_CONFIG.oi) soit déterministe des deux côtés de
+  // la comparaison plutôt qu'un alternat tuiles-chargées / noir-uni selon le
+  // timing du run. `window.OICarto` est absent hors de la page OI/hors de cet
+  // état (`state.waitForMapIdle` n'est posé que sur `cartography-modal`) ;
+  // filet de sécurité 5s (`.catch`) si la carte n'atteint jamais cet état
+  // (ex. réseau tuiles indisponible) — dégrade alors vers le comportement
+  // précédent (attente fixe) plutôt que de bloquer le test.
+  if (state.waitForMapIdle) {
+    await page
+      .waitForFunction(
+        () => {
+          const map = window.OICarto && window.OICarto.map;
+          if (!map) return true;
+          try {
+            return map.loaded() && map.areTilesLoaded();
+          } catch {
+            return true;
+          }
+        },
+        { timeout: 5000 }
+      )
+      .catch(() => {});
+  }
+
   let canvasBox = null;
   if (state.canvas) {
     canvasBox = await page
@@ -306,16 +366,20 @@ async function captureState(page, app, entryUrl, state, viewportName, theme) {
       .catch(() => null);
   }
 
-  // P3B.FIX (reprise 1), BLOQUANT R3 : cf. commentaire `unmaskSelector` sur
-  // l'état `cartography-modal` (APP_CONFIG.oi) — relevé EN DIRECT, mêmes
+  // P3B.FIX (reprise 1/2), BLOQUANT R3/R3bis : cf. commentaire `unmaskSelector`
+  // sur l'état `cartography-modal` (APP_CONFIG.oi) — relevé EN DIRECT, mêmes
   // garanties que `canvasBox` ci-dessus (jamais de coordonnées codées en dur
-  // pour un élément qui flotte par-dessus une carte).
-  let unmaskBox = null;
+  // pour un élément qui flotte par-dessus une carte). Reprise 2 : UN rect PAR
+  // élément matché (ex. les 8 `.oi-carto-fab`), pas un seul rect englobant —
+  // cf. commentaire `paintMask()` pour la justification.
+  let unmaskBoxes = [];
   if (state.unmaskSelector) {
-    unmaskBox = await page
+    unmaskBoxes = await page
       .locator(state.unmaskSelector)
-      .boundingBox()
-      .catch(() => null);
+      .all()
+      .then((locators) => Promise.all(locators.map((l) => l.boundingBox().catch(() => null))))
+      .then((boxes) => boxes.filter(Boolean))
+      .catch(() => []);
   }
 
   // Relevé après state.run() : certains états (ex. ouverture du panneau
@@ -325,7 +389,7 @@ async function captureState(page, app, entryUrl, state, viewportName, theme) {
   const scrollY = await page.evaluate(() => window.scrollY);
 
   const buffer = await page.screenshot({ animations: 'disabled' });
-  return { buffer, canvasBox, unmaskBox, scrollY };
+  return { buffer, canvasBox, unmaskBoxes, scrollY };
 }
 
 function loadBaselinePng(app, state, viewportName) {
@@ -355,7 +419,7 @@ async function run() {
     for (const state of config.states) {
       const label = `${state.id}-${viewportName}`;
       try {
-        const { buffer, canvasBox, unmaskBox, scrollY } = await captureState(page, app, config.entryUrl, state, viewportName, config.theme);
+        const { buffer, canvasBox, unmaskBoxes, scrollY } = await captureState(page, app, config.entryUrl, state, viewportName, config.theme);
         const actualPng = PNG.sync.read(buffer);
         writeFileSync(join(outDir, `${label}.actual.png`), buffer);
 
@@ -393,14 +457,15 @@ async function run() {
 
         if (state.canvas) {
           if (canvasBox) {
-            // P3B.FIX (reprise 1), BLOQUANT R3 : `unmaskBox` (cf. `unmaskSelector`
-            // sur l'état, et commentaire `paintMask()`) troue le masque à
-            // l'emplacement d'un éventuel élément de chrome déterministe qui
-            // flotte par-dessus le canvas (ex. `.oi-carto-toolbar` sur
-            // `cartography-modal`) — `undefined` pour tous les autres états,
-            // comportement strictement inchangé (masque plein comme avant).
-            const paintedBase = paintMask(basePng, canvasBox, unmaskBox);
-            const paintedActual = paintMask(actualPng, canvasBox, unmaskBox);
+            // P3B.FIX (reprise 1/2), BLOQUANT R3/R3bis : `unmaskBoxes` (cf.
+            // `unmaskSelector` sur l'état, et commentaire `paintMask()`) troue
+            // le masque à l'emplacement des éléments de chrome déterministes
+            // qui flottent par-dessus le canvas (ex. chaque `.oi-carto-fab`
+            // sur `cartography-modal`) — tableau vide pour tous les autres
+            // états, comportement strictement inchangé (masque plein comme
+            // avant).
+            const paintedBase = paintMask(basePng, canvasBox, unmaskBoxes);
+            const paintedActual = paintMask(actualPng, canvasBox, unmaskBoxes);
             // Garde-fou : un état canvas:true DOIT masquer au moins 1 pixel
             // des deux côtés. 0 pixel peint = masque inerte (bug de forme du
             // rectangle, cf. commentaire paintMask() ci-dessus) — on sort en
@@ -424,25 +489,26 @@ async function run() {
             // (0 pixel de diff) et le verdict est un PASS 0.000% qui n'a
             // rien vérifié (cf. mission — mesuré sur `cartography-modal`
             // desktop, `canvasBox` = {0,0,1440,900} = 100% du viewport, AVANT
-            // `unmaskBox` ci-dessus). Seuil retenu 99% (pas 95% comme dans la
-            // première formulation de ce correctif) : `.oi-carto-toolbar`
-            // (seule zone de chrome déterministe existant réellement
-            // au-dessus d'un `<dialog>` `100vw`/`100vh` verbatim,
-            // cf. commentaire `unmaskSelector`) ne couvre que ~1,8% du
-            // viewport desktop (50×456 / 1440×900, mesuré) — un seuil à 95%
-            // resterait donc TOUJOURS en ERROR même après le trou pratiqué
-            // ci-dessus (100% masqué avant, ~98,2% après), alors que 99%
-            // laisse passer cet état légitimement quasi-plein tout en
-            // continuant de bloquer le cas ~100% d'origine (l'écart entre
-            // les deux, ~1,8 point, est entièrement occupé par du contenu
-            // réellement comparé, pas par de la tolérance gratuite).
+            // `unmaskBoxes` ci-dessus). Seuil retenu 99% (pas 95% comme dans
+            // la première formulation de ce correctif) : les zones de chrome
+            // déterministes existant réellement au-dessus d'un `<dialog>`
+            // `100vw`/`100vh` verbatim (cf. commentaire `unmaskSelector`) ne
+            // couvrent, même depuis la reprise 2 (un rect PAR bouton plutôt
+            // qu'un seul rect englobant la toolbar), que ~1,54% du viewport
+            // desktop (8 × 50×50 = 20 000 / 1 440×900 = 1 296 000, mesuré) —
+            // un seuil à 95% resterait donc TOUJOURS en ERROR même après les
+            // trous pratiqués ci-dessus (100% masqué avant, ~98,46% après),
+            // alors que 99% laisse passer cet état légitimement quasi-plein
+            // tout en continuant de bloquer le cas ~100% d'origine (l'écart
+            // entre les deux est entièrement occupé par du contenu réellement
+            // comparé, pas par de la tolérance gratuite).
             const totalPixels = basePng.width * basePng.height;
             const maskedPct = (Math.max(paintedBase, paintedActual) / totalPixels) * 100;
             if (maskedPct >= MAX_CANVAS_MASK_PCT) {
               results.push({
                 label,
                 status: 'ERROR',
-                detail: `masque carte quasi-total (${maskedPct.toFixed(2)}% du viewport masqué, seuil ${MAX_CANVAS_MASK_PCT}%) pour un état canvas:true — le verdict PASS/FAIL n'assert quasiment rien pour cet état — canvasBox=${JSON.stringify(canvasBox)} unmaskBox=${JSON.stringify(unmaskBox)}`,
+                detail: `masque carte quasi-total (${maskedPct.toFixed(2)}% du viewport masqué, seuil ${MAX_CANVAS_MASK_PCT}%) pour un état canvas:true — le verdict PASS/FAIL n'assert quasiment rien pour cet état — canvasBox=${JSON.stringify(canvasBox)} unmaskBoxes=${JSON.stringify(unmaskBoxes)}`,
               });
               continue;
             }

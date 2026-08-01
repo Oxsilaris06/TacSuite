@@ -179,6 +179,74 @@ Avec ce masque : `node tests/visual/compare.mjs oi` → **18/18 PASS**
 Aucun impact sur `compare.mjs pctac` (masque scopé à la clé `oi` de
 `PORTAL_LINK_MASK`, absente pour `pctac`) — revérifié **20/20 PASS**.
 
+### Chrome au-dessus du canvas plein écran (`cartography-modal`, P3B.FIX)
+
+`#cartographyModal` est un `<dialog>` `100vw`/`100vh` (4.html:3613-3620,
+verbatim) : `canvas.maplibregl-canvas` y occupe donc la totalité du
+viewport, sans aucun chrome de PAGE visible autour (contrairement aux états
+carte de PC-Tac). La seule zone de chrome réelle est `.oi-carto-toolbar`
+(colonne de 8 FABs circulaires `.oi-carto-fab`, ⌀50px chacun), qui flotte
+par-dessus le canvas.
+
+**Reprise 1 (BLOQUANT R3)** démasquait le rectangle ENGLOBANT de
+`.oi-carto-toolbar` (50×456) pour lui redonner un statut d'assertion réelle
+plutôt que de le noyer dans le masque canvas — mais une colonne de disques
+séparés par des interstices TRANSPARENTS laisse le canvas visible à travers
+ces interstices, ce qui réintroduit le non-déterminisme (tuiles réseau) que
+le masque canvas existe pour supprimer. Mesuré sur 8 exécutions du dépôt :
+2 régimes discrets sur `cartography-modal-desktop` — 332px (tuiles déjà
+chargées au clic) / 8036px = bbox entière de la toolbar (tuiles pas encore
+chargées), `run()` n'attendant qu'un `waitForTimeout(500)` fixe sans
+attendre la fin de chargement des tuiles.
+
+**Reprise 2 (BLOQUANT R3bis)**, deux correctifs combinés :
+1. `unmaskSelector: '.oi-carto-toolbar .oi-carto-fab'` — un rect **par
+   bouton** (8 × 50×50) plutôt qu'un seul rect englobant. Les interstices
+   retombent dans le masque canvas (non comparés) ; `paintMask()` accepte
+   désormais un tableau d'exclusions (`excludeRects`) au lieu d'un rect
+   unique.
+2. `state.waitForMapIdle: true` — après le clic, `captureState()` attend
+   `window.OICarto.map.loaded() && .areTilesLoaded()` (API publique
+   maplibre-gl, filet de sécurité 5s) avant la capture, en plus de
+   `networkidle` (qui ne couvre que les requêtes réseau, pas le rendu
+   interne MapLibre).
+
+Vérifié : 8 exécutions consécutives de `node tests/visual/compare.mjs oi`
+→ **exit 0**, `cartography-modal-desktop` stable à **220px (0,017 %)**
+pixel-pour-pixel identique à chaque run (crop toolbar isolé : md5 identique
+sur 5 captures indépendantes). `MAX_CANVAS_MASK_PCT` (99 %) reste valide
+sans modification : masque désormais ~98,46 % (8×50×50 = 20 000 /
+1 296 000 px, mesuré) au lieu de ~98,24 % avant — toujours sous le seuil.
+
+**Résidu 332px → 220px, root cause (MOYEN)** : le résidu documenté en
+reprise 1 (anneau de focus bleu sur le 1er bouton, `#oi_carto_btn_search`,
+absent de la baseline) N'EST PAS un écart DOM/CSS du portage — vérifié par
+sonde directe (`getComputedStyle`) : `outline`/`box-shadow`/`:focus-visible`
+sont **strictement identiques** (mêmes valeurs calculées, même règle globale
+`:focus-visible { outline: ... !important }` de `shared/ui-platform.css`,
+chargée par les deux apps) entre l'ORIGINAL (9679) et le porté (9678) à
+séquence d'interaction égale. La divergence est un artefact de
+**méthodologie de capture** : le heuristique `:focus-visible` de Chromium
+dépend de l'historique d'interaction de la page — `capture-baseline.spec.ts`
+parcourt les 7 étapes du wizard par clics réels AVANT d'ouvrir la
+cartographie (session continue), tandis que `compare.mjs` fait un
+`page.goto` frais puis un clic immédiat sur `#cartographyBtn` PAR ÉTAT (états
+indépendants). Reproduit à l'identique sur l'ORIGINAL seul (sans toucher au
+porté) : séquence "goto frais + clic immédiat" → anneau visible
+(`:focus-visible` = true) ; séquence "7 clics wizard puis clic" → anneau
+absent (`:focus-visible` = false, `activeElement` identique mais sans
+indicateur visuel) — les DEUX comportements sont donc légitimes et
+reproductibles sur l'original lui-même, purement fonction du chemin
+emprunté par le harnais de test, pas d'une régression du produit. **Pas
+d'entrée `DECISIONS-DOM-ECARTS.md`** en conséquence (réservé aux écarts DOM
+réels type `#portalLink`/`#tl-orbat-style`) : il n'y a rien à corriger côté
+application, le masquage par bouton (ci-dessus) réduit mécaniquement le
+résidu (332→220px) en excluant la majorité du halo (`outline`/`box-shadow`
+dessinés hors de la boîte de bordure du bouton, donc hors du rect
+50×50 démasqué) sans avoir besoin de le neutraliser explicitement ; le
+reliquat (bord de l'arc du 1er bouton + quelques pixels d'antialiasing
+d'icône sur les boutons 2-4) reste largement sous le seuil de 0,1 %.
+
 ### Baselines mode clair OI (`oi-light`, P3B.E)
 
 Les 18 baselines Phase 0 de `tests/visual/baseline/oi/` sont toutes en mode

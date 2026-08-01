@@ -9,26 +9,23 @@ directe du code câblé réel, cf. en-tête du fichier) et par certification PDF
 structurelle / comparaison visuelle pour les items non exprimables en simple
 assertion DOM.
 
-## Run de référence (2026-08-01)
+## Run de référence (2026-08-01, mise à jour P3B.FIX reprise 2)
+
+Cette section a été réécrite : la version précédente décrivait un protocole
+(`--workers=2` manuel, `actionTimeout`/`expect.timeout` 2000ms) périmé depuis
+les commits `b498e8b` (BLOQUANT R2 — `workers` figé à `1` **dans**
+`playwright.config.ts`, plus besoin de flag manuel) et `3b1cc30` (timeouts
+relevés à 3000ms) — et affirmait un `compare.mjs oi` **18/18 PASS** non
+reproductible en l'état (non-déterminisme identifié et corrigé en reprise 2,
+voir plus bas).
 
 - **E2E** : `npx playwright test tests/e2e/oi.spec.ts` (35 tests ×
-  2 projets `chromium-desktop`/`chromium-mobile` = 70 exécutions) :
-  **70/70 verts**, stable sur **3 exécutions consécutives** à `--workers=2`
-  (~1min10-1min20 chacune) et sur un run entièrement séquentiel
-  (`--workers=1`, 1 seul flake ponctuel isolé — voir note ci-dessous).
-  Le run par défaut (`--workers=50%` ≈ 8 sur cette machine 16 cœurs) produit
-  des échecs non reproductibles en isolation (2 à 10 selon le run, jamais les
-  mêmes tests) : contention de charge sur un unique serveur dev partagé par
-  8 workers concurrents sous un `actionTimeout`/`expect.timeout` de 2000ms
-  calibré sans charge (`playwright.config.ts`), pas une régression — chaque
-  test incriminé repasse au vert de façon déterministe en isolation
-  (`--project=... -g '<nom>'`) et sous `--workers=2`/`--workers=1`. Même
-  nature de flakiness documentée côté PC-Tac pour le `dragTo()` HTML5 natif
-  (`docs/CHECKLIST-PCTAC.md`) ; ici étendue par la contention dock/viewport
-  mobile (`#dockMenu` intercepte transitoirement les clics sous charge CPU).
-  **Défaut de test, pas de régression du portage** — aucun correctif de code
-  applicatif nécessaire, seul le protocole de run (`--workers=2`, 3× stable)
-  fait foi pour ce gate.
+  2 projets `chromium-desktop`/`chromium-mobile` = 70 exécutions), commande
+  **sans flag** — `playwright.config.ts` fixe désormais lui-même
+  `workers: 1` et `expect.timeout`/`actionTimeout: 3000ms` (cf. commits
+  ci-dessus) : **70/70 verts sur 3 exécutions consécutives** de cette
+  commande par défaut (2min12, 2min18, 2min24). Aucun flake observé sur ces
+  3 runs.
 - **PDF** : recette `.tacsuite-prep/oi-reference/recipe.md` rejouée SANS le
   contournement du bug reload/flush (`.tacsuite-prep/replay-recipe-ported.mjs`,
   variante de `replay-recipe.mjs` sans interception de
@@ -37,15 +34,25 @@ assertion DOM.
   de `tactical_oi_data` observé). `node compare-pdf.mjs oi-reference/reference.pdf
   oi-portage-run/candidate-ported.pdf --fingerprint oi-reference/fingerprint.md` :
   **VERDICT PASS** (exit 0), 14/14 pages, **0,00 % de diff pixel sur les
-  14 pages**, **100 % de concordance OCR** titre/fingerprint.
+  14 pages**, **100 % de concordance OCR** titre/fingerprint. (Item non
+  retouché par la reprise 2 — reporté tel quel depuis la version précédente
+  de cette section.)
 - **Visuel** : `node tests/visual/compare.mjs oi` : **18/18 PASS**
-  (0,009-0,047 %, seuil 0,1 %) après correctif de masque (voir
-  `tests/visual/README.md` § « Écart volontaire : lien portail »). Baselines
-  mode clair intégrées (`tests/visual/baseline/oi-light/`, depuis
+  (0,011-0,060 %, seuil 0,1 %). **Correctif reprise 2** : `cartography-modal-desktop`
+  était NON DÉTERMINISTE (mesuré ~1 échec sur 4, alternant 332px/8036px selon
+  que les tuiles MapLibre étaient chargées ou non au moment de la capture —
+  cf. `tests/visual/README.md` § « Chrome au-dessus du canvas plein écran »
+  pour le détail complet et la root cause) ; corrigé par démasquage PAR
+  BOUTON (au lieu d'un rectangle englobant la toolbar) + attente explicite de
+  l'état `idle` de la carte OI avant capture. Revérifié **8 exécutions
+  consécutives à exit 0**, `cartography-modal-desktop` identique au pixel
+  près (220px/0,017 %) à chaque run — plus aucune non-déterminisme observée.
+  Baselines mode clair intégrées (`tests/visual/baseline/oi-light/`, depuis
   `.tacsuite-prep/oi-baseline-light/`) : `node tests/visual/compare.mjs
-  oi-light` : **18/18 PASS** (0,009-0,052 %). Non-régression confirmée sur le
+  oi-light` : **18/18 PASS** (0,012-0,052 %). Non-régression confirmée sur le
   gate existant : `node tests/visual/compare.mjs pctac` toujours **20/20
-  PASS** (le correctif de masque est scopé à la clé `oi`).
+  PASS** (0,000-0,072 %, le correctif de masque `cartography-modal` est
+  scopé à la clé `oi` de `APP_CONFIG`, sans effet sur `pctac`).
 
 Légende statuts : **VERT** (E2E vert) · **PARTIEL** (couvert en partie,
 nuance dans la colonne Résultat) · **NON COUVERT** (aucun test dédié, assumé
