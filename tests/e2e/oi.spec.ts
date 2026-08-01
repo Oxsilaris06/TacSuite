@@ -497,7 +497,13 @@ test.describe('OI — Checklist fonctionnelle (docs/recon-oi.md §9)', () => {
     // immédiatement après la création du PAX (juste avant, via prompt) n'a
     // pas le temps de se stabiliser sous `actionTimeout: 2000` — le `dragTo`
     // aboutit (pas d'exception) mais le drop n'est pas pris en compte.
-    await page.waitForTimeout(200);
+    // P3B.FIX (reprise 1), BLOQUANT R2 : releve de 200 a 500ms - mesure
+    // (playwright.config.ts workers=1) : ce test echoue encore parfois seul
+    // dans la suite COMPLETE (130 tests), jamais isole. Meme nature que le
+    // relevement des `waitForTimeout` de « Plan — dessin » (pctac.spec.ts) -
+    // pas seulement de la contention inter-workers, mais un budget de
+    // stabilisation DOM trop juste sous charge cumulee du serveur dev.
+    await page.waitForTimeout(500);
 
     await step('glisser le PAX non-affecté vers le véhicule (drag.js, DnD HTML5 natif)', async () => {
       const member = page.locator('#unassigned_members_container .patracdvr-member-btn[data-trigramme="XYZ"]');
@@ -511,7 +517,9 @@ test.describe('OI — Checklist fonctionnelle (docs/recon-oi.md §9)', () => {
     await step('glisser vers #trashCan supprime définitivement (confirm natif accepté par beforeEach)', async () => {
       // Même défaut de test que le drag précédent (settle avant un dragTo
       // HTML5 natif juste après un DOM ré-affecté par le drop précédent).
-      await page.waitForTimeout(300);
+      // P3B.FIX (reprise 1), BLOQUANT R2 : releve de 300 a 600ms, meme
+      // justification que ci-dessus.
+      await page.waitForTimeout(600);
       const member = page.locator('.patracdvr-member-btn[data-trigramme="XYZ"]');
       await member.dragTo(page.locator('#trashCan'), { timeout: 4000 });
       await expect.soft(page.locator('.patracdvr-member-btn[data-trigramme="XYZ"]')).toHaveCount(0, { timeout: 1500 });

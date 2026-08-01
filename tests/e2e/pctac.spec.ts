@@ -512,7 +512,16 @@ test.describe('PC-Tac — Checklist fonctionnelle (docs/recon-pctac.md §6)', ()
       // cf. test « Plan — verrouillage » : laisser PlanMap.init() se stabiliser
       // avant d'interagir avec le dock dessin (flaky sous charge parallèle sans
       // cette attente).
-      await page.waitForTimeout(1000);
+      // P3B.FIX (reprise 1), BLOQUANT R2 : releve de 1000 a 1800ms - mesure
+      // (playwright.config.ts workers=1, aucune contention entre workers
+      // possible) : ce test echoue encore parfois seul dans la suite COMPLETE
+      // (130 tests), jamais isole (3/3 vert en isolation). La contention
+      // inter-workers n'est donc pas l'unique cause - le budget fixe de
+      // 1000ms pour l'init asynchrone de PlanMap (tuiles reseau + WebGL)
+      // peut aussi etre depasse par la charge CUMULEE du serveur dev sur une
+      // suite longue (memoire/GC), meme sans parallelisme. Marge relevee en
+      // consequence.
+      await page.waitForTimeout(1800);
       await page.locator('#plan_btn_draw').click();
       await expect.soft(page.locator('#plan_draw_dock')).toHaveClass(/open/, { timeout: 1500 });
       for (const tool of ['line', 'rectangle', 'circle', 'text', 'measure']) {
@@ -594,9 +603,19 @@ test.describe('PC-Tac — Checklist fonctionnelle (docs/recon-pctac.md §6)', ()
   test('Plan — mesure de distance / azimut', async ({ page }) => {
     await step('outil mesure : deux clics sur la carte affichent une distance', async () => {
       await clickTab(page, 'view-plan');
-      await page.waitForTimeout(1000);
+      // P3B.FIX (reprise 1), BLOQUANT R2 : releve de 1000 a 1800ms, meme
+      // justification que le test « Plan — dessin » ci-dessus.
+      await page.waitForTimeout(1800);
       await page.locator('#plan_btn_draw').click();
       await page.locator('.plan-draw-btn[data-tool="measure"]').click();
+      // P3B.FIX (reprise 1), BLOQUANT R2 : petite marge après la sélection de
+      // l'outil (même nature que le commentaire « Ordre couleur PUIS outil »
+      // du test « Plan — dessin » — le clic sur `.plan-draw-btn` déclenche un
+      // câblage/état interne avant que le premier clic carte soit pris en
+      // compte comme sommet de mesure) - sans elle, sous charge cumulée du
+      // serveur dev, les deux clics ci-dessous arrivent parfois avant que
+      // l'outil measure soit réellement actif et aucun label n'apparaît.
+      await page.waitForTimeout(200);
       const box = await page.locator('#plan_map').boundingBox();
       if (box) {
         await page.mouse.click(box.x + 80, box.y + 80);
@@ -608,9 +627,14 @@ test.describe('PC-Tac — Checklist fonctionnelle (docs/recon-pctac.md §6)', ()
       // Playwright dès que le libellé de mesure est réellement rendu (measure.ts
       // `.plan-measure-label`). Deux clics posent un sommet + un cumul : deux
       // labels existent, `.first()` suffit à confirmer le rendu.
+      // P3B.FIX (reprise 1), BLOQUANT R2 : timeout releve de 2000 a 3500ms -
+      // mesure : ce test a encore echoue une fois sur cette assertion dans la
+      // suite COMPLETE (130 tests, workers=1) malgre le relevement de
+      // playwright.config.ts (cette valeur EXPLICITE ecrase le defaut global
+      // `expect.timeout`, elle doit donc etre relevee ici aussi).
       await expect
         .soft(page.locator('#plan_map .plan-measure-label').first())
-        .toBeVisible({ timeout: 2000 });
+        .toBeVisible({ timeout: 3500 });
     });
   });
 
@@ -620,7 +644,9 @@ test.describe('PC-Tac — Checklist fonctionnelle (docs/recon-pctac.md §6)', ()
     // câblage du dock dessin se stabiliser avant d'interagir — sans cette
     // attente, le clic sur #plan_draw_lock arrive parfois avant que son
     // `onclick` soit posé (flaky sous charge parallèle constatée).
-    await page.waitForTimeout(1000);
+    // P3B.FIX (reprise 1), BLOQUANT R2 : releve de 1000 a 1800ms, meme
+    // justification que le test « Plan — dessin » ci-dessus.
+    await page.waitForTimeout(1800);
     await page.locator('#plan_btn_draw').click();
     await step('verrou global (#plan_draw_lock)', async () => {
       await page.locator('#plan_draw_lock').click();
