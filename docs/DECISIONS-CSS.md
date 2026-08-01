@@ -89,7 +89,7 @@ annonçait 13 par erreur) :
 
 | Mesure | Avant (P0.A5, verbatim) | Après (P2.F) |
 |---|---|---|
-| LOC `styles/pctac.css` | 1724 | 1738 |
+| LOC `styles/pctac.css` | 1724 | 1748 (1738 à l'issue de P2.F ; +10 lignes par le correctif §6.2 — réaffectation de `--shadow-glow-accent` dans `body.light-mode` ; compte réel vérifié par `wc -l`, P2BIS.FIX) |
 | Variables `:root` custom properties (thème pctac) | 62 | 76 (+14) |
 | Occurrences littérales remplacées par `var(--token)` | 0 | 37 (7× transition, 6× `border-radius:4px`, 3× `border-radius:999px`, 2× `border-radius:8px`, 3× `box-shadow` glow, 3× `box-shadow` panel-float, 13× z-index restants après purge) |
 | Règles strictement dupliquées trouvées | 0 (vérifié par script) | — |
@@ -108,11 +108,10 @@ de la mission).
 Exécuté après chaque lot de changements (variables + substitutions, sections,
 purge du code mort), conformément au protocole :
 
-- `node tests/visual/compare.mjs pctac` : **20/20 états PASS**, tous
-  ≤ 0,077 % (seuil 0,1 %), y compris après la suppression du code mort
-  `#version-toggle-btn` — écarts résiduels identiques à ceux mesurés AVANT
-  toute modification CSS (bruit réseau des tuiles cartographiques, cf.
-  `tests/visual/README.md`), aucune dégradation imputable au CSS.
+- `node tests/visual/compare.mjs pctac` : **20/20 états PASS** — voir §4.1
+  pour les pourcentages réellement mesurés et un correctif d'outillage
+  ultérieur qui a invalidé rétroactivement les chiffres annoncés ici à
+  l'origine.
 - `npm run build` : succès (warning taille de chunk JS pré-existant, sans
   rapport avec ce CSS).
 - `npx tsc --noEmit` : 0 erreur. `npm run lint` : 0 erreur.
@@ -128,10 +127,75 @@ purge du code mort), conformément au protocole :
   changements CSS de cette mission** — pas une régression introduite par
   P2.F.
 
+### 4.1 Correctif d'outillage (P2BIS.FIX) — le masque carte était inerte
+
+Les chiffres « 20/20 PASS, tous ≤ 0,077 % » annoncés en tête de §4 lors de
+P2.F ont été obtenus avec un `tests/visual/compare.mjs` **dont le masque de
+la carte (canvas MapLibre) ne peignait en réalité aucun pixel**, sans jamais
+le signaler : `paintMask()` lisait `rect.w`/`rect.h`, mais pour les états
+`canvas:true` le rectangle transmis est un `boundingBox()` Playwright — forme
+`{x, y, width, height}`. `rect.w`/`rect.h` valaient donc `undefined`, les
+bornes de boucle devenaient `NaN`, et la boucle de peinture ne s'exécutait
+jamais (toute comparaison `y < NaN` est fausse) : 0 pixel peint, PASS/FAIL
+calculé silencieusement sur l'image carte **non masquée**. Le PASS obtenu
+n'était donc pas la preuve d'un diff CSS négligeable *hors carte* qu'il
+prétendait être — la carte non masquée passait simplement, par coïncidence
+(tuiles chargées identiquement aux deux captures), sous le seuil de 0,1 %.
+
+**Correctif appliqué (`tests/visual/compare.mjs`)** :
+`paintMask()` accepte désormais les deux formes de rectangle
+(`w ?? width`, `h ?? height`) et retourne le nombre de pixels effectivement
+peints ; pour tout état déclaré
+`canvas: true`, si 0 pixel est peint côté baseline ou côté capture alors que
+le canvas a été localisé (`canvasBox` non nul), l'outil sort désormais en
+**ERROR** explicite plutôt que de laisser passer un PASS/FAIL calculé sur un
+masque cassé.
+
+**Résultats reproductibles obtenus avec l'outil corrigé** (deux exécutions
+indépendantes de `node tests/visual/compare.mjs pctac`, serveur dev
+`127.0.0.1:9678`, 1er août 2026) :
+
+| État | Run 1 | Run 2 |
+|---|---|---|
+| initial-main-courante-desktop | 0,020 % | 0,022 % |
+| tab-adversaires-desktop | 0,012 % | 0,012 % |
+| tab-otages-desktop | 0,012 % | 0,012 % |
+| tab-amis-desktop | 0,012 % | 0,012 % |
+| tab-photos-desktop | 0,011 % | 0,011 % |
+| tab-plan-desktop (canvas) | 0,012 % | 0,012 % |
+| tab-liens-desktop | 0,021 % | 0,021 % |
+| tab-plan-panneau-recherche-desktop (canvas) | 0,012 % | 0,012 % |
+| tab-plan-dock-dessin-desktop (canvas) | 0,012 % | 0,012 % |
+| tab-plan-panneau-tchap-live-desktop (canvas) | 0,000 % | 0,000 % |
+| initial-main-courante-mobile | 0,076 % | 0,075 % |
+| tab-adversaires-mobile | 0,043 % | 0,043 % |
+| tab-otages-mobile | 0,042 % | 0,042 % |
+| tab-amis-mobile | 0,042 % | 0,042 % |
+| tab-photos-mobile | 0,041 % | 0,041 % |
+| tab-plan-mobile (canvas) | 0,042 % | 0,042 % |
+| tab-liens-mobile | 0,072 % | 0,072 % |
+| tab-plan-panneau-recherche-mobile (canvas) | 0,042 % | 0,042 % |
+| tab-plan-dock-dessin-mobile (canvas) | 0,042 % | 0,042 % |
+| tab-plan-panneau-tchap-live-mobile (canvas) | 0,042 % | 0,042 % |
+
+**20/20 PASS aux deux runs**, aucune sortie `ERROR` (masque carte désormais
+actif sur les 8 états `canvas:true` — confirmé notamment par
+`tab-plan-panneau-tchap-live-desktop` à 0,000 % exact, image intégralement
+masquée des deux côtés), écarts stables d'un run à l'autre (± 1 à
+3 pixels sur ~1,3 M ou ~0,33 M pixels selon le viewport — bruit
+d'anti-aliasing de capture, sans rapport avec le CSS), tous très en-deçà du
+seuil de 0,1 %. Cet outillage corrigé est celui utilisé pour la validation
+CSS de ce document ; les valeurs 6× plus faibles côté desktop que côté
+mobile pour les mêmes états s'expliquent par le rapport pixels-masqués/
+pixels-totaux, plus favorable en haute résolution.
+
 ## 5. Fichier modifié
 
 - `styles/pctac.css` (seul fichier touché par cette mission P2.F d'origine ;
   voir §6 pour les fichiers touchés par le correctif ultérieur).
+- `tests/visual/compare.mjs` — correctif du masque carte inerte, cf. §4.1
+  (P2BIS.FIX, hors mission P2.F d'origine, documenté ici car il invalide les
+  chiffres §4 tels qu'annoncés à l'origine).
 
 ## 6. Correctif post-mission (P2.FIX reprise 1) — régression mode clair
 
