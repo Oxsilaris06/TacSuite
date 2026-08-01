@@ -53,7 +53,14 @@ const THRESHOLD_PCT = 0.1;
 // P3B.FIX (reprise 1), BLOQUANT R3 : garde-fou symétrique au garde-fou
 // « masque inerte » existant (0 pixel peint) — cf. commentaire au point
 // d'usage (boucle de `run()`) pour la justification complète du seuil.
-const MAX_CANVAS_MASK_PCT = 99;
+// P3B.FIX (reprise 3), BLOQUANT R1 : relevé de 99 à 99.5 — cf. commentaire au
+// point d'usage (le passage au carré inscrit fait mécaniquement remonter le
+// masqué desktop à ~99,23%, au-dessus de l'ancien seuil).
+const MAX_CANVAS_MASK_PCT = 99.5;
+// P3B.FIX (reprise 3), BLOQUANT R1 : timeout de `waitForMapIdle` (cf.
+// `captureState()`), relevé de 5000 à 15000ms et rendu NON silencieux —
+// cf. commentaire au point d'usage pour la justification complète.
+const MAP_IDLE_TIMEOUT_MS = 15000;
 
 const VIEWPORTS = {
   desktop: { width: 1440, height: 900 },
@@ -215,6 +222,35 @@ const APP_CONFIG = {
         //      garanties chargées avant la capture — vérifié : 5 captures
         //      consécutives avec cette attente produisent un crop toolbar
         //      strictement identique au pixel près (md5 identique).
+        //
+        // P3B.FIX (reprise 3), BLOQUANT R1 : la reprise 2 a laissé subsister
+        // les DEUX moitiés du correctif décrites ci-dessus dans un état
+        // incomplet, mesuré en direct sur 15 exécutions (1 FAIL à 5025px/
+        // 0,388%, seuil 0,1% — les 14 autres à 220px/0,017%) :
+        //   1. Le point 1 démasque le rectangle ENGLOBANT (50×50) de chaque
+        //      `.oi-carto-fab`, pas le disque lui-même — les 4 coins NON
+        //      circulaires de chaque carré (1 − π/4 ≈ 21,5% de sa surface)
+        //      laissent le canvas MapLibre transparaître et être comparé,
+        //      alors que le commentaire ci-dessus les attribue à tort au
+        //      seul point 2 (`waitForMapIdle`). Sur 8 boutons × 2500px² :
+        //      21,5% ≈ 4300px, cohérent avec l'écart mesuré (5025−220=4805px).
+        //      Correctif : `unmaskBoxes` (cf. `captureState()`) réduit
+        //      maintenant chaque rectangle 50×50 au CARRÉ INSCRIT dans le
+        //      disque (inset ≈7,3px par bord, ≈35×35 centré) avant de le
+        //      passer à `paintMask()` — tous les pixels démasqués sont alors
+        //      garantis opaques (bouton), plus aucun pixel de canvas ne
+        //      transparaît dans la zone comparée, quel que soit l'état des
+        //      tuiles au moment de la capture.
+        //   2. `waitForMapIdle` n'est qu'une RÉDUCTION DE FRÉQUENCE, pas une
+        //      élimination : son timeout de 5s se résout silencieusement en
+        //      `.catch(() => {})` (cf. `captureState()`) dès que les tuiles
+        //      mettent plus de 5s à charger, dégradant SANS AUCUNE TRACE vers
+        //      l'ancien comportement (capture quel que soit l'état réel de la
+        //      carte) — exactement la fenêtre dans laquelle le FAIL mesuré
+        //      s'est produit. Porté à `MAP_IDLE_TIMEOUT_MS` (15s) ET rendu
+        //      NON silencieux : un dépassement produit désormais un résultat
+        //      `ERROR` explicite pour cet état (cf. boucle `run()`) plutôt
+        //      qu'une capture dégradée comptée comme un PASS/FAIL trompeur.
         unmaskSelector: '.oi-carto-toolbar .oi-carto-fab',
         waitForMapIdle: true,
         run: async (page) => {
@@ -298,6 +334,32 @@ function paintMask(png, rect, excludeRects) {
   return painted;
 }
 
+/**
+ * P3B.FIX (reprise 3), BLOQUANT R1 : réduit un rectangle `{x, y, width,
+ * height}` (boundingBox() d'un `.oi-carto-fab`, disque CSS ⌀ = min(w,h)) au
+ * CARRÉ INSCRIT dans ce disque — cf. commentaire `unmaskSelector` (état
+ * `cartography-modal`, APP_CONFIG.oi) pour la justification complète. Un
+ * carré inscrit dans un cercle de diamètre `d` a pour côté `d/√2` ; l'inset
+ * par bord est donc `(d − d/√2) / 2`. Tous les pixels du rectangle retourné
+ * sont garantis à l'intérieur du disque (donc opaques, bouton réel) — aucun
+ * pixel de canvas ne peut plus transparaître à travers un coin non circulaire.
+ *
+ * @param {{x:number,y:number,width:number,height:number}|null} box
+ * @returns {{x:number,y:number,width:number,height:number}|null}
+ */
+function inscribedSquare(box) {
+  if (!box) return null;
+  const d = Math.min(box.width, box.height);
+  const side = d * Math.SQRT1_2; // d/√2
+  const inset = (d - side) / 2;
+  return {
+    x: box.x + (box.width - d) / 2 + inset,
+    y: box.y + (box.height - d) / 2 + inset,
+    width: side,
+    height: side,
+  };
+}
+
 async function captureState(page, app, entryUrl, state, viewportName, theme) {
   await page.setViewportSize(VIEWPORTS[viewportName]);
   await page.goto(`${BASE_URL}${entryUrl}`, { waitUntil: 'load' });
@@ -341,6 +403,29 @@ async function captureState(page, app, entryUrl, state, viewportName, theme) {
   // filet de sécurité 5s (`.catch`) si la carte n'atteint jamais cet état
   // (ex. réseau tuiles indisponible) — dégrade alors vers le comportement
   // précédent (attente fixe) plutôt que de bloquer le test.
+  //
+  // P3B.FIX (reprise 3), BLOQUANT R1 : ce `.catch(() => {})` était SILENCIEUX
+  // — un dépassement de timeout dégradait vers une capture quand même prise,
+  // sans aucune trace, indiscernable d'un run où la carte a réellement atteint
+  // l'idle. C'est cette dégradation silencieuse (déclenchée dès que les
+  // tuiles dépassent 5s) qui a laissé passer la capture non déterministe à
+  // l'origine du FAIL 5025px/0,388% mesuré sur 1 run/15. Timeout porté à
+  // `MAP_IDLE_TIMEOUT_MS` (15s, contre 5s) ET dégradation remplacée par un
+  // flag (`mapIdleTimedOut`) que l'appelant (`run()`) traduit en résultat
+  // `ERROR` explicite pour cet état plutôt que de capturer quand même.
+  // P3B.FIX (reprise 3), BLOQUANT R1 : `waitForFunction(pageFunction, arg,
+  // options)` — l'`arg` (2e paramètre positionnel) est OBLIGATOIRE pour que
+  // Playwright résolve le 3e comme `options` ; l'omettre (forme à 2 arguments
+  // `waitForFunction(fn, { timeout })`) fait passer l'objet `{ timeout }`
+  // comme `arg` et NON comme `options`, silencieusement — Playwright retombe
+  // alors sur le timeout par défaut de la page (`page.setDefaultTimeout(3000)`
+  // posé plus haut dans `run()`, cf. plus bas), pas sur `MAP_IDLE_TIMEOUT_MS`
+  // (15s). Confirmé par un test isolé (`chromium.launch()` + les deux formes
+  // d'appel) : forme à 2 arguments → time out à 30000ms (défaut Playwright
+  // sans page.setDefaultTimeout) au lieu du `{timeout}` fourni ; forme à 3
+  // arguments (`arg` explicite `undefined`) → time out bien à la valeur
+  // demandée. `undefined` ci-dessous est cet `arg` explicite.
+  let mapIdleTimedOut = false;
   if (state.waitForMapIdle) {
     await page
       .waitForFunction(
@@ -353,9 +438,12 @@ async function captureState(page, app, entryUrl, state, viewportName, theme) {
             return true;
           }
         },
-        { timeout: 5000 }
+        undefined,
+        { timeout: MAP_IDLE_TIMEOUT_MS }
       )
-      .catch(() => {});
+      .catch(() => {
+        mapIdleTimedOut = true;
+      });
   }
 
   let canvasBox = null;
@@ -372,13 +460,20 @@ async function captureState(page, app, entryUrl, state, viewportName, theme) {
   // pour un élément qui flotte par-dessus une carte). Reprise 2 : UN rect PAR
   // élément matché (ex. les 8 `.oi-carto-fab`), pas un seul rect englobant —
   // cf. commentaire `paintMask()` pour la justification.
+  //
+  // P3B.FIX (reprise 3), BLOQUANT R1 : chaque boundingBox() (rectangle
+  // ENGLOBANT 50×50 d'un disque) est réduite via `inscribedSquare()` au carré
+  // INSCRIT dans le disque (≈35×35 centré) — cf. commentaire `inscribedSquare`
+  // et commentaire `unmaskSelector` (état `cartography-modal`) pour la
+  // justification complète (les 4 coins non circulaires du rectangle
+  // englobant laissaient transparaître et comparer des pixels de canvas).
   let unmaskBoxes = [];
   if (state.unmaskSelector) {
     unmaskBoxes = await page
       .locator(state.unmaskSelector)
       .all()
       .then((locators) => Promise.all(locators.map((l) => l.boundingBox().catch(() => null))))
-      .then((boxes) => boxes.filter(Boolean))
+      .then((boxes) => boxes.filter(Boolean).map(inscribedSquare))
       .catch(() => []);
   }
 
@@ -389,7 +484,7 @@ async function captureState(page, app, entryUrl, state, viewportName, theme) {
   const scrollY = await page.evaluate(() => window.scrollY);
 
   const buffer = await page.screenshot({ animations: 'disabled' });
-  return { buffer, canvasBox, unmaskBoxes, scrollY };
+  return { buffer, canvasBox, unmaskBoxes, scrollY, mapIdleTimedOut };
 }
 
 function loadBaselinePng(app, state, viewportName) {
@@ -419,9 +514,23 @@ async function run() {
     for (const state of config.states) {
       const label = `${state.id}-${viewportName}`;
       try {
-        const { buffer, canvasBox, unmaskBoxes, scrollY } = await captureState(page, app, config.entryUrl, state, viewportName, config.theme);
+        const { buffer, canvasBox, unmaskBoxes, scrollY, mapIdleTimedOut } = await captureState(page, app, config.entryUrl, state, viewportName, config.theme);
         const actualPng = PNG.sync.read(buffer);
         writeFileSync(join(outDir, `${label}.actual.png`), buffer);
+
+        // P3B.FIX (reprise 3), BLOQUANT R1 : cf. commentaire `waitForMapIdle`
+        // dans `captureState()` — un dépassement du timeout d'idle carte
+        // produit désormais un ERROR explicite (capture abandonnée pour cet
+        // état) plutôt qu'une dégradation silencieuse vers l'ancien
+        // comportement (capture quand même, verdict PASS/FAIL non fiable).
+        if (mapIdleTimedOut) {
+          results.push({
+            label,
+            status: 'ERROR',
+            detail: `waitForMapIdle : timeout ${MAP_IDLE_TIMEOUT_MS}ms sans que window.OICarto.map atteigne l'état idle (loaded()+areTilesLoaded()) — capture abandonnée plutôt que dégradée silencieusement`,
+          });
+          continue;
+        }
 
         const { png: basePng, error } = loadBaselinePng(app, state, viewportName);
         if (error) {
@@ -489,19 +598,28 @@ async function run() {
             // (0 pixel de diff) et le verdict est un PASS 0.000% qui n'a
             // rien vérifié (cf. mission — mesuré sur `cartography-modal`
             // desktop, `canvasBox` = {0,0,1440,900} = 100% du viewport, AVANT
-            // `unmaskBoxes` ci-dessus). Seuil retenu 99% (pas 95% comme dans
-            // la première formulation de ce correctif) : les zones de chrome
-            // déterministes existant réellement au-dessus d'un `<dialog>`
-            // `100vw`/`100vh` verbatim (cf. commentaire `unmaskSelector`) ne
-            // couvrent, même depuis la reprise 2 (un rect PAR bouton plutôt
-            // qu'un seul rect englobant la toolbar), que ~1,54% du viewport
-            // desktop (8 × 50×50 = 20 000 / 1 440×900 = 1 296 000, mesuré) —
-            // un seuil à 95% resterait donc TOUJOURS en ERROR même après les
-            // trous pratiqués ci-dessus (100% masqué avant, ~98,46% après),
-            // alors que 99% laisse passer cet état légitimement quasi-plein
-            // tout en continuant de bloquer le cas ~100% d'origine (l'écart
-            // entre les deux est entièrement occupé par du contenu réellement
-            // comparé, pas par de la tolérance gratuite).
+            // `unmaskBoxes` ci-dessus). Seuil retenu à l'origine 99% (pas 95%
+            // comme dans la première formulation de ce correctif) : les zones
+            // de chrome déterministes existant réellement au-dessus d'un
+            // `<dialog>` `100vw`/`100vh` verbatim (cf. commentaire
+            // `unmaskSelector`) ne couvraient, à la reprise 2 (un rect
+            // ENGLOBANT par bouton, 8 × 50×50 = 20 000px), que ~1,54% du
+            // viewport desktop (20 000 / 1 296 000) — d'où un seuil à 99%,
+            // entre les ~98,46% mesurés et 100%.
+            //
+            // P3B.FIX (reprise 3), BLOQUANT R1 : `unmaskBoxes` couvre
+            // désormais le CARRÉ INSCRIT dans chaque disque (cf.
+            // `inscribedSquare()`), pas le rectangle englobant — surface par
+            // bouton divisée par 2 (côté 50/√2 ≈ 35,36 → 1250px² au lieu de
+            // 2500px²). La zone réellement démasquée retombe donc à ~0,77%
+            // du viewport desktop (8 × 1250 / 1 296 000 ≈ 0,7716%, mesuré :
+            // 99,228% masqué), au-dessus de l'ancien seuil 99% — un état
+            // légitime aurait donc été rejeté à tort. Seuil relevé à 99,5% :
+            // reste largement en-deçà de 100% (donc continue de bloquer le
+            // cas masque total ~100% d'origine, avec ~0,5 point de marge
+            // sous ce plafond), tout en laissant passer les ~99,23% mesurés
+            // avec le carré inscrit (marge ~0,27 point, largement au-dessus
+            // du bruit de mesure d'un boundingBox() sub-pixel).
             const totalPixels = basePng.width * basePng.height;
             const maskedPct = (Math.max(paintedBase, paintedActual) / totalPixels) * 100;
             if (maskedPct >= MAX_CANVAS_MASK_PCT) {
