@@ -15,7 +15,20 @@
  * Usage :
  *   node tests/visual/compare.mjs pctac
  *   node tests/visual/compare.mjs oi
+ *   node tests/visual/compare.mjs oi-light
  *   node tests/visual/compare.mjs pctac --viewport=desktop   (par défaut : les deux)
+ *
+ * `oi-light` (P3B.E) : mêmes 9 états que `oi`, contre les baselines mode
+ * CLAIR de l'ORIGINAL (`.tacsuite-prep/oi-baseline-light/`, intégrées dans
+ * `tests/visual/baseline/oi-light/`, cf. README.md « Baselines mode clair »)
+ * — comble le trou de couverture Phase 0 (baselines `oi` toutes en mode
+ * sombre, seul état par défaut de `4.html`). Bascule effectuée par clic
+ * réel sur `#darkModeToggle` juste après le chargement (même mécanisme que
+ * `.tacsuite-prep/capture-oi-light.mjs`, qui a produit ces baselines côté
+ * ORIGINAL), avant d'exécuter les mêmes `run()` d'état que `oi`. Masques
+ * (`HEADER_MASK`/`PORTAL_LINK_MASK`) réutilisés tels quels : la bascule de
+ * thème ne change que des couleurs, aucune propriété de layout (vérifié
+ * dans `oi-baseline-light/README.md`).
  *
  * Prérequis : le serveur TacSuite dev tourne sur 127.0.0.1:9678
  * (scripts/dev.sh) ET les baselines existent dans tests/visual/baseline/<app>/.
@@ -61,6 +74,38 @@ const HEADER_MASK = {
     mobile: { x: 332, y: 24, w: 40, h: 26 },
   },
 };
+
+// P3B.E — `#portalLink` (retour au portail TacSuite, ajout pur P3B.C, cf.
+// docs/DECISIONS-DOM-ECARTS.md §6) : absent des baselines OI (Phase 0,
+// antérieures à cet ajout), visible dans TOUTES les captures OI car
+// `#dockMenu` y est déployé par défaut (contrairement à PC-Tac, où le dock
+// ship `collapsed` et où aucun état capturé ne l'ouvre — §6 documente que
+// `compare.mjs pctac` n'a donc besoin d'aucun masque).
+//
+// Un premier essai masquant SEULEMENT le rectangle du nouvel icône (56x56 /
+// 38x52) a été mesuré insuffisant : `#dockMenu` (`styles/oi.css`) est une
+// barre flex centrée SANS `collapsed` sur OI — insérer un item de plus la
+// recentre et TRANSLATE tous les icônes voisins d'une largeur de slot, pas
+// seulement le nouveau (vérifié : 16-18 états sur 18 en FAIL à ~0.13-0.43%,
+// diff concentré sur toute la largeur de la barre, pas seulement sur
+// l'icône ajoutée). Le masque couvre donc désormais tout `#dockMenu`
+// (bounding box mesurée en direct sur le porté, mode sombre ET clair : la
+// bascule de thème ne change que des couleurs, aucune propriété de layout —
+// cf. oi-baseline-light/README.md) plutôt que le seul rectangle de
+// `#portalLink`. `#dockMenu` est `position:fixed` : sa position ne dépend
+// PAS du scroll (pas de correctif `-scrollY` requis, contrairement à
+// HEADER_MASK).
+const PORTAL_LINK_MASK = {
+  oi: {
+    desktop: { x: 427, y: 802, w: 586, h: 74 },
+    mobile: { x: 16, y: 766, w: 358, h: 62 },
+  },
+};
+// `oi-light` réutilise les mêmes rectangles que `oi` (même bounding box
+// `#dockMenu`/`#beta-button` en mode clair qu'en mode sombre, cf. commentaire
+// APP_CONFIG['oi-light'] plus haut et oi-baseline-light/README.md).
+HEADER_MASK['oi-light'] = HEADER_MASK.oi;
+PORTAL_LINK_MASK['oi-light'] = PORTAL_LINK_MASK.oi;
 
 // Sélecteur du canvas cartographique à masquer (tuiles réseau non déterministes) —
 // mesuré EN DIRECT sur la page vivante (le porté), puis réutilisé tel quel sur
@@ -133,11 +178,15 @@ const APP_CONFIG = {
     ],
   },
 };
+// `oi-light` (P3B.E) : mêmes états/entryUrl que `oi`, seule la bascule de
+// thème (`theme: 'light'`, lue par `captureState()`) change — voir
+// commentaire en tête de fichier.
+APP_CONFIG['oi-light'] = { entryUrl: APP_CONFIG.oi.entryUrl, theme: 'light', states: APP_CONFIG.oi.states };
 
 function parseArgs(argv) {
   const app = argv[2];
   if (!app || !APP_CONFIG[app]) {
-    console.error(`Usage: node tests/visual/compare.mjs <pctac|oi> [--viewport=desktop|mobile]`);
+    console.error(`Usage: node tests/visual/compare.mjs <pctac|oi|oi-light> [--viewport=desktop|mobile]`);
     process.exit(2);
   }
   const viewportArg = argv.find((a) => a.startsWith('--viewport='));
@@ -181,10 +230,27 @@ function paintMask(png, rect) {
   return painted;
 }
 
-async function captureState(page, app, entryUrl, state, viewportName) {
+async function captureState(page, app, entryUrl, state, viewportName, theme) {
   await page.setViewportSize(VIEWPORTS[viewportName]);
   await page.goto(`${BASE_URL}${entryUrl}`, { waitUntil: 'load' });
   await page.waitForLoadState('networkidle', { timeout: 8000 }).catch(() => {});
+  if (theme === 'light') {
+    // Bascule vers le mode clair par clic réel (même mécanisme que
+    // .tacsuite-prep/capture-oi-light.mjs) — l'app démarre en mode sombre
+    // par défaut (aucune classe 'light-mode' au chargement initial, cf.
+    // oi-baseline-light/README.md). Contrairement à capture-oi-light.mjs
+    // (une seule navigation par viewport, thème basculé une fois), ce script
+    // fait un `page.goto` par ÉTAT : dès le 2e état, `localStorage.theme`
+    // ('light', persistée par handleThemeToggle() au 1er clic) fait déjà
+    // démarrer la page en 'light-mode' — cliquer à nouveau la ferait
+    // REBASCULER en sombre. D'où ce garde : ne cliquer que si pas déjà clair.
+    const alreadyLight = await page.evaluate(() => document.body.classList.contains('light-mode'));
+    if (!alreadyLight) {
+      await page.locator('#darkModeToggle').click();
+      await page.waitForFunction(() => document.body.classList.contains('light-mode'), { timeout: 5000 });
+    }
+    await page.waitForTimeout(300); // laisse filer la transition CSS background-color/color
+  }
   await page.waitForTimeout(state.id.startsWith('initial') || state.id.startsWith('step0') ? 1200 : 300);
   await state.run(page);
   await page.waitForTimeout(300);
@@ -238,7 +304,7 @@ async function run() {
     for (const state of config.states) {
       const label = `${state.id}-${viewportName}`;
       try {
-        const { buffer, canvasBox, scrollY } = await captureState(page, app, config.entryUrl, state, viewportName);
+        const { buffer, canvasBox, scrollY } = await captureState(page, app, config.entryUrl, state, viewportName, config.theme);
         const actualPng = PNG.sync.read(buffer);
         writeFileSync(join(outDir, `${label}.actual.png`), buffer);
 
@@ -266,6 +332,13 @@ async function run() {
           : headerRectBase;
         paintMask(basePng, headerRect);
         paintMask(actualPng, headerRect);
+
+        // `#dockMenu` étant `position:fixed`, aucune translation -scrollY
+        // (contrairement à headerRect ci-dessus) — voir commentaire
+        // PORTAL_LINK_MASK en tête de fichier.
+        const portalLinkRect = PORTAL_LINK_MASK[app]?.[viewportName];
+        paintMask(basePng, portalLinkRect);
+        paintMask(actualPng, portalLinkRect);
 
         if (state.canvas) {
           if (canvasBox) {

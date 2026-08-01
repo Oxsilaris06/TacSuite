@@ -155,13 +155,60 @@ cette mission) :
 - **OI** : à la différence de PC-Tac, `#dockMenu` de `oi/index.html` N'A PAS
   la classe `collapsed` par défaut (dock déployé au premier rendu) —
   `#portalLink` y est donc visible dès le chargement, sur les 9 états / 18
-  captures de baseline OI. `compare.mjs oi` n'est PAS un gate de la mission
-  P3B.C (seul `compare.mjs pctac` est requis par le mandat) et n'a pas été
-  relancé/corrigé ici. **Si `compare.mjs oi` redevient un gate actif**, un
-  rectangle de masque dédié à `#portalLink` (même mécanisme que
-  `HEADER_MASK`) devra être mesuré et ajouté à `tests/visual/compare.mjs`
-  pour l'app `oi`, ou les baselines OI devront être re-capturées avec le
-  lien en place.
+  captures de baseline OI. `compare.mjs oi` n'était PAS un gate de la mission
+  P3B.C (seul `compare.mjs pctac` était requis par ce mandat-là) et n'avait
+  pas été relancé/corrigé à ce moment.
+
+**Mise à jour (P3B.E, `compare.mjs oi` redevenu un gate actif)** : masque
+ajouté à `tests/visual/compare.mjs` (`PORTAL_LINK_MASK.oi`). Premier essai
+insuffisant : masquer seulement le rectangle du nouvel icône (mesuré
+56×56 desktop / 38×52 mobile) laissait 16/18 états en FAIL (~0,13-0,43 %,
+juste au-dessus du seuil 0,1 %) — `#dockMenu` est une barre flex CENTRÉE
+sans `collapsed` côté OI, donc insérer un item de plus RECENTRE toute la
+barre et translate tous les icônes voisins d'une largeur de slot, pas
+seulement `#portalLink` lui-même. Le masque couvre donc désormais la
+bounding box entière de `#dockMenu` (mesurée en direct sur le porté) :
+
+| Viewport | x | y | w | h |
+|---|---:|---:|---:|---:|
+| desktop 1440×900 | 427 | 802 | 586 | 74 |
+| mobile 390×844 | 16 | 766 | 358 | 62 |
+
+Avec ce masque : `node tests/visual/compare.mjs oi` → **18/18 PASS**
+(0,009-0,047 % desktop et mobile confondus), stable sur re-runs consécutifs.
+Aucun impact sur `compare.mjs pctac` (masque scopé à la clé `oi` de
+`PORTAL_LINK_MASK`, absente pour `pctac`) — revérifié **20/20 PASS**.
+
+### Baselines mode clair OI (`oi-light`, P3B.E)
+
+Les 18 baselines Phase 0 de `tests/visual/baseline/oi/` sont toutes en mode
+**sombre** (défaut de `4.html`, cf. `docs/DECISIONS-CSS.md` §6.3). Un trou de
+couverture mode clair a été comblé en amont par capture sur l'ORIGINAL
+(`.tacsuite-prep/capture-oi-light.mjs` → `.tacsuite-prep/oi-baseline-light/`,
+18 PNG, mécanisme documenté dans son propre `README.md`) — intégré ici tel
+quel dans `tests/visual/baseline/oi-light/` (mêmes 9 états × 2 viewports,
+mêmes noms de fichiers).
+
+`tests/visual/compare.mjs` définit une clé d'app dédiée `oi-light`
+(`APP_CONFIG['oi-light']`, mêmes `states`/`entryUrl` que `oi`, ajoute
+`theme: 'light'`) : `captureState()` bascule le porté en mode clair par un
+clic réel sur `#darkModeToggle` (même mécanisme que
+`capture-oi-light.mjs`), avec un garde nécessaire ici : contrairement à
+`capture-oi-light.mjs` (une seule navigation par viewport, thème basculé une
+fois puis navigation SPA entre états), `compare.mjs` fait un `page.goto` par
+ÉTAT — dès le 2e état, `localStorage.theme` (persistée par
+`handleThemeToggle()` au 1er clic) fait déjà démarrer la page en
+`light-mode` ; cliquer à nouveau sans garde la ferait REBASCULER en sombre
+(bug constaté à l'implémentation : 9/18 états en `ERROR` par timeout,
+exactement 1 état sur 2 — la parité trahissant l'aller-retour clair/sombre à
+chaque état). Corrigé en ne cliquant que si `body` n'est pas déjà
+`light-mode`. `HEADER_MASK`/`PORTAL_LINK_MASK` réutilisés tels quels pour
+`oi-light` (mêmes bounding boxes qu'en mode sombre — la bascule de thème ne
+change que des couleurs, aucune propriété de layout, vérifié dans
+`oi-baseline-light/README.md`).
+
+`node tests/visual/compare.mjs oi-light` → **18/18 PASS** (0,009-0,052 %),
+stable sur re-runs consécutifs.
 
 ### Forme naïve envisagée puis REJETÉE (piège documenté ci-dessous)
 
