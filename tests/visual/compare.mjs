@@ -377,7 +377,7 @@ async function captureState(page, app, entryUrl, state, viewportName, theme) {
     const alreadyLight = await page.evaluate(() => document.body.classList.contains('light-mode'));
     if (!alreadyLight) {
       await page.locator('#darkModeToggle').click();
-      await page.waitForFunction(() => document.body.classList.contains('light-mode'), { timeout: 5000 });
+      await page.waitForFunction(() => document.body.classList.contains('light-mode'), undefined, { timeout: 5000 });
     }
     await page.waitForTimeout(300); // laisse filer la transition CSS background-color/color
   }

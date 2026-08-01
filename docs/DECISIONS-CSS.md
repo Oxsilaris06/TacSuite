@@ -449,3 +449,45 @@ souhaitée.
 ### 7.4 Fichier modifié
 
 - `styles/oi.css` (seul fichier touché par cette mission P3B.E).
+
+### 7.5 Quirks pré-existants supplémentaires portés verbatim (gate P3, remarque non bloquante #4)
+
+Deux autres particularités de l'original `4.html`, distinctes des 2
+divergences clair/sombre déjà documentées en §7.3 (`--focus-ring`,
+`--field-border`), repérées en relisant `styles/oi.css` après la mission
+P3B.E — non touchées, ni par cette mission (hors périmètre des 5 lots
+§7.1) ni par aucune mission ultérieure :
+
+- **`--noise-texture` déclarée uniquement en mode clair.** Le token n'existe
+  que dans le bloc `body.light-mode { ... }` (`styles/oi.css:394`), pas dans
+  le `:root` sombre (`styles/oi.css:69-217`) ni dans le second `:root`
+  (`styles/oi.css:220-...`). Utilisée en `background-image` du `body`
+  (`styles/oi.css:430`, avec `var(--canvas-glow)`) et en `background-image`
+  composite d'un autre élément (`styles/oi.css:552`, avec
+  `var(--metal-sheen)`) : dans les deux cas la déclaration `var()` est
+  toujours présente en mode sombre, mais résout `--noise-texture` en chaîne
+  vide (custom property non définie) — le grain de texture est donc absent
+  en mode sombre, présent seulement en mode clair. Comportement de
+  l'original, reproduit à l'identique par le portage verbatim P0.A5 (aucune
+  substitution du Lot 3/4 ne touche ce token, cf. §7.1 : il n'a pas de
+  correspondance pctac et n'entre dans aucun barème). Confirmé stable par
+  les gates visuels `compare.mjs oi` (18/18) et `compare.mjs oi-light`
+  (18/18, §7.3) : aucune baseline ne le contredit.
+- **`--bg-card` avec repli littéral `#1a1a1a`.** Une unique occurrence,
+  `background: var(--bg-card, #1a1a1a);` (`styles/oi.css:1204`,
+  `.patrac-batch-bar`), diffère de toutes les autres consommations de
+  `--bg-card` dans le fichier qui n'ont pas de valeur de repli. `--bg-card`
+  est bien déclarée dans les deux `:root` (sombre et clair) — ce repli
+  n'est donc jamais activé dans le rendu normal, c'est un vestige défensif
+  de l'original (probablement une règle ajoutée avant que `--bg-card` ne
+  soit garantie disponible partout). Porté verbatim, non nettoyé : changer
+  ou retirer ce repli est une modification de source, pas une
+  relocalisation, et sort du principe « changements chirurgicaux » comme du
+  protocole zéro régression (`docs/PLAN.md` §4) qui encadre cette mission.
+- **Conséquence visuelle** : aucune pour `--bg-card` (repli mort). Pour
+  `--noise-texture`, le grain est un effet de 0,02 d'opacité sur un
+  `feTurbulence` — sous le seuil de détection des gates `compare.mjs`
+  (18/18 oi + 18/18 oi-light, seuils §7.3), cohérent avec l'absence de
+  régression observée sur les 4 lots de la mission P3B.E.
+- **Trouvé et documenté en réponse au gate P3, remarque non bloquante #4**
+  (mission P4.A, solde des 4 remarques non bloquantes).

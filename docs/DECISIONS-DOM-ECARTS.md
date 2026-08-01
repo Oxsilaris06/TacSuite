@@ -284,7 +284,10 @@ sous-section "10bis" apres celle-ci pour cette seconde balise.
   "`<style>` inline retires du body" est entierement tracee (2/2, points 10 et
   10bis) — le delta d'elements body entre `pctac2.html` et `pctac/index.html`
   est alors integralement explique : -3 `<script>`, -2 `<style>` (points
-  10/10bis), +1 `<span>` (point 6, imbrique dans le `<a id="portalLink">`) —
+  10/10bis), -1 `<a id="version-toggle-btn">` (point 1) et +1
+  `<a id="portalLink">` (point 6) qui s'annulent au niveau du COMPTE brut
+  d'elements (meme s'ils ne sont pas le meme noeud — remplacement, pas
+  no-op), +1 `<span>` (point 6, imbrique dans ce `<a id="portalLink">`) —
   soit -4 elements nets.
 - **Trouve et documente par la mission P3B.FIX (reprise 3), MINEUR R3** — le
   point 10 (mission precedente) ne couvrait que la balise AVEC id, laissant
