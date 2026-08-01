@@ -7,7 +7,49 @@ non-régression). Statuts vérifiés le 2026-08-01 contre
 --project=chromium-desktop`) et via revue de code ciblée pour les items
 infaisables en E2E.
 
-## 0. Constat bloquant — À LIRE AVANT LE TABLEAU
+## MISE À JOUR — P2.FIX reprise 1 (2026-08-01, après exécution de P2.D)
+
+**Le constat bloquant du §0 ci-dessous est RÉSOLU.** `src/apps/pctac/main.ts`
+câble désormais les 33 modules portés (imports §5.2, 22 étapes du
+`DOMContentLoaded` §5.3 de `docs/SPEC-PCTAC-CONVERSION.md`), suivant à la
+lettre l'ordre imposé — cf. compte-rendu de la mission P2.FIX (reprise 1) pour
+le détail correctif par correctif. Le tableau du §1 et les commentaires du §0/§2
+ci-dessous **restent tels quels comme trace historique du gate P2.E1** (avant
+P2.D) ; ils ne sont volontairement PAS réécrits ligne par ligne ici (ce
+réexamen exhaustif item par item est le livrable du prochain gate officiel
+P2.E, pas de cette reprise correctrice). Seuls les deux points explicitement
+signalés à revalider par la mission de reprise sont mis à jour ci-dessous :
+
+- **Item #6 (mode PAX libre)** — REVALIDÉ, confirmé **NON-RÉGRESSION** (comme
+  l'item #11) : `.mode-toggle-btn`, `#pax_select_wrapper_standard`,
+  `#pax_select_wrapper_free` sont absents à la fois de `pctac2.html`
+  (ORIGINAL, grep confirmé — 0 occurrence) et de `pctac/index.html` (porté).
+  Aucun élément du DOM statique n'invoque `setPaxMode('free')`, et rien ne les
+  injecte au runtime (`UI.initPaxModeAndColors` n'en crée aucun). C'est du
+  code mort déjà présent dans la source, pas un défaut de câblage P2.D. La
+  logique de `UI.setPaxMode` elle-même reste correcte (revérifiée en E2E via
+  `window.setPaxMode('free')` invoqué directement). Test E2E mis à jour
+  (`tests/e2e/pctac.spec.ts`, test « Main Courante — mode PAX libre + couleur
+  personnalisée ») pour ne plus attendre un sélecteur inexistant.
+- **Item #26 (légende repliable)** — ISOLÉE dans son propre test E2E
+  (`Plan — légende repliable (élément <details> natif)`), indépendant de
+  `#plan_btn_draw`. Confirmé **VERT**, comme anticipé (élément HTML natif
+  `<details>`, aucun JS requis).
+
+**Résultat du re-run complet** (`npx playwright test tests/e2e/pctac.spec.ts
+--project=chromium-desktop`, 2026-08-01, après P2.D) : **30/30 tests verts**
+(26 tests d'origine + 4 ajoutés en R7 de la reprise — drag&drop du journal
+item #8, bascule 2D/3D item #16, import d'archive `.pctac.zip` item #30 ;
+item #31 reste NON COUVERT, différé en Phase 3 comme prévu). Stable sur 3
+exécutions consécutives (`--workers=4` et défaut). Comparaison visuelle
+(`node tests/visual/compare.mjs pctac`) : 19/20 états sous le seuil de
+0,1 % (contre 0/10 avant P2.D) ; 1 résidu (`tab-plan-panneau-tchap-live-mobile`,
+0,119 %) documenté dans le compte-rendu de la mission comme point à instruire
+séparément (diff diffus, non localisé à un élément précis, absent côté
+desktop — probablement une variance de rendu des contrôles MapLibre hors
+canvas masqué, pas une régression du câblage).
+
+## 0. Constat bloquant (ÉTAT AU MOMENT DU GATE P2.E1, avant P2.D — historique)
 
 **`src/apps/pctac/main.ts` est encore le placeholder de scaffold de la Phase 0**
 (6 lignes utiles : import des polices auto-hébergées + CSS MapLibre + un
@@ -63,7 +105,7 @@ non fonctionnel dans l'ORIGINAL, donc pas un défaut du portage) ·
 | 3 | Navigation : clavier flèches (a11y `makeTablist`) | BLOQUÉ (P2.D) | E2E | `makeTablist` (ui-platform.ts, 100% testé unitairement) jamais invoqué par `main.ts` |
 | 4 | Navigation : dernier onglet restauré au reload | BLOQUÉ (P2.D) | E2E | Dépend du point 2 (bascule initiale déjà bloquée) — non isolable tant que 2 n'est pas résolu |
 | 5 | Main Courante : ajout entrée (PAX standard + couleur) | BLOQUÉ (P2.D) | E2E | Formulaire visible (vue par défaut) mais `submit` sans effet (aucun listener) |
-| 6 | Main Courante : mode PAX libre + couleur perso | BLOQUÉ (P2.D) + NON CONFIRMÉ | E2E + revue | `.mode-toggle-btn`/wrappers libres injectés au runtime par `UI.init` (`ui.js:122-137`), jamais exécuté ici ; **sélecteur non confirmé en pratique**, à revalider une fois P2.D fait |
+| 6 | Main Courante : mode PAX libre + couleur perso | **REVALIDÉ (reprise 1) → NON-RÉGRESSION** | E2E + revue | `.mode-toggle-btn`/`#pax_select_wrapper_standard`/`_free` **absents des DEUX** DOM statiques (grep confirmé sur `pctac2.html` ET `pctac/index.html`, 0 occurrence) ; aucun déclencheur UI ni injection runtime — code mort déjà présent dans la source, même statut que l'item #11. `window.setPaxMode('free')` revérifié fonctionnel via la façade en E2E |
 | 7 | Main Courante : tri par heure | BLOQUÉ (P2.D) | E2E | Dépend de l'ajout (point 5) |
 | 8 | Main Courante : réordonnancement drag&drop (souris + tactile) | REVUE DE CODE (OK) + BLOQUÉ (P2.D) pour l'E2E | Revue de `src/apps/pctac/ui.ts:310-340` vs `modules/pctac/ui.js:253-284` | Logique `dragstart/dragover/drop/dragend` portée à l'identique (mêmes listeners, même commentaire sur le bug historique corrigé) ; **non atteignable par clic/drag E2E réel tant que P2.D n'est pas fait** — pas de test E2E dédié au drag lui-même dans cette passe (voir §2) |
 | 9 | Main Courante : autosuggestion lieu (historique) | BLOQUÉ (P2.D) | E2E | `#lieu_suggestions` reste vide (0 `<option>`) |
@@ -83,7 +125,7 @@ non fonctionnel dans l'ORIGINAL, donc pas un défaut du portage) ·
 | 23 | Plan : overlay noms de rues togglable | BLOQUÉ (P2.D) | E2E | `#plan_btn_labels` clic sans effet observable |
 | 24 | Plan : AOI hors-ligne (cadrage, quota, téléchargement, retry) | BLOQUÉ (P2.D) pour l'armement ; REVUE DE CODE pour le reste | E2E (armement) + revue | Armement du cadrage (`#plan_btn_aoi` → classe `.active`) bloqué. Le flux complet (estimation tuiles, `storage.estimate()`, téléchargement avec backoff/retry, barre de progression annulable) est HORS PÉRIMÈTRE E2E de toute façon (vrai téléchargement réseau de tuiles cartographiques) — vérifié par revue : logique présente et testée unitairement dans `tests/unit/pctac/pm-aoi.test.ts` (vert) |
 | 25 | Plan : copier coordonnées (WGS84/DMS/MGRS) presse-papier | BLOQUÉ (P2.D) | E2E (permissions clipboard accordées) | Pin jamais placé (modale `#pingModal` inatteignable) → roue contextuelle et `_copyCoords` jamais atteints. Conversions elles-mêmes testées unitairement avec valeurs de référence croisées (`tests/unit/coords.test.ts`, vert) |
-| 26 | Plan : légende repliable (statuts géoloc live) | BLOQUÉ (P2.D) | E2E | `<details id="plan_legend">` cliquable nativement (HTML natif, pas de JS requis) MAIS test resté rouge car englobé dans le même test que les diamètres/labels (dépendance `#plan_btn_draw`) — **à ISOLER dans un test dédié au prochain run, probablement VERT même sans câblage complet** (natif `<details>`) |
+| 26 | Plan : légende repliable (statuts géoloc live) | **VERT (reprise 1)** | E2E | `<details id="plan_legend">` cliquable nativement, ISOLÉE dans son propre test E2E (`Plan — légende repliable (élément <details> natif)`), indépendant de `#plan_btn_draw` — vert comme anticipé |
 | 27 | Plan : géoloc équipe live (Tchap) — panneau, connexion ProConnect/token, liste opérateurs, suivi, trace, reprise offline | BLOQUÉ (P2.D) pour le panneau ; REVUE DE CODE pour la connexion réelle | E2E (ouverture panneau) + revue | `#tl_panel` inatteignable (module `tchap-live.ts` jamais importé). **Connexion réelle (OAuth device-code RFC 8628 ou token manuel) explicitement HORS PÉRIMÈTRE E2E** (nécessite un vrai compte ProConnect / homeserver Tchap réel) — vérifiée par revue de code ciblée : `src/apps/pctac/tchap-live.ts` (1277 LOC) expose `{startManual, startOidc, stop, wireUI}`, s'auto-câble sur `DOMContentLoaded` exactement comme l'original (`if (document.readyState==='loading') ... else wireUI()`, `tchapLive.js` même pattern), reprise auto après reload portée (`cfg.mode==='oidc' && cfg.oidc?.refreshToken` / `cfg.token`) — **logique fidèle à l'original, testée unitairement (`tests/unit/pctac/pc-tchaplive.test.ts`, vert)**. Note : PC-Tac n'utilise PAS `navigator.geolocation` (device GPS) — grep confirmé nul sur `modules/pctac/*.js` — donc pas d'item "géoloc matérielle" à proprement parler ici, uniquement la géoloc réseau Tchap |
 | 28 | Liens : liens externes statiques (Google Maps, Google Earth, Tchap, WhatsApp) | VERT | E2E structurel | 4/4 liens : `href` + `target="_blank"` conformes, indépendant du câblage (ancre HTML pure) |
 | 29 | Dock : export archive `.pctac.zip` | BLOQUÉ (P2.D) | E2E | `#exportJsonDockBtn` non cliquable (dock replié par défaut, `#dockToggleBtn` jamais câblé) |
@@ -99,33 +141,41 @@ non fonctionnel dans l'ORIGINAL, donc pas un défaut du portage) ·
 | 39 | Persistance : clés localStorage/IndexedDB inchangées | VERT (statique) | Revue de code | `src/apps/pctac/config.ts` déclare les mêmes clés (`pcTacLogData`, `pcTacAdversaries`, etc., cf. `docs/recon-pctac.md` §5) que l'original — vérifié par lecture directe, cohérent avec le protocole zéro régression §5 |
 | 40 | PWA : installable, service worker offline-first | HORS-PHASE (P4.A) | E2E (manifest) + revue plan | `docs/PLAN.md` §6 place le SW/précache en **P4.A**, pas en Phase 2. Test E2E vérifie seulement la présence du `<link rel="manifest">` (vert) et de l'API `serviceWorker` du navigateur (vert) — aucun SW n'est enregistré côté TacSuite à ce stade (`public/` ne contient aucun `sw.js`), ce qui est CONFORME au plan, pas une régression |
 
-## 2. Items non couverts par un test E2E dédié dans cette passe
+## 2. Items non couverts par un test E2E dédié (état initial P2.E1 — historique)
 
-À ajouter dans une itération suivante (idéalement juste après P2.D, en même
-temps que le re-run du gate) :
+Liste telle qu'établie au gate P2.E1 initial. **Mise à jour reprise 1** :
+#8, #16, #26 et #30 sont désormais **COUVERTS** (voir note en tête de
+document) ; seuls #15/#33 et #31 restent des trous assumés.
 
-- **#8 Drag&drop du journal** : simulation `mouse.down/move/up` fiable sur les
-  lignes `<tr draggable="true">` — non tentée ici (complexité/fragilité
-  headless), logique vérifiée par revue de code uniquement pour l'instant.
+- ~~**#8 Drag&drop du journal**~~ — **COUVERT (reprise 1)** :
+  `tests/e2e/pctac.spec.ts`, test « Main Courante — réordonnancement du
+  journal par glisser-déposer », via `locator.dragTo()` (vraie séquence HTML5
+  DnD dragstart/dragover/drop), avec vérification de la persistance après
+  rechargement.
 - **#15/#33 Plein écran** (Plan et Dock, même fonction `toggleFullscreen`) :
   la Fullscreen API est notoirement peu fiable en Chromium headless
   (nécessite un geste utilisateur "trusted" que Playwright simule
-  correctement en théorie, mais non testé ici par prudence).
-- **#16 Bascule 2D/3D relief** : bouton présent (`#plan_btn_3d`), bascule de
-  pitch/relief MapLibre non vérifiée spécifiquement.
-- **#30/#31 Import d'archive `.pctac.zip` et passerelle `.oi.zip`** :
-  nécessitent un fichier `.zip` de test réaliste (structure
-  `manifest.json + data.json + images/`) — non construit dans cette passe ;
-  `archive.ts` est déjà couvert unitairement.
-- **#26 Légende repliable isolée** : actuellement noyée dans le même test que
-  diamètres/labels (dépend de `#plan_btn_draw`) ; `<details>` étant un
-  élément HTML natif, un test isolé serait probablement déjà vert même sans
-  câblage complet — à extraire.
+  correctement en théorie, mais non testé ici par prudence). **Reste NON
+  COUVERT**, assumé explicitement (revue de code tracée dans le tableau §1).
+- ~~**#16 Bascule 2D/3D relief**~~ — **COUVERT (reprise 1)** :
+  `tests/e2e/pctac.spec.ts`, test « Plan — bascule 2D/3D relief
+  (#plan_btn_3d) », vérifie `window.PlanMap.is3D` avant/après clic (état
+  interne fiable en headless, indépendant du rendu WebGL réel).
+- ~~**#30 Import d'archive `.pctac.zip`**~~ — **COUVERT (reprise 1)** :
+  `tests/e2e/pctac.spec.ts`, test « Dock — import archive .pctac.zip
+  (checklist item #30) », fixture `.pctac.zip` construite avec `jszip`
+  (manifest.json + data.json), injectée via `page.setInputFiles`.
+- **#31 Passerelle `.oi.zip`** : **reste NON COUVERT**, différé en Phase 3
+  comme prévu — dépend de l'app OI (non portée) pour produire un `.oi.zip`
+  réel ; `Archive.importOiArchive` est déjà couvert unitairement
+  (`tests/unit/pctac/pc-archive.test.ts`).
+- ~~**#26 Légende repliable isolée**~~ — **COUVERT (reprise 1)**, voir note en
+  tête de document.
 
 Aucun de ces items n'est un signe de régression constatée : ce sont des trous
-de couverture E2E assumés, listés pour transparence vis-à-vis du critère
-d'acceptation §9.2 du plan ("Checklists fonctionnelles... 100% vérifiées en
-E2E").
+de couverture E2E assumés (ou désormais comblés), listés pour transparence
+vis-à-vis du critère d'acceptation §9.2 du plan ("Checklists fonctionnelles...
+100% vérifiées en E2E").
 
 ## 3. Comparaison visuelle (P2.E1 point 2)
 

@@ -1,4 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
+import JSZip from 'jszip';
 
 /**
  * P2.E1 — Tests E2E fonctionnels PC-Tac, contre http://127.0.0.1:9678/pctac/.
@@ -48,6 +49,32 @@ async function clickTab(page: Page, viewId: string): Promise<void> {
 }
 
 /**
+ * R7 (P2.FIX reprise 1) — CHECKLIST-PCTAC.md item #30 : construit un fixture
+ * `.pctac.zip` minimal mais réaliste (manifest.json + data.json), au format
+ * strictement attendu par `Archive.importFile` (archive.ts) : `data.json` est
+ * un objet dont les valeurs sont les CHAÎNES JSON brutes de chaque clé
+ * localStorage (`data[k] = localStorage.getItem(k)`, PAS un objet imbriqué).
+ * Aucune image : `imgIds` reste vide, la branche `images/` n'est pas requise.
+ */
+async function buildPctacZipFixture(): Promise<Buffer> {
+  const zip = new JSZip();
+  zip.file(
+    'manifest.json',
+    JSON.stringify({ appName: 'PC TAC', version: 1, createdAt: new Date().toISOString() }),
+  );
+  const logEntry = {
+    id: 'e2e-import-1',
+    heure: '11:11',
+    pax: 'Adversaire',
+    paxMode: 'standard',
+    lieu: 'Lieu Import ZIP E2E',
+    remarques: 'Importé via fixture E2E',
+  };
+  zip.file('data.json', JSON.stringify({ pcTacLogData: JSON.stringify([logEntry]) }));
+  return zip.generateAsync({ type: 'nodebuffer' });
+}
+
+/**
  * Enveloppe une étape de checklist : capture toute exception (ex. clic sur un
  * élément non interactif) en échec `soft` au lieu de laisser l'exception
  * interrompre les étapes suivantes du même test. `test.step` reste utilisé
@@ -71,6 +98,12 @@ async function step(name: string, fn: () => Promise<void>): Promise<void> {
 
 test.describe('PC-Tac — Checklist fonctionnelle (docs/recon-pctac.md §6)', () => {
   test.beforeEach(async ({ page }) => {
+    // P2.D pose de vrais `confirm()`/`alert()` natifs (deleteCollectionItem,
+    // import d'archive...) — sans accepteur, Playwright les auto-DISMISS par
+    // défaut (confirm() → false), ce qui bloquerait silencieusement toute
+    // action réellement câblée. Aucun test de cette suite n'attend une
+    // annulation de confirm().
+    page.on('dialog', (dialog) => { void dialog.accept(); });
     await gotoPctac(page);
   });
 
@@ -149,7 +182,10 @@ test.describe('PC-Tac — Checklist fonctionnelle (docs/recon-pctac.md §6)', ()
     await step("édition d'une entrée existante (modale editModal)", async () => {
       const row = page.locator('#logTable tbody tr', { hasText: 'Entrée A — E2E' });
       await row.locator('button.edit, .action-btn-small.edit').click();
-      await expect.soft(page.locator('#editModal')).toHaveClass(/active/, { timeout: 1500 });
+      // openEditModal (ui.js:286-297 / ui.ts) bascule `style.display`, PAS une
+      // classe CSS — vérifié contre l'original (aucune classe `.active` n'est
+      // jamais posée sur #editModal, ni dans pctac2.html/ui.js ni dans le port).
+      await expect.soft(page.locator('#editModal')).toBeVisible({ timeout: 1500 });
       await page.locator('#edit_remarques').fill('Remarque E2E 1 — modifiée');
       await page.locator('#confirmEditBtn').click();
       await expect
@@ -166,15 +202,76 @@ test.describe('PC-Tac — Checklist fonctionnelle (docs/recon-pctac.md §6)', ()
     });
   });
 
-  test('Main Courante — mode PAX libre + couleur personnalisée', async ({ page }) => {
-    // cf. ui.js setPaxMode/.mode-toggle-btn — bascule standard/libre. Sélecteur
-    // best-effort : les wrappers #pax_select_wrapper_standard/_free et les
-    // .mode-toggle-btn ne sont PAS dans le DOM statique de pctac2.html/pctac/index.html,
-    // ils sont attendus injectés au runtime par UI.init (non confirmé avant câblage réel).
-    await step('bouton de bascule vers le mode libre atteignable', async () => {
+  // R7 (P2.FIX reprise 1) — CHECKLIST-PCTAC.md item #8 : réordonnancement du
+  // journal par glisser-déposer, jusqu'ici vérifié seulement par revue de
+  // code (ui.ts:310-340 vs ui.js:253-284). `locator.dragTo()` reproduit une
+  // vraie séquence HTML5 DnD (dragstart/dragover/drop), contrairement à des
+  // mouse.move/down/up bruts qui ne déclenchent pas fiablement ces événements.
+  // Deux entrées de MÊME heure (le tri de `Storage.saveLogData` est stable :
+  // à heure égale, l'ordre du DOM au moment du drop est préservé) pour que le
+  // nouvel ordre survive au tri par heure appliqué à chaque sauvegarde.
+  test('Main Courante — réordonnancement du journal par glisser-déposer', async ({ page }) => {
+    await step('créer deux entrées de même heure', async () => {
+      await page.locator('#heure_input').fill('10:00');
+      await page.locator('.pax-select-option[data-pax="Inter"]').click();
+      await page.locator('#lieu_input').fill('DND-A E2E');
+      await page.locator('#remarques_input').fill('x');
+      await page.locator('#log-form button[type="submit"]').click();
       await expect
-        .soft(page.locator('.mode-toggle-btn[data-mode="free"]'))
+        .soft(page.locator('#logTable tbody tr', { hasText: 'DND-A E2E' }))
         .toBeVisible({ timeout: 1500 });
+
+      await page.locator('#heure_input').fill('10:00');
+      await page.locator('.pax-select-option[data-pax="Inter"]').click();
+      await page.locator('#lieu_input').fill('DND-B E2E');
+      await page.locator('#remarques_input').fill('x');
+      await page.locator('#log-form button[type="submit"]').click();
+      const rows = page.locator('#logTable tbody tr');
+      await expect.soft(rows).toHaveCount(2, { timeout: 1500 });
+      // Ordre d'insertion stable : A avant B (même heure).
+      await expect.soft(rows.nth(0)).toContainText('DND-A E2E');
+      await expect.soft(rows.nth(1)).toContainText('DND-B E2E');
+    });
+
+    await step('glisser la 2e ligne au-dessus de la 1re', async () => {
+      const rows = page.locator('#logTable tbody tr');
+      await rows.nth(1).dragTo(rows.nth(0), { targetPosition: { x: 20, y: 2 } });
+      await expect.soft(rows.nth(0)).toContainText('DND-B E2E', { timeout: 1500 });
+      await expect.soft(rows.nth(1)).toContainText('DND-A E2E', { timeout: 1500 });
+    });
+
+    await step('drop persisté : ordre conservé après rechargement', async () => {
+      await page.reload();
+      await page.waitForLoadState('domcontentloaded');
+      const rows = page.locator('#logTable tbody tr');
+      await expect.soft(rows.nth(0)).toContainText('DND-B E2E', { timeout: 1500 });
+      await expect.soft(rows.nth(1)).toContainText('DND-A E2E', { timeout: 1500 });
+    });
+  });
+
+  test('Main Courante — mode PAX libre + couleur personnalisée', async ({ page }) => {
+    // REVALIDÉ post-P2.D (CHECKLIST-PCTAC.md item #6) : `.mode-toggle-btn` et
+    // `#pax_select_wrapper_standard`/`#pax_select_wrapper_free` sont absents à
+    // la fois de `pctac2.html` (ORIGINAL, grep confirmé — 0 occurrence) et de
+    // `pctac/index.html` (porté) — CE N'EST PAS un oubli du câblage P2.D : rien
+    // n'injecte ces éléments au runtime non plus (`UI.initPaxModeAndColors`
+    // n'en crée aucun). `UI.setPaxMode`/`.mode-toggle-btn` sont du code MORT
+    // déjà dans la source (aucun appelant, aucun déclencheur UI), au même
+    // titre que `#search_container`/`toggleSearchMode` (item #11). La fonction
+    // `setPaxMode` elle-même reste néanmoins correcte : on l'invoque
+    // directement via la façade `window.setPaxMode` pour vérifier la logique
+    // portée (bascule des wrappers, valeur de `#pax_mode_input`), même si rien
+    // dans l'UI ne l'atteint.
+    await step('.mode-toggle-btn absent du DOM (dead code confirmé, non une régression)', async () => {
+      await expect.soft(page.locator('.mode-toggle-btn')).toHaveCount(0);
+      await expect.soft(page.locator('#pax_select_wrapper_free')).toHaveCount(0);
+    });
+    await step('window.setPaxMode("free") — logique portée fonctionnelle (façade)', async () => {
+      const modeAfter = await page.evaluate(() => {
+        window.setPaxMode('free');
+        return (document.getElementById('pax_mode_input') as HTMLInputElement | null)?.value ?? null;
+      });
+      expect.soft(modeAfter).toBe('free');
     });
   });
 
@@ -337,6 +434,33 @@ test.describe('PC-Tac — Checklist fonctionnelle (docs/recon-pctac.md §6)', ()
     });
   });
 
+  // R7 (P2.FIX reprise 1) — CHECKLIST-PCTAC.md item #16 : bascule relief 2D/3D,
+  // non couverte jusqu'ici. `window.PlanMap.is3D` (map-core.ts `_toggle3D`) est
+  // l'état interne fiable à vérifier en headless (le pitch/bearing MapLibre
+  // réel dépend du rendu WebGL, non déterministe en CI).
+  test('Plan — bascule 2D/3D relief (#plan_btn_3d)', async ({ page }) => {
+    await step('clic sur le FAB 3D bascule window.PlanMap.is3D', async () => {
+      await clickTab(page, 'view-plan');
+      await page.waitForTimeout(1200);
+      const before = await page.evaluate(
+        () => (window as unknown as { PlanMap: { is3D: boolean } }).PlanMap.is3D,
+      );
+      await page.locator('#plan_btn_3d').click();
+      await page.waitForTimeout(400); // _enable3D/_disable3D animent la caméra
+      const after = await page.evaluate(
+        () => (window as unknown as { PlanMap: { is3D: boolean } }).PlanMap.is3D,
+      );
+      expect.soft(before).toBe(false);
+      expect.soft(after).toBe(true);
+      await page.locator('#plan_btn_3d').click();
+      await page.waitForTimeout(400);
+      const afterToggleBack = await page.evaluate(
+        () => (window as unknown as { PlanMap: { is3D: boolean } }).PlanMap.is3D,
+      );
+      expect.soft(afterToggleBack).toBe(false);
+    });
+  });
+
   test('Plan — recherche adresse / coordonnées GPS (Nominatim)', async ({ page }) => {
     await step('ouvrir le bandeau et rechercher des coordonnées GPS', async () => {
       await clickTab(page, 'view-plan');
@@ -349,18 +473,27 @@ test.describe('PC-Tac — Checklist fonctionnelle (docs/recon-pctac.md §6)', ()
   });
 
   test('Plan — ping : entité existante et point libre', async ({ page }) => {
-    await step('ouvrir la modale et créer un point libre', async () => {
+    // REVALIDÉ post-P2.D : `_openPingModal` (`#pingModal`) N'A AUCUN APPELANT
+    // dans `planMap.js` (grep confirmé sur les 5596 lignes — la seule
+    // occurrence est sa propre déclaration, planMap.js:957) : ce n'est PAS le
+    // point d'entrée réel de la création de ping, ni dans l'original ni dans
+    // le port. Le vrai flux (chrome.ts `_bindUi`, planMap.js:722-726) est une
+    // ROUE CONTEXTUELLE (`wheels.ts` `_openCreatePingWheel`, planMap.js:3591) :
+    // clic sur `#plan_btn_ping` → roue à 5 segments couleur OTAN (« Adv »,
+    // « Otage », « Inter », « Oscar », « Inconnu ») + « Catalogue » + « Copier
+    // coords », posée sur le centre de la carte. Taper un segment couleur
+    // pose directement un ping (icône par défaut) — `_quickPlacePing`.
+    await step('ouvrir la roue de création (clic sur le FAB ping)', async () => {
       await clickTab(page, 'view-plan');
+      await page.waitForTimeout(1000); // carte + tuiles
       await page.locator('#plan_btn_ping').click();
-      await expect.soft(page.locator('#pingModal')).toBeVisible({ timeout: 1500 });
-      await page.locator('#free_pin_label').fill('Point libre E2E');
-      await page.locator('#free_pin_color_select .pax-select-option[data-kind="Oscar"]').click();
-      await page.locator('#freePinConfirmBtn').click();
-      await expect.soft(page.locator('#pingModal')).toBeHidden({ timeout: 1500 });
+      await expect.soft(page.locator('.plan-wheel')).toBeVisible({ timeout: 1500 });
     });
-    await step('placer le point sur la carte', async () => {
-      await page.locator('#plan_map').click({ position: { x: 200, y: 200 } });
-      await expect.soft(page.locator('.maplibregl-marker')).toHaveCount(1, { timeout: 2000 });
+    await step('taper un segment couleur pose un ping directement', async () => {
+      await page.locator('.plan-wheel button[title="Oscar"]').click();
+      // Un ping = 2 `maplibregl.Marker` distincts (pins.ts:492/495 : icône +
+      // label), pas 1 — vérifié dans le code (`entry.pinMarker`/`entry.labelMarker`).
+      await expect.soft(page.locator('.maplibregl-marker')).toHaveCount(2, { timeout: 2000 });
     });
   });
 
@@ -369,15 +502,23 @@ test.describe('PC-Tac — Checklist fonctionnelle (docs/recon-pctac.md §6)', ()
   }) => {
     await step('ouvrir le dock et sélectionner outil + couleur', async () => {
       await clickTab(page, 'view-plan');
+      // cf. test « Plan — verrouillage » : laisser PlanMap.init() se stabiliser
+      // avant d'interagir avec le dock dessin (flaky sous charge parallèle sans
+      // cette attente).
+      await page.waitForTimeout(1000);
       await page.locator('#plan_btn_draw').click();
       await expect.soft(page.locator('#plan_draw_dock')).toHaveClass(/open/, { timeout: 1500 });
       for (const tool of ['line', 'rectangle', 'circle', 'text', 'measure']) {
         await expect.soft(page.locator(`.plan-draw-btn[data-tool="${tool}"]`)).toBeVisible();
       }
       await page.locator('.plan-draw-btn[data-tool="rectangle"]').click();
-      await expect
-        .soft(page.locator('.plan-draw-btn[data-tool="rectangle"]'))
-        .toHaveClass(/active|selected/, { timeout: 1500 });
+      // _setDrawTool (draw-tools.ts, planMap.js:2025-2029) marque l'outil actif
+      // via `style.background` inline, PAS une classe CSS — vérifié contre
+      // l'original (aucune classe `.active`/`.selected` n'est jamais posée ici).
+      const bg = await page
+        .locator('.plan-draw-btn[data-tool="rectangle"]')
+        .evaluate((el) => (el as HTMLElement).style.background);
+      expect.soft(bg).not.toBe('transparent');
       await page.locator('.plan-draw-color[data-color="#22c55e"]').click();
     });
     await step('tracer un rectangle par glisser', async () => {
@@ -402,6 +543,7 @@ test.describe('PC-Tac — Checklist fonctionnelle (docs/recon-pctac.md §6)', ()
   test('Plan — mesure de distance / azimut', async ({ page }) => {
     await step('outil mesure : deux clics sur la carte affichent une distance', async () => {
       await clickTab(page, 'view-plan');
+      await page.waitForTimeout(1000);
       await page.locator('#plan_btn_draw').click();
       await page.locator('.plan-draw-btn[data-tool="measure"]').click();
       const box = await page.locator('#plan_map').boundingBox();
@@ -409,14 +551,25 @@ test.describe('PC-Tac — Checklist fonctionnelle (docs/recon-pctac.md §6)', ()
         await page.mouse.click(box.x + 80, box.y + 80);
         await page.mouse.click(box.x + 220, box.y + 180);
       }
+      // Sélecteur précisé : `text=/\d+\s?(m|km)/` seul était ambigu (matchait
+      // aussi le contrôle d'échelle natif MapLibre, toujours présent —
+      // `.maplibregl-ctrl-scale`, ex. « 100 km »), en violation du mode strict
+      // Playwright dès que le libellé de mesure est réellement rendu (measure.ts
+      // `.plan-measure-label`). Deux clics posent un sommet + un cumul : deux
+      // labels existent, `.first()` suffit à confirmer le rendu.
       await expect
-        .soft(page.locator('#plan_map').locator('text=/\\d+\\s?(m|km)/'))
+        .soft(page.locator('#plan_map .plan-measure-label').first())
         .toBeVisible({ timeout: 2000 });
     });
   });
 
   test('Plan — verrouillage global et par-annotation', async ({ page }) => {
     await clickTab(page, 'view-plan');
+    // Comme les autres tests Plan : laisser PlanMap.init() (asynchrone) et le
+    // câblage du dock dessin se stabiliser avant d'interagir — sans cette
+    // attente, le clic sur #plan_draw_lock arrive parfois avant que son
+    // `onclick` soit posé (flaky sous charge parallèle constatée).
+    await page.waitForTimeout(1000);
     await page.locator('#plan_btn_draw').click();
     await step('verrou global (#plan_draw_lock)', async () => {
       await page.locator('#plan_draw_lock').click();
@@ -425,26 +578,43 @@ test.describe('PC-Tac — Checklist fonctionnelle (docs/recon-pctac.md §6)', ()
         .toHaveText('lock', { timeout: 1500 });
     });
     await step('verrou par-annotation (cadenas sur un ping)', async () => {
-      // Nécessite un ping déjà placé sur la carte — non recréé ici (couvert par
-      // le test "ping"), best-effort : on vérifie juste qu'un badge de verrou
-      // existe quelque part sur un pin/forme visible.
+      // REVALIDÉ post-P2.D : la création se fait via la roue contextuelle
+      // (`_openCreatePingWheel`, cf. test « Plan — ping »), pas via #pingModal
+      // (dead code, aucun appelant dans planMap.js). Après pose, `_quickPlacePing`
+      // rouvre AUTOMATIQUEMENT la roue d'OPTIONS ~80 ms plus tard (wheels.ts:151),
+      // avec un segment « Verrouiller » — plus fiable ici qu'un double-tap manuel
+      // sur un marqueur potentiellement minuscule à l'écran.
       await page.locator('#plan_btn_ping').click();
-      await page.locator('#free_pin_label').fill('Lock E2E');
-      await page.locator('#freePinConfirmBtn').click();
-      await page.locator('#plan_map').click({ position: { x: 250, y: 150 } });
-      await expect
-        .soft(page.locator('.maplibregl-marker .lock-badge, .maplibregl-marker [data-lock-badge]'))
-        .toHaveCount(1, { timeout: 1500 });
+      await page.locator('.plan-wheel button[title="Inconnu"]').click();
+      // Un ping = 2 `maplibregl.Marker` (icône + label, pins.ts:492/495).
+      await expect.soft(page.locator('.maplibregl-marker')).toHaveCount(2, { timeout: 2000 });
+      await expect.soft(page.locator('.plan-wheel button[title="Verrouiller"]')).toBeVisible({ timeout: 1500 });
+      await page.locator('.plan-wheel button[title="Verrouiller"]').click();
+      // Cadenas TOUJOURS présent sur le marqueur icône (pins.ts:279-282, « cadenas
+      // cliquable TOUJOURS visible »), classe RÉELLE `.plan-lock-badge` (pas
+      // `.lock-badge`/`[data-lock-badge]`, constatée dans le code).
+      const badge = page.locator('.maplibregl-marker .plan-lock-badge').first();
+      await expect.soft(badge).toHaveText('lock', { timeout: 1500 });
     });
   });
 
-  test('Plan — diamètres cercle, overlay noms de rues, légende repliable', async ({ page }) => {
-    await step('toggles diamètres + noms de rues + légende', async () => {
+  test('Plan — diamètres cercle, overlay noms de rues', async ({ page }) => {
+    await step('toggles diamètres + noms de rues', async () => {
       await clickTab(page, 'view-plan');
       await page.locator('#plan_btn_draw').click();
       await page.locator('#plan_draw_diameter_toggle').click();
       await page.locator('#plan_btn_labels').click();
       await expect.soft(page.locator('#plan_btn_labels')).toHaveClass(/active/, { timeout: 1500 });
+    });
+  });
+
+  // CHECKLIST-PCTAC.md item #26 : ISOLÉ de son test d'origine (qui dépendait
+  // de #plan_btn_draw) — `<details id="plan_legend">` est un élément HTML
+  // NATIF (aucun JS requis pour se déplier), donc testable indépendamment de
+  // tout câblage `PlanMap`/dock dessin.
+  test('Plan — légende repliable (élément <details> natif)', async ({ page }) => {
+    await step('déplier la légende via <summary>, sans dépendance au dock dessin', async () => {
+      await clickTab(page, 'view-plan');
       const legend = page.locator('#plan_legend');
       await legend.locator('summary').click();
       await expect.soft(legend).toHaveAttribute('open', '', { timeout: 1500 });
@@ -467,12 +637,21 @@ test.describe('PC-Tac — Checklist fonctionnelle (docs/recon-pctac.md §6)', ()
     test.skip(browserName !== 'chromium', 'Permissions clipboard non supportées hors Chromium');
     await context.grantPermissions(['clipboard-read', 'clipboard-write']);
     await step('placer un point puis copier ses coordonnées via la roue contextuelle', async () => {
+      // REVALIDÉ post-P2.D : un ping existant s'atteint normalement par un
+      // DOUBLE-TAP sur son marqueur (`_openPingOptionsWheel`, wheels.ts:158,
+      // déclenché par `_lastPinTap` — deux taps < 350 ms, pins.ts:392-397).
+      // Chemin plus fiable en E2E : `_quickPlacePing` ROUVRE déjà cette même
+      // roue d'options ~80 ms après la pose (wheels.ts:151), avec son propre
+      // segment « Copier coords » lié aux coordonnées RÉELLES du pin (par
+      // opposition à celui de la roue de CRÉATION, qui copie le centre carte).
       await clickTab(page, 'view-plan');
+      await page.waitForTimeout(1000);
       await page.locator('#plan_btn_ping').click();
-      await page.locator('#free_pin_label').fill('Coord E2E');
-      await page.locator('#freePinConfirmBtn').click();
-      await page.locator('#plan_map').click({ position: { x: 150, y: 150 } });
-      await page.locator('.maplibregl-marker').first().click({ button: 'right' });
+      await page.locator('.plan-wheel button[title="Inter"]').click();
+      // Un ping = 2 `maplibregl.Marker` (icône + label, pins.ts:492/495).
+      await expect.soft(page.locator('.maplibregl-marker')).toHaveCount(2, { timeout: 2000 });
+      await expect.soft(page.locator('.plan-wheel button[title="Copier coords"]')).toBeVisible({ timeout: 1500 });
+      await page.locator('.plan-wheel button[title="Copier coords"]').click();
       const clipboardText = await page.evaluate(() => navigator.clipboard.readText().catch(() => ''));
       expect.soft(clipboardText).not.toBe('');
     });
@@ -536,6 +715,25 @@ test.describe('PC-Tac — Checklist fonctionnelle (docs/recon-pctac.md §6)', ()
   // ------------------------------------------------------------------
   // Global / dock flottant
   // ------------------------------------------------------------------
+  // R7 (P2.FIX reprise 1) — CHECKLIST-PCTAC.md item #30 : import d'archive
+  // `.pctac.zip`, jusqu'ici NON COUVERT (seulement `archive.ts` testé
+  // unitairement). `setInputFiles` n'exige pas que l'input soit visible (il
+  // passe par CDP), donc aucun besoin de déplier le dock au préalable ici —
+  // seul l'événement `change` compte, câblé par main.ts étape 19.
+  test('Dock — import archive .pctac.zip (checklist item #30)', async ({ page }) => {
+    await step('importer un fixture .pctac.zip et retrouver son entrée de journal', async () => {
+      const buffer = await buildPctacZipFixture();
+      await page.setInputFiles('#archiveImportInput', {
+        name: 'fixture.pctac.zip',
+        mimeType: 'application/zip',
+        buffer,
+      });
+      await expect
+        .soft(page.locator('#logTable tbody tr', { hasText: 'Lieu Import ZIP E2E' }))
+        .toBeVisible({ timeout: 3000 });
+    });
+  });
+
   test('Dock global — export/import archive, import OI, thème, plein écran, PDF, reset', async ({
     page,
   }) => {
@@ -552,6 +750,16 @@ test.describe('PC-Tac — Checklist fonctionnelle (docs/recon-pctac.md §6)', ()
       ]) {
         await expect.soft(page.locator(`#${id}`)).toBeAttached();
       }
+    });
+
+    // `#dockMenu` ship AVEC la classe `collapsed` figée dans le DOM statique
+    // (T17, pctac/index.html) : `.dock-menu.collapsed .dock-menu-item:not(#dockToggleBtn)`
+    // est `display:none` (styles/pctac.css) tant que le dock n'a pas été déplié.
+    // Sans ce clic préalable, TOUS les boutons internes du dock restent non
+    // interactifs — cause racine confirmée, pas un défaut de câblage P2.D.
+    await step('déplier le dock (préalable requis avant tout item interne)', async () => {
+      await page.locator('#dockToggleBtn').click();
+      await expect.soft(page.locator('#dockMenu')).not.toHaveClass(/collapsed/, { timeout: 1500 });
     });
 
     await step('bascule thème clair/sombre', async () => {
@@ -582,7 +790,9 @@ test.describe('PC-Tac — Checklist fonctionnelle (docs/recon-pctac.md §6)', ()
 
     await step('réinitialisation totale (confirmation puis purge)', async () => {
       await page.locator('#resetDataDockBtn').click();
-      await expect.soft(page.locator('#resetModal')).toHaveClass(/active/, { timeout: 1500 });
+      // showResetModal (ui.ts) bascule `style.display`, pas une classe (même
+      // remarque que pour #editModal ci-dessus).
+      await expect.soft(page.locator('#resetModal')).toBeVisible({ timeout: 1500 });
       await page.locator('#confirmResetBtn').click();
       await expect.soft(page.locator('#logTable tbody tr')).toHaveCount(0, { timeout: 1500 });
     });
@@ -596,6 +806,10 @@ test.describe('PC-Tac — Checklist fonctionnelle (docs/recon-pctac.md §6)', ()
   });
 
   test('Tuto interactif — bouton injecté dans le dock + ouverture', async ({ page }) => {
+    // Même préalable que le test « Dock global » : le dock ship `collapsed`,
+    // qui masque tous les `.dock-menu-item` (dont `.ptuto-dock`) sauf le
+    // bouton de bascule lui-même.
+    await page.locator('#dockToggleBtn').click();
     await step('bouton .ptuto-dock injecté par PocheTuto.mount()', async () => {
       await expect.soft(page.locator('#dockMenu .ptuto-dock')).toBeVisible({ timeout: 1500 });
       await page.locator('#dockMenu .ptuto-dock').click();
