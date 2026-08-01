@@ -30,6 +30,20 @@ reecrits en absolu)".
   identiquement aux deux images par le script de diff P2.F — cf.
   `tests/visual/README.md` § "Zones a MASQUER" / "Forme d'appel a utiliser
   en P2.F / P3.D" pour la forme d'appel exacte et les coordonnees.
+- **Consequence tutoriel (trouvee en P2.FIX reprise 1)** : `src/apps/pctac/tuto-data.ts:25`
+  (chapitre "Prise en main de PC Tac", premiere etape) conserve
+  `selector: "#version-toggle-btn"` et un `body` decrivant verbatim le badge
+  BETA — "Le badge BETA, en haut a gauche, signale la version beta et
+  bascule vers la version classique (pctac.html) si on clique dessus." —
+  alors que l'element et ses regles CSS associees sont desormais absents du
+  portage. Degradation gracieuse confirmee : `src/shared/tuto-engine.ts:827-838`
+  ne cree simplement pas le bouton "Montrer sur la page" quand le `selector`
+  ne correspond a aucun element du DOM, sans erreur ni blocage du tutoriel —
+  **non bloquant**. Reste neanmoins un ecart de contenu : le texte affiche au
+  lecteur decrit une fonctionnalite (bascule vers `pctac.html`) qui n'existe
+  plus dans TacSuite. Non corrige par la mission P2.FIX (hors perimetre CSS
+  de cette reprise) — a traiter lors d'une prochaine passe sur
+  `tuto-data.ts` (reformuler l'etape sans le badge BETA, ou la retirer).
 
 ## 2. OI : suppression du bouton BETA (pont vers la page legacy `1.html`)
 

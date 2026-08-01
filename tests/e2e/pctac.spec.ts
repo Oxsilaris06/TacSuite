@@ -812,6 +812,28 @@ test.describe('PC-Tac — Checklist fonctionnelle (docs/recon-pctac.md §6)', ()
       await expect.soft(page.locator('body')).not.toHaveClass(/dark-mode/, { timeout: 1500 });
     });
 
+    // P2.FIX reprise 1 — régression prouvée : --shadow-glow-accent (styles/pctac.css,
+    // bloc :root, P2.F) référence var(--accent-glow) en IMBRIQUÉ. Un var() imbriqué
+    // dans une custom property se substitue avec la valeur cascadée au POINT DE
+    // DÉCLARATION (:root, valeur sombre) et non par élément : sans réaffectation
+    // explicite dans body.light-mode, .add-btn:hover / .add-log-btn:hover /
+    // .custom-file-upload:hover gardaient le glow SOMBRE en thème clair. Le gate
+    // visuel (tests/visual/compare.mjs) ne l'aurait jamais détecté : ses 20 états
+    // capturent tous en dark-mode (défaut du DOM statique), aucune baseline claire.
+    // Cette assertion ciblée comble ce trou de couverture sans capture d'écran.
+    // Détail : docs/DECISIONS-CSS.md §6.
+    await step('cohérence --shadow-glow-accent en thème clair (P2.FIX reprise 1)', async () => {
+      const vals = await page.evaluate(() => {
+        const cs = getComputedStyle(document.body);
+        return {
+          accentGlow: cs.getPropertyValue('--accent-glow').trim(),
+          shadowGlowAccent: cs.getPropertyValue('--shadow-glow-accent').trim(),
+        };
+      });
+      expect.soft(vals.accentGlow).toBe('rgba(29, 99, 214, 0.16)');
+      expect.soft(vals.shadowGlowAccent).toBe(`0 0 15px ${vals.accentGlow}`);
+    });
+
     await step('export archive .pctac.zip déclenche un téléchargement', async () => {
       const downloadPromise = page.waitForEvent('download', { timeout: 3000 }).catch(() => null);
       await page.locator('#exportJsonDockBtn').click();

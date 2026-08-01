@@ -368,6 +368,16 @@ body.up-kb-open .up-kb-aware {
             --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.08), 0 4px 6px -4px rgba(0, 0, 0, 0.04);
             --shadow-float: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.05);
             --inner-glow: inset 0 1px 0 rgba(255, 255, 255, 0.6);
+
+            /* P2.FIX reprise 1 — réaffectation obligatoire : --shadow-glow-accent
+               (bloc :root, P2.F) référence var(--accent-glow) en IMBRIQUÉ. Par
+               la spec CSS Custom Properties, ce var() se substitue avec la
+               valeur de --accent-glow cascadée au POINT DE DÉCLARATION de
+               --shadow-glow-accent (:root, valeur sombre), pas par élément —
+               sans cette ligne, body.light-mode ne changeait donc pas la
+               couleur du glow malgré sa propre redéfinition de --accent-glow
+               ligne 342. cf. docs/DECISIONS-CSS.md §6. */
+            --shadow-glow-accent: 0 0 15px var(--accent-glow);
         }
 
         body.light-mode .main-tab-bar {

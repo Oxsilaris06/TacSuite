@@ -24,6 +24,11 @@ significatif pour la cascade.
    — substitution **préservant la valeur calculée à l'identique** (donc sans
    impact visuel possible), vérifiée un par un avant application (comptage
    des occurrences, aucun remplacement à l'aveugle).
+   **Correctif (P2.FIX reprise 1)** : cette affirmation était fausse pour les
+   3 occurrences de `--shadow-glow-accent` (`.add-btn:hover`,
+   `.add-log-btn:hover`, `.custom-file-upload:hover`) — régression prouvée en
+   mode clair, corrigée depuis ; voir §6 pour l'analyse complète et le
+   correctif appliqué.
 3. **Nouvelles variables ajoutées de façon strictement additive**, à
    l'intérieur du bloc `:root` du thème "Tactical Glass" déjà existant
    (`pctac2.html:58 → styles/pctac.css`), à la suite des variables
@@ -68,8 +73,10 @@ significatif pour la cascade.
 ## 2. Variables créées
 
 Ajoutées dans le bloc `:root` du thème (à la suite de `--inner-glow` /
-`--metal-sheen`), 13 variables actives (`--z-action` retirée après la purge
-du point 5) :
+`--metal-sheen`), 14 variables actives (`--z-action` retirée après la purge
+du point 5 ; comptage programmatique avant/après re-vérifié en P2.FIX
+reprise 1, cf. §6 — le tableau ci-dessous en listait déjà 14, seul le texte
+annonçait 13 par erreur) :
 
 | Catégorie | Variables | Valeurs |
 |---|---|---|
@@ -83,7 +90,7 @@ du point 5) :
 | Mesure | Avant (P0.A5, verbatim) | Après (P2.F) |
 |---|---|---|
 | LOC `styles/pctac.css` | 1724 | 1738 |
-| Variables `:root` custom properties (thème pctac) | ~55 | 68 (+13) |
+| Variables `:root` custom properties (thème pctac) | 62 | 76 (+14) |
 | Occurrences littérales remplacées par `var(--token)` | 0 | 37 (7× transition, 6× `border-radius:4px`, 3× `border-radius:999px`, 2× `border-radius:8px`, 3× `box-shadow` glow, 3× `box-shadow` panel-float, 13× z-index restants après purge) |
 | Règles strictement dupliquées trouvées | 0 (vérifié par script) | — |
 | Commentaires dupliqués supprimés | 1 | — |
@@ -123,4 +130,111 @@ purge du code mort), conformément au protocole :
 
 ## 5. Fichier modifié
 
-- `styles/pctac.css` (seul fichier touché par cette mission).
+- `styles/pctac.css` (seul fichier touché par cette mission P2.F d'origine ;
+  voir §6 pour les fichiers touchés par le correctif ultérieur).
+
+## 6. Correctif post-mission (P2.FIX reprise 1) — régression mode clair
+
+### 6.1 Constat
+
+`--shadow-glow-accent`, introduite au §2, est déclarée **une seule fois**,
+dans le bloc `:root` du thème, avec un `var()` **imbriqué** :
+
+```css
+:root {
+    --accent-glow: rgba(79, 141, 255, 0.28);        /* sombre */
+    --shadow-glow-accent: 0 0 15px var(--accent-glow);
+}
+body.light-mode {
+    --accent-glow: rgba(29, 99, 214, 0.16);         /* clair */
+    /* --shadow-glow-accent n'était PAS réaffectée ici */
+}
+```
+
+Par la spécification CSS Custom Properties, la valeur calculée d'une custom
+property se substitue en résolvant les `var()` qu'elle contient avec la
+valeur cascadée **au point de déclaration de cette custom property**, pas
+par élément consommateur. `--shadow-glow-accent` n'étant déclarée qu'à
+`:root`, son `var(--accent-glow)` s'y résolvait avec la valeur **sombre**,
+et cette valeur déjà figée était ensuite héritée telle quelle par
+`body.light-mode` — la redéfinition de `--accent-glow` à la ligne 342 n'avait
+donc aucun effet sur `--shadow-glow-accent`.
+
+Mesure empirique avant correctif, sur la page servie
+(`127.0.0.1:9678/pctac/`, `getComputedStyle(document.body)` après
+`document.body.classList.add('light-mode')`) :
+
+| Variable | Attendu (clair) | Mesuré avant correctif |
+|---|---|---|
+| `--accent-glow` | `rgba(29, 99, 214, 0.16)` | `rgba(29, 99, 214, 0.16)` (correct — pas de `var()` imbriqué) |
+| `--shadow-glow-accent` | `0 0 15px rgba(29, 99, 214, 0.16)` | `0 0 15px rgba(79, 141, 255, 0.28)` (valeur SOMBRE figée) |
+
+3 sélecteurs affectés, valeur calculée changeant réellement en thème clair
+(contrairement à l'affirmation "sans impact visuel possible" du §1.2/§3
+d'origine) : `.add-btn:hover` (698-700), `.add-log-btn:hover` (724-726),
+`.custom-file-upload:hover` (1015-1018). Les originaux verbatim
+(`pctac2.html:555, 581, 869`, forme littérale `box-shadow: 0 0 15px
+var(--accent-glow)` directement sur la règle) n'ont pas ce défaut : un `var()`
+non imbriqué se résout par élément consommateur, donc correctement en clair
+comme en sombre.
+
+### 6.2 Correctif appliqué
+
+Option retenue : réaffecter `--shadow-glow-accent` dans `body.light-mode`
+avec la même forme (`0 0 15px var(--accent-glow)`), pour qu'elle se
+résolve dans CE contexte de cascade (donc avec le `--accent-glow` clair) :
+
+```css
+body.light-mode {
+    ...
+    --shadow-glow-accent: 0 0 15px var(--accent-glow);
+}
+```
+
+(Alternative non retenue : revenir à la forme littérale sur les 3 sélecteurs
+et supprimer la variable. Écartée pour rester compatible avec le comptage de
+variables au §2/§3, qui suppose son maintien, et parce que la réaffectation
+ci-dessus est strictement plus courte tout en respectant "fidélité avant
+élégance" — la substitution redevient, comme dans l'original, résolue par
+contexte de cascade plutôt que figée.)
+
+Vérification post-correctif (même relevé `getComputedStyle`, sombre puis
+clair) :
+
+| Variable | Sombre | Clair (après correctif) |
+|---|---|---|
+| `--accent-glow` | `rgba(79, 141, 255, 0.28)` | `rgba(29, 99, 214, 0.16)` |
+| `--shadow-glow-accent` | `0 0 15px rgba(79, 141, 255, 0.28)` | `0 0 15px rgba(29, 99, 214, 0.16)` |
+
+Les deux thèmes donnent désormais la valeur calculée attendue.
+
+### 6.3 Trou de couverture du gate visuel — corrigé
+
+Les 20 états de `node tests/visual/compare.mjs pctac` capturent tous en mode
+sombre (`document.body.className` = `dark-mode`, valeur par défaut du DOM
+statique) : aucune baseline ni assertion ne contrôlait le thème clair
+au-delà du simple basculement de classe
+(`tests/e2e/pctac.spec.ts`, test *"Dock global"*, étape "bascule thème
+clair/sombre" — n'asserte que `not.toHaveClass(/dark-mode/)`). C'est
+pourquoi la régression du §6.1 a franchi le gate P2.F "20/20 PASS" sans être
+détectée.
+
+Correctif : ajout d'une étape E2E ciblée juste après la bascule de thème
+(`tests/e2e/pctac.spec.ts`, test *"Dock global — export/import archive,
+import OI, thème, plein écran, PDF, reset"*), comparant en clair
+`getComputedStyle(document.body).getPropertyValue('--shadow-glow-accent')`
+à `0 0 15px ` + la valeur de `--accent-glow` du même contexte — sans capture
+d'écran, donc sans baseline à maintenir. Vérifié dans les deux sens :
+échoue sur le CSS d'avant correctif (`git stash` local, régression reproduite
+puis restaurée), passe sur le CSS corrigé (2/2, chromium-desktop +
+chromium-mobile).
+
+### 6.4 Fichiers touchés par ce correctif
+
+- `styles/pctac.css` — réaffectation de `--shadow-glow-accent` dans
+  `body.light-mode` (§6.2).
+- `tests/e2e/pctac.spec.ts` — étape E2E de non-régression (§6.3).
+- `docs/DECISIONS-CSS.md` (ce document) — rectification des affirmations
+  §1.2/§3 et des chiffres §2/§3 (13 → 14 variables, 62 → 76, +14).
+- `docs/DECISIONS-DOM-ECARTS.md` — conséquence supplémentaire tracée au §1
+  (texte du tutoriel décrivant `#version-toggle-btn`, absent du portage).
