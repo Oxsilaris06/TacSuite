@@ -511,6 +511,15 @@ test.describe('PC-Tac — Checklist fonctionnelle (docs/recon-pctac.md §6)', ()
       for (const tool of ['line', 'rectangle', 'circle', 'text', 'measure']) {
         await expect.soft(page.locator(`.plan-draw-btn[data-tool="${tool}"]`)).toBeVisible();
       }
+      // Ordre couleur PUIS outil (pas l'inverse) : `_setDrawColor` (draw-tools.ts,
+      // verbatim planMap.js:2082-2089) réinvoque `_setTool(this.drawTool)` pour
+      // re-styler le bouton actif, mais le garde de toggle de `_setTool`
+      // (`if (tool && this.drawTool === tool) tool = null`) désélectionne
+      // l'outil s'il est déjà actif au moment du clic couleur — comportement de
+      // l'ORIGINAL, pas une régression de portage (vérifié verbatim). Cliquer
+      // l'outil EN DERNIER est donc requis pour qu'il reste actif au moment du
+      // tracé ci-dessous.
+      await page.locator('.plan-draw-color[data-color="#22c55e"]').click();
       await page.locator('.plan-draw-btn[data-tool="rectangle"]').click();
       // _setDrawTool (draw-tools.ts, planMap.js:2025-2029) marque l'outil actif
       // via `style.background` inline, PAS une classe CSS — vérifié contre
@@ -519,24 +528,59 @@ test.describe('PC-Tac — Checklist fonctionnelle (docs/recon-pctac.md §6)', ()
         .locator('.plan-draw-btn[data-tool="rectangle"]')
         .evaluate((el) => (el as HTMLElement).style.background);
       expect.soft(bg).not.toBe('transparent');
-      await page.locator('.plan-draw-color[data-color="#22c55e"]').click();
     });
+    // Assertion sur l'état persistant (localStorage `pcTacPlanShapes`,
+    // `planmap/constants.ts` SHAPES_KEY) plutôt que sur le rendu WebGL du
+    // canvas MapLibre : `#plan_map .maplibregl-canvas` est présent AVANT
+    // tout tracé (dès l'initialisation de la carte), donc ne prouve pas
+    // qu'une forme a réellement été créée — cf. SPEC-PLANMAP-SPLIT.md §5.8
+    // (`_undo`/`_redo` écrivent directement dans ce même localStorage).
+    const shapesCount = () =>
+      page.evaluate(() => JSON.parse(localStorage.getItem('pcTacPlanShapes') || '[]').length);
+
     await step('tracer un rectangle par glisser', async () => {
+      // Viewport <=768px (mobile) : `_setTool` (draw-tools.ts, verbatim
+      // planMap.js:2018-2023) active `drawPrecisionMode` pour tout outil autre
+      // que trait/mesure (même condition `window.innerWidth <= 768` reprise
+      // ici — `drawPrecisionMode` est un état INTERNE, volontairement absent
+      // de la façade `PlanMapContract`, cf. docs/SPEC-CONTRATS.md), et
+      // `_handleDrawDown` retourne alors immédiatement
+      // (`if (!this.drawTool || this.drawPrecisionMode) return;`, planMap.js:2094)
+      // — un glisser-déposer direct sur la carte NE crée AUCUNE forme, comme
+      // dans l'ORIGINAL (comportement mobile délibéré : réticule + boutons
+      // Viser/Valider plutôt qu'un drag imprécis au doigt). Le flux diffère
+      // donc selon le viewport, pas seulement l'assertion finale.
+      const viewport = page.viewportSize();
+      const precisionMode = !!viewport && viewport.width <= 768;
       const box = await page.locator('#plan_map').boundingBox();
-      if (box) {
+      if (precisionMode) {
+        await page.locator('#plan_draw_precision_start').click();
+        if (box) {
+          // Panote la carte (dragPan reste actif en mode précision) pour que le
+          // centre au moment de « Valider » diffère du centre visé au départ.
+          await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+          await page.mouse.down();
+          await page.mouse.move(box.x + box.width / 2 + 60, box.y + box.height / 2 + 60, { steps: 5 });
+          await page.mouse.up();
+        }
+        await page.locator('#plan_draw_precision_confirm').click();
+      } else if (box) {
         await page.mouse.move(box.x + 100, box.y + 100);
         await page.mouse.down();
         await page.mouse.move(box.x + 200, box.y + 200);
         await page.mouse.up();
       }
-      await expect
-        .soft(page.locator('#plan_map .maplibregl-canvas, #plan_map svg, #plan_map [data-shape-id]'))
-        .toBeVisible({ timeout: 1500 });
+      await expect.poll(shapesCount, { timeout: 1500 }).toBe(1);
     });
     await step('undo/redo (Ctrl+Z/Y) et effacer tout', async () => {
       await page.keyboard.press('Control+z');
+      await expect.poll(shapesCount, { timeout: 1500 }).toBe(0);
       await page.keyboard.press('Control+y');
+      await expect.poll(shapesCount, { timeout: 1500 }).toBe(1);
+      // beforeEach câble page.on('dialog') → accept() : le confirm() natif de
+      // #plan_draw_clear est accepté automatiquement.
       await page.locator('#plan_draw_clear').click();
+      await expect.poll(shapesCount, { timeout: 1500 }).toBe(0);
     });
   });
 

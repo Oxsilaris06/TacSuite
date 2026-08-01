@@ -59,8 +59,55 @@ reecrits en absolu)".
   / "Forme d'appel a utiliser en P2.F / P3.D" pour la forme d'appel exacte
   et les coordonnees.
 
+## 3. PC-Tac : 4 balises `<meta>` PWA/iOS manquantes — RESTAUREES (P2.FIX reprise 2, 2026-08-01)
+
+- **Constat** : un re-diff attribut par attribut de `GStart-main/pctac2.html`
+  vs `TacSuite/pctac/index.html` (parse HTML, attributs tries, scripts/styles
+  exclus, espaces normalises) a mis en evidence 4 balises `<meta>` de
+  l'original absentes du porte et non documentees ici :
+  `<meta name="theme-color" content="#10141c">` (`pctac2.html:28`),
+  `<meta name="apple-mobile-web-app-capable" content="yes">` (`:29`),
+  `<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">` (`:30`),
+  `<meta name="apple-mobile-web-app-title" content="PC Tac">` (`:31`).
+  Ce sont des metadonnees PWA/iOS pures (couleur de la barre d'etat systeme,
+  titre affiche en mode standalone) sans dependance au service worker
+  (differe en P4.A, cf. `docs/PLAN.md` §6).
+- **Decision** : RESTAUREES verbatim dans `pctac/index.html` (juste apres
+  `<link rel="manifest">`, meme regroupement PWA que l'original), conformement
+  au protocole zero regression §4 point 1 (`docs/PLAN.md`) — aucune raison de
+  les retirer, elles n'ont aucun cout ni dependance bloquante.
+- **Consequence visuelle** : aucune — des balises `<meta>` ne rendent rien a
+  l'ecran, n'affectent aucune des baselines `tests/visual/baseline/pctac/`.
+
+## 4. `<link>` retires ne relevant d'aucune categorie ci-dessus — renvois
+
+Trois `<link>` de plus, presents dans `pctac2.html` mais absents de
+`pctac/index.html`, ne sont ni le toggle BETA (point 1) ni les 4 `<meta>`
+du point 3. Ils sont deja traces, mais ailleurs que dans ce document — ce
+paragraphe centralise le renvoi pour que ce fichier cesse d'affirmer qu'il
+n'existe "aucun autre ecart" :
+
+- `<link rel="stylesheet" href="shared/ui-platform.css">` (`pctac2.html:19`) —
+  absent en tant que `<link>` distinct : concatene VERBATIM dans
+  `styles/pctac.css` (source 1/4, cf. l'en-tete de ce fichier,
+  `styles/pctac.css:1-25`).
+- Les 2 feuilles Google Fonts (`pctac2.html:33-41` : `preconnect` ×2 +
+  `<link rel="stylesheet" href="https://fonts.googleapis.com/css2?...">` +
+  la feuille Material Symbols) — remplacees par des paquets npm auto-heberges
+  (zero CDN a l'execution, `docs/PLAN.md` §2), tracees dans
+  `docs/DECISIONS-DEPS.md` § "Polices (ajout P0.FIX, reprise 1)".
+- `<link rel="stylesheet" href="./vendor/maplibre-gl.css">` (`pctac2.html:47`) —
+  remplace par l'import npm `maplibre-gl/dist/maplibre-gl.css` dans
+  `src/apps/pctac/main.ts`, trace dans l'en-tete de `styles/pctac.css`
+  (§ "HORS PERIMETRE").
+
+Ces trois ecarts sont deja couverts par la documentation existante (CSS
+concatene ou dependances npm) — aucun n'affecte le rendu visuel puisque le
+CSS/JS equivalent est bien charge par une autre voie.
+
 ## Portee de ce document
 
-Aucun autre ecart DOM (id/classe/attribut) n'a ete introduit lors du portage
-des squelettes P0.A5. Toute divergence future devra etre ajoutee ici avant
-d'etre acceptee par un gate.
+Les ecarts DOM ci-dessus (points 1 a 4) sont, a la date du 2026-08-01, la
+liste exhaustive des divergences constatees entre le DOM des originaux et
+celui des squelettes portes. Toute divergence future devra etre ajoutee ici
+avant d'etre acceptee par un gate.

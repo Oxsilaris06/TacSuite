@@ -136,7 +136,7 @@ bouton BETA (`#version-toggle-btn` côté PC-Tac, `#beta-button` côté OI),
 absent du porté. Son masque est donc également OBLIGATOIRE, sur 100 % des
 états, pas seulement sur les états carte.
 
-### Forme d'appel à utiliser en P2.F / P3.D
+### Forme naïve envisagée puis REJETÉE (piège documenté ci-dessous)
 
 ```ts
 // Côté PC-Tac
@@ -149,6 +149,10 @@ await page.screenshot({
   mask: [page.locator('#beta-button'), page.locator('canvas.maplibregl-canvas')],
 });
 ```
+
+Cette forme n'est PAS celle utilisée par `tests/visual/compare.mjs` (voir
+« Stratégie retenue » ci-dessous pour l'implémentation réelle) — elle est
+conservée ici uniquement à titre d'exemple du piège à ne pas reproduire.
 
 **Piège à éviter** : cette forme, prise telle quelle, ne suffit PAS pour
 `#version-toggle-btn` / `#beta-button`. Playwright peint le masque sur la
@@ -190,6 +194,32 @@ n'y a côté porté aucun élément équivalent à `#version-toggle-btn` /
 `#beta-button` à partir duquel dériver une position. Elles restent valables
 tant que la mise en page de l'en-tête ne change pas — à revérifier si P2.F
 / P3.E (modernisation CSS) déplacent les éléments d'en-tête adjacents.
+
+**Correction (P2.FIX reprise 2)** — ces 4 rectangles sont des constantes
+mesurées à l'état NON défilé (`scrollY=0`), ce qui est le cas de la quasi
+totalité des états capturés MAIS PAS de tous : côté PC-Tac, l'état
+`tab-plan-panneau-tchap-live` (clic sur `#tl_toggle`, ouverture du panneau
+Tchap live) fait défiler la page de ~28-32 px en mobile (390×844) et
+~228 px en desktop (1440×900) avant la capture finale. Appliquer le
+rectangle constant tel quel désaligne le masque de la position réelle du
+bouton BETA dans l'image (mesuré directement sur les PNG de baseline :
+`x=324..369 y=30..57` dans `tab-plan-mobile.png`/`initial-main-courante-mobile.png`
+non défilés, mais `x=324..369 y=2..25` dans
+`tab-plan-panneau-tchap-live-mobile.png`, défilé) — le masque manque
+intégralement sa cible et le bouton fuit dans le diff (mesuré : 393 px de
+diff sur cet état, 0,119 % > seuil 0,1 %, contre ~204 px / 0,062 % attendu
+hors ce défaut).
+
+`tests/visual/compare.mjs` corrige ceci en relevant `window.scrollY` côté
+page vivante (le porté, seul capturable en direct) juste avant le
+screenshot de chaque état, puis en translatant le rectangle constant de
+`-scrollY` avant de peindre le masque sur LES DEUX images (baseline
+figée ET capture fraîche) — le layout DOM/CSS étant identique des deux
+côtés par protocole zéro régression, le même décalage de scroll s'applique
+aux deux. Les coordonnées `x`/`y` du tableau ci-dessus restent donc les
+constantes de référence (état non défilé) ; c'est uniquement au moment du
+diff que `y` est ajusté dynamiquement. Sans effet sur les états qui ne
+défilent pas (`scrollY=0` → rectangle inchangé).
 
 **Alternative écartée** : re-capturer les 38 baselines avec les boutons
 BETA neutralisés (ex. `display:none` injecté) dans l'original. Rejetée

@@ -43,8 +43,14 @@ const VIEWPORTS = {
   mobile: { width: 390, height: 844 },
 };
 
-// Rectangles fixes documentés dans README.md § « Zones à MASQUER » (bouton
+// Rectangles documentés dans README.md § « Zones à MASQUER » (bouton
 // BETA/version-toggle, absent du porté par écart DOM assumé — DECISIONS-DOM-ECARTS.md).
+// Coordonnées mesurées à l'état NON défilé (scrollY=0) : la plupart des états
+// le sont, mais certains (ex. pctac « tab-plan-panneau-tchap-live », qui fait
+// défiler la page en ouvrant le panneau Tchap live) ne le sont pas — le
+// rectangle est alors translaté verticalement de `-scrollY` au moment du
+// diff (cf. `captureState()` / boucle de `run()` ci-dessous), le layout
+// DOM/CSS étant identique côté baseline et côté porté par protocole.
 const HEADER_MASK = {
   pctac: {
     desktop: { x: 1144, y: 45, w: 61, h: 36 },
@@ -177,8 +183,14 @@ async function captureState(page, app, entryUrl, state, viewportName) {
       .catch(() => null);
   }
 
+  // Relevé après state.run() : certains états (ex. ouverture du panneau
+  // Tchap live) font défiler la page — le masque d'en-tête (rectangle fixe)
+  // doit suivre ce décalage pour rester aligné sur la position réelle de
+  // l'en-tête dans l'image capturée (cf. commentaire HEADER_MASK ci-dessus).
+  const scrollY = await page.evaluate(() => window.scrollY);
+
   const buffer = await page.screenshot({ animations: 'disabled' });
-  return { buffer, canvasBox };
+  return { buffer, canvasBox, scrollY };
 }
 
 function loadBaselinePng(app, state, viewportName) {
@@ -208,7 +220,7 @@ async function run() {
     for (const state of config.states) {
       const label = `${state.id}-${viewportName}`;
       try {
-        const { buffer, canvasBox } = await captureState(page, app, config.entryUrl, state, viewportName);
+        const { buffer, canvasBox, scrollY } = await captureState(page, app, config.entryUrl, state, viewportName);
         const actualPng = PNG.sync.read(buffer);
         writeFileSync(join(outDir, `${label}.actual.png`), buffer);
 
@@ -227,7 +239,13 @@ async function run() {
           continue;
         }
 
-        const headerRect = HEADER_MASK[app][viewportName];
+        // Translation verticale par -scrollY : voir commentaire HEADER_MASK
+        // en tête de fichier. Sans effet (scrollY=0) sur les états qui ne
+        // font pas défiler la page.
+        const headerRectBase = HEADER_MASK[app][viewportName];
+        const headerRect = headerRectBase
+          ? { ...headerRectBase, y: headerRectBase.y - scrollY }
+          : headerRectBase;
         paintMask(basePng, headerRect);
         paintMask(actualPng, headerRect);
 
