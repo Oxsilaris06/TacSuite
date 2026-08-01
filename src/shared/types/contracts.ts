@@ -150,16 +150,16 @@ export interface UIPlatformContract {
     onLongPress(
         el: HTMLElement,
         cb: (e: PointerEvent) => void,
-        opts?: UIPlatformLongPressOptions,
+        opts?: UIPlatformLongPressOptions | null,
     ): UIPlatformLongPressHandle;
     onDoubleTap(
         el: HTMLElement,
         cb: (e: PointerEvent) => void,
-        opts?: UIPlatformDoubleTapOptions,
+        opts?: UIPlatformDoubleTapOptions | null,
     ): void;
-    sortable(container: HTMLElement, opts?: UIPlatformSortableOptions): UIPlatformSortableHandle;
-    makeDialog(el: HTMLElement, opts?: UIPlatformDialogOptions): UIPlatformDialogHandle;
-    makeTablist(container: HTMLElement, opts?: UIPlatformTablistOptions): void;
+    sortable(container: HTMLElement, opts?: UIPlatformSortableOptions | null): UIPlatformSortableHandle;
+    makeDialog(el: HTMLElement, opts?: UIPlatformDialogOptions | null): UIPlatformDialogHandle;
+    makeTablist(container: HTMLElement, opts?: UIPlatformTablistOptions | null): void;
 }
 
 /* =========================================================================

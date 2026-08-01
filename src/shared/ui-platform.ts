@@ -172,10 +172,11 @@ export function clampToViewport(el: HTMLElement | null | undefined, margin?: num
 export function onLongPress(
     el: HTMLElement,
     cb: (e: PointerEvent) => void,
-    opts: UIPlatformLongPressOptions = {},
+    opts?: UIPlatformLongPressOptions | null,
 ): UIPlatformLongPressHandle {
-    const delay = opts.delay || 450;
-    const moveTol = opts.moveTol || 10;
+    const o = opts ?? {};
+    const delay = o.delay || 450;
+    const moveTol = o.moveTol || 10;
     let timer: ReturnType<typeof setTimeout> | null = null;
     let sx = 0;
     let sy = 0;
@@ -213,9 +214,10 @@ export function onLongPress(
 export function onDoubleTap(
     el: HTMLElement,
     cb: (e: PointerEvent) => void,
-    opts: UIPlatformDoubleTapOptions = {},
+    opts?: UIPlatformDoubleTapOptions | null,
 ): void {
-    const win = opts.window || 320;
+    const o = opts ?? {};
+    const win = o.window || 320;
     let last = 0;
     let lx = 0;
     let ly = 0;
@@ -244,13 +246,14 @@ export function onDoubleTap(
 
 export function sortable(
     container: HTMLElement,
-    opts: UIPlatformSortableOptions = {},
+    opts?: UIPlatformSortableOptions | null,
 ): UIPlatformSortableHandle {
-    const itemSelector = opts.itemSelector || ':scope > *';
-    const handleSel = opts.handleSelector ?? null;
-    const longPressMs = opts.longPress === undefined ? 0 : opts.longPress;
-    const threshold = opts.threshold == null ? 8 : opts.threshold;
-    const axis = opts.axis === 'x' ? 'x' : 'y'; // 'y' = liste verticale (défaut), 'x' = horizontale
+    const o = opts ?? {};
+    const itemSelector = o.itemSelector || ':scope > *';
+    const handleSel = o.handleSelector ?? null;
+    const longPressMs = o.longPress === undefined ? 0 : o.longPress;
+    const threshold = o.threshold == null ? 8 : o.threshold;
+    const axis = o.axis === 'x' ? 'x' : 'y'; // 'y' = liste verticale (défaut), 'x' = horizontale
 
     let active: HTMLElement | null = null;
     let placeholder: HTMLElement | null = null;
@@ -330,7 +333,7 @@ export function sortable(
         if (e.button != null && e.button !== 0) return;
         // Filtre optionnel par type de pointeur (ex. ['touch'] pour laisser la
         // souris au drag&drop HTML5 natif sur desktop).
-        if (opts.pointerTypes && opts.pointerTypes.indexOf(e.pointerType) === -1) return;
+        if (o.pointerTypes && o.pointerTypes.indexOf(e.pointerType) === -1) return;
         const target = e.target instanceof Element ? e.target : null;
         const item = target ? (target.closest(itemSelector) as HTMLElement | null) : null;
         if (!item || item.parentNode !== container) return;
@@ -371,8 +374,8 @@ export function sortable(
             const toIdx = ordered.indexOf(placeholder);
             placeholder.parentNode?.insertBefore(active, placeholder);
             cleanup();
-            if (typeof opts.onReorder === 'function') {
-                opts.onReorder(items(), toIdx);
+            if (typeof o.onReorder === 'function') {
+                o.onReorder(items(), toIdx);
             }
         } else {
             cleanup();
@@ -407,14 +410,15 @@ function getFocusable(root: HTMLElement): HTMLElement[] {
     ).filter((el) => el.offsetParent !== null || el === document.activeElement);
 }
 
-export function makeDialog(el: HTMLElement, opts: UIPlatformDialogOptions = {}): UIPlatformDialogHandle {
+export function makeDialog(el: HTMLElement, opts?: UIPlatformDialogOptions | null): UIPlatformDialogHandle {
+    const o = opts ?? {};
     el.setAttribute('role', el.getAttribute('role') || 'dialog');
     el.setAttribute('aria-modal', 'true');
     let lastFocus: Element | null = null;
 
     function onKey(e: KeyboardEvent): void {
-        if (e.key === 'Escape' && opts.onClose) {
-            opts.onClose(e);
+        if (e.key === 'Escape' && o.onClose) {
+            o.onClose(e);
             return;
         }
         if (e.key !== 'Tab') return;
@@ -458,8 +462,9 @@ export function makeDialog(el: HTMLElement, opts: UIPlatformDialogOptions = {}):
  * Onglets accessibles (ui-platform.js:267-283)
  * ========================================================================= */
 
-export function makeTablist(container: HTMLElement, opts: UIPlatformTablistOptions = {}): void {
-    const tabSel = opts.tabSelector || '[role="tab"]';
+export function makeTablist(container: HTMLElement, opts?: UIPlatformTablistOptions | null): void {
+    const o = opts ?? {};
+    const tabSel = o.tabSelector || '[role="tab"]';
     container.setAttribute('role', 'tablist');
 
     function tabs(): HTMLElement[] {
@@ -481,7 +486,7 @@ export function makeTablist(container: HTMLElement, opts: UIPlatformTablistOptio
             const target = t[n];
             if (target) {
                 target.focus();
-                if (opts.activate) opts.activate(target);
+                if (o.activate) o.activate(target);
             }
         }
     });
