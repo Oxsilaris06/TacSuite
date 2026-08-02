@@ -181,6 +181,36 @@ export function catItemsPerPageBudget(fontPx: number): number {
 }
 
 /**
+ * Nombre approximatif de caractères qui tiennent sur UNE LIGNE d'une colonne
+ * de `columnWidthPt` points de large au palier de police `fontPx` — police
+ * monospace JetBrainsMono, chasse fixe approximée à 0,62 × la taille de
+ * police (mesure grossière, même esprit qu'`adaptivePagePx`/`patracFontPx` :
+ * aucune mesure de rendu réelle, cf. contrainte module pur
+ * `document-builder.ts`). Correctif PG.REFIX round 1 : `catItemsPerPageBudget`
+ * ci-dessus comptait chaque item « à tiret » pour 1 UNITÉ, quelle que soit sa
+ * longueur — un item de 73-88 caractères dans une colonne `grid2` à demi-
+ * largeur (~381 pt à 9 px) occupe en réalité 2 LIGNES rendues (jamais
+ * comptabilisées, cause du défaut « queue orpheline sans (suite) » constaté
+ * sur `tests/pdf/fixtures/long-case.json`). Combiné à `estimateWrappedLines`
+ * ci-dessous, un item est désormais compté pour son coût RÉEL en lignes
+ * (unité commune avec `catItemsPerPageBudget`, calibrée à l'origine sur des
+ * items d'UNE ligne).
+ */
+export function estimateCharsPerLine(fontPx: number, columnWidthPt: number): number {
+    return Math.max(1, Math.floor(columnWidthPt / (fontPx * 0.62)));
+}
+
+/**
+ * Nombre de lignes réelles qu'occupera `item` une fois rendu à `charsPerLine`
+ * caractères par ligne (`estimateCharsPerLine`) — arrondi au SUPÉRIEUR,
+ * jamais 0 (même un item vide occupe au moins 1 ligne). Cf. JSDoc
+ * `estimateCharsPerLine` pour le contexte du correctif.
+ */
+export function estimateWrappedLines(item: string, charsPerLine: number): number {
+    return Math.max(1, Math.ceil(item.length / charsPerLine));
+}
+
+/**
  * Hauteur utile (mm) d'une page pleine (garde/finale) selon l'orientation,
  * marges verticales `@page` déduites (8 + 11 mm) — port verbatim de
  * `fullPageHeightMm()` (OrderPdfStyle.kt:60-62).

@@ -666,4 +666,93 @@ describe('buildOiDocDefinition — modèle de pagination v2 (ZMSPCP/MOICP, corre
         expect(secondPageJson).not.toContain('Composition par Cellule');
         expect(json.slice(0, firstPageEnd)).toContain('Composition par Cellule');
     });
+
+    it("champ « C conduite à tenir » à ITEMS LONGS (plusieurs lignes chacun une fois enroulés) : la scission se déclenche même SOUS le budget d'items « 1 ligne » (correctif PG.REFIX round 1)", () => {
+        // 20 items d'~80 caractères — même profil que `tests/pdf/fixtures/long-case.json`
+        // (constat terrain : items enroulés sur 2 lignes réelles dans la colonne
+        // `grid2` à demi-largeur, jamais comptabilisés par l'ancien budget « 1 item
+        // = 1 unité », d'où la queue orpheline sans titre du défaut PG.REFIX round 1).
+        function longDashItems(count: number): string {
+            return Array.from(
+                { length: count },
+                (_, i) => `- Item numero ${i + 1} tres long qui occupe deux lignes une fois rendu dans la colonne etroite.`,
+            ).join('\n');
+        }
+        const zmspcpBlocks: OiZmspcpBlock[] = [
+            { id: 'z1', title: 'ALPHA', zone: '-', mission: '-', secteur: '-', points_particuliers: '-', cat: longDashItems(20), place_chef: '-', members: [] },
+        ];
+        const json = JSON.stringify(buildOiDocDefinition(collect({ zmspcp_blocks: zmspcpBlocks }), { format: 'a4' }));
+
+        expect(json).toContain('ARTICULATION : ZMSPCP - ALPHA (SUITE)');
+        for (let i = 1; i <= 20; i++) {
+            const marker = `Item numero ${i} tres long`;
+            expect(json.split(marker).length - 1, `item ${i} doit apparaître exactement 1 fois`).toBe(1);
+        }
+    });
+});
+
+// ===========================================================================
+// Correctif PG.REFIX round 1 — 2 défauts « carte esseulée »/« section vide
+// non omise » (2e retour utilisateur, guardrail structurel B4-B6 dédié,
+// `tests/pdf/verify-structure.mjs`).
+// ===========================================================================
+describe('buildOiDocDefinition — correctif PG.REFIX round 1', () => {
+    it('page de garde : un `situation_generale`/`situation_particuliere` volumineux réduit le palier de police de `situationCard`/`ciblesCard` (grid2) sous le palier document', () => {
+        const longSituation = 'Reconduite du scenario de recette OI avec un jeu de donnees volontairement charge. '.repeat(6);
+        const formData: OiFormData = { situation_generale: longSituation, situation_particuliere: longSituation };
+        const dd = buildOiDocDefinition(collect(formData), { format: 'a4' });
+        const json = JSON.stringify(dd);
+
+        // La grille couverture (`{ stack: [grid2(...)], fontSize: coverFontPx }`,
+        // document-builder.ts::buildCover) porte un `fontSize` explicite juste
+        // après la fermeture du `stack` qui enveloppe `grid2()` — <= 10 pour un
+        // volume aussi long (`coverCardFontPx`, bien SOUS le palier plancher
+        // `adaptivePagePx` de 9, cf. sa JSDoc).
+        const gridMatch = json.match(/"columnGap":[\d.]+\}\],"fontSize":(\d+)/);
+        expect(gridMatch).not.toBeNull();
+        expect(Number(gridMatch?.[1])).toBeLessThanOrEqual(10);
+    });
+
+    it("un bloc effraction SANS AUCUNE mesure technique, SANS hypothèse, SANS photo est OMIS (section vide = OMISE, jamais de page 'titre seul')", () => {
+        const effractionBlocks: OiEffractionBlock[] = [
+            {
+                id: 'e1', title: 'CELLULE VIDE', mission: '-', porte: '', structure: '', serrurerie: '',
+                environnement: '', bati_a_bati: '', dormant_a_dormant: '', prof_linteaux: '', prof_bati: '',
+                h_porte: '', h_marche: '', prof_marche: '', prof_moulure: '', members: [], hypotheses: [],
+            },
+        ];
+        const json = JSON.stringify(buildOiDocDefinition(collect({ effraction_blocks: effractionBlocks }), { format: 'a4' }));
+
+        expect(json).not.toContain('ARTICULATION : EFFRACTION');
+        expect(json).not.toContain('CELLULE VIDE');
+    });
+
+    it('un bloc effraction avec AU MOINS une mesure technique saisie est rendu (aucune perte de données saisies)', () => {
+        const effractionBlocks: OiEffractionBlock[] = [
+            {
+                id: 'e1', title: 'CELLULE RENSEIGNEE', mission: '-', porte: '', structure: 'Beton arme', serrurerie: '',
+                environnement: '', bati_a_bati: '', dormant_a_dormant: '', prof_linteaux: '', prof_bati: '',
+                h_porte: '', h_marche: '', prof_marche: '', prof_moulure: '', members: [], hypotheses: [],
+            },
+        ];
+        const json = JSON.stringify(buildOiDocDefinition(collect({ effraction_blocks: effractionBlocks }), { format: 'a4' }));
+
+        expect(json).toContain('ARTICULATION : EFFRACTION - CELLULE RENSEIGNEE');
+        expect(json).toContain('Beton arme');
+    });
+
+    it('un bloc effraction SANS mesure technique mais avec au moins UNE hypothèse saisie est rendu (aucune perte de données saisies)', () => {
+        const effractionBlocks: OiEffractionBlock[] = [
+            {
+                id: 'e1', title: 'CELLULE HYP', mission: '-', porte: '', structure: '', serrurerie: '',
+                environnement: '', bati_a_bati: '', dormant_a_dormant: '', prof_linteaux: '', prof_bati: '',
+                h_porte: '', h_marche: '', prof_marche: '', prof_moulure: '', members: [],
+                hypotheses: [{ id: 'h1', title: 'H1', desc: '-', effrac: 'Pied de biche', degag: '-', assaut: '-' }],
+            },
+        ];
+        const json = JSON.stringify(buildOiDocDefinition(collect({ effraction_blocks: effractionBlocks }), { format: 'a4' }));
+
+        expect(json).toContain('ARTICULATION : EFFRACTION - CELLULE HYP');
+        expect(json).toContain('Pied de biche');
+    });
 });

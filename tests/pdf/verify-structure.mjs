@@ -26,21 +26,23 @@
  *
  * Défauts : --format=a4, --photos=0, mode strict (pas de --lenient).
  * Sortie : une ligne `PASS <code> — <libellé>` ou `FAIL <code> — <constat
- * mesuré>` par assertion (A1..A8 historiques + B1..B3 guardrail pagination,
- * mission PG.GUARD), puis un résumé `N/11 assertions`. Avec `--json`, émet EN
- * PLUS (pas à la place — les lignes lisibles restent imprimées) un objet
- * `{ ok, file, assertions: [{ code, ok, detail }] }` sur stdout, en dernière
- * ligne.
- * Code de sortie : 0 si les 11 assertions passent, 1 sinon, 2 en cas de garde
+ * mesuré>` par assertion (A1..A8 historiques + B1..B6 guardrail pagination,
+ * missions PG.GUARD puis PG.REFIX), puis un résumé `N/14 assertions`. Avec
+ * `--json`, émet EN PLUS (pas à la place — les lignes lisibles restent
+ * imprimées) un objet `{ ok, file, assertions: [{ code, ok, detail }] }` sur
+ * stdout, en dernière ligne.
+ * Code de sortie : 0 si les 14 assertions passent, 1 sinon, 2 en cas de garde
  * d'exécution (binaire poppler absent, fichier PDF introuvable, arguments
  * invalides — l'outil n'a alors PU faire tourner aucune assertion).
  *
  * Détail des 8 assertions A1-A8 et de leurs seuils : voir
  * `tests/pdf/README.md` et `docs/SPEC-PDF-V3.md` §7 (tableau « Assertions
- * exactes »). B1..B3 (guardrail pagination, non couvertes par la SPEC
- * d'origine) sont documentées en JSDoc à leur point de définition ci-dessous
- * et TOUJOURS évaluées, indépendamment de `--lenient` (qui ne régit que les
- * marqueurs conditionnels de A3).
+ * exactes »). B1..B6 (guardrail pagination, non couvertes par la SPEC
+ * d'origine — B1-B3 mission PG.GUARD, B4-B6 mission PG.REFIX round 1, ce
+ * dernier round motivé par 3 défauts que B1-B3 laissaient passer) sont
+ * documentées en JSDoc à leur point de définition ci-dessous et TOUJOURS
+ * évaluées, indépendamment de `--lenient` (qui ne régit que les marqueurs
+ * conditionnels de A3).
  */
 
 import { execFileSync } from 'node:child_process';
@@ -258,6 +260,39 @@ export function parsePdfImages(output) {
 
 function collectImages(file) {
   return parsePdfImages(runPoppler('pdfimages', ['-list', file]));
+}
+
+/**
+ * Parse `pdftotext -bbox` (XHTML, un `<page width=".." height="..">` par
+ * page contenant des `<word .. yMax="..">token</word>`) — utilisé par B6
+ * (ratio de remplissage vertical, mission PG.REFIX round 1) pour repérer la
+ * coordonnée Y du bas du texte le plus BAS de chaque page, sans dépendance
+ * npm supplémentaire (même binaire `pdftotext` que `collectText`, juste une
+ * option différente). Parseur volontairement minimal (regex, pas un vrai
+ * parseur XML) : la sortie de `pdftotext -bbox` est un format STABLE et
+ * plat, pas du XML arbitraire à valider.
+ */
+export function parseBBoxPages(xml) {
+  const pages = [];
+  const pageRe = /<page width="([0-9.]+)" height="([0-9.]+)">([\s\S]*?)<\/page>/g;
+  let pm;
+  while ((pm = pageRe.exec(xml))) {
+    const width = Number(pm[1]);
+    const height = Number(pm[2]);
+    const body = pm[3];
+    let maxYMax = 0;
+    const wordRe = /yMax="([0-9.]+)"/g;
+    let wm;
+    while ((wm = wordRe.exec(body))) {
+      maxYMax = Math.max(maxYMax, Number(wm[1]));
+    }
+    pages.push({ width, height, maxYMax });
+  }
+  return pages;
+}
+
+function collectBBox(file) {
+  return parseBBoxPages(runPoppler('pdftotext', ['-bbox', file, '-']));
 }
 
 // ===========================================================================
@@ -698,6 +733,191 @@ export function assertB3_noTitleOnlyPage(text) {
 }
 
 // ===========================================================================
+// B4..B6 — GUARDRAIL PAGINATION round 2 (mission PG.REFIX) : les 3 défauts
+// SUPPLÉMENTAIRES prouvés sur un PDF réel (`long-case.json`) que B1-B3
+// laissaient passer — le rapport précédent avait déclaré vert un PDF qui en
+// portait encore 3 : (a) queues NUES sans titre/« (suite) » pour les blocs
+// ZMSPCP/MOICP (B1 ne voit qu'un déficit de CARACTÈRES, pas l'absence d'un
+// EN-TÊTE) ; (b) une page à titre seul dont le contenu n'est fait que de
+// libellés vides `LABEL : -` (B3 compte ces tirets comme du contenu) ; (c)
+// la couverture scindée en 2 pages aux 2/3 vides (B1/B3 EXCLUENT
+// délibérément la page de garde comme légitimement courte — ce défaut
+// précis en fait une exception). Toujours évaluées, INDÉPENDANTES de
+// `--lenient` (même principe que B1-B3).
+// ===========================================================================
+
+/** Un fragment « (suite) »/« (SUITE) » (port `h2()`, `blocks.ts` — MAJUSCULE le texte). */
+const SUITE_RE = /\(suite\)/i;
+
+/**
+ * B4 — anti-queue-nue : aucune page (hors garde/finale/photo, même exclusion
+ * que B1) ne doit commencer par un item à tiret (`- ...`) SANS le fragment
+ * de titre `(suite)` qui doit obligatoirement le précéder — constat terrain
+ * PG.REFIX round 1 : `catItemsPerPageBudget` (theme.ts) sous-estimait le
+ * volume RÉEL d'un item qui s'enroule sur 2+ lignes (colonne `grid2` à
+ * demi-largeur), la scission ne se déclenchait donc jamais et pdfmake
+ * débordait la page SANS jamais poser le `h2(... (suite))`/`fieldLabel(...
+ * (suite))` que `buildArticulationCorePages` (document-builder.ts) prévoit
+ * pourtant pour ce cas — page 8/page 10 du PDF réel commençant brut par
+ * « - Rendre compte de toute anomalie sonore… »/« - Rendre compte au chef de
+ * dispositif… ». Portée délibérément restreinte au motif EXACT du défaut
+ * (1re ligne non-blanche commençant par un tiret de liste) plutôt qu'à
+ * « toute page sans marqueur » : la pagination automatique d'un TABLEAU
+ * (`headerRows:1`, PATRACDVR notamment) est un écart ASSUMÉ (E3, README) —
+ * une continuation de tableau ne commence jamais par un tiret, donc jamais
+ * signalée ici à tort.
+ */
+export function assertB4_noHeaderlessDashContinuation(text, images) {
+  const pages = splitPages(text);
+  const pageCount = pages.length;
+  if (pageCount === 0) {
+    return { ok: true, detail: 'document vide — aucune page à examiner' };
+  }
+  const pagesWithImage = new Set(images.map((img) => img.page));
+  const hits = [];
+  for (let i = 0; i < pageCount; i++) {
+    const pageNum = i + 1;
+    if (pageNum === 1 || pageNum === pageCount) continue; // garde / finale
+    if (pagesWithImage.has(pageNum)) continue; // page photo pleine page
+    const firstLine = pages[i].split('\n').map((l) => l.trim()).find((l) => l !== '');
+    if (firstLine === undefined) continue;
+    if (firstLine.startsWith('-') && !SUITE_RE.test(pages[i].split('\n').slice(0, 3).join(' '))) {
+      hits.push({ page: pageNum, firstLine });
+    }
+  }
+  if (hits.length > 0) {
+    const list = hits.map((h) => `page ${h.page} (« ${h.firstLine.slice(0, 60)} »)`).join(', ');
+    return {
+      ok: false,
+      detail: `${hits.length} page(s) de continuation SANS titre/« (suite) » — 1re ligne non blanche est un item à tiret brut : ${list}`,
+    };
+  }
+  return { ok: true, detail: `0 queue nue sur ${pageCount} page(s) (1re ligne à tiret sans titre « (suite) » précédent)` };
+}
+
+// Libellé `LABEL : -` COMPLET (`labelValue()`, blocks.ts — port MAJUSCULE
+// `${label.toUpperCase()} : ${value}`) dont la valeur est le repli littéral
+// `-` (`strOr`, document-builder.ts) — unité de mesure `mm` optionnelle
+// (ex. `BÂTI À BÂTI : - mm`, `buildEffractionPage`). Capture le LIBELLÉ
+// entier (pas seulement `: -`) pour pouvoir le déduire du contenu utile
+// restant (cf. `assertB5_noEmptyFieldDominatedPage`) — un champ vide n'est
+// jamais du contenu SAISI, qu'il s'agisse du libellé ou de la valeur.
+const EMPTY_FIELD_RE = /[A-ZÀ-ÖØ-Þ0-9./' ]{2,40}:\s*-(?:\s*mm)?(?=\s|$)/g;
+const EMPTY_FIELD_MIN_COUNT = 4;
+const B5_CONTENT_MAX_CHARS = 250;
+// Repli littéral des listes vides (`ciblesBody`/`hypBody`/`hypRows`,
+// document-builder.ts : « Aucune cible renseignée. », « Aucune hypothèse
+// saisie »…) — jamais du contenu SAISI non plus.
+const PLACEHOLDER_PHRASE_RE = /Aucune[^\n]{0,60}/gi;
+// Bande de pied de page document-wide (`buildFooter`, document-builder.ts,
+// présente sur TOUTES les pages sauf la garde — écart assumé E2) + le
+// compteur `n / N` sur la ligne suivante : jamais du contenu de section,
+// exclus avant de compter le contenu utile restant.
+const FOOTER_LINE_RE = /^\s*OI\s*-.*CONFIDENTIEL\s*$/gim;
+const PAGE_COUNTER_LINE_RE = /^\s*\d+\s*\/\s*\d+\s*$/gm;
+
+/**
+ * B5 — anti-section-vide-non-omise : aucune page ne doit être DOMINÉE par
+ * des libellés de valeur vide (`LABEL : -`, ≥ `EMPTY_FIELD_MIN_COUNT` sur la
+ * page) tout en ayant, une fois le pied de page document-wide déduit, moins
+ * de `B5_CONTENT_MAX_CHARS` caractères non blancs de contenu — constat
+ * terrain PG.REFIX round 1 : la page « ARTICULATION : EFFRACTION » d'un
+ * bloc créé mais jamais renseigné (STRUCTURE/SERRURERIE/ENVIRONNEMENT/
+ * H. PORTE/PROF. BÂTI/BÂTI À BÂTI/DORMANT/PROF. LINTEAUX tous à `-`, «
+ * Aucune hypothèse saisie ») passait B3 (qui compte les tirets ET les
+ * libellés comme du « contenu ») alors que `document-builder.ts` prévoit
+ * pourtant la règle « section vide = OMISE » ailleurs (`buildCatPage`/
+ * `buildPatracPage`) — jamais portée aux blocs effraction avant ce
+ * correctif. Double condition volontaire (nombre de champs vides ET volume
+ * total modeste) : une page RICHE peut légitimement contenir quelques
+ * `LABEL : -` isolés (champ optionnel non saisi) sans être pour autant une
+ * « section vide » — seule la COMBINAISON des deux signaux est probante.
+ */
+export function assertB5_noEmptyFieldDominatedPage(text) {
+  const pages = splitPages(text);
+  const hits = [];
+  pages.forEach((pageText, idx) => {
+    const emptyFieldMatches = pageText.match(EMPTY_FIELD_RE) ?? [];
+    if (emptyFieldMatches.length < EMPTY_FIELD_MIN_COUNT) return;
+    const stripped = pageText
+      .replace(EMPTY_FIELD_RE, '')
+      .replace(PLACEHOLDER_PHRASE_RE, '')
+      .replace(FOOTER_LINE_RE, '')
+      .replace(PAGE_COUNTER_LINE_RE, '');
+    const contentLen = nonBlankLength(stripped);
+    if (contentLen <= B5_CONTENT_MAX_CHARS) {
+      hits.push({ page: idx + 1, emptyFields: emptyFieldMatches.length, contentLen });
+    }
+  });
+  if (hits.length > 0) {
+    const list = hits
+      .map((h) => `page ${h.page} (${h.emptyFields} champ(s) « LABEL : - », ${h.contentLen} car. de contenu hors pied de page)`)
+      .join(', ');
+    return {
+      ok: false,
+      detail: `${hits.length} page(s) dominée(s) par des libellés vides (≥ ${EMPTY_FIELD_MIN_COUNT} « LABEL : - », ≤ ${B5_CONTENT_MAX_CHARS} car. de contenu) — section vide non omise : ${list}`,
+    };
+  }
+  return { ok: true, detail: `0 page dominée par des libellés vides (seuils ${EMPTY_FIELD_MIN_COUNT} champs / ${B5_CONTENT_MAX_CHARS} car.)` };
+}
+
+const FILL_RATIO_MIN = 0.35;
+
+/**
+ * B6 — anti-page-clairsemée : ratio de remplissage vertical (Y du mot le
+ * plus bas d'une page ÷ hauteur de page, `pdftotext -bbox`) ≥
+ * `FILL_RATIO_MIN` sur TOUTE page sauf la FINALE (`MARKERS[14]`, « AVEZ-VOUS
+ * DES QUESTIONS ? » — page de clôture courte PAR CONCEPTION, écart assumé
+ * E2/E5, même exclusion que B3). Délibérément PAS d'exclusion de la page de
+ * GARDE (à la différence de B1/B3) : c'est précisément CETTE page qui
+ * portait le défaut « carte esseulée » constaté PG.REFIX round 1
+ * (couverture scindée en 2 pages aux 2/3 vides — `situationCard` reportée
+ * en bloc sur la page 2 par `grid2`, colonnes non synchronisées pour la
+ * pagination pdfmake).
+ *
+ * SEUIL CALIBRÉ VOLONTAIREMENT BAS (35 %, pas 50 %) — écart mesuré,
+ * documenté ici plutôt que deviné : le PDF fautif (avant correctif) mesurait
+ * 0,54 sur sa garde scindée, MAIS une garde LÉGITIMEMENT minimale (`RAS.`/
+ * `RAS.`, aucune cible) mesure 0,59 — MOINS remplie encore, par construction
+ * (peu de données saisies ⇒ peu de contenu, sans aucun bug). Un simple ratio
+ * ne peut donc PAS discriminer de façon fiable « couverture scindée » de
+ * « couverture légitimement courte » dans cette bande 0,5-0,6 : cette
+ * assertion reste un FILET GÉNÉRIQUE contre les cas plus sévères (page quasi
+ * vide, < 35 %), le défaut PRÉCIS « carte esseulée » de la couverture est
+ * couvert de façon fiable par A3 (ordre des marqueurs #2/#3) et B4/B5
+ * ci-dessus, pas par ce seuil. Le pied de page document-wide (présent sur
+ * toutes les pages SAUF la garde) pousse par ailleurs mécaniquement le ratio
+ * de toute autre page vers ~0,97 — cette assertion est donc, par
+ * construction du document, surtout un filet pour la garde ; conservée
+ * générique (pas de branche spéciale « page 1 ») pour rester valide si
+ * `buildFooter`/la géométrie de couverture évoluent.
+ */
+export function assertB6_verticalFillRatio(bboxPages) {
+  const pageCount = bboxPages.length;
+  if (pageCount === 0) {
+    return { ok: true, detail: 'document vide — aucune page à examiner' };
+  }
+  const hits = [];
+  bboxPages.forEach((page, idx) => {
+    const pageNum = idx + 1;
+    if (pageNum === pageCount) return; // finale, courte par conception
+    if (page.height <= 0) return;
+    const ratio = page.maxYMax / page.height;
+    if (ratio < FILL_RATIO_MIN) {
+      hits.push({ page: pageNum, ratio });
+    }
+  });
+  if (hits.length > 0) {
+    const list = hits.map((h) => `page ${h.page} (${(h.ratio * 100).toFixed(0)} %)`).join(', ');
+    return {
+      ok: false,
+      detail: `${hits.length} page(s) sous ${(FILL_RATIO_MIN * 100).toFixed(0)} % de remplissage vertical (hors finale) : ${list}`,
+    };
+  }
+  return { ok: true, detail: `0 page sous ${(FILL_RATIO_MIN * 100).toFixed(0)} % de remplissage vertical (hors finale)` };
+}
+
+// ===========================================================================
 // CLI
 // ===========================================================================
 
@@ -765,13 +985,14 @@ function main() {
     process.exit(2);
   }
 
-  let pdfInfo, text, fonts, images, fileSizeBytes;
+  let pdfInfo, text, fonts, images, fileSizeBytes, bboxPages;
   try {
     pdfInfo = collectPdfInfo(opts.file);
     text = collectText(opts.file);
     fonts = collectFonts(opts.file);
     images = collectImages(opts.file);
     fileSizeBytes = statSync(opts.file).size;
+    bboxPages = collectBBox(opts.file);
   } catch (err) {
     // Fichier existant mais illisible par poppler (corrompu, pas un PDF...)
     // — l'outil ne peut faire tourner AUCUNE assertion, même traitement que
@@ -794,6 +1015,11 @@ function main() {
     { code: 'B1', ...assertB1_noOrphanPage(text, images) },
     { code: 'B2', ...assertB2_noVerticalWordSplit(text) },
     { code: 'B3', ...assertB3_noTitleOnlyPage(text) },
+    // Guardrail pagination round 2 (mission PG.REFIX) — mêmes garanties que
+    // B1-B3 (toujours évaluées, indépendantes de --lenient).
+    { code: 'B4', ...assertB4_noHeaderlessDashContinuation(text, images) },
+    { code: 'B5', ...assertB5_noEmptyFieldDominatedPage(text) },
+    { code: 'B6', ...assertB6_verticalFillRatio(bboxPages) },
   ];
 
   for (const a of assertions) {

@@ -194,8 +194,19 @@ export function labelValue(
  * (D8, `pdfv3-design-fix/DEFAUTS.md`), corrigé ici. `opts.fillColor` reste le
  * seul moyen d'obtenir un fond plein (ex. `accentCard`/`kvTable` posent le
  * leur eux-mêmes, hors de `card`).
+ *
+ * `opts.unbreakable` (défaut `true`, comportement historique préservé
+ * partout ailleurs) — correctif PG.REFIX round 1 : pour une carte posée en
+ * COLONNE ÉTROITE (`grid2`, ex. `situationCard` de la couverture), `columns`
+ * pdfmake ne SYNCHRONISE PAS ses colonnes pour la pagination — un contenu
+ * `unbreakable` qui ne tient plus dans la place restante de la page COURANTE
+ * est reporté EN BLOC sur la page suivante (défaut « carte esseulée » : la
+ * colonne voisine, plus courte, reste seule sur la première page, 2/3 vide).
+ * `unbreakable:false` laisse la carte se scinder normalement au fil du texte
+ * — seul recours quand même le palier de police le plus bas ne suffit pas à
+ * la faire tenir intégralement sur la page courante.
  */
-export function card(body: Content[], p: OiPdfPalette, opts?: { fillColor?: string }): Content {
+export function card(body: Content[], p: OiPdfPalette, opts?: { fillColor?: string; unbreakable?: boolean }): Content {
     return {
         table: {
             widths: ['*'],
@@ -210,7 +221,7 @@ export function card(body: Content[], p: OiPdfPalette, opts?: { fillColor?: stri
             ],
         },
         layout: LAYOUT_BORDERED,
-        unbreakable: true,
+        unbreakable: opts?.unbreakable ?? true,
     };
 }
 

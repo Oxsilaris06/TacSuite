@@ -63,6 +63,8 @@ import {
     patracFontPx,
     adaptivePagePx,
     catItemsPerPageBudget,
+    estimateCharsPerLine,
+    estimateWrappedLines,
     type OiPdfFormat,
     type OiPdfPalette,
 } from './theme.js';
@@ -81,6 +83,14 @@ import type {
 /* ==========================================================================
  * Helpers génériques (fidélité, saut de page, valeurs Store).
  * ======================================================================== */
+
+/**
+ * Hauteur utile de page `a4` — référence de calibration du budget
+ * `catItemsPerPageBudget` (theme.ts, table d'origine mission PG.IMPL) : voir
+ * son usage dans `buildArticulationCorePages` (correctif PG.REFIX round 1,
+ * mise à l'échelle pour `16:9`).
+ */
+const A4_CONTENT_HEIGHT_PT = pageGeometry('a4').contentHeightPt;
 
 /** Conversion sûre d'un champ `unknown` du Store (mission #4) — jamais de validation absente de l'original. */
 function str(v: unknown): string {
@@ -269,6 +279,33 @@ function ficheAdversaireTitleBar(text: string, p: OiPdfPalette): Content {
     };
 }
 
+/**
+ * Palier de police adaptatif de `situationCard`/`ciblesCard` (correctif
+ * PG.REFIX round 1) — MÊME méthode que `adaptivePagePx()` (theme.ts,
+ * elle-même un port verbatim de `OrderPdfStyle.kt`, jamais modifiée par ce
+ * correctif) mais avec des seuils propres, environ MOITIÉ de ceux
+ * d'`adaptivePagePx` : `grid2()` pose ces deux cartes en COLONNE ÉTROITE
+ * (demi-largeur de page), alors qu'`adaptivePagePx` est calibrée pour un
+ * contenu qui occupe la largeur de page ENTIÈRE (fiche adversaire, blocs
+ * ZMSPCP/MOICP) — un volume qui tiendrait à son palier plancher (9 px) en
+ * pleine largeur ne tient pas forcément en demi-largeur (mesuré au banc
+ * `tests/pdf/generate-from-fixture.mjs` contre
+ * `tests/pdf/fixtures/long-case.json` : palier 9 encore insuffisant, palier
+ * 8 requis pour que les 2 colonnes tiennent sur la page 1 — défaut « carte
+ * esseulée » du retour utilisateur). Repose sur la même formule volume =
+ * caractères + (retours-ligne × 60), cf. JSDoc `adaptivePagePx`.
+ */
+function coverCardFontPx(fields: string[], extraLines = 0): number {
+    const chars = fields.reduce((sum, field) => sum + field.length, 0);
+    const lines = fields.reduce((sum, field) => sum + (field.match(/\n/g)?.length ?? 0), 0) + extraLines;
+    const total = chars + lines * 60;
+    if (total < 150) return 14;
+    if (total < 300) return 12;
+    if (total < 500) return 10;
+    if (total < 700) return 9;
+    return 8;
+}
+
 /* ==========================================================================
  * Section 1 — Page de garde « ORDRE INITIAL » (pdf-engine-v2.ts:816-855, §3.2 ligne 1).
  * ======================================================================== */
@@ -297,6 +334,24 @@ function buildCover(ctx: BuildCtx): Content {
         absolutePosition: { x: geo.widthPt - mm(60), y: mm(2) },
     };
 
+    // Palier de police adaptatif de la couverture (correctif PG.REFIX,
+    // addendum § Pagination v2) — même mécanique que `adaptivePagePx` ailleurs
+    // (fiche adversaire, blocs ZMSPCP/MOICP) : `situationCard`/`ciblesCard`
+    // sont posées côte à côte par `grid2` en DEMI-largeur de page, sous un
+    // budget vertical déjà réduit par les marges du `h1` (35mm haut/15mm
+    // bas, ligne ci-dessous) — un `situation_generale`/`situation_particuliere`
+    // volumineux au palier de police DOCUMENT (`baseFontSize`, jusqu'à 14 px)
+    // peut ne plus tenir sur la page 1 : pdfmake, `columns` n'étant PAS
+    // synchronisées entre elles pour la pagination, reporte alors la colonne
+    // entière en page 2 (« carte esseulée », défaut prouvé PG.REFIX round 1)
+    // au lieu de scinder proprement. Calculé sur les mêmes champs que le
+    // rendu (situation générale/particulière + un texte par cible) : réduit
+    // le palier AVANT que `card()` (insécable) ne soit mis en présence d'un
+    // contenu trop grand pour la place restante.
+    const adversaries = formData.adversaries ?? [];
+    const coverTextFields = [formData.situation_generale, formData.situation_particuliere].map(str);
+    const coverFontPx = coverCardFontPx(coverTextFields, adversaries.length);
+
     const situationCard = card(
         [
             h3('1. SITUATION GLOBALE', p),
@@ -304,9 +359,14 @@ function buildCover(ctx: BuildCtx): Content {
             labelValue('Situation particulière', strOr(formData.situation_particuliere), p, { valueBold: true }),
         ],
         p,
+        // Sécable (cf. JSDoc `card()`, blocks.ts) : filet de sécurité si même
+        // le palier de police le plus bas ne suffit pas à faire tenir un
+        // `situation_generale`/`situation_particuliere` très volumineux sur
+        // la page 1 — la carte se scinde alors normalement plutôt que d'être
+        // reportée EN BLOC (défaut « carte esseulée »).
+        { unbreakable: false },
     );
 
-    const adversaries = formData.adversaries ?? [];
     const ciblesBody: Content[] =
         adversaries.length > 0
             ? adversaries.map((adv): Content => {
@@ -333,7 +393,7 @@ function buildCover(ctx: BuildCtx): Content {
             ...watermark,
             opCard,
             { stack: [h1('ORDRE INITIAL', p, { boxed: true })], margin: [0, mm(35), 0, mm(15)] },
-            grid2([situationCard], [ciblesCard]),
+            { stack: [grid2([situationCard], [ciblesCard])], fontSize: coverFontPx },
         ],
     };
 }
@@ -638,16 +698,46 @@ function splitAtDashBoundaries(text: string): string[] {
     return parts.length > 1 ? parts : [text];
 }
 
-/** Découpe `items` en tranches d'au plus `size` éléments (`size` <= 0 -> une seule tranche, jamais de boucle infinie). */
-function chunkItems<T>(items: T[], size: number): T[][] {
-    if (size <= 0 || items.length <= size) {
+/**
+ * Découpe `items` en tranches dont le COÛT CUMULÉ (`cost(item)`, cf.
+ * `estimateWrappedLines`) ne dépasse pas `budget` — jamais à l'intérieur
+ * d'un item (frontière légitime uniquement, un item qui dépasse `budget` à
+ * lui seul reste seul dans sa propre tranche plutôt que de bloquer la
+ * boucle). `budget` <= 0 -> une seule tranche, jamais de boucle infinie.
+ * Correctif PG.REFIX round 1 : remplace l'ancien `chunkItems(items, size)`
+ * par NOMBRE D'ITEMS (`size` = `catItemsPerPageBudget(fontPx)`, 1 unité par
+ * item quelle que soit sa longueur) — un item « à tiret » qui s'enroule sur
+ * plusieurs lignes (colonne `grid2` à demi-largeur) coûtait toujours 1 unité,
+ * jamais 2+, la scission ne se déclenchait donc jamais pour un bloc dont
+ * seuls quelques items longs débordaient déjà la page (cf. JSDoc
+ * `estimateCharsPerLine`, `theme.ts`). Unité commune préservée (`budget`
+ * reste `catItemsPerPageBudget(fontPx)`, calibré à l'origine sur des items
+ * d'UNE ligne) : pour un jeu d'items COURTS (1 ligne chacun), le comportement
+ * est inchangé — coût 1 par item, comme avant.
+ */
+function chunkItemsByCost<T>(items: T[], cost: (item: T) => number, budgets: { first: number; rest: number }): T[][] {
+    if (budgets.first <= 0 && budgets.rest <= 0) {
         return [items];
     }
     const chunks: T[][] = [];
-    for (let i = 0; i < items.length; i += size) {
-        chunks.push(items.slice(i, i + size));
+    let current: T[] = [];
+    let currentCost = 0;
+    let budget = budgets.first > 0 ? budgets.first : Infinity;
+    for (const item of items) {
+        const c = cost(item);
+        if (current.length > 0 && currentCost + c > budget) {
+            chunks.push(current);
+            current = [];
+            currentCost = 0;
+            budget = budgets.rest > 0 ? budgets.rest : Infinity;
+        }
+        current.push(item);
+        currentCost += c;
     }
-    return chunks;
+    if (current.length > 0) {
+        chunks.push(current);
+    }
+    return chunks.length > 0 ? chunks : [items];
 }
 
 /**
@@ -708,11 +798,44 @@ function buildArticulationCorePages(opts: {
     const { title, sectionLabel, coreFields, catLabel, catText, cellsContent, placeChef, fontPx, p, geo } = opts;
     const catItems = splitAtDashBoundaries(catText || '-');
     const hasBoundary = catItems.length > 1;
-    // Garde-fou de dernier recours (JSDoc `catItemsPerPageBudget`, theme.ts) :
-    // scission uniquement si le nombre d'items dépasse le budget d'UNE page
-    // au palier choisi — sinon (immense majorité des cas réels) tout tient
-    // sur la page unique du bloc, `chunkItems` renvoie alors `[catItems]`.
-    const catChunks = hasBoundary ? chunkItems(catItems, catItemsPerPageBudget(fontPx)) : [catItems];
+    // Garde-fou de dernier recours (JSDoc `catItemsPerPageBudget`/
+    // `estimateWrappedLines`, theme.ts) : scission uniquement si le COÛT EN
+    // LIGNES cumulé des items dépasse le budget d'UNE page au palier choisi
+    // — sinon (immense majorité des cas réels) tout tient sur la page unique
+    // du bloc, `chunkItemsByCost` renvoie alors `[catItems]`. Le coût d'un
+    // item est son nombre de lignes RÉELLEMENT rendues (`estimateWrappedLines`,
+    // colonne `grid2` à demi-largeur de page) — pas 1 unité fixe par item
+    // (correctif PG.REFIX round 1, cf. JSDoc `chunkItemsByCost`).
+    const catColumnWidthPt = (geo.contentWidthPt - mm(6)) / 2;
+    const catCharsPerLine = estimateCharsPerLine(fontPx, catColumnWidthPt);
+    // La PREMIÈRE page du bloc partage sa colonne gauche avec `h3(sectionLabel)`
+    // + les champs cœur (Z/M/S/P ou M/O/I/P, avec leur libellé — même texte
+    // que le rendu réel `labelValue`) AVANT les items : leur place, mesurée
+    // en lignes via `estimateWrappedLines`, n'était PAS déduite du budget
+    // (correctif PG.REFIX round 1 — cause du défaut « queue orpheline sans
+    // titre » constaté sur `long-case.json` : le premier chunk débordait
+    // quand même de la page 1, faute d'avoir réservé la place de ce
+    // gabarit). Les pages « (suite) » n'ont, elles, que `h2`+`fieldLabel` —
+    // déjà couverts par le budget `catItemsPerPageBudget` d'origine, inchangé.
+    const catFirstPageOverheadLines =
+        1 /* h3(sectionLabel) */ +
+        coreFields.reduce((sum, [label, value]) => sum + estimateWrappedLines(`${label.toUpperCase()} : ${value}`, catCharsPerLine), 0);
+    // `catItemsPerPageBudget(fontPx)` (theme.ts) est calibré pour la hauteur
+    // utile de page `a4` (montage d'origine, mission PG.IMPL) — le format
+    // `16:9` a une page plus BASSE (539,01 pt vs 595,28 pt de hauteur totale,
+    // cf. `pageGeometry`) : appliqué tel quel, le budget de la page « (suite) »
+    // reste surdimensionné pour `16:9` et débordait encore (correctif
+    // PG.REFIX round 1 — 2e occurrence du défaut « queue orpheline sans
+    // titre », cette fois en format `16:9`). Mis à l'échelle de la hauteur
+    // utile RÉELLE de `geo` relative à celle d'`a4` — 1 en `a4` (aucun
+    // changement, budget table d'origine préservé à l'identique).
+    const catBudget = Math.max(1, Math.round(catItemsPerPageBudget(fontPx) * (geo.contentHeightPt / A4_CONTENT_HEIGHT_PT)));
+    const catChunks = hasBoundary
+        ? chunkItemsByCost(catItems, (item) => estimateWrappedLines(item, catCharsPerLine), {
+              first: Math.max(1, catBudget - catFirstPageOverheadLines),
+              rest: catBudget,
+          })
+        : [catItems];
 
     return catChunks.map((chunk, idx): Content => {
         const catNode: Content[] = hasBoundary
@@ -794,11 +917,47 @@ function buildMoicpPage(ctx: BuildCtx, block: OiMoicpBlock, memberToCell: Map<st
     });
 }
 
-/** Bloc « Articulation : EFFRACTION - <titre> » (pdf-engine-v2.ts:1132-1187, §3.2 ligne 8f, POINT DE VIGILANCE §1). */
-function buildEffractionPage(ctx: BuildCtx, block: OiEffractionBlock): Content {
+/**
+ * Un bloc EFFRACTION est VIDE (§3.4 règle 1, correctif PG.REFIX round 1) si
+ * AUCUNE mesure technique n'est saisie (les 9 champs rendus par `specs`
+ * ci-dessous), AUCUNE hypothèse d'effraction, ET aucune photo de porte
+ * résolue — constat terrain : une page pleine « STRUCTURE/SERRURERIE/
+ * ENVIRONNEMENT/H. PORTE/PROF. BÂTI/BÂTI À BÂTI/DORMANT/PROF. LINTEAUX »
+ * tous à `-` et « Aucune hypothèse saisie », pour un bloc créé mais jamais
+ * renseigné (même défaut de principe que `buildCatPage`/`buildPatracPage`,
+ * jusqu'ici jamais porté aux blocs effraction). Une SEULE mesure saisie,
+ * une hypothèse, ou une photo de porte suffit à rendre la page (jamais de
+ * perte de données saisies).
+ */
+function isEffractionBlockEmpty(block: OiEffractionBlock, doorSrc: string | undefined): boolean {
+    const measures = [
+        block.structure,
+        block.serrurerie,
+        block.environnement,
+        block.bati_a_bati,
+        block.dormant_a_dormant,
+        block.prof_linteaux,
+        block.prof_bati,
+        block.h_porte,
+        block.h_marche,
+    ];
+    const hasMeasure = measures.some((v) => str(v).trim() !== '');
+    return !hasMeasure && block.hypotheses.length === 0 && doorSrc === undefined;
+}
+
+/**
+ * Bloc « Articulation : EFFRACTION - <titre> » (pdf-engine-v2.ts:1132-1187,
+ * §3.2 ligne 8f, POINT DE VIGILANCE §1). `null` si `isEffractionBlockEmpty`
+ * (§3.4 règle 1, correctif PG.REFIX round 1) — section omise, jamais de page
+ * à titre seul pour un bloc créé mais non renseigné.
+ */
+function buildEffractionPage(ctx: BuildCtx, block: OiEffractionBlock): Content | null {
     const { photosBase64, dynamicPhotos, p, geo, is169 } = ctx;
     const doorMeta = dynamicPhotos[`photo_effrac_${block.id}`]?.[0];
     const doorSrc = doorMeta ? photosBase64[doorMeta.id] : undefined;
+    if (isEffractionBlockEmpty(block, doorSrc)) {
+        return null;
+    }
     const tools = doorMeta ? parseTools(doorMeta.tools) : [];
     const topHMm = is169 ? 65 : 75;
 
@@ -929,7 +1088,10 @@ function buildArticulationBlocksLoop(ctx: BuildCtx): Content[] {
 
         const effrac = effracBlocks[i];
         if (effrac) {
-            pushPage(acc, buildEffractionPage(ctx, effrac));
+            const effractionPage = buildEffractionPage(ctx, effrac);
+            if (effractionPage !== null) {
+                pushPage(acc, effractionPage);
+            }
             const photos = dynamicPhotos[`photo_effrac_${effrac.id}`] ?? [];
             pushPages(acc, galleryPages(`Effraction : ${effrac.title || '-'}`, photos, photosBase64, p, geo));
         }
