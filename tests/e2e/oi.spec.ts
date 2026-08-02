@@ -843,6 +843,19 @@ test.describe('OI — Checklist fonctionnelle (docs/recon-oi.md §9)', () => {
       await page.locator('#photo_container_transport_pr_preview_container .image-preview-item .add-btn').first().click();
       await expect.soft(page.locator('#annotationModal')).toBeVisible({ timeout: 2000 });
       await expect.soft(page.locator('#annotationCanvas')).toBeVisible({ timeout: 1500 });
+      // Barrière d'init (défaut de test) : la visibilité de la modale et du
+      // canvas ne garantit PAS que son buffer de dessin est prêt —
+      // `openAnnotationModal` (dessin.ts:558) affiche la modale PUIS diffère
+      // l'init (dimensionnement du canvas, rechargement de
+      // Store.state.annotations depuis data-annotations, resetAnnotationHistory)
+      // de deux `requestAnimationFrame` imbriqués. Sans cette attente, le
+      // step suivant peut dessiner dans la fenêtre de course et se faire
+      // effacer par le reset sous charge machine. 200×150 = dimensions de
+      // LARGE_PNG_BASE64.
+      await page.waitForFunction(() => {
+        const canvas = document.getElementById('annotationCanvas') as HTMLCanvasElement | null;
+        return !!canvas && canvas.width === 200 && canvas.height === 150;
+      }, undefined, { timeout: 5000 });
     });
 
     await step('sélection outil Box + tracé souris sur le canvas', async () => {
@@ -860,6 +873,10 @@ test.describe('OI — Checklist fonctionnelle (docs/recon-oi.md §9)', () => {
         await page.mouse.move(box.x + 160, box.y + 110, { steps: 15 });
         await page.waitForTimeout(50);
         await page.mouse.up();
+        // refreshAnnotationUndoRedo (dessin.ts:227) n'active #annotation_undo
+        // que si l'historique n'est pas vide : confirme que le tracé a bien
+        // été enregistré avant de poursuivre.
+        await expect(page.locator('#annotation_undo')).toBeEnabled({ timeout: 2000 });
       }
     });
 
