@@ -83,6 +83,7 @@ import '@pctac/tchap-live.js'; // géoloc équipe live (Tchap) → marqueurs sur
 // NB : dashboard.js (board relationnel) est VOLONTAIREMENT débranché — inefficace
 // en l'état, mis de côté. Ne pas réimporter sans décision explicite.
 import { Persist } from '@shared/persist.js';
+import { registerServiceWorker } from '@shared/register-sw.js';
 import {
     CUSTOM_PAX_KEY,
     ADVERSARIES_KEY,
@@ -98,11 +99,9 @@ import {
 
 document.addEventListener('DOMContentLoaded', async () => {
     // §5.3 étape 1 — Service Worker (PWA, offline-fallback).
-    // TODO P4.A : SW reconstruit sur les assets buildés (docs/PLAN.md §6, Phase 4).
-    // `public/` ne contient encore aucun `sw.js` à ce stade du portage ; un
-    // `register('sw.js')` échouerait ici en 404 (requête réseau + `console.warn`),
-    // ce que le `.catch()` de l'original absorbait déjà silencieusement (pas de
-    // régression d'observable : rien ne s'enregistre, ni avant ni après).
+    // P4.B : SW reconstruit sur les assets buildés (docs/PLAN.md §6, Phase 4),
+    // cf. public/sw.ts + vite.config.ts (VitePWA/injectManifest).
+    registerServiceWorker('pctac');
 
     // §5.3 étape 2 — Migration des photos base64 vers IndexedDB (s'exécute une seule fois).
     try {

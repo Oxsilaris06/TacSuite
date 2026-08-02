@@ -1,5 +1,6 @@
 import { fileURLToPath, URL } from 'node:url';
 import { defineConfig } from 'vite';
+import { VitePWA } from 'vite-plugin-pwa';
 
 // Multi-page app: portail + PC-Tac + Generateur d'OI.
 // base est parametrable via TACSUITE_BASE (ex: '/TacSuite/' pour GitHub Pages).
@@ -21,4 +22,46 @@ export default defineConfig({
       },
     },
   },
+  plugins: [
+    VitePWA({
+      // SW maison (public/sw.ts) plutot qu'un SW genere : controle explicite
+      // du routage (tuiles carto exclues, secours de navigation par page).
+      strategies: 'injectManifest',
+      srcDir: 'public',
+      filename: 'sw.ts', // resolu en public/sw.ts -> dist/sw.js (conversion auto .ts -> .js)
+
+      // Enregistrement manuel dans chaque main.ts (pctac/oi/portail) : pas
+      // d'injection automatique de script d'enregistrement par le plugin.
+      injectRegister: false,
+      registerType: 'autoUpdate',
+
+      // public/manifest.webmanifest existe deja, complet (16 icones toutes
+      // tailles/plateformes) et deja reference par <link rel="manifest"> dans
+      // pctac/index.html et oi/index.html. On le laisse tel quel (copie
+      // verbatim via publicDir de Vite) plutot que de laisser le plugin en
+      // regenerer un concurrent.
+      manifest: false,
+
+      injectManifest: {
+        // Fichiers buildes a precacher (chemins relatifs a dist/, cf. structure
+        // reelle observee : index.html + pctac/index.html + oi/index.html a la
+        // racine de chaque dossier, assets/**, icones et manifest a la racine).
+        // Polices (assets/**/*.{woff,woff2}) volontairement EXCLUES du precache
+        // statique : la police Material Symbols pese ~4 Mo (glyphes variables),
+        // au-dela de la limite Workbox (2 Mo/fichier) — cf. runtime caching
+        // StaleWhileRevalidate dans public/sw.ts (mise en cache opportuniste
+        // des polices memes origine, sans limite de taille par fichier).
+        globPatterns: [
+          'index.html',
+          'pctac/index.html',
+          'oi/index.html',
+          'assets/**/*.{js,css}',
+          'manifest.webmanifest',
+          'favicon.ico',
+          '*.png',
+        ],
+        globIgnores: ['**/*.map'],
+      },
+    }),
+  ],
 });

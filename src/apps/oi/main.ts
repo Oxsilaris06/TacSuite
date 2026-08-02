@@ -37,9 +37,9 @@
  *    comme écart assumé dans `docs/DECISIONS-DOM-ECARTS.md`.
  * 2. Enregistrement Service Worker (4.html:4505-4507, HORS de la plage
  *    4536-4814 assignée mais partie du même point d'entrée) — même
- *    traitement que src/apps/pctac/main.ts §5.3 étape 1 : commentaire
- *    placeholder, PAS d'appel `navigator.serviceWorker.register(...)`
- *    (aucun sw.js buildé à ce stade, cf. docs/PLAN.md §6 Phase 4 / P4.A).
+ *    traitement que src/apps/pctac/main.ts §5.3 étape 1 : `registerServiceWorker`
+ *    (module `@shared/register-sw.js`, P4.B) sur `sw.js` buildé par
+ *    vite-plugin-pwa (cf. docs/PLAN.md §6 Phase 4 / public/sw.ts).
  * 3. `window.open(...)` dans l'intercepteur de logs (4.html:105) : l'original
  *    déréférence `logWindow.document` sans vérifier `logWindow` (bloqueur de
  *    popup ⇒ TypeError non typé). Garde `if (logWindow)` ajoutée — adaptation
@@ -150,8 +150,9 @@ window.addEventListener('unhandledrejection', (e) => {
 })();
 
 // ── §12.1 étape 1bis — Service Worker (PWA). Voir écart assumé n°2 : même
-// traitement que src/apps/pctac/main.ts §5.3 étape 1, différé à P4.A. ──────
-// TODO P4.A : SW reconstruit sur les assets buildés (docs/PLAN.md §6, Phase 4).
+// traitement que src/apps/pctac/main.ts §5.3 étape 1 (P4.B). ──────────────
+import { registerServiceWorker } from '@shared/register-sw.js';
+registerServiceWorker('oi');
 
 // ── §12.1 étape 2 — Polices auto-hébergées (zéro CDN Google Fonts, P0.FIX). ─
 import '@shared/fonts.js';
