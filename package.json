@@ -12,7 +12,9 @@
     "test:e2e": "playwright test",
     "test:visual": "node tests/visual/compare.mjs",
     "typecheck": "tsc --noEmit",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "gen:pdf-fonts": "node scripts/gen-pdf-fonts.mjs",
+    "test:pdf": "node tests/pdf/verify-structure.mjs"
   },
   "dependencies": {
     "@fontsource/inter": "5.3.0",
@@ -20,16 +22,17 @@
     "@fontsource/oswald": "5.3.0",
     "html2canvas": "1.4.1",
     "html5-qrcode": "2.3.8",
-    "jspdf": "2.5.1",
     "jszip": "3.10.1",
     "maplibre-gl": "4.7.1",
     "material-symbols": "0.45.10",
     "pdf-lib": "1.17.1",
+    "pdfmake": "0.3.11",
     "qrcodejs": "1.0.0"
   },
   "devDependencies": {
     "@playwright/test": "^1.62.1",
     "@types/node": "^26.1.2",
+    "@types/pdfmake": "0.3.3",
     "eslint": "^10.8.0",
     "jsdom": "^30.0.1",
     "pixelmatch": "^7.2.0",

@@ -62,6 +62,42 @@ toucher a la version en Phase 0.** A traiter explicitement en Phase 3 (P3.A0/P3.
 fois la comparaison PDF de reference en place, en arbitrant entre patch cible de
 `dompurify` (resolutions/overrides npm) et montee de version controlee de `jspdf`.
 
+## Retrait de `jspdf` (PDF.INTEG, SPEC-PDF-V3.md §4) — resout l'alerte securite ci-dessus
+
+Date : 2026-08-02, mission `PDF.INTEG` (integration finale du chantier PDF v3).
+
+Le moteur de TELECHARGEMENT PDF raster de l'OI (`PDFEngineV2.downloadOiPdf()`,
+html2canvas + jsPDF, `src/apps/oi/pdf-engine-v2.ts`) a ete REMPLACE par
+`downloadOiPdfV3()` (`src/apps/oi/pdf/engine-v3.ts`), moteur vectoriel `pdfmake`
+(cf. `docs/SPEC-PDF-V3.md`). Le corps de l'ancienne methode a ete retire du fichier ;
+seuls `generateHTML`/`collectAllData`/`_fitPageToBudget` restent (aperçu HTML in-app
+et mode « Presenter ici », qui ne rasterisent jamais et n'ont jamais depend de
+jsPDF/html2canvas).
+
+Verification exhaustive avant retrait (grep projet entier, hors `node_modules/`) :
+
+```
+grep -rn "jspdf" src/ tests/
+```
+
+Aucun `import` restant — seules des mentions en commentaire/doc et les mocks
+`vi.doMock('jspdf', ...)` du describe `downloadOiPdf` desormais SUPPRIME de
+`tests/unit/oi/oi-pdf-engine-v2.test.ts` (tests réorientés vers
+`tests/unit/oi/pdf/oi-pdf-engine-v3.test.ts`, describe `downloadOiPdfV3`).
+
+**`jspdf@2.5.1` retire de `package.json`/`package-lock.json`** (`npm uninstall jspdf`).
+Consequence directe : les 2 vulnerabilites `npm audit` (1 critique, 1 moderee) portees
+par la dependance transitive `dompurify` de `jspdf` disparaissent —
+**`npm audit` : 0 vulnerabilite** apres retrait (etait : 2, cf. alerte ci-dessus).
+
+`html2canvas@1.4.1` **NE CHANGE PAS** : toujours consomme par
+`src/apps/pctac/planmap/capture.ts` et `src/apps/oi/carto/capture.ts` (captures
+cartographiques, hors perimetre PDF), verifie par grep — retrait explicitement exclu
+par `SPEC-PDF-V3.md` §4.
+
+`pdf-lib@1.17.1` **NE CHANGE PAS** : moteur du PDF PATRACDVR autonome
+(`#patracdvrPdfBtn`), sans lien avec `downloadOiPdf`/`jspdf`.
+
 ## Methode de verification
 
 ```
