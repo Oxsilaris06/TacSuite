@@ -1,0 +1,463 @@
+/**
+ * pdf-pdf-p8-verify-structure.test.ts — Tests unitaires de la LOGIQUE PURE de
+ * `tests/pdf/verify-structure.mjs` (paquet `pdf-p8-verify-structure`,
+ * SPEC-PDF-V3.md §7). Le script est un outil CLI (appelle `pdfinfo`/
+ * `pdftotext`/`pdffonts`/`pdfimages` via `child_process`, se termine par
+ * `process.exit()`) — ce fichier ne teste PAS l'exécution des binaires
+ * poppler (couverte par la vérification manuelle documentée dans
+ * `tests/pdf/README.md`, section « Démonstration »), mais les fonctions
+ * PURES exportées : normalisation de texte, parsing des sorties tabulaires
+ * `pdffonts`/`pdfimages`, et les 8 fonctions `assertA1..A8` (aucun DOM,
+ * aucun accès disque/réseau, aucun `process.exit`).
+ *
+ * `main()` n'est PAS appelée par cet import : le fichier source garde son
+ * exécution CLI derrière `if (isMainModule)` précisément pour permettre cet
+ * import de test sans déclencher `process.exit()` (cf. commentaire au point
+ * d'usage dans `verify-structure.mjs`).
+ */
+import { describe, expect, it } from 'vitest';
+
+import {
+    assertA1_geometry,
+    assertA2_realText,
+    assertA3_sectionOrder,
+    assertA4_duplicateSevenPreserved,
+    assertA5_embeddedFonts,
+    assertA6_noRasterization,
+    assertA7_weight,
+    assertA8_sampleData,
+    MARKERS,
+    normalize,
+    PAGE_DIMENSIONS_PT,
+    parsePdfFonts,
+    parsePdfImages,
+    // @ts-expect-error — module .mjs sans déclaration de types ; les fonctions
+    // exportées sont exercées via leur comportement runtime, pas leur typage.
+} from '../../pdf/verify-structure.mjs';
+
+// ===========================================================================
+// MARKERS / PAGE_DIMENSIONS_PT — sanity sur les constantes verbatim SPEC §7
+// ===========================================================================
+describe('MARKERS (SPEC-PDF-V3.md §7, liste des 15 marqueurs)', () => {
+    it('contient exactement 15 marqueurs, numérotés 1..15 dans l\'ordre', () => {
+        expect(MARKERS).toHaveLength(15);
+        expect(MARKERS.map((m: { n: number }) => m.n)).toEqual(
+            Array.from({ length: 15 }, (_, i) => i + 1)
+        );
+    });
+
+    it('les indices conditionnels sont exactement 4, 8, 10, 11, 12, 13 (SPEC §7)', () => {
+        const conditionalIndices = MARKERS.filter((m: { conditional: boolean }) => m.conditional).map(
+            (m: { n: number }) => m.n
+        );
+        expect(conditionalIndices).toEqual([4, 8, 10, 11, 12, 13]);
+    });
+
+    it('les deux titres « 7. » (#9 et #14) sont bien les défauts hérités attendus par A4', () => {
+        expect(MARKERS[8]).toMatchObject({ n: 9, text: '7. ARTICULATION & ORDRES DE MOUVEMENT' });
+        expect(MARKERS[13]).toMatchObject({ n: 14, text: '7. RÉCAPITULATIF PATRACDVR' });
+    });
+});
+
+describe('PAGE_DIMENSIONS_PT (SPEC-PDF-V3.md §7, A1)', () => {
+    it('a4 = 841.89 x 595.28 pts, 16:9 = 958.11 x 539.01 pts', () => {
+        expect(PAGE_DIMENSIONS_PT.a4).toEqual({ w: 841.89, h: 595.28 });
+        expect(PAGE_DIMENSIONS_PT['16:9']).toEqual({ w: 958.11, h: 539.01 });
+    });
+});
+
+// ===========================================================================
+// normalize() — NFC, collapse d'espaces, apostrophes typographiques
+// ===========================================================================
+describe('normalize()', () => {
+    it('réduit les espaces/retours à la ligne consécutifs à un seul espace', () => {
+        expect(normalize('7.   ARTICULATION\n\n&  ORDRES')).toBe('7. ARTICULATION & ORDRES');
+    });
+
+    it('convertit les apostrophes typographiques ’ en apostrophe droite \'', () => {
+        expect(normalize('L’UNITÉ')).toBe("L'UNITÉ");
+    });
+
+    it('conserve les tirets – et — tels quels (aucune substitution)', () => {
+        expect(normalize('avant – après — fin')).toBe('avant – après — fin');
+    });
+
+    it('rogne les espaces de tête/fin après collapse', () => {
+        expect(normalize('   texte   ')).toBe('texte');
+    });
+
+    it('normalise en NFC (formes composées/décomposées équivalentes)', () => {
+        const nfc = 'É'; // U+00C9, forme précomposée
+        const nfd = 'É'; // E + accent combinant, forme décomposée
+        expect(normalize(nfd)).toBe(normalize(nfc));
+    });
+});
+
+// ===========================================================================
+// parsePdfFonts() — sortie tabulaire réelle de `pdffonts` (poppler 26.07.0),
+// mesurée au banc sur l'étalon raster ET sur un PDF pdfmake réel (3 polices
+// CID TrueType embarquées Oswald/JetBrainsMono, cf. tests/pdf/README.md).
+// ===========================================================================
+describe('parsePdfFonts()', () => {
+    it('parse les 3 polices embarquées attendues du moteur v3 (colonne "type" à espace interne)', () => {
+        const output = [
+            'name                                 type              encoding         emb sub uni object ID',
+            '------------------------------------ ----------------- ---------------- --- --- --- ---------',
+            'BZZZZZ+Oswald-Medium                 CID TrueType      Identity-H       yes yes yes      9  0',
+            'CZZZZZ+JetBrainsMono-Regular         CID TrueType      Identity-H       yes yes yes     10  0',
+            'DZZZZZ+JetBrainsMono-Bold            CID TrueType      Identity-H       yes yes yes     11  0',
+        ].join('\n');
+
+        const fonts = parsePdfFonts(output);
+
+        expect(fonts).toHaveLength(3);
+        expect(fonts[0]).toEqual({
+            name: 'BZZZZZ+Oswald-Medium',
+            type: 'CID TrueType',
+            encoding: 'Identity-H',
+            emb: 'yes',
+            sub: 'yes',
+            uni: 'yes',
+        });
+        expect(fonts.every((f: { emb: string; sub: string }) => f.emb === 'yes' && f.sub === 'yes')).toBe(true);
+    });
+
+    it('parse les 14 polices standard NON embarquées de l\'étalon raster (emb=no sub=no)', () => {
+        const output = [
+            'name                                 type              encoding         emb sub uni object ID',
+            '------------------------------------ ----------------- ---------------- --- --- --- ---------',
+            'Helvetica                            Type 1            WinAnsi          no  no  no      31  0',
+            'ZapfDingbats                         Type 1            ZapfDingbats     no  no  no      43  0',
+        ].join('\n');
+
+        const fonts = parsePdfFonts(output);
+
+        expect(fonts).toHaveLength(2);
+        expect(fonts.every((f: { emb: string }) => f.emb === 'no')).toBe(true);
+    });
+
+    it('ignore l\'en-tête et la ligne de tirets (0 police pour une sortie vide)', () => {
+        const output = [
+            'name                                 type              encoding         emb sub uni object ID',
+            '------------------------------------ ----------------- ---------------- --- --- --- ---------',
+        ].join('\n');
+
+        expect(parsePdfFonts(output)).toEqual([]);
+    });
+});
+
+// ===========================================================================
+// parsePdfImages() — sortie tabulaire réelle de `pdfimages -list` (14
+// images de l'étalon raster, mesurée au banc).
+// ===========================================================================
+describe('parsePdfImages()', () => {
+    it('parse une ligne d\'image (largeur/hauteur/ppi) telle que mesurée sur reference.pdf', () => {
+        const output = [
+            'page   num  type   width height color comp bpc  enc interp  object ID x-ppi y-ppi size ratio',
+            '--------------------------------------------------------------------------------------------',
+            '   1     0 image    1750  1389  rgb     3   8  jpeg   no        45  0   150   168  182K 2.6%',
+        ].join('\n');
+
+        const images = parsePdfImages(output);
+
+        expect(images).toEqual([{ page: 1, type: 'image', width: 1750, height: 1389, xppi: 150, yppi: 168 }]);
+    });
+
+    it('ignore l\'en-tête et la ligne de tirets (0 image pour une sortie vide)', () => {
+        const output = [
+            'page   num  type   width height color comp bpc  enc interp  object ID x-ppi y-ppi size ratio',
+            '--------------------------------------------------------------------------------------------',
+        ].join('\n');
+
+        expect(parsePdfImages(output)).toEqual([]);
+    });
+
+    it('parse plusieurs pages (une image par page, comme les 14 pages de l\'étalon)', () => {
+        const lines = [
+            'page   num  type   width height color comp bpc  enc interp  object ID x-ppi y-ppi size ratio',
+            '--------------------------------------------------------------------------------------------',
+        ];
+        for (let p = 1; p <= 14; p++) {
+            lines.push(`  ${p}     0 image    1750  1389  rgb     3   8  jpeg   no        ${44 + p}  0   150   168  182K 2.6%`);
+        }
+        const images = parsePdfImages(lines.join('\n'));
+        expect(images).toHaveLength(14);
+        expect(images.map((i: { page: number }) => i.page)).toEqual(Array.from({ length: 14 }, (_, i) => i + 1));
+    });
+});
+
+// ===========================================================================
+// assertA1_geometry — pages ≥ 12, dimensions homogènes ±0.5pt
+// ===========================================================================
+describe('assertA1_geometry()', () => {
+    const homogeneousA4 = (pageCount: number) => ({
+        pageCount,
+        pageSizes: Array.from({ length: pageCount }, (_, i) => ({ page: i + 1, width: 841.89, height: 595.28 })),
+    });
+
+    it('PASS : 14 pages A4 homogènes', () => {
+        const r = assertA1_geometry(homogeneousA4(14), 'a4');
+        expect(r.ok).toBe(true);
+    });
+
+    it('FAIL : moins de 12 pages', () => {
+        const r = assertA1_geometry(homogeneousA4(11), 'a4');
+        expect(r.ok).toBe(false);
+        expect(r.detail).toMatch(/11/);
+    });
+
+    it('FAIL : une page hors tolérance ±0.5pt', () => {
+        const data = homogeneousA4(12);
+        data.pageSizes[5] = { page: 6, width: 900, height: 600 };
+        const r = assertA1_geometry(data, 'a4');
+        expect(r.ok).toBe(false);
+        expect(r.detail).toMatch(/page 6/);
+    });
+
+    it('PASS : format 16:9 avec les dimensions cibles correspondantes', () => {
+        const data = {
+            pageCount: 12,
+            pageSizes: Array.from({ length: 12 }, (_, i) => ({ page: i + 1, width: 958.11, height: 539.01 })),
+        };
+        expect(assertA1_geometry(data, '16:9').ok).toBe(true);
+    });
+
+    it('tolère exactement ±0.5pt (limite incluse)', () => {
+        const data = homogeneousA4(12);
+        data.pageSizes[0] = { page: 1, width: 841.89 + 0.5, height: 595.28 - 0.5 };
+        expect(assertA1_geometry(data, 'a4').ok).toBe(true);
+    });
+
+    it('FAIL : au-delà de ±0.5pt', () => {
+        const data = homogeneousA4(12);
+        data.pageSizes[0] = { page: 1, width: 841.89 + 0.51, height: 595.28 };
+        expect(assertA1_geometry(data, 'a4').ok).toBe(false);
+    });
+});
+
+// ===========================================================================
+// assertA2_realText — ≥ 1500 caractères non blancs
+// ===========================================================================
+describe('assertA2_realText()', () => {
+    it('FAIL : texte vide (signature de l\'étalon raster)', () => {
+        expect(assertA2_realText('\n\n\n').ok).toBe(false);
+    });
+
+    it('PASS : ≥ 1500 caractères non blancs', () => {
+        expect(assertA2_realText('a'.repeat(1500)).ok).toBe(true);
+    });
+
+    it('FAIL : 1499 caractères non blancs (juste sous le seuil)', () => {
+        expect(assertA2_realText('a'.repeat(1499)).ok).toBe(false);
+    });
+
+    it('ne compte pas les espaces/retours à la ligne', () => {
+        const text = `a `.repeat(1500); // 1500 'a' non blancs + 1500 espaces ignorés
+        expect(assertA2_realText(text).ok).toBe(true);
+    });
+});
+
+// ===========================================================================
+// assertA3_sectionOrder — ordre strictement croissant, strict vs --lenient
+// ===========================================================================
+describe('assertA3_sectionOrder()', () => {
+    const buildFullText = () => MARKERS.map((m: { text: string }) => m.text).join('\n\n--- texte de remplissage ---\n\n');
+
+    it('PASS strict : les 15 marqueurs présents dans l\'ordre', () => {
+        const r = assertA3_sectionOrder(buildFullText(), { lenient: false });
+        expect(r.ok).toBe(true);
+    });
+
+    it('FAIL strict : un marqueur conditionnel manquant fait échouer', () => {
+        const text = MARKERS.filter((m: { n: number }) => m.n !== 4)
+            .map((m: { text: string }) => m.text)
+            .join('\n');
+        const r = assertA3_sectionOrder(text, { lenient: false });
+        expect(r.ok).toBe(false);
+        expect(r.detail).toMatch(/2\.1 FICHE ADVERSAIRE/);
+    });
+
+    it('PASS --lenient : un marqueur conditionnel manquant devient SKIP, pas un FAIL', () => {
+        const text = MARKERS.filter((m: { n: number }) => m.n !== 4)
+            .map((m: { text: string }) => m.text)
+            .join('\n');
+        const r = assertA3_sectionOrder(text, { lenient: true });
+        expect(r.ok).toBe(true);
+        expect(r.detail).toMatch(/SKIP/);
+        expect(r.detail).toMatch(/#4/);
+    });
+
+    it('FAIL --lenient : un marqueur NON conditionnel manquant fait quand même échouer', () => {
+        const text = MARKERS.filter((m: { n: number }) => m.n !== 1)
+            .map((m: { text: string }) => m.text)
+            .join('\n');
+        const r = assertA3_sectionOrder(text, { lenient: true });
+        expect(r.ok).toBe(false);
+    });
+
+    it('FAIL : ordre inversé (marqueur présent mais avant son prédécesseur)', () => {
+        const swapped = [...MARKERS];
+        [swapped[0], swapped[1]] = [swapped[1], swapped[0]]; // #1 et #2 échangés
+        const text = swapped.map((m: { text: string }) => m.text).join('\n');
+        const r = assertA3_sectionOrder(text, { lenient: false });
+        expect(r.ok).toBe(false);
+        expect(r.detail).toMatch(/ordre rompu/);
+    });
+
+    it('applique normalize() avant recherche (espaces multiples/apostrophe typographique tolérés)', () => {
+        const text = MARKERS.map((m: { text: string }) => m.text.replace(/'/g, '’').replace(/ /g, '  ')).join(
+            '\n\n'
+        );
+        const r = assertA3_sectionOrder(text, { lenient: false });
+        expect(r.ok).toBe(true);
+    });
+});
+
+// ===========================================================================
+// assertA4_duplicateSevenPreserved — exactement 2 titres « 7. »
+// ===========================================================================
+describe('assertA4_duplicateSevenPreserved()', () => {
+    it('PASS : exactement 2 titres « 7. XXX »', () => {
+        const text = '7. ARTICULATION & ORDRES DE MOUVEMENT\n...\n7. RÉCAPITULATIF PATRACDVR';
+        expect(assertA4_duplicateSevenPreserved(text).ok).toBe(true);
+    });
+
+    it('FAIL : 0 titre « 7. » (texte vide, cf. étalon raster)', () => {
+        expect(assertA4_duplicateSevenPreserved('').ok).toBe(false);
+    });
+
+    it('FAIL : 1 seul titre « 7. » (section perdue/renumérotée)', () => {
+        expect(assertA4_duplicateSevenPreserved('7. ARTICULATION & ORDRES DE MOUVEMENT').ok).toBe(false);
+    });
+
+    it('FAIL : 3 titres « 7. » (renumérotation accidentelle en trop)', () => {
+        const text = '7. UN\n7. DEUX\n7. TROIS';
+        expect(assertA4_duplicateSevenPreserved(text).ok).toBe(false);
+    });
+
+    it('ne matche pas un numéro de liste « 7. » suivi de minuscule (pas un TITRE)', () => {
+        const text = '7. article suivant\n7. autre ligne';
+        expect(assertA4_duplicateSevenPreserved(text).ok).toBe(false);
+    });
+});
+
+// ===========================================================================
+// assertA5_embeddedFonts
+// ===========================================================================
+describe('assertA5_embeddedFonts()', () => {
+    const embeddedTrio = [
+        { name: 'AAA+Oswald-Medium', type: 'CID TrueType', encoding: 'Identity-H', emb: 'yes', sub: 'yes', uni: 'yes' },
+        { name: 'BBB+JetBrainsMono-Regular', type: 'CID TrueType', encoding: 'Identity-H', emb: 'yes', sub: 'yes', uni: 'yes' },
+        { name: 'CCC+JetBrainsMono-Bold', type: 'CID TrueType', encoding: 'Identity-H', emb: 'yes', sub: 'yes', uni: 'yes' },
+    ];
+
+    it('PASS : 3 polices embarquées, Oswald + JetBrainsMono présentes', () => {
+        expect(assertA5_embeddedFonts(embeddedTrio).ok).toBe(true);
+    });
+
+    it('FAIL : moins de 3 polices', () => {
+        expect(assertA5_embeddedFonts(embeddedTrio.slice(0, 2)).ok).toBe(false);
+    });
+
+    it('FAIL : une police non embarquée (signature de l\'étalon raster jsPDF)', () => {
+        const fonts = [
+            ...embeddedTrio,
+            { name: 'Helvetica', type: 'Type 1', encoding: 'WinAnsi', emb: 'no', sub: 'no', uni: 'no' },
+        ];
+        const r = assertA5_embeddedFonts(fonts);
+        expect(r.ok).toBe(false);
+        expect(r.detail).toMatch(/Helvetica/);
+    });
+
+    it('FAIL : famille Oswald absente', () => {
+        const fonts = embeddedTrio.filter((f) => !f.name.includes('Oswald'));
+        const r = assertA5_embeddedFonts(fonts.concat(fonts)); // ≥3 lignes, toujours 0 Oswald
+        expect(r.ok).toBe(false);
+        expect(r.detail).toMatch(/Oswald/);
+    });
+
+    it('FAIL : famille JetBrainsMono absente', () => {
+        // 3 polices (≥3, ne déclenche pas le garde « moins de 3 »), toutes
+        // Oswald, aucune JetBrainsMono.
+        const fonts = [embeddedTrio[0], embeddedTrio[0], embeddedTrio[0]];
+        const r = assertA5_embeddedFonts(fonts);
+        expect(r.ok).toBe(false);
+        expect(r.detail).toMatch(/JetBrainsMono/);
+    });
+});
+
+// ===========================================================================
+// assertA6_noRasterization
+// ===========================================================================
+describe('assertA6_noRasterization()', () => {
+    const a4PdfInfo = (pageCount: number) => ({
+        pageCount,
+        pageSizes: Array.from({ length: pageCount }, (_, i) => ({ page: i + 1, width: 841.89, height: 595.28 })),
+    });
+
+    it('PASS : 0 image, limite --photos=0', () => {
+        expect(assertA6_noRasterization([], a4PdfInfo(14), 0).ok).toBe(true);
+    });
+
+    it('FAIL : nombre d\'images dépasse la limite --photos', () => {
+        const images = [{ page: 1, type: 'image', width: 100, height: 100, xppi: 150, yppi: 150 }];
+        expect(assertA6_noRasterization(images, a4PdfInfo(14), 0).ok).toBe(false);
+    });
+
+    it('FAIL : signature html2canvas+jsPDF (nb_images == nb_pages, une image pleine page)', () => {
+        // Reproduit exactement la mesure de l'étalon raster : 1750x1389px
+        // @150x168ppi sur une page A4 paysage (841.89 x 595.28 pts) ≈ 99.8%.
+        const images = [{ page: 1, type: 'image', width: 1750, height: 1389, xppi: 150, yppi: 168 }];
+        const r = assertA6_noRasterization(images, a4PdfInfo(1), 14);
+        expect(r.ok).toBe(false);
+        expect(r.detail).toMatch(/signature de rastérisation/);
+    });
+
+    it('PASS : nb_images == nb_pages mais AUCUNE image ne couvre ≥80% (vraies photos, pas une capture pleine page)', () => {
+        // Petite vignette 200x150px sur une page A4 paysage : couverture négligeable.
+        const images = [{ page: 1, type: 'image', width: 200, height: 150, xppi: 150, yppi: 150 }];
+        const r = assertA6_noRasterization(images, a4PdfInfo(1), 1);
+        expect(r.ok).toBe(true);
+    });
+
+    it('ignore une image sans ppi exploitable (0/NaN) plutôt que de planter', () => {
+        const images = [{ page: 1, type: 'image', width: 1750, height: 1389, xppi: 0, yppi: 0 }];
+        expect(() => assertA6_noRasterization(images, a4PdfInfo(1), 1)).not.toThrow();
+    });
+});
+
+// ===========================================================================
+// assertA7_weight — inconditionnel (cf. commentaire dans verify-structure.mjs
+// et tests/pdf/README.md : la mention SPEC « avec --photos=0 » décrit le
+// scénario nominal de calibrage du seuil, pas une garde d'exécution).
+// ===========================================================================
+describe('assertA7_weight()', () => {
+    it('PASS : taille ≤ 1 Mio', () => {
+        expect(assertA7_weight(1_048_576).ok).toBe(true);
+    });
+
+    it('FAIL : taille > 1 Mio (ex. 2,53 Mo de l\'étalon raster)', () => {
+        expect(assertA7_weight(2_530_347).ok).toBe(false);
+    });
+
+    it('FAIL : 1 048 577 octets (juste au-dessus du seuil)', () => {
+        expect(assertA7_weight(1_048_577).ok).toBe(false);
+    });
+});
+
+// ===========================================================================
+// assertA8_sampleData
+// ===========================================================================
+describe('assertA8_sampleData()', () => {
+    it('SKIP (ok=true) si aucun --sample fourni', () => {
+        const r = assertA8_sampleData('texte quelconque', undefined);
+        expect(r.ok).toBe(true);
+        expect(r.skip).toBe(true);
+    });
+
+    it('FAIL si le fichier d\'échantillon est introuvable', () => {
+        const r = assertA8_sampleData('texte', '/chemin/inexistant.json');
+        expect(r.ok).toBe(false);
+        expect(r.detail).toMatch(/introuvable/);
+    });
+});
