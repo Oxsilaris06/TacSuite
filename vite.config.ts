@@ -62,6 +62,14 @@ export default defineConfig({
           'portal/*.webp',
         ],
         globIgnores: ['**/*.map'],
+        // Le nouveau moteur PDF vectoriel embarque pdfmake (~1,4 Mo brut) et le VFS des
+        // polices Oswald/JetBrains Mono en base64 (~415 Ko) dans des chunks JavaScript
+        // dedies (import dynamique). Ces chunks sont deja couverts par le motif
+        // 'assets/**/*.{js,css}'. La limite Workbox par defaut de 2 Mio par fichier est
+        // relevee pour garantir qu'ils entrent bien dans le precache — sans quoi la
+        // generation de PDF hors ligne serait silencieusement cassee.
+        // Taille reelle mesuree du plus gros chunk (phase build actuelle) : ~1,4 Mo.
+        maximumFileSizeToCacheInBytes: 3 * 1024 * 1024,
       },
     }),
   ],
