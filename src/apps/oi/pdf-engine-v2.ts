@@ -1,8 +1,9 @@
 /**
  * pdf-engine-v2.ts — Moteur de rendu PDF et d'aperçu du Générateur d'OI.
  * Port from: modules/pdf_engine_v2.js (1156 LOC, intégral).
- * Fonctions principales : PDFEngineV2.openPreview, PDFEngineV2.downloadOiPdf,
- * PDFEngineV2.collectAllData, PDFEngineV2.generateHTML.
+ * Fonctions principales : PDFEngineV2.openPreview, PDFEngineV2.openPresentInPlace,
+ * PDFEngineV2.collectAllData, PDFEngineV2.generateHTML (le téléchargement PDF
+ * est désormais `downloadOiPdfV3()`, `@oi/pdf/engine-v3.js` — SPEC-PDF-V3.md §4).
  *
  * FICHIER UNIQUE IMPOSÉ (SPEC-OI-CONVERSION.md §7, ARBITRAGE 3) : generateHTML
  * (:465-1153, 689 LOC = 60 % du fichier) est un unique gabarit HTML fermant sur
@@ -10,14 +11,18 @@
  * mapping trigramme→cellule, helper galerie photo) — le découpage en
  * sous-fichiers est INTERDIT (décision d'architecture actée).
  *
- * Bibliothèques : `html2canvas` et `jspdf` sont importées depuis npm (PAS les
- * globaux CDN `window.html2canvas`/`window.jspdf`) — SPEC §7. Les gardes
- * « librairie absente » de l'original (détection UMD vs global sur `window`)
- * sont réécrites en TESTS DE FORME (`typeof x === 'function'` sur le symbole
- * importé plutôt qu'une vérification d'existence sur `window`) : messages
- * utilisateur inchangés, branchement conservé. Même traitement pour
- * `createAnnotatedImageBlob` (importée de `@oi/dessin.js`, non exposée sur
- * `window` dans l'original).
+ * PDF.INTEG (phase Intégration, SPEC-PDF-V3.md §4) : le chemin de
+ * TÉLÉCHARGEMENT raster (`downloadOiPdf()`, html2canvas + jsPDF, ancien
+ * `:281-467`) a été RETIRÉ de ce fichier — remplacé au câblage
+ * (`src/apps/oi/main.ts`) par `downloadOiPdfV3()` (`@oi/pdf/engine-v3.js`,
+ * moteur vectoriel pdfmake). `generateHTML`/`_fitPageToBudget` restent
+ * INCHANGÉS : ils continuent de servir l'aperçu HTML in-app (`openPreview`)
+ * et le mode « Présenter ici » (`openPresentInPlace`), qui ne rastérisent
+ * jamais. `html2canvas`/`jspdf` ne sont donc plus importés ICI ; la garde
+ * « librairie absente » (`typeof x === 'function'` sur le symbole importé,
+ * plutôt qu'une vérification d'existence sur `window`) reste néanmoins le
+ * précédent pour `createAnnotatedImageBlob` ci-dessous (importée de
+ * `@oi/dessin.js`, non exposée sur `window` dans l'original).
  *
  * RISQUE XSS THÉORIQUE CONNU (signalé, non corrigé — fidélité, SPEC §7) :
  * `generateHTML` n'échappe PAS systématiquement le HTML inséré dans le
@@ -30,8 +35,6 @@
  * « 7. RÉCAPITULATIF PATRACDVR ».
  */
 
-import html2canvas from 'html2canvas';
-import { jsPDF } from 'jspdf';
 import type {
     OiAnnotation,
     OiFormData,
@@ -272,198 +275,6 @@ export const PDFEngineV2: PdfEngineV2Internal = {
             '</div>' +
             '<script>' + deckScript + '<\/script>' +
             '</body></html>';
-    },
-
-    /**
-     * Télécharge le PDF - Version V4 (Rendu indépendant par page).
-     * Cette méthode est la plus robuste : elle capture chaque page séparément dans un canvas dédié.
-     */
-    async downloadOiPdf(): Promise<void> {
-        console.group("🚀 [PDF ENGINE V4] - Démarrage de la génération");
-        const startTime = Date.now();
-
-        const loader = document.getElementById('pdfLoadingModal');
-        const statusText = document.getElementById('pdfLoadingStatus');
-        const updateStatus = (msg: string): void => { if (statusText) statusText.textContent = msg; };
-
-        // 0. Fermer l'aperçu si ouvert
-        // pdf_engine_v2.js:202 — cast HTMLDialogElement (même précédent que presentation.ts).
-        const previewModal = document.getElementById('presentationModal') as HTMLDialogElement | null;
-        if (previewModal && previewModal.open) {
-            previewModal.close();
-            document.body.classList.remove('modal-open');
-        }
-
-        // Afficher loader
-        if (loader) loader.style.display = 'flex';
-        updateStatus("Initialisation moteur...");
-
-        try {
-            // pdf_engine_v2.js:213-224 — Détection robuste des librairies (Umd vs
-            // Global) réécrite en TESTS DE FORME : `html2canvas`/`jsPDF` sont désormais
-            // importés depuis npm (SPEC §7), donc toujours définis statiquement ; le
-            // garde-fou `typeof … === 'function'` est conservé (branchement + messages
-            // inchangés) au lieu d'une vérification d'existence sur `window`.
-            if (typeof jsPDF !== 'function') {
-                console.error("❌ Librairie jsPDF non trouvée.");
-                throw new Error("Librairie jsPDF manquante.");
-            }
-            if (typeof html2canvas !== 'function') {
-                console.error("❌ Librairie html2canvas non trouvée.");
-                throw new Error("Librairie html2canvas manquante.");
-            }
-
-            // 1. Collecte & Préparation
-            updateStatus("Collecte des données...");
-            const data = await this.collectAllData();
-
-            // --- Format PDF sélectionné ---
-            const is169 = (window.pdfOutputFormat === '16:9');
-            // A4 landscape: 297×210mm | 16:9: 338×190.125mm (exactement 16/9)
-            const PAGE_W = is169 ? 338   : 297;
-            const PAGE_H = is169 ? 190.125 : 210;
-
-            updateStatus("Génération du squelette...");
-            const htmlContent = this.generateHTML(data, false, { pageW: PAGE_W, pageH: PAGE_H });
-
-            // 2. Injection DOM temporaire
-            const tempContainer = document.createElement('div');
-            tempContainer.id = 'pdf-render-temp-worker';
-            tempContainer.style.cssText = `
-                position: fixed; top: 0; left: 0; width: ${PAGE_W}mm; background: white;
-                z-index: -9999; visibility: visible !important; display: block !important;
-                opacity: 0 !important; pointer-events: none;
-            `;
-            tempContainer.innerHTML = htmlContent;
-            document.body.appendChild(tempContainer);
-
-            // 3. Synchronisation globale (Polices)
-            updateStatus("Chargement des polices...");
-            if (document.fonts) await document.fonts.ready;
-
-            // Trouver toutes les pages
-            const pageElements = Array.from(tempContainer.querySelectorAll<HTMLElement>('.pdf-page'));
-            if (pageElements.length === 0) throw new Error("Aucune page HTML générée.");
-
-            // 4. Initialisation du document PDF
-            const doc = new jsPDF({
-                orientation: 'landscape',
-                unit: 'mm',
-                format: is169 ? [PAGE_W, PAGE_H] : 'a4',
-                compress: true
-            });
-
-            // 5. BOUCLE DE RENDU INDÉPENDANTE
-            const N = pageElements.length;
-            // OI7 — échelle de rendu ADAPTATIVE au nombre de pages : scale 2 × beaucoup
-            // de pages sature la mémoire WebKit (crash / pages blanches sur mobile). On
-            // réduit progressivement tout en gardant une résolution largement lisible.
-            const renderScale = N > 20 ? 1.5 : (N > 10 ? 1.75 : 2);
-            let blankPages = 0;
-
-            for (let i = 0; i < N; i++) {
-                const isCover = (i === 0);
-                updateStatus(isCover ? "Rendu : Couverture..." : `Rendu : Page ${i + 1}/${N}...`);
-
-                // noUncheckedIndexedAccess : i < N === pageElements.length, indexation
-                // toujours définie — assertion de type, aucune garde ajoutée (fidélité,
-                // même principe que init.ts).
-                const pageEl = pageElements[i] as HTMLElement;
-
-                // Attendre le décodage des images
-                const pageImgs = Array.from(pageEl.querySelectorAll('img'));
-                await Promise.all(pageImgs.map(img => {
-                    if (img.complete) return Promise.resolve();
-                    return img.decode().catch(e => console.warn("Page img fail", e));
-                }));
-
-                // Adaptation TS : `requestAnimationFrame` appelle son callback avec un
-                // timestamp `number` ; le résolveur d'un `Promise<void>` n'accepte que
-                // `void` — `() => r()` ignore l'argument, comportement identique (même
-                // pattern que carto/capture.ts).
-                await new Promise<void>(r => requestAnimationFrame(() => requestAnimationFrame(() => r())));
-
-                // Anti-débordement : ajuste le contenu pour qu'il rentre dans la page
-                this._fitPageToBudget(pageEl, i);
-
-                // Capture de la page
-                // P4.FIX, BLOQUANT R1 : `imageTimeout` posé EXPLICITEMENT
-                // (au lieu de laisser html2canvas retomber sur son défaut
-                // interne implicite, 15000ms — `dist/html2canvas.js`, non
-                // documenté dans nos types) — borne le pire cas d'un
-                // chargement d'image interne à html2canvas (cache de
-                // ressources, indépendant du `img.decode()` déjà attendu
-                // ci-dessus) à une valeur connue et intentionnelle, pour que
-                // le blocage intermittent observé sur la page de couverture
-                // (cf. commentaire du test « Génération — téléchargement PDF »,
-                // tests/e2e/oi.spec.ts) se solde par un REJET capté par le
-                // `try/catch` englobant (ligne ~445, toast + log + fermeture
-                // du loader) plutôt qu'un silence indéfini côté appelant.
-                const canvas = await html2canvas(pageEl, {
-                    scale: renderScale,
-                    useCORS: true,
-                    allowTaint: true,
-                    backgroundColor: '#ffffff',
-                    logging: false,
-                    width: pageEl.offsetWidth,
-                    height: pageEl.offsetHeight,
-                    scrollX: 0,
-                    scrollY: 0,
-                    imageTimeout: 15000
-                });
-
-                let imgData: string | null = canvas.toDataURL('image/jpeg', 0.95);
-
-                // OI7 — détecter un rendu VIDE (canvas 0×0 / mémoire insuffisante / tainted)
-                // au lieu d'ajouter une page blanche et d'annoncer un faux « succès ».
-                if (!imgData || imgData.length < 100) {
-                    blankPages++;
-                    console.error(`[PDF] Page ${i + 1}/${N} : rendu vide (${imgData ? imgData.length : 0} octets) — mémoire probablement insuffisante.`);
-                }
-
-                if (i > 0) doc.addPage();
-                doc.addImage(imgData, 'JPEG', 0, 0, PAGE_W, PAGE_H, undefined, 'FAST');
-
-                canvas.width = 0;
-                canvas.height = 0;
-                imgData = null; // libère le dataURL pour le GC entre pages
-                // Micro-pause sur les gros documents : laisse le navigateur respirer
-                // (et le GC récupérer) avant la page suivante.
-                if (N > 8) await new Promise(r => setTimeout(r, 0));
-            }
-
-            // 6. Sauvegarde
-            updateStatus("Assemblage final...");
-            // pdf_engine_v2.js:327 — date_op/trigramme_redacteur ne sont pas déclarés
-            // dans OiFormData (champs libres du formulaire, indexés `unknown`) ;
-            // l'original les utilise comme des chaînes sans validation de forme —
-            // assertion de type fidèle au comportement non typé d'origine, aucune
-            // garde ajoutée.
-            const dateOp = (data.formData.date_op as string | undefined) || 'SANS_DATE';
-            const trigramme = (data.formData.trigramme_redacteur as string | undefined) || 'RED';
-            const fileName = `OI_${dateOp.replace(/\//g, '-')}_${trigramme}.pdf`;
-            doc.save(fileName);
-
-            console.log(`✅ [SUCCESS] PDF V4 généré en ${((Date.now() - startTime) / 1000).toFixed(2)}s (échelle ${renderScale}, ${blankPages} page(s) vide(s))`);
-            // OI7 — ne pas annoncer un succès si des pages n'ont pas pu être rendues.
-            // pdf_engine_v2.js:332 — RÈGLE D'OR (SPEC §2.2) : window.toast, même garde.
-            if (typeof window.toast === 'function') {
-                if (blankPages > 0) {
-                    window.toast(`PDF généré, mais ${blankPages} page(s) n'ont pas pu être rendues (mémoire insuffisante). Réduisez le nombre/poids des photos ou scindez l'OI.`, "error");
-                } else {
-                    window.toast("PDF généré avec succès !", "success");
-                }
-            }
-
-        } catch (error) {
-            console.error("❌ [CRITICAL V4] PDF Engine Failed:", error);
-            if (typeof window.toast === 'function') window.toast("Erreur de génération. Veuillez consulter les logs.", "error");
-        } finally {
-            if (loader) loader.style.display = 'none';
-            const el = document.getElementById('pdf-render-temp-worker');
-            if (el) el.remove();
-            console.groupEnd();
-        }
     },
 
     async collectAllData(): Promise<OiPdfCollectedData> {
@@ -1305,5 +1116,4 @@ export const PDFEngineV2: PdfEngineV2Internal = {
 };
 
 window.PDFEngineV2 = PDFEngineV2;
-window.downloadOiPdf = function () { PDFEngineV2.downloadOiPdf(); };
 window.openPresentInPlace = function () { PDFEngineV2.openPresentInPlace(); };

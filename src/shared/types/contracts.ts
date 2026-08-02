@@ -1056,8 +1056,10 @@ export interface PdfEngineV2Contract {
     openPreview(): Promise<void>;
     /** Ouvre un document Blob autonome dans un nouvel onglet (diaporama/liste). */
     openPresentInPlace(): Promise<void>;
-    /** Rastérise puis assemble `OI_<date_op>_<trigramme>.pdf` (html2canvas + jsPDF). */
-    downloadOiPdf(): Promise<void>;
+    // downloadOiPdf() RETIRÉE (PDF.INTEG, SPEC-PDF-V3.md §4) : le téléchargement
+    // rastérisait via html2canvas + jsPDF ; remplacé par `downloadOiPdfV3()`
+    // (`@oi/pdf/engine-v3.js`, moteur vectoriel pdfmake), câblé directement
+    // depuis `src/apps/oi/main.ts`, hors de ce contrat.
     collectAllData(): Promise<OiPdfCollectedData>;
     blobToBase64(blob: Blob): Promise<string>;
     generateHTML(
@@ -1351,8 +1353,9 @@ export interface OiAnnotationGlobals {
 export interface OiPresentationGlobals {
     /** Ouvre `#presentationModal` et délègue à `PDFEngineV2.openPreview()`. */
     openPresentationMode(): void;
-    /** Raccourci vers `PDFEngineV2.downloadOiPdf()`. */
-    downloadOiPdf(): void;
+    // downloadOiPdf() RETIRÉE (PDF.INTEG, SPEC-PDF-V3.md §4) : le bouton
+    // `#downloadPdfBtn` est désormais câblé directement sur `downloadOiPdfV3()`
+    // (`src/apps/oi/main.ts`), sans passer par un raccourci `window`.
     /** Raccourci vers `PDFEngineV2.openPresentInPlace()`. */
     openPresentInPlace(): void;
 }

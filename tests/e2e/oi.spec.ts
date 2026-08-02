@@ -924,49 +924,30 @@ test.describe('OI — Checklist fonctionnelle (docs/recon-oi.md §9)', () => {
     });
   });
 
-  // P4.FIX, BLOQUANT R1 : ce test isolé dans son propre `describe` pour lui
-  // attacher un `retries` CIBLÉ (pas de `retries` global dans
-  // `playwright.config.ts`, qui resterait sourd aux autres tests) — cause
-  // racine isolée en instrumentation : `downloadOiPdf()` (pdf-engine-v2.ts)
-  // se bloque par intermittence DANS `html2canvas` sur la page de couverture,
-  // sans erreur console ni requête réseau en échec/pendante (`#pdfLoadingStatus`
-  // reste figé sur « Rendu : Couverture… », `requestAnimationFrame` continue
-  // de tourner à ~28fps). Durée mesurée bimodale sur le groupe --grep
-  // "Génération" : 1,9s (nominal) contre 13s dans le pire cas mesuré (jamais
-  // au-delà de 20s observé, mais jamais garanti non plus — cf. ci-dessous).
-  // DÉFAUT HÉRITÉ, PAS UNE RÉGRESSION DE PORTAGE : le même scénario rejoué
-  // contre l'ORIGINAL (`http://127.0.0.1:9679/4.html`) échoue 1 fois sur 6
-  // (download NULL à 30s) — donc un budget, aussi large soit-il, ne peut pas
-  // à lui seul garantir 0 échec ; le `retries` ci-dessous absorbe ce résidu
-  // sans masquer une régression réelle (le test réussirait alors à la
-  // 2e tentative avec le MÊME code, signature d'un défaut d'attente/timing,
-  // pas d'un bug fonctionnel introduit par le portage). Tracé dans
-  // `docs/DECISIONS-DOM-ECARTS.md`.
-  //
-  // `timeout: 60000` — BUG trouvé et corrigé dans cette même reprise (cf.
-  // `tests/e2e/pctac.spec.ts`, test « Plan — dessin », même correctif) : le
-  // timeout GLOBAL par défaut d'un test Playwright est 30000ms
-  // (`playwright.config.ts` ne le modifie pas), IDENTIQUE au budget local du
-  // `waitForEvent('download', …)` ci-dessous — sans marge, le test entier
-  // peut expirer avant même que ce budget local soit atteint (d'autant plus
-  // que ce test consomme déjà du temps en amont : `goToFinalStepAndOpenPreview`
-  // + attente de `#presentationModal`).
-  test.describe('Génération — téléchargement PDF (retry cible, defaut herite)', () => {
-    test.describe.configure({ retries: 2, timeout: 60000 });
-
-    test('Génération — téléchargement PDF déclenche un download (downloadOiPdf)', async ({ page }) => {
-      await goToFinalStepAndOpenPreview(page);
-      await expect.soft(page.locator('#presentationModal')).toBeVisible({ timeout: 5000 });
-      await step('#downloadPdfBtn → fichier OI_<date>_<trigramme>.pdf (nom non vérifié finement ici)', async () => {
-        // Budget relevé de 8000 à 30000ms — largement au-dela du pire cas
-        // mesure (13s) — cf. commentaire ci-dessus pour la justification
-        // complete (bloquant html2canvas, defaut herite de l'original).
-        const downloadPromise = page.waitForEvent('download', { timeout: 30000 }).catch(() => null);
-        await page.locator('#downloadPdfBtn').click();
-        const download = await downloadPromise;
-        expect.soft(download).not.toBeNull();
-        if (download) expect.soft(download.suggestedFilename()).toMatch(/^OI_.*\.pdf$/);
-      });
+  // PDF.INTEG (SPEC-PDF-V3.md §4/§8) : `#downloadPdfBtn` est désormais câblé
+  // sur `downloadOiPdfV3()` (`src/apps/oi/pdf/engine-v3.ts`), moteur vectoriel
+  // pdfmake — l'ancien `downloadOiPdf()` (html2canvas + jsPDF, retiré de
+  // `pdf-engine-v2.ts`) ne participe plus à ce chemin. Le défaut hérité
+  // documenté ci-dessous jusqu'à cette mission (blocage intermittent DANS
+  // `html2canvas` sur la page de couverture, `retries: 2`/`timeout: 60000`
+  // dédiés) NE S'APPLIQUE PLUS : `html2canvas` n'est plus consommé par la
+  // génération PDF (reste utilisé par la capture cartographique, hors
+  // périmètre ici). Mesuré après câblage : le nouveau chemin (collecte →
+  // `normalizePhotos` → `buildOiDocDefinition` → `pdfmake.createPdf().getBlob()`
+  // → clic `<a download>`) prend ~0,4s en local, systématiquement < 2,5s de
+  // bout en bout (5 exécutions consécutives, aucun échec) — la marge de
+  // sécurité ci-dessous (`waitForEvent('download', { timeout: 15000 })`)
+  // couvre un premier import dynamique à froid du chunk `pdfmake` sans
+  // reconduire le `retries`/`timeout` spécial devenu sans objet.
+  test('Génération — téléchargement PDF déclenche un download (downloadOiPdfV3, moteur vectoriel)', async ({ page }) => {
+    await goToFinalStepAndOpenPreview(page);
+    await expect.soft(page.locator('#presentationModal')).toBeVisible({ timeout: 5000 });
+    await step('#downloadPdfBtn → fichier OI_<date>_<trigramme>.pdf (nom non vérifié finement ici)', async () => {
+      const downloadPromise = page.waitForEvent('download', { timeout: 15000 }).catch(() => null);
+      await page.locator('#downloadPdfBtn').click();
+      const download = await downloadPromise;
+      expect.soft(download).not.toBeNull();
+      if (download) expect.soft(download.suggestedFilename()).toMatch(/^OI_.*\.pdf$/);
     });
   });
 
@@ -982,6 +963,33 @@ test.describe('OI — Checklist fonctionnelle (docs/recon-oi.md §9)', () => {
         await popup.waitForLoadState('domcontentloaded').catch(() => {});
         expect.soft(popup.url()).toMatch(/^blob:|^data:/);
       }
+    });
+  });
+
+  // PDF.INTEG (SPEC-PDF-V3.md §5.2/§5.3) : nouveau bouton `#printHqBtn`
+  // (« Imprimer — qualité maximale », voie B) → `printOiHighQuality()`
+  // (`src/apps/oi/pdf/print-view.ts`) → `<iframe>` hors écran (srcdoc) →
+  // `window.print()` DE L'IFRAME (pas de la page top-level). `window.print()`
+  // ouvrirait la boîte de dialogue native du navigateur (bloquante, jamais
+  // fermée par Playwright/Chromium headless) — stubbée via `addInitScript`,
+  // qui s'applique à TOUS les documents créés dans la page APRÈS son appel, y
+  // compris l'iframe dynamique créée par `printOiHighQuality()` (vérifié :
+  // fonctionne même si `addInitScript` est posé après la navigation initiale
+  // de la page top-level, tant qu'il précède la création de l'iframe).
+  test('Génération — impression qualité maximale (printOiHighQuality, voie B, #printHqBtn)', async ({ page }) => {
+    let printCalls = 0;
+    await page.exposeFunction('__e2ePrintCalled', () => { printCalls++; });
+    await page.addInitScript(() => {
+      window.print = (): void => {
+        (window as unknown as { __e2ePrintCalled?: () => void }).__e2ePrintCalled?.();
+      };
+    });
+
+    await goToFinalStepAndOpenPreview(page);
+    await expect.soft(page.locator('#presentationModal')).toBeVisible({ timeout: 5000 });
+    await step('#printHqBtn construit le document autonome et appelle window.print() sur l\'iframe', async () => {
+      await page.locator('#printHqBtn').click();
+      await expect.poll(() => printCalls, { timeout: 10000 }).toBeGreaterThan(0);
     });
   });
 

@@ -303,6 +303,13 @@ const oiClickActions: Record<string, OiActionHandler> = {
     'clone-member-from-context': () => { window.cloneMemberFromContext(); },
     // index.html:768
     'delete-member-from-context': () => { window.deleteMemberFromContext(); },
+    // PDF.INTEG (SPEC-PDF-V3.md §5.2) — #printHqBtn, entre #presentHereBtn et
+    // #downloadPdfBtn. Import dynamique : isole la voie B (print-view.ts +
+    // print-style.ts) dans son propre chunk, jamais chargé si le bouton n'est
+    // pas cliqué.
+    'print-oi-high-quality': () => {
+        void import('@oi/pdf/print-view.js').then((m) => m.printOiHighQuality());
+    },
 };
 
 const oiInputActions: Record<string, OiActionHandler> = {
@@ -573,8 +580,16 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         // §12.3 étape 16 — Présentation / PDF / fermeture modale. 4.html:4753-4772
         if (oiState.previewBtn) oiState.previewBtn.addEventListener('click', window.openPresentationMode);
+        // PDF.INTEG (SPEC-PDF-V3.md §5.1) — bascule silencieuse : le libellé/id/
+        // position du bouton NE CHANGENT PAS, seule la fonction câblée change,
+        // de l'ancien `window.downloadOiPdf` (rastérisation html2canvas+jsPDF,
+        // retirée) vers `downloadOiPdfV3()` (moteur vectoriel pdfmake,
+        // `@oi/pdf/engine-v3.js`). Import dynamique : même raison que le bouton
+        // d'impression ci-dessus (chunk pdfmake jamais chargé sans clic).
         const dlPdfBtn = document.getElementById('downloadPdfBtn');
-        if (dlPdfBtn) dlPdfBtn.addEventListener('click', window.downloadOiPdf);
+        if (dlPdfBtn) dlPdfBtn.addEventListener('click', () => {
+            void import('@oi/pdf/engine-v3.js').then((m) => m.downloadOiPdfV3());
+        });
 
         const presentHereBtn = document.getElementById('presentHereBtn');
         if (presentHereBtn) presentHereBtn.addEventListener('click', () => {
