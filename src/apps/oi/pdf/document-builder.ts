@@ -503,7 +503,7 @@ function buildExecution(ctx: BuildCtx): Content {
     const chronoRows: TableCell[][] =
         events.length > 0
             ? events.map((e): TableCell[] => [
-                  { text: e.hour, borderColor: cellBorder(p) },
+                  { text: e.hour, alignment: 'center', borderColor: cellBorder(p) },
                   { text: [{ text: e.type, bold: true }, { text: ` : ${e.description}` }], borderColor: cellBorder(p) },
               ])
             : [[{ text: 'N/A', colSpan: 2, alignment: 'center', borderColor: cellBorder(p) }, {}]];
@@ -871,13 +871,13 @@ function buildPatracPage(ctx: BuildCtx): Content | null {
         const eqpt = [m.equipement, m.equipement2, m.grenades, m.tenue, m.gpb].filter((v) => v && v !== 'Sans').join(', ') || '-';
         const cells: TableCell[] = [
             { text: vehicle, bold: true, fillColor: vehicle ? p.headerRow : undefined, alignment: 'center', borderColor: cellBorder(p) },
-            { text: m.trigramme || '-', bold: true, borderColor: cellBorder(p) },
-            { text: m.cellule || '-', borderColor: cellBorder(p) },
-            { text: m.fonction || '-', borderColor: cellBorder(p) },
-            { text: m.principales || '-', borderColor: cellBorder(p) },
-            { text: m.secondaires || '-', borderColor: cellBorder(p) },
-            { text: m.afis || '-', borderColor: cellBorder(p) },
-            { text: eqpt, fontSize: 8, borderColor: cellBorder(p) },
+            { text: m.trigramme || '-', bold: true, alignment: 'center', borderColor: cellBorder(p) },
+            { text: m.cellule || '-', alignment: 'center', borderColor: cellBorder(p) },
+            { text: m.fonction || '-', alignment: 'center', borderColor: cellBorder(p) },
+            { text: m.principales || '-', alignment: 'center', borderColor: cellBorder(p) },
+            { text: m.secondaires || '-', alignment: 'center', borderColor: cellBorder(p) },
+            { text: m.afis || '-', alignment: 'center', borderColor: cellBorder(p) },
+            { text: eqpt, fontSize: 8, alignment: 'center', borderColor: cellBorder(p) },
         ];
         if (hasDir) {
             cells.push({ text: m.dir || '', bold: true, alignment: 'center', borderColor: cellBorder(p) });

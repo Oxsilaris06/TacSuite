@@ -423,8 +423,40 @@ describe('buildOiDocDefinition — tableaux de données : grille p.border, jamai
             `{"text":"VL","bold":true,"fillColor":"${pal.headerRow}","alignment":"center","borderColor":["${pal.border}","${pal.border}","${pal.border}","${pal.border}"]}`,
         );
         expect(json).toContain(
-            `{"text":"ABC","bold":true,"borderColor":["${pal.border}","${pal.border}","${pal.border}","${pal.border}"]}`,
+            `{"text":"ABC","bold":true,"alignment":"center","borderColor":["${pal.border}","${pal.border}","${pal.border}","${pal.border}"]}`,
         );
+    });
+});
+
+// ===========================================================================
+// Arbitrage DFIX.REFIX (round 1, 2026-08-02) — alignement des cellules,
+// dernier écart A↔B sur les tableaux. Référence B : `print-style.ts`
+// `.patrac td, .patrac th { text-align:center }` (TOUT le roster PATRACDVR
+// centré, pas seulement VL/DIR) et `print-view.ts:410`
+// `<td style="text-align:center;">` sur la colonne Heure de la Chronologie
+// (la colonne Événement reste alignée à gauche, comportement par défaut de
+// B non redéfini pour cette colonne).
+// ===========================================================================
+describe('buildOiDocDefinition — alignement centré du roster PATRACDVR (arbitrage A↔B, round DFIX.REFIX)', () => {
+    it('les colonnes CELLULE/FONCTION/PPALE/SEC./AFIS/EQPT+GREN. sont centrées, comme VL/DIR/en-tête', () => {
+        const json = JSON.stringify(buildOiDocDefinition(collect({ patracdvr_rows: [makePatracRow()] }), { format: 'a4' }));
+
+        expect(json).toContain('{"text":"AO1","alignment":"center","borderColor":');
+        expect(json).toContain('{"text":"Chef inter","alignment":"center","borderColor":');
+        expect(json).toContain('{"text":"UMP9","alignment":"center","borderColor":');
+        expect(json).toContain('{"text":"PSA","alignment":"center","borderColor":');
+        expect(json).toContain('{"text":"PIE","alignment":"center","borderColor":');
+        expect(json).toContain('{"text":"GENL, UBAS","fontSize":8,"alignment":"center","borderColor":');
+    });
+});
+
+describe("buildOiDocDefinition — Chronologie : colonne Heure centrée (arbitrage A↔B), colonne Événement inchangée (gauche)", () => {
+    it('la cellule Heure porte alignment:center, la cellule Événement n\'a aucune clé alignment', () => {
+        const formData: OiFormData = { time_events: [{ hour: '08:00', type: 'DÉPART', description: 'PC' }] };
+        const json = JSON.stringify(buildOiDocDefinition(collect(formData), { format: 'a4' }));
+
+        expect(json).toContain('{"text":"08:00","alignment":"center","borderColor":');
+        expect(json).not.toContain('"text":[{"text":"DÉPART","bold":true},{"text":" : PC"}],"alignment"');
     });
 });
 
