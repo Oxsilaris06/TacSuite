@@ -62,6 +62,7 @@ import {
     palette,
     patracFontPx,
     adaptivePagePx,
+    catItemsPerPageBudget,
     type OiPdfFormat,
     type OiPdfPalette,
 } from './theme.js';
@@ -601,59 +602,196 @@ function buildArticulationOverview(ctx: BuildCtx): Content {
 /* ==========================================================================
  * Blocs d'articulation groupés par index (ZMSPCP[i] / MOICP[i] / EFFRAC[i])
  * (pdf-engine-v2.ts:1059-1189, §3.2 lignes 8a-8g, §3.4 règle 4).
+ *
+ * MODÈLE DE PAGINATION v2 (correctif PG.IMPL, docs/SPEC-PDF-V3.md § Pagination
+ * v2) : constat terrain (banc `pdfmake-pagination-bench`, contre-épreuve
+ * `tests/pdf/fixtures/long-case.json`) — un champ « C conduite à tenir » long
+ * (liste à tirets) débordait de sa page SANS que `document-builder.ts` ne le
+ * sache jamais : pdfmake le rompt alors n'importe où dans le flux de texte,
+ * abandonnant une QUEUE ORPHELINE sur la page suivante (« - Se tenir prêt...
+ * pour fixer l'adversaire. » seule sur une page, guardrail B1). Corrigé en 2
+ * temps, dans l'ordre de priorité de la mission : (1) POLICE ADAPTATIVE —
+ * `adaptivePagePx` (déjà utilisée par la fiche adversaire) réduit le palier
+ * du bloc entier selon son volume AVANT toute scission ; (2) SCISSION aux
+ * frontières légitimes SEULEMENT si le nombre d'items à tiret dépasse encore
+ * `catItemsPerPageBudget(fontPx)` au palier choisi (garde-fou de dernier
+ * recours, cf. sa JSDoc `theme.ts`) — jamais en milieu de phrase, le
+ * fragment suivant porte alors `(suite)` (règle cible strategica).
  * ======================================================================== */
-function buildZmspcpPage(ctx: BuildCtx, block: OiZmspcpBlock, memberToCell: Map<string, string>): Content {
-    const { p, geo } = ctx;
-    const groups = regroupByCellOrdered(block.members, memberToCell);
-    const cellsContent: Content[] =
-        groups.length > 0 ? groups.map(([cell, members]) => cellGroupBox(cell, members, p)) : [{ text: '-', color: p.muted }];
-    return {
-        stack: [
-            h2(`Articulation : ZMSPCP - ${block.title || '-'}`, p, geo.contentWidthPt),
-            grid2(
-                [
-                    h3('ZMSPCP', p),
-                    labelValue('Z zone', block.zone || '-', p),
-                    labelValue('M mission', block.mission || '-', p),
-                    labelValue('S secteur', block.secteur || '-', p),
-                    labelValue('P points particuliers', block.points_particuliers || '-', p),
-                    labelValue('C conduite à tenir', block.cat || '-', p),
-                ],
-                [
-                    h3('Composition par Cellule', p),
-                    ...cellsContent,
-                    labelValue('Place du Chef', block.place_chef || '-', p),
-                ],
-            ),
-        ],
-    };
+
+/**
+ * Découpe un texte en items aux frontières légitimes UNIQUEMENT — entre deux
+ * tirets de liste (`\n- item`), jamais en milieu de phrase. Sans tiret
+ * détecté (aucune frontière légitime disponible dans ce champ), renvoie le
+ * texte INTACT en un seul élément : `document-builder.ts` ne scinde alors
+ * JAMAIS ce bloc (un débordement pdfmake non contrôlé reste préférable à une
+ * coupure arbitraire au milieu d'une phrase, cf. règle cible mission).
+ */
+function splitAtDashBoundaries(text: string): string[] {
+    if (!text) {
+        return [];
+    }
+    const parts = text
+        .split(/\n(?=-\s)/)
+        .map((s) => s.trim())
+        .filter((s) => s !== '');
+    return parts.length > 1 ? parts : [text];
 }
 
-function buildMoicpPage(ctx: BuildCtx, block: OiMoicpBlock, memberToCell: Map<string, string>): Content {
+/** Découpe `items` en tranches d'au plus `size` éléments (`size` <= 0 -> une seule tranche, jamais de boucle infinie). */
+function chunkItems<T>(items: T[], size: number): T[][] {
+    if (size <= 0 || items.length <= size) {
+        return [items];
+    }
+    const chunks: T[][] = [];
+    for (let i = 0; i < items.length; i += size) {
+        chunks.push(items.slice(i, i + size));
+    }
+    return chunks;
+}
+
+/**
+ * Rend une liste d'items à tiret comme une pile d'éléments INDIVIDUELLEMENT
+ * insécables — pdfmake ne rompt donc jamais un item en milieu de phrase.
+ * Chaque item reste très en-deçà de la hauteur d'une page (finding #1 du
+ * banc : un bloc `unbreakable` DÉPASSANT une page est SILENCIEUSEMENT
+ * SUPPRIMÉ par pdfmake — jamais appliqué ici à un bloc de la taille d'une
+ * page, seulement à chaque item pris isolément).
+ */
+function dashItemList(items: string[], p: OiPdfPalette): Content[] {
+    return items.map(
+        (item, i): Content => ({
+            text: item,
+            color: p.text,
+            margin: [0, i === 0 ? 0 : 2, 0, 0],
+            unbreakable: true,
+        }),
+    );
+}
+
+/** Libellé de champ seul (port du préfixe `LABEL :` de `labelValue`, sans valeur inline) — utilisé devant une `dashItemList` scindée sur plusieurs pages. */
+function fieldLabel(label: string, p: OiPdfPalette): Content {
+    return { text: `${label.toUpperCase()} :`, bold: true, color: p.accent, margin: [0, 0, 0, 2] };
+}
+
+/** Champs texte communs ZMSPCP/MOICP mesurés pour le palier de police adaptatif (même méthode que `buildAdversaryFiche::fontPx`, `adaptivePagePx`). */
+function articulationBlockFontPx(fields: Array<string | undefined>, memberGroupCount: number): number {
+    return adaptivePagePx(fields.map(str), memberGroupCount);
+}
+
+/**
+ * Rendu commun ZMSPCP/MOICP (mutualisé, mission PG.IMPL — les deux blocs
+ * partagent exactement la même mécanique de pagination, seuls les champs
+ * « cœur » [Z/M/S/P ou M/O/I/P] et le libellé de la 1re colonne diffèrent).
+ * `catText` est TOUJOURS rendu en liste d'items INDIVIDUELLEMENT insécables
+ * dès qu'une frontière légitime (tiret) existe — même sur une seule page,
+ * pas seulement en cas de scission — pour que pdfmake ne puisse JAMAIS
+ * couper en milieu de phrase (rule cible mission), y compris quand un item
+ * wrappé sur 2 lignes tombe near d'une frontière de page : seul un
+ * débordement pdfmake NON contrôlé (au niveau d'un item unique, jamais du
+ * bloc entier — finding #1 du banc, cf. JSDoc `dashItemList`) reste possible.
+ * Sans frontière légitime (`catText` sans tiret), repli sur un simple
+ * `labelValue` (comportement identique à avant ce correctif).
+ */
+function buildArticulationCorePages(opts: {
+    title: string;
+    sectionLabel: string;
+    coreFields: Array<[string, string]>;
+    catLabel: string;
+    catText: string;
+    cellsContent: Content[];
+    placeChef: string;
+    fontPx: number;
+    p: OiPdfPalette;
+    geo: ReturnType<typeof pageGeometry>;
+}): Content[] {
+    const { title, sectionLabel, coreFields, catLabel, catText, cellsContent, placeChef, fontPx, p, geo } = opts;
+    const catItems = splitAtDashBoundaries(catText || '-');
+    const hasBoundary = catItems.length > 1;
+    // Garde-fou de dernier recours (JSDoc `catItemsPerPageBudget`, theme.ts) :
+    // scission uniquement si le nombre d'items dépasse le budget d'UNE page
+    // au palier choisi — sinon (immense majorité des cas réels) tout tient
+    // sur la page unique du bloc, `chunkItems` renvoie alors `[catItems]`.
+    const catChunks = hasBoundary ? chunkItems(catItems, catItemsPerPageBudget(fontPx)) : [catItems];
+
+    return catChunks.map((chunk, idx): Content => {
+        const catNode: Content[] = hasBoundary
+            ? [fieldLabel(idx === 0 ? catLabel : `${catLabel} (suite)`, p), ...dashItemList(chunk, p)]
+            : [labelValue(catLabel, chunk[0] ?? '-', p)];
+        const left: Content[] =
+            idx === 0
+                ? [h3(sectionLabel, p), ...coreFields.map(([label, value]) => labelValue(label, value, p)), ...catNode]
+                : catNode;
+        const right: Content[] =
+            idx === 0
+                ? [h3('Composition par Cellule', p), ...cellsContent, labelValue('Place du Chef', placeChef, p)]
+                : [{ text: '' }];
+        return {
+            stack: [h2(idx === 0 ? title : `${title} (suite)`, p, geo.contentWidthPt), grid2(left, right)],
+            fontSize: fontPx,
+            // Convention `galleryPages()` (cf. en-tête de fichier) : bloc
+            // multi-pages auto-cohérent, seule la 1re page reste nue, les
+            // suivantes portent déjà leur propre saut — `pushPages` ne
+            // rajoute rien après la première.
+            pageBreak: idx === 0 ? undefined : 'before',
+        };
+    });
+}
+
+function buildZmspcpPage(ctx: BuildCtx, block: OiZmspcpBlock, memberToCell: Map<string, string>): Content[] {
     const { p, geo } = ctx;
     const groups = regroupByCellOrdered(block.members, memberToCell);
     const cellsContent: Content[] =
         groups.length > 0 ? groups.map(([cell, members]) => cellGroupBox(cell, members, p)) : [{ text: '-', color: p.muted }];
-    return {
-        stack: [
-            h2(`Articulation : MOICP - ${block.title || '-'}`, p, geo.contentWidthPt),
-            grid2(
-                [
-                    h3('MOICP', p),
-                    labelValue('M mission', block.mission || '-', p),
-                    labelValue('O objectif', block.objectif || '-', p),
-                    labelValue('I itinéraire', block.itineraire || '-', p),
-                    labelValue('P points particuliers', block.points_particuliers || '-', p),
-                    labelValue('C conduite à tenir', block.cat || '-', p),
-                ],
-                [
-                    h3('Composition par Cellule', p),
-                    ...cellsContent,
-                    labelValue('Place du Chef', block.place_chef || '-', p),
-                ],
-            ),
+    const fontPx = articulationBlockFontPx(
+        [block.zone, block.mission, block.secteur, block.points_particuliers, block.cat, block.place_chef],
+        groups.length,
+    );
+    return buildArticulationCorePages({
+        title: `Articulation : ZMSPCP - ${block.title || '-'}`,
+        sectionLabel: 'ZMSPCP',
+        coreFields: [
+            ['Z zone', block.zone || '-'],
+            ['M mission', block.mission || '-'],
+            ['S secteur', block.secteur || '-'],
+            ['P points particuliers', block.points_particuliers || '-'],
         ],
-    };
+        catLabel: 'C conduite à tenir',
+        catText: block.cat || '-',
+        cellsContent,
+        placeChef: block.place_chef || '-',
+        fontPx,
+        p,
+        geo,
+    });
+}
+
+function buildMoicpPage(ctx: BuildCtx, block: OiMoicpBlock, memberToCell: Map<string, string>): Content[] {
+    const { p, geo } = ctx;
+    const groups = regroupByCellOrdered(block.members, memberToCell);
+    const cellsContent: Content[] =
+        groups.length > 0 ? groups.map(([cell, members]) => cellGroupBox(cell, members, p)) : [{ text: '-', color: p.muted }];
+    const fontPx = articulationBlockFontPx(
+        [block.mission, block.objectif, block.itineraire, block.points_particuliers, block.cat, block.place_chef],
+        groups.length,
+    );
+    return buildArticulationCorePages({
+        title: `Articulation : MOICP - ${block.title || '-'}`,
+        sectionLabel: 'MOICP',
+        coreFields: [
+            ['M mission', block.mission || '-'],
+            ['O objectif', block.objectif || '-'],
+            ['I itinéraire', block.itineraire || '-'],
+            ['P points particuliers', block.points_particuliers || '-'],
+        ],
+        catLabel: 'C conduite à tenir',
+        catText: block.cat || '-',
+        cellsContent,
+        placeChef: block.place_chef || '-',
+        fontPx,
+        p,
+        geo,
+    });
 }
 
 /** Bloc « Articulation : EFFRACTION - <titre> » (pdf-engine-v2.ts:1132-1187, §3.2 ligne 8f, POINT DE VIGILANCE §1). */
@@ -776,14 +914,14 @@ function buildArticulationBlocksLoop(ctx: BuildCtx): Content[] {
         if (zmspcp) {
             const bapteme = dynamicPhotos[`photo_bapteme_${zmspcp.id}`] ?? [];
             pushPages(acc, galleryPages(`Baptême Terrain — ${zmspcp.title || '-'}`, bapteme, photosBase64, p, geo));
-            pushPage(acc, buildZmspcpPage(ctx, zmspcp, memberToCell));
+            pushPages(acc, buildZmspcpPage(ctx, zmspcp, memberToCell));
             const emplAo = dynamicPhotos[`photo_empl_ao_${zmspcp.id}`] ?? [];
             pushPages(acc, galleryPages(`ZMSPCP : ${zmspcp.title || '-'} (Emplacement AO)`, emplAo, photosBase64, p, geo));
         }
 
         const moicp = moicpBlocks[i];
         if (moicp) {
-            pushPage(acc, buildMoicpPage(ctx, moicp, memberToCell));
+            pushPages(acc, buildMoicpPage(ctx, moicp, memberToCell));
             const ext = dynamicPhotos[`photo_itin_ext_${moicp.id}`] ?? [];
             const int_ = dynamicPhotos[`photo_itin_int_${moicp.id}`] ?? [];
             pushPages(acc, galleryPages(`MOICP : ${moicp.title || '-'}`, [...ext, ...int_], photosBase64, p, geo));
@@ -855,9 +993,18 @@ function buildPatracPage(ctx: BuildCtx): Content | null {
     }
 
     const hasDir = allRows.some((r) => r.m.dir.trim() !== '');
+    // Largeurs adaptées (modèle pagination v2, mission PG.IMPL point 5 — banc
+    // `pdfmake-pagination-bench` q3 : une colonne à largeur FIXE trop étroite
+    // SANS `noWrap` casse un mot sans espace lettre à lettre ("KODIA Q BANA",
+    // "SHARA N", "PSIG GILE TTE" constatés sur `long-case.json` p.15 avant ce
+    // correctif). Toutes les colonnes « code court » (VL, PAX, CELLULE,
+    // FONCTION, PPALE, SEC., AFIS, DIR) passent donc en `auto` + `noWrap` sur
+    // leurs cellules (largeur = celle du plus long libellé RENCONTRÉ, jamais
+    // coupée) ; seule EQPT/GREN. (texte combiné potentiellement long) reste
+    // `*` et garde son retour à la ligne normal.
     const widths: Size[] = hasDir
-        ? ['7%', '7%', '10%', '14%', '10%', '10%', '8%', '28%', '6%']
-        : ['7%', '7%', '10%', '14%', '10%', '10%', '8%', '34%'];
+        ? ['auto', 'auto', 'auto', 'auto', 'auto', 'auto', 'auto', '*', 'auto']
+        : ['auto', 'auto', 'auto', 'auto', 'auto', 'auto', 'auto', '*'];
     const headers = ['VL', 'PAX', 'CELLULE', 'FONCTION', 'PPALE', 'SEC.', 'AFIS', 'EQPT/GREN.', ...(hasDir ? ['DIR'] : [])];
     const headerRow: TableCell[] = headers.map((h) => ({
         text: h,
@@ -870,17 +1017,17 @@ function buildPatracPage(ctx: BuildCtx): Content | null {
     const bodyRows: TableCell[][] = allRows.map(({ vehicle, m }) => {
         const eqpt = [m.equipement, m.equipement2, m.grenades, m.tenue, m.gpb].filter((v) => v && v !== 'Sans').join(', ') || '-';
         const cells: TableCell[] = [
-            { text: vehicle, bold: true, fillColor: vehicle ? p.headerRow : undefined, alignment: 'center', borderColor: cellBorder(p) },
-            { text: m.trigramme || '-', bold: true, alignment: 'center', borderColor: cellBorder(p) },
-            { text: m.cellule || '-', alignment: 'center', borderColor: cellBorder(p) },
-            { text: m.fonction || '-', alignment: 'center', borderColor: cellBorder(p) },
-            { text: m.principales || '-', alignment: 'center', borderColor: cellBorder(p) },
-            { text: m.secondaires || '-', alignment: 'center', borderColor: cellBorder(p) },
-            { text: m.afis || '-', alignment: 'center', borderColor: cellBorder(p) },
+            { text: vehicle, bold: true, fillColor: vehicle ? p.headerRow : undefined, alignment: 'center', noWrap: true, borderColor: cellBorder(p) },
+            { text: m.trigramme || '-', bold: true, alignment: 'center', noWrap: true, borderColor: cellBorder(p) },
+            { text: m.cellule || '-', alignment: 'center', noWrap: true, borderColor: cellBorder(p) },
+            { text: m.fonction || '-', alignment: 'center', noWrap: true, borderColor: cellBorder(p) },
+            { text: m.principales || '-', alignment: 'center', noWrap: true, borderColor: cellBorder(p) },
+            { text: m.secondaires || '-', alignment: 'center', noWrap: true, borderColor: cellBorder(p) },
+            { text: m.afis || '-', alignment: 'center', noWrap: true, borderColor: cellBorder(p) },
             { text: eqpt, fontSize: 8, alignment: 'center', borderColor: cellBorder(p) },
         ];
         if (hasDir) {
-            cells.push({ text: m.dir || '', bold: true, alignment: 'center', borderColor: cellBorder(p) });
+            cells.push({ text: m.dir || '', bold: true, alignment: 'center', noWrap: true, borderColor: cellBorder(p) });
         }
         return cells;
     });

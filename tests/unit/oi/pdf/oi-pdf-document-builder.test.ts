@@ -189,17 +189,17 @@ describe('buildOiDocDefinition — PATRACDVR, colonne DIR conditionnelle', () =>
         };
     }
 
-    it("aucun membre n'a de dir : colonne DIR absente, EQPT/GREN. à 34%", () => {
+    it("aucun membre n'a de dir : colonne DIR absente, EQPT/GREN. en '*'", () => {
         const json = JSON.stringify(buildOiDocDefinition(collect(patracFormData('')), { format: 'a4' }));
 
-        expect(json).toContain('"widths":["7%","7%","10%","14%","10%","10%","8%","34%"]');
+        expect(json).toContain('"widths":["auto","auto","auto","auto","auto","auto","auto","*"]');
         expect(json).not.toContain('"text":"DIR"');
     });
 
-    it('un membre a un dir non vide : colonne DIR présente, EQPT/GREN. à 28%', () => {
+    it("un membre a un dir non vide : colonne DIR présente, EQPT/GREN. en '*'", () => {
         const json = JSON.stringify(buildOiDocDefinition(collect(patracFormData('G1')), { format: 'a4' }));
 
-        expect(json).toContain('"widths":["7%","7%","10%","14%","10%","10%","8%","28%","6%"]');
+        expect(json).toContain('"widths":["auto","auto","auto","auto","auto","auto","auto","*","auto"]');
         expect(json).toContain('"text":"DIR"');
     });
 
@@ -423,7 +423,7 @@ describe('buildOiDocDefinition — tableaux de données : grille p.border, jamai
             `{"text":"VL","bold":true,"fillColor":"${pal.headerRow}","alignment":"center","borderColor":["${pal.border}","${pal.border}","${pal.border}","${pal.border}"]}`,
         );
         expect(json).toContain(
-            `{"text":"ABC","bold":true,"alignment":"center","borderColor":["${pal.border}","${pal.border}","${pal.border}","${pal.border}"]}`,
+            `{"text":"ABC","bold":true,"alignment":"center","noWrap":true,"borderColor":["${pal.border}","${pal.border}","${pal.border}","${pal.border}"]}`,
         );
     });
 });
@@ -441,11 +441,11 @@ describe('buildOiDocDefinition — alignement centré du roster PATRACDVR (arbit
     it('les colonnes CELLULE/FONCTION/PPALE/SEC./AFIS/EQPT+GREN. sont centrées, comme VL/DIR/en-tête', () => {
         const json = JSON.stringify(buildOiDocDefinition(collect({ patracdvr_rows: [makePatracRow()] }), { format: 'a4' }));
 
-        expect(json).toContain('{"text":"AO1","alignment":"center","borderColor":');
-        expect(json).toContain('{"text":"Chef inter","alignment":"center","borderColor":');
-        expect(json).toContain('{"text":"UMP9","alignment":"center","borderColor":');
-        expect(json).toContain('{"text":"PSA","alignment":"center","borderColor":');
-        expect(json).toContain('{"text":"PIE","alignment":"center","borderColor":');
+        expect(json).toContain('{"text":"AO1","alignment":"center","noWrap":true,"borderColor":');
+        expect(json).toContain('{"text":"Chef inter","alignment":"center","noWrap":true,"borderColor":');
+        expect(json).toContain('{"text":"UMP9","alignment":"center","noWrap":true,"borderColor":');
+        expect(json).toContain('{"text":"PSA","alignment":"center","noWrap":true,"borderColor":');
+        expect(json).toContain('{"text":"PIE","alignment":"center","noWrap":true,"borderColor":');
         expect(json).toContain('{"text":"GENL, UBAS","fontSize":8,"alignment":"center","borderColor":');
     });
 });
@@ -598,5 +598,72 @@ describe('buildOiDocDefinition — cartes/encadrés simples : transparentes par 
         );
         // Signature de l'ANCIEN défaut (fond systématique cardAlt sur une card() nue) : absente.
         expect(json).not.toContain(`"fillColor":"${PDF_LIGHT.cardAlt}","borderColor":["${PDF_LIGHT.border}"`);
+    });
+});
+
+// ===========================================================================
+// Modèle de PAGINATION v2 (correctif PG.IMPL, docs/SPEC-PDF-V3.md § Pagination
+// v2) — blocs ZMSPCP/MOICP « C conduite à tenir » : police adaptative PUIS
+// scission aux frontières légitimes (tirets) en dernier recours. Contre-épreuve
+// terrain équivalente (guardrail structurel réel) : `tests/pdf/fixtures/long-case.json`
+// + `tests/pdf/verify-structure.mjs` (assertions B1/B2/B3, cf. `tests/pdf/README.md`).
+// ===========================================================================
+describe('buildOiDocDefinition — modèle de pagination v2 (ZMSPCP/MOICP, correctif PG.IMPL)', () => {
+    function dashItems(count: number): string {
+        return Array.from({ length: count }, (_, i) => `- Item numero ${i + 1} du champ conduite a tenir.`).join('\n');
+    }
+
+    it('champ « C conduite à tenir » COURT (sans tiret) : rendu inchangé, un seul labelValue, une seule page', () => {
+        const zmspcpBlocks: OiZmspcpBlock[] = [
+            { id: 'z1', title: 'ALPHA', zone: '-', mission: '-', secteur: '-', points_particuliers: '-', cat: 'RAS', place_chef: '-', members: [] },
+        ];
+        const json = JSON.stringify(buildOiDocDefinition(collect({ zmspcp_blocks: zmspcpBlocks }), { format: 'a4' }));
+
+        expect(json).toContain('"text":[{"text":"C CONDUITE À TENIR : ","bold":true,"color":"#0033a0"},{"text":"RAS"');
+        expect(json).not.toContain('(suite)');
+    });
+
+    it('champ « C conduite à tenir » à tirets tenant sur UNE page : liste d\'items insécables, AUCUNE scission', () => {
+        const zmspcpBlocks: OiZmspcpBlock[] = [
+            { id: 'z1', title: 'ALPHA', zone: '-', mission: '-', secteur: '-', points_particuliers: '-', cat: dashItems(5), place_chef: '-', members: [] },
+        ];
+        const json = JSON.stringify(buildOiDocDefinition(collect({ zmspcp_blocks: zmspcpBlocks }), { format: 'a4' }));
+
+        // Chaque item rendu comme un `text` insécable distinct (pas un labelValue unique multi-lignes).
+        expect(json).toContain('{"text":"- Item numero 1 du champ conduite a tenir.","color":"#111111","margin":[0,0,0,0],"unbreakable":true}');
+        expect(json).toContain('{"text":"- Item numero 5 du champ conduite a tenir.","color":"#111111","margin":[0,2,0,0],"unbreakable":true}');
+        expect(json).not.toContain('(suite)');
+        expect((json.match(/ARTICULATION : ZMSPCP - ALPHA/g) ?? []).length).toBe(1);
+    });
+
+    it("champ « C conduite à tenir » DÉPASSANT le budget d'une page : scission aux frontières légitimes, fragment « (suite) », jamais de coupure en milieu de phrase", () => {
+        const zmspcpBlocks: OiZmspcpBlock[] = [
+            { id: 'z1', title: 'ALPHA', zone: '-', mission: '-', secteur: '-', points_particuliers: '-', cat: dashItems(30), place_chef: '-', members: [] },
+        ];
+        const json = JSON.stringify(buildOiDocDefinition(collect({ zmspcp_blocks: zmspcpBlocks }), { format: 'a4' }));
+
+        // Fragment « (suite) » présent, EXACTEMENT une fois (une seule scission pour 30 items au budget calibré).
+        expect(json).toContain('ARTICULATION : ZMSPCP - ALPHA (SUITE)');
+        expect((json.match(/\(SUITE\)/g) ?? []).length).toBeGreaterThanOrEqual(1);
+
+        // Les 30 items apparaissent chacun EXACTEMENT une fois (aucune perte, aucune duplication),
+        // chacun comme bloc `unbreakable` INTACT — jamais une coupure en milieu de phrase.
+        for (let i = 1; i <= 30; i++) {
+            const marker = `Item numero ${i} du champ conduite a tenir.`;
+            const occurrences = json.split(marker).length - 1;
+            expect(occurrences, `item ${i} doit apparaître exactement 1 fois`).toBe(1);
+            expect(json).toContain(`"text":"- ${marker}","color":"#111111"`);
+        }
+
+        // Le fragment « (suite) » porte bien un saut de page explicite (convention `galleryPages()`).
+        const suiteIdx = json.indexOf('ARTICULATION : ZMSPCP - ALPHA (SUITE)');
+        const finalPageIdx = json.indexOf('AVEZ-VOUS DES QUESTIONS');
+        const secondPageJson = json.slice(suiteIdx, finalPageIdx);
+        expect(secondPageJson).toContain('"pageBreak":"before"');
+
+        // La composition par cellule ne réapparaît pas sur le fragment « (suite) ».
+        const firstPageEnd = suiteIdx;
+        expect(secondPageJson).not.toContain('Composition par Cellule');
+        expect(json.slice(0, firstPageEnd)).toContain('Composition par Cellule');
     });
 });

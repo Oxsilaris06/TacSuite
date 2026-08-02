@@ -157,6 +157,30 @@ export function patracFontPx(rowCount: number): number {
 }
 
 /**
+ * Budget approximatif d'items « à tiret » (ex. conduite à tenir ZMSPCP/MOICP,
+ * `\n- item`) tenant sur UNE page dédiée à un palier de police donné —
+ * modèle de pagination v2 (docs/SPEC-PDF-V3.md § Pagination v2, correctif
+ * PG.IMPL). Mesure grossière par NOMBRE D'ITEMS plutôt que par caractère :
+ * `document-builder.ts` reste un module PUR (zéro pdfmake en valeur, cf.
+ * son en-tête) donc sans accès à la mesure réelle `pageSize:{height:Infinity}`
+ * du banc (`pdfmake-pagination-bench` q5) — seule une heuristique est
+ * possible ici, dans le même esprit que `adaptivePagePx`/`patracFontPx`
+ * ci-dessus. Calibré empiriquement contre `tests/pdf/fixtures/long-case.json`
+ * (bloc ZMSPCP à 20 items, `adaptivePagePx` le réduit au palier 9 → tient
+ * largement sous ce budget, aucune scission nécessaire — vérifié guardrail
+ * B1/B3). Sert de GARDE-FOU DE DERNIER RECOURS : la police adaptative
+ * absorbe déjà l'immense majorité des volumes réels ; `document-builder.ts`
+ * ne scinde un bloc à tirets en pages « (suite) » que si son nombre d'items
+ * dépasse encore ce budget au palier choisi.
+ */
+export function catItemsPerPageBudget(fontPx: number): number {
+    if (fontPx >= 14) return 12;
+    if (fontPx >= 12) return 16;
+    if (fontPx >= 10) return 20;
+    return 26;
+}
+
+/**
  * Hauteur utile (mm) d'une page pleine (garde/finale) selon l'orientation,
  * marges verticales `@page` déduites (8 + 11 mm) — port verbatim de
  * `fullPageHeightMm()` (OrderPdfStyle.kt:60-62).

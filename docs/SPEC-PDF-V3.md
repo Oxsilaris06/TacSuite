@@ -519,6 +519,119 @@ exécution complète (`npm run typecheck && npm run lint && npm test && npm run 
 
 ---
 
+## § Pagination v2 (correctif PG.IMPL, mode rapide sans Playwright)
+
+Addendum au §7 (guardrail B1-B3, `tests/pdf/verify-structure.mjs`) : modèle de
+pagination des blocs ZMSPCP/MOICP et du tableau PATRACDVR de
+`document-builder.ts` (voie A, pdfmake), motivé par 3 défauts **prouvés** sur
+un PDF réel de 21 pages avant correctif — queues orphelines (« fixer
+l'adversaire. » seule sur une page), pages à titre seul, mots du Store cassés
+lettre à lettre dans le PATRACDVR (« SHARA N », « GILE TTE », « KODIA Q
+BANA »). Contre-épreuve TDD : `tests/pdf/fixtures/long-case.json` +
+`tests/pdf/verify-structure.mjs --lenient` (assertions B1/B2/B3, indépendantes
+de `--lenient`) — FAIL avant ce correctif (B1 page 9 à 114 caractères, B2 3
+mots cassés page 15), PASS après (les deux, thème clair ET sombre, format
+`a4` ET `16:9`), sans régresser les 1628 tests préexistants (1631 après ajout
+des 3 tests dédiés `tests/unit/oi/pdf/oi-pdf-document-builder.test.ts`).
+
+### Contrainte de départ : module PUR
+
+`document-builder.ts` reste un module PUR (zéro pdfmake en VALEUR, cf. son
+en-tête) — la mesure réelle du rendu (`pageSize:{height:Infinity}`, bench
+`pdfmake-pagination-bench` q5) est donc **hors de portée** de ce fichier :
+c'est une capacité du seul harnais de test (`tests/pdf/generate-from-fixture.mjs`),
+jamais du code de production. Le modèle ci-dessous est donc entièrement
+**heuristique par volume de caractères**, dans le prolongement direct des
+barèmes déjà en place (`documentFontPx`, `adaptivePagePx`, `patracFontPx`,
+`theme.ts`) — pas une mesure de rendu réelle.
+
+### 1. Police adaptative AVANT scission (priorité 1-2)
+
+`buildZmspcpPage`/`buildMoicpPage` calculent un palier de police propre au
+bloc via `adaptivePagePx()` (déjà utilisée par la fiche adversaire), sur les
+champs cœur (Z/M/S/P ou M/O/I/P, `cat`, `place_chef`) + un nombre de lignes
+« virtuelles » proportionnel au nombre de groupes de cellule. Un champ « C
+conduite à tenir » volumineux (beaucoup de `\n`) fait donc naturellement
+tomber le palier au minimum (9 px) **avant** toute décision de scission —
+sur `long-case.json` (bloc ZMSPCP à 20 items), ce seul mécanisme suffit à
+faire tenir le bloc entier sur une page (vérifié par rendu réel +
+`pdftoppm`, aucune scission déclenchée).
+
+### 2. Frontières légitimes UNIQUEMENT (priorité 3, `splitAtDashBoundaries`)
+
+Un champ « à tirets » (`- item\n- item...`) est découpé en items **seulement**
+aux frontières `\n(?=-\s)` — jamais en milieu de phrase. Sans tiret détecté,
+le champ reste un bloc unique, intact, JAMAIS scindé (repli identique au
+comportement pré-correctif). Chaque item est ensuite rendu comme un élément
+`unbreakable:true` **individuel** (`dashItemList`) — pas le bloc entier :
+finding #1 du banc (`unbreakable` dépassant une page = **suppression
+SILENCIEUSE**, 0 ligne rendue, aucune erreur) interdit d'appliquer
+`unbreakable` à un bloc de la taille d'une page ; chaque item pris seul reste
+très en-deçà de cette limite. Ce rendu par item s'applique **dès qu'une
+frontière existe**, même sur une seule page — pas seulement en cas de
+scission — pour que pdfmake ne puisse jamais rompre une phrase entre deux
+lignes wrappées d'un même item.
+
+### 3. Scission « (suite) » en dernier recours (priorité 3, garde-fou)
+
+Si le nombre d'items dépasse `catItemsPerPageBudget(fontPx)` (`theme.ts` —
+budget par NOMBRE D'ITEMS, mesure grossière calibrée empiriquement en
+l'absence de mesure de rendu réelle, cf. contrainte module pur ci-dessus :
+12/16/20/26 items selon le palier 14/12/10/9 px), le bloc est scindé en
+fragments de `budget` items (`chunkItems`). Chaque fragment devient sa PROPRE
+page : le premier conserve les champs cœur + la composition par cellule, les
+suivants portent le titre `<Titre> (SUITE)` (port de la règle cible
+strategica, `h2()` majuscule le texte) et uniquement la suite des items —
+jamais de duplication ni de perte (vérifié exhaustivement par test unitaire,
+30 items synthétiques → exactement 1 scission à l'item 26/30, chaque item
+présent exactement une fois). Convention de saut de page : identique à
+`galleryPages()` (cf. en-tête `document-builder.ts`) — seule la première page
+du bloc reste nue, les suivantes portent déjà leur propre `pageBreak:'before'`,
+consommées par `pushPages()` (pas `pushPage()`).
+
+### 4. Sections vides omises
+
+Déjà couvert par le code préexistant, non touché par ce correctif :
+`buildCatPage`/`buildPatracPage` renvoient `null` si tous leurs champs sont
+vides (§3.4 règle 1), et `galleryPages()` renvoie `[]` sans photo résolue —
+aucune page « titre seul » n'est donc générée pour une section vide.
+
+### 5. PATRACDVR : largeurs adaptées (`buildPatracPage`)
+
+Cause du bug (bench q3, confirmée sur `long-case.json` p.15 AVANT correctif) :
+les colonnes « code court » (véhicule, trigramme, cellule, fonction, armes,
+AFIS, direction) étaient en largeur **pourcentage fixe** sans `noWrap` — un
+mot sans espace plus large que la colonne (« SHARAN », « KODIAQ », « GILETTE »)
+était cassé **lettre à lettre** par l'algorithme de wrap de pdfmake (aucune
+césure au tiret possible pour un mot du Store). Corrigé en largeurs `'auto'`
++ `noWrap:true` sur cellule pour **toutes** les colonnes code court (largeur
+= celle du plus long libellé RENCONTRÉ, jamais coupée) ; seule EQPT/GREN.
+(texte combiné potentiellement long, plusieurs mots) reste en `'*'` sans
+`noWrap`, conservant son retour à la ligne normal. `patracFontPx()` (palier
+9-14 px selon le nombre de lignes, `theme.ts`) est inchangé.
+
+### 6. Groupement 2 colonnes (ZMSPCP/MOICP)
+
+Déjà porté par `grid2()` (champs cœur à gauche, composition par cellule à
+droite) — inchangé par ce correctif, simplement préservé sur la première page
+de chaque bloc scindé (les fragments « (SUITE) » n'ont qu'une colonne gauche
+utile, la droite reste un espace réservateur `{ text: '' }` pour garder la
+mise en page à 2 colonnes cohérente).
+
+### Limites assumées
+
+* Le budget `catItemsPerPageBudget` est une heuristique par NOMBRE D'ITEMS,
+  pas par volume de caractères par item — un bloc à 20 items très longs
+  (chacun sur 3-4 lignes) pourrait en théorie encore déborder d'une page
+  malgré un nombre d'items sous le budget ; non observé sur les jeux de
+  données réels disponibles (`long-case.json`, `recipe-data.json`).
+* Seuls ZMSPCP/MOICP (`C conduite à tenir`) et PATRACDVR bénéficient de ce
+  modèle — `buildEffractionPage`/`buildCatPage` (8. CONDUITES À TENIR
+  GÉNÉRALES) restent au comportement pré-correctif, aucun défaut B1/B2/B3
+  n'ayant été mesuré sur ces blocs.
+
+---
+
 ## 9. Références
 
 * Étude : `../../.tacsuite-prep/etude-pdf-strategica.md`
