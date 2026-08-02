@@ -1081,10 +1081,11 @@ test.describe('OI — Checklist fonctionnelle (docs/recon-oi.md §9)', () => {
         await expect.soft(page.locator(`#${id}`)).toBeAttached();
       }
     });
-    await step('lien PC-Tac pointe vers /pctac/ (SPEC-OI-CONVERSION §12.4 : pctac.html → /pctac/)', async () => {
-      // Résolu : oi/index.html:663 porte bien href="/pctac/" (appliqué en
-      // P3B.C, commit aa1f10f).
-      await expect.soft(page.locator('#pctacLink')).toHaveAttribute('href', '/pctac/');
+    await step('lien PC-Tac pointe vers ../pctac/ (SPEC-OI-CONVERSION §12.4 : pctac.html → /pctac/ ; relatif depuis P4.C, base GitHub Pages)', async () => {
+      // Résolu : oi/index.html:663 portait href="/pctac/" (P3B.C, commit
+      // aa1f10f), converti en href="../pctac/" en P4.C (liens inter-apps
+      // relatifs, cf. docs/DECISIONS-DOM-ECARTS.md point 11).
+      await expect.soft(page.locator('#pctacLink')).toHaveAttribute('href', '../pctac/');
     });
     await step('réduire/agrandir le dock (toggleDock, persisté dockCollapsed)', async () => {
       await page.locator('#dockToggleBtn').click();
@@ -1122,9 +1123,11 @@ test.describe('OI — Checklist fonctionnelle (docs/recon-oi.md §9)', () => {
     // non testé dans `pctac.spec.ts` — ce test comble ce trou pour OI SANS
     // toucher aux 4 chemins protégés du portail racine (index.html,
     // styles/portal.css, src/apps/portal/, public/portal/ — hors périmètre
-    // de ce fichier, jamais lus ni modifiés ici).
+    // de ce fichier, jamais lus ni modifiés ici). Converti en `href="../"`
+    // en P4.C (liens inter-apps relatifs, cf. docs/DECISIONS-DOM-ECARTS.md
+    // point 11).
     await expect.soft(page.locator('#portalLink')).toBeAttached();
-    await expect.soft(page.locator('#portalLink')).toHaveAttribute('href', '/');
+    await expect.soft(page.locator('#portalLink')).toHaveAttribute('href', '../');
   });
 
   test('Tuto interactif — bouton injecté dans le dock + ouverture (PocheTuto, appId="oi")', async ({ page }) => {

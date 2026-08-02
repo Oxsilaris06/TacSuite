@@ -293,9 +293,43 @@ sous-section "10bis" apres celle-ci pour cette seconde balise.
   point 10 (mission precedente) ne couvrait que la balise AVEC id, laissant
   le document incomplet sur la categorie qu'il venait precisement d'ouvrir.
 
+## 11. OI et PC-Tac : liens dock (`#portalLink`, `#pctacLink`, lien OI) — chemins absolus `/…` → relatifs `../…`
+
+- **Points modifies** : `#pctacLink` (point 5, `oi/index.html`), `#portalLink`
+  (point 6, `oi/index.html` ET `pctac/index.html`), lien dock PC-Tac vers l'OI
+  (point 7, `pctac/index.html`) — les quatre chemins absolus `/pctac/`, `/`
+  (x2) et `/oi/` deviennent respectivement `../pctac/`, `../` (x2) et `../oi/`.
+- **Original** : aucun (ces liens sont des ajouts purs du portage, cf. points
+  5/6/7 ci-dessus — pas d'equivalent legacy a comparer).
+- **Justification** : deploiement GitHub Pages sous base `/TacSuite/`
+  (`vite.config.ts`, `TACSUITE_BASE`). Vite reecrit les references d'assets
+  du HTML (`<link>`, `<script src>`, `<img src>`) avec la base au moment du
+  build, mais PAS le contenu des ancres `<a href>` — un chemin absolu
+  `/pctac/` reste `/pctac/` apres build, donc pointe hors du sous-repertoire
+  `/TacSuite/` une fois deploye (404 sur Pages). Les chemins relatifs
+  (`../pctac/` depuis `oi/index.html`, `../` depuis `pctac/index.html`)
+  traversent correctement le prefixe de base quel qu'il soit (`/` en dev/
+  preview, `/TacSuite/` sur Pages) car ils sont resolus par le navigateur
+  contre l'URL de la page courante, pas contre la racine du site.
+- **Chemins non touches** : les references d'assets (`href="/favicon.ico"`,
+  `href="/manifest.webmanifest"`, `href="/styles/*.css"`,
+  `script src="/src/apps/*/main.ts"`, `img src="/portal/*.webp"`) restent en
+  chemins absolus — Vite les reecrit deja correctement avec la base au build,
+  contrairement aux ancres `<a href>`.
+- **Portail racine** (`index.html`) : deja en chemins relatifs (`href="./pctac/"`,
+  `href="./oi/"`) depuis sa version courante — aucun changement necessaire sur
+  ce fichier pour ce point.
+- **Tests ajustes** : `tests/e2e/oi.spec.ts` — assertions `toHaveAttribute('href', …)`
+  sur `#pctacLink` (`'/pctac/'` → `'../pctac/'`) et `#portalLink`
+  (`'/'` → `'../'`). `tests/e2e/pctac.spec.ts` ne portait aucune assertion
+  d'attribut `href` sur ces liens (rien a ajuster). `tests/e2e/offline.spec.ts`
+  navigue via `page.goto()` sur des chemins absolus independants du DOM des
+  ancres — non concerne.
+- **Mission P4.C** (livraison : preparation GitHub Pages).
+
 ## Portee de ce document
 
-Les ecarts DOM ci-dessus (points 1 a 10, plus 10bis) sont, a la date du 2026-08-01, la
-liste exhaustive des divergences constatees entre le DOM des originaux et
-celui des squelettes portes. Toute divergence future devra etre ajoutee ici
-avant d'etre acceptee par un gate.
+Les ecarts DOM ci-dessus (points 1 a 10, plus 10bis et 11) sont, a la date du
+2026-08-02, la liste exhaustive des divergences constatees entre le DOM des
+originaux et celui des squelettes portes. Toute divergence future devra etre
+ajoutee ici avant d'etre acceptee par un gate.
