@@ -1,0 +1,137 @@
+{
+  "isDark": true,
+  "photosBase64": {},
+  "formData": {
+    "date_op": "2026-08-02",
+    "trigramme_redacteur": "PGD",
+    "unite_redacteur": "PSIG TEST",
+    "situation_generale": "Reconduite du scenario de recette OI avec un jeu de donnees volontairement charge : plusieurs blocs d'articulation portent des conduites a tenir tres longues (15+ lignes) pour reproduire les queues orphelines observees par l'utilisateur sur le PDF reel de 21 pages (fragments isoles \"fixer l'adversaire.\" et \"porte\" en fin de page). Le PATRACDVR embarque des vehicules et une direction dont les noms sont assez longs pour etre casses lettre a lettre dans les colonnes etroites du tableau (SHARAN, KODIAQ BANA, PSIG GILETTE).",
+    "situation_particuliere": "Le bloc Effraction ne porte aucune mesure technique saisie (structure/serrurerie/environnement/cotes toutes vides) et aucune hypothese d'effraction : cas \"effraction sans mesures\" du retour utilisateur. Aucune photo de cheminement n'est fournie : la galerie Logistique & Transports (Cheminement) doit rester une section vide.",
+    "amies": "PSIG de reserve en soutien, 5 minutes du point de rassemblement.",
+    "terrain_info": "Zone pavillonnaire, visibilite correcte, vent nul.",
+    "eclairage": "Eclairage public partiel, cage d'escalier sans detecteur.",
+    "lever_soleil": "06:20",
+    "population": "Riverains presents des 06:30.",
+    "faune_animaux": "Neant signale.",
+    "acces_principal": "Portail pieton cote rue, sas puis escalier B.",
+    "cheminement_initial": "Approche pedestre en colonne tactique depuis le point de rassemblement.",
+    "cadre_juridique": "Commission rogatoire - interpellation.",
+    "missions_psig": "1. INVESTIR LE DOMICILE DE L'OBJECTIF.\n2. INTERPELLER LES INDIVIDUS PRESENTS.\n3. SECURISER LES LIEUX.",
+    "date_execution": "2026-08-02",
+    "heure_execution": "06:00",
+    "action_body_text": "En vue d'interpeller les mis en cause, investir le domicile presume apres bouclage exterieur.",
+    "cat_generales": "- Usage de la force strictement necessaire et proportionnee.\n- Riposte graduee conforme a l'Art L435-1 du CSI.",
+    "no_go": "",
+    "cat_liaison": "Gestuelle et visuelle entre les elements India.",
+    "hypotheses": [
+      "La porte est renforcee par une barre de securite.",
+      "Presence de tiers non identifies dans le salon.",
+      "Tentative de fuite par la fenetre arriere."
+    ],
+    "time_events": [
+      { "type": "T0", "hour": "05:15", "description": "Briefing final." },
+      { "type": "T1", "hour": "05:30", "description": "Depart de la base." },
+      { "type": "T2", "hour": "05:45", "description": "Mise en place au PR." },
+      { "type": "T3", "hour": "05:55", "description": "Approche pedestre discrete." },
+      { "type": "T4", "hour": "06:00", "description": "TOP ACTION - effraction et penetration." }
+    ],
+    "place_chef": "Au contact de l'equipe de penetration (India).",
+    "rame_vl_order": ["SHARAN", "KODIAQ BANA", "VL3", "VL4"],
+    "colonne_progression_order": ["GRD", "RTI", "GLS", "MHX", "BSN", "RLE", "PPR", "LNZ", "TOZ", "VNC"],
+    "ordre_penetration_order": ["GRD", "RTI", "GLS", "MHX", "BSN", "RLE", "PPR", "LNZ", "TOZ", "VNC"],
+    "adversaries": [],
+    "dynamic_photos": {},
+    "zmspcp_blocks": [
+      {
+        "id": "zmspcp_1",
+        "title": "ZMSPCP - Groupe Alpha (Bouclage Long)",
+        "zone": "Perimetre exterieur du batiment B.",
+        "mission": "SECURISER LE PERIMETRE EXTERNE ET FIGER TOUTE ISSUE.",
+        "secteur": "Facade Nord et Sud du batiment B.",
+        "points_particuliers": "Fenetres du RDC pouvant servir de sortie secondaire.",
+        "cat": "- Prendre position des le top depart et rendre compte de la mise en place.\n- Observer en permanence les issues Nord et Sud du batiment B sans se decouvrir.\n- Ne jamais quitter son poste sans ordre explicite du chef de dispositif.\n- Signaler immediatement toute ouverture de fenetre ou de porte laterale.\n- Interdire tout croisement avec des riverains non identifies dans le perimetre.\n- Maintenir la liaison radio permanente avec le poste de commandement tactique.\n- En cas de sortie precipitee d'un individu, privilegier la verbalisation avant contact.\n- Ne jamais engager seul une interpellation hors zone de couverture directe.\n- Conserver une distance de securite suffisante avec les ouvertures du batiment.\n- Prevoir un repli immediat derriere un point dur en cas de menace armee identifiee.\n- Rendre compte de toute anomalie sonore ou lumineuse provenant du batiment cible.\n- Verifier regulierement l'etat de son equipement de protection individuelle.\n- Ne pas utiliser d'eclairage tactique sauf necessite operationnelle immediate.\n- Anticiper les axes de fuite pietons et vehicules autour du pate de maisons.\n- Coordonner tout mouvement lateral avec le binome adjacent avant de bouger.\n- Rester en couverture mutuelle permanente avec le second element du dispositif.\n- Prevenir sans delai toute apparition de tiers aux fenetres du batiment cible.\n- Garder le contact visuel avec l'objectif principal en toutes circonstances.\n- Attendre le top du chef de dispositif avant tout mouvement de resserrement.\n- Se tenir pret a intervenir en renfort immediat pour fixer l'adversaire.",
+        "place_chef": "Angle Nord-Est du batiment B.",
+        "members": ["GRD", "RTI", "GLS"]
+      }
+    ],
+    "moicp_blocks": [
+      {
+        "id": "moicp_1",
+        "title": "MOICP - Groupe India (Penetration Longue)",
+        "mission": "INVESTIR, REDUIRE L'OPPOSITION ET INTERPELLER LES OCCUPANTS.",
+        "objectif": "Appartement 3e etage, batiment B, porte gauche.",
+        "itineraire": "Escalier B jusqu'au palier du 3e etage.",
+        "points_particuliers": "Chien de garde possible derriere la porte.",
+        "cat": "- Progresser en colonne serree jusqu'au palier du troisieme etage sans bruit.\n- Marquer un temps d'arret avant le palier pour ecouter toute activite interieure.\n- Confirmer la position de chaque binome avant d'entamer la derniere volee d'escalier.\n- Se repartir de part et d'autre du palier hors de l'axe direct de la porte.\n- Attendre le top du chef d'equipe avant toute mise en oeuvre du dispositif d'ouverture.\n- Couvrir systematiquement les angles morts du palier pendant toute la phase d'approche.\n- Neutraliser prioritairement tout animal de garde avec les moyens non letaux prevus.\n- Verbaliser clairement son identification avant tout franchissement du seuil.\n- Progresser en configuration entonnoir des l'ouverture obtenue sur le palier.\n- Traiter chaque piece dans l'ordre convenu lors du briefing, sans improvisation.\n- Rendre compte au chef de dispositif a chaque piece securisee du logement.\n- Regrouper les occupants interpelles dans la piece designee comme point de regroupement.\n- Maintenir une communication radio breve et codifiee pendant toute la phase interieure.\n- Ne jamais tourner le dos a une piece non fouillee pendant la progression.\n- Conserver la couverture mutuelle du binome a chaque changement de direction.\n- Signaler sans delai toute decouverte de produit ou d'objet dangereux.\n- Attendre l'autorisation du chef avant d'entamer la fouille de securite des lieux.\n- Ne desengager le dispositif qu'apres compte rendu complet au poste de commandement.\n- Prevoir un renfort immediat en cas d'opposition franche des occupants.\n- Preparer les moyens necessaires avant de forcer la porte.",
+        "place_chef": "Palier du 3e etage, batiment B.",
+        "members": ["MHX", "PRC", "PPR"]
+      }
+    ],
+    "effraction_blocks": [
+      {
+        "id": "effrac_1",
+        "title": "Cellule Effraction",
+        "mission": "FRANCHISSEMENT DE LA PORTE D'ENTREE.",
+        "porte": "",
+        "structure": "",
+        "serrurerie": "",
+        "environnement": "",
+        "bati_a_bati": "",
+        "dormant_a_dormant": "",
+        "prof_linteaux": "",
+        "prof_bati": "",
+        "h_porte": "",
+        "h_marche": "",
+        "prof_marche": "",
+        "prof_moulure": "",
+        "members": [],
+        "hypotheses": []
+      }
+    ],
+    "patracdvr_unassigned": [],
+    "patracdvr_rows": [
+      {
+        "vehicle": "SHARAN",
+        "members": [
+          { "trigramme": "GRD", "fonction": "Chef inter", "cellule": "India 1", "principales": "UMP9", "secondaires": "PSA", "afis": "Sans", "grenades": "Sans", "equipement": "Sans", "equipement2": "Sans", "tenue": "UBAS", "gpb": "GPBL", "dir": "" },
+          { "trigramme": "RTI", "fonction": "Inter", "cellule": "India 1", "principales": "G36", "secondaires": "PSA", "afis": "Sans", "grenades": "Sans", "equipement": "Sans", "equipement2": "Sans", "tenue": "UBAS", "gpb": "GPBL", "dir": "" },
+          { "trigramme": "GLS", "fonction": "Sans", "cellule": "India 1", "principales": "FAP", "secondaires": "PSA", "afis": "Sans", "grenades": "Sans", "equipement": "Sans", "equipement2": "Sans", "tenue": "UBAS", "gpb": "GPBL", "dir": "" }
+        ]
+      },
+      {
+        "vehicle": "KODIAQ BANA",
+        "members": [
+          { "trigramme": "MHX", "fonction": "Chef dispo", "cellule": "India 2", "principales": "UMP9", "secondaires": "PSA", "afis": "Sans", "grenades": "Sans", "equipement": "Sans", "equipement2": "Sans", "tenue": "UBAS", "gpb": "GPBL", "dir": "PSIG GILETTE" },
+          { "trigramme": "PRC", "fonction": "Inter", "cellule": "India 2", "principales": "G36", "secondaires": "PSA", "afis": "Sans", "grenades": "Sans", "equipement": "Sans", "equipement2": "Sans", "tenue": "UBAS", "gpb": "GPBL", "dir": "" },
+          { "trigramme": "PPR", "fonction": "Sans", "cellule": "India 2", "principales": "FAP", "secondaires": "PSA", "afis": "Sans", "grenades": "Sans", "equipement": "Sans", "equipement2": "Sans", "tenue": "UBAS", "gpb": "GPBL", "dir": "" }
+        ]
+      },
+      {
+        "vehicle": "VL3",
+        "members": [
+          { "trigramme": "BSN", "fonction": "AO", "cellule": "AO1", "principales": "UMP9", "secondaires": "PSA", "afis": "Sans", "grenades": "Sans", "equipement": "Sans", "equipement2": "Sans", "tenue": "UBAS", "gpb": "GPBL", "dir": "" },
+          { "trigramme": "RLE", "fonction": "Sans", "cellule": "AO1", "principales": "G36", "secondaires": "PSA", "afis": "Sans", "grenades": "Sans", "equipement": "Sans", "equipement2": "Sans", "tenue": "UBAS", "gpb": "GPBL", "dir": "" }
+        ]
+      },
+      {
+        "vehicle": "VL4",
+        "members": [
+          { "trigramme": "LNZ", "fonction": "Sans", "cellule": "AO2", "principales": "UMP9", "secondaires": "PSA", "afis": "Sans", "grenades": "Sans", "equipement": "Sans", "equipement2": "Sans", "tenue": "UBAS", "gpb": "GPBL", "dir": "" },
+          { "trigramme": "TOZ", "fonction": "Sans", "cellule": "AO2", "principales": "G36", "secondaires": "PSA", "afis": "Sans", "grenades": "Sans", "equipement": "Sans", "equipement2": "Sans", "tenue": "UBAS", "gpb": "GPBL", "dir": "" }
+        ]
+      }
+    ],
+    "options": {
+      "fonctions": ["Chef inter", "Chef dispo", "Chef Oscar", "Conducteur", "Chef de bord", "DE", "Cyno", "Inter", "Effrac", "AO", "Sans"],
+      "cellules": ["AO1", "AO2", "AO3", "AO4", "India 1", "India 2", "India 3", "India 4", "Effrac", "Sans"],
+      "principales": ["UMP9", "G36", "FAP", "Sans"],
+      "afis": ["PIE", "LBD40", "LBD44", "Sans"],
+      "secondaires": ["PSA", "Sans"],
+      "grenades": ["GENL", "MP7", "Sans"],
+      "equipements": ["Sans", "BBAL", "Bouclier MO", "Belier"],
+      "equipements2": ["Sans", "Cam pieton", "Echelle"],
+      "tenues": ["UBAS", "4S", "Bleu", "Civile"],
+      "gpbs": ["GPBL", "GPBPD", "Casque Lourd", "Sans"]
+    }
+  }
+}

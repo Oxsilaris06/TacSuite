@@ -26,16 +26,21 @@
  *
  * Défauts : --format=a4, --photos=0, mode strict (pas de --lenient).
  * Sortie : une ligne `PASS <code> — <libellé>` ou `FAIL <code> — <constat
- * mesuré>` par assertion (A1..A8), puis un résumé `N/8 assertions`. Avec
- * `--json`, émet EN PLUS (pas à la place — les lignes lisibles restent
- * imprimées) un objet `{ ok, file, assertions: [{ code, ok, detail }] }` sur
- * stdout, en dernière ligne.
- * Code de sortie : 0 si les 8 assertions passent, 1 sinon, 2 en cas de garde
+ * mesuré>` par assertion (A1..A8 historiques + B1..B3 guardrail pagination,
+ * mission PG.GUARD), puis un résumé `N/11 assertions`. Avec `--json`, émet EN
+ * PLUS (pas à la place — les lignes lisibles restent imprimées) un objet
+ * `{ ok, file, assertions: [{ code, ok, detail }] }` sur stdout, en dernière
+ * ligne.
+ * Code de sortie : 0 si les 11 assertions passent, 1 sinon, 2 en cas de garde
  * d'exécution (binaire poppler absent, fichier PDF introuvable, arguments
  * invalides — l'outil n'a alors PU faire tourner aucune assertion).
  *
- * Détail des 8 assertions et de leurs seuils : voir `tests/pdf/README.md`
- * et `docs/SPEC-PDF-V3.md` §7 (tableau « Assertions exactes »).
+ * Détail des 8 assertions A1-A8 et de leurs seuils : voir
+ * `tests/pdf/README.md` et `docs/SPEC-PDF-V3.md` §7 (tableau « Assertions
+ * exactes »). B1..B3 (guardrail pagination, non couvertes par la SPEC
+ * d'origine) sont documentées en JSDoc à leur point de définition ci-dessous
+ * et TOUJOURS évaluées, indépendamment de `--lenient` (qui ne régit que les
+ * marqueurs conditionnels de A3).
  */
 
 import { execFileSync } from 'node:child_process';
@@ -474,6 +479,225 @@ export function assertA8_sampleData(text, samplePath) {
 }
 
 // ===========================================================================
+// B1..B3 — GUARDRAIL PAGINATION (mission PG.GUARD, correctif pagination PDF v3
+// « mode rapide sans Playwright ») : 3 assertions STRUCTURELLES supplémentaires,
+// indépendantes de A1-A8, détectant les 3 défauts prouvés sur un vrai PDF de
+// 21 pages généré par la voie A (pdfmake) : queues orphelines (débordement
+// d'une conduite à tenir ZMSPCP/MOICP sur une page quasi vide), pages à titre
+// seul pour une section quasi vide, et mots du Store cassés verticalement
+// dans les colonnes étroites du tableau PATRACDVR. Toujours évaluées
+// (INDÉPENDANTES de `--lenient`, qui ne régit que les marqueurs conditionnels
+// de A3) — un défaut de pagination n'est jamais « acceptable » selon le jeu
+// de données saisi. Contre-épreuve : `tests/pdf/fixtures/long-case.json` +
+// `tests/pdf/generate-from-fixture.mjs` (cf. `tests/pdf/README.md`).
+// ===========================================================================
+
+/**
+ * Un fichier `pdftotext -layout` (sans `-nopgbrk`) sépare ses pages par `\f`
+ * (form feed) — même découpage que `collectText`. `pdftotext` termine TOUJOURS
+ * sa sortie par un `\f` final (y compris après la dernière page) : un
+ * `split('\f')` naïf produit donc un dernier élément fantôme `''` qui
+ * décalerait de 1 la détection « dernière page » (garde/finale de B1/B3) —
+ * retiré ici, PAS dans `collectText` (A2/A3/A4/A8 travaillent sur le texte
+ * entier, insensibles à ce `\f` de fin).
+ */
+function splitPages(text) {
+  const pages = text.split('\f');
+  if (pages.length > 0 && pages[pages.length - 1] === '') {
+    pages.pop();
+  }
+  return pages;
+}
+
+/** Caractères non blancs d'une page — même définition que A2 (`assertA2_realText`), appliquée par PAGE plutôt qu'au document entier. */
+function nonBlankLength(pageText) {
+  return pageText.replace(/\s/g, '').length;
+}
+
+const ORPHAN_MIN_NON_BLANK_CHARS = 120;
+
+/**
+ * B1 — anti-orpheline : aucune page (hors GARDE = page 1, FINALE = dernière
+ * page, et pages PHOTO = au moins une image `pdfimages` dessus, cf. `images`
+ * de A6) ne doit tomber sous `ORPHAN_MIN_NON_BLANK_CHARS` (120) caractères non
+ * blancs — signature d'une queue orpheline : un bloc non-`unbreakable`
+ * (ex. `labelValue('C conduite à tenir', …)` dans `buildZmspcpPage`/
+ * `buildMoicpPage`, `document-builder.ts`) déborde de sa page et n'y laisse
+ * qu'un fragment de fin de phrase (constat terrain : « fixer l'adversaire. »
+ * seule sur une page, « porte » sur une autre).
+ */
+export function assertB1_noOrphanPage(text, images) {
+  const pages = splitPages(text);
+  const pageCount = pages.length;
+  if (pageCount === 0) {
+    return { ok: true, detail: 'document vide — aucune page à examiner' };
+  }
+  const pagesWithImage = new Set(images.map((img) => img.page));
+  const orphans = [];
+  for (let i = 0; i < pageCount; i++) {
+    const pageNum = i + 1;
+    if (pageNum === 1 || pageNum === pageCount) continue; // garde / finale
+    if (pagesWithImage.has(pageNum)) continue; // page photo pleine page
+    const len = nonBlankLength(pages[i]);
+    if (len < ORPHAN_MIN_NON_BLANK_CHARS) {
+      orphans.push({ page: pageNum, len });
+    }
+  }
+  if (orphans.length > 0) {
+    const list = orphans.map((o) => `page ${o.page} (${o.len} car.)`).join(', ');
+    return {
+      ok: false,
+      detail: `${orphans.length} page(s) orpheline(s) — < ${ORPHAN_MIN_NON_BLANK_CHARS} caractères non blancs (hors garde/finale/photo) : ${list}`,
+    };
+  }
+  return {
+    ok: true,
+    detail: `0 page orpheline sur ${pageCount} page(s) (hors garde/finale/photo, seuil ${ORPHAN_MIN_NON_BLANK_CHARS} car.)`,
+  };
+}
+
+// Lettres capitales (+ accentuées FR) — vocabulaire des valeurs Store rendues
+// en gras/centré dans les colonnes étroites du PATRACDVR (trigrammes,
+// véhicules, direction) : `buildPatracPage` (document-builder.ts) rend CES
+// valeurs telles quelles (jamais `.toUpperCase()`), donc une casse EXISTANTE
+// tout-capitales dans le texte extrait signe une valeur SAISIE ainsi par
+// l'utilisateur (ex. « SHARAN », « GILETTE »), pas un artefact de mise en forme.
+const UPPER_CLASS = 'A-ZÀÂÄÉÈÊËÏÎÔÖÙÛÜÇ';
+const WORD_SPLIT_TAIL_RE = new RegExp(`^[${UPPER_CLASS}]{2,}$`);
+const WORD_SPLIT_HEAD_RE = new RegExp(`^[${UPPER_CLASS}]{1,4}$`);
+// Tolérance de colonne (caractères) entre la fin d'un fragment et le début du
+// suivant sur la ligne d'après — `pdftotext -layout` positionne le texte sur
+// une grille de caractères façon monospace ; deux fragments de la MÊME
+// colonne de tableau (donc potentiellement le MÊME mot coupé) restent à une
+// poignée de caractères l'un de l'autre d'une ligne à l'autre.
+const WORD_SPLIT_COLUMN_TOLERANCE = 3;
+// En-têtes LITTÉRALES du tableau PATRACDVR (`buildPatracPage`, `headers`) —
+// jamais des valeurs du Store, exclues des deux côtés d'une paire suspecte
+// pour ne jamais confondre un en-tête (« VL », « DIR »…) avec un fragment de
+// mot cassé situé juste en dessous dans la même colonne.
+const PATRAC_HEADER_TOKENS = new Set(['VL', 'PAX', 'CELLULE', 'FONCTION', 'PPALE', 'SEC', 'AFIS', 'EQPT', 'GREN', 'DIR']);
+
+/** Découpe une ligne `pdftotext -layout` en tokens `{ text, col }` (`col` = index caractère de début, cf. tolérance de colonne ci-dessus). */
+function lineTokens(line) {
+  const tokens = [];
+  const re = /\S+/g;
+  let m;
+  while ((m = re.exec(line))) {
+    tokens.push({ text: m[0], col: m.index });
+  }
+  return tokens;
+}
+
+/**
+ * B2 — anti-césure verticale : aucun mot du Store scindé en fragments
+ * empilés dans le tableau PATRACDVR (constat terrain : « SHARA\nN »,
+ * « GILE\nTTE », « KODIA\nQ\nBANA » — colonnes trop étroites pour
+ * `SHARAN`/`GILETTE`/`KODIAQ`, pas de césure au tiret). Portée volontairement
+ * restreinte à la section PATRACDVR (entre le marqueur `MARKERS[13]` et la
+ * page finale `MARKERS[14]`, ou la fin du document si celle-ci est absente) :
+ * hors de cette section, les libellés STATIQUES du gabarit (`Z ZONE :`,
+ * `PROF. BÂTI`, titres `h2`…) produisent de FAUX positifs géométriques
+ * (lettre de libellé directement au-dessus d'un titre, texte justifié qui
+ * s'aligne par hasard) qui n'ont RIEN à voir avec une valeur du Store —
+ * vérifié en confrontant ce détecteur au PDF de la recette normale (0 faux
+ * positif) avant de le restreindre à cette portée. Détection : pour chaque
+ * paire de lignes adjacentes, un token tout-capitales de fin de ligne
+ * (2+ lettres) suivi, à la MÊME colonne (± `WORD_SPLIT_COLUMN_TOLERANCE`),
+ * d'un token tout-capitales de 1 à 4 lettres en tête de ligne suivante —
+ * combinaison ≥ 4 lettres, ni l'un ni l'autre n'étant un en-tête littéral du
+ * tableau. Une ligne se terminant par un TIRET n'entre jamais dans ce motif
+ * (le tiret n'est pas une lettre capitale) — la césure légitime au tiret
+ * n'est donc jamais signalée, conformément à la règle cible.
+ */
+export function assertB2_noVerticalWordSplit(text) {
+  const pages = splitPages(text);
+  const patracMarker = MARKERS[13]; // '7. RÉCAPITULATIF PATRACDVR'
+  const finalMarker = MARKERS[14]; // 'AVEZ-VOUS DES QUESTIONS ?'
+  const normPages = pages.map((p) => normalize(p));
+  const startIdx = normPages.findIndex((p) => p.includes(normalize(patracMarker.text)));
+  if (startIdx === -1) {
+    return { ok: true, skip: true, detail: 'SKIP — aucun tableau PATRACDVR dans ce document, assertion non applicable' };
+  }
+  let endIdx = normPages.findIndex((p, i) => i > startIdx && p.includes(normalize(finalMarker.text)));
+  if (endIdx === -1) endIdx = pages.length;
+
+  const hits = [];
+  for (let pi = startIdx; pi < endIdx; pi++) {
+    const lines = pages[pi].split('\n');
+    for (let i = 0; i < lines.length - 1; i++) {
+      const tails = lineTokens(lines[i]).filter(
+        (t) => WORD_SPLIT_TAIL_RE.test(t.text) && !PATRAC_HEADER_TOKENS.has(t.text),
+      );
+      if (tails.length === 0) continue;
+      const heads = lineTokens(lines[i + 1]).filter(
+        (t) => WORD_SPLIT_HEAD_RE.test(t.text) && !PATRAC_HEADER_TOKENS.has(t.text),
+      );
+      if (heads.length === 0) continue;
+      for (const tail of tails) {
+        for (const head of heads) {
+          if (Math.abs(tail.col - head.col) > WORD_SPLIT_COLUMN_TOLERANCE) continue;
+          const combined = tail.text + head.text;
+          if (combined.length < 4) continue;
+          hits.push({ page: pi + 1, fragment1: tail.text, fragment2: head.text, combined });
+        }
+      }
+    }
+  }
+
+  if (hits.length > 0) {
+    const list = hits.map((h) => `page ${h.page} « ${h.fragment1} » + « ${h.fragment2} » = « ${h.combined} »`).join(', ');
+    return { ok: false, detail: `${hits.length} mot(s) probablement cassé(s) verticalement dans le PATRACDVR : ${list}` };
+  }
+  return { ok: true, detail: `0 mot cassé verticalement dans le PATRACDVR (pages ${startIdx + 1}-${endIdx})` };
+}
+
+const TITLE_ONLY_MAX_CONTENT_CHARS = 40;
+
+/**
+ * B3 — anti-page-titre-seul : aucune page ne doit porter un titre de section
+ * (un des 15 `MARKERS`, cf. A3) avec MOINS de `TITLE_ONLY_MAX_CONTENT_CHARS`
+ * (40) caractères non blancs de CONTENU (le texte de la page une fois le
+ * titre matché lui-même déduit) — constat terrain : une page « LOGISTIQUE -
+ * Détail » quasi noire, une page « Effraction - Détail » réduite à 4 badges,
+ * pour une section dont les données saisies sont vides.
+ *
+ * Exclusion volontaire du marqueur FINALE (`MARKERS[14]`, « AVEZ-VOUS DES
+ * QUESTIONS ? ») : cette page de clôture est un titre seul PAR CONCEPTION
+ * (langage strategica, écart E2/E5 du README) — vérifié en confrontant ce
+ * détecteur au PDF de la recette normale (`recipe-data.json`, qui remplit
+ * TOUTES les sections) avant d'ajouter cette exclusion : sans elle, B3 FAIL
+ * systématiquement sur cette page de clôture légitime, quel que soit le jeu
+ * de données (faux positif garanti, pas un défaut de pagination).
+ */
+export function assertB3_noTitleOnlyPage(text) {
+  const pages = splitPages(text);
+  const finalMarkerNorm = normalize(MARKERS[14].text);
+  const hits = [];
+  pages.forEach((pageText, idx) => {
+    const norm = normalize(pageText);
+    const matched = MARKERS.filter((m) => norm.includes(normalize(m.text)));
+    if (matched.length === 0) return;
+    if (matched.length === 1 && normalize(matched[0].text) === finalMarkerNorm) return;
+    const titleLen = Math.max(...matched.map((m) => normalize(m.text).replace(/\s/g, '').length));
+    const total = nonBlankLength(pageText);
+    const contentLen = Math.max(0, total - titleLen);
+    if (contentLen < TITLE_ONLY_MAX_CONTENT_CHARS) {
+      hits.push({ page: idx + 1, contentLen, titles: matched.map((m) => m.text) });
+    }
+  });
+  if (hits.length > 0) {
+    const list = hits
+      .map((h) => `page ${h.page} « ${h.titles.join(' / ')} » (${h.contentLen} car. de contenu)`)
+      .join(', ');
+    return {
+      ok: false,
+      detail: `${hits.length} page(s) à titre seul — < ${TITLE_ONLY_MAX_CONTENT_CHARS} caractères de contenu hors titre : ${list}`,
+    };
+  }
+  return { ok: true, detail: `0 page à titre seul (seuil ${TITLE_ONLY_MAX_CONTENT_CHARS} car. de contenu hors titre)` };
+}
+
+// ===========================================================================
 // CLI
 // ===========================================================================
 
@@ -565,6 +789,11 @@ function main() {
     { code: 'A6', ...assertA6_noRasterization(images, pdfInfo, opts.photos) },
     { code: 'A7', ...assertA7_weight(fileSizeBytes) },
     { code: 'A8', ...assertA8_sampleData(text, opts.sample) },
+    // Guardrail pagination (mission PG.GUARD) — toujours évaluées, INDÉPENDANTES
+    // de --lenient (cf. en-tête de ces 3 fonctions).
+    { code: 'B1', ...assertB1_noOrphanPage(text, images) },
+    { code: 'B2', ...assertB2_noVerticalWordSplit(text) },
+    { code: 'B3', ...assertB3_noTitleOnlyPage(text) },
   ];
 
   for (const a of assertions) {
