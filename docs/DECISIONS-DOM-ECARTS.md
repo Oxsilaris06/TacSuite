@@ -327,6 +327,44 @@ sous-section "10bis" apres celle-ci pour cette seconde balise.
   ancres — non concerne.
 - **Mission P4.C** (livraison : preparation GitHub Pages).
 
+## 12. OI : ajout du bouton « Imprimer — qualité maximale » (#printHqBtn)
+
+- **Constat** : element SANS equivalent dans l'original `GStart-main/4.html` — ajout
+  assume, pas un portage. Le bouton « Télécharger le PDF » (#downloadPdfBtn) existe
+  dans l'original et reste inchange ; le nouveau bouton est pur.
+- **Justification** : voie B de `docs/SPEC-PDF-V3.md` (impression HTML/CSS +
+  `window.print()`), PDF vectoriel de qualité maximale, complement du téléchargement
+  automatique qui reste sur #downloadPdfBtn. Cette alternative offre au rédacteur
+  d'OI deux chemins de finalisation : téléchargement automatique (format raster,
+  compression, nom predéfini) vs impression manuelle (qualité maximale, controle
+  utilisateur complet). Ambition de refonte du moteur PDF de TacSuite (v3).
+- **Emplacement exact** : `oi/index.html`, dans `.modal-actions-pdf`, entre
+  `#presentHereBtn` (ligne 38, fermeture) et `#downloadPdfBtn` (ligne 39, ouverture).
+  Indentation 12 espaces, alignée sur les boutons voisins. Balisage VERBATIM :
+  ```html
+  <button id="printHqBtn" type="button" class="wizard-nav-btn"
+      data-action="print-oi-high-quality"
+      title="Ouvre la boîte d'impression du navigateur : PDF entièrement vectoriel, texte sélectionnable (qualité maximale)">
+      Imprimer — qualité maximale <span class="material-symbols-outlined"
+          style="font-size: 1.2em;">print</span>
+  </button>
+  ```
+- **Mecanisme** : attribut `data-action="print-oi-high-quality"` (delegation, conforme
+  au chapitre 8 de ce document). CÂBLÉ (phase Intégration, mission `PDF.INTEG`) dans
+  `oiClickActions['print-oi-high-quality']` (`src/apps/oi/main.ts`) →
+  `void import('@oi/pdf/print-view.js').then(m => m.printOiHighQuality())` — import
+  dynamique, le chunk de la voie B (impression HTML/CSS, `print-view.ts` +
+  `print-style.ts`) n'est jamais charge tant que le bouton n'est pas clique. Le
+  bouton était INERTE en phase P7.UI-PWA (handler absent) ; il est desormais actif.
+- **IMPACT SUR LE GATE VISUEL** : AUCUN masque requis. Les 9 etats OI captures par
+  `tests/visual/compare.mjs` (lignes 185-196 : step0-situation … step7-finalisation,
+  cartography-modal) n'ouvrent jamais `#presentationModal`, qui est un `<dialog>`
+  ferme par defaut. Le bouton n'apparait donc dans AUCUNE capture de reference. Si
+  un diff visuel apparait malgre tout sur un etat OI, c'est une regression reelle,
+  pas cet ajout. Reverifie (`node tests/visual/compare.mjs oi`) apres câblage —
+  vert, aucun masque ajoute.
+- **Mission P7.UI-PWA** (ajout DOM) **puis `PDF.INTEG`** (câblage JavaScript).
+
 ## Annexe (hors perimetre DOM) : blocage intermittent html2canvas sur la page de couverture (generation PDF OI)
 
 Point trace ici par decision explicite de la mission P4.FIX (BLOQUANT R1),
