@@ -106,3 +106,20 @@ Le dossier `docs/` regroupe le plan de portage (`PLAN.md`), les specs de
 conversion (`SPEC-*.md`), les décisions d'architecture (`DECISIONS-*.md`)
 et les checklists fonctionnelles (`CHECKLIST-*.md`) héritées de la recette
 sur les originaux.
+
+## Polices embarquées
+
+Les polices vectorielles suivantes sont embarquées dans le PDF du Générateur
+d'OI (**100 % hors ligne**, aucun accès réseau au rendu) :
+
+- **Oswald 500** (Medium) — titres et entêtes — 86 Ko
+- **JetBrains Mono 400** (Regular) — corps monospaced — 112 Ko
+- **JetBrains Mono 700** (Bold) — corps monospaced gras — 112 Ko
+
+Licence : **SIL Open Font License 1.1** (textes complets dans
+`src/apps/oi/pdf/fonts/OFL-*.txt`). Redistribution autorisée y compris
+embarquée dans un PDF, sans obligation de licence sur le document produit.
+
+Les fichiers TTF ne sont jamais servis ni bundlés — seul le module TypeScript
+`src/apps/oi/pdf/fonts.generated.ts` (généré par `npm run gen:pdf-fonts`)
+contient leur codage base64 et entre dans le bundle.
