@@ -75,6 +75,25 @@ Les ancres de navigation inter-apps (`<a href>` du portail et des docks
 PC-Tac/OI) sont en chemins relatifs pour rester correctes quelle que soit
 la base — voir `docs/DECISIONS-DOM-ECARTS.md`, point 11.
 
+**Piège (P4.FIX, MINEUR R4)** : `vite.config.ts` relit `process.env.TACSUITE_BASE`
+à CHAQUE lancement de la config — la variable doit donc être positionnée pour
+`preview` AUSSI, pas seulement pour `build`. Un `npm run build` avec
+`TACSUITE_BASE=/TacSuite/` suivi d'un `npm run preview` NU (sans la variable)
+repart en `base=/` : le serveur de preview répond alors HTTP 200 sur TOUTES
+les URL `/TacSuite/**` en renvoyant `dist/index.html` (le portail) — y compris
+pour `/TacSuite/pctac/index.html` ou `/TacSuite/manifest.webmanifest`, qui
+n'existent pourtant pas à cet emplacement dans `dist/`. Ce faux « zéro 404 »
+masque un déploiement cassé. Commande correcte pour vérifier un build Pages
+en local :
+
+```bash
+TACSUITE_BASE=/TacSuite/ npm run build
+TACSUITE_BASE=/TacSuite/ npx vite preview --port 9678 --strictPort
+```
+
+(Le workflow `.github/workflows/pages.yml` n'est pas concerné : il ne fait
+qu'un `build`, avec `TACSUITE_BASE: /TacSuite/` déjà positionné.)
+
 ## Déploiement
 
 GitHub Pages via GitHub Actions (`.github/workflows/pages.yml`) : chaque

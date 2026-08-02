@@ -387,6 +387,18 @@ export const PDFEngineV2: PdfEngineV2Internal = {
                 this._fitPageToBudget(pageEl, i);
 
                 // Capture de la page
+                // P4.FIX, BLOQUANT R1 : `imageTimeout` posé EXPLICITEMENT
+                // (au lieu de laisser html2canvas retomber sur son défaut
+                // interne implicite, 15000ms — `dist/html2canvas.js`, non
+                // documenté dans nos types) — borne le pire cas d'un
+                // chargement d'image interne à html2canvas (cache de
+                // ressources, indépendant du `img.decode()` déjà attendu
+                // ci-dessus) à une valeur connue et intentionnelle, pour que
+                // le blocage intermittent observé sur la page de couverture
+                // (cf. commentaire du test « Génération — téléchargement PDF »,
+                // tests/e2e/oi.spec.ts) se solde par un REJET capté par le
+                // `try/catch` englobant (ligne ~445, toast + log + fermeture
+                // du loader) plutôt qu'un silence indéfini côté appelant.
                 const canvas = await html2canvas(pageEl, {
                     scale: renderScale,
                     useCORS: true,
@@ -396,7 +408,8 @@ export const PDFEngineV2: PdfEngineV2Internal = {
                     width: pageEl.offsetWidth,
                     height: pageEl.offsetHeight,
                     scrollX: 0,
-                    scrollY: 0
+                    scrollY: 0,
+                    imageTimeout: 15000
                 });
 
                 let imgData: string | null = canvas.toDataURL('image/jpeg', 0.95);

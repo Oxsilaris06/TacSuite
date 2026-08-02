@@ -60,7 +60,22 @@ const MAX_CANVAS_MASK_PCT = 99.5;
 // P3B.FIX (reprise 3), BLOQUANT R1 : timeout de `waitForMapIdle` (cf.
 // `captureState()`), relevé de 5000 à 15000ms et rendu NON silencieux —
 // cf. commentaire au point d'usage pour la justification complète.
-const MAP_IDLE_TIMEOUT_MS = 15000;
+// P4.FIX, BLOQUANT R2 : encore 2 ERROR sur 8 runs à 15000ms (oi run 1 →
+// cartography-modal-desktop ; oi-light run 1 → cartography-modal-mobile),
+// réseau tuiles pourtant vérifié bon au même moment (tile.openstreetmap.org
+// HTTP 200 en 0,19s) — pure instabilité de l'attente, pas un écart de rendu
+// (les runs verts donnent 8px de diff, 0,001%). Relevé à 25000ms ET doublé
+// d'une reprise ciblée sur cet état (cf. `MAP_IDLE_MAX_ATTEMPTS` / point
+// d'usage dans `run()`) plutôt que de miser sur le seul relèvement de
+// timeout, qui n'avait déjà pas suffi seul en reprise 3.
+const MAP_IDLE_TIMEOUT_MS = 25000;
+// P4.FIX, BLOQUANT R2 : nombre max de TENTATIVES (1 = pas de reprise) pour un
+// état `waitForMapIdle: true` — une seule reprise (2 tentatives) absorbe
+// l'instabilité résiduelle mesurée (2/8, jamais 2 fois de suite sur le même
+// état dans les runs observés) sans masquer un vrai défaut de rendu (si les
+// 2 tentatives échouent, le résultat reste ERROR explicite, pas un PASS
+// dégradé).
+const MAP_IDLE_MAX_ATTEMPTS = 2;
 
 const VIEWPORTS = {
   desktop: { width: 1440, height: 900 },
@@ -514,7 +529,23 @@ async function run() {
     for (const state of config.states) {
       const label = `${state.id}-${viewportName}`;
       try {
-        const { buffer, canvasBox, unmaskBoxes, scrollY, mapIdleTimedOut } = await captureState(page, app, config.entryUrl, state, viewportName, config.theme);
+        // P4.FIX, BLOQUANT R2 : reprise CIBLÉE — seuls les états
+        // `waitForMapIdle: true` (aujourd'hui : `cartography-modal`
+        // uniquement) sont concernés ; tous les autres gardent le
+        // comportement inchangé (1 seule tentative). Chaque tentative refait
+        // une capture COMPLÈTE (nouvelle navigation + nouveau `state.run()`),
+        // pas une simple re-attente sur la même page — l'instabilité mesurée
+        // porte sur le TIMING de chargement des tuiles, qui peut varier d'un
+        // essai à l'autre.
+        const maxAttempts = state.waitForMapIdle ? MAP_IDLE_MAX_ATTEMPTS : 1;
+        let capture = await captureState(page, app, config.entryUrl, state, viewportName, config.theme);
+        let attempt = 1;
+        while (capture.mapIdleTimedOut && attempt < maxAttempts) {
+          attempt++;
+          console.warn(`  [reprise ${attempt}/${maxAttempts}] ${label} : waitForMapIdle a expiré, nouvelle tentative…`);
+          capture = await captureState(page, app, config.entryUrl, state, viewportName, config.theme);
+        }
+        const { buffer, canvasBox, unmaskBoxes, scrollY, mapIdleTimedOut } = capture;
         const actualPng = PNG.sync.read(buffer);
         writeFileSync(join(outDir, `${label}.actual.png`), buffer);
 
@@ -527,7 +558,7 @@ async function run() {
           results.push({
             label,
             status: 'ERROR',
-            detail: `waitForMapIdle : timeout ${MAP_IDLE_TIMEOUT_MS}ms sans que window.OICarto.map atteigne l'état idle (loaded()+areTilesLoaded()) — capture abandonnée plutôt que dégradée silencieusement`,
+            detail: `waitForMapIdle : timeout ${MAP_IDLE_TIMEOUT_MS}ms sans que window.OICarto.map atteigne l'état idle (loaded()+areTilesLoaded()) — capture abandonnée plutôt que dégradée silencieusement (${attempt}/${maxAttempts} tentative(s))`,
           });
           continue;
         }

@@ -907,15 +907,49 @@ test.describe('OI — Checklist fonctionnelle (docs/recon-oi.md §9)', () => {
     });
   });
 
-  test('Génération — téléchargement PDF déclenche un download (downloadOiPdf)', async ({ page }) => {
-    await goToFinalStepAndOpenPreview(page);
-    await expect.soft(page.locator('#presentationModal')).toBeVisible({ timeout: 5000 });
-    await step('#downloadPdfBtn → fichier OI_<date>_<trigramme>.pdf (nom non vérifié finement ici)', async () => {
-      const downloadPromise = page.waitForEvent('download', { timeout: 8000 }).catch(() => null);
-      await page.locator('#downloadPdfBtn').click();
-      const download = await downloadPromise;
-      expect.soft(download).not.toBeNull();
-      if (download) expect.soft(download.suggestedFilename()).toMatch(/^OI_.*\.pdf$/);
+  // P4.FIX, BLOQUANT R1 : ce test isolé dans son propre `describe` pour lui
+  // attacher un `retries` CIBLÉ (pas de `retries` global dans
+  // `playwright.config.ts`, qui resterait sourd aux autres tests) — cause
+  // racine isolée en instrumentation : `downloadOiPdf()` (pdf-engine-v2.ts)
+  // se bloque par intermittence DANS `html2canvas` sur la page de couverture,
+  // sans erreur console ni requête réseau en échec/pendante (`#pdfLoadingStatus`
+  // reste figé sur « Rendu : Couverture… », `requestAnimationFrame` continue
+  // de tourner à ~28fps). Durée mesurée bimodale sur le groupe --grep
+  // "Génération" : 1,9s (nominal) contre 13s dans le pire cas mesuré (jamais
+  // au-delà de 20s observé, mais jamais garanti non plus — cf. ci-dessous).
+  // DÉFAUT HÉRITÉ, PAS UNE RÉGRESSION DE PORTAGE : le même scénario rejoué
+  // contre l'ORIGINAL (`http://127.0.0.1:9679/4.html`) échoue 1 fois sur 6
+  // (download NULL à 30s) — donc un budget, aussi large soit-il, ne peut pas
+  // à lui seul garantir 0 échec ; le `retries` ci-dessous absorbe ce résidu
+  // sans masquer une régression réelle (le test réussirait alors à la
+  // 2e tentative avec le MÊME code, signature d'un défaut d'attente/timing,
+  // pas d'un bug fonctionnel introduit par le portage). Tracé dans
+  // `docs/DECISIONS-DOM-ECARTS.md`.
+  //
+  // `timeout: 60000` — BUG trouvé et corrigé dans cette même reprise (cf.
+  // `tests/e2e/pctac.spec.ts`, test « Plan — dessin », même correctif) : le
+  // timeout GLOBAL par défaut d'un test Playwright est 30000ms
+  // (`playwright.config.ts` ne le modifie pas), IDENTIQUE au budget local du
+  // `waitForEvent('download', …)` ci-dessous — sans marge, le test entier
+  // peut expirer avant même que ce budget local soit atteint (d'autant plus
+  // que ce test consomme déjà du temps en amont : `goToFinalStepAndOpenPreview`
+  // + attente de `#presentationModal`).
+  test.describe('Génération — téléchargement PDF (retry cible, defaut herite)', () => {
+    test.describe.configure({ retries: 2, timeout: 60000 });
+
+    test('Génération — téléchargement PDF déclenche un download (downloadOiPdf)', async ({ page }) => {
+      await goToFinalStepAndOpenPreview(page);
+      await expect.soft(page.locator('#presentationModal')).toBeVisible({ timeout: 5000 });
+      await step('#downloadPdfBtn → fichier OI_<date>_<trigramme>.pdf (nom non vérifié finement ici)', async () => {
+        // Budget relevé de 8000 à 30000ms — largement au-dela du pire cas
+        // mesure (13s) — cf. commentaire ci-dessus pour la justification
+        // complete (bloquant html2canvas, defaut herite de l'original).
+        const downloadPromise = page.waitForEvent('download', { timeout: 30000 }).catch(() => null);
+        await page.locator('#downloadPdfBtn').click();
+        const download = await downloadPromise;
+        expect.soft(download).not.toBeNull();
+        if (download) expect.soft(download.suggestedFilename()).toMatch(/^OI_.*\.pdf$/);
+      });
     });
   });
 

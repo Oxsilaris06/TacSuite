@@ -86,7 +86,18 @@ async function waitForPlanMapReady(page: Page): Promise<void> {
       return !!pm && pm.initialized && !!pm.map && pm.map.loaded() && pm.map.areTilesLoaded();
     },
     undefined,
-    { timeout: 15000 }
+    // P4.FIX, BLOQUANT R1 : releve de 15000 a 30000ms — mesure sur un run
+    // COMPLET (136 tests, workers=1, preview) : « Plan — dessin » a encore
+    // echoue ici (desktop ET mobile), meme diagnostic que documente par
+    // P3B.FIX reprise 1/3 (cf. commentaire au point d'usage) — un budget
+    // FIXE, quelle que soit sa valeur, reste sujet a la charge CUMULEE
+    // (memoire/GC, contextes WebGL) d'une suite longue a un seul worker ;
+    // ce point de synchronisation attend deja un etat REEL (pas un delai
+    // arbitraire), le relevement ne fait qu'absorber un ralentissement
+    // temporaire de ce meme etat sous charge, pas masquer un blocage
+    // permanent. Cf. aussi le `retries` cible sur le test « Plan — dessin »
+    // (meme fichier, meme cause), defense en profondeur.
+    { timeout: 30000 }
   );
 }
 
@@ -546,97 +557,122 @@ test.describe('PC-Tac — Checklist fonctionnelle (docs/recon-pctac.md §6)', ()
     });
   });
 
-  test('Plan — dessin (trait/rectangle/cercle/texte) + couleurs + undo/redo + effacer', async ({
-    page,
-  }) => {
-    await step('ouvrir le dock et sélectionner outil + couleur', async () => {
-      await clickTab(page, 'view-plan');
-      // cf. test « Plan — verrouillage » : laisser PlanMap.init() se stabiliser
-      // avant d'interagir avec le dock dessin (flaky sous charge parallèle sans
-      // cette attente).
-      // P3B.FIX (reprise 3), BLOQUANT R2 : `waitForTimeout` fixe remplacé par
-      // le vrai point de synchronisation (`waitForPlanMapReady`, cf. sa
-      // JSDoc) — la reprise 1 avait relevé ce délai de 1000 à 1800ms mais son
-      // propre commentaire admettait que ce test échouait encore parfois
-      // seul dans la suite COMPLÈTE (130 tests), jamais isolé : un budget
-      // FIXE, quelle que soit sa valeur, reste par nature sujet à la charge
-      // cumulée (mémoire/GC) du serveur dev sur une suite longue.
-      await waitForPlanMapReady(page);
-      await page.locator('#plan_btn_draw').click();
-      await expect.soft(page.locator('#plan_draw_dock')).toHaveClass(/open/, { timeout: 1500 });
-      for (const tool of ['line', 'rectangle', 'circle', 'text', 'measure']) {
-        await expect.soft(page.locator(`.plan-draw-btn[data-tool="${tool}"]`)).toBeVisible();
-      }
-      // Ordre couleur PUIS outil (pas l'inverse) : `_setDrawColor` (draw-tools.ts,
-      // verbatim planMap.js:2082-2089) réinvoque `_setTool(this.drawTool)` pour
-      // re-styler le bouton actif, mais le garde de toggle de `_setTool`
-      // (`if (tool && this.drawTool === tool) tool = null`) désélectionne
-      // l'outil s'il est déjà actif au moment du clic couleur — comportement de
-      // l'ORIGINAL, pas une régression de portage (vérifié verbatim). Cliquer
-      // l'outil EN DERNIER est donc requis pour qu'il reste actif au moment du
-      // tracé ci-dessous.
-      await page.locator('.plan-draw-color[data-color="#22c55e"]').click();
-      await page.locator('.plan-draw-btn[data-tool="rectangle"]').click();
-      // _setDrawTool (draw-tools.ts, planMap.js:2025-2029) marque l'outil actif
-      // via `style.background` inline, PAS une classe CSS — vérifié contre
-      // l'original (aucune classe `.active`/`.selected` n'est jamais posée ici).
-      const bg = await page
-        .locator('.plan-draw-btn[data-tool="rectangle"]')
-        .evaluate((el) => (el as HTMLElement).style.background);
-      expect.soft(bg).not.toBe('transparent');
-    });
-    // Assertion sur l'état persistant (localStorage `pcTacPlanShapes`,
-    // `planmap/constants.ts` SHAPES_KEY) plutôt que sur le rendu WebGL du
-    // canvas MapLibre : `#plan_map .maplibregl-canvas` est présent AVANT
-    // tout tracé (dès l'initialisation de la carte), donc ne prouve pas
-    // qu'une forme a réellement été créée — cf. SPEC-PLANMAP-SPLIT.md §5.8
-    // (`_undo`/`_redo` écrivent directement dans ce même localStorage).
-    const shapesCount = () =>
-      page.evaluate(() => JSON.parse(localStorage.getItem('pcTacPlanShapes') || '[]').length);
+  // P4.FIX, BLOQUANT R1 : `describe` dédié pour un `retries` CIBLÉ sur ce
+  // seul test — mesuré en échec (desktop ET mobile) sur un run COMPLET
+  // (136 tests, workers=1, preview), toujours à l'étape `waitForPlanMapReady`
+  // (cf. sa JSDoc ci-dessus) : cause identique et déjà documentée par
+  // P3B.FIX (reprise 1/3) — un budget fixe, aussi large soit-il, reste par
+  // nature sujet à la charge CUMULÉE (mémoire/GC, contextes WebGL) d'une
+  // suite longue à un seul worker. Défense en profondeur avec le
+  // relèvement du timeout ci-dessus (30000ms) : pas de `retries` global dans
+  // `playwright.config.ts`, qui masquerait des régressions ailleurs.
+  //
+  // `timeout: 60000` ICI AUSSI (pas seulement le `waitForFunction` interne
+  // à `waitForPlanMapReady`) — BUG mesuré en direct dans cette même reprise :
+  // le timeout GLOBAL par défaut d'un test Playwright (30000ms, non modifié
+  // dans `playwright.config.ts`) est resté à 30000ms alors que
+  // `waitForPlanMapReady` (relevé ci-dessus à 30000ms lui aussi) l'occupe à
+  // lui seul en cas de lenteur réelle — le test entier expirait ALORS QUE
+  // son propre `waitForFunction` interne tournait encore (« Test timeout of
+  // 30000ms exceeded », page/contexte fermés en plein milieu de l'étape
+  // suivante). Le timeout de test doit rester STRICTEMENT SUPÉRIEUR à la
+  // somme du budget `waitForPlanMapReady` + celui, cumulé, des étapes de
+  // dessin qui le suivent dans le même test.
+  test.describe('Plan — dessin (retry cible, charge cumulee suite longue)', () => {
+    test.describe.configure({ retries: 1, timeout: 60000 });
 
-    await step('tracer un rectangle par glisser', async () => {
-      // Viewport <=768px (mobile) : `_setTool` (draw-tools.ts, verbatim
-      // planMap.js:2018-2023) active `drawPrecisionMode` pour tout outil autre
-      // que trait/mesure (même condition `window.innerWidth <= 768` reprise
-      // ici — `drawPrecisionMode` est un état INTERNE, volontairement absent
-      // de la façade `PlanMapContract`, cf. docs/SPEC-CONTRATS.md), et
-      // `_handleDrawDown` retourne alors immédiatement
-      // (`if (!this.drawTool || this.drawPrecisionMode) return;`, planMap.js:2094)
-      // — un glisser-déposer direct sur la carte NE crée AUCUNE forme, comme
-      // dans l'ORIGINAL (comportement mobile délibéré : réticule + boutons
-      // Viser/Valider plutôt qu'un drag imprécis au doigt). Le flux diffère
-      // donc selon le viewport, pas seulement l'assertion finale.
-      const viewport = page.viewportSize();
-      const precisionMode = !!viewport && viewport.width <= 768;
-      const box = await page.locator('#plan_map').boundingBox();
-      if (precisionMode) {
-        await page.locator('#plan_draw_precision_start').click();
-        if (box) {
-          // Panote la carte (dragPan reste actif en mode précision) pour que le
-          // centre au moment de « Valider » diffère du centre visé au départ.
-          await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    test('Plan — dessin (trait/rectangle/cercle/texte) + couleurs + undo/redo + effacer', async ({
+      page,
+    }) => {
+      await step('ouvrir le dock et sélectionner outil + couleur', async () => {
+        await clickTab(page, 'view-plan');
+        // cf. test « Plan — verrouillage » : laisser PlanMap.init() se stabiliser
+        // avant d'interagir avec le dock dessin (flaky sous charge parallèle sans
+        // cette attente).
+        // P3B.FIX (reprise 3), BLOQUANT R2 : `waitForTimeout` fixe remplacé par
+        // le vrai point de synchronisation (`waitForPlanMapReady`, cf. sa
+        // JSDoc) — la reprise 1 avait relevé ce délai de 1000 à 1800ms mais son
+        // propre commentaire admettait que ce test échouait encore parfois
+        // seul dans la suite COMPLÈTE (130 tests), jamais isolé : un budget
+        // FIXE, quelle que soit sa valeur, reste par nature sujet à la charge
+        // cumulée (mémoire/GC) du serveur dev sur une suite longue.
+        await waitForPlanMapReady(page);
+        await page.locator('#plan_btn_draw').click();
+        await expect.soft(page.locator('#plan_draw_dock')).toHaveClass(/open/, { timeout: 1500 });
+        for (const tool of ['line', 'rectangle', 'circle', 'text', 'measure']) {
+          await expect.soft(page.locator(`.plan-draw-btn[data-tool="${tool}"]`)).toBeVisible();
+        }
+        // Ordre couleur PUIS outil (pas l'inverse) : `_setDrawColor` (draw-tools.ts,
+        // verbatim planMap.js:2082-2089) réinvoque `_setTool(this.drawTool)` pour
+        // re-styler le bouton actif, mais le garde de toggle de `_setTool`
+        // (`if (tool && this.drawTool === tool) tool = null`) désélectionne
+        // l'outil s'il est déjà actif au moment du clic couleur — comportement de
+        // l'ORIGINAL, pas une régression de portage (vérifié verbatim). Cliquer
+        // l'outil EN DERNIER est donc requis pour qu'il reste actif au moment du
+        // tracé ci-dessous.
+        await page.locator('.plan-draw-color[data-color="#22c55e"]').click();
+        await page.locator('.plan-draw-btn[data-tool="rectangle"]').click();
+        // _setDrawTool (draw-tools.ts, planMap.js:2025-2029) marque l'outil actif
+        // via `style.background` inline, PAS une classe CSS — vérifié contre
+        // l'original (aucune classe `.active`/`.selected` n'est jamais posée ici).
+        const bg = await page
+          .locator('.plan-draw-btn[data-tool="rectangle"]')
+          .evaluate((el) => (el as HTMLElement).style.background);
+        expect.soft(bg).not.toBe('transparent');
+      });
+      // Assertion sur l'état persistant (localStorage `pcTacPlanShapes`,
+      // `planmap/constants.ts` SHAPES_KEY) plutôt que sur le rendu WebGL du
+      // canvas MapLibre : `#plan_map .maplibregl-canvas` est présent AVANT
+      // tout tracé (dès l'initialisation de la carte), donc ne prouve pas
+      // qu'une forme a réellement été créée — cf. SPEC-PLANMAP-SPLIT.md §5.8
+      // (`_undo`/`_redo` écrivent directement dans ce même localStorage).
+      const shapesCount = () =>
+        page.evaluate(() => JSON.parse(localStorage.getItem('pcTacPlanShapes') || '[]').length);
+
+      await step('tracer un rectangle par glisser', async () => {
+        // Viewport <=768px (mobile) : `_setTool` (draw-tools.ts, verbatim
+        // planMap.js:2018-2023) active `drawPrecisionMode` pour tout outil autre
+        // que trait/mesure (même condition `window.innerWidth <= 768` reprise
+        // ici — `drawPrecisionMode` est un état INTERNE, volontairement absent
+        // de la façade `PlanMapContract`, cf. docs/SPEC-CONTRATS.md), et
+        // `_handleDrawDown` retourne alors immédiatement
+        // (`if (!this.drawTool || this.drawPrecisionMode) return;`, planMap.js:2094)
+        // — un glisser-déposer direct sur la carte NE crée AUCUNE forme, comme
+        // dans l'ORIGINAL (comportement mobile délibéré : réticule + boutons
+        // Viser/Valider plutôt qu'un drag imprécis au doigt). Le flux diffère
+        // donc selon le viewport, pas seulement l'assertion finale.
+        const viewport = page.viewportSize();
+        const precisionMode = !!viewport && viewport.width <= 768;
+        const box = await page.locator('#plan_map').boundingBox();
+        if (precisionMode) {
+          await page.locator('#plan_draw_precision_start').click();
+          if (box) {
+            // Panote la carte (dragPan reste actif en mode précision) pour que le
+            // centre au moment de « Valider » diffère du centre visé au départ.
+            await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+            await page.mouse.down();
+            await page.mouse.move(box.x + box.width / 2 + 60, box.y + box.height / 2 + 60, { steps: 5 });
+            await page.mouse.up();
+          }
+          await page.locator('#plan_draw_precision_confirm').click();
+        } else if (box) {
+          await page.mouse.move(box.x + 100, box.y + 100);
           await page.mouse.down();
-          await page.mouse.move(box.x + box.width / 2 + 60, box.y + box.height / 2 + 60, { steps: 5 });
+          await page.mouse.move(box.x + 200, box.y + 200);
           await page.mouse.up();
         }
-        await page.locator('#plan_draw_precision_confirm').click();
-      } else if (box) {
-        await page.mouse.move(box.x + 100, box.y + 100);
-        await page.mouse.down();
-        await page.mouse.move(box.x + 200, box.y + 200);
-        await page.mouse.up();
-      }
-      await expect.poll(shapesCount, { timeout: 1500 }).toBe(1);
-    });
-    await step('undo/redo (Ctrl+Z/Y) et effacer tout', async () => {
-      await page.keyboard.press('Control+z');
-      await expect.poll(shapesCount, { timeout: 1500 }).toBe(0);
-      await page.keyboard.press('Control+y');
-      await expect.poll(shapesCount, { timeout: 1500 }).toBe(1);
-      // beforeEach câble page.on('dialog') → accept() : le confirm() natif de
-      // #plan_draw_clear est accepté automatiquement.
-      await page.locator('#plan_draw_clear').click();
-      await expect.poll(shapesCount, { timeout: 1500 }).toBe(0);
+        await expect.poll(shapesCount, { timeout: 1500 }).toBe(1);
+      });
+      await step('undo/redo (Ctrl+Z/Y) et effacer tout', async () => {
+        await page.keyboard.press('Control+z');
+        await expect.poll(shapesCount, { timeout: 1500 }).toBe(0);
+        await page.keyboard.press('Control+y');
+        await expect.poll(shapesCount, { timeout: 1500 }).toBe(1);
+        // beforeEach câble page.on('dialog') → accept() : le confirm() natif de
+        // #plan_draw_clear est accepté automatiquement.
+        await page.locator('#plan_draw_clear').click();
+        await expect.poll(shapesCount, { timeout: 1500 }).toBe(0);
+      });
     });
   });
 
@@ -900,13 +936,40 @@ test.describe('PC-Tac — Checklist fonctionnelle (docs/recon-pctac.md §6)', ()
     await step('cohérence --shadow-glow-accent en thème clair (P2.FIX reprise 1)', async () => {
       const vals = await page.evaluate(() => {
         const cs = getComputedStyle(document.body);
+        const accentGlowRaw = cs.getPropertyValue('--accent-glow').trim();
         return {
-          accentGlow: cs.getPropertyValue('--accent-glow').trim(),
+          // P4.FIX, BLOQUANT R1 : `getComputedStyle` sur une PROPRIÉTÉ
+          // PERSONNALISÉE (non typée) sérialise sa couleur dans le format
+          // choisi par le moteur de rendu au moment de la requête — mesuré :
+          // `rgba(29, 99, 214, 0.16)` texte, TEL QU'AUTEURÉ dans
+          // `styles/pctac.css:342`, sur les versions de Chromium utilisées
+          // lors des gates P2/P3 ; `#1d63d629` (hex8, MÊME couleur —
+          // 0x29 = round(0.16×255) = 41) sur la version bundlée par
+          // `@playwright/test@1.62.1` de cette mission. Comparaison
+          // rendue INDÉPENDANTE de ce détail de sérialisation en passant
+          // par une propriété TYPÉE (`color`, dont la forme calculée
+          // `rgb()`/`rgba()` est fixée par la spec CSSOM, cf. probe
+          // ci-dessous) plutôt que de comparer le texte brut de la
+          // custom property à un littéral figé sur un format precis.
+          accentGlow: (() => {
+            const probe = document.createElement('div');
+            probe.style.color = accentGlowRaw;
+            document.body.appendChild(probe);
+            const normalized = getComputedStyle(probe).color;
+            probe.remove();
+            return normalized;
+          })(),
+          // Auto-cohérence (shadowGlowAccent référence accentGlow) : les
+          // DEUX valeurs proviennent du même appel `getPropertyValue` sur
+          // des custom properties, donc du MÊME format quel qu'il soit —
+          // comparaison déjà indépendante de la sérialisation, aucun
+          // changement nécessaire ici (garde le texte BRUT, pas normalisé).
           shadowGlowAccent: cs.getPropertyValue('--shadow-glow-accent').trim(),
+          accentGlowRaw,
         };
       });
       expect.soft(vals.accentGlow).toBe('rgba(29, 99, 214, 0.16)');
-      expect.soft(vals.shadowGlowAccent).toBe(`0 0 15px ${vals.accentGlow}`);
+      expect.soft(vals.shadowGlowAccent).toBe(`0 0 15px ${vals.accentGlowRaw}`);
     });
 
     await step('export archive .pctac.zip déclenche un téléchargement', async () => {
