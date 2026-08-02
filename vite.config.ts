@@ -59,6 +59,7 @@ export default defineConfig({
           'manifest.webmanifest',
           'favicon.ico',
           '*.png',
+          'portal/*.webp',
         ],
         globIgnores: ['**/*.map'],
       },

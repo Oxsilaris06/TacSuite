@@ -5,3 +5,11 @@ playwright-report/
 tests/visual/diffs/
 *.log
 .DS_Store
+
+# Artefact derive de `graphify` (graphe de connaissance + cache d'extraction
+# semantique) : regenerable localement via `graphify update .` (AST-only,
+# gratuit) ou `graphify extract --mode deep` (semantique, cout API). Analogue
+# a dist/ ci-dessus - non publie car perime des le premier commit ulterieur
+# et sans valeur pour les utilisateurs finaux de TacSuite (outillage IA de
+# dev, pas un livrable applicatif). Decision arbitree en P4.FIX (reprise 2).
+graphify-out/
