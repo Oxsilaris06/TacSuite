@@ -1,0 +1,789 @@
+/* ============================================================================
+ * styles/portal.css — Page de garde TacSuite (portail).
+ *
+ * Architecture de tokens a TROIS COUCHES (skill design-system) :
+ *     primitives  →  semantiques  →  composants
+ *
+ * Les primitives ne sont PAS inventees : elles sont extraites des deux themes
+ * applicatifs deja portes (styles/pctac.css « Tactical Glass », styles/oi.css
+ * « tactical/OLED ») afin que le portail et les apps partagent exactement le
+ * meme substrat visuel (graphite neutre, accent bleu #4f8dff, glow bleu a 28 %,
+ * rayons 6/12/20, echelle d'espacement 4→64, trio Oswald/Inter/JetBrains Mono).
+ * Les seules valeurs ajoutees sont la rampe CLAIRE : les apps n'ont pas de theme
+ * clair, elle est donc derivee (miroir de la rampe sombre, accent assombri a
+ * #2f6fe0 pour tenir le contraste AA sur fond papier).
+ *
+ * REGLE : aucune valeur brute dans les regles de composants — uniquement var().
+ * ========================================================================== */
+
+/* ============================================================================
+ * COUCHE 1 — PRIMITIVES (valeurs brutes, sans intention d'usage)
+ * ========================================================================== */
+:root {
+    /* --- Graphite liquide (pctac.css:207-212, 266-268, 275-276) ------------ */
+    --tac-graphite-950: #0a0a0b;
+    --tac-graphite-900: #141416;
+    --tac-graphite-850: #18181b;
+    --tac-graphite-800: #1d1d21;
+    --tac-graphite-700: #29292e;
+    --tac-graphite-600: #2b2b30;
+    --tac-graphite-500: #52525b;
+
+    /* --- Verres et voiles (pctac.css:208-211) ----------------------------- */
+    --tac-glass-dark: rgba(22, 22, 26, 0.70);
+    --tac-glass-heavy: rgba(16, 16, 19, 0.95);
+    --tac-white-a04: rgba(255, 255, 255, 0.04);
+    --tac-white-a07: rgba(255, 255, 255, 0.07);
+    --tac-white-a08: rgba(255, 255, 255, 0.08);
+    --tac-black-a42: rgba(0, 0, 0, 0.42);
+
+    /* --- Papier (rampe claire derivee, absente des apps) ------------------ */
+    --tac-paper-50: #ffffff;
+    --tac-paper-100: #f7f8fa;
+    --tac-paper-200: #eef0f4;
+    --tac-paper-300: #e2e5ec;
+    --tac-paper-400: #d0d5df;
+    --tac-paper-500: #9aa1ae;
+    --tac-paper-glass: rgba(255, 255, 255, 0.72);
+    --tac-black-a06: rgba(0, 0, 0, 0.06);
+    --tac-black-a10: rgba(0, 0, 0, 0.10);
+
+    /* --- Accent bleu tactique (pctac.css:219-221, 230, 287) --------------- */
+    --tac-blue-600: #2f6fe0;
+    /* Bleu profond : seule teinte d'accent tenant AA (>=4.5:1) pour du petit
+       texte pose sur un fond teinte clair (badges). */
+    --tac-blue-700: #1c4fa8;
+    --tac-blue-500: #4f8dff;
+    --tac-blue-400: #74a6ff;
+    --tac-blue-a28: rgba(79, 141, 255, 0.28);
+    --tac-blue-a55: rgba(79, 141, 255, 0.55);
+    --tac-blue-a12: rgba(79, 141, 255, 0.12);
+    --tac-blue-600-a20: rgba(47, 111, 224, 0.20);
+    --tac-blue-600-a35: rgba(47, 111, 224, 0.35);
+
+    /* --- Signaletique operationnelle (pctac.css:226-231, 284) ------------- */
+    --tac-green-500: #2ecf91;
+    --tac-green-600: #0b573a;
+    --tac-green-a18: rgba(46, 207, 145, 0.18);
+    --tac-green-600-a14: rgba(11, 87, 58, 0.14);
+    --tac-amber-500: #f0b53e;
+    --tac-amber-700: #6b3f00;
+    --tac-amber-a20: rgba(240, 181, 62, 0.20);
+    --tac-amber-700-a16: rgba(107, 63, 0, 0.16);
+    --tac-red-500: #f0556a;
+
+    /* --- Texte (pctac.css:222-223, 271-272) ------------------------------- */
+    --tac-text-100: #f0f0f1;
+    --tac-text-300: #b6b6bc;
+    --tac-text-500: #8a8a91;
+    --tac-ink-900: #101114;
+    --tac-ink-700: #3c414b;
+    --tac-ink-500: #5d6472;
+
+    /* --- Typographie (pctac.css:214-216) ---------------------------------- */
+    --tac-font-ui: 'Inter', system-ui, sans-serif;
+    --tac-font-title: 'Oswald', sans-serif;
+    --tac-font-data: 'JetBrains Mono', monospace;
+    --tac-size-xs: 0.75rem;
+    --tac-size-sm: 0.875rem;
+    --tac-size-md: 1rem;
+    --tac-size-lg: 1.125rem;
+    --tac-size-xl: 1.5rem;
+    --tac-size-2xl: clamp(2rem, 7vw, 3.25rem);
+    --tac-weight-regular: 400;
+    --tac-weight-medium: 500;
+    --tac-weight-semibold: 600;
+    --tac-weight-bold: 700;
+    --tac-leading-tight: 1.15;
+    --tac-leading-normal: 1.55;
+    --tac-tracking-wide: 0.06em;
+    --tac-tracking-wider: 0.14em;
+
+    /* --- Rayons (pctac.css:236-239, 321-323) ------------------------------ */
+    --tac-radius-sm: 6px;
+    --tac-radius-md: 12px;
+    --tac-radius-lg: 20px;
+    --tac-radius-pill: 999px;
+    --tac-radius-full: 9999px;
+
+    /* --- Espacement (pctac.css:242-249) ----------------------------------- */
+    --tac-space-1: 4px;
+    --tac-space-2: 8px;
+    --tac-space-3: 12px;
+    --tac-space-4: 16px;
+    --tac-space-5: 24px;
+    --tac-space-6: 32px;
+    --tac-space-7: 48px;
+    --tac-space-8: 64px;
+
+    /* --- Mouvement (pctac.css:252-255) ------------------------------------ */
+    --tac-ease-out-spring: cubic-bezier(0.175, 0.885, 0.32, 1.1);
+    --tac-ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+    --tac-duration-fast: 0.15s;
+    --tac-duration-normal: 0.3s;
+
+    /* --- Ombres (pctac.css:296-300, 326-327) ------------------------------ */
+    --tac-shadow-sm-dark: 0 1px 2px rgba(0, 0, 0, 0.4);
+    --tac-shadow-md-dark: 0 4px 6px -1px rgba(0, 0, 0, 0.4), 0 2px 4px -2px rgba(0, 0, 0, 0.4);
+    --tac-shadow-lg-dark: 0 10px 15px -3px rgba(0, 0, 0, 0.5), 0 4px 6px -4px rgba(0, 0, 0, 0.5);
+    --tac-shadow-sm-light: 0 1px 2px rgba(16, 17, 20, 0.06);
+    --tac-shadow-md-light: 0 4px 10px -2px rgba(16, 17, 20, 0.10);
+    --tac-shadow-lg-light: 0 12px 24px -6px rgba(16, 17, 20, 0.14);
+    --tac-inner-glow-dark: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+    --tac-inner-glow-light: inset 0 1px 0 rgba(255, 255, 255, 0.9);
+
+    /* --- Halos / textures (pctac.css:303-304) ----------------------------- */
+    --tac-canvas-glow-dark: radial-gradient(120% 80% at 50% -8%, rgba(255, 255, 255, 0.05) 0%, transparent 55%);
+    --tac-canvas-glow-light: radial-gradient(120% 80% at 50% -8%, rgba(47, 111, 224, 0.10) 0%, transparent 60%);
+
+    /* --- Divers ----------------------------------------------------------- */
+    --tac-border-width: 1px;
+    --tac-border-width-thick: 2px;
+    --tac-focus-width: 3px;
+    --tac-outline-width: 2px;
+    --tac-outline-offset: 2px;
+    --tac-dot-size: 8px;
+    --tac-content-max: 1080px;
+    --tac-lift: -2px;
+    --tac-z-skip: 10;
+    --tac-zero: 0;
+    --tac-full: 100%;
+}
+
+/* ============================================================================
+ * COUCHE 2 — SEMANTIQUES (intention d'usage ; commutent avec le theme)
+ * Sombre = defaut, aligne sur PC-Tac. Le clair est active soit par
+ * prefers-color-scheme (premier chargement), soit par [data-theme] (choix
+ * explicite persiste par le portail — il gagne toujours sur la preference OS).
+ * ========================================================================== */
+:root,
+:root[data-theme='dark'] {
+    color-scheme: dark;
+
+    --color-bg: var(--tac-graphite-950);
+    --color-bg-texture: var(--tac-canvas-glow-dark);
+    --color-surface: var(--tac-glass-dark);
+    --color-surface-solid: var(--tac-graphite-900);
+    --color-surface-hover: var(--tac-graphite-800);
+    --color-surface-sunken: var(--tac-black-a42);
+    --color-surface-inner-glow: var(--tac-inner-glow-dark);
+
+    --color-border: var(--tac-graphite-600);
+    --color-border-subtle: var(--tac-white-a08);
+    --color-border-strong: var(--tac-graphite-500);
+
+    --color-text: var(--tac-text-100);
+    --color-text-secondary: var(--tac-text-300);
+    --color-text-muted: var(--tac-text-500);
+    --color-text-on-primary: var(--tac-graphite-950);
+
+    --color-primary: var(--tac-blue-500);
+    --color-primary-hover: var(--tac-blue-400);
+    --color-primary-glow: var(--tac-blue-a28);
+    --color-primary-ring: var(--tac-blue-a55);
+    --color-primary-soft: var(--tac-blue-a12);
+    --color-primary-strong: var(--tac-blue-400);
+
+    --color-success: var(--tac-green-500);
+    --color-success-soft: var(--tac-green-a18);
+    --color-warning: var(--tac-amber-500);
+    --color-warning-soft: var(--tac-amber-a20);
+    --color-danger: var(--tac-red-500);
+
+    --shadow-sm: var(--tac-shadow-sm-dark);
+    --shadow-md: var(--tac-shadow-md-dark);
+    --shadow-lg: var(--tac-shadow-lg-dark);
+    --shadow-glow-accent: 0 0 15px var(--color-primary-glow);
+
+    --focus-ring: 0 0 0 var(--tac-focus-width) var(--color-primary-glow);
+}
+
+@media (prefers-color-scheme: light) {
+    :root:not([data-theme]) {
+        color-scheme: light;
+
+        --color-bg: var(--tac-paper-100);
+        --color-bg-texture: var(--tac-canvas-glow-light);
+        --color-surface: var(--tac-paper-glass);
+        --color-surface-solid: var(--tac-paper-50);
+        --color-surface-hover: var(--tac-paper-200);
+        --color-surface-sunken: var(--tac-black-a06);
+        --color-surface-inner-glow: var(--tac-inner-glow-light);
+
+        --color-border: var(--tac-paper-400);
+        --color-border-subtle: var(--tac-black-a10);
+        --color-border-strong: var(--tac-paper-500);
+
+        --color-text: var(--tac-ink-900);
+        --color-text-secondary: var(--tac-ink-700);
+        --color-text-muted: var(--tac-ink-500);
+        --color-text-on-primary: var(--tac-paper-50);
+
+        --color-primary: var(--tac-blue-600);
+        --color-primary-hover: var(--tac-blue-500);
+        --color-primary-glow: var(--tac-blue-600-a20);
+        --color-primary-ring: var(--tac-blue-600-a35);
+        --color-primary-soft: var(--tac-blue-600-a20);
+        --color-primary-strong: var(--tac-blue-700);
+
+        --color-success: var(--tac-green-600);
+        --color-success-soft: var(--tac-green-600-a14);
+        --color-warning: var(--tac-amber-700);
+        --color-warning-soft: var(--tac-amber-700-a16);
+
+        --shadow-sm: var(--tac-shadow-sm-light);
+        --shadow-md: var(--tac-shadow-md-light);
+        --shadow-lg: var(--tac-shadow-lg-light);
+    }
+}
+
+:root[data-theme='light'] {
+    color-scheme: light;
+
+    --color-bg: var(--tac-paper-100);
+    --color-bg-texture: var(--tac-canvas-glow-light);
+    --color-surface: var(--tac-paper-glass);
+    --color-surface-solid: var(--tac-paper-50);
+    --color-surface-hover: var(--tac-paper-200);
+    --color-surface-sunken: var(--tac-black-a06);
+    --color-surface-inner-glow: var(--tac-inner-glow-light);
+
+    --color-border: var(--tac-paper-400);
+    --color-border-subtle: var(--tac-black-a10);
+    --color-border-strong: var(--tac-paper-500);
+
+    --color-text: var(--tac-ink-900);
+    --color-text-secondary: var(--tac-ink-700);
+    --color-text-muted: var(--tac-ink-500);
+    --color-text-on-primary: var(--tac-paper-50);
+
+    --color-primary: var(--tac-blue-600);
+    --color-primary-hover: var(--tac-blue-500);
+    --color-primary-glow: var(--tac-blue-600-a20);
+    --color-primary-ring: var(--tac-blue-600-a35);
+    --color-primary-soft: var(--tac-blue-600-a20);
+    --color-primary-strong: var(--tac-blue-700);
+
+    --color-success: var(--tac-green-600);
+    --color-success-soft: var(--tac-green-600-a14);
+    --color-warning: var(--tac-amber-700);
+    --color-warning-soft: var(--tac-amber-700-a16);
+
+    --shadow-sm: var(--tac-shadow-sm-light);
+    --shadow-md: var(--tac-shadow-md-light);
+    --shadow-lg: var(--tac-shadow-lg-light);
+}
+
+/* ============================================================================
+ * COUCHE 3 — TOKENS DE COMPOSANTS
+ * ========================================================================== */
+:root {
+    /* Page */
+    --page-bg: var(--color-bg);
+    --page-fg: var(--color-text);
+    --page-font: var(--tac-font-ui);
+    --page-padding-block: var(--tac-space-7);
+    --page-padding-inline: var(--tac-space-5);
+    --page-max-width: var(--tac-content-max);
+    --page-gap: var(--tac-space-7);
+
+    /* En-tete */
+    --header-gap: var(--tac-space-3);
+    --header-title-font: var(--tac-font-title);
+    --header-title-size: var(--tac-size-2xl);
+    --header-title-weight: var(--tac-weight-bold);
+    --header-title-tracking: var(--tac-tracking-wide);
+    --header-title-accent: var(--color-primary);
+    --header-subtitle-color: var(--color-text-secondary);
+    --header-subtitle-size: var(--tac-size-md);
+    --header-rule-color: var(--color-border-subtle);
+
+    /* Barre d'etat (theme + reseau) */
+    --statusbar-gap: var(--tac-space-2);
+    --status-dot-size: var(--tac-dot-size);
+    --status-online-color: var(--color-success);
+    --status-online-bg: var(--color-success-soft);
+    --status-offline-color: var(--color-warning);
+    --status-offline-bg: var(--color-warning-soft);
+    --status-font-size: var(--tac-size-xs);
+    --status-tracking: var(--tac-tracking-wide);
+
+    /* Bouton de theme */
+    --toggle-bg: var(--color-surface-solid);
+    --toggle-bg-hover: var(--color-surface-hover);
+    --toggle-border: var(--color-border);
+    --toggle-fg: var(--color-text-secondary);
+    --toggle-fg-hover: var(--color-text);
+    --toggle-radius: var(--tac-radius-pill);
+    --toggle-padding-block: var(--tac-space-2);
+    --toggle-padding-inline: var(--tac-space-3);
+    --toggle-gap: var(--tac-space-2);
+    --toggle-icon-size: var(--tac-size-lg);
+
+    /* Cartes applicatives */
+    --card-bg: var(--color-surface);
+    --card-bg-hover: var(--color-surface-hover);
+    --card-border: var(--tac-border-width) solid var(--color-border);
+    --card-border-hover-color: var(--color-primary);
+    --card-radius: var(--tac-radius-lg);
+    --card-padding: var(--tac-space-5);
+    --card-gap: var(--tac-space-3);
+    --card-grid-gap: var(--tac-space-5);
+    --card-shadow: var(--shadow-md);
+    --card-shadow-hover: var(--shadow-lg), var(--shadow-glow-accent);
+    --card-inner-glow: var(--color-surface-inner-glow);
+    --card-title-font: var(--tac-font-title);
+    --card-title-size: var(--tac-size-xl);
+    --card-title-weight: var(--tac-weight-semibold);
+    --card-title-tracking: var(--tac-tracking-wide);
+    --card-desc-color: var(--color-text-secondary);
+    --card-desc-size: var(--tac-size-sm);
+    --card-arrow-color: var(--color-text-muted);
+    --card-arrow-color-hover: var(--color-primary);
+    --card-transition: var(--tac-duration-fast) var(--tac-ease-in-out);
+    --card-lift: var(--tac-lift);
+
+    /* Vignette illustrative (couvre les deux themes : le voile bas ancre
+       l'image sur fond papier comme sur fond graphite, le halo haut reprend
+       la teinte d'accent deja utilisee par le theme actif). */
+    --card-media-radius: var(--tac-radius-md);
+    --card-media-border-color: var(--color-border-subtle);
+    --card-media-vignette: var(--tac-black-a42);
+    --card-media-glow: var(--color-primary-glow);
+    --card-media-scale-hover: 1.04;
+
+    /* Badge « donnees locales » — teinte ACCENT (et non succes) : le vert reste
+       reserve a l'etat reseau, pour que les deux signaux ne se confondent pas. */
+    --badge-bg: var(--color-primary-soft);
+    --badge-fg: var(--color-primary-strong);
+    --badge-border-color: var(--color-primary);
+    --badge-radius: var(--tac-radius-pill);
+    --badge-padding-block: var(--tac-space-1);
+    --badge-padding-inline: var(--tac-space-3);
+    --badge-font: var(--tac-font-data);
+    --badge-size: var(--tac-size-xs);
+    --badge-gap: var(--tac-space-2);
+
+    /* Pied de page */
+    --footer-color: var(--color-text-muted);
+    --footer-size: var(--tac-size-xs);
+    --footer-gap: var(--tac-space-2);
+    --footer-rule-color: var(--color-border-subtle);
+    --footer-link-color: var(--color-text-secondary);
+    --footer-link-disabled-color: var(--color-text-muted);
+}
+
+/* ============================================================================
+ * COMPOSANTS — 100 % var(), aucune valeur brute.
+ * ========================================================================== */
+
+*,
+*::before,
+*::after {
+    box-sizing: border-box;
+}
+
+html {
+    -webkit-text-size-adjust: var(--tac-full);
+}
+
+body {
+    margin: var(--tac-zero);
+    min-height: 100dvh;
+    background-color: var(--page-bg);
+    background-image: var(--color-bg-texture);
+    background-repeat: no-repeat;
+    color: var(--page-fg);
+    font-family: var(--page-font);
+    font-size: var(--tac-size-md);
+    line-height: var(--tac-leading-normal);
+    -webkit-font-smoothing: antialiased;
+    transition: background-color var(--tac-duration-normal) var(--tac-ease-in-out),
+        color var(--tac-duration-normal) var(--tac-ease-in-out);
+}
+
+:focus-visible {
+    outline: var(--tac-outline-width) solid var(--color-primary);
+    outline-offset: var(--tac-outline-offset);
+    border-radius: var(--tac-radius-sm);
+}
+
+.portal {
+    min-height: 100dvh;
+    max-width: var(--page-max-width);
+    margin-inline: auto;
+    padding-block: var(--page-padding-block);
+    padding-inline: var(--page-padding-inline);
+    display: flex;
+    flex-direction: column;
+    gap: var(--page-gap);
+}
+
+/* --- Lien d'evitement ------------------------------------------------------ */
+.portal-skip {
+    position: absolute;
+    left: var(--tac-space-4);
+    top: var(--tac-space-4);
+    z-index: var(--tac-z-skip);
+    padding: var(--tac-space-2) var(--tac-space-4);
+    background: var(--color-surface-solid);
+    color: var(--color-text);
+    border: var(--tac-border-width) solid var(--color-border);
+    border-radius: var(--tac-radius-sm);
+    transform: translateY(calc(var(--tac-space-8) * -2));
+}
+
+.portal-skip:focus {
+    transform: translateY(var(--tac-zero));
+}
+
+/* --- En-tete --------------------------------------------------------------- */
+.portal-header {
+    display: flex;
+    flex-direction: column;
+    gap: var(--header-gap);
+    padding-bottom: var(--tac-space-5);
+    border-bottom: var(--tac-border-width) solid var(--header-rule-color);
+}
+
+.portal-header__bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--statusbar-gap);
+}
+
+.portal-title {
+    margin: var(--tac-zero);
+    font-family: var(--header-title-font);
+    font-size: var(--header-title-size);
+    font-weight: var(--header-title-weight);
+    line-height: var(--tac-leading-tight);
+    letter-spacing: var(--header-title-tracking);
+    text-transform: uppercase;
+}
+
+.portal-title__accent {
+    color: var(--header-title-accent);
+}
+
+.portal-subtitle {
+    margin: var(--tac-zero);
+    max-width: 60ch;
+    color: var(--header-subtitle-color);
+    font-size: var(--header-subtitle-size);
+}
+
+/* --- Barre d'etat ---------------------------------------------------------- */
+.portal-status {
+    display: flex;
+    align-items: center;
+    gap: var(--statusbar-gap);
+}
+
+.net-status {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--badge-gap);
+    padding: var(--badge-padding-block) var(--badge-padding-inline);
+    border-radius: var(--badge-radius);
+    border: var(--tac-border-width) solid var(--status-online-color);
+    background: var(--status-online-bg);
+    color: var(--status-online-color);
+    font-size: var(--status-font-size);
+    font-family: var(--badge-font);
+    letter-spacing: var(--status-tracking);
+    text-transform: uppercase;
+}
+
+.net-status[data-online='false'] {
+    border-color: var(--status-offline-color);
+    background: var(--status-offline-bg);
+    color: var(--status-offline-color);
+}
+
+.net-status__dot {
+    width: var(--status-dot-size);
+    height: var(--status-dot-size);
+    border-radius: var(--tac-radius-full);
+    background: currentColor;
+    flex: var(--tac-zero) var(--tac-zero) auto;
+}
+
+/* --- Bouton de theme ------------------------------------------------------- */
+.theme-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--toggle-gap);
+    padding: var(--toggle-padding-block) var(--toggle-padding-inline);
+    border: var(--tac-border-width) solid var(--toggle-border);
+    border-radius: var(--toggle-radius);
+    background: var(--toggle-bg);
+    color: var(--toggle-fg);
+    font-family: var(--page-font);
+    font-size: var(--tac-size-xs);
+    font-weight: var(--tac-weight-semibold);
+    letter-spacing: var(--status-tracking);
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: background var(--card-transition), color var(--card-transition),
+        border-color var(--card-transition);
+}
+
+.theme-toggle:hover {
+    background: var(--toggle-bg-hover);
+    color: var(--toggle-fg-hover);
+    border-color: var(--color-border-strong);
+}
+
+.theme-toggle__icon {
+    width: var(--toggle-icon-size);
+    height: var(--toggle-icon-size);
+    flex: var(--tac-zero) var(--tac-zero) auto;
+}
+
+/* Une seule des deux icones est visible selon le theme actif. */
+.theme-toggle__icon--sun {
+    display: none;
+}
+
+@media (prefers-color-scheme: light) {
+    :root:not([data-theme]) .theme-toggle__icon--sun {
+        display: block;
+    }
+
+    :root:not([data-theme]) .theme-toggle__icon--moon {
+        display: none;
+    }
+}
+
+:root[data-theme='light'] .theme-toggle__icon--sun {
+    display: block;
+}
+
+:root[data-theme='light'] .theme-toggle__icon--moon {
+    display: none;
+}
+
+/* --- Grille de cartes ------------------------------------------------------ */
+.portal-apps {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(var(--tac-full), 20rem), 1fr));
+    gap: var(--card-grid-gap);
+    margin: var(--tac-zero);
+    padding: var(--tac-zero);
+    list-style: none;
+}
+
+.app-card {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: var(--card-gap);
+    padding: var(--card-padding);
+    border: var(--card-border);
+    border-radius: var(--card-radius);
+    background: var(--card-bg);
+    box-shadow: var(--card-shadow), var(--card-inner-glow);
+    transition: border-color var(--card-transition), box-shadow var(--card-transition),
+        transform var(--card-transition), background var(--card-transition);
+}
+
+.app-card:hover,
+.app-card:focus-within {
+    background: var(--card-bg-hover);
+    border-color: var(--card-border-hover-color);
+    box-shadow: var(--card-shadow-hover);
+    transform: translateY(var(--card-lift));
+}
+
+/* --- Vignette illustrative --------------------------------------------- */
+.app-card__media {
+    position: relative;
+    aspect-ratio: 1 / 1;
+    overflow: hidden;
+    border: var(--tac-border-width) solid var(--card-media-border-color);
+    border-radius: var(--card-media-radius);
+    box-shadow: var(--card-inner-glow);
+}
+
+.app-card__media-img {
+    position: absolute;
+    inset: var(--tac-zero);
+    width: var(--tac-full);
+    height: var(--tac-full);
+    object-fit: cover;
+    object-position: center;
+    transition: transform var(--card-transition);
+}
+
+.app-card__media::after {
+    content: '';
+    position: absolute;
+    inset: var(--tac-zero);
+    background: radial-gradient(120% 90% at 50% -10%, var(--card-media-glow) 0%, transparent 60%),
+        linear-gradient(180deg, transparent 55%, var(--card-media-vignette) 100%);
+    pointer-events: none;
+}
+
+.app-card:hover .app-card__media-img,
+.app-card:focus-within .app-card__media-img {
+    transform: scale(var(--card-media-scale-hover));
+}
+
+.app-card__head {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--card-gap);
+}
+
+.app-card__title {
+    margin: var(--tac-zero);
+    font-family: var(--card-title-font);
+    font-size: var(--card-title-size);
+    font-weight: var(--card-title-weight);
+    letter-spacing: var(--card-title-tracking);
+    line-height: var(--tac-leading-tight);
+    text-transform: uppercase;
+}
+
+/* Le lien couvre toute la carte (cible tactile maximale) sans imbriquer le
+   texte : le pseudo-element etale la zone cliquable. */
+.app-card__link {
+    color: inherit;
+    text-decoration: none;
+}
+
+.app-card__link::after {
+    content: '';
+    position: absolute;
+    inset: var(--tac-zero);
+    border-radius: var(--card-radius);
+}
+
+.app-card__desc {
+    margin: var(--tac-zero);
+    color: var(--card-desc-color);
+    font-size: var(--card-desc-size);
+    text-align: center;
+}
+
+.app-card__footer {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: var(--badge-gap);
+    margin-top: auto;
+    padding-top: var(--tac-space-2);
+}
+
+.app-card__cta {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--badge-gap);
+    color: var(--card-arrow-color);
+    font-size: var(--tac-size-xs);
+    font-weight: var(--tac-weight-semibold);
+    letter-spacing: var(--status-tracking);
+    text-transform: uppercase;
+    transition: color var(--card-transition);
+}
+
+.app-card:hover .app-card__cta,
+.app-card:focus-within .app-card__cta {
+    color: var(--card-arrow-color-hover);
+}
+
+.app-card__path {
+    font-family: var(--badge-font);
+    font-size: var(--tac-size-xs);
+    color: var(--color-text-muted);
+}
+
+/* --- Badge « donnees locales presentes » ----------------------------------- */
+.data-badge {
+    display: none;
+    align-items: center;
+    gap: var(--badge-gap);
+    padding: var(--badge-padding-block) var(--badge-padding-inline);
+    border: var(--tac-border-width) solid var(--badge-border-color);
+    border-radius: var(--badge-radius);
+    background: var(--badge-bg);
+    color: var(--badge-fg);
+    font-family: var(--badge-font);
+    font-size: var(--badge-size);
+    letter-spacing: var(--status-tracking);
+    text-transform: uppercase;
+}
+
+.data-badge[data-present='true'] {
+    display: inline-flex;
+}
+
+.data-badge__dot {
+    width: var(--status-dot-size);
+    height: var(--status-dot-size);
+    border-radius: var(--tac-radius-full);
+    background: currentColor;
+    flex: var(--tac-zero) var(--tac-zero) auto;
+}
+
+/* --- Pied de page ---------------------------------------------------------- */
+.portal-footer {
+    margin-top: auto;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--footer-gap) var(--tac-space-4);
+    padding-top: var(--tac-space-5);
+    border-top: var(--tac-border-width) solid var(--footer-rule-color);
+    color: var(--footer-color);
+    font-size: var(--footer-size);
+}
+
+.portal-footer p {
+    margin: var(--tac-zero);
+}
+
+.portal-footer__link[aria-disabled='true'] {
+    color: var(--footer-link-disabled-color);
+    text-decoration: line-through;
+    cursor: default;
+}
+
+/* --- Adaptations mobile / terrain ------------------------------------------ */
+@media (max-width: 30rem) {
+    :root {
+        --page-padding-block: var(--tac-space-5);
+        --page-padding-inline: var(--tac-space-4);
+        --page-gap: var(--tac-space-5);
+        --card-padding: var(--tac-space-4);
+    }
+
+    .portal-header__bar {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        animation-duration: var(--tac-duration-fast) !important;
+        transition-duration: var(--tac-duration-fast) !important;
+    }
+
+    .app-card:hover,
+    .app-card:focus-within {
+        transform: none;
+    }
+
+    .app-card:hover .app-card__media-img,
+    .app-card:focus-within .app-card__media-img {
+        transform: none;
+    }
+}
