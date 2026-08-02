@@ -152,20 +152,26 @@ describe('labelValue (pdf-engine-v2.ts:709-710, T9)', () => {
     });
 });
 
-describe('card (OrderPdfStyle.kt:121-122, T8)', () => {
-    it('est une table 1x1 fillColor cardAlt par défaut', () => {
+describe('card (OrderPdfStyle.kt:121-122, T8 — D8 pdfv3-design-fix/DEFAUTS.md)', () => {
+    it('est une table 1x1 SANS fillColor par défaut (transparente, comme .box qui ne porte aucun `background`, print-style.ts:73-74)', () => {
         const result = card([{ text: 'contenu' }], p) as ContentTable;
         expect(result.table.body).toHaveLength(1);
         expect(result.table.body[0]).toHaveLength(1);
         const cell = result.table.body[0]?.[0] as ContentStack & { fillColor?: string };
-        expect(cell.fillColor).toBe(p.cardAlt);
+        expect(cell.fillColor).toBeUndefined();
         expect(cell.stack).toEqual([{ text: 'contenu' }]);
     });
 
-    it('opts.fillColor override la couleur de fond', () => {
+    it('opts.fillColor pose explicitement une couleur de fond', () => {
         const result = card([{ text: 'x' }], p, { fillColor: '#123456' }) as ContentTable;
         const cell = result.table.body[0]?.[0] as { fillColor?: string };
         expect(cell.fillColor).toBe('#123456');
+    });
+
+    it('la bordure reste toujours p.border, indépendamment de opts.fillColor', () => {
+        const result = card([{ text: 'x' }], p) as ContentTable;
+        const cell = result.table.body[0]?.[0] as { borderColor?: string[] };
+        expect(cell.borderColor).toEqual([p.border, p.border, p.border, p.border]);
     });
 });
 

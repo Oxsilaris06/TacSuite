@@ -187,7 +187,13 @@ export function labelValue(
 /**
  * `card` — port de `.box{border:1px solid border;padding:8px;
  * page-break-inside:avoid}` (OrderPdfStyle.kt:121-122). Rayon/ombre CSS
- * abandonnés (écart E1, aucun équivalent pdfmake).
+ * abandonnés (écart E1, aucun équivalent pdfmake). SANS `opts.fillColor`,
+ * transparente (aucune clé `fillColor` posée) : `.box` n'a **aucune**
+ * propriété `background` (print-style.ts:73-74), elle montre le fond de PAGE
+ * à travers son cadre — un fond `p.cardAlt` systématique était un défaut
+ * (D8, `pdfv3-design-fix/DEFAUTS.md`), corrigé ici. `opts.fillColor` reste le
+ * seul moyen d'obtenir un fond plein (ex. `accentCard`/`kvTable` posent le
+ * leur eux-mêmes, hors de `card`).
  */
 export function card(body: Content[], p: OiPdfPalette, opts?: { fillColor?: string }): Content {
     return {
@@ -197,7 +203,7 @@ export function card(body: Content[], p: OiPdfPalette, opts?: { fillColor?: stri
                 [
                     {
                         stack: body,
-                        fillColor: opts?.fillColor ?? p.cardAlt,
+                        ...(opts?.fillColor !== undefined ? { fillColor: opts.fillColor } : {}),
                         borderColor: [p.border, p.border, p.border, p.border],
                     },
                 ],

@@ -32,6 +32,7 @@
  */
 import type {
     Content,
+    ContextPageSize,
     CustomTableLayout,
     DynamicContent,
     Size,
@@ -41,7 +42,6 @@ import type {
 
 import {
     accentCard,
-    badgeRow,
     card,
     figure,
     galleryPages,
@@ -49,10 +49,10 @@ import {
     h1,
     h2,
     h3,
+    kvTable,
     labelValue,
     LAYOUT_BORDERED,
     LAYOUT_NONE,
-    LAYOUT_PILL,
     pillRow,
 } from './blocks.js';
 import {
@@ -89,6 +89,17 @@ function str(v: unknown): string {
 /** `str(v) || fallback` — port exact du motif `formData.x || '-'` de `pdf-engine-v2.ts` (aucun trim, fidèle à l'original). */
 function strOr(v: unknown, fallback = '-'): string {
     return str(v) || fallback;
+}
+
+/**
+ * Bordure `p.border` sur les 4 côtés d'une cellule — port de
+ * `td,th{border:1px solid p.border}` (print-style.ts:67-68), posée par
+ * CELLULE et jamais dans `LAYOUT_BORDERED` (cf. tête de `blocks.ts`), pour
+ * que les tableaux de données restent palette-dépendants au lieu de retomber
+ * sur le noir par défaut de pdfmake (D3, `pdfv3-design-fix/DEFAUTS.md`).
+ */
+function cellBorder(p: OiPdfPalette): [string, string, string, string] {
+    return [p.border, p.border, p.border, p.border];
 }
 
 /**
@@ -187,7 +198,15 @@ function regroupByCellOrdered(trigrammes: string[], memberToCell: Map<string, st
     return order.map((cell) => [cell, groups.get(cell) ?? []]);
 }
 
-/** Bloc « cellule » — port verbatim des classes `.cell-group`/`.cell-name`/`.cell-members` (pdf-engine-v2.ts:760-762). */
+/**
+ * Bloc « cellule » — port de `.cell-group`/`.cell-name`/`.cell-members`
+ * (print-style.ts:175-184, commentaire :175-179 : la palette strategica
+ * n'expose pas l'accent en RGB décomposable, la référence retombe donc sur un
+ * fond `p.cardAlt` PLEIN plutôt que le voile `rgba(accent,.05)` de l'original
+ * Kotlin). Fond PLEIN `p.cardAlt` (D5) + trigrammes en pastille CONTOUR
+ * `pillRow` (même primitive que « Ordre Rame VL »), jamais en badge plein
+ * (D6) — `pdfv3-design-fix/DEFAUTS.md`.
+ */
 function cellGroupBox(cellName: string, trigrammes: string[], p: OiPdfPalette): Content {
     return {
         table: {
@@ -197,10 +216,9 @@ function cellGroupBox(cellName: string, trigrammes: string[], p: OiPdfPalette): 
                     {
                         stack: [
                             { text: cellName, bold: true, color: p.accent, decoration: 'underline', fontSize: 8, margin: [0, 0, 0, 4] },
-                            badgeRow(trigrammes, p),
+                            pillRow(trigrammes, p, { perRow: 6 }),
                         ],
-                        fillColor: p.accent,
-                        fillOpacity: 0.05,
+                        fillColor: p.cardAlt,
                         borderColor: [p.accent, p.accent, p.accent, p.accent],
                     },
                 ],
@@ -238,42 +256,6 @@ function hypothesisLine(index: number, text: string, p: OiPdfPalette): Content {
         layout: LAYOUT_NONE,
         margin: [0, 0, 0, 4],
     };
-}
-
-/** Pilule « grande » de l'Ordre de Pénétration (§3.2 ligne 7) : indice petit muté AU-DESSUS du libellé, `fillColor: p.headerRow` — distincte de `blocks.pill` (indice inline). */
-function bigPenetrationPill(text: string, index: number, p: OiPdfPalette): TableCell {
-    return {
-        table: {
-            widths: ['auto'],
-            body: [
-                [
-                    {
-                        stack: [
-                            { text: String(index + 1), fontSize: 8, color: p.muted },
-                            { text, bold: true, fontSize: 13 },
-                        ],
-                        fillColor: p.headerRow,
-                        borderColor: [p.accent, p.accent, p.accent, p.accent],
-                        alignment: 'center',
-                    },
-                ],
-            ],
-        },
-        layout: LAYOUT_PILL,
-    };
-}
-
-/** Grille de `bigPenetrationPill`, même découpage en lignes de `perRow` que `blocks.ts::pillGrid` (privé, non réutilisable hors module). */
-function bigPillRow(items: string[], p: OiPdfPalette, perRow = 4): Content {
-    const rows: TableCell[][] = [];
-    for (let i = 0; i < items.length; i += perRow) {
-        const rowItems: TableCell[] = items.slice(i, i + perRow).map((item, j) => bigPenetrationPill(item, i + j, p));
-        while (rowItems.length < perRow) {
-            rowItems.push({ text: '' });
-        }
-        rows.push(rowItems);
-    }
-    return { table: { widths: new Array(perRow).fill('*') as Array<'*'>, body: rows }, layout: LAYOUT_NONE };
 }
 
 /** Bandeau de titre « 2.<i> FICHE ADVERSAIRE : <nom> » — fond accent plein, texte blanc (aucun équivalent `blocks.ts` : `h2` majusculerait le nom, non souhaité ici). */
@@ -385,19 +367,19 @@ function buildAdversaryFiche(ctx: BuildCtx, adv: OiAdversary, index: number): Co
     ].map(str);
     const fontPx = adaptivePagePx(textFields, vehiculesList.length);
 
-    const identityCard = card(
-        [
-            h3('IDENTITÉ', p),
-            labelValue('Naissance', `${strOr(adv.date_naissance)} @ ${strOr(adv.lieu_naissance)}`, p),
-            labelValue('Profession', strOr(adv.profession_adversaire), p),
-            labelValue('Situation familiale', strOr(adv.situation_familiale), p),
-            labelValue('Signalement', `${strOr(adv.stature_adversaire)} | ${strOr(adv.ethnie_adversaire)}`, p),
-            labelValue('Signes particuliers', strOr(adv.signes_particuliers, 'Ras'), p),
-            labelValue('Substances', strOr(adv.substances_adversaire), p),
-            ...(meList.length > 0 ? [labelValue('Moyens Employés', meList.join(' / '), p)] : []),
-        ],
-        p,
-    );
+    // Tableau bordé (référence B : `kvRow()`, print-view.ts:89-90/303-310, la
+    // MÊME classe `.k` que toute la fiche), pas des lignes de texte nues (D4,
+    // `pdfv3-design-fix/DEFAUTS.md`) — `kvTable()` existait déjà, jamais appelée.
+    const identityRows: Array<[string, string]> = [
+        ['Naissance', `${strOr(adv.date_naissance)} @ ${strOr(adv.lieu_naissance)}`],
+        ['Profession', strOr(adv.profession_adversaire)],
+        ['Situation familiale', strOr(adv.situation_familiale)],
+        ['Signalement', `${strOr(adv.stature_adversaire)} | ${strOr(adv.ethnie_adversaire)}`],
+        ['Signes particuliers', strOr(adv.signes_particuliers, 'Ras')],
+        ['Substances', strOr(adv.substances_adversaire)],
+        ...(meList.length > 0 ? ([['Moyens Employés', meList.join(' / ')]] as Array<[string, string]>) : []),
+    ];
+    const identityCard = card([h3('IDENTITÉ', p), kvTable(identityRows, p)], p);
 
     const dangerCard = card(
         [
@@ -521,18 +503,18 @@ function buildExecution(ctx: BuildCtx): Content {
     const chronoRows: TableCell[][] =
         events.length > 0
             ? events.map((e): TableCell[] => [
-                  { text: e.hour },
-                  { text: [{ text: e.type, bold: true }, { text: ` : ${e.description}` }] },
+                  { text: e.hour, borderColor: cellBorder(p) },
+                  { text: [{ text: e.type, bold: true }, { text: ` : ${e.description}` }], borderColor: cellBorder(p) },
               ])
-            : [[{ text: 'N/A', colSpan: 2, alignment: 'center' }, {}]];
+            : [[{ text: 'N/A', colSpan: 2, alignment: 'center', borderColor: cellBorder(p) }, {}]];
     const chronoTable: Content = {
         table: {
             widths: ['22%', '*'],
             headerRows: 1,
             body: [
                 [
-                    { text: 'Heure', bold: true, fillColor: p.headerRow },
-                    { text: 'Événement', bold: true, fillColor: p.headerRow },
+                    { text: 'Heure', bold: true, fillColor: p.headerRow, borderColor: cellBorder(p) },
+                    { text: 'Événement', bold: true, fillColor: p.headerRow, borderColor: cellBorder(p) },
                 ],
                 ...chronoRows,
             ],
@@ -593,10 +575,13 @@ function buildArticulationOverview(ctx: BuildCtx): Content {
         [h3('Colonne Progression', p), colonne.length > 0 ? pillRow(colonne, p, { numbered: true }) : { text: '-' }],
         p,
     );
+    // Même pastille inline numérotée que « Ordre Rame VL »/« Colonne Progression »
+    // (référence B : `pillList()`, print-view.ts:93-98, rend les 3 rangées à
+    // l'identique) — D7, `pdfv3-design-fix/DEFAUTS.md`.
     const penetrationCard = card(
         [
             h3('Ordre de Pénétration', p),
-            penetration.length > 0 ? bigPillRow(penetration, p) : { text: '-' },
+            penetration.length > 0 ? pillRow(penetration, p, { numbered: true }) : { text: '-' },
             { text: '', margin: [0, 6, 0, 0] },
             labelValue('PLACE DU CHEF', strOr(formData.place_chef), p, { valueColor: p.accent }),
         ],
@@ -736,13 +721,13 @@ function buildEffractionPage(ctx: BuildCtx, block: OiEffractionBlock): Content {
         hypotheses.length > 0
             ? hypotheses.map(
                   (h): TableCell[] => [
-                      { text: h.title || h.id, bold: true, color: p.accent },
-                      { text: h.effrac || '-' },
-                      { text: h.degag || '-' },
-                      { text: h.assaut || '-' },
+                      { text: h.title || h.id, bold: true, color: p.accent, borderColor: cellBorder(p) },
+                      { text: h.effrac || '-', borderColor: cellBorder(p) },
+                      { text: h.degag || '-', borderColor: cellBorder(p) },
+                      { text: h.assaut || '-', borderColor: cellBorder(p) },
                   ],
               )
-            : [[{ text: 'Aucune hypothèse saisie', colSpan: 4, alignment: 'center' }, {}, {}, {}]];
+            : [[{ text: 'Aucune hypothèse saisie', colSpan: 4, alignment: 'center', borderColor: cellBorder(p) }, {}, {}, {}]];
 
     const hypTable: Content = {
         table: {
@@ -750,10 +735,10 @@ function buildEffractionPage(ctx: BuildCtx, block: OiEffractionBlock): Content {
             headerRows: 1,
             body: [
                 [
-                    { text: 'Hypothèse', bold: true, fillColor: p.headerRow },
-                    { text: 'Technique / Moyen', bold: true, fillColor: p.headerRow },
-                    { text: 'Dégagement', bold: true, fillColor: p.headerRow },
-                    { text: 'Assaut', bold: true, fillColor: p.headerRow },
+                    { text: 'Hypothèse', bold: true, fillColor: p.headerRow, borderColor: cellBorder(p) },
+                    { text: 'Technique / Moyen', bold: true, fillColor: p.headerRow, borderColor: cellBorder(p) },
+                    { text: 'Dégagement', bold: true, fillColor: p.headerRow, borderColor: cellBorder(p) },
+                    { text: 'Assaut', bold: true, fillColor: p.headerRow, borderColor: cellBorder(p) },
                 ],
                 ...hypRows,
             ],
@@ -874,22 +859,28 @@ function buildPatracPage(ctx: BuildCtx): Content | null {
         ? ['7%', '7%', '10%', '14%', '10%', '10%', '8%', '28%', '6%']
         : ['7%', '7%', '10%', '14%', '10%', '10%', '8%', '34%'];
     const headers = ['VL', 'PAX', 'CELLULE', 'FONCTION', 'PPALE', 'SEC.', 'AFIS', 'EQPT/GREN.', ...(hasDir ? ['DIR'] : [])];
-    const headerRow: TableCell[] = headers.map((h) => ({ text: h, bold: true, fillColor: p.headerRow, alignment: 'center' }));
+    const headerRow: TableCell[] = headers.map((h) => ({
+        text: h,
+        bold: true,
+        fillColor: p.headerRow,
+        alignment: 'center',
+        borderColor: cellBorder(p),
+    }));
 
     const bodyRows: TableCell[][] = allRows.map(({ vehicle, m }) => {
         const eqpt = [m.equipement, m.equipement2, m.grenades, m.tenue, m.gpb].filter((v) => v && v !== 'Sans').join(', ') || '-';
         const cells: TableCell[] = [
-            { text: vehicle, bold: true, fillColor: vehicle ? p.headerRow : undefined, alignment: 'center' },
-            { text: m.trigramme || '-', bold: true },
-            { text: m.cellule || '-' },
-            { text: m.fonction || '-' },
-            { text: m.principales || '-' },
-            { text: m.secondaires || '-' },
-            { text: m.afis || '-' },
-            { text: eqpt, fontSize: 8 },
+            { text: vehicle, bold: true, fillColor: vehicle ? p.headerRow : undefined, alignment: 'center', borderColor: cellBorder(p) },
+            { text: m.trigramme || '-', bold: true, borderColor: cellBorder(p) },
+            { text: m.cellule || '-', borderColor: cellBorder(p) },
+            { text: m.fonction || '-', borderColor: cellBorder(p) },
+            { text: m.principales || '-', borderColor: cellBorder(p) },
+            { text: m.secondaires || '-', borderColor: cellBorder(p) },
+            { text: m.afis || '-', borderColor: cellBorder(p) },
+            { text: eqpt, fontSize: 8, borderColor: cellBorder(p) },
         ];
         if (hasDir) {
-            cells.push({ text: m.dir || '', bold: true, alignment: 'center' });
+            cells.push({ text: m.dir || '', bold: true, alignment: 'center', borderColor: cellBorder(p) });
         }
         return cells;
     });
@@ -1045,7 +1036,16 @@ export function buildOiDocDefinition(data: OiPdfCollectedData, opts: { format: O
         pageSize: opts.format === 'a4' ? 'A4' : { width: geo.widthPt, height: geo.heightPt },
         pageOrientation: 'landscape',
         pageMargins: geo.marginsPt,
-        defaultStyle: { font: 'JetBrainsMono', fontSize: baseFontSize, lineHeight: 1.45 },
+        // D2 (`pdfv3-design-fix/DEFAUTS.md`) : encre de corps par défaut jamais
+        // recolorée — port de `body{color:${p.text}}` (print-style.ts:49).
+        defaultStyle: { font: 'JetBrainsMono', fontSize: baseFontSize, lineHeight: 1.45, color: p.text },
         footer: buildFooter(formData, p),
+        // D1 (`pdfv3-design-fix/DEFAUTS.md`) : fond de page jamais peint — sans ce
+        // callback, pdfmake retombe sur SON propre blanc par défaut quel que soit
+        // `isDark`. Port de `body{background:${p.bg}}` (print-style.ts:49), même
+        // mécanique `canvas` que `buildWatermark()` (ci-dessus) pour l'image de fond.
+        background: (_currentPage: number, pageSize: ContextPageSize): Content => ({
+            canvas: [{ type: 'rect', x: 0, y: 0, w: pageSize.width, h: pageSize.height, color: p.bg, lineWidth: 0 }],
+        }),
     };
 }

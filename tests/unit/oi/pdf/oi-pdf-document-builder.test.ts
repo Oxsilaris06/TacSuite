@@ -21,9 +21,10 @@
  * par `galleryPages()` → `h2()`), sans perdre la preuve d'ordre recherchée.
  */
 import { describe, expect, it } from 'vitest';
-import type { Content, ContextPageSize, DynamicContent } from 'pdfmake/interfaces';
+import type { Content, ContextPageSize, DynamicBackground, DynamicContent } from 'pdfmake/interfaces';
 
 import { buildOiDocDefinition, oiPdfFileName } from '@oi/pdf/document-builder.js';
+import { PDF_DARK, PDF_LIGHT } from '@oi/pdf/theme.js';
 import type {
     OiEffractionBlock,
     OiFormData,
@@ -338,5 +339,232 @@ describe('buildOiDocDefinition — aucune valeur du Store ne produit une entité
         expect(json).toContain('Repli <b>gras</b> & vérification');
         expect(json).not.toContain('&lt;');
         expect(json).not.toContain('&amp;');
+    });
+});
+
+// ===========================================================================
+// D1/D2 (pdfv3-design-fix/DEFAUTS.md) — la palette suit le thème COURANT de
+// l'app (isDark), jamais les défauts internes blancs/noirs de pdfmake.
+// ===========================================================================
+describe('buildOiDocDefinition — thème : fond de page + encre par défaut suivent isDark (D1/D2)', () => {
+    const fakePageSize: ContextPageSize = { width: 841.89, height: 595.28, orientation: 'landscape' };
+
+    it("isDark=false : fond de page peint en PDF_LIGHT.bg ('#ffffff'), encre de corps par défaut = PDF_LIGHT.text ('#111111')", () => {
+        const dd = buildOiDocDefinition(collect({}, {}, false), { format: 'a4' });
+        expect(dd.defaultStyle?.color).toBe(PDF_LIGHT.text);
+
+        const bg = (dd.background as DynamicBackground)(1, fakePageSize) as Content & { canvas?: unknown[] };
+        const rect = bg.canvas?.[0] as { color?: string; w?: number; h?: number; type?: string };
+        expect(rect.type).toBe('rect');
+        expect(rect.color).toBe(PDF_LIGHT.bg);
+        expect(rect.w).toBe(fakePageSize.width);
+        expect(rect.h).toBe(fakePageSize.height);
+    });
+
+    it("isDark=true : fond de page peint en PDF_DARK.bg ('#000000'), encre de corps par défaut = PDF_DARK.text ('#e0e0e0')", () => {
+        const dd = buildOiDocDefinition(collect({}, {}, true), { format: 'a4' });
+        expect(dd.defaultStyle?.color).toBe(PDF_DARK.text);
+
+        const bg = (dd.background as DynamicBackground)(1, fakePageSize) as Content & { canvas?: unknown[] };
+        const rect = bg.canvas?.[0] as { color?: string };
+        expect(rect.color).toBe(PDF_DARK.bg);
+    });
+});
+
+// ===========================================================================
+// D3 (pdfv3-design-fix/DEFAUTS.md) — grille des tableaux de données posée en
+// p.border par CELLULE (jamais le noir par défaut de pdfmake), Chronologie /
+// Effraction (hypothèses) / PATRACDVR, dans les DEUX thèmes.
+// ===========================================================================
+describe('buildOiDocDefinition — tableaux de données : grille p.border, jamais noir figé (D3)', () => {
+    it.each([
+        ['clair', false, PDF_LIGHT],
+        ['sombre', true, PDF_DARK],
+    ] as const)('Chronologie Prévisionnelle (thème %s) : en-tête bordée p.border, fond p.headerRow', (_label, isDark, pal) => {
+        const formData: OiFormData = { time_events: [{ hour: '08:00', type: 'DÉPART', description: 'PC' }] };
+        const json = JSON.stringify(buildOiDocDefinition(collect(formData, {}, isDark), { format: 'a4' }));
+
+        expect(json).toContain(
+            `{"text":"Heure","bold":true,"fillColor":"${pal.headerRow}","borderColor":["${pal.border}","${pal.border}","${pal.border}","${pal.border}"]}`,
+        );
+        expect(json).toContain(
+            `{"text":"Événement","bold":true,"fillColor":"${pal.headerRow}","borderColor":["${pal.border}","${pal.border}","${pal.border}","${pal.border}"]}`,
+        );
+    });
+
+    it.each([
+        ['clair', false, PDF_LIGHT],
+        ['sombre', true, PDF_DARK],
+    ] as const)("Hypothèses d'Effraction (thème %s) : en-tête bordée p.border", (_label, isDark, pal) => {
+        const effractionBlocks: OiEffractionBlock[] = [
+            {
+                id: 'e1', title: 'PORTE', mission: '-', porte: '-', structure: '-', serrurerie: '-',
+                environnement: '-', bati_a_bati: '-', dormant_a_dormant: '-', prof_linteaux: '-',
+                prof_bati: '-', h_porte: '-', h_marche: '-', prof_marche: '-', prof_moulure: '-',
+                members: [], hypotheses: [],
+            },
+        ];
+        const json = JSON.stringify(buildOiDocDefinition(collect({ effraction_blocks: effractionBlocks }, {}, isDark), { format: 'a4' }));
+
+        expect(json).toContain(
+            `{"text":"Hypothèse","bold":true,"fillColor":"${pal.headerRow}","borderColor":["${pal.border}","${pal.border}","${pal.border}","${pal.border}"]}`,
+        );
+    });
+
+    it.each([
+        ['clair', false, PDF_LIGHT],
+        ['sombre', true, PDF_DARK],
+    ] as const)('RÉCAPITULATIF PATRACDVR (thème %s) : en-tête ET lignes de membres bordées p.border', (_label, isDark, pal) => {
+        const json = JSON.stringify(
+            buildOiDocDefinition(collect({ patracdvr_rows: [makePatracRow()] }, {}, isDark), { format: 'a4' }),
+        );
+
+        expect(json).toContain(
+            `{"text":"VL","bold":true,"fillColor":"${pal.headerRow}","alignment":"center","borderColor":["${pal.border}","${pal.border}","${pal.border}","${pal.border}"]}`,
+        );
+        expect(json).toContain(
+            `{"text":"ABC","bold":true,"borderColor":["${pal.border}","${pal.border}","${pal.border}","${pal.border}"]}`,
+        );
+    });
+});
+
+// ===========================================================================
+// D4 (pdfv3-design-fix/DEFAUTS.md) — bloc IDENTITÉ de fiche adversaire rendu
+// en tableau bordé `kvTable()`, plus en lignes `labelValue()` nues.
+// ===========================================================================
+describe('buildOiDocDefinition — fiche adversaire, bloc IDENTITÉ : tableau bordé kvTable (D4)', () => {
+    function advFormData(meList: string[] = []): OiFormData {
+        return {
+            adversaries: [
+                {
+                    id: 'adv1',
+                    nom_adversaire: 'DUPONT',
+                    date_naissance: '01/01/1990',
+                    lieu_naissance: 'Paris',
+                    profession_adversaire: 'Inconnue',
+                    situation_familiale: 'Célibataire',
+                    stature_adversaire: '1m80',
+                    ethnie_adversaire: 'Caucasien',
+                    me_list: meList,
+                    etat_esprit_list: [],
+                    volume_list: [],
+                    vehicules_list: [],
+                },
+            ],
+        };
+    }
+
+    it('la ligne « Naissance » est une cellule kvTable (label gras fillColor p.cardAlt, bordée p.border) — plus une ligne labelValue nue', () => {
+        const json = JSON.stringify(buildOiDocDefinition(collect(advFormData()), { format: 'a4' }));
+
+        expect(json).toContain(
+            `{"text":"Naissance","bold":true,"fillColor":"${PDF_LIGHT.cardAlt}","borderColor":["${PDF_LIGHT.border}","${PDF_LIGHT.border}","${PDF_LIGHT.border}","${PDF_LIGHT.border}"]}`,
+        );
+        // labelValue() (ex-rendu, D4) aurait produit "NAISSANCE : " — absent désormais.
+        expect(json).not.toContain('NAISSANCE : ');
+    });
+
+    it("« Moyens Employés » n'apparaît QUE si me_list contient une entrée non vide (repli conditionnel préservé)", () => {
+        const without = JSON.stringify(buildOiDocDefinition(collect(advFormData([])), { format: 'a4' }));
+        expect(without).not.toContain('Moyens Employés');
+
+        const withMe = JSON.stringify(buildOiDocDefinition(collect(advFormData(['MP9'])), { format: 'a4' }));
+        expect(withMe).toContain('"text":"Moyens Employés"');
+        expect(withMe).toContain('"text":"MP9"');
+    });
+});
+
+// ===========================================================================
+// D5/D6 (pdfv3-design-fix/DEFAUTS.md) — « Composition par Cellule » : fond
+// PLEIN p.cardAlt (jamais un voile translucide) + pastilles CONTOUR (jamais
+// un badge plein), dans les DEUX thèmes.
+// ===========================================================================
+describe('buildOiDocDefinition — Composition par Cellule : fond plein + pastilles contour (D5/D6)', () => {
+    function cellFormData(): OiFormData {
+        const zmspcpBlocks: OiZmspcpBlock[] = [
+            { id: 'z1', title: 'ALPHA', zone: '-', mission: '-', secteur: '-', points_particuliers: '-', cat: '-', place_chef: '-', members: ['ABC'] },
+        ];
+        return {
+            zmspcp_blocks: zmspcpBlocks,
+            patracdvr_rows: [
+                {
+                    vehicle: 'VL1',
+                    members: [
+                        { trigramme: 'ABC', fonction: '-', cellule: 'AO1', principales: '-', secondaires: '-', afis: '-', grenades: '-', equipement: '-', equipement2: '-', tenue: '-', gpb: '-', dir: '' },
+                    ],
+                },
+            ],
+        };
+    }
+
+    it.each([
+        ['clair', false, PDF_LIGHT],
+        ['sombre', true, PDF_DARK],
+    ] as const)('(thème %s) fond PLEIN p.cardAlt, jamais de fillOpacity (voile translucide)', (_label, isDark, pal) => {
+        const json = JSON.stringify(buildOiDocDefinition(collect(cellFormData(), {}, isDark), { format: 'a4' }));
+
+        expect(json).not.toContain('fillOpacity');
+        expect(json).toContain(`"fillColor":"${pal.cardAlt}","borderColor":["${pal.accent}","${pal.accent}","${pal.accent}","${pal.accent}"]`);
+    });
+
+    it.each([
+        ['clair', false, PDF_LIGHT],
+        ['sombre', true, PDF_DARK],
+    ] as const)('(thème %s) le trigramme ABC est une pastille CONTOUR (bordure p.accent, aucun fillColor/color plein) — pas un badge', (_label, isDark, pal) => {
+        const json = JSON.stringify(buildOiDocDefinition(collect(cellFormData(), {}, isDark), { format: 'a4' }));
+
+        expect(json).toContain(
+            `{"text":"ABC","borderColor":["${pal.accent}","${pal.accent}","${pal.accent}","${pal.accent}"],"alignment":"center"}`,
+        );
+    });
+});
+
+// ===========================================================================
+// D7 (pdfv3-design-fix/DEFAUTS.md) — « Ordre de Pénétration » rend la MÊME
+// pastille inline numérotée que « Ordre Rame VL »/« Colonne Progression »,
+// plus le pavé 2 lignes `bigPenetrationPill` (supprimé).
+// ===========================================================================
+describe('buildOiDocDefinition — Ordre de Pénétration : même pastille inline que les 2 autres rangées (D7)', () => {
+    it('les 3 rangées rendent le même item avec EXACTEMENT la même structure de pastille numérotée', () => {
+        const formData: OiFormData = {
+            rame_vl_order: ['A1'],
+            colonne_progression_order: ['A1'],
+            ordre_penetration_order: ['A1'],
+        };
+        const json = JSON.stringify(buildOiDocDefinition(collect(formData), { format: 'a4' }));
+
+        const pillShape =
+            `{"text":[{"text":"1 ","bold":true,"color":"${PDF_LIGHT.accent}"},{"text":"A1"}],` +
+            `"borderColor":["${PDF_LIGHT.accent}","${PDF_LIGHT.accent}","${PDF_LIGHT.accent}","${PDF_LIGHT.accent}"],"alignment":"center"}`;
+        const occurrences = json.split(pillShape).length - 1;
+        expect(occurrences).toBe(3);
+    });
+
+    it("l'ancien pavé 2 lignes (indice muted au-dessus du libellé, fillColor p.headerRow) a disparu", () => {
+        const formData: OiFormData = { ordre_penetration_order: ['A1'] };
+        const json = JSON.stringify(buildOiDocDefinition(collect(formData), { format: 'a4' }));
+
+        expect(json).not.toContain(`"fontSize":8,"color":"${PDF_LIGHT.muted}"`);
+    });
+});
+
+// ===========================================================================
+// D8 (pdfv3-design-fix/DEFAUTS.md) — `card()` (blocks.ts) transparente par
+// défaut, pas de fond `p.cardAlt` systématique — vérifié ici au niveau
+// document (page de garde « 1. SITUATION GLOBALE », dans une vraie
+// `TDocumentDefinitions`), en complément du test unitaire de `blocks.ts`.
+// ===========================================================================
+describe('buildOiDocDefinition — cartes/encadrés simples : transparentes par défaut (D8)', () => {
+    it('la carte « 1. SITUATION GLOBALE » (card(), page de garde) ne porte aucun fillColor de fond', () => {
+        const formData: OiFormData = { situation_generale: 'RAS' };
+        const json = JSON.stringify(buildOiDocDefinition(collect(formData), { format: 'a4' }));
+
+        // h3('1. SITUATION GLOBALE') est immédiatement suivi, dans la même cellule
+        // de card(), de la bordure p.border SANS fillColor intercalé.
+        expect(json).toContain(
+            `[{"text":"1. SITUATION GLOBALE","fontSize":12,"bold":true,"decoration":"underline","color":"${PDF_LIGHT.accent}"}`,
+        );
+        // Signature de l'ANCIEN défaut (fond systématique cardAlt sur une card() nue) : absente.
+        expect(json).not.toContain(`"fillColor":"${PDF_LIGHT.cardAlt}","borderColor":["${PDF_LIGHT.border}"`);
     });
 });
