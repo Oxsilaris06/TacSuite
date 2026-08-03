@@ -538,7 +538,17 @@ function buildDangerPages(opts: {
     const itemCosts = items.map((item) => estimateWrappedLines(item, charsPerLine));
     const totalCost = itemCosts.reduce((a, b) => a + b, 0);
     const normalBudget = Math.max(1, Math.round(catItemsPerPageBudget(fontPx) * (geo.contentHeightPt / A4_CONTENT_HEIGHT_PT)));
-    const fitsWithoutSplit = totalCost <= normalBudget;
+    // BLIND.FIX (point 1) — `fitsWithoutSplit` ignorait `overheadLines`
+    // (bandeau IDENTITÉ/localisation/mobilité voisin sur la MÊME page 1,
+    // cf. JSDoc `siblingColumnOverheadLines` ci-dessus) : un volume ATCD
+    // « moyen » (15-25 entrées) dont `totalCost` seul tient sous
+    // `normalBudget` débordait quand même NATURELLEMENT sous pdfmake une fois
+    // l'overhead réel pris en compte — sans jamais passer par
+    // `chunkItemsByCost`, donc sans jamais hériter du titre « (SUITE) »
+    // (page 2 orpheline, aucun titre — vérifié : `adv-atcd20.json` déborde
+    // sur une page 3 qui commence directement par « - ATCD 14 : … », sans
+    // aucun en-tête). Réintègre `overheadLines` à la condition.
+    const fitsWithoutSplit = totalCost + overheadLines <= normalBudget;
     const chunks = fitsWithoutSplit
         ? [items]
         : chunkItemsByCost(items, (item) => estimateWrappedLines(item, charsPerLine), {
@@ -619,27 +629,6 @@ function buildAdversaryFiche(ctx: BuildCtx, adv: OiAdversary, index: number): Co
     const identityCard = card([h3('IDENTITÉ', p), kvTable(identityRows, p)], p);
 
     const advTitle = `2.${index} FICHE ADVERSAIRE : ${nom}`;
-    // Largeur réelle de la colonne DANGEROSITÉ (demi-page avec photo, pleine
-    // largeur sans — mission BLIND.A, cf. JSDoc `buildDangerPages`).
-    const dangerColumnWidthPt = mainPhotoSrc !== undefined ? ctx.geo.contentWidthPt - mm(70) - mm(6) : ctx.geo.contentWidthPt;
-    const { card: dangerCard, extraPages: dangerExtraPages } = buildDangerPages({
-        advTitle,
-        armesConnues: strOr(adv.armes_connues),
-        atcd: strOr(adv.antecedents_adversaire),
-        fontPx,
-        columnWidthPt: dangerColumnWidthPt,
-        p,
-        geo,
-        // `identityCard` (h3 + une ligne par `identityRows`) est empilée
-        // AU-DESSUS de `dangerCard` dans `rightColumn` — et, SANS photo
-        // (`head` en simple `stack` pleine largeur, pas de `columns`),
-        // `localisationCard`/`mobiliteCard` (`grid2`, 2×(h3 + 2 lignes))
-        // ainsi que le bandeau de titre partagent la MÊME page 1 — cf. JSDoc
-        // `buildDangerPages::siblingColumnOverheadLines`. Constante `+8`
-        // calibrée empiriquement (même méthode que `catItemsPerPageBudget`,
-        // theme.ts) contre `adv-5-atcd40.json` (guardrail B1/B4).
-        siblingColumnOverheadLines: 1 + identityRows.length + 8,
-    });
 
     // Blindage BLIND.A : `domicile_adversaire`/`attitude_adversaire`/listes
     // véhicules sont non bornés — filet `unbreakable:false`.
@@ -659,7 +648,9 @@ function buildAdversaryFiche(ctx: BuildCtx, adv: OiAdversary, index: number): Co
     // `A-advsmall-03.png`) — chaque LIGNE (pas la carte entière) est
     // maintenant filtrée indépendamment, la carte disparaît si les DEUX
     // lignes sont vides, et le `grid2`/marge qui la précède disparaît à son
-    // tour si LES DEUX cartes sont vides.
+    // tour si LES DEUX cartes sont vides. Calculé AVANT `buildDangerPages`
+    // (BLIND.FIX point 1) : `siblingColumnOverheadLines` a besoin de savoir
+    // si ces cartes existeront RÉELLEMENT sur la page 1.
     const domicileValue = str(adv.domicile_adversaire).trim();
     const volumeEspritValue = [volumeList.join(', '), etatEspritList.join(', ')].filter((s) => s !== '').join(' | ');
     const localisationRows: Content[] = [
@@ -677,6 +668,71 @@ function buildAdversaryFiche(ctx: BuildCtx, adv: OiAdversary, index: number): Co
     ].filter((c): c is Content => c !== null);
     const mobiliteCard: Content | null =
         mobiliteRows.length > 0 ? card([h3('MOBILITÉ', p), ...mobiliteRows], p, { unbreakable: false }) : null;
+
+    // Largeur réelle de la colonne DANGEROSITÉ (demi-page avec photo, pleine
+    // largeur sans — mission BLIND.A, cf. JSDoc `buildDangerPages`).
+    const dangerColumnWidthPt = mainPhotoSrc !== undefined ? ctx.geo.contentWidthPt - mm(70) - mm(6) : ctx.geo.contentWidthPt;
+    // BLIND.FIX (point 1) — `siblingColumnOverheadLines` ajoutait une
+    // constante `+8` (`localisationCard`/`mobiliteCard`, `grid2` 2×(h3 + 2
+    // lignes)) INCONDITIONNELLEMENT, même quand ces 2 cartes sont ABSENTES
+    // (BLIND.REFIX round 2 ci-dessus : omises quand tous leurs champs sont
+    // vides — le cas de la majorité des fiches ATCD de test, `adv-atcd*.json`
+    // sauf `adv-5-atcd40.json` où elles sont bien présentes, fixture où la
+    // constante `+8` a été calibrée). Ce surcoût fantôme gonflait l'overhead
+    // réservé au budget de `dangerCard` sur des fiches qui n'en avaient pas
+    // besoin. Désormais conditionné à leur présence RÉELLE.
+    //
+    // `identityCard`/`localisationCard`+`mobiliteCard` ont une hauteur
+    // PHYSIQUE (points) quasi indépendante de `fontPx` (tableau `kvTable` à
+    // police fixe, `IDENTITÉ`/`LOCALISATION`/`MOBILITÉ` bornés à 2-7 lignes
+    // COURTES) — contrairement au coût en LIGNES d'`estimateWrappedLines`
+    // (déjà exprimé dans l'unité `catItemsPerPageBudget(fontPx)`, qui
+    // elle-même représente une hauteur physique DÉCROISSANTE par unité à
+    // mesure que `fontPx` grandit). Convertir cette hauteur physique fixe en
+    // unités `catItemsPerPageBudget` SANS tenir compte de cette échelle
+    // sous-estimait l'overhead réel au palier `fontPx=9` (`budget=26`, où
+    // chaque unité représente une hauteur MOINDRE) autant qu'au palier
+    // `fontPx=10` (`budget=20`) — c'est ce qui empêchait `adv-atcd15.json`
+    // (15 ATCD, guardrail point 1) de scinder alors qu'`adv-atcd10.json` (10
+    // ATCD) ne devait PAS scinder : avec un compte de lignes FIXE, aucune
+    // constante ne sépare ces deux cas (marge nulle sur le 2e, marge de 1
+    // sur le 1er alors qu'il a MOINS de contenu à scinder). Correctif :
+    // convertir la hauteur physique (pt) en unités `catItemsPerPageBudget`
+    // du palier COURANT (`Math.round(hauteurPt * budget(fontPx) /
+    // geo.contentHeightPt)`) — l'overhead grandit alors correctement en
+    // unités à mesure que `fontPx` rétrécit (chaque unité pèse moins de pt).
+    // Constantes calibrées empiriquement (même esprit que
+    // `DANGER_BUDGET_SAFETY_FACTOR`) : `IDENTITY_CARD_HEIGHT_PT` contre le
+    // couple `adv-atcd10.json` (ne doit PAS scinder) / `adv-atcd15.json`
+    // (DOIT scinder, balayage `atcd=5,10,15,20,25,28,30,35`, guardrail point
+    // 1) ; `LOCAL_MOBILE_CARDS_HEIGHT_PT` reprend la valeur physique
+    // équivalente à l'ancienne constante `+8` (unités) au palier où elle
+    // avait été calibrée (`fontPx=9`, `adv-5-atcd40.json`, guardrail B1/B4).
+    const IDENTITY_CARD_HEIGHT_PT = 165;
+    const LOCAL_MOBILE_CARDS_HEIGHT_PT = 164;
+    const identityOverheadUnits = Math.round((IDENTITY_CARD_HEIGHT_PT * catItemsPerPageBudget(fontPx)) / geo.contentHeightPt);
+    const localMobileOverhead =
+        localisationCard !== null || mobiliteCard !== null
+            ? Math.round((LOCAL_MOBILE_CARDS_HEIGHT_PT * catItemsPerPageBudget(fontPx)) / geo.contentHeightPt)
+            : 0;
+    const { card: dangerCard, extraPages: dangerExtraPages } = buildDangerPages({
+        advTitle,
+        armesConnues: strOr(adv.armes_connues),
+        atcd: strOr(adv.antecedents_adversaire),
+        fontPx,
+        columnWidthPt: dangerColumnWidthPt,
+        p,
+        geo,
+        // `identityCard` (h3 + une ligne par `identityRows`) est empilée
+        // AU-DESSUS de `dangerCard` dans `rightColumn` — `localisationCard`/
+        // `mobiliteCard` (`grid2`, 2×(h3 + 2 lignes), si présentes) ainsi que
+        // le bandeau de titre partagent la MÊME page 1 — cf. JSDoc
+        // `buildDangerPages::siblingColumnOverheadLines`. Constante `+8`
+        // calibrée empiriquement (même méthode que `catItemsPerPageBudget`,
+        // theme.ts) contre `adv-5-atcd40.json` (guardrail B1/B4), appliquée
+        // seulement si `localMobileOverhead` la confirme nécessaire.
+        siblingColumnOverheadLines: 1 + identityOverheadUnits + localMobileOverhead,
+    });
 
     const rightColumn: Content[] = [identityCard, dangerCard];
     const head: Content =
@@ -1557,13 +1613,33 @@ function buildEffractionPages(ctx: BuildCtx, block: OiEffractionBlock): Content[
     const headCost = effractionHeadRowCost(block, fontPx, geo.contentWidthPt);
     const firstPageBudget = Math.max(1, budget - EFFRAC_CHUNK_HEADER_ROWS - headCost);
     const restPageBudget = Math.max(1, budget - EFFRAC_CHUNK_HEADER_ROWS);
+    // BLIND.FIX (point 3) — QUALITÉ, scission TROP CONSERVATRICE : `headCost`
+    // (overhead RÉEL de la page 1) ET `EFFRAC_CHUNK_HEADER_ROWS` (marge de
+    // sécurité pour le débordement pdfmake NATUREL, cf. JSDoc ci-dessus)
+    // étaient déduits INCONDITIONNELLEMENT de `firstPageBudget`, cumulant
+    // deux marges de sécurité CONÇUES pour une VRAIE scission (volume qui
+    // dépasse déjà une page) — sur une fiche COURTE (2 hypothèses,
+    // `sentinel-champs.json`, `fontPx=14`/`budget=12`), `headCost=9` +
+    // `EFFRAC_CHUNK_HEADER_ROWS=5` déduisaient à eux seuls PLUS que le
+    // budget total, ramenant `firstPageBudget` à 1 alors que les 2
+    // hypothèses (coût réel total 2) tiennent LARGEMENT sur la même page
+    // que MISSION + CARACTÉRISTIQUES TECHNIQUES (preuve
+    // `A-sentinel-champs-light-10/11.png` : page 2 quasi vide, 1 seule
+    // hypothèse en trop). Même principe qu'au point 1 (`fitsWithoutSplit`,
+    // `buildDangerPages`) : ne consulter cet overhead QUE si le coût TOTAL
+    // réel des hypothèses dépasse déjà le budget de page NORMAL — la marge
+    // de sécurité reste un filet contre le désébordement pdfmake NATUREL
+    // lors d'une VRAIE scission, pas une pénalité payée par les fiches qui
+    // n'en ont jamais besoin.
+    const totalHypCost = hypotheses.reduce((sum, h) => sum + hypothesisRowCost(h, fontPx, geo.contentWidthPt), 0);
+    const fitsWithoutSplit = totalHypCost + headCost <= budget;
     const hypChunks: OiEffractionHypothesis[][] =
-        hypotheses.length > 0
+        !fitsWithoutSplit && hypotheses.length > 0
             ? chunkItemsByCost(hypotheses, (h) => hypothesisRowCost(h, fontPx, geo.contentWidthPt), {
                   first: firstPageBudget,
                   rest: restPageBudget,
               })
-            : [[]];
+            : [hypotheses];
 
     return hypChunks.map((chunk, idx): Content => {
         const rows: TableCell[][] =
