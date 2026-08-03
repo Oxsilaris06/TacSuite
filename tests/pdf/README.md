@@ -38,7 +38,7 @@ vérifie à la place des **invariants indépendants du rendu pixel**.
 
 ```bash
 node tests/pdf/verify-structure.mjs <fichier.pdf> \
-    [--format=a4|16:9] [--photos=N] [--sample=<fichier.json>] [--json] [--lenient]
+    [--format=a4|16:9] [--photos=N] [--sample=<fichier.json>] [--json] [--lenient] [--voie=a|b]
 ```
 
 | Option | Défaut | Effet |
@@ -48,6 +48,7 @@ node tests/pdf/verify-structure.mjs <fichier.pdf> \
 | `--sample=<fichier.json>` | (aucun) | Active A8 : vérifie que chaque chaîne de `expect[]` apparaît dans le texte extrait. Sans cette option, A8 est SKIP (non applicable). |
 | `--json` | — | Émet **en plus** des lignes lisibles (pas à la place) un objet `{ ok, file, assertions: [{ code, ok, detail }] }` sur stdout, en dernière ligne. |
 | `--lenient` | mode strict | Un marqueur **conditionnel** (A3, indices 4/8/10/11/12/13) absent devient `SKIP` au lieu de faire échouer A3 — l'ordre des marqueurs **présents** reste asserté. |
+| `--voie=a\|b` | `a` | Calibrage des gardes pagination **B1/B2/B6** (cf. tableau B ci-dessous) : `a` (pdfmake, INCHANGÉ) suppose une page dense multi-sections — un déficit de contenu y signale un vrai débordement. `b` (`print-view.ts`/navigateur) suppose une page DÉDIÉE par section (conception assumée, pas un bug) — seuils B1 nettement abaissés, B2 exige en plus l'absence d'autre token sur la ligne « head » (distingue une vraie césure d'un empilement fortuit de 2 mots complets), B6 devient SKIP. |
 
 **Prérequis** : le paquet système `poppler-utils` (fournit `pdfinfo`,
 `pdftotext`, `pdffonts`, `pdfimages`). Si un binaire est absent du `PATH`,
@@ -56,8 +57,9 @@ paquet à installer, plutôt qu'une trace d'erreur obscure. Même code de
 sortie si le fichier PDF passé en argument n'existe pas, ou si les
 arguments CLI sont invalides.
 
-**Codes de sortie** : `0` si les 8 assertions passent, `1` si au moins une
-échoue, `2` en cas de garde d'exécution (aucune assertion n'a pu tourner).
+**Codes de sortie** : `0` si les 15 assertions (A1-A8 + B1-B7, cf. tableau B
+ci-dessous) passent, `1` si au moins une échoue, `2` en cas de garde
+d'exécution (aucune assertion n'a pu tourner).
 
 ## Les 8 assertions
 
@@ -87,6 +89,22 @@ raison **sans rapport avec la rastérisation** (poids des photos, pas un
 retour à html2canvas) : un run avec photos doit interpréter un `FAIL A7`
 isolé (A2/A5/A6 restant verts) comme un dépassement de poids assumé, pas une
 régression.
+
+## Les 7 gardes pagination (B1-B7)
+
+Guardrails additionnels (hors SPEC-PDF-V3.md §7 d'origine), toujours
+évaluées indépendamment de `--lenient` — seul `--voie` change le calibrage
+de B1/B2/B6 (cf. tableau des options ci-dessus).
+
+| Code | Garde | Seuil (voie A, défaut) | Mode `--voie=b` |
+|---|---|---|---|
+| **B1** | Anti-page-orpheline | ≥ 120 caractères non blancs par page (hors garde/finale/photo) | Seuil abaissé à 20 (pages dédiées courtes par conception). |
+| **B2** | Anti-césure verticale (PATRACDVR) | Aucun mot capitalisé scindé sur 2 lignes adjacentes de la même colonne | + exige l'absence d'autre token sur la ligne « head » (élimine le faux positif « deux mots complets empilés », ex. « KODIAQ »/« BANA »). |
+| **B3** | Anti-page-titre-seul | ≥ 40 caractères de contenu hors titre | Inchangé (hors périmètre de cette mission). |
+| **B4** | Anti-queue-nue (ZMSPCP/MOICP) | 1re ligne à tiret d'une page jamais sans titre « (suite) » précédent | Inchangé. |
+| **B5** | Anti-page-libellés-vides | < 4 champs `LABEL : -` ou < 250 car. de tels libellés par page | Inchangé. |
+| **B6** | Anti-page-clairsemée | Ratio remplissage vertical ≥ 35 % (hors finale) | SKIP (pages dédiées légitimement peu remplies par conception). |
+| **B7** | Anti-table-hypothèses-orpheline | Chaque continuation de tableau Hypothèses d'Effraction porte un titre « (SUITE) » | Inchangé. |
 
 ## Les 15 marqueurs (ordre imposé)
 
@@ -118,6 +136,28 @@ Marqueurs conditionnels (4, 8, 10, 11, 12, 13) : le jeu de rejeu
 strict (défaut) donc satisfaisable sans `--lenient` sur ce jeu de données.
 `--lenient` existe pour des jeux de données **partiels** (ex. aucun
 adversaire saisi ⇒ marqueur #4 légitimement absent).
+
+**BLIND.FIX (point 6) — bloc logistique complété** : `recipe-data.json`
+(historiquement un dump BRUT `OiFormData`, cf. `recipe.md` — « Aucune photo,
+l'export de session ne sérialise jamais les Blobs IndexedDB ») ne portait
+AUCUNE donnée logistique : le marqueur #8 (« 6. LOGISTIQUE & TRANSPORTS »,
+conditionné par au moins une photo dans
+`dynamic_photos['photo_container_transport_pr_preview_container']` ou son
+homologue `_domicile_`, cf. `logisticsPhotos()` des deux voies) ne pouvait
+donc JAMAIS apparaître via le harnais offline (`generate-from-fixture.mjs`)
+— mode STRICT structurellement insatisfaisable, indépendamment de tout bug
+de pagination. Le fichier est désormais l'enveloppe `{ formData,
+photosBase64, isDark }` attendue par le harnais (au lieu du seul `OiFormData`
+brut) et porte une entrée `dynamic_photos` minimale pour ce conteneur, avec
+une image `photosBase64` associée (PNG valide 320×240, un gris uni — asset
+minimal mais RÉEL, pas un id orphelin : les deux voies omettent
+silencieusement toute photo dont l'id n'a pas de `photosBase64`
+correspondant, cf. `blocks.ts::galleryPages`/`print-view.ts::galleryPages`).
+Vérifié : A3 passe désormais 15/15 en mode STRICT (sans `--lenient`), voie A
+comme voie B, thème clair comme sombre. `recipe.md` (étape 3, upload manuel
+de `J.png` sur ce même conteneur lors d'un rejeu navigateur réel) reste
+inchangé — cette complétion ne concerne que le rejeu OFFLINE via les
+fixtures JSON, pas le protocole de capture Playwright historique.
 
 **CORRECTIF PDF.INTEG (casse des marqueurs #10-#12)** : `SPEC-PDF-V3.md` §7
 les recopiait dans la casse SOURCE du gabarit `pdf-engine-v2.ts`

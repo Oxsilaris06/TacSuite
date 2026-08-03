@@ -550,6 +550,20 @@ function nonBlankLength(pageText) {
 }
 
 const ORPHAN_MIN_NON_BLANK_CHARS = 120;
+// BLIND.FIX (point 5) — mode voie B : `ORPHAN_MIN_NON_BLANK_CHARS` (120) est
+// calibré sur la voie A (pdfmake), où PLUSIEURS sections partagent
+// normalement une page — une page sous ce seuil y signale un vrai
+// débordement. La voie B (print-view.ts) est structurée en pages DÉDIÉES
+// « une section = un `.adv-page` » (cf. son propre en-tête de fichier) : une
+// page « 4. MISSION DE L'UNITÉ » à 2 lignes de mission, ou une galerie à 1
+// photo, y est courte PAR CONCEPTION, pas par débordement — constat mesuré
+// sur la recette complétée (`recipe-data.json`, bloc logistique BLIND.FIX
+// point 6) : cette conception légitime déclenchait déjà des faux positifs
+// avant même d'ajouter la moindre donnée volumineuse. Seuil VOIE B
+// nettement plus bas (20, pas 0 : une page RÉELLEMENT vide resterait
+// suspecte) plutôt qu'un skip total — la voie B garde un filet contre une
+// vraie page blanche/quasi blanche.
+const ORPHAN_MIN_NON_BLANK_CHARS_VOIE_B = 20;
 
 /**
  * B1 — anti-orpheline : aucune page (hors GARDE = page 1, FINALE = dernière
@@ -561,12 +575,13 @@ const ORPHAN_MIN_NON_BLANK_CHARS = 120;
  * qu'un fragment de fin de phrase (constat terrain : « fixer l'adversaire. »
  * seule sur une page, « porte » sur une autre).
  */
-export function assertB1_noOrphanPage(text, images) {
+export function assertB1_noOrphanPage(text, images, { voie = 'a' } = {}) {
   const pages = splitPages(text);
   const pageCount = pages.length;
   if (pageCount === 0) {
     return { ok: true, detail: 'document vide — aucune page à examiner' };
   }
+  const threshold = voie === 'b' ? ORPHAN_MIN_NON_BLANK_CHARS_VOIE_B : ORPHAN_MIN_NON_BLANK_CHARS;
   const pagesWithImage = new Set(images.map((img) => img.page));
   const orphans = [];
   for (let i = 0; i < pageCount; i++) {
@@ -574,7 +589,7 @@ export function assertB1_noOrphanPage(text, images) {
     if (pageNum === 1 || pageNum === pageCount) continue; // garde / finale
     if (pagesWithImage.has(pageNum)) continue; // page photo pleine page
     const len = nonBlankLength(pages[i]);
-    if (len < ORPHAN_MIN_NON_BLANK_CHARS) {
+    if (len < threshold) {
       orphans.push({ page: pageNum, len });
     }
   }
@@ -582,12 +597,12 @@ export function assertB1_noOrphanPage(text, images) {
     const list = orphans.map((o) => `page ${o.page} (${o.len} car.)`).join(', ');
     return {
       ok: false,
-      detail: `${orphans.length} page(s) orpheline(s) — < ${ORPHAN_MIN_NON_BLANK_CHARS} caractères non blancs (hors garde/finale/photo) : ${list}`,
+      detail: `${orphans.length} page(s) orpheline(s) — < ${threshold} caractères non blancs (hors garde/finale/photo) : ${list}`,
     };
   }
   return {
     ok: true,
-    detail: `0 page orpheline sur ${pageCount} page(s) (hors garde/finale/photo, seuil ${ORPHAN_MIN_NON_BLANK_CHARS} car.)`,
+    detail: `0 page orpheline sur ${pageCount} page(s) (hors garde/finale/photo, seuil ${threshold} car.${voie === 'b' ? ', mode voie B' : ''})`,
   };
 }
 
@@ -644,7 +659,29 @@ function lineTokens(line) {
  * (le tiret n'est pas une lettre capitale) — la césure légitime au tiret
  * n'est donc jamais signalée, conformément à la règle cible.
  */
-export function assertB2_noVerticalWordSplit(text) {
+// BLIND.FIX (point 5) — mode voie B : constat terrain « KODIAQ BANA » — DEUX
+// mots COMPLETS et légitimes (ex. modèle de véhicule + fragment de couleur/
+// immatriculation) qui se replient l'un sous l'autre, DANS LA MÊME COLONNE,
+// sur deux lignes `pdftotext` adjacentes SANS être une césure — la voie B
+// (tableau HTML natif, cf. `print-style.ts::.patrac`) n'a pas la même grille
+// de colonnes fixes que le tableau pdfmake de la voie A, deux valeurs
+// INDÉPENDANTES (pas une seule cellule enroulée) peuvent donc s'aligner par
+// coïncidence. Distinction retenue, SANS dictionnaire : une césure RÉELLE
+// (cellule d'UNE ligne de tableau qui s'enroule) laisse alors la ligne
+// suivante quasi vide de tout AUTRE contenu (seule la suite du mot y
+// figure) ; deux valeurs INDÉPENDANTES empilées appartiennent, elles, à des
+// LIGNES DE TABLEAU DIFFÉRENTES et la ligne du « head » porte typiquement
+// d'AUTRES tokens (les autres colonnes de cette ligne, ex. `PPR`, `India 4`).
+// En mode voie B, on exige donc en plus que la ligne du « head » ne
+// contienne PAS d'autre token que le fragment candidat (hors en-têtes
+// littéraux) — une vraie césure passe ce filtre (rien d'autre sur cette
+// ligne), deux mots complets de lignes différentes ne le passent
+// généralement pas.
+function otherTokensOnLine(line, head) {
+  return lineTokens(line).filter((t) => t.text !== head.text && !PATRAC_HEADER_TOKENS.has(t.text));
+}
+
+export function assertB2_noVerticalWordSplit(text, { voie = 'a' } = {}) {
   const pages = splitPages(text);
   const patracMarker = MARKERS[13]; // '7. RÉCAPITULATIF PATRACDVR'
   const finalMarker = MARKERS[14]; // 'AVEZ-VOUS DES QUESTIONS ?'
@@ -671,6 +708,7 @@ export function assertB2_noVerticalWordSplit(text) {
       for (const tail of tails) {
         for (const head of heads) {
           if (Math.abs(tail.col - head.col) > WORD_SPLIT_COLUMN_TOLERANCE) continue;
+          if (voie === 'b' && otherTokensOnLine(lines[i + 1], head).length > 0) continue;
           const combined = tail.text + head.text;
           if (combined.length < 4) continue;
           hits.push({ page: pi + 1, fragment1: tail.text, fragment2: head.text, combined });
@@ -683,7 +721,10 @@ export function assertB2_noVerticalWordSplit(text) {
     const list = hits.map((h) => `page ${h.page} « ${h.fragment1} » + « ${h.fragment2} » = « ${h.combined} »`).join(', ');
     return { ok: false, detail: `${hits.length} mot(s) probablement cassé(s) verticalement dans le PATRACDVR : ${list}` };
   }
-  return { ok: true, detail: `0 mot cassé verticalement dans le PATRACDVR (pages ${startIdx + 1}-${endIdx})` };
+  return {
+    ok: true,
+    detail: `0 mot cassé verticalement dans le PATRACDVR (pages ${startIdx + 1}-${endIdx}${voie === 'b' ? ', mode voie B' : ''})`,
+  };
 }
 
 const TITLE_ONLY_MAX_CONTENT_CHARS = 40;
@@ -892,7 +933,24 @@ const FILL_RATIO_MIN = 0.35;
  * générique (pas de branche spéciale « page 1 ») pour rester valide si
  * `buildFooter`/la géométrie de couverture évoluent.
  */
-export function assertB6_verticalFillRatio(bboxPages) {
+// BLIND.FIX (point 5) — mode voie B : `FILL_RATIO_MIN` (35 %) suppose une
+// page qui accumule PLUSIEURS sections (voie A) — un ratio bas y signale un
+// vrai gâchis de place (carte esseulée, cf. JSDoc ci-dessus). La voie B
+// (une section = un `.adv-page`, cf. en-tête `print-view.ts`) produit des
+// pages COURTES PAR CONCEPTION dès qu'une section a peu de contenu (ex.
+// « 4. MISSION DE L'UNITÉ » à 2 lignes, une galerie à 1 photo) — constat
+// mesuré (`recipe-data.json` complétée, BLIND.FIX point 6) : 20 % de
+// remplissage sur une page MISSION parfaitement légitime. Cette assertion
+// est SKIP (pas silencieusement PASS) en mode voie B — le filet reste actif
+// en voie A par défaut, inchangé.
+export function assertB6_verticalFillRatio(bboxPages, { voie = 'a' } = {}) {
+  if (voie === 'b') {
+    return {
+      ok: true,
+      skip: true,
+      detail: 'SKIP (mode voie B) — pages dédiées « une section = une page » légitimement peu remplies par conception, non applicable',
+    };
+  }
   const pageCount = bboxPages.length;
   if (pageCount === 0) {
     return { ok: true, detail: 'document vide — aucune page à examiner' };
@@ -973,7 +1031,7 @@ export function assertB7_effractionSuiteTitlePresent(text) {
 
 function printUsage() {
   console.error(
-    'Usage : node tests/pdf/verify-structure.mjs <fichier.pdf> [--format=a4|16:9] [--photos=N] [--sample=<fichier.json>] [--json] [--lenient]'
+    'Usage : node tests/pdf/verify-structure.mjs <fichier.pdf> [--format=a4|16:9] [--photos=N] [--sample=<fichier.json>] [--json] [--lenient] [--voie=a|b]'
   );
 }
 
@@ -1015,7 +1073,19 @@ function parseArgs(argv) {
   const json = flags.some((f) => f === '--json');
   const lenient = flags.some((f) => f === '--lenient');
 
-  return { file, format, photos, sample, json, lenient };
+  // BLIND.FIX (point 5) — `--voie=a|b` : voie A (pdfmake, défaut — comportement
+  // INCHANGÉ) ou voie B (print-view.ts/navigateur) pour les gardes B1/B2/B6
+  // (cf. leur JSDoc respective) dont le calibrage suppose par défaut la
+  // pagination dense multi-sections de la voie A — inapplicable à la voie B
+  // qui a une page dédiée par section PAR CONCEPTION.
+  const voieRaw = (getValue('voie') ?? 'a').toLowerCase();
+  if (voieRaw !== 'a' && voieRaw !== 'b') {
+    console.error(`--voie invalide : "${voieRaw}" (attendu : a ou b)`);
+    printUsage();
+    process.exit(2);
+  }
+
+  return { file, format, photos, sample, json, lenient, voie: voieRaw };
 }
 
 function main() {
@@ -1062,14 +1132,14 @@ function main() {
     { code: 'A8', ...assertA8_sampleData(text, opts.sample) },
     // Guardrail pagination (mission PG.GUARD) — toujours évaluées, INDÉPENDANTES
     // de --lenient (cf. en-tête de ces 3 fonctions).
-    { code: 'B1', ...assertB1_noOrphanPage(text, images) },
-    { code: 'B2', ...assertB2_noVerticalWordSplit(text) },
+    { code: 'B1', ...assertB1_noOrphanPage(text, images, { voie: opts.voie }) },
+    { code: 'B2', ...assertB2_noVerticalWordSplit(text, { voie: opts.voie }) },
     { code: 'B3', ...assertB3_noTitleOnlyPage(text) },
     // Guardrail pagination round 2 (mission PG.REFIX) — mêmes garanties que
     // B1-B3 (toujours évaluées, indépendantes de --lenient).
     { code: 'B4', ...assertB4_noHeaderlessDashContinuation(text, images) },
     { code: 'B5', ...assertB5_noEmptyFieldDominatedPage(text) },
-    { code: 'B6', ...assertB6_verticalFillRatio(bboxPages) },
+    { code: 'B6', ...assertB6_verticalFillRatio(bboxPages, { voie: opts.voie }) },
     // Guardrail pagination round 3 (mission BLIND.REFIX round 2) — même
     // garantie que B1/B4 (toujours évaluée, indépendante de --lenient).
     { code: 'B7', ...assertB7_effractionSuiteTitlePresent(text) },
