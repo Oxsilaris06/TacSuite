@@ -26,7 +26,9 @@ import {
     badgeRow,
     card,
     figure,
+    galleryAllTools,
     galleryPages,
+    galleryToolsReservePt,
     grid2,
     h1,
     h2,
@@ -39,7 +41,7 @@ import {
     pill,
     pillRow,
 } from '@oi/pdf/blocks.js';
-import { pageGeometry, PDF_LIGHT } from '@oi/pdf/theme.js';
+import { mm, pageGeometry, PDF_LIGHT, photoPageGalleryHeightMm } from '@oi/pdf/theme.js';
 import type { OiPhotoMeta } from '@shared/types/contracts.js';
 
 const p = PDF_LIGHT;
@@ -428,6 +430,67 @@ describe('galleryPages (OrderHtmlPhotos.kt:69-92, SPEC-PDF-V3.md §3.3)', () => 
         };
         expect(captionOf(pagesCustom)).toBe('Vue de face');
         expect(captionOf(pagesDefault)).toBe('Porte principale - Détail');
+    });
+});
+
+describe('galleryToolsReservePt (SPEC-PDF-DEFINITIF §5, axe A3 — correctif D3)', () => {
+    const boxWidthPt = 400;
+    const fontPt = 14;
+
+    it('réserve NULLE sans outil (non-régression stricte des galeries sans outil)', () => {
+        expect(galleryToolsReservePt([], boxWidthPt, fontPt)).toBe(0);
+    });
+
+    it('réserve croissante avec le nombre de rangées', () => {
+        const one = galleryToolsReservePt(['A'], boxWidthPt, fontPt);
+        const four = galleryToolsReservePt(['A', 'B', 'C', 'D'], boxWidthPt, fontPt);
+        const five = galleryToolsReservePt(['A', 'B', 'C', 'D', 'E'], boxWidthPt, fontPt);
+        expect(one).toBeGreaterThan(0);
+        // 4 outils tiennent sur la même rangée (perRow=4) que 1 seul.
+        expect(four).toBe(one);
+        expect(five).toBeGreaterThan(four);
+    });
+
+    it('5 outils => 2 rangées exactement (grille perRow=4)', () => {
+        const one = galleryToolsReservePt(['A'], boxWidthPt, fontPt);
+        const five = galleryToolsReservePt(['A', 'B', 'C', 'D', 'E'], boxWidthPt, fontPt);
+        const oneRowHeight = one - mm(2);
+        expect(five - mm(2)).toBeCloseTo(2 * oneRowHeight, 6);
+    });
+
+    it('un libellé très long (repli intra-cellule) réserve plus qu\'un libellé court', () => {
+        const short = galleryToolsReservePt(['HDR50'], boxWidthPt, fontPt);
+        const long = galleryToolsReservePt(['Bélier hydraulique lourd de dernière génération à double poignée'], boxWidthPt, fontPt);
+        expect(long).toBeGreaterThan(short);
+    });
+
+    it('galleryAllTools combine tools JSON et other_tools (même assemblage que le rendu)', () => {
+        expect(galleryAllTools(makePhoto({ tools: '["A","B"]', other_tools: 'C' }))).toEqual(['A', 'B', 'C']);
+        expect(galleryAllTools(makePhoto({ tools: '{{', other_tools: '' }))).toEqual([]);
+    });
+
+    it('galleryPages : le cadre photo est RÉDUIT de la réserve quand des outils existent, jamais sous le plancher mm(40)', () => {
+        const photosBase64 = { 'photo-1': 'data:image/jpeg;base64,AAA' };
+        const frameHeightOf = (photos: OiPhotoMeta[]): number => {
+            const pages = galleryPages('Galerie', photos, photosBase64, p, geo);
+            const page1 = pages[0] as ContentStack;
+            const body = page1.stack[1] as ContentStack;
+            const fig = body.stack[0] as ContentStack; // figure avec légende = stack [frame, caption]
+            const frame = fig.stack[0] as ContentTable;
+            return (frame.table.heights as number[])[0] as number;
+        };
+
+        const without = frameHeightOf([makePhoto({ id: 'photo-1' })]);
+        const withTools = frameHeightOf([makePhoto({ id: 'photo-1', tools: '["HDR50","Bélier lourd","VIGIK"]', other_tools: 'Bfldkngnfl' })]);
+        // Sans outil : hauteur historique inchangée (base - réserve légende).
+        expect(without).toBeCloseTo(mm(photoPageGalleryHeightMm(true)) - mm(12), 6);
+        expect(withTools).toBeLessThan(without);
+        expect(withTools).toBeGreaterThanOrEqual(mm(40));
+
+        // Plancher jamais franchi, même avec un déluge d'outils.
+        const many = Array.from({ length: 40 }, (_, i) => `Outil numéro ${i} très long pour replier`);
+        const flooded = frameHeightOf([makePhoto({ id: 'photo-1', tools: JSON.stringify(many) })]);
+        expect(flooded).toBe(mm(40));
     });
 });
 

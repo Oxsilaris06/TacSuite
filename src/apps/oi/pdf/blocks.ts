@@ -22,7 +22,14 @@
  */
 import type { Content, CustomTableLayout, TableCell } from 'pdfmake/interfaces';
 
-import { mm, pageGeometry, photoPageGalleryHeightMm, type OiPdfPalette } from './theme.js';
+import {
+    estimateCharsPerLine,
+    estimateWrappedLines,
+    mm,
+    pageGeometry,
+    photoPageGalleryHeightMm,
+    type OiPdfPalette,
+} from './theme.js';
 import { breakLongTokens } from './text-utils.js';
 import type { OiPhotoMeta } from '@shared/types/contracts.js';
 
@@ -480,6 +487,65 @@ function safeJsonParseStringArray(raw: string): string[] {
     }
 }
 
+/** Liste COMPLÈTE des outils d'une photo de galerie (`tools` JSON + repli
+ *  texte libre `other_tools`) — même assemblage que le rendu réel
+ *  (`galleryPhotoStack`), partagé avec `galleryToolsReservePt` pour que la
+ *  RÉSERVE soit calculée sur exactement ce qui sera rendu. */
+export function galleryAllTools(meta: OiPhotoMeta): string[] {
+    const tools = safeJsonParseStringArray(meta.tools || '[]');
+    const otherTools = meta.other_tools;
+    return otherTools ? [...tools, otherTools] : tools;
+}
+
+/**
+ * Taille de police MAXIMALE possible des pilules d'outils d'une galerie : les
+ * pages de galerie n'imposent aucun `fontSize` propre, les pilules héritent
+ * donc de `defaultStyle.fontSize` (`documentFontPx`, theme.ts — au plus 14).
+ * La réserve est calculée à ce maximum (direction SÛRE, cf. SPEC-PDF-DEFINITIF
+ * §3.4 : trop grand = une page un peu moins remplie, jamais un débordement).
+ */
+const GALLERY_TOOLS_FONT_PT = 14;
+
+/**
+ * Hauteur (pt) à RÉSERVER sous le cadre photo d'une galerie pour le `pillRow`
+ * d'outils empilé par `galleryPhotoStack` (SPEC-PDF-DEFINITIF §5, axe A3,
+ * correctif D3) : `GALLERY_CAPTION_RESERVE_PT` réservait la légende mais RIEN
+ * pour les badges — le cadre photo étant dimensionné à la hauteur utile quasi
+ * entière de la page, les badges débordaient SYSTÉMATIQUEMENT sur une page
+ * orpheline dès qu'un outil existait (défaut D3, p14 du PDF réel : page ne
+ * portant QUE « HDR50 / Bélier lourd / VIGIK / … »).
+ *
+ * Le nombre de RANGÉES est EXACT (grille `pillGrid` à `perRow` colonnes
+ * fixes) ; seul le repli intra-cellule est estimé, via `estimateCharsPerLine`/
+ * `estimateWrappedLines` (theme.ts, déjà utilisés partout) sur la largeur de
+ * cellule `boxWidthPt / perRow`. Hauteur d'une rangée = lignes × fontSize ×
+ * 1.45 (lineHeight du document) + 2×2 (padding vertical `LAYOUT_PILL`) + 2
+ * (bordures 1 pt) ; plus `mm(2)` de gouttière globale. `0` si `tools` est
+ * vide (non-régression stricte des galeries sans outil).
+ *
+ * Précédent direct : la voie B fait déjà exactement cela
+ * (`img{max-height:80%}` + caption + badges dans le même conteneur à hauteur
+ * fixe, `print-view.ts:176-180`) et n'a jamais présenté D3.
+ */
+export function galleryToolsReservePt(
+    tools: readonly string[],
+    boxWidthPt: number,
+    fontSizePt: number,
+    perRow = 4,
+): number {
+    if (tools.length === 0) {
+        return 0;
+    }
+    const charsPerLine = estimateCharsPerLine(fontSizePt, boxWidthPt / perRow);
+    let total = 0;
+    for (let i = 0; i < tools.length; i += perRow) {
+        const row = tools.slice(i, i + perRow);
+        const rowLines = Math.max(...row.map((t) => estimateWrappedLines(t, charsPerLine)));
+        total += rowLines * fontSizePt * 1.45 + 2 * 2 + 2;
+    }
+    return total + mm(2);
+}
+
 /** Contenu empilé d'UNE photo de galerie : cadre+légende (`figure`) puis,
  *  si présents, les badges d'outils (`pillRow`, fond `p.warning`, texte
  *  noir — port de `.tool-badge`, OrderPdfStyle.kt:727-733 côté v2). */
@@ -491,9 +557,7 @@ function galleryPhotoStack(
     baseTitle: string,
 ): Content[] {
     const captionText = meta.customTitle || `${baseTitle} - Détail`;
-    const tools = safeJsonParseStringArray(meta.tools || '[]');
-    const otherTools = meta.other_tools;
-    const allTools = otherTools ? [...tools, otherTools] : tools;
+    const allTools = galleryAllTools(meta);
     const items: Content[] = [figure(dataUrl, boxPt, p, captionText)];
     if (allTools.length > 0) {
         items.push(pillRow(allTools, p, { fillColor: p.warning, textColor: '#000000' }));
@@ -551,7 +615,7 @@ export function galleryPages(
     // max = 14) + sa marge `[0,4,0,0]` — le filet `unbreakable` de `figure()`
     // ci-dessus couvre le cas résiduel d'une légende encore plus longue.
     const GALLERY_CAPTION_RESERVE_PT = mm(12);
-    const galleryHeightPt = mm(photoPageGalleryHeightMm(true)) - GALLERY_CAPTION_RESERVE_PT;
+    const baseGalleryHeightPt = mm(photoPageGalleryHeightMm(true)) - GALLERY_CAPTION_RESERVE_PT;
     const pairGapPt = mm(4);
     const pairBoxWidthPt = (geo.contentWidthPt - pairGapPt) / 2;
 
@@ -565,6 +629,18 @@ export function galleryPages(
         const second = chunk[1];
         const pageIndex = pages.length;
         const pageTitle = pageIndex === 0 ? title : `${title} (suite)`;
+
+        // Axe A3 (SPEC-PDF-DEFINITIF §5, correctif D3) : la hauteur du cadre
+        // photo DÉDUIT la place des badges d'outils. Réserve calculée PAR PAGE
+        // (une page sans outil garde sa pleine hauteur) sur le MAXIMUM des
+        // deux photos (les deux cadres partagent la même hauteur), à la
+        // largeur de cadre réelle de la page (pleine ou demi). Plancher de
+        // sécurité `mm(40)` : le cadre reste toujours exploitable.
+        const boxWidthPt = second === undefined ? geo.contentWidthPt : pairBoxWidthPt;
+        const toolsReservePt = Math.max(
+            ...chunk.map((r) => galleryToolsReservePt(galleryAllTools(r.meta), boxWidthPt, GALLERY_TOOLS_FONT_PT, 4)),
+        );
+        const galleryHeightPt = Math.max(mm(40), baseGalleryHeightPt - toolsReservePt);
 
         const body: Content =
             second === undefined
