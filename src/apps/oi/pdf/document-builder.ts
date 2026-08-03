@@ -439,12 +439,13 @@ function buildCover(ctx: BuildCtx): Content {
 
 /**
  * Découpe un texte en lignes légitimes — généralisation de `splitAtDashBoundaries`
- * (mission BLIND.A, scission pilotée universelle) à la carte DANGEROSITÉ/ATCD :
- * chaque entrée y est déjà préfixée d'un tiret (`- ATCD n : …`, même convention
- * que la conduite à tenir ZMSPCP/MOICP) — réutilise donc directement
- * `splitAtDashBoundaries` telle quelle. Sans frontière légitime (aucun tiret),
- * `splitAtDashBoundaries` renvoie le texte intact en un seul élément (R10) :
- * `buildDangerPages` retombe alors sur le filet minimal `unbreakable:false`.
+ * (mission BLIND.A, scission pilotée universelle) à la carte DANGEROSITÉ/ATCD,
+ * via `splitAtcdBoundaries` (correctif D1) : entrées à tiret (`- ATCD n : …`)
+ * OU, à défaut, RETOURS À LA LIGNE saisis (`2024 : USAGE…\n2022 : …`, format
+ * réel constaté sur `cas-reel-01` — cf. JSDoc `splitAtcdBoundaries`). Sans
+ * frontière légitime (ni tiret ni retour à la ligne), le texte reste intact en
+ * un seul élément (R10) : `buildDangerPages` retombe alors sur le filet
+ * minimal `unbreakable:false`.
  *
  * Bloc « DANGEROSITÉ » d'une fiche adversaire — police adaptative (`fontPx`,
  * déjà calculée par l'appelant sur l'ensemble de la fiche) PUIS scission
@@ -476,7 +477,7 @@ function buildDangerPages(opts: {
     siblingColumnOverheadLines: number;
 }): { card: Content; extraPages: Content[] } {
     const { advTitle, armesConnues, atcd, fontPx, columnWidthPt, p, geo, siblingColumnOverheadLines } = opts;
-    const items = splitAtDashBoundaries(atcd);
+    const items = splitAtcdBoundaries(atcd);
     const hasBoundary = items.length > 1;
 
     if (!hasBoundary) {
@@ -1005,6 +1006,38 @@ function splitAtDashBoundaries(text: string): string[] {
 }
 
 /**
+ * Frontières légitimes d'un champ ATCD (`antecedents_adversaire`) — correctif
+ * D1 (SPEC-PDF-DEFINITIF, gate ROUND0) : la JSDoc historique de
+ * `buildDangerPages` supposait « chaque entrée préfixée d'un tiret », or le
+ * PDF réel fautif (`cas-reel-01`) saisit ses ATCD en LIGNES nues
+ * (`2024 : USAGE ILLICITE…\n    DETENTION…`) — aucun tiret, donc
+ * `splitAtDashBoundaries` renvoyait le texte INTACT, `buildDangerPages`
+ * retombait sur le filet `unbreakable:false` et pdfmake scindait NATURELLEMENT
+ * p2→p3 (queue de 3 lignes + LOCALISATION orphelines, p3 à ~85 % vide, sans
+ * « (SUITE) » — FAIL B10/B11). Un RETOUR À LA LIGNE saisi est une frontière
+ * aussi légitime qu'un tiret (jamais de coupure en milieu de phrase) : repli
+ * sur les lignes non vides quand aucun tiret n'existe. `trimEnd()` seul —
+ * l'indentation de tête (lignes de continuation « ␣␣␣␣DETENTION… ») est une
+ * mise en forme SAISIE, préservée au rendu (`dashItemList`,
+ * `preserveLeadingSpaces`). Sans tiret NI retour à la ligne : texte intact en
+ * un seul élément, même filet minimal qu'avant (R10 inchangée).
+ */
+function splitAtcdBoundaries(text: string): string[] {
+    const dashItems = splitAtDashBoundaries(text);
+    if (dashItems.length > 1) {
+        return dashItems;
+    }
+    if (!text) {
+        return dashItems;
+    }
+    const lines = text
+        .split('\n')
+        .map((s) => s.trimEnd())
+        .filter((s) => s.trim() !== '');
+    return lines.length > 1 ? lines : dashItems;
+}
+
+/**
  * Découpe `items` en tranches dont le COÛT CUMULÉ (`cost(item)`, cf.
  * `estimateWrappedLines`) ne dépasse pas `budget` — jamais à l'intérieur
  * d'un item (frontière légitime uniquement, un item qui dépasse `budget` à
@@ -1065,6 +1098,11 @@ function dashItemList(items: string[], p: OiPdfPalette): Content[] {
             color: p.text,
             margin: [0, i === 0 ? 0 : 2, 0, 0],
             unbreakable: true,
+            // Correctif D1 : les items ATCD scindés aux retours à la ligne
+            // (`splitAtcdBoundaries`) peuvent porter une indentation SAISIE
+            // (lignes de continuation « ␣␣␣␣DETENTION… ») — préservée telle
+            // quelle. Sans effet sur les items à tiret (jamais indentés).
+            preserveLeadingSpaces: true,
         }),
     );
 }

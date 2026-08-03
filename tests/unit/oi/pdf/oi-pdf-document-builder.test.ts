@@ -638,8 +638,8 @@ describe('buildOiDocDefinition — modèle de pagination v2 (ZMSPCP/MOICP, corre
         const json = JSON.stringify(buildOiDocDefinition(collect({ zmspcp_blocks: zmspcpBlocks }), { format: 'a4' }));
 
         // Chaque item rendu comme un `text` insécable distinct (pas un labelValue unique multi-lignes).
-        expect(json).toContain('{"text":"- Item numero 1 du champ conduite a tenir.","color":"#111111","margin":[0,0,0,0],"unbreakable":true}');
-        expect(json).toContain('{"text":"- Item numero 5 du champ conduite a tenir.","color":"#111111","margin":[0,2,0,0],"unbreakable":true}');
+        expect(json).toContain('{"text":"- Item numero 1 du champ conduite a tenir.","color":"#111111","margin":[0,0,0,0],"unbreakable":true,"preserveLeadingSpaces":true}');
+        expect(json).toContain('{"text":"- Item numero 5 du champ conduite a tenir.","color":"#111111","margin":[0,2,0,0],"unbreakable":true,"preserveLeadingSpaces":true}');
         expect(json).not.toContain('(suite)');
         expect((json.match(/ARTICULATION : ZMSPCP - ALPHA/g) ?? []).length).toBe(1);
     });
