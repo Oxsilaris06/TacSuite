@@ -129,8 +129,8 @@ export function h1(text: string, p: OiPdfPalette, opts?: { fontSize?: number; bo
  * `text` traverse `breakLongTokens()` (blindage BLIND.A #2, `text-utils.ts`)
  * AVANT `.toUpperCase()` — les titres dynamiques (`Articulation : ZMSPCP -
  * <titre>`, etc.) peuvent embarquer un titre saisi arbitrairement long/sans
- * espace ; le ZWSP inséré n'est pas une lettre, `.toUpperCase()` le laisse
- * intact.
+ * espace ; le SOFT HYPHEN de coupure inséré (round 1 BLIND.REFIX, cf.
+ * `text-utils.ts`) n'est pas une lettre, `.toUpperCase()` le laisse intact.
  */
 export function h2(text: string, p: OiPdfPalette, contentWidthPt: number): Content {
     return {

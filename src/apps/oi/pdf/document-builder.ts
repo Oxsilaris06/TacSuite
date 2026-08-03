@@ -506,10 +506,30 @@ function buildDangerPages(opts: {
         1,
         Math.round(catItemsPerPageBudget(fontPx) * (geo.contentHeightPt / A4_CONTENT_HEIGHT_PT) * DANGER_BUDGET_SAFETY_FACTOR),
     );
-    const chunks = chunkItemsByCost(items, (item) => estimateWrappedLines(item, charsPerLine), {
-        first: Math.max(1, budget - overheadLines),
-        rest: budget,
-    });
+    // BLIND.REFIX round 1 — SCISSION TROP AGRESSIVE À FAIBLE VOLUME (régression
+    // vs baseline 4f630a6) : soustraire `overheadLines`/`DANGER_BUDGET_SAFETY_FACTOR`
+    // du budget de la PREMIÈRE page, INCONDITIONNELLEMENT, ramenait `first` à 1
+    // seul item dès que l'overhead (bandeau identité/localisation voisin,
+    // marge conservatrice) dépassait le budget — y compris pour un volume
+    // ATCD ORDINAIRE qui tenait entièrement sur une page au baseline (5 ATCD
+    // d'une ligne chacun, `adv-atcd5.json` : `budget=12`, `overheadLines=18`,
+    // `totalCost=5` → scission dès le 1er item alors que les 5 tiennent
+    // largement). Correctif : ne consulter `overheadLines`/le facteur de
+    // sécurité QUE si le coût TOTAL de la liste dépasse déjà le budget de
+    // page NORMAL (sans marge conservatrice) — la marge conservatrice est un
+    // filet contre le désébordement pdfmake NATUREL lors d'une VRAIE
+    // scission, pas une pénalité à payer par les fiches qui n'ont jamais
+    // besoin de scinder.
+    const itemCosts = items.map((item) => estimateWrappedLines(item, charsPerLine));
+    const totalCost = itemCosts.reduce((a, b) => a + b, 0);
+    const normalBudget = Math.max(1, Math.round(catItemsPerPageBudget(fontPx) * (geo.contentHeightPt / A4_CONTENT_HEIGHT_PT)));
+    const fitsWithoutSplit = totalCost <= normalBudget;
+    const chunks = fitsWithoutSplit
+        ? [items]
+        : chunkItemsByCost(items, (item) => estimateWrappedLines(item, charsPerLine), {
+              first: Math.max(1, budget - overheadLines),
+              rest: budget,
+          });
 
     const firstCard = card(
         [
@@ -1146,6 +1166,15 @@ function hypothesisRowCost(h: OiEffractionHypothesis, fontPx: number, contentWid
  * (`dashItemList`, réutilisé tel quel — filet R11 identique aux items ZMSPCP/
  * MOICP), le conteneur `unbreakable:false` (jamais de perte silencieuse si le
  * bloc entier dépasse la place restante).
+ *
+ * COSMÉTIQUE BLIND.REFIX round 1 : titre `h3` « Description des Hypothèses »
+ * ajouté EN TÊTE — la voie B (`print-view.ts`, `<h3>Description des
+ * Hypothèses</h3>`) titrait déjà ce bloc, la voie A le rendait sans titre
+ * (juste la liste `HE1 — …`), ce qui cassait le repère visuel lors d'une
+ * comparaison A/B côte à côte. Harmonisé sur le MÊME libellé ; le format par
+ * item (`HE<n> — <titre> : <desc>` en liste à tiret) reste INCHANGÉ, c'est la
+ * dérogation anti-débordement déjà actée (§4 ci-dessus), pas une divergence
+ * à corriger.
  */
 function hypothesesDescBlock(hypotheses: OiEffractionHypothesis[], p: OiPdfPalette): Content | null {
     const lines = hypotheses
@@ -1154,7 +1183,11 @@ function hypothesesDescBlock(hypotheses: OiEffractionHypothesis[], p: OiPdfPalet
     if (lines.length === 0) {
         return null;
     }
-    return { stack: dashItemList(lines, p), unbreakable: false, margin: [0, 6, 0, 0] };
+    return {
+        stack: [h3('Description des Hypothèses', p), ...dashItemList(lines, p)],
+        unbreakable: false,
+        margin: [0, 6, 0, 0],
+    };
 }
 
 /**
@@ -1168,14 +1201,29 @@ function hypothesesDescBlock(hypotheses: OiEffractionHypothesis[], p: OiPdfPalet
  * jusqu'ici jamais porté aux blocs effraction). Une SEULE mesure saisie,
  * une hypothèse, ou une photo de porte suffit à rendre la page (jamais de
  * perte de données saisies). Volontairement INCHANGÉ par le blindage BLIND.A
- * (champs fantômes #3, ci-dessous) : `mission`/`porte` ne sont PAS ajoutés à
- * cette liste — les fixtures de recette (`long-case.json` et consorts) portent
- * `mission: '-'` comme simple valeur de repli sur des blocs par ailleurs
- * authentiquement vides, ce qui romprait la règle d'omission si `mission`
- * comptait comme une mesure saisie.
+ * (champs fantômes #3, ci-dessous).
+ *
+ * CORRECTIF BLIND.REFIX round 1 — PERTE SILENCIEUSE D'UN CHAMP FANTÔME
+ * NOUVELLEMENT RENDU : cette liste ne testait QUE les 9 mesures historiques
+ * ci-dessus — elle ignorait `mission`/`porte`/`prof_marche`/`prof_moulure`,
+ * pourtant rendus depuis le champ fantôme #3 (`OrderHtmlArticulation.kt:245,
+ * 279, 289-290`). Reproduit sur `tests/pdf/fixtures/long-case.json` (ET
+ * `adv-atcd5.json`/`adv-atcd10.json`) : un bloc où SEUL `mission` est saisi
+ * (« FRANCHISSEMENT DE LA PORTE D'ENTREE. », les 9 mesures + hypothèses +
+ * porte/prof_marche/prof_moulure tous vides) était donc entièrement
+ * SUPPRIMÉ — perte totale d'une donnée saisie, contraire à l'arbitrage
+ * « zéro perte de données quel que soit le volume ». L'ancienne
+ * justification (« `mission: '-'` comme simple valeur de repli sur des
+ * fixtures par ailleurs vides ») ne tient pas à l'examen : ce repli `'-'`
+ * n'existe QU'au rendu (`labelValue('Mission', block.mission || '-', p)`
+ * ci-dessous), jamais dans la donnée `block.mission` elle-même testée ici —
+ * un `block.mission` réellement vide (`''`/`undefined`) reste `''` après
+ * `str().trim()`, aucun risque de faux positif « bloc non vide ».
  */
 function isEffractionBlockEmpty(block: OiEffractionBlock, doorSrc: string | undefined): boolean {
     const measures = [
+        block.mission,
+        block.porte,
         block.structure,
         block.serrurerie,
         block.environnement,
@@ -1185,6 +1233,8 @@ function isEffractionBlockEmpty(block: OiEffractionBlock, doorSrc: string | unde
         block.prof_bati,
         block.h_porte,
         block.h_marche,
+        block.prof_marche,
+        block.prof_moulure,
     ];
     const hasMeasure = measures.some((v) => str(v).trim() !== '');
     return !hasMeasure && block.hypotheses.length === 0 && doorSrc === undefined;
@@ -1317,6 +1367,24 @@ function buildEffractionPages(ctx: BuildCtx, block: OiEffractionBlock): Content[
             table: {
                 widths: ['20%', '30%', '25%', '25%'],
                 headerRows: 1,
+                // BLIND.REFIX round 1 — QUEUE ORPHELINE : `hypothesisRowCost`/
+                // `chunkItemsByCost` ci-dessus n'assignent les hypothèses aux
+                // pages qu'à partir d'une ESTIMATION heuristique de la place
+                // encore disponible (`firstPageBudget` ne connaît pas la
+                // hauteur RÉELLE du bandeau photo/specs qui précède la table
+                // en page 1) — reproduit sur `effrac-n4.json` : l'estimation
+                // plaçait 3 hypothèses en page 1 alors que seules 2,x
+                // tenaient réellement, et SANS ce filet pdfmake scindait la
+                // 3e ligne PAR LE MILIEU entre page 1 et sa continuation
+                // automatique (page portant SEULEMENT l'en-tête répétée + les
+                // queues de cellules, sans libellé « Hypothese 3 » ni titre
+                // « (SUITE) », guardrail B1 FAIL). `dontBreakRows` interdit à
+                // pdfmake de couper une ligne de table en deux, quelle que
+                // soit la précision de l'estimation en amont : si une ligne
+                // ne tient plus, elle bascule ENTIÈRE sur la continuation
+                // automatique (en-tête répétée + libellé intact) plutôt que
+                // tronquée — filet robuste indépendant du budget heuristique.
+                dontBreakRows: true,
                 body: [hypothesesTableHeader(p), ...rows],
             },
             layout: LAYOUT_BORDERED,
