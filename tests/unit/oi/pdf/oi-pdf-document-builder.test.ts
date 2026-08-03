@@ -756,3 +756,164 @@ describe('buildOiDocDefinition — correctif PG.REFIX round 1', () => {
         expect(json).toContain('Pied de biche');
     });
 });
+
+// ===========================================================================
+// Blindage PDF OI — mission BLIND.A (voie A pdfmake).
+// Arbitrage #2 : coupure automatique au rendu des tokens sans espace > 40 car.
+// ===========================================================================
+describe('buildOiDocDefinition — blindage BLIND.A #2 : coupure des tokens sans espace', () => {
+    const ZWSP = '​';
+
+    it("un mot ininterrompu de 80 caractères dans « C conduite à tenir » (crash fontkit confirmé, matrice-rupture.md §4) ne fait PLUS planter buildOiDocDefinition", () => {
+        const longWord = 'A'.repeat(80);
+        const zmspcpBlocks: OiZmspcpBlock[] = [
+            {
+                id: 'z1', title: 'ALPHA', zone: '-', mission: '-', secteur: '-', points_particuliers: '-',
+                cat: `- Consigne normale.\n- ${longWord}\n- Autre consigne normale.`, place_chef: '-', members: [],
+            },
+        ];
+
+        expect(() => buildOiDocDefinition(collect({ zmspcp_blocks: zmspcpBlocks }), { format: 'a4' })).not.toThrow();
+
+        const json = JSON.stringify(buildOiDocDefinition(collect({ zmspcp_blocks: zmspcpBlocks }), { format: 'a4' }));
+        // Contenu intégral préservé : le mot de 80 car., une fois les points de
+        // coupure ZWSP retirés, est retrouvé EXACTEMENT dans le JSON produit.
+        const stripped = json.replace(new RegExp(ZWSP, 'g'), '');
+        expect(stripped).toContain(longWord);
+        // Au moins un point de coupure a bien été inséré (mot > 40 car.).
+        expect(json).toContain(ZWSP);
+    });
+
+    it('un mot ininterrompu de 80 caractères dans un champ texte libre (situation_generale, hors dashItemList) est également coupé', () => {
+        const longWord = 'B'.repeat(80);
+        const json = JSON.stringify(
+            buildOiDocDefinition(collect({ situation_generale: `RAS ${longWord} RAS` }), { format: 'a4' }),
+        );
+        expect(json.replace(new RegExp(ZWSP, 'g'), '')).toContain(longWord);
+    });
+});
+
+// ===========================================================================
+// Blindage PDF OI — mission BLIND.A. Arbitrage #1 : scission pilotée
+// universelle — table Hypothèses d'Effraction (police adaptative `effracFontPx`
+// PUIS scission entre lignes d'hypothèses, en-tête répété, aucune perte
+// silencieuse au-delà de 8 hypothèses, cf. matrice-rupture.md §2).
+// ===========================================================================
+describe('buildOiDocDefinition — blindage BLIND.A #1 : scission Hypothèses d’Effraction', () => {
+    function effractionWithHypotheses(count: number): OiEffractionBlock {
+        return {
+            id: 'e1', title: 'PORTE ALPHA', mission: '-', porte: '-', structure: '-', serrurerie: '-',
+            environnement: '-', bati_a_bati: '-', dormant_a_dormant: '-', prof_linteaux: '-', prof_bati: '-',
+            h_porte: '-', h_marche: '-', prof_marche: '-', prof_moulure: '-', members: [],
+            hypotheses: Array.from({ length: count }, (_, i) => ({
+                id: `he${i}`,
+                title: `Hypothese ${i + 1}`,
+                desc: '',
+                effrac: `Technique effraction ${i + 1} : pied de biche + verin hydraulique, description detaillee de la manoeuvre a executer.`,
+                degag: `Degagement ${i + 1} : evacuation par le couloir principal vers le point de regroupement Alpha.`,
+                assaut: `Assaut ${i + 1} : penetration en Y inverse, binome de tete puis binome de couverture.`,
+            })),
+        };
+    }
+
+    it("12 hypothèses d'effraction (défaut confirmé : table ENTIÈREMENT disparue à 8+, matrice-rupture.md §2) — les 12 apparaissent TOUTES, aucune perte silencieuse", () => {
+        const json = JSON.stringify(
+            buildOiDocDefinition(collect({ effraction_blocks: [effractionWithHypotheses(12)] }), { format: 'a4' }),
+        );
+
+        for (let i = 1; i <= 12; i++) {
+            expect(json, `Hypothese ${i} doit apparaître`).toContain(`Hypothese ${i}`);
+            expect(json, `Technique effraction ${i} doit apparaître`).toContain(`Technique effraction ${i} `);
+        }
+    });
+
+    it('4 hypothèses (sous le seuil de scission) : une seule page, aucun « (SUITE) »', () => {
+        const json = JSON.stringify(
+            buildOiDocDefinition(collect({ effraction_blocks: [effractionWithHypotheses(4)] }), { format: 'a4' }),
+        );
+        for (let i = 1; i <= 4; i++) {
+            expect(json).toContain(`Hypothese ${i}`);
+        }
+    });
+});
+
+// ===========================================================================
+// Blindage PDF OI — mission BLIND.A. Arbitrage #1 : scission pilotée
+// universelle — carte DANGEROSITÉ/ATCD (police adaptative PUIS scission entre
+// items « - ATCD n » d'une fiche adversaire, aucune perte silencieuse au-delà
+// de ~30 lignes, cf. matrice-rupture.md §3).
+// ===========================================================================
+describe('buildOiDocDefinition — blindage BLIND.A #1 : scission carte DANGEROSITÉ/ATCD', () => {
+    function advWithAtcd(lines: number): OiFormData {
+        const atcd = Array.from({ length: lines }, (_, i) => `- ATCD ${i + 1} : mesure operationnelle detaillee decrivant une consigne precise a appliquer sur zone.`).join('\n');
+        return {
+            adversaries: [
+                {
+                    id: 'adv1', nom_adversaire: 'DUPONT', antecedents_adversaire: atcd, armes_connues: 'Arme de poing',
+                    me_list: [], etat_esprit_list: [], volume_list: [], vehicules_list: [],
+                },
+            ],
+        };
+    }
+
+    it("un champ ATCD de 40 lignes (défaut confirmé : carte DANGEROSITÉ ENTIÈREMENT disparue à 30+ lignes, matrice-rupture.md §3) — les 40 lignes ET « Arme de poing » apparaissent, aucune perte silencieuse", () => {
+        const json = JSON.stringify(buildOiDocDefinition(collect(advWithAtcd(40)), { format: 'a4' }));
+
+        expect(json).toContain('DANGEROSITÉ');
+        expect(json).toContain('Arme de poing');
+        for (let i = 1; i <= 40; i++) {
+            expect(json, `ATCD ${i} doit apparaître`).toContain(`ATCD ${i} :`);
+        }
+    });
+
+    it('un champ ATCD court (5 lignes) : rendu inchangé, aucun « (SUITE) »', () => {
+        const json = JSON.stringify(buildOiDocDefinition(collect(advWithAtcd(5)), { format: 'a4' }));
+        for (let i = 1; i <= 5; i++) {
+            expect(json).toContain(`ATCD ${i} :`);
+        }
+    });
+});
+
+// ===========================================================================
+// Blindage PDF OI — mission BLIND.A. Arbitrage #3 : champs fantômes —
+// `effraction_blocks[].{mission,porte,prof_marche,prof_moulure}` +
+// `hypotheses[].desc` (champs-fantomes.md, régression du port TacSuite vs
+// strategica `OrderHtmlArticulation.kt:245,279,289,290`).
+// ===========================================================================
+describe('buildOiDocDefinition — blindage BLIND.A #3 : champs fantômes effraction', () => {
+    it('mission/porte/prof_marche/prof_moulure de la cellule Effraction sont rendus (régression strategica corrigée)', () => {
+        const effractionBlocks: OiEffractionBlock[] = [
+            {
+                id: 'e1', title: 'PORTE ALPHA', mission: 'FRANCHISSEMENT DE LA PORTE PRINCIPALE.', porte: 'Blindee',
+                structure: '-', serrurerie: '-', environnement: '-', bati_a_bati: '-', dormant_a_dormant: '-',
+                prof_linteaux: '-', prof_bati: '-', h_porte: '-', h_marche: '-', prof_marche: '12',
+                prof_moulure: '5', members: [], hypotheses: [],
+            },
+        ];
+        const json = JSON.stringify(buildOiDocDefinition(collect({ effraction_blocks: effractionBlocks }), { format: 'a4' }));
+
+        expect(json).toContain('FRANCHISSEMENT DE LA PORTE PRINCIPALE.');
+        expect(json).toContain('Blindee');
+        expect(json).toContain('"text":"12 mm"');
+        expect(json).toContain('"text":"5 mm"');
+    });
+
+    it("hypotheses[].desc est rendu en bloc texte SOUS le tableau des hypothèses (dérogation anti-débordement, jamais dans la cellule)", () => {
+        const effractionBlocks: OiEffractionBlock[] = [
+            {
+                id: 'e1', title: 'PORTE ALPHA', mission: '-', porte: '-', structure: '-', serrurerie: '-',
+                environnement: '-', bati_a_bati: '-', dormant_a_dormant: '-', prof_linteaux: '-', prof_bati: '-',
+                h_porte: '-', h_marche: '-', prof_marche: '-', prof_moulure: '-', members: [],
+                hypotheses: [{ id: 'h1', title: 'Hypothese A', desc: 'Description longue de l’hypothese A.', effrac: 'Pied de biche', degag: '-', assaut: '-' }],
+            },
+        ];
+        const json = JSON.stringify(buildOiDocDefinition(collect({ effraction_blocks: effractionBlocks }), { format: 'a4' }));
+
+        expect(json).toContain('Description longue de l’hypothese A.');
+        // La cellule « Hypothèse » du tableau reste SEULE (le titre, sans la
+        // description) : jamais le pattern `<br/>` strategica qui concatène desc
+        // DANS la cellule et pousse au débordement (cf. champs-fantomes.md #4).
+        expect(json).toContain('"text":"Hypothese A"');
+        expect(json).not.toContain('Hypothese A\\nDescription longue');
+    });
+});

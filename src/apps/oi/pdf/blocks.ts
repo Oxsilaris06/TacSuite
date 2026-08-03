@@ -23,6 +23,7 @@
 import type { Content, CustomTableLayout, TableCell } from 'pdfmake/interfaces';
 
 import { mm, pageGeometry, photoPageGalleryHeightMm, type OiPdfPalette } from './theme.js';
+import { breakLongTokens } from './text-utils.js';
 import type { OiPhotoMeta } from '@shared/types/contracts.js';
 
 // --- Layouts de table génériques (géométrie seule, cf. en-tête de fichier). ---
@@ -124,12 +125,18 @@ export function h1(text: string, p: OiPdfPalette, opts?: { fontSize?: number; bo
  * (OrderPdfStyle.kt:98-101) : titre Oswald 17 pt MAJUSCULES + filet 2 pt
  * pleine largeur en lieu et place du `border-bottom` CSS. `unbreakable`
  * reproduit `page-break-after:avoid`.
+ *
+ * `text` traverse `breakLongTokens()` (blindage BLIND.A #2, `text-utils.ts`)
+ * AVANT `.toUpperCase()` — les titres dynamiques (`Articulation : ZMSPCP -
+ * <titre>`, etc.) peuvent embarquer un titre saisi arbitrairement long/sans
+ * espace ; le ZWSP inséré n'est pas une lettre, `.toUpperCase()` le laisse
+ * intact.
  */
 export function h2(text: string, p: OiPdfPalette, contentWidthPt: number): Content {
     return {
         stack: [
             {
-                text: text.toUpperCase(),
+                text: breakLongTokens(text).toUpperCase(),
                 font: 'Oswald',
                 fontSize: 17,
                 color: p.accent,
@@ -164,7 +171,9 @@ export function h3(text: string, p: OiPdfPalette, opts?: { color?: string }): Co
 /**
  * `labelValue` — port de `.label`/`.value` (pdf-engine-v2.ts:709-710) :
  * libellé MAJUSCULE gras accent suivi de « : », valeur en texte simple.
- * `preserveLeadingSpaces` reproduit `white-space:pre-wrap`.
+ * `preserveLeadingSpaces` reproduit `white-space:pre-wrap`. `value` traverse
+ * `breakLongTokens()` (blindage BLIND.A #2, `text-utils.ts`) — `label` ne
+ * porte jamais de donnée du Store (libellé métier fixe), non concerné.
  */
 export function labelValue(
     label: string,
@@ -175,7 +184,7 @@ export function labelValue(
     return {
         text: [
             { text: `${label.toUpperCase()} : `, bold: true, color: p.accent },
-            { text: value, color: opts?.valueColor, bold: opts?.valueBold },
+            { text: breakLongTokens(value), color: opts?.valueColor, bold: opts?.valueBold },
         ],
         fontSize: opts?.fontSize,
         preserveLeadingSpaces: true,
@@ -230,12 +239,22 @@ export function card(body: Content[], p: OiPdfPalette, opts?: { fillColor?: stri
  * (OrderPdfStyle.kt:131-136) : liseré gauche 6 pt de la couleur du `kind`,
  * fond `p.cardAlt`, sans bordure. `title` optionnel (les cartes CAT/liaison
  * de la section 8 n'en ont pas toutes, §3.2 ligne 9).
+ *
+ * `opts.unbreakable` (défaut `true`, comportement historique préservé) —
+ * blindage BLIND.A (audit « tout `unbreakable` restant a un filet ») : un
+ * champ de texte libre non borné (`missions_psig`, `cat_generales`, `no_go`,
+ * `cat_liaison`…) posé dans un `accentCard` insécable est exposé au MÊME
+ * risque de suppression silencieuse par pdfmake que R11 (`document-builder.ts`,
+ * matrice-rupture.md §2/§3) s'il dépasse une page. `unbreakable:false`
+ * (posé par les appelants concernés, `document-builder.ts::buildMission`/
+ * `buildCatPage`) est le même filet minimal que `card({unbreakable:false})`.
  */
 export function accentCard(
     title: string | null,
     body: Content[],
     p: OiPdfPalette,
     kind: 'accent' | 'danger' | 'warning',
+    opts?: { unbreakable?: boolean },
 ): Content {
     const stripeColor = kind === 'danger' ? p.danger : kind === 'warning' ? p.warning : p.accent;
     const titleNode: Content[] =
@@ -251,7 +270,7 @@ export function accentCard(
             ],
         },
         layout: LAYOUT_NONE,
-        unbreakable: true,
+        unbreakable: opts?.unbreakable ?? true,
     };
 }
 
@@ -283,8 +302,13 @@ export function pill(
     p: OiPdfPalette,
     opts?: { fillColor?: string; textColor?: string; index?: number },
 ): TableCell {
+    // Blindage BLIND.A #2 (`text-utils.ts`) : un trigramme/outil/URL saisi
+    // sans espace au-delà du seuil est cassé au rendu, jamais en amont.
+    const brokenText = breakLongTokens(text);
     const textValue: Content =
-        opts?.index !== undefined ? [{ text: `${opts.index + 1} `, bold: true, color: p.accent }, { text }] : text;
+        opts?.index !== undefined
+            ? [{ text: `${opts.index + 1} `, bold: true, color: p.accent }, { text: brokenText }]
+            : brokenText;
     return {
         table: {
             widths: ['auto'],
@@ -374,6 +398,8 @@ export function badgeRow(items: string[], p: OiPdfPalette, opts?: { perRow?: num
 /**
  * `kvTable` — port de `.k{font-weight:bold;width:30%;background:cardAlt}`
  * (OrderPdfStyle.kt:114) : 2 colonnes (30 % / 70 %), bordure `LAYOUT_BORDERED`.
+ * `value` traverse `breakLongTokens()` (blindage BLIND.A #2) — `label` est
+ * toujours un libellé métier fixe, jamais une donnée du Store.
  */
 export function kvTable(rows: Array<[string, string]>, p: OiPdfPalette): Content {
     return {
@@ -387,7 +413,7 @@ export function kvTable(rows: Array<[string, string]>, p: OiPdfPalette): Content
                     borderColor: [p.border, p.border, p.border, p.border],
                 },
                 {
-                    text: value,
+                    text: breakLongTokens(value),
                     borderColor: [p.border, p.border, p.border, p.border],
                 },
             ]),
@@ -423,7 +449,12 @@ export function figure(dataUrl: string | null, boxPt: [number, number], p: OiPdf
         return frame;
     }
     return {
-        stack: [frame, { text: caption, bold: true, color: p.accent, alignment: 'center', margin: [0, 4, 0, 0] }],
+        stack: [
+            frame,
+            // `breakLongTokens()` (BLIND.A #2) : `caption` peut porter un `customTitle`
+            // de photo saisi librement, sans espace, au-delà du seuil de coupure.
+            { text: breakLongTokens(caption), bold: true, color: p.accent, alignment: 'center', margin: [0, 4, 0, 0] },
+        ],
     };
 }
 

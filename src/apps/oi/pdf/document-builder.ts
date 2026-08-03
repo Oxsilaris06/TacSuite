@@ -63,14 +63,17 @@ import {
     patracFontPx,
     adaptivePagePx,
     catItemsPerPageBudget,
+    effracFontPx,
     estimateCharsPerLine,
     estimateWrappedLines,
     type OiPdfFormat,
     type OiPdfPalette,
 } from './theme.js';
+import { breakLongTokens } from './text-utils.js';
 import type {
     OiAdversary,
     OiEffractionBlock,
+    OiEffractionHypothesis,
     OiFormData,
     OiMoicpBlock,
     OiPatracMember,
@@ -92,9 +95,16 @@ import type {
  */
 const A4_CONTENT_HEIGHT_PT = pageGeometry('a4').contentHeightPt;
 
-/** Conversion sûre d'un champ `unknown` du Store (mission #4) — jamais de validation absente de l'original. */
+/**
+ * Conversion sûre d'un champ `unknown` du Store (mission #4) — jamais de
+ * validation absente de l'original. Traverse `breakLongTokens()` (blindage
+ * BLIND.A #2, `text-utils.ts`) : point de passage de la quasi-totalité des
+ * champs texte libres du Store (`strOr`, `labelValue`/`kvTable` via
+ * `blocks.ts` portent leur propre filet identique pour les champs déjà
+ * typés `string` qui ne transitent jamais par `str()`, cf. leur JSDoc).
+ */
 function str(v: unknown): string {
-    return String(v ?? '');
+    return breakLongTokens(String(v ?? ''));
 }
 
 /** `str(v) || fallback` — port exact du motif `formData.x || '-'` de `pdf-engine-v2.ts` (aucun trim, fidèle à l'original). */
@@ -226,7 +236,9 @@ function cellGroupBox(cellName: string, trigrammes: string[], p: OiPdfPalette): 
                 [
                     {
                         stack: [
-                            { text: cellName, bold: true, color: p.accent, decoration: 'underline', fontSize: 8, margin: [0, 0, 0, 4] },
+                            // Blindage BLIND.A #2 : `cellName` vient du roster PATRACDVR
+                            // (`OiPatracMember.cellule`, texte libre non typé `str()`).
+                            { text: breakLongTokens(cellName), bold: true, color: p.accent, decoration: 'underline', fontSize: 8, margin: [0, 0, 0, 4] },
                             pillRow(trigrammes, p, { perRow: 6 }),
                         ],
                         fillColor: p.cardAlt,
@@ -256,7 +268,9 @@ function hypothesisLine(index: number, text: string, p: OiPdfPalette): Content {
                     {
                         text: [
                             { text: `H${index + 1} : `, bold: true, color: p.danger },
-                            { text },
+                            // Blindage BLIND.A #2 (`text-utils.ts`) : `formData.hypotheses`
+                            // est du texte libre non typé, non couvert par `str()` ici.
+                            { text: breakLongTokens(text) },
                         ],
                         fillColor: p.cardAlt,
                         margin: [6, 4, 4, 4],
@@ -386,6 +400,16 @@ function buildCover(ctx: BuildCtx): Content {
                   };
               })
             : [{ text: 'Aucune cible renseignée.', color: p.muted }];
+    // Blindage BLIND.A (audit « tout unbreakable a un filet ») : `ciblesCard`
+    // reste par défaut `unbreakable:true` (JUSTIFICATION, pas un correctif) —
+    // chaque entrée y est bornée à 2-3 lignes (nom/détail/filet), un volume
+    // qui ne peut réalistement pas dépasser une page entière ; la rendre
+    // sécable a été essayé et RETIRÉ : posée en `grid2` à côté de
+    // `situationCard` (elle-même sécable, filet ci-dessus), la rendre
+    // sécable AUSSI fait interférer ses fragments avec ceux de la colonne
+    // voisine sur plusieurs pages (`columns` pdfmake non synchronisées pour
+    // la pagination, même limite documentée que le défaut « carte esseulée »
+    // — constaté avec la fixture `adv-5-atcd40.json`, guardrail B1/B4 FAIL).
     const ciblesCard = card([h3('CIBLES(S)', p), ...ciblesBody], p);
 
     return {
@@ -398,11 +422,123 @@ function buildCover(ctx: BuildCtx): Content {
     };
 }
 
+/**
+ * Découpe un texte en lignes légitimes — généralisation de `splitAtDashBoundaries`
+ * (mission BLIND.A, scission pilotée universelle) à la carte DANGEROSITÉ/ATCD :
+ * chaque entrée y est déjà préfixée d'un tiret (`- ATCD n : …`, même convention
+ * que la conduite à tenir ZMSPCP/MOICP) — réutilise donc directement
+ * `splitAtDashBoundaries` telle quelle. Sans frontière légitime (aucun tiret),
+ * `splitAtDashBoundaries` renvoie le texte intact en un seul élément (R10) :
+ * `buildDangerPages` retombe alors sur le filet minimal `unbreakable:false`.
+ *
+ * Bloc « DANGEROSITÉ » d'une fiche adversaire — police adaptative (`fontPx`,
+ * déjà calculée par l'appelant sur l'ensemble de la fiche) PUIS scission
+ * pilotée d'un `antecedents_adversaire` volumineux (mission BLIND.A,
+ * généralisation R10 : matrice-rupture.md §3 — carte ENTIÈREMENT disparue,
+ * silencieusement, au-delà de ~30 lignes d'ATCD, `card()` par défaut
+ * `unbreakable:true`). `columnWidthPt` = largeur réelle de la colonne où la
+ * carte est posée (demi-page avec photo, pleine largeur sans) — sert à
+ * estimer le nombre de lignes réellement occupées par chaque entrée ATCD
+ * (`estimateWrappedLines`, même méthode que ZMSPCP/MOICP).
+ */
+function buildDangerPages(opts: {
+    advTitle: string;
+    armesConnues: string;
+    atcd: string;
+    fontPx: number;
+    columnWidthPt: number;
+    p: OiPdfPalette;
+    geo: ReturnType<typeof pageGeometry>;
+    /**
+     * Coût EN LIGNES du contenu qui partage la MÊME colonne que `dangerCard`
+     * SUR LA PREMIÈRE PAGE — `identityCard` (h3 + `identityRows`) est
+     * empilée AU-DESSUS dans `rightColumn` (`buildAdversaryFiche`) — jamais
+     * comptabilisé avant ce correctif (défaut constaté : `firstPageBudget`
+     * trop généreux, le débordement pdfmake NATUREL survenait alors AVANT le
+     * point de scission prévu, désynchronisant le titre « (SUITE) » de la
+     * coupure réelle — guardrail B4, fixture `adv-5-atcd40.json`).
+     */
+    siblingColumnOverheadLines: number;
+}): { card: Content; extraPages: Content[] } {
+    const { advTitle, armesConnues, atcd, fontPx, columnWidthPt, p, geo, siblingColumnOverheadLines } = opts;
+    const items = splitAtDashBoundaries(atcd);
+    const hasBoundary = items.length > 1;
+
+    if (!hasBoundary) {
+        // Filet minimal (R11/R16, mission BLIND.A « audit toi-même tout
+        // unbreakable restant ») : aucune frontière légitime pour scinder
+        // proprement — carte SÉCABLE (comme `situationCard` de la couverture,
+        // `document-builder.ts::buildCover`) plutôt qu'insécable : jamais de
+        // perte silencieuse, quel que soit le volume.
+        return {
+            card: card(
+                [
+                    h3('DANGEROSITÉ', p, { color: p.danger }),
+                    labelValue('Armes Connues', armesConnues, p, { valueColor: p.danger, valueBold: true }),
+                    labelValue('Dangerosité / ATCD', atcd, p),
+                ],
+                p,
+                { unbreakable: false },
+            ),
+            extraPages: [],
+        };
+    }
+
+    const charsPerLine = estimateCharsPerLine(fontPx, columnWidthPt);
+    const overheadLines =
+        1 /* h3 */ +
+        estimateWrappedLines(`ARMES CONNUES : ${armesConnues}`, charsPerLine) +
+        1 /* fieldLabel ATCD */ +
+        siblingColumnOverheadLines;
+    // Marge de sécurité 0,75 (calibrée empiriquement contre `adv-5-atcd40.json`,
+    // guardrail B1/B4) : `catItemsPerPageBudget`/`estimateCharsPerLine`
+    // (theme.ts) sont calibrés sur la colonne `grid2` à demi-largeur de
+    // `buildArticulationCorePages` — la carte DANGEROSITÉ, elle, partage sa
+    // page avec BEAUCOUP plus de contenu voisin (identité, localisation,
+    // mobilité) dont le coût réel en hauteur reste, comme documenté partout
+    // ailleurs dans ce fichier, une approximation grossière (aucune mesure de
+    // rendu réelle possible dans ce module PUR) — une marge conservatrice
+    // évite un débordement pdfmake NATUREL qui désynchroniserait le titre
+    // « (SUITE) » de la coupure réelle (préférable à une scission au plus
+    // juste qui échoue silencieusement à protéger le titre).
+    const DANGER_BUDGET_SAFETY_FACTOR = 0.75;
+    const budget = Math.max(
+        1,
+        Math.round(catItemsPerPageBudget(fontPx) * (geo.contentHeightPt / A4_CONTENT_HEIGHT_PT) * DANGER_BUDGET_SAFETY_FACTOR),
+    );
+    const chunks = chunkItemsByCost(items, (item) => estimateWrappedLines(item, charsPerLine), {
+        first: Math.max(1, budget - overheadLines),
+        rest: budget,
+    });
+
+    const firstCard = card(
+        [
+            h3('DANGEROSITÉ', p, { color: p.danger }),
+            labelValue('Armes Connues', armesConnues, p, { valueColor: p.danger, valueBold: true }),
+            fieldLabel('Dangerosité / ATCD', p),
+            ...dashItemList(chunks[0] ?? [], p),
+        ],
+        p,
+        { unbreakable: false },
+    );
+    const extraPages: Content[] = chunks.slice(1).map(
+        (chunk): Content => ({
+            stack: [
+                h2(`${advTitle} (SUITE)`, p, geo.contentWidthPt),
+                card([fieldLabel('Dangerosité / ATCD (suite)', p), ...dashItemList(chunk, p)], p, { unbreakable: false }),
+            ],
+            fontSize: fontPx,
+            pageBreak: 'before',
+        }),
+    );
+    return { card: firstCard, extraPages };
+}
+
 /* ==========================================================================
  * Section 2 — Fiche adversaire dédiée (pdf-engine-v2.ts:894-958, §3.2 ligne 2).
  * ======================================================================== */
-function buildAdversaryFiche(ctx: BuildCtx, adv: OiAdversary, index: number): Content {
-    const { photosBase64, dynamicPhotos, p, is169 } = ctx;
+function buildAdversaryFiche(ctx: BuildCtx, adv: OiAdversary, index: number): Content[] {
+    const { photosBase64, dynamicPhotos, p, geo, is169 } = ctx;
     const nom = strOr(adv.nom_adversaire, 'Inconnu');
     const mainPhotoId = dynamicPhotos[`photo_main_${adv.id}`]?.[0]?.id;
     const mainPhotoSrc = mainPhotoId ? photosBase64[mainPhotoId] : undefined;
@@ -440,17 +576,38 @@ function buildAdversaryFiche(ctx: BuildCtx, adv: OiAdversary, index: number): Co
         ['Substances', strOr(adv.substances_adversaire)],
         ...(meList.length > 0 ? ([['Moyens Employés', meList.join(' / ')]] as Array<[string, string]>) : []),
     ];
+    // Blindage BLIND.A (audit « tout unbreakable a un filet ») : `identityCard`
+    // reste `unbreakable:true` (JUSTIFICATION) — nombre de lignes BORNÉ (6-7
+    // `identityRows` fixes), ne peut réalistement pas dépasser une page ; son
+    // coût EN LIGNES est en revanche réservé dans le budget de `dangerCard`
+    // (`siblingColumnOverheadLines` ci-dessous, même colonne).
     const identityCard = card([h3('IDENTITÉ', p), kvTable(identityRows, p)], p);
 
-    const dangerCard = card(
-        [
-            h3('DANGEROSITÉ', p, { color: p.danger }),
-            labelValue('Armes Connues', strOr(adv.armes_connues), p, { valueColor: p.danger, valueBold: true }),
-            labelValue('Dangerosité / ATCD', strOr(adv.antecedents_adversaire), p),
-        ],
+    const advTitle = `2.${index} FICHE ADVERSAIRE : ${nom}`;
+    // Largeur réelle de la colonne DANGEROSITÉ (demi-page avec photo, pleine
+    // largeur sans — mission BLIND.A, cf. JSDoc `buildDangerPages`).
+    const dangerColumnWidthPt = mainPhotoSrc !== undefined ? ctx.geo.contentWidthPt - mm(70) - mm(6) : ctx.geo.contentWidthPt;
+    const { card: dangerCard, extraPages: dangerExtraPages } = buildDangerPages({
+        advTitle,
+        armesConnues: strOr(adv.armes_connues),
+        atcd: strOr(adv.antecedents_adversaire),
+        fontPx,
+        columnWidthPt: dangerColumnWidthPt,
         p,
-    );
+        geo,
+        // `identityCard` (h3 + une ligne par `identityRows`) est empilée
+        // AU-DESSUS de `dangerCard` dans `rightColumn` — et, SANS photo
+        // (`head` en simple `stack` pleine largeur, pas de `columns`),
+        // `localisationCard`/`mobiliteCard` (`grid2`, 2×(h3 + 2 lignes))
+        // ainsi que le bandeau de titre partagent la MÊME page 1 — cf. JSDoc
+        // `buildDangerPages::siblingColumnOverheadLines`. Constante `+8`
+        // calibrée empiriquement (même méthode que `catItemsPerPageBudget`,
+        // theme.ts) contre `adv-5-atcd40.json` (guardrail B1/B4).
+        siblingColumnOverheadLines: 1 + identityRows.length + 8,
+    });
 
+    // Blindage BLIND.A : `domicile_adversaire`/`attitude_adversaire`/listes
+    // véhicules sont non bornés — filet `unbreakable:false`.
     const localisationCard = card(
         [
             h3('LOCALISATION', p),
@@ -458,6 +615,7 @@ function buildAdversaryFiche(ctx: BuildCtx, adv: OiAdversary, index: number): Co
             labelValue('Volume / Esprit', `${volumeList.join(', ') || '-'} | ${etatEspritList.join(', ') || '-'}`, p),
         ],
         p,
+        { unbreakable: false },
     );
 
     const mobiliteCard = card(
@@ -467,6 +625,7 @@ function buildAdversaryFiche(ctx: BuildCtx, adv: OiAdversary, index: number): Co
             labelValue('Attitude Attendue', strOr(adv.attitude_adversaire), p),
         ],
         p,
+        { unbreakable: false },
     );
 
     const rightColumn: Content[] = [identityCard, dangerCard];
@@ -481,15 +640,16 @@ function buildAdversaryFiche(ctx: BuildCtx, adv: OiAdversary, index: number): Co
               }
             : { stack: rightColumn };
 
-    return {
+    const firstPage: Content = {
         stack: [
-            ficheAdversaireTitleBar(`2.${index} FICHE ADVERSAIRE : ${nom}`, p),
+            ficheAdversaireTitleBar(advTitle, p),
             head,
             { text: '', margin: [0, 6, 0, 0] },
             grid2([localisationCard], [mobiliteCard]),
         ],
         fontSize: fontPx,
     };
+    return [firstPage, ...dangerExtraPages];
 }
 
 /** Fiche adversaire + ses galeries « Photos annexes »/« Renfort possible » (pdf-engine-v2.ts:959-969). */
@@ -498,7 +658,7 @@ function buildAdversaryPages(ctx: BuildCtx): Content[] {
     const adversaries = formData.adversaries ?? [];
     const acc: Content[] = [];
     adversaries.forEach((adv, idx) => {
-        pushPage(acc, buildAdversaryFiche(ctx, adv, idx + 1));
+        pushPages(acc, buildAdversaryFiche(ctx, adv, idx + 1));
         const nom = strOr(adv.nom_adversaire, 'Inconnu');
         const extra = dynamicPhotos[`photo_extra_${adv.id}`] ?? [];
         const renfort = dynamicPhotos[`photo_renforts_${adv.id}`] ?? [];
@@ -524,14 +684,18 @@ function buildEnvironnement(ctx: BuildCtx): Content {
         labelValue('Faune / Animaux', strOr(formData.faune_animaux), p),
         labelValue('Cadre Juridique', strOr(formData.cadre_juridique), p),
     ];
+    // Blindage BLIND.A (audit « tout `unbreakable` restant a un filet ») :
+    // champs texte libres non bornés (`amies`/`terrain_info`/…) — même filet
+    // minimal `unbreakable:false` que `situationCard` (`buildCover`), jamais
+    // de perte silencieuse si l'un d'eux dépasse la page.
     return {
         stack: [
             h2('3. ENVIRONNEMENT ET AMIS', p, geo.contentWidthPt),
-            grid2([card(left, p)], [card(right, p)]),
+            grid2([card(left, p, { unbreakable: false })], [card(right, p, { unbreakable: false })]),
             { text: '', margin: [0, 5, 0, 0] },
             grid2(
-                [card([labelValue('Accès Principal', strOr(formData.acces_principal), p)], p)],
-                [card([labelValue('Cheminement Initial', strOr(formData.cheminement_initial), p)], p)],
+                [card([labelValue('Accès Principal', strOr(formData.acces_principal), p)], p, { unbreakable: false })],
+                [card([labelValue('Cheminement Initial', strOr(formData.cheminement_initial), p)], p, { unbreakable: false })],
             ),
         ],
     };
@@ -545,11 +709,14 @@ function buildMission(ctx: BuildCtx): Content {
     return {
         stack: [
             h2("4. MISSION DE L'UNITÉ", p, geo.contentWidthPt),
+            // Blindage BLIND.A : `missions_psig` est un champ texte libre non
+            // borné — filet `unbreakable:false` (audit « tout unbreakable a un filet »).
             accentCard(
                 null,
                 [{ text: strOr(formData.missions_psig), bold: true, fontSize: Math.round(baseFontSize * 1.6), preserveLeadingSpaces: true }],
                 p,
                 'accent',
+                { unbreakable: false },
             ),
         ],
     };
@@ -565,7 +732,12 @@ function buildExecution(ctx: BuildCtx): Content {
         events.length > 0
             ? events.map((e): TableCell[] => [
                   { text: e.hour, alignment: 'center', borderColor: cellBorder(p) },
-                  { text: [{ text: e.type, bold: true }, { text: ` : ${e.description}` }], borderColor: cellBorder(p) },
+                  {
+                      // Blindage BLIND.A #2 : `e.type`/`e.description` (`OiTimeEvent`, texte
+                      // libre non typé `str()`) traversent `breakLongTokens()` au point d'entrée.
+                      text: [{ text: breakLongTokens(e.type), bold: true }, { text: ` : ${breakLongTokens(e.description)}` }],
+                      borderColor: cellBorder(p),
+                  },
               ])
             : [[{ text: 'N/A', colSpan: 2, alignment: 'center', borderColor: cellBorder(p) }, {}]];
     const chronoTable: Content = {
@@ -582,12 +754,17 @@ function buildExecution(ctx: BuildCtx): Content {
         },
         layout: LAYOUT_BORDERED,
     };
-    const chronoCard = card([h3('Chronologie Prévisionnelle', p), chronoTable], p);
+    // Blindage BLIND.A : `time_events` (chronologie) est une liste non bornée
+    // — filet `unbreakable:false` (audit « tout unbreakable a un filet »).
+    const chronoCard = card([h3('Chronologie Prévisionnelle', p), chronoTable], p, { unbreakable: false });
 
     const hypotheses = formData.hypotheses ?? [];
     const hypBody: Content[] =
         hypotheses.length > 0 ? hypotheses.map((h, i) => hypothesisLine(i, h, p)) : [{ text: '-', color: p.muted }];
-    const hypCard = card([h3("Hypothèses d'ensemble", p), ...hypBody], p);
+    // Blindage BLIND.A : `formData.hypotheses` (liste libre, MÊME classe de
+    // risque que la conduite à tenir ZMSPCP/MOICP, matrice-rupture.md §2/§3)
+    // — filet `unbreakable:false`.
+    const hypCard = card([h3("Hypothèses d'ensemble", p), ...hypBody], p, { unbreakable: false });
 
     return {
         stack: [
@@ -628,13 +805,17 @@ function buildArticulationOverview(ctx: BuildCtx): Content {
     const colonne = formData.colonne_progression_order ?? [];
     const penetration = formData.ordre_penetration_order ?? [];
 
+    // Blindage BLIND.A : les 3 listes de pastilles sont non bornées (filet
+    // `unbreakable:false`, audit « tout unbreakable a un filet »).
     const rameCard = card(
         [h3('Ordre Rame VL', p), rameVl.length > 0 ? pillRow(rameVl, p, { numbered: true }) : { text: '-' }],
         p,
+        { unbreakable: false },
     );
     const colonneCard = card(
         [h3('Colonne Progression', p), colonne.length > 0 ? pillRow(colonne, p, { numbered: true }) : { text: '-' }],
         p,
+        { unbreakable: false },
     );
     // Même pastille inline numérotée que « Ordre Rame VL »/« Colonne Progression »
     // (référence B : `pillList()`, print-view.ts:93-98, rend les 3 rangées à
@@ -647,6 +828,7 @@ function buildArticulationOverview(ctx: BuildCtx): Content {
             labelValue('PLACE DU CHEF', strOr(formData.place_chef), p, { valueColor: p.accent }),
         ],
         p,
+        { unbreakable: false },
     );
 
     return {
@@ -751,7 +933,11 @@ function chunkItemsByCost<T>(items: T[], cost: (item: T) => number, budgets: { f
 function dashItemList(items: string[], p: OiPdfPalette): Content[] {
     return items.map(
         (item, i): Content => ({
-            text: item,
+            // Blindage BLIND.A #2 (`text-utils.ts`) : c'est ICI, un item `unbreakable`
+            // dans une colonne étroite, qu'un token sans espace ≥ ~76-80 caractères
+            // faisait CRASHER tout le rendu pdfmake (matrice-rupture.md §4) — filet posé
+            // au plus près du point de crash.
+            text: breakLongTokens(item),
             color: p.text,
             margin: [0, i === 0 ? 0 : 2, 0, 0],
             unbreakable: true,
@@ -917,6 +1103,60 @@ function buildMoicpPage(ctx: BuildCtx, block: OiMoicpBlock, memberToCell: Map<st
     });
 }
 
+/** En-tête à 4 colonnes du tableau Hypothèses d'Effraction (R21 — répétée sur chaque page « (suite) », cf. `buildEffractionPages`). */
+function hypothesesTableHeader(p: OiPdfPalette): TableCell[] {
+    return [
+        { text: 'Hypothèse', bold: true, fillColor: p.headerRow, borderColor: cellBorder(p) },
+        { text: 'Technique / Moyen', bold: true, fillColor: p.headerRow, borderColor: cellBorder(p) },
+        { text: 'Dégagement', bold: true, fillColor: p.headerRow, borderColor: cellBorder(p) },
+        { text: 'Assaut', bold: true, fillColor: p.headerRow, borderColor: cellBorder(p) },
+    ];
+}
+
+/** Une ligne du tableau Hypothèses d'Effraction — `h.desc` en est délibérément ABSENT (dérogation arbitrage #3 : rendu en bloc texte à part, cf. `hypothesesDescBlock`, jamais concaténé dans la cellule comme strategica, source du risque de débordement §4 `champs-fantomes.md`). */
+function hypothesisTableRow(h: OiEffractionHypothesis, p: OiPdfPalette): TableCell[] {
+    return [
+        { text: breakLongTokens(h.title || h.id), bold: true, color: p.accent, borderColor: cellBorder(p) },
+        { text: breakLongTokens(h.effrac || '-'), borderColor: cellBorder(p) },
+        { text: breakLongTokens(h.degag || '-'), borderColor: cellBorder(p) },
+        { text: breakLongTokens(h.assaut || '-'), borderColor: cellBorder(p) },
+    ];
+}
+
+/** Fraction de `geo.contentWidthPt` occupée par chacune des 4 colonnes du tableau (mêmes largeurs que `widths` ci-dessous) — sert à estimer le nombre de lignes réellement occupées par une hypothèse (mission BLIND.A, scission pilotée). */
+const HYP_TABLE_COLUMN_FRACTIONS = [0.2, 0.3, 0.25, 0.25];
+
+/**
+ * Coût EN LIGNES d'une hypothèse (mission BLIND.A, généralisation R10/scission
+ * pilotée à la table Hypothèses d'Effraction, cf. `chunkItemsByCost` déjà
+ * utilisé pour ZMSPCP/MOICP) — le MAX des 4 colonnes (celle qui déborde le
+ * plus dicte la hauteur réelle de la ligne de tableau), jamais leur somme.
+ * `h.desc` n'entre PAS dans ce coût (rendu à part, cf. `hypothesisTableRow`).
+ */
+function hypothesisRowCost(h: OiEffractionHypothesis, fontPx: number, contentWidthPt: number): number {
+    const charsPerLineCols = HYP_TABLE_COLUMN_FRACTIONS.map((f) => estimateCharsPerLine(fontPx, contentWidthPt * f));
+    const cols = [h.title || h.id, h.effrac || '-', h.degag || '-', h.assaut || '-'];
+    return Math.max(...cols.map((text, i) => estimateWrappedLines(text, charsPerLineCols[i] as number)));
+}
+
+/**
+ * Bloc « HE<n> — <titre> : <desc> » sous le tableau (arbitrage #3, dérogation
+ * anti-débordement — `champs-fantomes.md` §4, option 2) : une hypothèse SANS
+ * `desc` non-vide n'y figure pas. Chaque paragraphe rendu `unbreakable`
+ * (`dashItemList`, réutilisé tel quel — filet R11 identique aux items ZMSPCP/
+ * MOICP), le conteneur `unbreakable:false` (jamais de perte silencieuse si le
+ * bloc entier dépasse la place restante).
+ */
+function hypothesesDescBlock(hypotheses: OiEffractionHypothesis[], p: OiPdfPalette): Content | null {
+    const lines = hypotheses
+        .map((h, i) => (h.desc && h.desc.trim() !== '' ? `HE${i + 1} — ${h.title || h.id} : ${h.desc}` : null))
+        .filter((s): s is string => s !== null);
+    if (lines.length === 0) {
+        return null;
+    }
+    return { stack: dashItemList(lines, p), unbreakable: false, margin: [0, 6, 0, 0] };
+}
+
 /**
  * Un bloc EFFRACTION est VIDE (§3.4 règle 1, correctif PG.REFIX round 1) si
  * AUCUNE mesure technique n'est saisie (les 9 champs rendus par `specs`
@@ -927,7 +1167,12 @@ function buildMoicpPage(ctx: BuildCtx, block: OiMoicpBlock, memberToCell: Map<st
  * renseigné (même défaut de principe que `buildCatPage`/`buildPatracPage`,
  * jusqu'ici jamais porté aux blocs effraction). Une SEULE mesure saisie,
  * une hypothèse, ou une photo de porte suffit à rendre la page (jamais de
- * perte de données saisies).
+ * perte de données saisies). Volontairement INCHANGÉ par le blindage BLIND.A
+ * (champs fantômes #3, ci-dessous) : `mission`/`porte` ne sont PAS ajoutés à
+ * cette liste — les fixtures de recette (`long-case.json` et consorts) portent
+ * `mission: '-'` comme simple valeur de repli sur des blocs par ailleurs
+ * authentiquement vides, ce qui romprait la règle d'omission si `mission`
+ * comptait comme une mesure saisie.
  */
 function isEffractionBlockEmpty(block: OiEffractionBlock, doorSrc: string | undefined): boolean {
     const measures = [
@@ -947,19 +1192,36 @@ function isEffractionBlockEmpty(block: OiEffractionBlock, doorSrc: string | unde
 
 /**
  * Bloc « Articulation : EFFRACTION - <titre> » (pdf-engine-v2.ts:1132-1187,
- * §3.2 ligne 8f, POINT DE VIGILANCE §1). `null` si `isEffractionBlockEmpty`
+ * §3.2 ligne 8f, POINT DE VIGILANCE §1). `[]` si `isEffractionBlockEmpty`
  * (§3.4 règle 1, correctif PG.REFIX round 1) — section omise, jamais de page
  * à titre seul pour un bloc créé mais non renseigné.
+ *
+ * Blindage PDF OI, mission BLIND.A : (1) champs fantômes #3 — `mission`
+ * rendue en tête (port `OrderHtmlArticulation.kt:245`), `porte` en 1re ligne
+ * des mesures (`:279`), `prof_marche`/`prof_moulure` en fin de mesures
+ * (`:289-290`), `hypotheses[].desc` en bloc texte SOUS le tableau (dérogation
+ * anti-débordement, cf. `hypothesesDescBlock`) ; (2) `effracFontPx` (R7,
+ * jusqu'ici non portée) réduit le palier de police AVANT toute scission ;
+ * (3) scission pilotée de la table (aucune perte silencieuse au-delà de 8
+ * hypothèses, matrice-rupture.md §2 : `card()` par défaut `unbreakable:true`
+ * était SILENCIEUSEMENT SUPPRIMÉE par pdfmake au-delà d'une page).
  */
-function buildEffractionPage(ctx: BuildCtx, block: OiEffractionBlock): Content | null {
+function buildEffractionPages(ctx: BuildCtx, block: OiEffractionBlock): Content[] {
     const { photosBase64, dynamicPhotos, p, geo, is169 } = ctx;
     const doorMeta = dynamicPhotos[`photo_effrac_${block.id}`]?.[0];
     const doorSrc = doorMeta ? photosBase64[doorMeta.id] : undefined;
     if (isEffractionBlockEmpty(block, doorSrc)) {
-        return null;
+        return [];
     }
     const tools = doorMeta ? parseTools(doorMeta.tools) : [];
     const topHMm = is169 ? 65 : 75;
+    const title = `Articulation : EFFRACTION - ${block.title || '-'}`;
+
+    const hypotheses = block.hypotheses;
+    const fontPx = effracFontPx(
+        [block.mission, ...hypotheses.flatMap((h) => [h.title, h.desc, h.effrac, h.degag, h.assaut])].map(str),
+        hypotheses.length,
+    );
 
     // Bandeau d'outils : port simplifié en empilement SOUS la photo plutôt
     // qu'en `absolutePosition` exact (aucune assertion de coordonnées côté
@@ -975,6 +1237,9 @@ function buildEffractionPage(ctx: BuildCtx, block: OiEffractionBlock): Content |
     const specs = card(
         [
             h3('Caractéristiques Techniques', p),
+            // Champ fantôme #3 (`porte`, `OrderHtmlArticulation.kt:279`) : 1re ligne,
+            // AVANT Structure — même ordre que strategica (`champs-fantomes.md` #2).
+            labelValue('Type de Porte', block.porte || '-', p),
             grid2(
                 [
                     labelValue('Structure', block.structure || '-', p),
@@ -997,9 +1262,15 @@ function buildEffractionPage(ctx: BuildCtx, block: OiEffractionBlock): Content |
                 margin: [0, 6, 0, 6],
             },
             grid2([labelValue('H. Porte', block.h_porte || '-', p)], [labelValue('H. Marche', block.h_marche || '-', p)]),
-            labelValue('Prof. Bâti', block.prof_bati || '-', p),
+            // Champ fantôme #3 (`prof_marche`/`prof_moulure`, `OrderHtmlArticulation.kt:289-290`)
+            // — dernières lignes des mesures, même ordre que strategica.
+            grid2([labelValue('Prof. Marche', `${block.prof_marche || '-'} mm`, p)], [labelValue('Prof. Bâti', block.prof_bati || '-', p)]),
+            labelValue('Prof. Moulure', `${block.prof_moulure || '-'} mm`, p),
         ],
         p,
+        // Blindage BLIND.A : champs texte libres non bornés (`structure`,
+        // `serrurerie`, `environnement`…) — filet `unbreakable:false`.
+        { unbreakable: false },
     );
 
     const head: Content =
@@ -1013,44 +1284,59 @@ function buildEffractionPage(ctx: BuildCtx, block: OiEffractionBlock): Content |
               }
             : { stack: [specs] };
 
-    const hypotheses = block.hypotheses;
-    const hypRows: TableCell[][] =
+    // Champ fantôme #3 (`mission`, `OrderHtmlArticulation.kt:245`) : sa propre
+    // ligne EN TÊTE de page, AVANT le bloc photo/mesures — même ordre que
+    // strategica (les fiches MOICP/ZMSPCP montrent déjà « Mission » en tête).
+    const missionLine = labelValue('Mission', block.mission || '-', p);
+
+    const descBlock = hypothesesDescBlock(hypotheses, p);
+
+    // Scission pilotée (mission BLIND.A, généralisation R10 à la table
+    // Hypothèses d'Effraction) : chaque hypothèse est une frontière légitime
+    // (jamais de coupure en milieu de ligne), le budget est le MÊME barème
+    // `catItemsPerPageBudget`/mise à l'échelle `geo` que ZMSPCP/MOICP
+    // (`buildArticulationCorePages`). Page 1 réserve un overhead pour le
+    // bandeau photo/specs (heuristique : ~la moitié du budget, ce bloc
+    // occupant grossièrement la moitié de la hauteur utile de page).
+    const budget = Math.max(1, Math.round(catItemsPerPageBudget(fontPx) * (geo.contentHeightPt / A4_CONTENT_HEIGHT_PT)));
+    const firstPageBudget = Math.max(1, Math.round(budget / 2));
+    const hypChunks: OiEffractionHypothesis[][] =
         hypotheses.length > 0
-            ? hypotheses.map(
-                  (h): TableCell[] => [
-                      { text: h.title || h.id, bold: true, color: p.accent, borderColor: cellBorder(p) },
-                      { text: h.effrac || '-', borderColor: cellBorder(p) },
-                      { text: h.degag || '-', borderColor: cellBorder(p) },
-                      { text: h.assaut || '-', borderColor: cellBorder(p) },
-                  ],
-              )
-            : [[{ text: 'Aucune hypothèse saisie', colSpan: 4, alignment: 'center', borderColor: cellBorder(p) }, {}, {}, {}]];
+            ? chunkItemsByCost(hypotheses, (h) => hypothesisRowCost(h, fontPx, geo.contentWidthPt), {
+                  first: firstPageBudget,
+                  rest: budget,
+              })
+            : [[]];
 
-    const hypTable: Content = {
-        table: {
-            widths: ['20%', '30%', '25%', '25%'],
-            headerRows: 1,
-            body: [
-                [
-                    { text: 'Hypothèse', bold: true, fillColor: p.headerRow, borderColor: cellBorder(p) },
-                    { text: 'Technique / Moyen', bold: true, fillColor: p.headerRow, borderColor: cellBorder(p) },
-                    { text: 'Dégagement', bold: true, fillColor: p.headerRow, borderColor: cellBorder(p) },
-                    { text: 'Assaut', bold: true, fillColor: p.headerRow, borderColor: cellBorder(p) },
-                ],
-                ...hypRows,
-            ],
-        },
-        layout: LAYOUT_BORDERED,
-    };
-
-    return {
-        stack: [
-            h2(`Articulation : EFFRACTION - ${block.title || '-'}`, p, geo.contentWidthPt),
-            head,
-            { text: '', margin: [0, 6, 0, 0] },
-            card([h3("Hypothèses d'Effraction", p), hypTable], p),
-        ],
-    };
+    return hypChunks.map((chunk, idx): Content => {
+        const rows: TableCell[][] =
+            chunk.length > 0
+                ? chunk.map((h) => hypothesisTableRow(h, p))
+                : [[{ text: 'Aucune hypothèse saisie', colSpan: 4, alignment: 'center', borderColor: cellBorder(p) }, {}, {}, {}]];
+        const hypTable: Content = {
+            table: {
+                widths: ['20%', '30%', '25%', '25%'],
+                headerRows: 1,
+                body: [hypothesesTableHeader(p), ...rows],
+            },
+            layout: LAYOUT_BORDERED,
+        };
+        const isLastChunk = idx === hypChunks.length - 1;
+        const hypCardBody: Content[] = [
+            h3(idx === 0 ? "Hypothèses d'Effraction" : "Hypothèses d'Effraction (suite)", p),
+            hypTable,
+            ...(isLastChunk && descBlock !== null ? [descBlock] : []),
+        ];
+        const pageBody: Content[] =
+            idx === 0
+                ? [head, { text: '', margin: [0, 6, 0, 0] }, card(hypCardBody, p, { unbreakable: false })]
+                : [card(hypCardBody, p, { unbreakable: false })];
+        return {
+            stack: [h2(idx === 0 ? title : `${title} (SUITE)`, p, geo.contentWidthPt), ...(idx === 0 ? [missionLine, { text: '', margin: [0, 4, 0, 0] } as Content] : []), ...pageBody],
+            fontSize: fontPx,
+            pageBreak: idx === 0 ? undefined : 'before',
+        };
+    });
 }
 
 /**
@@ -1088,10 +1374,7 @@ function buildArticulationBlocksLoop(ctx: BuildCtx): Content[] {
 
         const effrac = effracBlocks[i];
         if (effrac) {
-            const effractionPage = buildEffractionPage(ctx, effrac);
-            if (effractionPage !== null) {
-                pushPage(acc, effractionPage);
-            }
+            pushPages(acc, buildEffractionPages(ctx, effrac));
             const photos = dynamicPhotos[`photo_effrac_${effrac.id}`] ?? [];
             pushPages(acc, galleryPages(`Effraction : ${effrac.title || '-'}`, photos, photosBase64, p, geo));
         }
@@ -1113,22 +1396,26 @@ function buildCatPage(ctx: BuildCtx): Content | null {
         return null;
     }
 
+    // Blindage BLIND.A : `cat_generales`/`no_go`/`cat_liaison` sont des champs
+    // texte libres non bornés — filet `unbreakable:false` (audit « tout
+    // unbreakable a un filet »).
     return {
         stack: [
             h2('8. CONDUITES À TENIR GÉNÉRALES', p, geo.contentWidthPt),
             grid2(
-                [accentCard('CAT Générales', [{ text: strOr(cat), preserveLeadingSpaces: true }], p, 'accent')],
+                [accentCard('CAT Générales', [{ text: strOr(cat), preserveLeadingSpaces: true }], p, 'accent', { unbreakable: false })],
                 [
                     accentCard(
                         'Conditions de Désengagement (NO-GO)',
                         [{ text: strOr(nogo), color: p.danger, bold: true, preserveLeadingSpaces: true }],
                         p,
                         'danger',
+                        { unbreakable: false },
                     ),
                 ],
             ),
             { text: '', margin: [0, 6, 0, 0] },
-            accentCard('Liaison', [{ text: strOr(liaison), preserveLeadingSpaces: true }], p, 'warning'),
+            accentCard('Liaison', [{ text: strOr(liaison), preserveLeadingSpaces: true }], p, 'warning', { unbreakable: false }),
         ],
     };
 }

@@ -14,6 +14,7 @@ import { describe, expect, it } from 'vitest';
 import {
     adaptivePagePx,
     documentFontPx,
+    effracFontPx,
     fullPageHeightMm,
     mm,
     palette,
@@ -256,5 +257,35 @@ describe('fullPageHeightMm / photoPageGalleryHeightMm (OrderPdfStyle.kt:62,68)',
 
     it('photoPageGalleryHeightMm(false) === 258 (272 - 14, portrait)', () => {
         expect(photoPageGalleryHeightMm(false)).toBe(258);
+    });
+});
+
+// ===========================================================================
+// effracFontPx (OrderHtmlArticulation.kt:261-274) — blindage PDF OI, mission
+// BLIND.A (R7 `regles-strategica.md`, non portée avant ce correctif).
+// ===========================================================================
+describe('effracFontPx (OrderHtmlArticulation.kt:261-274)', () => {
+    it('même barème qu’adaptivePagePx : volume < 500 → 14', () => {
+        expect(effracFontPx(['court'], 0)).toBe(14);
+    });
+
+    it('0 hypothèse, mission seule : 14 (plancher haut)', () => {
+        expect(effracFontPx(['FRANCHISSEMENT DE LA PORTE.'], 0)).toBe(14);
+    });
+
+    it('12 hypothèses volumineuses (fixture effrac-12-hypotheses) : palier réduit sous 14', () => {
+        const fields = Array.from({ length: 12 }, (_, i) => [
+            `Hypothese ${i + 1}`,
+            '',
+            `Technique effraction ${i + 1} : pied de biche + verin hydraulique, description detaillee de la manoeuvre a executer.`,
+            `Degagement ${i + 1} : evacuation par le couloir principal vers le point de regroupement Alpha.`,
+            `Assaut ${i + 1} : penetration en Y inverse, binome de tete puis binome de couverture.`,
+        ]).flat();
+        expect(effracFontPx(fields, 12)).toBeLessThan(14);
+    });
+
+    it('lines = extraLines (hypothesesCount*2) pèsent comme adaptivePagePx(fields, hypothesesCount*2) — délégation directe', () => {
+        const fields = ['a', 'b', 'c'];
+        expect(effracFontPx(fields, 5)).toBe(adaptivePagePx(fields, 10));
     });
 });

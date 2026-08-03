@@ -211,6 +211,22 @@ export function estimateWrappedLines(item: string, charsPerLine: number): number
 }
 
 /**
+ * Police adaptative d'UNE fiche effraction — port verbatim de `effracFontPx()`
+ * (`OrderHtmlArticulation.kt:261-274`, Praxis-Rust, lecture seule) : MÊME
+ * barème qu'`adaptivePagePx` (share la formule volume = caractères +
+ * retours-ligne×60), calibré à part car R7 (`regles-strategica.md`) était
+ * jusqu'ici NON PORTÉE côté voie A (blindage PDF OI, mission BLIND.A) — le
+ * tableau Hypothèses d'Effraction ne bénéficiait d'aucun repli de police
+ * avant de scinder. `fields`/`hypothesesCount` : mêmes arguments que l'appelant
+ * mesure (`[mission, ...hypotheses.flatMap(h => [title,desc,effrac,degag,assaut])]`,
+ * `hypotheses.length`) — cf. Kotlin `lines = fields.sumOf{'\n' count} +
+ * hypotheses.size*2`.
+ */
+export function effracFontPx(fields: string[], hypothesesCount: number): number {
+    return adaptivePagePx(fields, hypothesesCount * 2);
+}
+
+/**
  * Hauteur utile (mm) d'une page pleine (garde/finale) selon l'orientation,
  * marges verticales `@page` déduites (8 + 11 mm) — port verbatim de
  * `fullPageHeightMm()` (OrderPdfStyle.kt:60-62).
