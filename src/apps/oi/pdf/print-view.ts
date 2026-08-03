@@ -916,6 +916,69 @@ const EFFRAC_CHUNK_SAFETY_MARGIN = 2;
  */
 const EFFRAC_FIRST_PAGE_LIGHT_EXTRA_MARGIN = 2;
 
+/* --------------------------------------------------------------------------
+ * VOIEB.FIX — placement du bloc « Description des Hypothèses » (motif
+ * D2-équivalent constaté au banc sur la fixture réelle, thème CLAIR
+ * uniquement) : la scission pilotée `chunkItemsByCost` ne budgète QUE les
+ * lignes du tableau Hypothèses — le bloc desc (`.box`,
+ * `page-break-inside:avoid`) rejoint la dernière page SANS être compté. Quand
+ * la page est presque pleine, le navigateur le bascule ENTIER sur une page
+ * physique suivante… sans titre `h2` (fragmentation native d'un `.adv-page`),
+ * page quasi vide sans contexte — FAIL `B8` de `verify-structure --voie=b`.
+ * L'asymétrie clair/sombre est GÉOMÉTRIQUE et documentée (`print-style.ts` :
+ * clair = marges @page 8+11 mm, hauteur utile 191 mm ; sombre = marges 0 +
+ * padding-top 8 mm, hauteur utile 202 mm) : le même document tient en sombre
+ * (constaté : 14 pages, desc en bas de la page effraction) et déborde en
+ * clair de quelques mm.
+ *
+ * Correctif : estimation GÉOMÉTRIQUE (px CSS réels, PAS les unités
+ * `catItemsPerPageBudget` — trop grossières pour discriminer un écart de
+ * 11 mm) de la pile de la dernière page du bloc ; si le bloc desc ne tient
+ * pas dans la hauteur utile DU THÈME, il part sur sa PROPRE page titrée
+ * « … (SUITE) » (même convention que les fragments d'hypothèses). Jamais de
+ * perte : dans le pire cas d'estimation fausse, soit une page « (SUITE) »
+ * un peu creuse (trop prudent), soit le statu quo (trop optimiste) — les
+ * données sont rendues dans les deux cas.
+ *
+ * Constantes vérifiées au banc (`render-b.mjs` + chromium, fixture réelle
+ * `cas-reel-01.json`, fontPx=10) : pile estimée 724 px pour une hauteur utile
+ * de 722 px (clair) / 763 px (sombre) — la marge de sécurité de 10 px
+ * absorbe l'imprécision d'estimation SANS approcher la borne sombre (~29 px
+ * d'écart restant).
+ * ------------------------------------------------------------------------ */
+/** px CSS par mm (96 dpi, définition CSS du mm à l'impression Chromium). */
+const CSS_PX_PER_MM = 96 / 25.4;
+/** `line-height` du body (`print-style.ts`), en em. */
+const BODY_LINE_HEIGHT_EM = 1.45;
+/** Hauteur estimée du bandeau `h2` d'une page effraction (fonte Oswald 17px
+ * × 1.45 + border-bottom 2 + padding-bottom 3 + marges 16/8 ≈ 54 px). */
+const EFFRAC_H2_HEADER_PX = 54;
+/** Chrome vertical d'une `.box` (marges 6+6, bordures 1+1, padding 8+8). */
+const BOX_VERTICAL_CHROME_PX = 30;
+/** Marges verticales d'un `h3` (10 + 5 px, `print-style.ts`). */
+const H3_VERTICAL_MARGINS_PX = 15;
+/** Hauteur mm du cadre photo de porte (littéral inline `height:75mm`). */
+const EFFRAC_PHOTO_FIG_MM = 75;
+/** Chrome vertical de la colonne photo hors cadre : bordures `.fig` 2+2,
+ * marge `.gallery` 4, rangée de badges (10pt × 1.2 + padding 8 + bordures 2). */
+const EFFRAC_PHOTO_COL_CHROME_PX = 34;
+/** Chrome vertical d'une rangée de tableau (padding 4+4 + bordures ~2). */
+const TABLE_ROW_CHROME_PX = 10;
+/** Marge de sécurité soustraite de la hauteur utile avant le verdict. */
+const DESC_FIT_SAFETY_PX = 10;
+/** Hauteurs utiles mm perdues par thème : clair = marges @page (8 + 11 mm) ;
+ * sombre = padding-top 8 mm (`darkPageTopPad`), marges @page nulles. */
+const PAGE_VERTICAL_LOSS_MM = { dark: 8, light: 19 } as const;
+
+/** Lignes RENDUES d'un texte à `charsPerLine` caractères par ligne — comme
+ * `estimateWrappedLines` mais consciente des retours-ligne (`nl2br` les rend
+ * en `<br/>`), indispensable ici : les champs effraction réels en contiennent
+ * (une ligne par outil/action) et l'estimation px doit compter la hauteur
+ * réelle, pas la longueur brute. */
+function renderedLines(text: string, charsPerLine: number): number {
+    return text.split('\n').reduce((n, line) => n + Math.max(1, Math.ceil(line.length / charsPerLine)), 0);
+}
+
 /** Port de `document-builder.ts::EFFRAC_CHUNK_HEADER_ROWS` (bandeau fixe de
  * la 1re page : `h2` de section, `h3` « Hypothèses d'Effraction », en-tête de
  * tableau), même unité `catItemsPerPageBudget` mise à l'échelle par
@@ -1095,6 +1158,77 @@ function effractionPage(
               })
             : [[]];
 
+    // VOIEB.FIX (cf. bloc de constantes ci-dessus) — le bloc desc part sur sa
+    // propre page « (SUITE) » si la pile estimée de la DERNIÈRE page du bloc
+    // (en px CSS réels, hauteur utile du THÈME) ne peut pas l'absorber.
+    let descOnOwnPage = false;
+    if (descHtml !== '') {
+        const lineHPx = fontPx * BODY_LINE_HEIGHT_EM;
+        const tableLineHPx = (fontPx - 1) * BODY_LINE_HEIGHT_EM;
+        const h3Px = lineHPx + H3_VERTICAL_MARGINS_PX;
+        const fullCpl = estimateCharsPerLine(fontPx, geo.contentWidthPt);
+        const halfCpl = estimateCharsPerLine(fontPx, geo.contentWidthPt / 2);
+
+        // Coût px d'une rangée du tableau Hypothèses (mêmes largeurs de
+        // colonnes et facteur de chasse que `hypothesisRowCost`, mais en
+        // lignes RENDUES, retours-ligne compris).
+        const hypRowPx = (h: OiEffractionHypothesis): number => {
+            const cols = [h.title || h.id, h.effrac || '-', h.degag || '-', h.assaut || '-'];
+            const lines = Math.max(
+                ...cols.map((text, i) =>
+                    renderedLines(
+                        text,
+                        Math.max(
+                            1,
+                            Math.round(
+                                estimateCharsPerLine(fontPx, geo.contentWidthPt * (HYP_TABLE_COLUMN_FRACTIONS[i] as number)) *
+                                    HYP_ROW_CHARS_PER_LINE_FACTOR,
+                            ),
+                        ),
+                    ),
+                ),
+            );
+            return lines * tableLineHPx + TABLE_ROW_CHROME_PX;
+        };
+        const lastChunk = hypChunks[hypChunks.length - 1] as OiEffractionHypothesis[];
+        const tablePx =
+            BOX_VERTICAL_CHROME_PX +
+            h3Px +
+            (tableLineHPx + TABLE_ROW_CHROME_PX) + // thead
+            lastChunk.reduce((sum, h) => sum + hypRowPx(h), 0);
+
+        const descPx =
+            BOX_VERTICAL_CHROME_PX +
+            h3Px +
+            descEntries.reduce((sum, h) => sum + renderedLines(`${h.title || h.id} : ${h.desc}`, fullCpl), 0) * lineHPx +
+            6 * descEntries.length; // marges des <p>
+
+        let stackPx = EFFRAC_H2_HEADER_PX + tablePx + descPx;
+        if (hypChunks.length === 1) {
+            // La page porte AUSSI le bandeau Mission + photo/Caractéristiques.
+            if (missionHtml !== '') {
+                stackPx += renderedLines(`Mission : ${block.mission || '-'}`, fullCpl) * lineHPx + 6;
+            }
+            const photoColPx = doorSrc ? EFFRAC_PHOTO_FIG_MM * CSS_PX_PER_MM + EFFRAC_PHOTO_COL_CHROME_PX : 0;
+            // Grille specs 2 colonnes : par paire, un libellé (0.75 em) + la
+            // plus haute des deux valeurs.
+            const specEntries = [...measureRows, ...measureRows2];
+            let specsPx = BOX_VERTICAL_CHROME_PX + h3Px;
+            for (let i = 0; i < specEntries.length; i += 2) {
+                const leftLines = renderedLines(specEntries[i]?.[1] ?? '', halfCpl);
+                const rightLines = specEntries[i + 1] ? renderedLines(specEntries[i + 1]?.[1] ?? '', halfCpl) : 0;
+                specsPx += 0.75 * lineHPx + Math.max(leftLines, rightLines, 1) * lineHPx;
+            }
+            stackPx += Math.max(photoColPx, specsPx) + 6;
+        }
+
+        const pageHeightMm = geo.heightPt / mm(1);
+        const usablePx =
+            (pageHeightMm - (isDark ? PAGE_VERTICAL_LOSS_MM.dark : PAGE_VERTICAL_LOSS_MM.light)) * CSS_PX_PER_MM -
+            DESC_FIT_SAFETY_PX;
+        descOnOwnPage = stackPx > usablePx;
+    }
+
     return hypChunks
         .map((chunk, idx) => {
             const rowsHtml = chunk.length > 0 ? chunk.map(hypothesisRowHtml).join('') : '<tr><td colspan="4">Aucune hypothèse saisie</td></tr>';
@@ -1112,8 +1246,8 @@ function effractionPage(
                 // le nombre (contraste voie A, cf. matrice-rupture.md §2) — la
                 // SCISSION PILOTÉE ci-dessus (BLIND.FIX point 2) élimine en plus
                 // l'orphelinage du TITRE lors de cette fragmentation native.
-                `<table>${hypTableHead}<tbody>${rowsHtml}</tbody></table></div>` +
-                (isLastChunk && descHtml !== '' ? descHtml : '');
+                `<table class="hyp-table">${hypTableHead}<tbody>${rowsHtml}</tbody></table></div>` +
+                (isLastChunk && descHtml !== '' && !descOnOwnPage ? descHtml : '');
             const pageTitle = idx === 0 ? title : `${title} (SUITE)`;
             const bodyHtml =
                 idx === 0
@@ -1123,7 +1257,14 @@ function effractionPage(
                     : hypBoxHtml;
             return `<div class="adv-page" style="font-size:${fontPx}px;"><h2>${pageTitle}</h2>${bodyHtml}</div>`;
         })
-        .join('');
+        .join('')
+        // VOIEB.FIX — page dédiée « (SUITE) » du bloc desc quand il ne tient
+        // pas sur la dernière page du bloc (cf. décision `descOnOwnPage`).
+        .concat(
+            descOnOwnPage
+                ? `<div class="adv-page" style="font-size:${fontPx}px;"><h2>${title} (SUITE)</h2>${descHtml}</div>`
+                : '',
+        );
 }
 
 /**

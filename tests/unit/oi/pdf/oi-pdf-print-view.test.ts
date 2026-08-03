@@ -396,6 +396,133 @@ describe('champs fantômes effraction (mission/porte/prof_marche/prof_moulure/hy
 });
 
 // ===========================================================================
+// VOIEB.FIX — placement du bloc « Description des Hypothèses » (motif
+// D2-équivalent, thème CLAIR uniquement, cf. JSDoc des constantes
+// `DESC_FIT_SAFETY_PX`/`PAGE_VERTICAL_LOSS_MM` de print-view.ts). Fixture
+// ANONYMISÉE à métriques identiques à la fixture réelle du banc (mêmes
+// longueurs de champs, mêmes retours-ligne, photo de porte présente) : la
+// page effraction est alors PRESQUE pleine — le bloc desc tient encore dans
+// les 202 mm utiles du thème sombre mais déborde des 191 mm du clair.
+// ===========================================================================
+describe('placement du bloc desc effraction (asymétrie clair/sombre)', () => {
+    function makeNearFullEffrac(): OiFormData {
+        const block: OiEffracShim = {
+            id: 'e1',
+            title: 'PORTE TEST',
+            mission:
+                'APPUYER LA CELLULE DE FRANCHISSEMENT\n' +
+                "L'objectif premier de la cellule est d'effectuer une ouverture rapide et securisee de la porte principale facade NORD " +
+                'afin de permettre la progression fluide du groupe de tete. En mesure de se rearticuler sur ordre.',
+            porte: 'Porte PVC',
+            structure: '/',
+            serrurerie: '/',
+            environnement: '', bati_a_bati: '', dormant_a_dormant: '', prof_linteaux: '', prof_bati: '',
+            h_porte: '', h_marche: '', prof_marche: '', prof_moulure: '',
+            members: [],
+            hypotheses: [
+                {
+                    id: 'he0',
+                    title: 'Hypothèse 1',
+                    desc: 'Controle du palier si besoin\nTest porte NORD 1\nSi ferme : ouverture manuelle aux outils (OutilUn / OutilDeux)',
+                    effrac: 'AAA : OutilUn\nBBB : OutilDeux',
+                    degag: 'Repli en arriere de la cellule effrac',
+                    assaut: 'Entree NORD puis ouverture',
+                },
+                {
+                    id: 'he1',
+                    title: 'Hypothèse 2',
+                    desc: 'Echec ouverture manuelle',
+                    effrac: 'Si echec ouverture manuelle\nAAA : OutilUn\nBBB : Masse lourde',
+                    degag: 'Repli en arriere de la cellule effrac',
+                    assaut: 'Entree NORD puis ouverture',
+                },
+            ],
+        };
+        return {
+            effraction_blocks: [block],
+            dynamic_photos: {
+                photo_effrac_e1: [{ id: 'ph1', annotations: '[]', tools: '["OutilUn","Masse lourde"]', other_tools: '', customTitle: '' }],
+            },
+        };
+    }
+    type OiEffracShim = OiEffractionBlock;
+    const photos = { logphoto: 'data:image/jpeg;base64,bG9n', ph1: 'data:image/png;base64,cG9ydGU=' };
+
+    it('thème CLAIR (191 mm utiles) : le bloc desc part sur sa PROPRE page titrée "(SUITE)", jamais en page nue', () => {
+        const html = buildPrintDocument({ formData: makeNearFullEffrac(), photosBase64: photos, isDark: false }, { format: 'a4' });
+        expect(html).toContain('<h2>Articulation : EFFRACTION - PORTE TEST (SUITE)</h2>');
+        // Le bloc desc est APRÈS le titre (SUITE), pas sur la 1re page du bloc.
+        const suiteIdx = html.indexOf('Articulation : EFFRACTION - PORTE TEST (SUITE)');
+        const descIdx = html.indexOf('Description des Hypothèses');
+        expect(descIdx).toBeGreaterThan(suiteIdx);
+        // Zéro perte de données.
+        expect(html).toContain('Controle du palier si besoin');
+        expect(html).toContain('Echec ouverture manuelle');
+    });
+
+    it('thème SOMBRE (202 mm utiles) : le MÊME contenu garde le bloc desc sur la page du tableau, sans "(SUITE)"', () => {
+        const html = buildPrintDocument({ formData: makeNearFullEffrac(), photosBase64: photos, isDark: true }, { format: 'a4' });
+        expect(html).not.toContain('PORTE TEST (SUITE)');
+        expect(html).toContain('Description des Hypothèses');
+        expect(html).toContain('Controle du palier si besoin');
+    });
+
+    it('bloc effraction court (sans photo, desc bref) : jamais de page desc séparée, quel que soit le thème', () => {
+        const formData: OiFormData = {
+            effraction_blocks: [
+                {
+                    id: 'e1', title: 'PORTE COURTE', mission: 'Mission breve.', porte: 'Bois',
+                    structure: '', serrurerie: '', environnement: '', bati_a_bati: '', dormant_a_dormant: '',
+                    prof_linteaux: '', prof_bati: '', h_porte: '', h_marche: '', prof_marche: '', prof_moulure: '',
+                    members: [],
+                    hypotheses: [{ id: 'h1', title: 'Hypothèse 1', desc: 'Courte.', effrac: 'E', degag: 'D', assaut: 'A' }],
+                },
+            ],
+        };
+        for (const isDark of [false, true]) {
+            const html = buildPrintDocument({ formData, photosBase64: photos, isDark }, { format: 'a4' });
+            expect(html).not.toContain('PORTE COURTE (SUITE)');
+            expect(html).toContain('Description des Hypothèses');
+        }
+    });
+});
+
+// ===========================================================================
+// Durcissement défensif print-style.ts (SPEC-PDF-DEFINITIF.md §8.2) —
+// présence des règles `break-*` MODERNES en complément des `page-break-*`.
+// ===========================================================================
+describe('durcissement défensif §8.2 (syntaxe break-* moderne)', () => {
+    it.each([['clair', PDF_LIGHT], ['sombre', PDF_DARK]] as const)('printCss (%s) contient les 3 règles §8.2', (_label, p) => {
+        const css = printCss(p, 12, true, '');
+        expect(css).toContain('h2, h3 { break-after: avoid; }');
+        expect(css).toContain('.adv-page .box, .accent-card { break-inside: avoid; }');
+        expect(css).toContain('.hyp-table thead { break-inside: avoid; }');
+        expect(css).toContain('.hyp-table thead + tbody tr:first-child { break-before: avoid; }');
+    });
+
+    it('le tableau Hypothèses d\'Effraction porte la classe hyp-table (cible des règles §8.2)', () => {
+        const { formData } = makeEffracFormDataForClass();
+        const html = buildPrintDocument(makeData(formData), { format: 'a4' });
+        expect(html).toContain('<table class="hyp-table">');
+    });
+
+    function makeEffracFormDataForClass(): { formData: OiFormData } {
+        return {
+            formData: {
+                effraction_blocks: [
+                    {
+                        id: 'e1', title: 'PORTE', mission: '-', porte: '-', structure: '-', serrurerie: '-',
+                        environnement: '-', bati_a_bati: '-', dormant_a_dormant: '-', prof_linteaux: '-', prof_bati: '-',
+                        h_porte: '-', h_marche: '-', prof_marche: '-', prof_moulure: '-', members: [],
+                        hypotheses: [{ id: 'h1', title: 'H1', desc: '', effrac: 'E', degag: 'D', assaut: 'A' }],
+                    },
+                ],
+            },
+        };
+    }
+});
+
+// ===========================================================================
 // printOiHighQuality (SPEC-PDF-V3.md §5.3)
 // ===========================================================================
 describe('printOiHighQuality', () => {

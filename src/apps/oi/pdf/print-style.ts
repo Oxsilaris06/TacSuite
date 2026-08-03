@@ -67,6 +67,19 @@ export function printCss(p: OiPdfPalette, fontPx: number, landscape: boolean, fo
        letter-spacing:1px; page-break-after:avoid; }
   h3 { font-size:${fontPx}px; font-weight:bold; margin:10px 0 5px 0;
        text-decoration:underline; color:${p.accent}; page-break-after:avoid; }
+  /* Durcissement défensif (SPEC-PDF-DEFINITIF.md §8.2) — syntaxe MODERNE en
+     COMPLÉMENT des propriétés héritées page-break-* posées ci-dessus/dessous :
+     Chromium honore les deux, mais 'break-*' est celle qui fait autorité
+     (spec css-break-3) ; poser les deux rend structurellement impossible le
+     motif « titre orphelin en bas de page » (D2 voie A) même si le moteur
+     cesse un jour d'aliasser l'ancienne syntaxe. */
+  h2, h3 { break-after: avoid; }
+  .adv-page .box, .accent-card { break-inside: avoid; }
+  /* Analogue CSS de R1 (voie A, headerRows) pour D2 : l'en-tête du tableau
+     Hypothèses d'Effraction ne reste jamais seul en bas de page — il est
+     insécable ET soudé à la première ligne de données. */
+  .hyp-table thead { break-inside: avoid; }
+  .hyp-table thead + tbody tr:first-child { break-before: avoid; }
   p { margin:3px 0; text-align:justify; overflow-wrap:anywhere; }
   .muted { color:${p.muted}; }
   .danger { color:${p.danger}; font-weight:bold; }
