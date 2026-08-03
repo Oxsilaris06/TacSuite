@@ -771,20 +771,36 @@ const TITLE_ONLY_MAX_CONTENT_CHARS = 40;
  * systématiquement sur cette page de clôture légitime, quel que soit le jeu
  * de données (faux positif garanti, pas un défaut de pagination).
  */
-export function assertB3_noTitleOnlyPage(text) {
+// BF.REFIX (round 2, point 2) — faux positif en mode `--voie=b` : une page de
+// galerie photo (ex. « 6. LOGISTIQUE & TRANSPORTS (CHEMINEMENT) ») ne porte
+// souvent QU'une légende courte sous l'image (« Transport PSIG -> PR », < 40
+// caractères) — B3 ne comptait alors QUE les caractères de texte extraits par
+// `pdftotext`, aveugle à l'image elle-même (`pdfimages` n'était consulté que
+// pour A6). Constat terrain : `B-recipe-light.pdf`/`B-recipe-dark.pdf`
+// (fixture `recipe-data.json`) échouaient en STRICT sur la page 7, qui porte
+// pourtant bien 1 image embarquée (`pdfimages -list`) — pas un titre nu.
+// Correctif : en mode `--voie=b` uniquement, une page qui porte au moins une
+// image (`images`, même détection que A6/B1/B4) est exemptée du seuil de
+// contenu texte — la photo EST le contenu de cette page, pas un titre seul.
+// Mode `--voie=a` (pdfmake) inchangé : ce moteur n'a jamais ce motif de page
+// dédiée à une seule image de galerie (E4 du README — 2 photos/page).
+export function assertB3_noTitleOnlyPage(text, images = [], { voie = 'a' } = {}) {
   const pages = splitPages(text);
   const finalMarkerNorm = normalize(MARKERS[14].text);
+  const pagesWithImage = voie === 'b' ? new Set(images.map((img) => img.page)) : new Set();
   const hits = [];
   pages.forEach((pageText, idx) => {
+    const pageNum = idx + 1;
     const norm = normalize(pageText);
     const matched = MARKERS.filter((m) => norm.includes(normalize(m.text)));
     if (matched.length === 0) return;
     if (matched.length === 1 && normalize(matched[0].text) === finalMarkerNorm) return;
+    if (pagesWithImage.has(pageNum)) return; // page-galerie : la photo EST le contenu
     const titleLen = Math.max(...matched.map((m) => normalize(m.text).replace(/\s/g, '').length));
     const total = nonBlankLength(pageText);
     const contentLen = Math.max(0, total - titleLen);
     if (contentLen < TITLE_ONLY_MAX_CONTENT_CHARS) {
-      hits.push({ page: idx + 1, contentLen, titles: matched.map((m) => m.text) });
+      hits.push({ page: pageNum, contentLen, titles: matched.map((m) => m.text) });
     }
   });
   if (hits.length > 0) {
@@ -796,7 +812,10 @@ export function assertB3_noTitleOnlyPage(text) {
       detail: `${hits.length} page(s) à titre seul — < ${TITLE_ONLY_MAX_CONTENT_CHARS} caractères de contenu hors titre : ${list}`,
     };
   }
-  return { ok: true, detail: `0 page à titre seul (seuil ${TITLE_ONLY_MAX_CONTENT_CHARS} car. de contenu hors titre)` };
+  return {
+    ok: true,
+    detail: `0 page à titre seul (seuil ${TITLE_ONLY_MAX_CONTENT_CHARS} car. de contenu hors titre${voie === 'b' ? ', pages-galerie exemptées' : ''})`,
+  };
 }
 
 // ===========================================================================
@@ -1160,7 +1179,7 @@ function main() {
     // de --lenient (cf. en-tête de ces 3 fonctions).
     { code: 'B1', ...assertB1_noOrphanPage(text, images, { voie: opts.voie }) },
     { code: 'B2', ...assertB2_noVerticalWordSplit(text, { voie: opts.voie }) },
-    { code: 'B3', ...assertB3_noTitleOnlyPage(text) },
+    { code: 'B3', ...assertB3_noTitleOnlyPage(text, images, { voie: opts.voie }) },
     // Guardrail pagination round 2 (mission PG.REFIX) — mêmes garanties que
     // B1-B3 (toujours évaluées, indépendantes de --lenient).
     { code: 'B4', ...assertB4_noHeaderlessDashContinuation(text, images) },

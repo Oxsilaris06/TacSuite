@@ -770,6 +770,30 @@ const EFFRAC_VOIE_B_REST_CAPACITY_FACTOR = 1.0;
  */
 const EFFRAC_CHUNK_SAFETY_MARGIN = 2;
 
+/**
+ * BF.REFIX (round 2, point 1) — `EFFRAC_CHUNK_SAFETY_MARGIN` ci-dessus (2
+ * unités) suffit à absorber la variance de rendu inter-fixtures sur la
+ * capacité de la 1re page en thème SOMBRE (calibration BF.REFIX round 1,
+ * vérifiée sur `stress-27hyp.json` à `stress-40hyp.json`), mais s'est révélée
+ * INSUFFISANTE en thème CLAIR : vérifié au banc (`render-b.mjs` + chromium)
+ * sur les 7 volumes de `stress-Nhyp.json` (13/14/20/27/28/30/40 hypothèses,
+ * `hypothesisRowCost` à 2 chacune) — la 1re page tient RÉELLEMENT 12
+ * hypothèses en clair (24 unités) contre 13 en sombre (26 unités), un écart
+ * de rendu de 2 unités (~1 hypothèse) reproductible 7/7 en clair, 0/7 en
+ * sombre (`B7` de `verify-structure.mjs --voie=b`, page de continuation sans
+ * titre/thead pour le 13e cas). Aucune différence de police/densité connue
+ * entre les deux thèmes (mêmes règles CSS `print-style.ts`, seule la palette
+ * de couleurs change) — écart constaté au pixel près, pas expliqué par une
+ * variable du calcul ; on le compense donc par une marge de sécurité
+ * SUPPLÉMENTAIRE, propre au thème clair, appliquée UNIQUEMENT au budget de
+ * la 1re page (la page « (SUITE) » n'a pas cette 1re page dense
+ * Mission + Caractéristiques Techniques et n'a montré aucun écart au banc).
+ * Un excédent de marge en thème sombre resterait sans risque (chunk qui se
+ * scinde une page plus tôt, jamais de perte de données) — la valeur reste
+ * donc nulle pour ce thème plutôt que dupliquée par prudence inutile.
+ */
+const EFFRAC_FIRST_PAGE_LIGHT_EXTRA_MARGIN = 2;
+
 /** Port de `document-builder.ts::EFFRAC_CHUNK_HEADER_ROWS` (bandeau fixe de
  * la 1re page : `h2` de section, `h3` « Hypothèses d'Effraction », en-tête de
  * tableau), même unité `catItemsPerPageBudget` mise à l'échelle par
@@ -830,6 +854,7 @@ function effractionPage(
     photosBase64: Record<string, string>,
     dynamicPhotos: Record<string, OiPhotoMeta[]>,
     format: OiPdfFormat,
+    isDark: boolean,
 ): string {
     const photoMeta = (dynamicPhotos[`photo_effrac_${block.id}`] ?? [])[0];
     const doorSrc = photoMeta ? photosBase64[photoMeta.id] : undefined;
@@ -932,7 +957,11 @@ function effractionPage(
     const heightRatio = geo.contentHeightPt / A4_CONTENT_HEIGHT_PT;
     const budget = Math.max(1, Math.round(catItemsPerPageBudget(fontPx) * heightRatio * EFFRAC_VOIE_B_CAPACITY_FACTOR));
     const headCost = effractionHeadRowCost(block, fontPx, geo.contentWidthPt);
-    const firstPageBudget = Math.max(1, budget - EFFRAC_CHUNK_HEADER_ROWS - headCost - EFFRAC_CHUNK_SAFETY_MARGIN);
+    const firstPageLightExtraMargin = isDark ? 0 : EFFRAC_FIRST_PAGE_LIGHT_EXTRA_MARGIN;
+    const firstPageBudget = Math.max(
+        1,
+        budget - EFFRAC_CHUNK_HEADER_ROWS - headCost - EFFRAC_CHUNK_SAFETY_MARGIN - firstPageLightExtraMargin,
+    );
     const restBudget = Math.max(1, Math.round(catItemsPerPageBudget(fontPx) * heightRatio * EFFRAC_VOIE_B_REST_CAPACITY_FACTOR));
     const restPageBudget = Math.max(1, restBudget - EFFRAC_CHUNK_SAFETY_MARGIN);
     const hypotheses = block.hypotheses;
@@ -986,6 +1015,7 @@ function articulationBlocksLoop(
     photosBase64: Record<string, string>,
     dynamicPhotos: Record<string, OiPhotoMeta[]>,
     format: OiPdfFormat,
+    isDark: boolean,
 ): string {
     const moicpBlocks = formData.moicp_blocks ?? [];
     const zmspcpBlocks = formData.zmspcp_blocks ?? [];
@@ -1014,7 +1044,7 @@ function articulationBlocksLoop(
 
         const effrac = effracBlocks[i];
         if (effrac) {
-            html += effractionPage(effrac, photosBase64, dynamicPhotos, format);
+            html += effractionPage(effrac, photosBase64, dynamicPhotos, format, isDark);
             const photos = dynamicPhotos[`photo_effrac_${effrac.id}`] ?? [];
             html += galleryPages(`Effraction : ${esc(textOr(effrac.title))}`, photos, photosBase64);
         }
@@ -1120,7 +1150,16 @@ function finalPage(
  * verbatim indépendant du format (toujours « paysage »).
  */
 export function buildPrintDocument(data: OiPdfCollectedData, opts: { format: OiPdfFormat }): string {
-    const { formData, photosBase64, isDark } = data;
+    const { formData, isDark } = data;
+    // BF.REFIX (round 2, point 3) — `photosBase64` est requis par le contrat
+    // `OiPdfCollectedData`, mais la voie A le défausse déjà (`?? {}`,
+    // `generate-from-fixture.mjs:193`) : toute donnée réelle sans champ
+    // (constaté via le banc `render-b.mjs` sur `gate-recette.json`) faisait
+    // planter `buildPrintDocument` (déréférencement de
+    // `photosBase64['custom_pdf_background']` plus bas) alors que la voie A
+    // produit un PDF sans broncher — asymétrie corrigée en alignant la voie B
+    // sur le même filet.
+    const photosBase64 = data.photosBase64 ?? {};
     const p = palette(isDark);
     const dynamicPhotos = formData.dynamic_photos ?? {};
     const fontPx = documentFontPx(documentVolume(formData));
@@ -1136,7 +1175,7 @@ export function buildPrintDocument(data: OiPdfCollectedData, opts: { format: OiP
     body += executionPage(formData, p);
     body += galleryPages('6. LOGISTIQUE & TRANSPORTS (Cheminement)', logisticsPhotos(dynamicPhotos), photosBase64);
     body += articulationPage(formData);
-    body += articulationBlocksLoop(formData, photosBase64, dynamicPhotos, opts.format);
+    body += articulationBlocksLoop(formData, photosBase64, dynamicPhotos, opts.format, !!isDark);
     body += catPage(formData);
     body += patracPage(formData, p);
     body += finalPage(formData, photosBase64, dynamicPhotos);
