@@ -113,6 +113,21 @@ function strOr(v: unknown, fallback = '-'): string {
 }
 
 /**
+ * Une valeur est VIDE (blanche OU réduite au repli littéral `'-'`) —
+ * définition PARTAGÉE, port du filtre strategica (`.filter { it.isNotBlank()
+ * }`, `OrderHtmlArticulation.kt:275-295`/`OrderHtmlAdversaires.kt:172-174`) :
+ * un tiret seul n'est jamais une DONNÉE saisie, seulement un repli
+ * d'affichage historique de ce module (`strOr`/`|| '-'`). Utilisée pour
+ * décider qu'UNE LIGNE/CARTE entière doit être OMISE plutôt que rendue avec
+ * son repli — jamais pour le texte affiché lui-même (`strOr` reste le repli
+ * de RENDU une fois la carte confirmée non vide par ailleurs).
+ */
+function isBlankOrDash(v: unknown): boolean {
+    const t = str(v).trim();
+    return t === '' || t === '-';
+}
+
+/**
  * Bordure `p.border` sur les 4 côtés d'une cellule — port de
  * `td,th{border:1px solid p.border}` (print-style.ts:67-68), posée par
  * CELLULE et jamais dans `LAYOUT_BORDERED` (cf. tête de `blocks.ts`), pour
@@ -628,25 +643,40 @@ function buildAdversaryFiche(ctx: BuildCtx, adv: OiAdversary, index: number): Co
 
     // Blindage BLIND.A : `domicile_adversaire`/`attitude_adversaire`/listes
     // véhicules sont non bornés — filet `unbreakable:false`.
-    const localisationCard = card(
-        [
-            h3('LOCALISATION', p),
-            labelValue('Domicile', strOr(adv.domicile_adversaire), p),
-            labelValue('Volume / Esprit', `${volumeList.join(', ') || '-'} | ${etatEspritList.join(', ') || '-'}`, p),
-        ],
-        p,
-        { unbreakable: false },
-    );
+    //
+    // CORRECTIF BLIND.REFIX round 2 — RÉGRESSION B1/B5 SUR UNE PETITE FICHE
+    // (`adv-atcd5.json`) : `localisationCard`/`mobiliteCard` étaient
+    // TOUJOURS rendues, chacune de ses 2 lignes systématiquement repliée sur
+    // `'-'` (`strOr`) même quand `domicile_adversaire`/`volumeList`/
+    // `etatEspritList`/`vehiculesList`/`attitude_adversaire` sont TOUS vides
+    // — jamais omises comme `isEffractionBlockEmpty`/`effractionMeasuresBody`
+    // le font déjà pour EFFRACTION (port strategica `localisationRows()`,
+    // `OrderHtmlAdversaires.kt:172-174` : `.filter { it.second.isNotBlank()
+    // }`). Sur une fiche adversaire COURTE (identité/dangerosité minimales),
+    // ce contenu 100 % « LABEL : - » suffisait à lui seul à faire déborder
+    // `firstPage` sur une page 3 SUPPLÉMENTAIRE ne portant QUE ces libellés
+    // vides (guardrail B1 orpheline + B5 section vide non omise, preuve
+    // `A-advsmall-03.png`) — chaque LIGNE (pas la carte entière) est
+    // maintenant filtrée indépendamment, la carte disparaît si les DEUX
+    // lignes sont vides, et le `grid2`/marge qui la précède disparaît à son
+    // tour si LES DEUX cartes sont vides.
+    const domicileValue = str(adv.domicile_adversaire).trim();
+    const volumeEspritValue = [volumeList.join(', '), etatEspritList.join(', ')].filter((s) => s !== '').join(' | ');
+    const localisationRows: Content[] = [
+        !isBlankOrDash(domicileValue) ? labelValue('Domicile', domicileValue, p) : null,
+        !isBlankOrDash(volumeEspritValue) ? labelValue('Volume / Esprit', volumeEspritValue, p) : null,
+    ].filter((c): c is Content => c !== null);
+    const localisationCard: Content | null =
+        localisationRows.length > 0 ? card([h3('LOCALISATION', p), ...localisationRows], p, { unbreakable: false }) : null;
 
-    const mobiliteCard = card(
-        [
-            h3('MOBILITÉ', p),
-            labelValue('Véhicules / Plaques', vehiculesList.join(' | ') || '-', p),
-            labelValue('Attitude Attendue', strOr(adv.attitude_adversaire), p),
-        ],
-        p,
-        { unbreakable: false },
-    );
+    const vehiculesValue = vehiculesList.join(' | ');
+    const attitudeValue = str(adv.attitude_adversaire).trim();
+    const mobiliteRows: Content[] = [
+        !isBlankOrDash(vehiculesValue) ? labelValue('Véhicules / Plaques', vehiculesValue, p) : null,
+        !isBlankOrDash(attitudeValue) ? labelValue('Attitude Attendue', attitudeValue, p) : null,
+    ].filter((c): c is Content => c !== null);
+    const mobiliteCard: Content | null =
+        mobiliteRows.length > 0 ? card([h3('MOBILITÉ', p), ...mobiliteRows], p, { unbreakable: false }) : null;
 
     const rightColumn: Content[] = [identityCard, dangerCard];
     const head: Content =
@@ -660,13 +690,13 @@ function buildAdversaryFiche(ctx: BuildCtx, adv: OiAdversary, index: number): Co
               }
             : { stack: rightColumn };
 
+    const localMobileBlock: Content[] =
+        localisationCard !== null || mobiliteCard !== null
+            ? [{ text: '', margin: [0, 6, 0, 0] }, grid2(localisationCard !== null ? [localisationCard] : [], mobiliteCard !== null ? [mobiliteCard] : [])]
+            : [];
+
     const firstPage: Content = {
-        stack: [
-            ficheAdversaireTitleBar(advTitle, p),
-            head,
-            { text: '', margin: [0, 6, 0, 0] },
-            grid2([localisationCard], [mobiliteCard]),
-        ],
+        stack: [ficheAdversaireTitleBar(advTitle, p), head, ...localMobileBlock],
         fontSize: fontPx,
     };
     return [firstPage, ...dangerExtraPages];
@@ -1153,10 +1183,190 @@ const HYP_TABLE_COLUMN_FRACTIONS = [0.2, 0.3, 0.25, 0.25];
  * plus dicte la hauteur réelle de la ligne de tableau), jamais leur somme.
  * `h.desc` n'entre PAS dans ce coût (rendu à part, cf. `hypothesisTableRow`).
  */
+/**
+ * Marge de sécurité appliquée à `estimateCharsPerLine` avant de mesurer une
+ * cellule d'hypothèse (BLIND.REFIX round 2, même esprit que
+ * `DANGER_BUDGET_SAFETY_FACTOR` ci-dessus). `estimateCharsPerLine` mesure une
+ * chasse fixe par CARACTÈRE alors que pdfmake enveloppe le texte aux
+ * frontières de MOT — un texte plein de mots de 8-10 lettres n'utilise
+ * jamais la pleine largeur de colonne jusqu'au dernier caractère avant de
+ * passer à la ligne suivante. Constat mesuré (`effrac-n6.json`, hyp. 1,
+ * colonne « Technique / Moyen » à `fontPx = 9` : 78 caractères, largeur
+ * calculée pour 41 caractères/ligne → coût estimé 2 lignes, rendu RÉEL 3
+ * lignes, cf. `A-effrac12L-11.png`/pdftotext) : sans cette marge, la 4e
+ * hypothèse d'`effrac-n6` débordait sa page SANS titre « (SUITE) ».
+ */
+const HYP_ROW_COST_SAFETY_FACTOR = 0.8;
+
 function hypothesisRowCost(h: OiEffractionHypothesis, fontPx: number, contentWidthPt: number): number {
-    const charsPerLineCols = HYP_TABLE_COLUMN_FRACTIONS.map((f) => estimateCharsPerLine(fontPx, contentWidthPt * f));
+    const charsPerLineCols = HYP_TABLE_COLUMN_FRACTIONS.map((f) =>
+        Math.max(1, Math.floor(estimateCharsPerLine(fontPx, contentWidthPt * f) * HYP_ROW_COST_SAFETY_FACTOR)),
+    );
     const cols = [h.title || h.id, h.effrac || '-', h.degag || '-', h.assaut || '-'];
     return Math.max(...cols.map((text, i) => estimateWrappedLines(text, charsPerLineCols[i] as number)));
+}
+
+/**
+ * Coût EN LIGNES (même unité que `hypothesisRowCost`/`catItemsPerPageBudget`)
+ * du bandeau fixe présent sur CHAQUE page de la scission Hypothèses
+ * d'Effraction — titre `h2` de section (avec filet `canvas` souligné),
+ * titre `h3` « Hypothèses d'Effraction (suite) », ligne d'en-tête du tableau
+ * répétée (`headerRows:1`) et marges inter-blocs. Calibré empiriquement
+ * (BLIND.REFIX round 2) contre `effrac-12-hypotheses.json` : la page
+ * « (SUITE) » comportant 7 hypothèses (coût 21) rend confortablement, la
+ * 8e (coût 24) déborde SILENCIEUSEMENT hors scission pilotée (preuve
+ * `A-effrac12L-13.png`, en-tête de tableau répétée par pdfmake SANS aucun
+ * titre) — la capacité réelle d'une page « (suite) » se situe donc entre 21
+ * et 23 coûts ; `EFFRAC_CHUNK_HEADER_ROWS = 5` (`budget - 5` ≈ 21 à
+ * `fontPx = 9`) retient la borne la plus SÛRE (jamais > 23).
+ */
+const EFFRAC_CHUNK_HEADER_ROWS = 5;
+
+/**
+ * Coût EN LIGNES (même unité que ci-dessus) du bandeau MISSION + carte
+ * « Caractéristiques Techniques » — présent UNIQUEMENT sur la 1re page de la
+ * scission (`buildEffractionPages`, `head`/`missionLine`), jamais déduit du
+ * budget avant BLIND.REFIX round 2 (cause de la queue orpheline sans
+ * « (SUITE) » — preuve `A-effrac12L-11.png`). Mesure grossière ligne par
+ * ligne (`estimateWrappedLines`), même esprit que `hypothesisRowCost` : la
+ * ligne « Mission » et « Prof. Moulure » en pleine largeur, les 3 champs de
+ * chaque colonne du `grid2` central (Structure/Serrurerie/Environnement vs
+ * Bâti à Bâti/Dormant à Dormant/Prof. Linteaux) et les 2 `grid2` d'une seule
+ * ligne (H. Porte/H. Marche, Prof. Marche/Prof. Bâti) à demi-largeur, plus
+ * « Type de Porte » et le titre `h3` « Caractéristiques Techniques » en
+ * pleine largeur. Calibré empiriquement (round 2) contre le même fixture :
+ * seules 3 hypothèses (coût 9) tiennent réellement sur la page 1 (la 4e
+ * déborde sans « (SUITE) », preuve `A-effrac12L-11.png`) — `+2` de marge de
+ * sécurité (bordures/paddings de carte non modélisés) porte le budget page 1
+ * à `budget - EFFRAC_CHUNK_HEADER_ROWS - headCost` ≈ 9 à `fontPx = 9`, sous
+ * la capacité réelle observée plutôt qu'au-dessus (zéro perte de données :
+ * mieux vaut une page 1 légèrement sous-remplie qu'une queue orpheline).
+ */
+/**
+ * Une valeur de mesure technique (§3.4/BLIND.REFIX round 2) est VIDE si
+ * blanche OU réduite au repli littéral `-` — port du filtre strategica
+ * `mesures()` (`OrderHtmlArticulation.kt:275-295`, `.filter { it.second.
+ * isNotBlank() }`), cf. `isBlankOrDash` ci-dessus. N'agit QUE sur les 12
+ * mesures techniques ci-dessous — `mission` (champ fantôme #3, toujours
+ * rendu en tête de page indépendamment de ce filtre) n'en fait PAS partie.
+ */
+function isEffractionMeasureBlank(v: string | undefined): boolean {
+    return isBlankOrDash(v);
+}
+
+/**
+ * Corps de la carte « Caractéristiques Techniques » (§3.4 règle 1, BLIND.A
+ * champs fantômes #3) — BLINDAGE round 2 : port du filtrage strategica
+ * `mesures()` (cf. `isEffractionMeasureBlank`). RÉGRESSION CORRIGÉE (B5,
+ * guardrail `verify-structure.mjs`) : avant ce correctif, les 12 mesures
+ * étaient TOUJOURS rendues avec leur repli `'-'` (`labelValue(label,
+ * block.x || '-', p)`) — un bloc dont `isEffractionBlockEmpty` ne permettait
+ * plus l'omission (dès qu'`mission`/une hypothèse/une photo était saisie,
+ * cf. sa JSDoc) affichait alors une page « saturée de libellés vides »
+ * (12 × `LABEL : -`, ~169 car. de contenu utile, preuve
+ * `A-effracvide-10.png`) — strategica ne fait JAMAIS cela (`mesures()`
+ * filtre les lignes vides, rend « Aucune mesure renseignée. » si tout est
+ * vide). Les 3 groupes `grid2` sont filtrés INDÉPENDAMMENT (une colonne peut
+ * rester seule si l'autre est entièrement vide) ; le filet pointillé
+ * (`canvas`) n'est posé QUE s'il sépare deux groupes non vides.
+ */
+function effractionMeasuresBody(block: OiEffractionBlock, p: OiPdfPalette, rightColWidthPt: number): Content[] {
+    const allBlank = [
+        block.porte,
+        block.structure,
+        block.serrurerie,
+        block.environnement,
+        block.bati_a_bati,
+        block.dormant_a_dormant,
+        block.prof_linteaux,
+        block.prof_bati,
+        block.h_porte,
+        block.h_marche,
+        block.prof_marche,
+        block.prof_moulure,
+    ].every(isEffractionMeasureBlank);
+    if (allBlank) {
+        return [h3('Caractéristiques Techniques', p), { text: 'Aucune mesure renseignée.', color: p.muted }];
+    }
+
+    // Champ fantôme #3 (`porte`, `OrderHtmlArticulation.kt:279`) : 1re ligne,
+    // AVANT Structure — même ordre que strategica (`champs-fantomes.md` #2).
+    const typePorte: Content[] = !isEffractionMeasureBlank(block.porte) ? [labelValue('Type de Porte', block.porte, p)] : [];
+
+    const leftItems: Content[] = [
+        !isEffractionMeasureBlank(block.structure) ? labelValue('Structure', block.structure, p) : null,
+        !isEffractionMeasureBlank(block.serrurerie) ? labelValue('Serrurerie', block.serrurerie, p) : null,
+        !isEffractionMeasureBlank(block.environnement) ? labelValue('Environnement', block.environnement, p) : null,
+    ].filter((c): c is Content => c !== null);
+    const rightItems: Content[] = [
+        !isEffractionMeasureBlank(block.bati_a_bati) ? labelValue('Bâti à Bâti', `${block.bati_a_bati} mm`, p) : null,
+        !isEffractionMeasureBlank(block.dormant_a_dormant) ? labelValue('Dormant à Dormant', `${block.dormant_a_dormant} mm`, p) : null,
+        !isEffractionMeasureBlank(block.prof_linteaux) ? labelValue('Prof. Linteaux', `${block.prof_linteaux} mm`, p) : null,
+    ].filter((c): c is Content => c !== null);
+    const gridTop: Content[] = leftItems.length > 0 || rightItems.length > 0 ? [grid2(leftItems, rightItems)] : [];
+
+    const hPorteItem: Content[] = !isEffractionMeasureBlank(block.h_porte) ? [labelValue('H. Porte', block.h_porte, p)] : [];
+    const hMarcheItem: Content[] = !isEffractionMeasureBlank(block.h_marche) ? [labelValue('H. Marche', block.h_marche, p)] : [];
+    const gridH: Content[] = hPorteItem.length > 0 || hMarcheItem.length > 0 ? [grid2(hPorteItem, hMarcheItem)] : [];
+
+    // Champ fantôme #3 (`prof_marche`/`prof_moulure`, `OrderHtmlArticulation.kt:289-290`)
+    // — dernières lignes des mesures, même ordre que strategica.
+    const profMarcheItem: Content[] = !isEffractionMeasureBlank(block.prof_marche) ? [labelValue('Prof. Marche', `${block.prof_marche} mm`, p)] : [];
+    const profBatiItem: Content[] = !isEffractionMeasureBlank(block.prof_bati) ? [labelValue('Prof. Bâti', block.prof_bati, p)] : [];
+    const gridProf: Content[] = profMarcheItem.length > 0 || profBatiItem.length > 0 ? [grid2(profMarcheItem, profBatiItem)] : [];
+
+    const profMoulure: Content[] = !isEffractionMeasureBlank(block.prof_moulure) ? [labelValue('Prof. Moulure', `${block.prof_moulure} mm`, p)] : [];
+
+    const before = [...typePorte, ...gridTop];
+    const after = [...gridH, ...gridProf, ...profMoulure];
+    const separator: Content[] =
+        before.length > 0 && after.length > 0
+            ? [
+                  {
+                      // Filet pointillé pleine largeur (§3.2 ligne 8f) — largeur approximée
+                      // à la colonne droite moins le padding de carte (2×8pt), non testée
+                      // au pixel près (aucune assertion géométrique côté test).
+                      canvas: [
+                          { type: 'line', x1: 0, y1: 0, x2: Math.max(0, rightColWidthPt - 16), y2: 0, lineWidth: 1, lineColor: p.border, dash: { length: 2 } },
+                      ],
+                      margin: [0, 6, 0, 6],
+                  } as Content,
+              ]
+            : [];
+
+    return [h3('Caractéristiques Techniques', p), ...before, ...separator, ...after];
+}
+
+function effractionHeadRowCost(block: OiEffractionBlock, fontPx: number, contentWidthPt: number): number {
+    const fullCpl = estimateCharsPerLine(fontPx, contentWidthPt);
+    const halfCpl = estimateCharsPerLine(fontPx, contentWidthPt / 2);
+
+    const missionRows = estimateWrappedLines(`Mission : ${block.mission || '-'}`, fullCpl);
+    const titleRows = 1; // h3 "Caractéristiques Techniques"
+
+    // BLINDAGE round 2 : le coût des mesures suit désormais EXACTEMENT le
+    // même filtrage que le rendu réel (`effractionMeasuresBody`, cf. sa
+    // JSDoc) — une mesure blanche/`-` ne coûte plus 1 ligne fantôme.
+    const rowCost = (label: string, value: string | undefined, cpl: number): number =>
+        isEffractionMeasureBlank(value) ? 0 : estimateWrappedLines(`${label} : ${value}`, cpl);
+
+    const typePorteRows = rowCost('Type de Porte', block.porte, fullCpl);
+    const leftColRows =
+        rowCost('Structure', block.structure, halfCpl) +
+        rowCost('Serrurerie', block.serrurerie, halfCpl) +
+        rowCost('Environnement', block.environnement, halfCpl);
+    const rightColRows =
+        rowCost('Bâti à Bâti', block.bati_a_bati, halfCpl) +
+        rowCost('Dormant à Dormant', block.dormant_a_dormant, halfCpl) +
+        rowCost('Prof. Linteaux', block.prof_linteaux, halfCpl);
+    const grid2TopRows = Math.max(leftColRows, rightColRows);
+
+    const hRows = Math.max(rowCost('H. Porte', block.h_porte, halfCpl), rowCost('H. Marche', block.h_marche, halfCpl));
+    const profRows = Math.max(rowCost('Prof. Marche', block.prof_marche, halfCpl), rowCost('Prof. Bâti', block.prof_bati, halfCpl));
+    const profMoulureRows = rowCost('Prof. Moulure', block.prof_moulure, fullCpl);
+
+    const SAFETY_MARGIN_ROWS = 2;
+    return missionRows + titleRows + typePorteRows + grid2TopRows + hRows + profRows + profMoulureRows + SAFETY_MARGIN_ROWS;
 }
 
 /**
@@ -1212,13 +1422,26 @@ function hypothesesDescBlock(hypotheses: OiEffractionHypothesis[], p: OiPdfPalet
  * (« FRANCHISSEMENT DE LA PORTE D'ENTREE. », les 9 mesures + hypothèses +
  * porte/prof_marche/prof_moulure tous vides) était donc entièrement
  * SUPPRIMÉ — perte totale d'une donnée saisie, contraire à l'arbitrage
- * « zéro perte de données quel que soit le volume ». L'ancienne
- * justification (« `mission: '-'` comme simple valeur de repli sur des
- * fixtures par ailleurs vides ») ne tient pas à l'examen : ce repli `'-'`
- * n'existe QU'au rendu (`labelValue('Mission', block.mission || '-', p)`
- * ci-dessous), jamais dans la donnée `block.mission` elle-même testée ici —
- * un `block.mission` réellement vide (`''`/`undefined`) reste `''` après
- * `str().trim()`, aucun risque de faux positif « bloc non vide ».
+ * « zéro perte de données quel que soit le volume ».
+ *
+ * CORRECTIF BLIND.REFIX round 2 — LA JUSTIFICATION CI-DESSUS ÉTAIT
+ * INCOMPLÈTE, DÉMENTIE PAR UN CAS RÉEL : round 1 écartait le risque de faux
+ * positif au motif que le repli `'-'` (`strOr`/`labelValue(..., block.x ||
+ * '-', p)`) « n'existe QU'au rendu, jamais dans la donnée testée ici » — vrai
+ * pour un `block.mission` réellement `''`/`undefined`, MAIS un `block.mission`
+ * dont la valeur SAISIE est littéralement le caractère `'-'` (repli déjà
+ * appliqué en amont par l'appelant/le Store, ou saisie volontaire d'un
+ * tiret) traverse `str().trim() !== ''` sans jamais être reconnue comme
+ * « vide » — un bloc SANS AUCUNE mesure technique, SANS hypothèse, SANS
+ * photo, dont seul `mission` vaut `'-'`, n'était donc PLUS omis (test
+ * dédié : « un bloc effraction SANS AUCUNE mesure technique… est OMIS »).
+ * Un tiret seul n'est jamais une DONNÉE saisie utile à l'utilisateur (même
+ * filtre que `isEffractionMeasureBlank`/`effractionMeasuresBody` ci-dessous,
+ * port strategica `mesures()` : `.filter { it.second.isNotBlank() }`) —
+ * `mission` rejoint donc ce filtre ici aussi, uniquement pour cette décision
+ * de VIDE/NON-VIDE (la ligne « Mission » elle-même reste rendue avec son
+ * repli `'-'` habituel dès que le bloc n'est pas vide par ailleurs, champ
+ * fantôme #3 inchangé).
  */
 function isEffractionBlockEmpty(block: OiEffractionBlock, doorSrc: string | undefined): boolean {
     const measures = [
@@ -1236,7 +1459,7 @@ function isEffractionBlockEmpty(block: OiEffractionBlock, doorSrc: string | unde
         block.prof_marche,
         block.prof_moulure,
     ];
-    const hasMeasure = measures.some((v) => str(v).trim() !== '');
+    const hasMeasure = measures.some((v) => !isEffractionMeasureBlank(v));
     return !hasMeasure && block.hypotheses.length === 0 && doorSrc === undefined;
 }
 
@@ -1285,38 +1508,7 @@ function buildEffractionPages(ctx: BuildCtx, block: OiEffractionBlock): Content[
     const rightColWidthPt = doorSrc !== undefined ? geo.contentWidthPt - mm(70) - mm(6) : geo.contentWidthPt;
 
     const specs = card(
-        [
-            h3('Caractéristiques Techniques', p),
-            // Champ fantôme #3 (`porte`, `OrderHtmlArticulation.kt:279`) : 1re ligne,
-            // AVANT Structure — même ordre que strategica (`champs-fantomes.md` #2).
-            labelValue('Type de Porte', block.porte || '-', p),
-            grid2(
-                [
-                    labelValue('Structure', block.structure || '-', p),
-                    labelValue('Serrurerie', block.serrurerie || '-', p),
-                    labelValue('Environnement', block.environnement || '-', p),
-                ],
-                [
-                    labelValue('Bâti à Bâti', `${block.bati_a_bati || '-'} mm`, p),
-                    labelValue('Dormant à Dormant', `${block.dormant_a_dormant || '-'} mm`, p),
-                    labelValue('Prof. Linteaux', `${block.prof_linteaux || '-'} mm`, p),
-                ],
-            ),
-            {
-                // Filet pointillé pleine largeur (§3.2 ligne 8f) — largeur approximée
-                // à la colonne droite moins le padding de carte (2×8pt), non testée
-                // au pixel près (aucune assertion géométrique côté test).
-                canvas: [
-                    { type: 'line', x1: 0, y1: 0, x2: Math.max(0, rightColWidthPt - 16), y2: 0, lineWidth: 1, lineColor: p.border, dash: { length: 2 } },
-                ],
-                margin: [0, 6, 0, 6],
-            },
-            grid2([labelValue('H. Porte', block.h_porte || '-', p)], [labelValue('H. Marche', block.h_marche || '-', p)]),
-            // Champ fantôme #3 (`prof_marche`/`prof_moulure`, `OrderHtmlArticulation.kt:289-290`)
-            // — dernières lignes des mesures, même ordre que strategica.
-            grid2([labelValue('Prof. Marche', `${block.prof_marche || '-'} mm`, p)], [labelValue('Prof. Bâti', block.prof_bati || '-', p)]),
-            labelValue('Prof. Moulure', `${block.prof_moulure || '-'} mm`, p),
-        ],
+        effractionMeasuresBody(block, p, rightColWidthPt),
         p,
         // Blindage BLIND.A : champs texte libres non bornés (`structure`,
         // `serrurerie`, `environnement`…) — filet `unbreakable:false`.
@@ -1345,16 +1537,31 @@ function buildEffractionPages(ctx: BuildCtx, block: OiEffractionBlock): Content[
     // Hypothèses d'Effraction) : chaque hypothèse est une frontière légitime
     // (jamais de coupure en milieu de ligne), le budget est le MÊME barème
     // `catItemsPerPageBudget`/mise à l'échelle `geo` que ZMSPCP/MOICP
-    // (`buildArticulationCorePages`). Page 1 réserve un overhead pour le
-    // bandeau photo/specs (heuristique : ~la moitié du budget, ce bloc
-    // occupant grossièrement la moitié de la hauteur utile de page).
+    // (`buildArticulationCorePages`).
+    //
+    // CORRECTIF BLIND.REFIX round 2 — QUEUE ORPHELINE SANS « (SUITE) » : la
+    // page 1 (bandeau MISSION + carte « Caractéristiques Techniques » avant
+    // la table) ET chaque page « (suite) » (titre `h2`/`h3` + en-tête de
+    // tableau répétée) portent un overhead RÉEL avant la première ligne
+    // d'hypothèse, jusqu'ici jamais déduit du budget (`firstPageBudget =
+    // budget / 2` grossièrement approximé). `chunkItemsByCost` assignait
+    // donc PLUS d'hypothèses qu'il n'en tenait réellement à une page/section
+    // pilotée ; pdfmake débordait alors NATURELLEMENT la table sur la page
+    // suivante (en-tête répétée par `headerRows`, MAIS sans le titre
+    // `(SUITE)` que seule notre scission explicite pose) AVANT que la
+    // scission n'ait l'occasion de se déclencher — reproduit sur
+    // `effrac-n4`/`n6`/`n8`/`12-hypotheses` (preuve `A-effrac12L-11.png` /
+    // `A-effrac12L-13.png`). `effractionHeadRowCost`/`EFFRAC_CHUNK_HEADER_ROWS`
+    // déduisent maintenant cet overhead RÉEL du budget de chaque fragment.
     const budget = Math.max(1, Math.round(catItemsPerPageBudget(fontPx) * (geo.contentHeightPt / A4_CONTENT_HEIGHT_PT)));
-    const firstPageBudget = Math.max(1, Math.round(budget / 2));
+    const headCost = effractionHeadRowCost(block, fontPx, geo.contentWidthPt);
+    const firstPageBudget = Math.max(1, budget - EFFRAC_CHUNK_HEADER_ROWS - headCost);
+    const restPageBudget = Math.max(1, budget - EFFRAC_CHUNK_HEADER_ROWS);
     const hypChunks: OiEffractionHypothesis[][] =
         hypotheses.length > 0
             ? chunkItemsByCost(hypotheses, (h) => hypothesisRowCost(h, fontPx, geo.contentWidthPt), {
                   first: firstPageBudget,
-                  rest: budget,
+                  rest: restPageBudget,
               })
             : [[]];
 

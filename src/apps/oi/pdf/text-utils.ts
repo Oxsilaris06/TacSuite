@@ -76,7 +76,7 @@ export const MAX_UNBROKEN_TOKEN_LENGTH = 40;
  * dans la police embarquée, vérifié par contre-épreuve directe contre
  * pdfmake (pas une supposition).
  */
-const SOFT_HYPHEN = '­';
+export const SOFT_HYPHEN = '­';
 
 /**
  * Sépare toute paire de `/` ADJACENTS (`//`, `///`…, motif classique d'une URL

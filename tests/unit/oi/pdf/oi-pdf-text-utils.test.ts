@@ -8,9 +8,12 @@
  */
 import { describe, expect, it } from 'vitest';
 
-import { breakLongTokens, MAX_UNBROKEN_TOKEN_LENGTH } from '@oi/pdf/text-utils.js';
+import { breakLongTokens, MAX_UNBROKEN_TOKEN_LENGTH, SOFT_HYPHEN } from '@oi/pdf/text-utils.js';
 
-const ZWSP = '​';
+// Nom conservé « ZWSP » dans les assertions ci-dessous pour minimiser le diff,
+// mais la valeur importée est désormais SOFT_HYPHEN (U+00AD) — cf. text-utils.ts
+// (BLIND.REFIX round 1 : ZWSP abandonné, glyphe .notdef non mappé dans la police).
+const ZWSP = SOFT_HYPHEN;
 
 describe('breakLongTokens', () => {
     it('texte vide/falsy renvoyé tel quel, jamais d’exception', () => {

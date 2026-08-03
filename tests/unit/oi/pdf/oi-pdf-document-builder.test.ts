@@ -24,6 +24,7 @@ import { describe, expect, it } from 'vitest';
 import type { Content, ContextPageSize, DynamicBackground, DynamicContent } from 'pdfmake/interfaces';
 
 import { buildOiDocDefinition, oiPdfFileName } from '@oi/pdf/document-builder.js';
+import { SOFT_HYPHEN } from '@oi/pdf/text-utils.js';
 import { PDF_DARK, PDF_LIGHT } from '@oi/pdf/theme.js';
 import type {
     OiEffractionBlock,
@@ -77,7 +78,10 @@ function makeRichFormData(): OiFormData {
     ];
     const effractionBlocks: OiEffractionBlock[] = [
         {
-            id: 'e1', title: 'PORTE CHARLIE', mission: '-', porte: '-', structure: '-',
+            // `structure` non vide (BLIND.REFIX round 2 : `isEffractionBlockEmpty`
+            // ignore désormais le repli `'-'`, cf. sa JSDoc) — bloc VOLONTAIREMENT
+            // non vide pour rester présent dans l'ordre des marqueurs testé ici.
+            id: 'e1', title: 'PORTE CHARLIE', mission: '-', porte: '-', structure: 'Porte blindee',
             serrurerie: '-', environnement: '-', bati_a_bati: '-', dormant_a_dormant: '-',
             prof_linteaux: '-', prof_bati: '-', h_porte: '-', h_marche: '-',
             prof_marche: '-', prof_moulure: '-', members: [], hypotheses: [],
@@ -398,7 +402,11 @@ describe('buildOiDocDefinition — tableaux de données : grille p.border, jamai
     ] as const)("Hypothèses d'Effraction (thème %s) : en-tête bordée p.border", (_label, isDark, pal) => {
         const effractionBlocks: OiEffractionBlock[] = [
             {
-                id: 'e1', title: 'PORTE', mission: '-', porte: '-', structure: '-', serrurerie: '-',
+                // `structure` non vide (BLIND.REFIX round 2 : `isEffractionBlockEmpty`
+                // ignore désormais le repli `'-'`, cf. sa JSDoc) — bloc VOLONTAIREMENT
+                // non vide pour que le tableau (et son en-tête, seul objet testé ici)
+                // soit bien rendu malgré `hypotheses: []`.
+                id: 'e1', title: 'PORTE', mission: '-', porte: '-', structure: 'Porte blindee', serrurerie: '-',
                 environnement: '-', bati_a_bati: '-', dormant_a_dormant: '-', prof_linteaux: '-',
                 prof_bati: '-', h_porte: '-', h_marche: '-', prof_marche: '-', prof_moulure: '-',
                 members: [], hypotheses: [],
@@ -762,7 +770,9 @@ describe('buildOiDocDefinition — correctif PG.REFIX round 1', () => {
 // Arbitrage #2 : coupure automatique au rendu des tokens sans espace > 40 car.
 // ===========================================================================
 describe('buildOiDocDefinition — blindage BLIND.A #2 : coupure des tokens sans espace', () => {
-    const ZWSP = '​';
+    // Nom conservé « ZWSP » dans les assertions ci-dessous pour minimiser le
+    // diff, mais la valeur importée est désormais SOFT_HYPHEN (U+00AD).
+    const ZWSP = SOFT_HYPHEN;
 
     it("un mot ininterrompu de 80 caractères dans « C conduite à tenir » (crash fontkit confirmé, matrice-rupture.md §4) ne fait PLUS planter buildOiDocDefinition", () => {
         const longWord = 'A'.repeat(80);

@@ -712,22 +712,41 @@ function effractionPage(
     // grille de mesures ; `:279` : type de porte en 1re ligne de la grille ;
     // `:289-290` : prof. marche puis prof. moulure en dernières lignes).
     const missionHtml = fieldOr('Mission', block.mission);
+    // BLINDAGE round 2 — port du filtrage strategica `mesures()`
+    // (`OrderHtmlArticulation.kt:275-295`, `.filter { it.second.isNotBlank()
+    // }`) : les 12 mesures étaient TOUJOURS rendues avec leur repli `-`
+    // (`nl2brOr`), même symptôme B5 que voie A (page saturée de libellés
+    // vides, preuve `out/B-sentinelles-light.pdf`). Une mesure blanche est
+    // désormais OMISE plutôt que rendue `- `/`- mm` ; si les 12 sont vides,
+    // un message muted remplace la grille entière (jamais de `<hr/>` isolé).
+    const measureRows: Array<[string, string]> = (
+        [
+            ['Type de Porte', block.porte],
+            ['Structure', block.structure],
+            ['Serrurerie', block.serrurerie],
+            ['Environnement', block.environnement],
+            ['Bâti à Bâti', block.bati_a_bati ? `${block.bati_a_bati} mm` : ''],
+            ['Dormant à Dormant', block.dormant_a_dormant ? `${block.dormant_a_dormant} mm` : ''],
+            ['Prof. Linteaux', block.prof_linteaux ? `${block.prof_linteaux} mm` : ''],
+            ['Prof. Bâti', block.prof_bati],
+        ] as Array<[string, string]>
+    ).filter(([, v]) => !isBlank(v));
+    const measureRows2: Array<[string, string]> = (
+        [
+            ['H. Porte', block.h_porte],
+            ['H. Marche', block.h_marche],
+            ['Prof. Marche', block.prof_marche ? `${block.prof_marche} mm` : ''],
+            ['Prof. Moulure', block.prof_moulure ? `${block.prof_moulure} mm` : ''],
+        ] as Array<[string, string]>
+    ).filter(([, v]) => !isBlank(v));
     const specs =
-        `<div class="effrac-specs">` +
-        `<div><span class="label">Type de Porte</span> ${nl2brOr(block.porte)}</div>` +
-        `<div><span class="label">Structure</span> ${nl2brOr(block.structure)}</div>` +
-        `<div><span class="label">Serrurerie</span> ${nl2brOr(block.serrurerie)}</div>` +
-        `<div><span class="label">Environnement</span> ${nl2brOr(block.environnement)}</div>` +
-        `<div><span class="label">Bâti à Bâti</span> ${nl2brOr(block.bati_a_bati)} mm</div>` +
-        `<div><span class="label">Dormant à Dormant</span> ${nl2brOr(block.dormant_a_dormant)} mm</div>` +
-        `<div><span class="label">Prof. Linteaux</span> ${nl2brOr(block.prof_linteaux)} mm</div>` +
-        `<div><span class="label">Prof. Bâti</span> ${nl2brOr(block.prof_bati)}</div>` +
-        `<hr style="grid-column: span 2;"/>` +
-        `<div><span class="label">H. Porte</span> ${nl2brOr(block.h_porte)}</div>` +
-        `<div><span class="label">H. Marche</span> ${nl2brOr(block.h_marche)}</div>` +
-        `<div><span class="label">Prof. Marche</span> ${nl2brOr(block.prof_marche)} mm</div>` +
-        `<div><span class="label">Prof. Moulure</span> ${nl2brOr(block.prof_moulure)} mm</div>` +
-        `</div>`;
+        measureRows.length === 0 && measureRows2.length === 0
+            ? `<p class="muted"><em>Aucune mesure renseignée.</em></p>`
+            : `<div class="effrac-specs">` +
+              measureRows.map(([label, value]) => `<div><span class="label">${esc(label)}</span> ${nl2br(value)}</div>`).join('') +
+              (measureRows.length > 0 && measureRows2.length > 0 ? `<hr style="grid-column: span 2;"/>` : '') +
+              measureRows2.map(([label, value]) => `<div><span class="label">${esc(label)}</span> ${nl2br(value)}</div>`).join('') +
+              `</div>`;
 
     const hypRows =
         block.hypotheses.length > 0

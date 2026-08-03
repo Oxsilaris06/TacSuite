@@ -918,6 +918,56 @@ export function assertB6_verticalFillRatio(bboxPages) {
 }
 
 // ===========================================================================
+// B7 — GUARDRAIL PAGINATION round 3 (mission BLIND.REFIX round 2) : la table
+// Hypothèses d'Effraction (voie A, `buildEffractionPages`) débordait
+// NATURELLEMENT sa page (en-tête de tableau répétée par `headerRows:1`, MAIS
+// SANS aucun titre « ARTICULATION : EFFRACTION »/« (SUITE) ») avant que la
+// scission pilotée n'ait l'occasion de se déclencher — `hypothesisRowCost`/
+// `chunkItemsByCost` sous-estimaient le volume réel du 1er fragment (surcoût
+// MISSION + carte « Caractéristiques Techniques » jamais déduit du budget) —
+// reproduit sur `effrac-n4`/`n6`/`n8`/`12-hypotheses.json`, preuve
+// `A-effrac12L-11.png` (p.11 : en-tête répétée + 1 hypothèse, aucun titre).
+// ===========================================================================
+
+/** Ligne de tableau Hypothèses d'Effraction (`hypothesisTableRow`, document-builder.ts — colonne 1 « Hypothese N »). */
+const HYP_ROW_RE = /^\s*Hypothese\s+\d+\b/m;
+
+/** Titre de section EFFRACTION, avec ou sans son suffixe `(SUITE)` (`buildEffractionPages`, document-builder.ts). */
+const EFFRACTION_TITLE_RE = /ARTICULATION\s*:\s*EFFRACTION/;
+
+/**
+ * B7 — anti-queue-de-tableau-sans-titre : toute page contenant AU MOINS une
+ * ligne du tableau Hypothèses d'Effraction (`Hypothese N` en 1re colonne)
+ * doit également porter, sur cette MÊME page, le titre de section
+ * « ARTICULATION : EFFRACTION » (page 1 du bloc) OU son suffixe
+ * « (SUITE) » (scission pilotée) — jamais une page de continuation
+ * NATURELLE de pdfmake (en-tête de tableau seule, aucun titre) qui
+ * désynchroniserait la coupure réelle du repère visuel destiné à
+ * l'utilisateur. Toujours évaluée, INDÉPENDANTE de `--lenient` (même
+ * principe que B1/B4).
+ */
+export function assertB7_effractionSuiteTitlePresent(text) {
+  const pages = splitPages(text);
+  const pageCount = pages.length;
+  if (pageCount === 0) {
+    return { ok: true, detail: 'document vide — aucune page à examiner' };
+  }
+  const hits = [];
+  pages.forEach((pageText, idx) => {
+    if (HYP_ROW_RE.test(pageText) && !EFFRACTION_TITLE_RE.test(pageText)) {
+      hits.push(idx + 1);
+    }
+  });
+  if (hits.length > 0) {
+    return {
+      ok: false,
+      detail: `${hits.length} page(s) portant une ligne « Hypothese N » SANS titre « ARTICULATION : EFFRACTION »/« (SUITE) » sur la même page : ${hits.join(', ')}`,
+    };
+  }
+  return { ok: true, detail: `0 page de continuation de tableau Hypothèses d'Effraction sans titre (sur ${pageCount} page(s))` };
+}
+
+// ===========================================================================
 // CLI
 // ===========================================================================
 
@@ -1020,6 +1070,9 @@ function main() {
     { code: 'B4', ...assertB4_noHeaderlessDashContinuation(text, images) },
     { code: 'B5', ...assertB5_noEmptyFieldDominatedPage(text) },
     { code: 'B6', ...assertB6_verticalFillRatio(bboxPages) },
+    // Guardrail pagination round 3 (mission BLIND.REFIX round 2) — même
+    // garantie que B1/B4 (toujours évaluée, indépendante de --lenient).
+    { code: 'B7', ...assertB7_effractionSuiteTitlePresent(text) },
   ];
 
   for (const a of assertions) {
