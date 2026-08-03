@@ -48,7 +48,7 @@ node tests/pdf/verify-structure.mjs <fichier.pdf> \
 | `--sample=<fichier.json>` | (aucun) | Active A8 : vérifie que chaque chaîne de `expect[]` apparaît dans le texte extrait. Sans cette option, A8 est SKIP (non applicable). |
 | `--json` | — | Émet **en plus** des lignes lisibles (pas à la place) un objet `{ ok, file, assertions: [{ code, ok, detail }] }` sur stdout, en dernière ligne. |
 | `--lenient` | mode strict | Un marqueur **conditionnel** (A3, indices 4/8/10/11/12/13) absent devient `SKIP` au lieu de faire échouer A3 — l'ordre des marqueurs **présents** reste asserté. |
-| `--voie=a\|b` | `a` | Calibrage des gardes pagination **B1/B2/B6** (cf. tableau B ci-dessous) : `a` (pdfmake, INCHANGÉ) suppose une page dense multi-sections — un déficit de contenu y signale un vrai débordement. `b` (`print-view.ts`/navigateur) suppose une page DÉDIÉE par section (conception assumée, pas un bug) — seuils B1 nettement abaissés, B2 exige en plus l'absence d'autre token sur la ligne « head » (distingue une vraie césure d'un empilement fortuit de 2 mots complets), B6 devient SKIP. |
+| `--voie=a\|b` | `a` | Calibrage des gardes pagination **B1/B2/B6/B8/B9** (cf. tableau B ci-dessous) : `a` (pdfmake, INCHANGÉ) suppose une page dense multi-sections — un déficit de contenu y signale un vrai débordement. `b` (`print-view.ts`/navigateur) suppose une page DÉDIÉE par section (conception assumée, pas un bug) — seuils B1 nettement abaissés, B2 exige en plus l'absence d'autre token sur la ligne « head » (distingue une vraie césure d'un empilement fortuit de 2 mots complets), B6 et B9 deviennent SKIP, B8 s'active (SKIP en voie A). B7/B10/B11 restent actives dans les DEUX voies (SPEC-PDF-DEFINITIF §8). |
 
 **Prérequis** : le paquet système `poppler-utils` (fournit `pdfinfo`,
 `pdftotext`, `pdffonts`, `pdfimages`). Si un binaire est absent du `PATH`,
@@ -57,7 +57,7 @@ paquet à installer, plutôt qu'une trace d'erreur obscure. Même code de
 sortie si le fichier PDF passé en argument n'existe pas, ou si les
 arguments CLI sont invalides.
 
-**Codes de sortie** : `0` si les 15 assertions (A1-A8 + B1-B7, cf. tableau B
+**Codes de sortie** : `0` si les 19 assertions (A1-A8 + B1-B11, cf. tableau B
 ci-dessous) passent, `1` si au moins une échoue, `2` en cas de garde
 d'exécution (aucune assertion n'a pu tourner).
 
@@ -90,21 +90,55 @@ retour à html2canvas) : un run avec photos doit interpréter un `FAIL A7`
 isolé (A2/A5/A6 restant verts) comme un dépassement de poids assumé, pas une
 régression.
 
-## Les 7 gardes pagination (B1-B7)
+## Les 11 gardes pagination (B1-B11)
 
 Guardrails additionnels (hors SPEC-PDF-V3.md §7 d'origine), toujours
 évaluées indépendamment de `--lenient` — seul `--voie` change le calibrage
-de B1/B2/B6 (cf. tableau des options ci-dessus).
+de B1/B2/B6/B8/B9 (cf. tableau des options ci-dessus).
 
 | Code | Garde | Seuil (voie A, défaut) | Mode `--voie=b` |
 |---|---|---|---|
 | **B1** | Anti-page-orpheline | ≥ 120 caractères non blancs par page (hors garde/finale/photo) | Seuil abaissé à 20 (pages dédiées courtes par conception). |
 | **B2** | Anti-césure verticale (PATRACDVR) | Aucun mot capitalisé scindé sur 2 lignes adjacentes de la même colonne | + exige l'absence d'autre token sur la ligne « head » (élimine le faux positif « deux mots complets empilés », ex. « KODIAQ »/« BANA »). |
-| **B3** | Anti-page-titre-seul | ≥ 40 caractères de contenu hors titre | Inchangé (hors périmètre de cette mission). |
+| **B3** | Anti-page-titre-seul | ≥ 40 caractères de contenu hors titre | Pages-galerie (≥ 1 image) exemptées. |
 | **B4** | Anti-queue-nue (ZMSPCP/MOICP) | 1re ligne à tiret d'une page jamais sans titre « (suite) » précédent | Inchangé. |
 | **B5** | Anti-page-libellés-vides | < 4 champs `LABEL : -` ou < 250 car. de tels libellés par page | Inchangé. |
 | **B6** | Anti-page-clairsemée | Ratio remplissage vertical ≥ 35 % (hors finale) | SKIP (pages dédiées légitimement peu remplies par conception). |
-| **B7** | Anti-table-hypothèses-orpheline | Chaque continuation de tableau Hypothèses d'Effraction porte un titre « (SUITE) » | Inchangé. |
+| **B7** | Anti-table-hypothèses-orpheline | Toute page portant l'en-tête LITTÉRAL de la table Hypothèses d'Effraction (« Technique / Moyen », répété par `headerRows:1`) porte aussi « ARTICULATION : EFFRACTION » ou « (SUITE) » | Inchangé (active). |
+| **B8** | Anti-carte-kv-orpheline | SKIP (motif propre aux pages dédiées voie B) | ≥ 2 lignes `LABEL : valeur` sans aucun marqueur ni « (suite) » et ≤ 200 car. ⇒ FAIL. |
+| **B9** | Anti-titre-orphelin-en-bas-de-page | La DERNIÈRE ligne non blanche d'une page (hors finale, pied de page retiré) ne matche jamais une signature statique de titre/en-tête (« Hypothèses d'Effraction », « DANGEROSITÉ », « LOCALISATION », en-tête de table…) | SKIP (une page dédiée peut légitimement se clore sur un titre court). |
+| **B10** | Anti-continuation-de-bloc-titré-sans-« (suite) » (généralise B7) | Toute page portant du contenu de bloc titré (ligne ATCD `AAAA :`, description `HEn —`, en-tête de table répété) porte aussi un des 15 marqueurs ou « (suite) » | Inchangé (active). |
+| **B11** | Anti-page-de-continuation-sous-remplie (renforce B1/B6) | Aucune page (hors garde/finale/photo) ne cumule : aucun marqueur, aucun « (suite) », < 300 car. non blancs hors pied de page | Inchangé (active). |
+
+### B7 (corrigée) et B9-B11 — mission GD.GUARDS, protocole de contre-épreuve
+
+Source : `../../.tacsuite-prep/pdf-goal-final/SPEC-PDF-DEFINITIF.md` §7
+(gardes écrites et contre-éprouvées AVANT les correctifs D1-D4 — une garde
+qui ne FAIL pas sur le PDF fautif ne prouve rien). Preuves détaillées :
+`../../.tacsuite-prep/pdf-goal-final/gardes-preuves.md` (hors repo, le PDF
+fautif contenant des données opérationnelles réelles).
+
+- **B7 corrigée** : la version d'origine cherchait une LIGNE `Hypothese N` —
+  un libellé de REPLI qui n'existe que si l'utilisateur n'a pas nommé ses
+  hypothèses ; sur le PDF fautif réel (hypothèses nommées), la garde était
+  AVEUGLE (PASS sur un défaut avéré). Elle cherche désormais l'EN-TÊTE
+  STATIQUE de la table (« Technique / Moyen »), présent sur chaque fragment
+  via `headerRows:1`, nommé ou pas.
+- **B9 resserrée par le balayage anti-faux-positifs** (§7.5 de la SPEC) : la
+  formulation initiale (fenêtre des 2 dernières lignes) remontait 26 faux
+  positifs sur les 34 fixtures d'audit (toute table d'hypothèses VIDE se
+  termine par en-tête + « Aucune hypothèse saisie » — l'en-tête entrait dans
+  la fenêtre alors qu'il est SUIVI de sa ligne de repli). Critère retenu :
+  la seule DERNIÈRE ligne — couvre les deux motifs réels (titre seul en
+  dernière ligne ; titre + en-tête de table, l'en-tête étant alors la
+  dernière ligne) sans le faux positif. Après resserrage : 0 hit sur les 68
+  rendus (34 fixtures × 2 thèmes), FAIL conservé sur le PDF fautif.
+- **Balayage** : les seules occurrences restantes sur les 34 fixtures sont
+  `effrac-n6` (B7/B10/B11 p11 — VRAI défaut préexistant de type D2 : en-tête
+  répété + ligne « Hypothese 6 » sans titre ni « (SUITE) », à corriger par
+  les lots correctifs) et `empty-partial` (B1 p3 — garde B1 PRÉEXISTANTE,
+  inchangée par cette mission, sur une page de section légitimement
+  minimale ; aucune des nouvelles gardes B7'/B9/B10/B11 n'y remonte).
 
 ## Les 15 marqueurs (ordre imposé)
 

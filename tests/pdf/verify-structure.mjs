@@ -26,23 +26,25 @@
  *
  * Défauts : --format=a4, --photos=0, mode strict (pas de --lenient).
  * Sortie : une ligne `PASS <code> — <libellé>` ou `FAIL <code> — <constat
- * mesuré>` par assertion (A1..A8 historiques + B1..B6 guardrail pagination,
- * missions PG.GUARD puis PG.REFIX), puis un résumé `N/14 assertions`. Avec
- * `--json`, émet EN PLUS (pas à la place — les lignes lisibles restent
- * imprimées) un objet `{ ok, file, assertions: [{ code, ok, detail }] }` sur
- * stdout, en dernière ligne.
- * Code de sortie : 0 si les 14 assertions passent, 1 sinon, 2 en cas de garde
+ * mesuré>` par assertion (A1..A8 historiques + B1..B11 guardrail pagination,
+ * missions PG.GUARD, PG.REFIX, BLIND.REFIX, FB.FIX puis GD.GUARDS), puis un
+ * résumé `N/19 assertions`. Avec `--json`, émet EN PLUS (pas à la place —
+ * les lignes lisibles restent imprimées) un objet `{ ok, file, assertions:
+ * [{ code, ok, detail }] }` sur stdout, en dernière ligne.
+ * Code de sortie : 0 si les 19 assertions passent, 1 sinon, 2 en cas de garde
  * d'exécution (binaire poppler absent, fichier PDF introuvable, arguments
  * invalides — l'outil n'a alors PU faire tourner aucune assertion).
  *
  * Détail des 8 assertions A1-A8 et de leurs seuils : voir
  * `tests/pdf/README.md` et `docs/SPEC-PDF-V3.md` §7 (tableau « Assertions
- * exactes »). B1..B6 (guardrail pagination, non couvertes par la SPEC
- * d'origine — B1-B3 mission PG.GUARD, B4-B6 mission PG.REFIX round 1, ce
- * dernier round motivé par 3 défauts que B1-B3 laissaient passer) sont
- * documentées en JSDoc à leur point de définition ci-dessous et TOUJOURS
- * évaluées, indépendamment de `--lenient` (qui ne régit que les marqueurs
- * conditionnels de A3).
+ * exactes »). B1..B11 (guardrail pagination, non couvertes par la SPEC
+ * d'origine — B1-B3 mission PG.GUARD, B4-B6 mission PG.REFIX round 1, B7
+ * mission BLIND.REFIX round 2 puis CORRIGÉE mission GD.GUARDS, B8 mission
+ * FB.FIX, B9-B11 mission GD.GUARDS d'après SPEC-PDF-DEFINITIF.md §7 —
+ * chaque round motivé par des défauts réels que les gardes précédentes
+ * laissaient passer) sont documentées en JSDoc à leur point de définition
+ * ci-dessous et TOUJOURS évaluées, indépendamment de `--lenient` (qui ne
+ * régit que les marqueurs conditionnels de A3).
  */
 
 import { execFileSync } from 'node:child_process';
@@ -1021,31 +1023,39 @@ export function assertB6_verticalFillRatio(bboxPages, { voie = 'a' } = {}) {
 }
 
 // ===========================================================================
-// B7 — GUARDRAIL PAGINATION round 3 (mission BLIND.REFIX round 2) : la table
-// Hypothèses d'Effraction (voie A, `buildEffractionPages`) débordait
-// NATURELLEMENT sa page (en-tête de tableau répétée par `headerRows:1`, MAIS
-// SANS aucun titre « ARTICULATION : EFFRACTION »/« (SUITE) ») avant que la
-// scission pilotée n'ait l'occasion de se déclencher — `hypothesisRowCost`/
-// `chunkItemsByCost` sous-estimaient le volume réel du 1er fragment (surcoût
-// MISSION + carte « Caractéristiques Techniques » jamais déduit du budget) —
-// reproduit sur `effrac-n4`/`n6`/`n8`/`12-hypotheses.json`, preuve
-// `A-effrac12L-11.png` (p.11 : en-tête répétée + 1 hypothèse, aucun titre).
+// B7 — GUARDRAIL PAGINATION round 3 (mission BLIND.REFIX round 2), CORRIGÉ
+// mission GD.GUARDS (SPEC-PDF-DEFINITIF.md §7.1) : la table Hypothèses
+// d'Effraction (voie A, `buildEffractionPages`) débordait NATURELLEMENT sa
+// page (en-tête de tableau répétée par `headerRows:1`, MAIS SANS aucun titre
+// « ARTICULATION : EFFRACTION »/« (SUITE) ») avant que la scission pilotée
+// n'ait l'occasion de se déclencher. La version d'origine cherchait une
+// LIGNE de tableau via `/^\s*Hypothese\s+\d+\b/m` — un libellé de repli qui
+// n'existe que si l'utilisateur n'a PAS nommé ses hypothèses : sur le PDF
+// réel fautif (`cas-reel-01-repro`, D2 du diagnostic), les hypothèses sont
+// nommées (« Porte d'entrée », …), la regex ne matchait RIEN et la garde
+// était AVEUGLE (PASS sur un défaut avéré p12). Correctif : chercher
+// l'EN-TÊTE de la table, qui est un libellé STATIQUE du gabarit
+// (`hypothesesTableHeader`, document-builder.ts — colonne 2 « Technique /
+// Moyen », littérale, non traduisible, jamais du texte utilisateur) —
+// répété sur CHAQUE fragment par `headerRows:1`, donc présent sur toute
+// page de continuation, nommée ou pas. Contre-épreuve mesurée : FAIL p12
+// sur `cas-reel-01-repro.pdf` (ancienne version : PASS, aveugle).
 // ===========================================================================
 
-/** Ligne de tableau Hypothèses d'Effraction (`hypothesisTableRow`, document-builder.ts — colonne 1 « Hypothese N »). */
-const HYP_ROW_RE = /^\s*Hypothese\s+\d+\b/m;
+/** En-tête LITTÉRAL de la table Hypothèses d'Effraction (`hypothesesTableHeader`, document-builder.ts — colonne 2 « Technique / Moyen », texte du GABARIT, jamais saisi par l'utilisateur). */
+const HYP_TABLE_HEAD_RE = /Technique\s*\/\s*Moyen/;
 
 /** Titre de section EFFRACTION, avec ou sans son suffixe `(SUITE)` (`buildEffractionPages`, document-builder.ts). */
 const EFFRACTION_TITLE_RE = /ARTICULATION\s*:\s*EFFRACTION/;
 
 /**
- * B7 — anti-queue-de-tableau-sans-titre : toute page contenant AU MOINS une
- * ligne du tableau Hypothèses d'Effraction (`Hypothese N` en 1re colonne)
- * doit également porter, sur cette MÊME page, le titre de section
- * « ARTICULATION : EFFRACTION » (page 1 du bloc) OU son suffixe
+ * B7 — anti-queue-de-tableau-sans-titre : toute page portant l'EN-TÊTE du
+ * tableau Hypothèses d'Effraction (« Technique / Moyen », statique) doit
+ * également porter, sur cette MÊME page, le titre de section
+ * « ARTICULATION : EFFRACTION » (page 1 du bloc) OU un fragment
  * « (SUITE) » (scission pilotée) — jamais une page de continuation
- * NATURELLE de pdfmake (en-tête de tableau seule, aucun titre) qui
- * désynchroniserait la coupure réelle du repère visuel destiné à
+ * NATURELLE de pdfmake (en-tête de tableau seule via `headerRows:1`, aucun
+ * titre) qui désynchroniserait la coupure réelle du repère visuel destiné à
  * l'utilisateur. Toujours évaluée, INDÉPENDANTE de `--lenient` (même
  * principe que B1/B4).
  */
@@ -1057,14 +1067,14 @@ export function assertB7_effractionSuiteTitlePresent(text) {
   }
   const hits = [];
   pages.forEach((pageText, idx) => {
-    if (HYP_ROW_RE.test(pageText) && !EFFRACTION_TITLE_RE.test(pageText)) {
+    if (HYP_TABLE_HEAD_RE.test(pageText) && !EFFRACTION_TITLE_RE.test(pageText) && !SUITE_RE.test(pageText)) {
       hits.push(idx + 1);
     }
   });
   if (hits.length > 0) {
     return {
       ok: false,
-      detail: `${hits.length} page(s) portant une ligne « Hypothese N » SANS titre « ARTICULATION : EFFRACTION »/« (SUITE) » sur la même page : ${hits.join(', ')}`,
+      detail: `${hits.length} page(s) portant l'en-tête de table « Technique / Moyen » SANS titre « ARTICULATION : EFFRACTION »/« (SUITE) » sur la même page : ${hits.join(', ')}`,
     };
   }
   return { ok: true, detail: `0 page de continuation de tableau Hypothèses d'Effraction sans titre (sur ${pageCount} page(s))` };
@@ -1142,6 +1152,219 @@ export function assertB8_noHeaderlessKvOrphanPage(text, images, { voie = 'a' } =
   return {
     ok: true,
     detail: `0 page de carte kv orpheline sans titre (seuils ${B8_MIN_KV_LINES} lignes kv / ${B8_MAX_CONTENT_CHARS} car., mode voie B)`,
+  };
+}
+
+// ===========================================================================
+// B9..B11 — GUARDRAIL PAGINATION round 5 (mission GD.GUARDS,
+// SPEC-PDF-DEFINITIF.md §7.2-§7.4) : gardes écrites AVANT les correctifs
+// D1/D2 (protocole de contre-épreuve : chaque garde FAIL sur le PDF fautif
+// `cas-reel-01-repro.pdf` conservé hors repo, puis PASS après correctifs — une
+// garde qui ne FAIL pas sur le PDF fautif ne prouve rien). Les défauts D1
+// (fiche adversaire : bloc DANGEROSITÉ scindé naturellement par pdfmake,
+// queue d'ATCD + LOCALISATION orphelines p3 sans « (SUITE) ») et D2 (table
+// effraction : titre + thead seuls en bas de p11, lignes p12 via
+// `headerRows` sans titre) passaient TOUTES les gardes A1-B8 existantes.
+// Toujours évaluées, INDÉPENDANTES de `--lenient` (même principe que B1-B8).
+// ===========================================================================
+
+/**
+ * Retire d'un texte de page le pied de page document-wide (`buildFooter`,
+ * document-builder.ts — bande « OI - … CONFIDENTIEL » + compteur « n / N »)
+ * avant toute mesure de contenu — même paire de regex que B5, factorisée ici
+ * pour B9/B11 : le pied de page est présent sur TOUTES les pages sauf la
+ * garde, jamais du contenu de section.
+ */
+function stripFooter(pageText) {
+  return pageText.replace(FOOTER_LINE_RE, '').replace(PAGE_COUNTER_LINE_RE, '');
+}
+
+// Signatures STATIQUES du gabarit (jamais du texte utilisateur) : titres de
+// bloc et en-têtes de tableau susceptibles de rester orphelins en BAS de
+// page quand pdfmake coupe naturellement juste après eux. Sources :
+// `buildDangerPages`/`buildAdversairePages` (DANGEROSITÉ, LOCALISATION,
+// MOBILITÉ, IDENTITÉ), `buildEffractionPages` (Hypothèses d'Effraction,
+// Caractéristiques Techniques, Description des Hypothèses),
+// `buildArticulationCorePages` (Composition par Cellule) — document-builder.ts.
+// Apostrophe tolérante `['’]` : même précaution que `normalize()` (le moteur
+// de rendu peut substituer l'apostrophe courbe).
+const B9_TRAILING_TITLE_RES = [
+  /Hypothèses d['’]Effraction/,
+  /Caractéristiques Techniques/,
+  /Description des Hypothèses/,
+  /DANGEROSITÉ/,
+  /LOCALISATION/,
+  /MOBILITÉ/,
+  /IDENTITÉ/,
+  /Composition par Cellule/,
+  HYP_TABLE_HEAD_RE,
+];
+
+/**
+ * B9 — anti-titre-orphelin-en-bas-de-page : aucune page (hors FINALE) ne
+ * doit se TERMINER par un titre de bloc ou un en-tête de tableau non suivi
+ * de données sur la même page — les 2 dernières lignes non blanches de la
+ * page (pied de page et compteur retirés) matchent une des signatures
+ * `B9_TRAILING_TITLE_RES`. Constat D2 (`cas-reel-01-repro` p11) : queue de page
+ * = « Hypothèses d'Effraction » + en-tête « Hypothèse | Technique / Moyen »,
+ * les données étant reléguées p12.
+ *
+ * RESSERRAGE issu du balayage anti-faux-positifs §7.5 (résultat MESURÉ, pas
+ * une précaution) : la formulation initiale de la SPEC (« les 2 DERNIÈRES
+ * lignes matchent une signature ») remontait 26 faux positifs sur les 34
+ * fixtures d'audit — toute table d'hypothèses VIDE se termine par
+ * `thead` + « Aucune hypothèse saisie » : le thead entre alors dans la
+ * fenêtre de 2 lignes ALORS QU'IL EST SUIVI de sa ligne de repli sur la
+ * même page (fin de section légitime, pas un orphelin). Le critère retenu
+ * est donc : la DERNIÈRE ligne non blanche matche une signature — ce qui
+ * couvre les deux motifs réels sans la fenêtre (titre seul en dernière
+ * ligne : matché directement ; titre + son thead : le thead EST la dernière
+ * ligne et matche `HYP_TABLE_HEAD_RE`, cas D2 p11 vérifié), tandis qu'un
+ * titre/thead SUIVI de données ne peut jamais être en dernière ligne.
+ * Contre-épreuve après resserrage : FAIL p11 de `cas-reel-01-repro`, 0 hit sur
+ * les 68 rendus des 34 fixtures.
+ * Mode `--voie=b` : SKIP (SPEC §8.3) — une page dédiée voie B (« une
+ * section = une page ») peut légitimement se terminer par un `h3` si la
+ * section est courte ; le motif « titre en bas, données page suivante » n'y
+ * existe pas puisque chaque section repart sur sa propre page.
+ */
+export function assertB9_noTrailingTitle(text, { voie = 'a' } = {}) {
+  if (voie === 'b') {
+    return {
+      ok: true,
+      skip: true,
+      detail: 'SKIP (mode voie B) — pages dédiées pouvant légitimement se clore sur un titre court, non applicable (SPEC-PDF-DEFINITIF §8)',
+    };
+  }
+  const pages = splitPages(text);
+  const pageCount = pages.length;
+  if (pageCount === 0) {
+    return { ok: true, detail: 'document vide — aucune page à examiner' };
+  }
+  const hits = [];
+  pages.forEach((pageText, idx) => {
+    const pageNum = idx + 1;
+    if (pageNum === pageCount) return; // finale, courte par conception
+    const lines = stripFooter(pageText.normalize('NFC'))
+      .split('\n')
+      .map((l) => l.trim())
+      .filter((l) => l !== '');
+    if (lines.length === 0) return;
+    const lastLine = lines[lines.length - 1];
+    const matched = B9_TRAILING_TITLE_RES.find((re) => re.test(lastLine));
+    if (matched) {
+      hits.push({ page: pageNum, tail: lastLine.slice(0, 70) });
+    }
+  });
+  if (hits.length > 0) {
+    const list = hits.map((h) => `page ${h.page} (queue « ${h.tail} »)`).join(', ');
+    return {
+      ok: false,
+      detail: `${hits.length} page(s) se terminant par un titre/en-tête de tableau orphelin (données reléguées à la page suivante) : ${list}`,
+    };
+  }
+  return { ok: true, detail: `0 titre/en-tête orphelin en bas de page sur ${pageCount} page(s) (hors finale)` };
+}
+
+// Signatures de CONTENU appartenant à un bloc titré — statiques, non
+// dépendantes des données saisies (seule la FORME du gabarit est matchée,
+// jamais son vocabulaire utilisateur) :
+/** Ligne d'antécédent judiciaire « 2021 : TROUBLE… » (`buildDangerPages`, document-builder.ts — l'année 4 chiffres + deux-points est un FORMAT du gabarit). */
+const ATCD_LINE_RE = /^\s*\d{4}\s*:/m;
+/** Ligne de description d'hypothèse « HE1 — … » (`hypothesesDescBlock`, document-builder.ts — préfixe `HEn —` généré par le gabarit). */
+const HE_DESC_RE = /^\s*HE\d+\s*—/m;
+
+/**
+ * B10 — anti-continuation-sans-titre (généralise B7 au-delà de la seule
+ * table effraction) : toute page portant du CONTENU appartenant à un bloc
+ * titré (ligne ATCD `AAAA :`, description `HEn —`, ou en-tête de table
+ * répété par `headerRows`) doit porter, sur la même page, soit un des 15
+ * `MARKERS` (le bloc commence ici), soit un fragment « (suite) » (scission
+ * pilotée) — sinon c'est une continuation NATURELLE de pdfmake, sans repère
+ * visuel pour le lecteur. C'est la garde qui manquait pour D1 : B4 ne voyait
+ * rien (la 1re ligne de la p3 fautive est « USAGE ILLICITE DE STUPEFIANTS »,
+ * une continuation de REPLI de ligne longue, pas un tiret de liste) et B1
+ * était sous son seuil. Contre-épreuve §7.3 : FAIL p3 (D1) ET p12 (D2) sur
+ * `cas-reel-01-repro.pdf`, aucune autre page. Active dans les DEUX voies
+ * (SPEC §8.3 : conserver B7'/B10/B11 en `--voie=b`).
+ */
+export function assertB10_titledBlockContinuationHasSuite(text) {
+  const pages = splitPages(text);
+  const pageCount = pages.length;
+  if (pageCount === 0) {
+    return { ok: true, detail: 'document vide — aucune page à examiner' };
+  }
+  const hits = [];
+  pages.forEach((pageText, idx) => {
+    const stripped = stripFooter(pageText.normalize('NFC'));
+    const isBlockContent = ATCD_LINE_RE.test(stripped) || HE_DESC_RE.test(stripped) || HYP_TABLE_HEAD_RE.test(stripped);
+    if (!isBlockContent) return;
+    const norm = normalize(stripped);
+    const hasMarker = MARKERS.some((m) => norm.includes(normalize(m.text)));
+    if (hasMarker || SUITE_RE.test(pageText)) return;
+    hits.push(idx + 1);
+  });
+  if (hits.length > 0) {
+    return {
+      ok: false,
+      detail: `${hits.length} page(s) portant du contenu de bloc titré (ligne ATCD « AAAA : », « HEn — » ou en-tête de table) SANS marqueur de section ni « (suite) » : ${hits.join(', ')}`,
+    };
+  }
+  return { ok: true, detail: `0 continuation de bloc titré sans titre/« (suite) » sur ${pageCount} page(s)` };
+}
+
+const B11_MIN_CONTINUATION_CHARS = 300;
+
+/**
+ * B11 — anti-page-de-continuation-sous-remplie (renforce B1/B6, SPEC §7.4) :
+ * aucune page (hors GARDE, FINALE, et page portant AU MOINS UNE image —
+ * même exclusion photo que B1) ne doit, À LA FOIS, ne porter AUCUN des 15
+ * `MARKERS`, ne porter AUCUN « (suite) », et compter moins de
+ * `B11_MIN_CONTINUATION_CHARS` (300) caractères non blancs hors pied de
+ * page. Pourquoi B1 et B6 rataient D1 (p3 de `cas-reel-01-repro`) : B1 compte
+ * 225 caractères > son seuil de 120, et B6 voit son ratio de remplissage
+ * poussé par la carte LOCALISATION reléguée en BAS de page (le `maxYMax`
+ * est haut alors que la page est aux 3/4 vide). La double condition
+ * « aucun titre reconnu ET volume maigre » est volontairement ÉTROITE pour
+ * ne pas créer de faux positifs : une page courte mais TITRÉE (section
+ * légitimement brève, fixtures `iso-*`/`empty-partial`) porte son marqueur
+ * et n'est jamais signalée. L'exclusion des pages à image est OBLIGATOIRE
+ * (résultat de contre-épreuve §7.4, pas une précaution) : sans elle, la
+ * page de galerie photo de `cas-reel-01-repro` (51 car. + 1 photo) remonterait
+ * en faux positif. Contre-épreuve : FAIL p3 (194 car., D1) et p14 (31 car.,
+ * D3) sur `cas-reel-01-repro.pdf`. Active dans les DEUX voies (SPEC §8.3).
+ */
+export function assertB11_noUnderfilledContinuationPage(text, images) {
+  const pages = splitPages(text);
+  const pageCount = pages.length;
+  if (pageCount === 0) {
+    return { ok: true, detail: 'document vide — aucune page à examiner' };
+  }
+  const pagesWithImage = new Set(images.map((img) => img.page));
+  const hits = [];
+  for (let i = 0; i < pageCount; i++) {
+    const pageNum = i + 1;
+    if (pageNum === 1 || pageNum === pageCount) continue; // garde / finale
+    if (pagesWithImage.has(pageNum)) continue; // la photo EST le contenu (même exclusion que B1)
+    const pageText = pages[i];
+    const norm = normalize(pageText);
+    const hasMarker = MARKERS.some((m) => norm.includes(normalize(m.text)));
+    if (hasMarker || SUITE_RE.test(pageText)) continue;
+    const len = nonBlankLength(stripFooter(pageText));
+    if (len < B11_MIN_CONTINUATION_CHARS) {
+      hits.push({ page: pageNum, len });
+    }
+  }
+  if (hits.length > 0) {
+    const list = hits.map((h) => `page ${h.page} (${h.len} car.)`).join(', ');
+    return {
+      ok: false,
+      detail: `${hits.length} page(s) de continuation sous-remplie(s) — sans marqueur ni « (suite) », < ${B11_MIN_CONTINUATION_CHARS} caractères non blancs hors pied de page : ${list}`,
+    };
+  }
+  return {
+    ok: true,
+    detail: `0 page de continuation sous-remplie sur ${pageCount} page(s) (hors garde/finale/photo, seuil ${B11_MIN_CONTINUATION_CHARS} car.)`,
   };
 }
 
@@ -1266,6 +1489,12 @@ function main() {
     // Guardrail pagination round 4 (mission FB.FIX, point 3) — toujours
     // évaluée (indépendante de --lenient), SKIP en mode --voie=a (cf. sa JSDoc).
     { code: 'B8', ...assertB8_noHeaderlessKvOrphanPage(text, images, { voie: opts.voie }) },
+    // Guardrail pagination round 5 (mission GD.GUARDS, SPEC-PDF-DEFINITIF §7)
+    // — toujours évaluées, indépendantes de --lenient ; B9 SKIP en --voie=b
+    // (cf. leur JSDoc respective).
+    { code: 'B9', ...assertB9_noTrailingTitle(text, { voie: opts.voie }) },
+    { code: 'B10', ...assertB10_titledBlockContinuationHasSuite(text) },
+    { code: 'B11', ...assertB11_noUnderfilledContinuationPage(text, images) },
   ];
 
   for (const a of assertions) {
