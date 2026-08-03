@@ -232,6 +232,170 @@ describe('buildPrintDocument', () => {
 });
 
 // ===========================================================================
+// SCISSION PILOTÉE + police adaptative ZMSPCP/MOICP/EFFRACTION
+// (mission BLIND.B, arbitrages 1/4, matrice-rupture.md §1).
+// ===========================================================================
+describe('scission pilotée + police adaptative (blocs à risque ZMSPCP/MOICP/EFFRACTION)', () => {
+    /** Génère un texte "- item N : ..." de N lignes, mêmes frontières légitimes
+     * que les fixtures de stress de l'audit (`cat-lines-120.json`). */
+    function dashItems(count: number): string {
+        return Array.from(
+            { length: count },
+            (_, i) => `- Mesure operationnelle numero ${i + 1} : consigne detaillee a appliquer sur zone.`,
+        ).join('\n');
+    }
+
+    function makeZmspcpFormData(catLines: number): OiFormData {
+        const zmspcpBlocks: OiZmspcpBlock[] = [
+            {
+                id: 'z1',
+                title: 'GROUPE ALPHA',
+                zone: 'Zone test',
+                mission: 'Mission test',
+                secteur: 'Secteur test',
+                points_particuliers: 'Points test',
+                cat: dashItems(catLines),
+                place_chef: 'Chef test',
+                members: [],
+            },
+        ];
+        return { zmspcp_blocks: zmspcpBlocks };
+    }
+
+    it('un bloc ZMSPCP à conduite à tenir courte reste sur UNE seule page, sans "(SUITE)"', () => {
+        const html = buildPrintDocument(makeData(makeZmspcpFormData(3)), { format: 'a4' });
+        expect(html).toContain('Articulation : ZMSPCP - GROUPE ALPHA');
+        expect(html).not.toContain('Articulation : ZMSPCP - GROUPE ALPHA (SUITE)');
+        expect(html).toContain('Mesure operationnelle numero 3');
+    });
+
+    it('un bloc ZMSPCP à conduite à tenir volumineuse (120 items) SCINDE avec titre "(SUITE)", ZÉRO perte de données', () => {
+        const html = buildPrintDocument(makeData(makeZmspcpFormData(120)), { format: 'a4' });
+        expect(html).toContain('Articulation : ZMSPCP - GROUPE ALPHA (SUITE)');
+        // Aucune donnée perdue : les 120 items sont TOUS présents (première ET
+        // dernière frontière), contrairement à la voie A qui les supprime
+        // silencieusement au-delà d'un certain volume (matrice-rupture.md §2/§3).
+        expect(html).toContain('Mesure operationnelle numero 1 ');
+        expect(html).toContain('Mesure operationnelle numero 120');
+        // Chaque fragment scindé est un `.adv-page` isolé (jamais de perte
+        // possible même si un fragment déborde encore sa propre page).
+        expect((html.match(/class="adv-page"/g) ?? []).length).toBeGreaterThan(1);
+    });
+
+    it('sans frontière légitime (aucun tiret), le texte reste INTACT, jamais scindé', () => {
+        const formData = makeZmspcpFormData(0);
+        formData.zmspcp_blocks![0]!.cat = 'Un unique paragraphe sans tiret, aussi long soit-il, jamais scindé.';
+        const html = buildPrintDocument(makeData(formData), { format: 'a4' });
+        expect(html).not.toContain('(SUITE)');
+        expect(html).toContain('Un unique paragraphe sans tiret, aussi long soit-il, jamais scindé.');
+    });
+
+    it('la police adaptative ZMSPCP suit le barème adaptivePagePx (volume faible -> 14px, volume élevé -> palier réduit)', () => {
+        const low = buildPrintDocument(makeData(makeZmspcpFormData(1)), { format: 'a4' });
+        const high = buildPrintDocument(makeData(makeZmspcpFormData(120)), { format: 'a4' });
+        expect(low).toMatch(/Articulation : ZMSPCP - GROUPE ALPHA<\/h2>/);
+        const lowFontMatch = /<div class="adv-page" style="font-size:(\d+)px;"><h2>Articulation : ZMSPCP/.exec(low);
+        const highFontMatch = /<div class="adv-page" style="font-size:(\d+)px;"><h2>Articulation : ZMSPCP/.exec(high);
+        expect(lowFontMatch).not.toBeNull();
+        expect(highFontMatch).not.toBeNull();
+        expect(Number(highFontMatch?.[1])).toBeLessThan(Number(lowFontMatch?.[1]));
+    });
+
+    it('la police adaptative EFFRACTION (effracFontPx transposé) réagit au volume cumulé mission+hypothèses', () => {
+        const manyHyp: OiEffractionBlock = {
+            id: 'e1',
+            title: 'PORTE CHARLIE',
+            mission: 'Mission effraction longue et détaillée '.repeat(10),
+            porte: '-',
+            structure: '-',
+            serrurerie: '-',
+            environnement: '-',
+            bati_a_bati: '-',
+            dormant_a_dormant: '-',
+            prof_linteaux: '-',
+            prof_bati: '-',
+            h_porte: '-',
+            h_marche: '-',
+            prof_marche: '-',
+            prof_moulure: '-',
+            members: [],
+            hypotheses: Array.from({ length: 12 }, (_, i) => ({
+                id: `he${i}`,
+                title: `Hypothèse ${i + 1}`,
+                desc: 'Description longue de l\'hypothèse '.repeat(5),
+                effrac: 'Technique',
+                degag: 'Dégagement',
+                assaut: 'Assaut',
+            })),
+        };
+        const html = buildPrintDocument(makeData({ effraction_blocks: [manyHyp] }), { format: 'a4' });
+        const match = /Articulation : EFFRACTION - PORTE CHARLIE<\/h2>/.exec(html);
+        expect(match).not.toBeNull();
+        const openTag = html.slice(0, match?.index).lastIndexOf('<div class="adv-page"');
+        expect(html.slice(openTag, openTag + 60)).toContain('font-size:9px');
+    });
+});
+
+// ===========================================================================
+// CHAMPS FANTÔMES effraction (mission BLIND.B §3, champs-fantomes.md)
+// ===========================================================================
+describe('champs fantômes effraction (mission/porte/prof_marche/prof_moulure/hypotheses[].desc)', () => {
+    function makeEffracFormData(): { formData: OiFormData; block: OiEffractionBlock } {
+        const block: OiEffractionBlock = {
+            id: 'e1',
+            title: 'PORTE CHARLIE',
+            mission: 'FRANCHISSEMENT DE LA PORTE PRINCIPALE.',
+            porte: 'Porte blindée',
+            structure: 'Béton',
+            serrurerie: 'Multipoints',
+            environnement: 'Urbain',
+            bati_a_bati: '90',
+            dormant_a_dormant: '85',
+            prof_linteaux: '15',
+            prof_bati: '20',
+            h_porte: '210',
+            h_marche: '18',
+            prof_marche: '30',
+            prof_moulure: '5',
+            members: [],
+            hypotheses: [
+                { id: 'he1', title: 'Hypothèse A', desc: 'Description tactique détaillée A.', effrac: 'E', degag: 'D', assaut: 'A' },
+            ],
+        };
+        return { formData: { effraction_blocks: [block] }, block };
+    }
+
+    it('rend mission/porte/prof_marche/prof_moulure (5 champs fantômes -1, desc traité séparément)', () => {
+        const { formData } = makeEffracFormData();
+        const html = buildPrintDocument(makeData(formData), { format: 'a4' });
+        expect(html).toContain('Mission :</strong> FRANCHISSEMENT DE LA PORTE PRINCIPALE.');
+        expect(html).toContain('Type de Porte</span> Porte blindée');
+        expect(html).toContain('Prof. Marche</span> 30');
+        expect(html).toContain('Prof. Moulure</span> 5');
+    });
+
+    it('hypotheses[].desc est rendu en BLOC TEXTE SOUS le tableau (dérogation anti-débordement), jamais dans une cellule de table', () => {
+        const { formData } = makeEffracFormData();
+        const html = buildPrintDocument(makeData(formData), { format: 'a4' });
+        expect(html).toContain('Description des Hypothèses');
+        expect(html).toContain('Description tactique détaillée A.');
+        // La cellule "Hypothèse" de la table ne contient QUE le titre, pas desc.
+        const tableIdx = html.indexOf('Hypothèses d\'Effraction');
+        const descBlockIdx = html.indexOf('Description des Hypothèses');
+        expect(descBlockIdx).toBeGreaterThan(tableIdx);
+        const tableSlice = html.slice(tableIdx, descBlockIdx);
+        expect(tableSlice).not.toContain('Description tactique détaillée A.');
+    });
+
+    it('sans aucune hypothèse desc renseignée, le bloc "Description des Hypothèses" est omis', () => {
+        const { formData, block } = makeEffracFormData();
+        block.hypotheses[0]!.desc = '';
+        const html = buildPrintDocument(makeData(formData), { format: 'a4' });
+        expect(html).not.toContain('Description des Hypothèses');
+    });
+});
+
+// ===========================================================================
 // printOiHighQuality (SPEC-PDF-V3.md §5.3)
 // ===========================================================================
 describe('printOiHighQuality', () => {

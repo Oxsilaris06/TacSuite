@@ -38,7 +38,10 @@ import { fontFacesCss } from './fonts.js';
 import { esc, field, nl2br, printCss, section } from './print-style.js';
 import {
     adaptivePagePx,
+    catItemsPerPageBudget,
     documentFontPx,
+    estimateCharsPerLine,
+    estimateWrappedLines,
     mm,
     palette,
     pageGeometry,
@@ -199,6 +202,154 @@ function documentVolume(formData: OiFormData): number {
         moicp.reduce((sum, b) => sum + b.mission.length, 0) +
         zmspcp.reduce((sum, b) => sum + b.mission.length, 0)
     );
+}
+
+/* ==========================================================================
+ * SCISSION PILOTÉE (mission BLIND.B, arbitrages 1/4) — transposition du
+ * modèle voie A (`document-builder.ts::splitAtDashBoundaries`/
+ * `chunkItemsByCost`, mission PG.IMPL/PG.REFIX, LECTURE SEULE, jamais
+ * importé : fichier interdit à cette mission) pour la voie B. Contrairement
+ * à la voie A, la voie B ne PERD jamais de donnée même sans ce mécanisme
+ * (débordement CSS non maîtrisé plutôt qu'une suppression silencieuse,
+ * cf. `regles-strategica.md` R11/R16) — cette scission sert donc à
+ * ÉLIMINER LES QUEUES ORPHELINES SANS TITRE (matrice-rupture.md §1, pages
+ * 7/9 de `long-case.json`), pas à éviter une perte de données : chaque
+ * fragment issu de la scission reste un `.adv-page` isolé (saut avant ET
+ * après, `print-style.ts:140`), donc même un fragment qui déborderait
+ * encore sa propre page resterait entièrement visible quelque part dans
+ * le flux imprimé (aucune classe `unbreakable`/`avoid` n'entoure jamais un
+ * bloc de la taille d'une page entière dans ce module).
+ * ======================================================================== */
+
+/**
+ * Découpe un texte en items aux frontières légitimes UNIQUEMENT — entre deux
+ * tirets de liste (`\n- item`), jamais en milieu de phrase. Sans tiret
+ * détecté, renvoie le texte INTACT en un seul élément : ce module ne scinde
+ * alors JAMAIS ce bloc (un débordement CSS non piloté reste préférable à une
+ * coupure arbitraire au milieu d'une phrase — même règle cible que la voie A).
+ */
+function splitAtDashBoundaries(text: string): string[] {
+    if (!text) return [];
+    const parts = text
+        .split(/\n(?=-\s)/)
+        .map((s) => s.trim())
+        .filter((s) => s !== '');
+    return parts.length > 1 ? parts : [text];
+}
+
+/**
+ * Découpe `items` en tranches dont le COÛT CUMULÉ (`cost(item)`, lignes
+ * réellement rendues via `estimateWrappedLines`) ne dépasse pas `budget` —
+ * jamais À L'INTÉRIEUR d'un item (frontière légitime uniquement ; un item qui
+ * dépasse `budget` à lui seul reste seul dans sa tranche). `budgets.first`/
+ * `.rest` <= 0 -> une seule tranche, jamais de boucle infinie.
+ */
+function chunkItemsByCost<T>(items: T[], cost: (item: T) => number, budgets: { first: number; rest: number }): T[][] {
+    if (budgets.first <= 0 && budgets.rest <= 0) return [items];
+    const chunks: T[][] = [];
+    let current: T[] = [];
+    let currentCost = 0;
+    let budget = budgets.first > 0 ? budgets.first : Infinity;
+    for (const item of items) {
+        const c = cost(item);
+        if (current.length > 0 && currentCost + c > budget) {
+            chunks.push(current);
+            current = [];
+            currentCost = 0;
+            budget = budgets.rest > 0 ? budgets.rest : Infinity;
+        }
+        current.push(item);
+        currentCost += c;
+    }
+    if (current.length > 0) chunks.push(current);
+    return chunks.length > 0 ? chunks : [items];
+}
+
+/** Hauteur utile de contenu (pt) du format 'a4' — référence d'échelle du budget
+ * `catItemsPerPageBudget`, calibré à l'origine sur ce format (même raison que
+ * son homologue voie A, `document-builder.ts::A4_CONTENT_HEIGHT_PT`). */
+const A4_CONTENT_HEIGHT_PT = pageGeometry('a4').contentHeightPt;
+
+/** `<li>` d'items à tiret, échappés/multi-lignes (`nl2br`). */
+function dashItemsHtml(items: string[]): string {
+    return `<ul>${items.map((item) => `<li>${nl2br(item)}</li>`).join('')}</ul>`;
+}
+
+/**
+ * Rendu commun ZMSPCP/MOICP avec SCISSION PILOTÉE du champ « C conduite à
+ * tenir » (mission BLIND.B §1) — port du modèle `buildArticulationCorePages`
+ * (voie A, `document-builder.ts:786-862`, LECTURE SEULE) adapté à HTML/CSS :
+ * chaque fragment est un `.adv-page` isolé (saut avant/après natif CSS) au
+ * lieu d'un `stack`+`pageBreak:'before'` pdfmake. Police adaptative
+ * (`adaptivePagePx`, arbitrage 4) calculée par l'appelant, partagée par TOUS
+ * les fragments du bloc (un seul palier par bloc, comme la voie A).
+ */
+function articulationBlockPages(opts: {
+    title: string;
+    sectionLabel: string;
+    coreFields: Array<[string, string]>;
+    catLabel: string;
+    catText: string;
+    cellsHtml: string;
+    placeChefHtml: string;
+    fontPx: number;
+    format: OiPdfFormat;
+}): string {
+    const { title, sectionLabel, coreFields, catLabel, catText, cellsHtml, placeChefHtml, fontPx, format } = opts;
+    const catItems = splitAtDashBoundaries(catText || '-');
+    const hasBoundary = catItems.length > 1;
+
+    const geo = pageGeometry(format);
+    const catColumnWidthPt = (geo.contentWidthPt - mm(6)) / 2;
+    const catCharsPerLine = estimateCharsPerLine(fontPx, catColumnWidthPt);
+    const catFirstPageOverheadLines =
+        1 /* h3(sectionLabel) */ +
+        coreFields.reduce((sum, [label, value]) => sum + estimateWrappedLines(`${label.toUpperCase()} : ${value}`, catCharsPerLine), 0);
+    const catBudget = Math.max(1, Math.round(catItemsPerPageBudget(fontPx) * (geo.contentHeightPt / A4_CONTENT_HEIGHT_PT)));
+    const catChunks = hasBoundary
+        ? chunkItemsByCost(catItems, (item) => estimateWrappedLines(item, catCharsPerLine), {
+              first: Math.max(1, catBudget - catFirstPageOverheadLines),
+              rest: catBudget,
+          })
+        : [catItems];
+
+    return catChunks
+        .map((chunk, idx) => {
+            let leftHtml: string;
+            if (hasBoundary) {
+                // Scission pilotée active : la liste C sort de la carte cœur
+                // dans SA PROPRE carte insécable (titrée « (SUITE) » à partir
+                // du 2e fragment) — c'est elle, jamais la carte cœur, qui se
+                // scinde d'un fragment à l'autre.
+                const catBoxHtml = `<div class="box avoid"><h3>${esc(idx === 0 ? catLabel : `${catLabel} (SUITE)`)}</h3>${dashItemsHtml(chunk)}</div>`;
+                leftHtml =
+                    idx === 0
+                        ? `<div class="box"><h3>${esc(sectionLabel)}</h3>` +
+                          coreFields.map(([label, value]) => fieldOr(label, value)).join('') +
+                          `</div>${catBoxHtml}`
+                        : catBoxHtml;
+            } else {
+                // Aucune frontière légitime dans C : même carte unique que
+                // l'ancien rendu (jamais de scission, jamais de risque
+                // d'orphelin puisqu'une seule page existe pour ce bloc).
+                leftHtml =
+                    `<div class="box"><h3>${esc(sectionLabel)}</h3>` +
+                    coreFields.map(([label, value]) => fieldOr(label, value)).join('') +
+                    fieldOr(catLabel, chunk[0] ?? '-') +
+                    `</div>`;
+            }
+            const rightHtml =
+                idx === 0
+                    ? `<div class="box"><h3>Composition par Cellule</h3>${cellsHtml}${placeChefHtml}</div>`
+                    : '';
+
+            const pageTitle = idx === 0 ? title : `${title} (SUITE)`;
+            return (
+                `<div class="adv-page" style="font-size:${fontPx}px;"><h2>${pageTitle}</h2>` +
+                `<div class="row"><div class="col">${leftHtml}</div><div class="col">${rightHtml}</div></div></div>`
+            );
+        })
+        .join('');
 }
 
 /**
@@ -476,42 +627,64 @@ function articulationPage(formData: OiFormData): string {
     );
 }
 
+/** Champs texte communs ZMSPCP/MOICP mesurés pour le palier de police
+ * adaptatif — même méthode que la fiche adversaire (`adaptivePagePx`),
+ * transposition verbatim de `articulationBlockFontPx` (voie A, lecture
+ * seule) : arbitrage 4 (police adaptative ZMSPCP/MOICP). */
+function articulationBlockFontPx(fields: Array<string | undefined>, memberGroupCount: number): number {
+    return adaptivePagePx(fields.map((v) => v ?? ''), memberGroupCount);
+}
+
 /** Bloc « Articulation : ZMSPCP - <titre> » (pdf-engine-v2.ts:1067-1097). */
-function zmspcpPage(block: OiZmspcpBlock, memberToCell: Map<string, string>): string {
+function zmspcpPage(block: OiZmspcpBlock, memberToCell: Map<string, string>, format: OiPdfFormat): string {
+    const groupCount = new Set(block.members.map((t) => memberToCell.get(t) || 'SANS CELLULE')).size;
     const cellHtml = cellGroupsHtml(block.members, memberToCell);
-    return (
-        `<div class="adv-page"><h2>Articulation : ZMSPCP - ${esc(textOr(block.title))}</h2>` +
-        `<div class="row"><div class="col"><div class="box"><h3>ZMSPCP</h3>` +
-        fieldOr('Z zone', block.zone) +
-        fieldOr('M mission', block.mission) +
-        fieldOr('S secteur', block.secteur) +
-        fieldOr('P points particuliers', block.points_particuliers) +
-        fieldOr('C conduite à tenir', block.cat) +
-        `</div></div>` +
-        `<div class="col"><div class="box"><h3>Composition par Cellule</h3>` +
-        (cellHtml || '<p class="muted">-</p>') +
-        `<p style="margin-top:10px;"><strong>Place du Chef :</strong> ${escOr(block.place_chef)}</p>` +
-        `</div></div></div></div>`
+    const fontPx = articulationBlockFontPx(
+        [block.zone, block.mission, block.secteur, block.points_particuliers, block.cat, block.place_chef],
+        groupCount,
     );
+    return articulationBlockPages({
+        title: `Articulation : ZMSPCP - ${esc(textOr(block.title))}`,
+        sectionLabel: 'ZMSPCP',
+        coreFields: [
+            ['Z zone', textOr(block.zone)],
+            ['M mission', textOr(block.mission)],
+            ['S secteur', textOr(block.secteur)],
+            ['P points particuliers', textOr(block.points_particuliers)],
+        ],
+        catLabel: 'C conduite à tenir',
+        catText: textOr(block.cat),
+        cellsHtml: cellHtml || '<p class="muted">-</p>',
+        placeChefHtml: `<p style="margin-top:10px;"><strong>Place du Chef :</strong> ${escOr(block.place_chef)}</p>`,
+        fontPx,
+        format,
+    });
 }
 
 /** Bloc « Articulation : MOICP - <titre> » (pdf-engine-v2.ts:1101-1123). */
-function moicpPage(block: OiMoicpBlock, memberToCell: Map<string, string>): string {
+function moicpPage(block: OiMoicpBlock, memberToCell: Map<string, string>, format: OiPdfFormat): string {
+    const groupCount = new Set(block.members.map((t) => memberToCell.get(t) || 'SANS CELLULE')).size;
     const cellHtml = cellGroupsHtml(block.members, memberToCell);
-    return (
-        `<div class="adv-page"><h2>Articulation : MOICP - ${esc(textOr(block.title))}</h2>` +
-        `<div class="row"><div class="col"><div class="box"><h3>MOICP</h3>` +
-        fieldOr('M mission', block.mission) +
-        fieldOr('O objectif', block.objectif) +
-        fieldOr('I itinéraire', block.itineraire) +
-        fieldOr('P points particuliers', block.points_particuliers) +
-        fieldOr('C conduite à tenir', block.cat) +
-        `</div></div>` +
-        `<div class="col"><div class="box"><h3>Composition par Cellule</h3>` +
-        (cellHtml || '<p class="muted">-</p>') +
-        `<p style="margin-top:10px;"><strong>Place du Chef :</strong> ${escOr(block.place_chef)}</p>` +
-        `</div></div></div></div>`
+    const fontPx = articulationBlockFontPx(
+        [block.mission, block.objectif, block.itineraire, block.points_particuliers, block.cat, block.place_chef],
+        groupCount,
     );
+    return articulationBlockPages({
+        title: `Articulation : MOICP - ${esc(textOr(block.title))}`,
+        sectionLabel: 'MOICP',
+        coreFields: [
+            ['M mission', textOr(block.mission)],
+            ['O objectif', textOr(block.objectif)],
+            ['I itinéraire', textOr(block.itineraire)],
+            ['P points particuliers', textOr(block.points_particuliers)],
+        ],
+        catLabel: 'C conduite à tenir',
+        catText: textOr(block.cat),
+        cellsHtml: cellHtml || '<p class="muted">-</p>',
+        placeChefHtml: `<p style="margin-top:10px;"><strong>Place du Chef :</strong> ${escOr(block.place_chef)}</p>`,
+        fontPx,
+        format,
+    });
 }
 
 /** Bloc « Articulation : EFFRACTION - <titre> » (pdf-engine-v2.ts:1132-1187). */
@@ -533,18 +706,27 @@ function effractionPage(
           `<div class="gallery" style="margin-top:4px;">${toolsHtml}</div></div>`
         : '';
 
+    // CHAMPS FANTÔMES (mission BLIND.B §3, champs-fantomes.md) : mission/porte/
+    // prof_moulure/prof_marche aux emplacements EXACTS strategica
+    // (`OrderHtmlArticulation.kt:245` : mission en paragraphe libre AVANT la
+    // grille de mesures ; `:279` : type de porte en 1re ligne de la grille ;
+    // `:289-290` : prof. marche puis prof. moulure en dernières lignes).
+    const missionHtml = fieldOr('Mission', block.mission);
     const specs =
         `<div class="effrac-specs">` +
+        `<div><span class="label">Type de Porte</span> ${nl2brOr(block.porte)}</div>` +
         `<div><span class="label">Structure</span> ${nl2brOr(block.structure)}</div>` +
         `<div><span class="label">Serrurerie</span> ${nl2brOr(block.serrurerie)}</div>` +
         `<div><span class="label">Environnement</span> ${nl2brOr(block.environnement)}</div>` +
         `<div><span class="label">Bâti à Bâti</span> ${nl2brOr(block.bati_a_bati)} mm</div>` +
         `<div><span class="label">Dormant à Dormant</span> ${nl2brOr(block.dormant_a_dormant)} mm</div>` +
         `<div><span class="label">Prof. Linteaux</span> ${nl2brOr(block.prof_linteaux)} mm</div>` +
+        `<div><span class="label">Prof. Bâti</span> ${nl2brOr(block.prof_bati)}</div>` +
         `<hr style="grid-column: span 2;"/>` +
         `<div><span class="label">H. Porte</span> ${nl2brOr(block.h_porte)}</div>` +
         `<div><span class="label">H. Marche</span> ${nl2brOr(block.h_marche)}</div>` +
-        `<div style="grid-column: span 2;"><span class="label">Prof. Bâti</span> ${nl2brOr(block.prof_bati)}</div>` +
+        `<div><span class="label">Prof. Marche</span> ${nl2brOr(block.prof_marche)} mm</div>` +
+        `<div><span class="label">Prof. Moulure</span> ${nl2brOr(block.prof_moulure)} mm</div>` +
         `</div>`;
 
     const hypRows =
@@ -558,13 +740,58 @@ function effractionPage(
                   .join('')
             : '<tr><td colspan="4">Aucune hypothèse saisie</td></tr>';
 
+    // `desc` (champ fantôme #4) : DÉROGATION anti-débordement (arbitrage 3) —
+    // strategica l'insère en <br/> DANS la cellule « Hypothèse » de la table
+    // (`OrderHtmlArticulation.kt:308-312`), ce qui pousse précisément la
+    // cellule à 20% de largeur à déborder/orpheliniser sur un texte long
+    // (cf. champs-fantomes.md, option 1 explicitement écartée). On rend donc
+    // `desc` en BLOC TEXTE SOUS le tableau, une entrée par hypothèse
+    // renseignée — la table garde ses 4 colonnes fixes, jamais de cellule
+    // à largeur contrainte contenant un volume de texte imprévisible.
+    const descEntries = block.hypotheses.filter((h) => !isBlank(h.desc));
+    const descHtml =
+        descEntries.length > 0
+            ? `<div class="box" style="margin-top:6px;"><h3>Description des Hypothèses</h3>` +
+              descEntries
+                  .map((h) => `<p><strong>${esc(h.title || h.id)} :</strong> ${nl2br(h.desc)}</p>`)
+                  .join('') +
+              `</div>`
+            : '';
+
+    // Police adaptative (arbitrage 4, port verbatim de `effracFontPx`,
+    // OrderHtmlArticulation.kt:261-274, LECTURE SEULE) : le volume cumulé
+    // mission + hypothèses (title/desc/effrac/degag/assaut) fixe le palier de
+    // la fiche entière, même barème que `adaptivePagePx` (theme.ts). Chaque
+    // hypothèse pèse 2 lignes de plus dans le calcul (comme le Kotlin
+    // `b.hypotheses.size * 2`) : place approximative de son en-tête + ses
+    // trois colonnes techniques.
+    const fontFields = [
+        block.mission,
+        ...block.hypotheses.flatMap((h) => [h.title, h.desc, h.effrac, h.degag, h.assaut]),
+    ];
+    const fontPx = adaptivePagePx(
+        fontFields.map((v) => v ?? ''),
+        block.hypotheses.length * 2,
+    );
+
     return (
-        `<div class="adv-page"><h2>Articulation : EFFRACTION - ${esc(textOr(block.title))}</h2>` +
+        `<div class="adv-page" style="font-size:${fontPx}px;"><h2>Articulation : EFFRACTION - ${esc(textOr(block.title))}</h2>` +
+        missionHtml +
         `<div class="fiche-head">${photoHtml}<div class="fiche-id"><div class="box"><h3>Caractéristiques Techniques</h3>${specs}</div></div></div>` +
+        // PAS de classe `avoid` sur cette table (contrairement au rendu
+        // précédent) : `page-break-inside:avoid` est de toute façon
+        // INEFFICACE au-delà d'une page pleine (R16, regles-strategica.md —
+        // le navigateur rompt quand même à l'intérieur) ; on assume donc
+        // explicitement la fragmentation NATIVE `<thead>` (répété sur chaque
+        // page, `tr{page-break-inside:avoid}` déjà global) plutôt qu'une
+        // règle « avoid » silencieusement violée. C'est ce mécanisme qui
+        // garantit qu'aucune hypothèse n'est jamais perdue, quel qu'en soit
+        // le nombre (contraste voie A, cf. matrice-rupture.md §2).
         `<div class="box"><h3>Hypothèses d'Effraction</h3>` +
-        `<table class="avoid"><thead><tr><th style="width:20%;">Hypothèse</th><th style="width:30%;">Technique / Moyen</th>` +
+        `<table><thead><tr><th style="width:20%;">Hypothèse</th><th style="width:30%;">Technique / Moyen</th>` +
         `<th style="width:25%;">Dégagement</th><th style="width:25%;">Assaut</th></tr></thead>` +
         `<tbody>${hypRows}</tbody></table></div>` +
+        descHtml +
         `</div>`
     );
 }
@@ -579,6 +806,7 @@ function articulationBlocksLoop(
     formData: OiFormData,
     photosBase64: Record<string, string>,
     dynamicPhotos: Record<string, OiPhotoMeta[]>,
+    format: OiPdfFormat,
 ): string {
     const moicpBlocks = formData.moicp_blocks ?? [];
     const zmspcpBlocks = formData.zmspcp_blocks ?? [];
@@ -592,14 +820,14 @@ function articulationBlocksLoop(
         if (zmspcp) {
             const bapteme = dynamicPhotos[`photo_bapteme_${zmspcp.id}`] ?? [];
             html += galleryPages(`Baptême Terrain — ${esc(textOr(zmspcp.title))}`, bapteme, photosBase64);
-            html += zmspcpPage(zmspcp, memberToCell);
+            html += zmspcpPage(zmspcp, memberToCell, format);
             const emplAo = dynamicPhotos[`photo_empl_ao_${zmspcp.id}`] ?? [];
             html += galleryPages(`ZMSPCP : ${esc(textOr(zmspcp.title))} (Emplacement AO)`, emplAo, photosBase64);
         }
 
         const moicp = moicpBlocks[i];
         if (moicp) {
-            html += moicpPage(moicp, memberToCell);
+            html += moicpPage(moicp, memberToCell, format);
             const ext = dynamicPhotos[`photo_itin_ext_${moicp.id}`] ?? [];
             const int_ = dynamicPhotos[`photo_itin_int_${moicp.id}`] ?? [];
             html += galleryPages(`MOICP : ${esc(textOr(moicp.title))}`, [...ext, ...int_], photosBase64);
@@ -729,7 +957,7 @@ export function buildPrintDocument(data: OiPdfCollectedData, opts: { format: OiP
     body += executionPage(formData, p);
     body += galleryPages('6. LOGISTIQUE & TRANSPORTS (Cheminement)', logisticsPhotos(dynamicPhotos), photosBase64);
     body += articulationPage(formData);
-    body += articulationBlocksLoop(formData, photosBase64, dynamicPhotos);
+    body += articulationBlocksLoop(formData, photosBase64, dynamicPhotos, opts.format);
     body += catPage(formData);
     body += patracPage(formData, p);
     body += finalPage(formData, photosBase64, dynamicPhotos);

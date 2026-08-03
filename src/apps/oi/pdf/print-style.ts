@@ -49,7 +49,16 @@ export function printCss(p: OiPdfPalette, fontPx: number, landscape: boolean, fo
   body { background:${p.bg}; color:${p.text};
          font-family:'JetBrains Mono', monospace;
          font-size:${fontPx}px; line-height:1.45; margin:0;
-         padding:${p.dark ? '8mm 11mm 11mm' : '0 11mm'}; }
+         padding:${p.dark ? '8mm 11mm 11mm' : '0 11mm'};
+         orphans:2; widows:2; }
+  /* Mission BLIND.B §2 — filet veuves/orphelines (R17, regles-strategica.md :
+     ABSENT de la source Kotlin elle-même, ajout propre à la voie B) : au
+     moins 2 lignes de chaque côté d'une coupure de page dans tout paragraphe/
+     cellule/item de texte libre. body seul ne suffit pas : orphans/widows ne
+     s'appliquent qu'aux boîtes de fragment RÉELLEMENT fragmentables
+     (paragraphes/cellules/items), pas par héritage magique sur tout leur
+     contenu — on les répète donc explicitement sur les éléments de texte libre. */
+  p, td, th, li { orphans:2; widows:2; }
   h1 { font-family:'Oswald', sans-serif; font-weight:500; color:${p.accent};
        letter-spacing:2px; text-transform:uppercase; margin:0 0 4px 0; }
   h2 { font-family:'Oswald', sans-serif; font-weight:500; color:${p.accent};
@@ -80,12 +89,19 @@ export function printCss(p: OiPdfPalette, fontPx: number, landscape: boolean, fo
                            overflow-wrap:normal; word-break:normal; }
   .card-head { background:${p.accent}; color:#fff; padding:5px;
                font-weight:bold; text-align:center; page-break-after:avoid; }
+  /* Mission BLIND.B §2 : ces 3 cartes encapsulent souvent un <div> de texte
+     libre directement (pas systématiquement un <p>, ex. catPage/adversaryFiche)
+     — overflow-wrap pose son propre filet ici plutôt que de dépendre d'un
+     enfant <p> qui ne l'aurait pas toujours. */
   .accent-card { border-left:6px solid ${p.accent}; background:${p.cardAlt};
-                 padding:8px 10px; margin:6px 0; page-break-inside:avoid; }
+                 padding:8px 10px; margin:6px 0; page-break-inside:avoid;
+                 overflow-wrap:anywhere; }
   .danger-card { border-left:6px solid ${p.danger}; background:${p.cardAlt};
-                 padding:8px 10px; margin:6px 0; page-break-inside:avoid; }
+                 padding:8px 10px; margin:6px 0; page-break-inside:avoid;
+                 overflow-wrap:anywhere; }
   .warning-card { border-left:6px solid ${p.warning}; background:${p.cardAlt};
-                  padding:8px 10px; margin:6px 0; page-break-inside:avoid; }
+                  padding:8px 10px; margin:6px 0; page-break-inside:avoid;
+                  overflow-wrap:anywhere; }
   .pill { display:inline-block; border:1px solid ${p.accent}; border-radius:10px;
           padding:2px 9px; margin:2px 4px 2px 0; page-break-inside:avoid; }
   .pill b { color:${p.accent}; }
@@ -157,7 +173,12 @@ export function printCss(p: OiPdfPalette, fontPx: number, landscape: boolean, fo
   .op-card { position:absolute; top:2mm; right:2mm; border:1px solid ${p.border};
              background:${p.cardAlt}; padding:4px 10px; font-size:${fontPx - 2}px; }
   ul { margin:4px 0; padding-left:18px; }
-  li { page-break-inside:avoid; }
+  /* Mission BLIND.B §2 — coupure de mot ciblée (arbitrage 2) : un item de
+     liste à tirets (conduite à tenir ZMSPCP/MOICP) est un texte libre comme
+     un autre, il peut contenir un token sans espace > ~40 caractères (URL,
+     référence…) qui ferait déborder la colonne à demi-largeur sans
+     overflow-wrap:anywhere (même risque que R14, p/.box/td,th). */
+  li { page-break-inside:avoid; overflow-wrap:anywhere; }
   hr { border:none; border-top:1px solid ${p.border}; margin:10px 0; }
   .page-break { page-break-before:always; }
   /* --- AJOUTS propres à NOTRE structure (absents de strategica) --- */
