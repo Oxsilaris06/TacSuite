@@ -2134,18 +2134,62 @@ export function oiPdfFileName(formData: OiFormData): string {
 }
 
 /**
+ * Correctif D4 (gate ROUND0, poids du PDF) — INTERNEMENT des images : pdfmake
+ * (`DocMeasure.convertIfBase64Image`) attribue un label `$$pdfmake$$<n>`
+ * FRAIS à chaque NŒUD `image:` portant une dataURL inline — deux usages de la
+ * MÊME photo (ex. porte d'effraction : bandeau `buildEffractionPages` + page
+ * détail `galleryPages`) étaient donc embarqués en DEUX objets PDF distincts
+ * (mesuré : 2 × 2074 K = 82 % du poids de `cas-reel-01`). Le dictionnaire
+ * `images` de la docDefinition, lui, est résolu par CLÉ
+ * (`PDFDocument.provideImage` : `_imageRegistry[src]`, un seul `embed` par
+ * clé) : chaque photo est donc référencée par son ID, la dataURL ne vivant
+ * qu'UNE fois dans `images`. Deux IDs portant une dataURL IDENTIQUE sont de
+ * surcroît fusionnés sur la première clé rencontrée (dédup par CONTENU).
+ * Les valeurs vides restent telles quelles (les gardes `figure('')`/
+ * `photosBase64[id] === undefined` en aval conservent leur sémantique).
+ */
+function internPhotoImages(photosBase64: Record<string, string>): {
+    photoRefs: Record<string, string>;
+    images: Record<string, string>;
+} {
+    const keyByDataUrl = new Map<string, string>();
+    const images: Record<string, string> = {};
+    const photoRefs: Record<string, string> = {};
+    for (const [id, dataUrl] of Object.entries(photosBase64)) {
+        if (!dataUrl) {
+            photoRefs[id] = dataUrl;
+            continue;
+        }
+        const existing = keyByDataUrl.get(dataUrl);
+        if (existing !== undefined) {
+            photoRefs[id] = existing;
+        } else {
+            keyByDataUrl.set(dataUrl, id);
+            images[id] = dataUrl;
+            photoRefs[id] = id;
+        }
+    }
+    return { photoRefs, images };
+}
+
+/**
  * Construit la `TDocumentDefinitions` complète des 14 sections de l'OI, dans
  * l'ordre imposé par SPEC-PDF-V3.md §3.2. Port de `pdf-engine-v2.ts:608-1304`
  * (`generateHTML`) — structure/replis/omissions identiques, langage visuel
  * `blocks.ts`/`theme.ts` (strategica).
  */
 export function buildOiDocDefinition(data: OiPdfCollectedData, opts: { format: OiPdfFormat }): TDocumentDefinitions {
-    const { formData, photosBase64, isDark } = data;
+    const { formData, isDark } = data;
     const p = palette(isDark);
     const geo = pageGeometry(opts.format);
     const dynamicPhotos = formData.dynamic_photos ?? {};
     const volume = documentVolume(formData);
     const baseFontSize = documentFontPx(volume);
+    // D4 : en aval de cette ligne, « photosBase64 » ne porte plus les dataURL
+    // mais des CLÉS du dictionnaire `images` ci-dessous — mêmes IDs, mêmes
+    // tests de présence (`!== undefined`), `figure()`/`image:` reçoivent la
+    // clé et pdfmake n'embarque chaque image qu'UNE seule fois.
+    const { photoRefs: photosBase64, images } = internPhotoImages(data.photosBase64);
 
     const ctx: BuildCtx = {
         formData,
@@ -2178,6 +2222,9 @@ export function buildOiDocDefinition(data: OiPdfCollectedData, opts: { format: O
 
     return {
         content: pages,
+        // D4 : dictionnaire d'images par CLÉ — une seule incorporation par
+        // image, quel que soit le nombre de nœuds qui la référencent.
+        images,
         pageSize: opts.format === 'a4' ? 'A4' : { width: geo.widthPt, height: geo.heightPt },
         pageOrientation: 'landscape',
         pageMargins: geo.marginsPt,

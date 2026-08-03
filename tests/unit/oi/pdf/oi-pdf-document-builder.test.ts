@@ -231,8 +231,11 @@ describe('buildOiDocDefinition — ordre des photos', () => {
         const photosBase64 = { extphoto: 'data:image/jpeg;base64,EXTPHOTO', intphoto: 'data:image/jpeg;base64,INTPHOTO' };
         const json = JSON.stringify(buildOiDocDefinition(collect(formData, photosBase64), { format: 'a4' }));
 
-        const extIdx = json.indexOf('EXTPHOTO');
-        const intIdx = json.indexOf('INTPHOTO');
+        // D4 (internement des images) : le contenu référence chaque photo par
+        // sa CLÉ (`"image":"extphoto"`), la dataURL ne vit qu'une fois dans le
+        // dictionnaire `images` — l'ordre se lit donc sur les références.
+        const extIdx = json.indexOf('"image":"extphoto"');
+        const intIdx = json.indexOf('"image":"intphoto"');
         expect(extIdx).toBeGreaterThanOrEqual(0);
         expect(intIdx).toBeGreaterThanOrEqual(0);
         expect(extIdx).toBeLessThan(intIdx);
@@ -251,9 +254,11 @@ describe('buildOiDocDefinition — ordre des photos', () => {
         const photosBase64 = { baptphoto: 'data:image/jpeg;base64,BAPTPHOTO', aophoto: 'data:image/jpeg;base64,AOPHOTO' };
         const json = JSON.stringify(buildOiDocDefinition(collect(formData, photosBase64), { format: 'a4' }));
 
-        const baptIdx = json.indexOf('BAPTPHOTO');
+        // D4 (internement des images) : même lecture par CLÉ que le test
+        // itinéraires ci-dessus.
+        const baptIdx = json.indexOf('"image":"baptphoto"');
         const zmspcpIdx = json.indexOf('ARTICULATION : ZMSPCP - ALPHA');
-        const aoIdx = json.indexOf('AOPHOTO');
+        const aoIdx = json.indexOf('"image":"aophoto"');
         expect(baptIdx).toBeGreaterThanOrEqual(0);
         expect(zmspcpIdx).toBeGreaterThanOrEqual(0);
         expect(aoIdx).toBeGreaterThanOrEqual(0);
