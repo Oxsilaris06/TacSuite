@@ -84,7 +84,10 @@ export function printCss(p: OiPdfPalette, fontPx: number, landscape: boolean, fo
   .avoid { page-break-inside:avoid; }
   /* Tableau roster : colonnes calibrées, coupure aux espaces uniquement
      (anywhere tronquait les libellés en plein mot — constat terrain). */
-  .patrac { font-size:${fontPx - 3}px; }
+  /* BLIND.FIX (point 4) — plancher de lisibilité en px ABSOLU (pas de «clamp()»
+     ici : «fontPx - 3» est déjà une valeur px calculée en JS, pas une unité
+     relative CSS) — même motivation que «.label»/«.cell-name» ci-dessus. */
+  .patrac { font-size:${Math.max(fontPx - 3, 8)}px; }
   .patrac td, .patrac th { padding:3px 2px; text-align:center;
                            overflow-wrap:normal; word-break:normal; }
   .card-head { background:${p.accent}; color:#fff; padding:5px;
@@ -157,7 +160,10 @@ export function printCss(p: OiPdfPalette, fontPx: number, landscape: boolean, fo
   .adv-page table { font-size:0.95em; }
   /* Le tableau PATRAC d'une page dédiée suit aussi la police adaptative
      (une règle px absolue écraserait l'inline de la page). */
-  .adv-page .patrac { font-size:0.8em; }
+  /* BLIND.FIX (point 4) — même plancher «clamp()» que «.label»/«.cell-name»
+     ci-dessus : «0.8em» d'un «.adv-page» à «fontPx=9» descend à 7,2px
+     (~5,4pt). */
+  .adv-page .patrac { font-size:clamp(8px, 0.8em, 100px); }
   ${darkPageTopPad}
   /* Fiche COURTE : dilatée sur la hauteur utile de page (blocs répartis
      uniformément) pour que la page paraisse complète. Les fiches denses ne
@@ -188,7 +194,19 @@ export function printCss(p: OiPdfPalette, fontPx: number, landscape: boolean, fo
      de base (ci-dessous, port du même fichier :709-710, T9) — strategica n'a pas
      cette classe (son field()/section() produit des <p> sans libellé encadré) ;
      on la réintroduit ICI, seulement pour cette grille 2 colonnes. */
-  .label { font-weight:bold; color:${p.accent}; font-size:0.75em;
+  /* BLIND.FIX (point 4) — plancher de lisibilité : «0.75em» d'un «.adv-page»
+     à police adaptative («fontPx» 9-14px, cf. sa JSDoc) descend à ~6,75px
+     (~5,1pt) au palier le plus dense, voire ~4,7pt pour «.cell-name»/
+     «.adv-page .patrac» ci-dessous (effet multiplicatif «0.7-0.8em» × 9px) —
+     illisible à l'impression. «clamp(MIN, val, MAX)» accepte des unités
+     mixtes («8px» MIN, «0.75em» la valeur relative usuelle) : le plancher
+     absolu ne s'applique QUE si «0.75em» tombe en dessous, la mise à
+     l'échelle relative reste intacte au-delà (fiches à volume réduit,
+     «fontPx» 12-14). DÉCISION ORCHESTRATEUR (BLIND.FIX) : la voie A reste en
+     points (rendu déjà validé utilisateur) — cette voie B reste fidèle au
+     modèle strategica en px, seul un plancher est ajouté (cf.
+     «docs/SPEC-PDF-V3.md» §7bis pour la divergence documentée). */
+  .label { font-weight:bold; color:${p.accent}; font-size:clamp(8px, 0.75em, 100px);
            text-transform:uppercase; display:block; }
   .effrac-specs { display:grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .effrac-specs > div { min-width:0; overflow-wrap:anywhere; }
@@ -200,7 +218,10 @@ export function printCss(p: OiPdfPalette, fontPx: number, landscape: boolean, fo
      sur cardAlt/border, déjà le motif "carte" du reste de ce document. */
   .cell-group { border:1px solid ${p.accent}; border-radius:6px; padding:8px;
                 background:${p.cardAlt}; margin-bottom:8px; page-break-inside:avoid; }
-  .cell-name { font-size:0.7em; font-weight:bold; color:${p.accent};
+  /* BLIND.FIX (point 4) — même plancher «clamp()» que «.label» (cf. sa JSDoc) :
+     «0.7em» d'un «.adv-page» à «fontPx=9» descend à 6,3px (~4,7pt), pire cas
+     mesuré. */
+  .cell-name { font-size:clamp(8px, 0.7em, 100px); font-weight:bold; color:${p.accent};
                text-transform:uppercase; margin-bottom:4px; border-bottom:1px solid ${p.border}; }
   .cell-members { display:flex; flex-wrap:wrap; gap:5px; }
   /* Badge outil d'effraction — port de pdf-engine-v2.ts:727-733, fond p.warning.

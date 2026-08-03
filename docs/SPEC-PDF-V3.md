@@ -428,7 +428,7 @@ appelle les binaires poppler déjà validés sur la machine : `pdfinfo`, `pdftot
 
 ```
 node tests/pdf/verify-structure.mjs <fichier.pdf> [--format=a4|16:9] [--photos=N]
-                                    [--sample=<fichier.json>] [--json] [--lenient]
+                                    [--sample=<fichier.json>] [--json] [--lenient] [--voie=a|b]
 ```
 Sortie : une ligne `PASS <code> — <libellé>` ou `FAIL <code> — <constat>` par assertion,
 puis un résumé. Code de sortie `0` si toutes les assertions passent, `1` sinon.
@@ -495,6 +495,32 @@ mais l'ordre des marqueurs **présents** reste asserté.
 | **E4** | Galeries à **2 photos** par page (au lieu d'une) | Langage strategica (`OrderHtmlPhotos.kt:70-82`), retour créateur « les images doubles prennent trop peu d'espace » |
 | **E5** | Suppression du filigrane sur les pages intermédiaires (il n'y en avait déjà pas) et de `_fitPageToBudget` | Pagination automatique |
 | **E6** | Palette : accents `#2563eb`/`#dc2626` → **`#0033a0`/`#c0392b`** (clair) et `#3b82f6` → **`#5b9bd5`** (sombre) | Langage visuel strategica (`OrderPdfStyle.kt:30-56`) — c'est l'objet du chantier |
+| **E7** | Unité de police divergente entre les deux voies (points PDF réels côté voie A vs pixels CSS avec plancher côté voie B, cf. §7bis) | Décision orchestrateur (mission BLIND.FIX, point 4) — chaque voie reste fidèle à SON modèle de référence (rendu voie A déjà validé utilisateur ; voie B fidèle au langage strategica en px) |
+
+---
+
+## 7bis. Divergence unités de police voie A / voie B (BLIND.FIX, point 4)
+
+**Constat** : `.cell-name`/`.adv-page .patrac` (`print-style.ts`, voie B)
+descendaient jusqu'à ~4,7 pt sur une fiche à police adaptative minimale
+(`fontPx = 9`, effet multiplicatif `0.7-0.8em` × 9 px) — illisible à
+l'impression papier. Correctif : plancher CSS `clamp(8px, <ratio>em, 100px)`
+sur `.label`/`.cell-name`/`.adv-page .patrac`, et plancher JS
+`Math.max(fontPx - 3, 8)` sur `.patrac` (valeur px déjà calculée côté
+serveur, pas une unité CSS relative) — cf. `print-style.ts` pour le détail
+de chaque plancher et sa justification.
+
+**Décision actée, PAS une régression à corriger plus tard** : la voie A
+(pdfmake, `document-builder.ts`) exprime ses tailles de police en **points
+PDF réels** (`fontPx`/`h3`/`labelValue`… déjà en points, rendu déjà validé
+par l'utilisateur lors des missions précédentes) ; la voie B
+(`print-view.ts`/`print-style.ts`) reste fidèle au modèle **strategica**
+d'origine, qui exprime ses tailles en **pixels CSS** (`OrderPdfStyle.kt`,
+port quasi verbatim, cf. l'en-tête de `print-style.ts`). Les deux voies
+n'ont donc PAS la même unité de référence pour une même taille nominale
+(1 px CSS ≈ 0,75 pt PDF à 96 ppp) — écart assumé au même titre que E1-E6
+ci-dessus, un plancher absolu suffit à garantir la lisibilité sans
+uniformiser les deux modèles.
 
 ---
 
