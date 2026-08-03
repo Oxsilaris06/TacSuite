@@ -455,6 +455,16 @@ export function figure(dataUrl: string | null, boxPt: [number, number], p: OiPdf
             // de photo saisi librement, sans espace, au-delà du seuil de coupure.
             { text: breakLongTokens(caption), bold: true, color: p.accent, alignment: 'center', margin: [0, 4, 0, 0] },
         ],
+        // BF.REFIX (round 1, point 6) — sans ce filet, pdfmake peut scinder ce
+        // `stack` entre la photo (qui tient dans la page) et la légende
+        // (repoussée SEULE sur la page suivante, orpheline) : constaté sur
+        // `recipe-data.json` (page « 6. LOGISTIQUE & TRANSPORTS », légende
+        // « Transport PSIG -> PR » seule en haut de la page suivante, cf.
+        // `galleryHeightPt`/`GALLERY_CAPTION_RESERVE_PT` ci-dessous qui
+        // réservent déjà la place normale — ce filet garantit qu'un cas
+        // borderline (légende plus longue qu'anticipé) bascule le bloc
+        // ENTIER d'un seul tenant plutôt que de le couper.
+        unbreakable: true,
     };
 }
 
@@ -529,7 +539,19 @@ export function galleryPages(
         return [];
     }
 
-    const galleryHeightPt = mm(photoPageGalleryHeightMm(true));
+    // BF.REFIX (round 1, point 6) — `photoPageGalleryHeightMm` réserve la
+    // place du titre `h2` mais PAS celle de la légende ajoutée par
+    // `figure()`/`galleryPhotoStack` SOUS la photo (`meta.customTitle ||
+    // "<titre> - Détail"`, TOUJOURS non vide) : le cadre photo était donc
+    // dimensionné à la hauteur UTILE ENTIÈRE de la page, garantissant un
+    // débordement de la légende sur CHAQUE page de galerie (reproduit sur
+    // `recipe-data.json`, légende « Transport PSIG -> PR » orpheline seule
+    // en page suivante). Réserve conservative pour 2 lignes de légende
+    // (police par défaut du document, `bold`, jusqu'à `documentFontPx()`
+    // max = 14) + sa marge `[0,4,0,0]` — le filet `unbreakable` de `figure()`
+    // ci-dessus couvre le cas résiduel d'une légende encore plus longue.
+    const GALLERY_CAPTION_RESERVE_PT = mm(12);
+    const galleryHeightPt = mm(photoPageGalleryHeightMm(true)) - GALLERY_CAPTION_RESERVE_PT;
     const pairGapPt = mm(4);
     const pairBoxWidthPt = (geo.contentWidthPt - pairGapPt) / 2;
 

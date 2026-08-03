@@ -144,6 +144,29 @@ export function normalize(text) {
 }
 
 // ===========================================================================
+// BF.REFIX (round 1, point 5) — normalisation SUPPLÉMENTAIRE, mode `--voie=b`
+// UNIQUEMENT (jamais appliquée en voie A, INCHANGÉE) : `letter-spacing:2px`
+// sur les titres `h1`/`h2` (`print-style.ts:63`/`:67`) fait insérer par
+// `pdftotext` des ESPACES À L'INTÉRIEUR DES MOTS eux-mêmes — constaté sur
+// « ORDRE INITIAL » -> « O RDRE I NITIA L » et « AVEZ-VOUS DES QUESTIONS ? »
+// -> « AVEZ-VO U S DES Q U ESTIO NS ? » (positions de coupure irrégulières,
+// dépendantes du moteur de justification de `pdftotext -layout`, PAS une
+// coupure lettre par lettre uniforme) — la normalisation `normalize()`
+// ci-dessus (collapse d'espaces MULTIPLES) ne les absorbe pas puisque ce
+// sont des espaces UNIQUES entre fragments. Seule une comparaison entièrement
+// DÉ-ESPACÉE (tous les espaces retirés, des DEUX côtés : texte extrait ET
+// marqueur recherché) absorbe ce défaut sans dépendre de la position exacte
+// des coupures. Appliquée en PLUS de `normalize()` (jamais à sa place) et
+// UNIQUEMENT quand `voie === 'b'` — la voie A n'a pas de calque `letter-
+// spacing` sur ses titres (pdfmake, pas de CSS) et n'a donc jamais ce défaut ;
+// lui appliquer ce dé-espacement inutilement risquerait de fusionner à tort
+// des marqueurs adjacents sur une voie où le bug n'existe pas.
+// ===========================================================================
+export function despace(text) {
+  return normalize(text).replace(/\s+/g, '');
+}
+
+// ===========================================================================
 // Exécution des binaires poppler
 // ===========================================================================
 
@@ -339,10 +362,13 @@ export function assertA2_realText(text) {
   };
 }
 
-export function assertA3_sectionOrder(text, { lenient }) {
-  const norm = normalize(text);
+export function assertA3_sectionOrder(text, { lenient, voie = 'a' }) {
+  // Mode voie B : dé-espacement intra-mot supplémentaire (cf. JSDoc
+  // `despace`) — voie A INCHANGÉE (comportement historique `normalize` seul).
+  const norm = voie === 'b' ? despace(text) : normalize(text);
+  const markerNorm = (m) => (voie === 'b' ? despace(m) : normalize(m));
   const results = MARKERS.map((m) => {
-    const idx = norm.indexOf(normalize(m.text));
+    const idx = norm.indexOf(markerNorm(m.text));
     return { ...m, idx, found: idx !== -1 };
   });
 
@@ -1124,7 +1150,7 @@ function main() {
   const assertions = [
     { code: 'A1', ...assertA1_geometry(pdfInfo, opts.format) },
     { code: 'A2', ...assertA2_realText(text) },
-    { code: 'A3', ...assertA3_sectionOrder(text, { lenient: opts.lenient }) },
+    { code: 'A3', ...assertA3_sectionOrder(text, { lenient: opts.lenient, voie: opts.voie }) },
     { code: 'A4', ...assertA4_duplicateSevenPreserved(text) },
     { code: 'A5', ...assertA5_embeddedFonts(fonts) },
     { code: 'A6', ...assertA6_noRasterization(images, pdfInfo, opts.photos) },

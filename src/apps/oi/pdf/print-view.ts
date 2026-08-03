@@ -736,10 +736,46 @@ function hypothesisRowCost(h: OiEffractionHypothesis, fontPx: number, contentWid
  */
 const EFFRAC_VOIE_B_CAPACITY_FACTOR = 1.5;
 
+/**
+ * BF.REFIX (round 1, point 2) — `EFFRAC_VOIE_B_CAPACITY_FACTOR` ci-dessus
+ * reste correct pour la PREMIÈRE page d'un bloc (Mission + Caractéristiques
+ * Techniques + tableau) mais s'est révélé SURESTIMÉ pour les pages
+ * « (SUITE) » : vérifié au banc (`render-printview.mjs` + chromium) contre
+ * une fixture de stress à 27/28/29/30/31/40 hypothèses — une page « (SUITE) »
+ * (bandeau `h2 (SUITE)` + `h3 (suite)` + `<thead>` répété, SANS Mission ni
+ * Caractéristiques Techniques) tient RÉELLEMENT 13 lignes de tableau (26
+ * unités de coût, `hypothesisRowCost` à 2 chacune) : 27 hypothèses (chunk
+ * `[14,13]`) tiennent sur 2 pages pleines, 28 (chunk `[14,14]`) font déborder
+ * 1 ligne SANS titre sur une 3e page (cause exacte du défaut constaté sur
+ * `stress-40hyp.json`, chunk `[14,17,9]` — la 3e tranche du chunk 17 lignes
+ * débordait déjà en page nue). Capacité réelle de continuation ≈ le barème
+ * `catItemsPerPageBudget` BRUT (sans le facteur ×1,5 ci-dessus, qui ne
+ * s'applique qu'à la 1re page) — la scission pilotée pour les pages « (SUITE) »
+ * doit viser ce plafond, pas celui (trop généreux) de la 1re page.
+ */
+const EFFRAC_VOIE_B_REST_CAPACITY_FACTOR = 1.0;
+
+/**
+ * Marge de sécurité (unités `catItemsPerPageBudget`, ~1 ligne de tableau)
+ * soustraite du plafond de CHAQUE page (1re ET continuation) — vérifié au
+ * banc que la frontière RÉELLE de la 1re page (Mission + Caractéristiques
+ * Techniques + tableau) est aussi 26 unités (13 lignes, `stress-13hyp` tient
+ * intégralement avec son en-tête, `stress-14hyp` fait déborder la table
+ * ENTIÈRE — thead compris — sur une page nue sans titre, cf.
+ * `EFFRAC_CHUNK_HEADER_ROWS`/`headCost` déjà déduits) : la MÊME marge
+ * s'applique donc aux deux budgets pour absorber la variance de rendu
+ * inter-fixtures (longueur des champs, cassures de mots différentes selon
+ * le contenu réel) sans revalider au pixel près à chaque fixture. Cf. JSDoc
+ * `EFFRAC_VOIE_B_REST_CAPACITY_FACTOR`.
+ */
+const EFFRAC_CHUNK_SAFETY_MARGIN = 2;
+
 /** Port de `document-builder.ts::EFFRAC_CHUNK_HEADER_ROWS` (bandeau fixe de
- * chaque fragment « (SUITE) » : `h2` de section, `h3` « (suite) », en-tête de
- * tableau répétée), même unité `catItemsPerPageBudget` mise à l'échelle par
- * `EFFRAC_VOIE_B_CAPACITY_FACTOR` ci-dessus. */
+ * la 1re page : `h2` de section, `h3` « Hypothèses d'Effraction », en-tête de
+ * tableau), même unité `catItemsPerPageBudget` mise à l'échelle par
+ * `EFFRAC_VOIE_B_CAPACITY_FACTOR` ci-dessus. Ne sert plus qu'au calcul de
+ * `firstPageBudget` depuis BF.REFIX round 1 (le budget des pages « (SUITE) »
+ * est désormais dérivé indépendamment, cf. `EFFRAC_VOIE_B_REST_CAPACITY_FACTOR`). */
 const EFFRAC_CHUNK_HEADER_ROWS = 5;
 
 /** Port de `document-builder.ts::effractionHeadRowCost` (bandeau MISSION +
@@ -893,13 +929,12 @@ function effractionPage(
 
     const title = `Articulation : EFFRACTION - ${esc(textOr(block.title))}`;
     const geo = pageGeometry(format);
-    const budget = Math.max(
-        1,
-        Math.round(catItemsPerPageBudget(fontPx) * (geo.contentHeightPt / A4_CONTENT_HEIGHT_PT) * EFFRAC_VOIE_B_CAPACITY_FACTOR),
-    );
+    const heightRatio = geo.contentHeightPt / A4_CONTENT_HEIGHT_PT;
+    const budget = Math.max(1, Math.round(catItemsPerPageBudget(fontPx) * heightRatio * EFFRAC_VOIE_B_CAPACITY_FACTOR));
     const headCost = effractionHeadRowCost(block, fontPx, geo.contentWidthPt);
-    const firstPageBudget = Math.max(1, budget - EFFRAC_CHUNK_HEADER_ROWS - headCost);
-    const restPageBudget = Math.max(1, budget - EFFRAC_CHUNK_HEADER_ROWS);
+    const firstPageBudget = Math.max(1, budget - EFFRAC_CHUNK_HEADER_ROWS - headCost - EFFRAC_CHUNK_SAFETY_MARGIN);
+    const restBudget = Math.max(1, Math.round(catItemsPerPageBudget(fontPx) * heightRatio * EFFRAC_VOIE_B_REST_CAPACITY_FACTOR));
+    const restPageBudget = Math.max(1, restBudget - EFFRAC_CHUNK_SAFETY_MARGIN);
     const hypotheses = block.hypotheses;
     const hypChunks: OiEffractionHypothesis[][] =
         hypotheses.length > 0

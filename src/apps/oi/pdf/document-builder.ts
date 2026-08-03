@@ -1457,6 +1457,34 @@ function hypothesesDescBlock(hypotheses: OiEffractionHypothesis[], p: OiPdfPalet
 }
 
 /**
+ * Coût EN LIGNES (même unité que `hypothesisRowCost`/`headCost` ci-dessous)
+ * du bloc « Description des Hypothèses » (`hypothesesDescBlock`) — BF.REFIX
+ * (round 1, point 3) : ce bloc n'était couvert par AUCUNE garde de budget,
+ * contrairement à la table qui le précède — `fitsWithoutSplit`/
+ * `chunkItemsByCost` ci-dessous ne mesuraient que le coût des LIGNES de
+ * table, jamais celui de ce bloc texte ajouté SOUS la dernière tranche
+ * (arbitrage #3). Reproduit sur `sentinel-champs.json` (2 hypothèses, table
+ * tenant confortablement sur la page 1, mais la 2e description — plus
+ * longue — débordait SEULE sur une page nue sans titre, guardrail B1). Même
+ * méthode ligne par ligne que `hypothesesDescBlock` : titre `h3` (1 ligne) +
+ * marge inter-blocs (1 ligne) + chaque entrée `HE<n> — … : …` mesurée à la
+ * largeur PLEINE de la carte (`contentWidthPt`, pas la demi-largeur des
+ * colonnes de la table).
+ */
+function descBlockCost(hypotheses: OiEffractionHypothesis[], fontPx: number, contentWidthPt: number): number {
+    const lines = hypotheses
+        .map((h, i) => (h.desc && h.desc.trim() !== '' ? `HE${i + 1} — ${h.title || h.id} : ${h.desc}` : null))
+        .filter((s): s is string => s !== null);
+    if (lines.length === 0) {
+        return 0;
+    }
+    const cpl = estimateCharsPerLine(fontPx, contentWidthPt);
+    const titleRows = 1; // h3 "Description des Hypothèses"
+    const marginRows = 1; // margin-top séparant le bloc de la table
+    return titleRows + marginRows + lines.reduce((sum, line) => sum + estimateWrappedLines(line, cpl), 0);
+}
+
+/**
  * Un bloc EFFRACTION est VIDE (§3.4 règle 1, correctif PG.REFIX round 1) si
  * AUCUNE mesure technique n'est saisie (les 9 champs rendus par `specs`
  * ci-dessous), AUCUNE hypothèse d'effraction, ET aucune photo de porte
@@ -1641,7 +1669,20 @@ function buildEffractionPages(ctx: BuildCtx, block: OiEffractionBlock): Content[
               })
             : [hypotheses];
 
-    return hypChunks.map((chunk, idx): Content => {
+    // BF.REFIX (round 1, point 3) — le bloc « Description des Hypothèses »
+    // (cf. JSDoc `descBlockCost`) n'est ajouté INLINE à la dernière tranche
+    // que s'il y tient RÉELLEMENT (même barème que la table qui précède,
+    // pas de nouvelle garde ad hoc) : sinon il devient sa PROPRE page
+    // titrée « (SUITE) », jamais une page nue en continuation naturelle
+    // pdfmake (même défaut que celui déjà corrigé pour la table, point 2).
+    const lastChunkIdx = hypChunks.length - 1;
+    const lastChunkIsFirst = lastChunkIdx === 0;
+    const descCost = descBlock !== null ? descBlockCost(hypotheses, fontPx, geo.contentWidthPt) : 0;
+    const lastChunkBudget = fitsWithoutSplit ? budget - headCost : lastChunkIsFirst ? firstPageBudget : restPageBudget;
+    const lastChunkCost = hypChunks[lastChunkIdx]?.reduce((sum, h) => sum + hypothesisRowCost(h, fontPx, geo.contentWidthPt), 0) ?? 0;
+    const descFitsOnLastChunkPage = descBlock === null || lastChunkCost + descCost <= lastChunkBudget;
+
+    const pages = hypChunks.map((chunk, idx): Content => {
         const rows: TableCell[][] =
             chunk.length > 0
                 ? chunk.map((h) => hypothesisTableRow(h, p))
@@ -1676,7 +1717,7 @@ function buildEffractionPages(ctx: BuildCtx, block: OiEffractionBlock): Content[
         const hypCardBody: Content[] = [
             h3(idx === 0 ? "Hypothèses d'Effraction" : "Hypothèses d'Effraction (suite)", p),
             hypTable,
-            ...(isLastChunk && descBlock !== null ? [descBlock] : []),
+            ...(isLastChunk && descBlock !== null && descFitsOnLastChunkPage ? [descBlock] : []),
         ];
         const pageBody: Content[] =
             idx === 0
@@ -1688,6 +1729,19 @@ function buildEffractionPages(ctx: BuildCtx, block: OiEffractionBlock): Content[
             pageBreak: idx === 0 ? undefined : 'before',
         };
     });
+
+    // BF.REFIX (round 1, point 3) — description trop volumineuse pour tenir
+    // sur la page de la dernière tranche : page « (SUITE) » dédiée, même
+    // gabarit de titre que les continuations de table ci-dessus.
+    if (descBlock !== null && !descFitsOnLastChunkPage) {
+        pages.push({
+            stack: [h2(`${title} (SUITE)`, p, geo.contentWidthPt), card([descBlock], p, { unbreakable: false })],
+            fontSize: fontPx,
+            pageBreak: 'before',
+        });
+    }
+
+    return pages;
 }
 
 /**
