@@ -26,6 +26,7 @@
 import type {
     OiAdversary,
     OiEffractionBlock,
+    OiEffractionHypothesis,
     OiFormData,
     OiMoicpBlock,
     OiPatracMember,
@@ -687,11 +688,112 @@ function moicpPage(block: OiMoicpBlock, memberToCell: Map<string, string>, forma
     });
 }
 
-/** Bloc « Articulation : EFFRACTION - <titre> » (pdf-engine-v2.ts:1132-1187). */
+/**
+ * Fraction de `contentWidthPt` occupée par chacune des 4 colonnes du tableau
+ * Hypothèses d'Effraction — port verbatim de `document-builder.ts::
+ * HYP_TABLE_COLUMN_FRACTIONS` (voie A, LECTURE SEULE) pour estimer le nombre
+ * de lignes réellement occupées par une hypothèse côté voie B.
+ */
+const HYP_TABLE_COLUMN_FRACTIONS = [0.2, 0.3, 0.25, 0.25];
+
+/**
+ * Correction empirique appliquée à `estimateCharsPerLine` pour CETTE table
+ * (mêmes police/colonnes que voie A, `HYP_TABLE_COLUMN_FRACTIONS`) — vérifié
+ * au banc (`render-printview.mjs`/chromium, cf. JSDoc
+ * `EFFRAC_VOIE_B_CAPACITY_FACTOR`) : une cellule « Technique / Moyen » de
+ * 108 caractères à `fontPx = 9` s'enroule RÉELLEMENT sur 2 lignes (capture
+ * `page11-40-11.png`), alors qu'`estimateCharsPerLine` (chasse 0,62×fontPx,
+ * calibrée sur `JetBrainsMono` PDFMAKE) l'estimait à 3 — la même police
+ * rendue par le NAVIGATEUR (`.adv-page table { font-size:0.95em; }`,
+ * `print-style.ts`) utilise sa largeur de caractère différemment. Facteur
+ * calibré pour retrouver le compte de lignes RÉEL sur ce cas de référence.
+ */
+const HYP_ROW_CHARS_PER_LINE_FACTOR = 1.35;
+
+function hypothesisRowCost(h: OiEffractionHypothesis, fontPx: number, contentWidthPt: number): number {
+    const charsPerLineCols = HYP_TABLE_COLUMN_FRACTIONS.map((f) =>
+        Math.max(1, Math.round(estimateCharsPerLine(fontPx, contentWidthPt * f) * HYP_ROW_CHARS_PER_LINE_FACTOR)),
+    );
+    const cols = [h.title || h.id, h.effrac || '-', h.degag || '-', h.assaut || '-'];
+    return Math.max(...cols.map((text, i) => estimateWrappedLines(text, charsPerLineCols[i] as number)));
+}
+
+/**
+ * Facteur de capacité RÉELLE d'une page voie B (CSS/navigateur) par rapport
+ * au barème `catItemsPerPageBudget` (calibré à l'origine sur le rendu
+ * pdfmake de la voie A, LECTURE SEULE) — vérifié au banc
+ * (`render-printview.mjs` + `chromium`/Playwright, `emulateMedia('print')`)
+ * contre un tableau Hypothèses d'Effraction dupliqué à 12/20/40 lignes
+ * ~2 lignes chacune : 12 hypothèses tiennent CONFORTABLEMENT sur la même
+ * page que Mission + Caractéristiques Techniques, 20 tiennent sur UNE SEULE
+ * page dédiée pleine, 40 nécessitent exactement 2 pages pleines (20
+ * chacune) — soit une capacité réelle ~1,5× le barème `catItemsPerPageBudget`
+ * brut (mise en page HTML/table du navigateur plus dense que l'estimation
+ * ligne-par-ligne calibrée pour pdfmake). Sans ce facteur, la scission
+ * pilotée ci-dessous se déclenchait dès 5 hypothèses alors qu'elles
+ * tiennent réellement toutes ensemble jusqu'à ~20 (régression constatée sur
+ * `effrac-n4`/`n6`/`n8`/`12-hypotheses` : scission inutile en 2 pages).
+ */
+const EFFRAC_VOIE_B_CAPACITY_FACTOR = 1.5;
+
+/** Port de `document-builder.ts::EFFRAC_CHUNK_HEADER_ROWS` (bandeau fixe de
+ * chaque fragment « (SUITE) » : `h2` de section, `h3` « (suite) », en-tête de
+ * tableau répétée), même unité `catItemsPerPageBudget` mise à l'échelle par
+ * `EFFRAC_VOIE_B_CAPACITY_FACTOR` ci-dessus. */
+const EFFRAC_CHUNK_HEADER_ROWS = 5;
+
+/** Port de `document-builder.ts::effractionHeadRowCost` (bandeau MISSION +
+ * carte « Caractéristiques Techniques », présent UNIQUEMENT sur la 1re page
+ * de la scission) — même méthode de mesure ligne par ligne. */
+function effractionHeadRowCost(block: OiEffractionBlock, fontPx: number, contentWidthPt: number): number {
+    const fullCpl = estimateCharsPerLine(fontPx, contentWidthPt);
+    const halfCpl = estimateCharsPerLine(fontPx, contentWidthPt / 2);
+
+    const missionRows = estimateWrappedLines(`Mission : ${block.mission || '-'}`, fullCpl);
+    const titleRows = 1; // h3 "Caractéristiques Techniques"
+
+    const rowCost = (label: string, value: string | undefined, cpl: number): number =>
+        isBlank(value) ? 0 : estimateWrappedLines(`${label} : ${value}`, cpl);
+
+    const typePorteRows = rowCost('Type de Porte', block.porte, fullCpl);
+    const leftColRows =
+        rowCost('Structure', block.structure, halfCpl) +
+        rowCost('Serrurerie', block.serrurerie, halfCpl) +
+        rowCost('Environnement', block.environnement, halfCpl);
+    const rightColRows =
+        rowCost('Bâti à Bâti', block.bati_a_bati, halfCpl) +
+        rowCost('Dormant à Dormant', block.dormant_a_dormant, halfCpl) +
+        rowCost('Prof. Linteaux', block.prof_linteaux, halfCpl);
+    const grid2TopRows = Math.max(leftColRows, rightColRows);
+
+    const hRows = Math.max(rowCost('H. Porte', block.h_porte, halfCpl), rowCost('H. Marche', block.h_marche, halfCpl));
+    const profRows = Math.max(rowCost('Prof. Marche', block.prof_marche, halfCpl), rowCost('Prof. Bâti', block.prof_bati, halfCpl));
+    const profMoulureRows = rowCost('Prof. Moulure', block.prof_moulure, fullCpl);
+
+    const SAFETY_MARGIN_ROWS = 2;
+    return missionRows + titleRows + typePorteRows + grid2TopRows + hRows + profRows + profMoulureRows + SAFETY_MARGIN_ROWS;
+}
+
+/**
+ * Bloc « Articulation : EFFRACTION - <titre> » (pdf-engine-v2.ts:1132-1187).
+ *
+ * BLIND.FIX (point 2) — le tableau « Hypothèses d'Effraction » était rendu
+ * dans un `.adv-page` UNIQUE : un volume d'hypothèses qui déborde la hauteur
+ * imprimable poursuivait sur une page physique suivante via la pagination
+ * CSS NATIVE du navigateur (`<thead>` répété par le moteur d'impression),
+ * mais SANS jamais réinjecter le titre `h2` de section — page orpheline,
+ * table sans contexte (cf. `A-effrac-12-hypotheses-light-11.png`, référence
+ * voie A). Correctif : transposition de `articulationBlockPages()`
+ * (scission pilotée `chunkItemsByCost`, déjà utilisée pour ZMSPCP/MOICP) à
+ * la table Hypothèses — chaque fragment est désormais un `.adv-page` isolé,
+ * retitré « ARTICULATION : EFFRACTION - {titre} (SUITE) » à partir du 2e
+ * fragment, avec sa PROPRE en-tête de tableau (`<thead>`) répétée.
+ */
 function effractionPage(
     block: OiEffractionBlock,
     photosBase64: Record<string, string>,
     dynamicPhotos: Record<string, OiPhotoMeta[]>,
+    format: OiPdfFormat,
 ): string {
     const photoMeta = (dynamicPhotos[`photo_effrac_${block.id}`] ?? [])[0];
     const doorSrc = photoMeta ? photosBase64[photoMeta.id] : undefined;
@@ -748,16 +850,12 @@ function effractionPage(
               measureRows2.map(([label, value]) => `<div><span class="label">${esc(label)}</span> ${nl2br(value)}</div>`).join('') +
               `</div>`;
 
-    const hypRows =
-        block.hypotheses.length > 0
-            ? block.hypotheses
-                  .map(
-                      (h) =>
-                          `<tr><td><strong>${esc(h.title || h.id)}</strong></td>` +
-                          `<td>${nl2brOr(h.effrac)}</td><td>${nl2brOr(h.degag)}</td><td>${nl2brOr(h.assaut)}</td></tr>`,
-                  )
-                  .join('')
-            : '<tr><td colspan="4">Aucune hypothèse saisie</td></tr>';
+    const hypothesisRowHtml = (h: OiEffractionHypothesis): string =>
+        `<tr><td><strong>${esc(h.title || h.id)}</strong></td>` +
+        `<td>${nl2brOr(h.effrac)}</td><td>${nl2brOr(h.degag)}</td><td>${nl2brOr(h.assaut)}</td></tr>`;
+    const hypTableHead =
+        `<thead><tr><th style="width:20%;">Hypothèse</th><th style="width:30%;">Technique / Moyen</th>` +
+        `<th style="width:25%;">Dégagement</th><th style="width:25%;">Assaut</th></tr></thead>`;
 
     // `desc` (champ fantôme #4) : DÉROGATION anti-débordement (arbitrage 3) —
     // strategica l'insère en <br/> DANS la cellule « Hypothèse » de la table
@@ -793,26 +891,53 @@ function effractionPage(
         block.hypotheses.length * 2,
     );
 
-    return (
-        `<div class="adv-page" style="font-size:${fontPx}px;"><h2>Articulation : EFFRACTION - ${esc(textOr(block.title))}</h2>` +
-        missionHtml +
-        `<div class="fiche-head">${photoHtml}<div class="fiche-id"><div class="box"><h3>Caractéristiques Techniques</h3>${specs}</div></div></div>` +
-        // PAS de classe `avoid` sur cette table (contrairement au rendu
-        // précédent) : `page-break-inside:avoid` est de toute façon
-        // INEFFICACE au-delà d'une page pleine (R16, regles-strategica.md —
-        // le navigateur rompt quand même à l'intérieur) ; on assume donc
-        // explicitement la fragmentation NATIVE `<thead>` (répété sur chaque
-        // page, `tr{page-break-inside:avoid}` déjà global) plutôt qu'une
-        // règle « avoid » silencieusement violée. C'est ce mécanisme qui
-        // garantit qu'aucune hypothèse n'est jamais perdue, quel qu'en soit
-        // le nombre (contraste voie A, cf. matrice-rupture.md §2).
-        `<div class="box"><h3>Hypothèses d'Effraction</h3>` +
-        `<table><thead><tr><th style="width:20%;">Hypothèse</th><th style="width:30%;">Technique / Moyen</th>` +
-        `<th style="width:25%;">Dégagement</th><th style="width:25%;">Assaut</th></tr></thead>` +
-        `<tbody>${hypRows}</tbody></table></div>` +
-        descHtml +
-        `</div>`
+    const title = `Articulation : EFFRACTION - ${esc(textOr(block.title))}`;
+    const geo = pageGeometry(format);
+    const budget = Math.max(
+        1,
+        Math.round(catItemsPerPageBudget(fontPx) * (geo.contentHeightPt / A4_CONTENT_HEIGHT_PT) * EFFRAC_VOIE_B_CAPACITY_FACTOR),
     );
+    const headCost = effractionHeadRowCost(block, fontPx, geo.contentWidthPt);
+    const firstPageBudget = Math.max(1, budget - EFFRAC_CHUNK_HEADER_ROWS - headCost);
+    const restPageBudget = Math.max(1, budget - EFFRAC_CHUNK_HEADER_ROWS);
+    const hypotheses = block.hypotheses;
+    const hypChunks: OiEffractionHypothesis[][] =
+        hypotheses.length > 0
+            ? chunkItemsByCost(hypotheses, (h) => hypothesisRowCost(h, fontPx, geo.contentWidthPt), {
+                  first: firstPageBudget,
+                  rest: restPageBudget,
+              })
+            : [[]];
+
+    return hypChunks
+        .map((chunk, idx) => {
+            const rowsHtml = chunk.length > 0 ? chunk.map(hypothesisRowHtml).join('') : '<tr><td colspan="4">Aucune hypothèse saisie</td></tr>';
+            const isLastChunk = idx === hypChunks.length - 1;
+            const hypBoxHtml =
+                `<div class="box"><h3>${idx === 0 ? "Hypothèses d'Effraction" : "Hypothèses d'Effraction (suite)"}</h3>` +
+                // PAS de classe `avoid` sur cette table (contrairement au rendu
+                // précédent) : `page-break-inside:avoid` est de toute façon
+                // INEFFICACE au-delà d'une page pleine (R16, regles-strategica.md —
+                // le navigateur rompt quand même à l'intérieur) ; on assume donc
+                // explicitement la fragmentation NATIVE `<thead>` (répété sur chaque
+                // page, `tr{page-break-inside:avoid}` déjà global) plutôt qu'une
+                // règle « avoid » silencieusement violée. C'est ce mécanisme qui
+                // garantit qu'aucune hypothèse n'est jamais perdue, quel qu'en soit
+                // le nombre (contraste voie A, cf. matrice-rupture.md §2) — la
+                // SCISSION PILOTÉE ci-dessus (BLIND.FIX point 2) élimine en plus
+                // l'orphelinage du TITRE lors de cette fragmentation native.
+                `<table>${hypTableHead}<tbody>${rowsHtml}</tbody></table></div>` +
+                (isLastChunk && descHtml !== '' ? descHtml : '');
+            const pageTitle = idx === 0 ? title : `${title} (SUITE)`;
+            const bodyHtml =
+                idx === 0
+                    ? missionHtml +
+                      `<div class="fiche-head">${photoHtml}<div class="fiche-id"><div class="box"><h3>Caractéristiques Techniques</h3>${specs}</div></div></div>` +
+                      hypBoxHtml
+                    : hypBoxHtml;
+            return `<div class="adv-page" style="font-size:${fontPx}px;"><h2>${pageTitle}</h2>${bodyHtml}</div>`;
+        })
+        .join('');
 }
 
 /**
@@ -854,7 +979,7 @@ function articulationBlocksLoop(
 
         const effrac = effracBlocks[i];
         if (effrac) {
-            html += effractionPage(effrac, photosBase64, dynamicPhotos);
+            html += effractionPage(effrac, photosBase64, dynamicPhotos, format);
             const photos = dynamicPhotos[`photo_effrac_${effrac.id}`] ?? [];
             html += galleryPages(`Effraction : ${esc(textOr(effrac.title))}`, photos, photosBase64);
         }
