@@ -1071,6 +1071,81 @@ export function assertB7_effractionSuiteTitlePresent(text) {
 }
 
 // ===========================================================================
+// B8 — GUARDRAIL PAGINATION round 4 (mission FB.FIX, point 3) : mode
+// `--voie=b` UNIQUEMENT. Motif constaté sur `adv-atcd32`/`adv-atcd35` clair
+// AVANT le correctif `print-view.ts::adversaryFiche` (mission FB.FIX point
+// 1/2) — les cartes LOCALISATION/MOBILITÉ (courtes, purement `LABEL :
+// valeur`) débordaient de la fiche adversaire SANS jamais réinjecter le
+// titre de fiche, atterrissant seules sur une page à 84-105 caractères non
+// blancs : B1 (seuil voie B = 20 caractères) les laisse passer (84 > 20) et
+// B4 (motif « 1re ligne à tiret ») ne les voit pas non plus (ces cartes
+// n'ont jamais de tiret de liste, seulement des lignes `LABEL : valeur`).
+// Ni B1 ni B4 ne couvraient donc ce motif précis avant ce correctif — d'où
+// ce guardrail dédié plutôt qu'un ajustement de seuil (un seuil B1 plus bas
+// resterait aveugle par construction : le défaut n'est pas le VOLUME de
+// caractères mais l'ABSENCE de titre reconnu sur une page de continuation).
+// ===========================================================================
+
+/** Ligne `LABEL : valeur` générique (`kvRow()`/`fieldOr()`, `print-view.ts`) — portée volontairement large (pas de vocabulaire LOCALISATION/MOBILITÉ figé) : le motif ciblé est « page de continuation dominée par des cartes kv courtes », quelle que soit la section d'origine. */
+const KV_LINE_RE = /^[^\n:]{1,40}:\s*\S/;
+const B8_MIN_KV_LINES = 2;
+const B8_MAX_CONTENT_CHARS = 200;
+
+/**
+ * B8 — anti-carte-kv-orpheline : en mode `--voie=b`, aucune page (hors
+ * garde/finale/photo, même exclusion que B1/B4) ne doit porter ≥
+ * `B8_MIN_KV_LINES` lignes `LABEL : valeur` tout en NE portant AUCUN titre
+ * reconnu (un des 15 `MARKERS` de la SPEC OU le fragment `(suite)`/`(SUITE)`
+ * d'une scission pilotée) ET en restant sous `B8_MAX_CONTENT_CHARS`
+ * caractères non blancs de contenu total — signature d'une carte kv COURTE
+ * (LOCALISATION/MOBILITÉ, IDENTITÉ…) qui a débordé de sa page dédiée sans
+ * qu'aucune scission pilotée ne lui ait réinjecté de titre de continuation.
+ * SKIP en mode `--voie=a` (pdfmake) : ce moteur ne produit jamais de page
+ * dédiée « une section = une page » par construction (cf. JSDoc `ORPHAN_MIN_
+ * NON_BLANK_CHARS_VOIE_B`), le motif ne s'y manifeste pas de la même façon.
+ */
+export function assertB8_noHeaderlessKvOrphanPage(text, images, { voie = 'a' } = {}) {
+  if (voie !== 'b') {
+    return { ok: true, skip: true, detail: 'SKIP (mode voie A) — motif propre aux pages dédiées de la voie B' };
+  }
+  const pages = splitPages(text);
+  const pageCount = pages.length;
+  if (pageCount === 0) {
+    return { ok: true, detail: 'document vide — aucune page à examiner' };
+  }
+  const pagesWithImage = new Set(images.map((img) => img.page));
+  const hits = [];
+  for (let i = 0; i < pageCount; i++) {
+    const pageNum = i + 1;
+    if (pageNum === 1 || pageNum === pageCount) continue; // garde / finale
+    if (pagesWithImage.has(pageNum)) continue; // page photo pleine page
+    const pageText = pages[i];
+    const norm = normalize(pageText);
+    const hasRecognizedTitle = MARKERS.some((m) => norm.includes(normalize(m.text))) || SUITE_RE.test(pageText);
+    if (hasRecognizedTitle) continue;
+    const kvLineCount = pageText
+      .split('\n')
+      .map((l) => l.trim())
+      .filter((l) => l !== '' && KV_LINE_RE.test(l)).length;
+    const contentLen = nonBlankLength(pageText);
+    if (kvLineCount >= B8_MIN_KV_LINES && contentLen <= B8_MAX_CONTENT_CHARS) {
+      hits.push({ page: pageNum, kvLineCount, contentLen });
+    }
+  }
+  if (hits.length > 0) {
+    const list = hits.map((h) => `page ${h.page} (${h.kvLineCount} ligne(s) kv, ${h.contentLen} car.)`).join(', ');
+    return {
+      ok: false,
+      detail: `${hits.length} page(s) de carte(s) kv orpheline(s) sans titre reconnu ni « (suite) » : ${list}`,
+    };
+  }
+  return {
+    ok: true,
+    detail: `0 page de carte kv orpheline sans titre (seuils ${B8_MIN_KV_LINES} lignes kv / ${B8_MAX_CONTENT_CHARS} car., mode voie B)`,
+  };
+}
+
+// ===========================================================================
 // CLI
 // ===========================================================================
 
@@ -1188,6 +1263,9 @@ function main() {
     // Guardrail pagination round 3 (mission BLIND.REFIX round 2) — même
     // garantie que B1/B4 (toujours évaluée, indépendante de --lenient).
     { code: 'B7', ...assertB7_effractionSuiteTitlePresent(text) },
+    // Guardrail pagination round 4 (mission FB.FIX, point 3) — toujours
+    // évaluée (indépendante de --lenient), SKIP en mode --voie=a (cf. sa JSDoc).
+    { code: 'B8', ...assertB8_noHeaderlessKvOrphanPage(text, images, { voie: opts.voie }) },
   ];
 
   for (const a of assertions) {

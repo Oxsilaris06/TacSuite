@@ -418,12 +418,110 @@ function coverPage(
     );
 }
 
+/**
+ * FB.FIX (point 1) — capacité mesurée par thème pour la carte DANGEROSITÉ/ATCD
+ * d'une fiche adversaire, MÊME modèle que `effractionPage`
+ * (`EFFRAC_VOIE_B_CAPACITY_FACTOR`/`EFFRAC_VOIE_B_REST_CAPACITY_FACTOR`/
+ * `EFFRAC_FIRST_PAGE_LIGHT_EXTRA_MARGIN`) : `adversaryFiche` ne portait AUCUN
+ * modèle de capacité — un `antecedents_adversaire` volumineux (`- ATCD n : …`,
+ * frontières légitimes à tiret comme la conduite à tenir ZMSPCP/MOICP)
+ * débordait alors `.danger-card` (`page-break-inside:avoid`, `print-style.ts`)
+ * NATURELLEMENT via la pagination CSS du navigateur, sans jamais réinjecter le
+ * titre de fiche — et, en thème CLAIR, ce débordement pouvait désynchroniser
+ * le `page-break-after:always` de `.adv-page` d'une page physique, produisant
+ * une page ENTIÈREMENT BLANCHE (constat : `adv-atcd30` clair, 15 pages contre
+ * 14 en sombre, `blank3-03.png`). Vérifiée au banc (`render-b.mjs` + chromium)
+ * contre le balayage `adv-atcd5` à `adv-atcd35` + `adv-5-atcd40` : la 1re page
+ * (bandeau titre + photo/identité + LOCALISATION/MOBILITÉ voisines) tient
+ * réellement MOINS d'ATCD que les pages « (SUITE) » (dépourvues de ce
+ * voisinage), même asymétrie clair/sombre que l'effraction — d'où la même
+ * marge supplémentaire, propre au thème clair, appliquée UNIQUEMENT à la 1re
+ * page.
+ */
+const ADV_DANGER_CAPACITY_FACTOR = 1;
+const ADV_DANGER_REST_CAPACITY_FACTOR = 1;
+const ADV_CHUNK_SAFETY_MARGIN = 2;
+const ADV_FIRST_PAGE_LIGHT_EXTRA_MARGIN = 2;
+
+/**
+ * Bloc « DANGEROSITÉ » d'une fiche adversaire — port du modèle
+ * `effractionPage`/`articulationBlockPages` (scission pilotée
+ * `chunkItemsByCost`) transposé à `antecedents_adversaire` (mission FB.FIX
+ * point 1). Sans frontière légitime (aucun tiret), retombe sur la carte
+ * unique d'origine (jamais de coupure arbitraire en milieu de phrase, R10) —
+ * un débordement CSS non piloté y reste possible mais AUCUNE page blanche
+ * n'en résulte (pas de re-titrage désynchronisé puisqu'aucune scission
+ * n'intervient). Avec frontière : le 1er fragment reste dans `.danger-card`
+ * sur la page 1 (aux côtés de IDENTITÉ/LOCALISATION/MOBILITÉ, jamais déplacé,
+ * mission FB.FIX point 2 — ces cartes ne partent donc jamais seules sur une
+ * page « (SUITE) »), chaque fragment suivant devient sa PROPRE `.adv-page`
+ * titrée « {advTitle} (SUITE) », comme les fragments d'hypothèses d'effraction.
+ */
+function dangerPages(opts: {
+    advTitle: string;
+    armesConnues: string;
+    atcd: string;
+    fontPx: number;
+    columnWidthPt: number;
+    geo: ReturnType<typeof pageGeometry>;
+    isDark: boolean;
+    siblingOverheadLines: number;
+}): { firstHtml: string; extraPagesHtml: string } {
+    const { advTitle, armesConnues, atcd, fontPx, columnWidthPt, geo, isDark, siblingOverheadLines } = opts;
+    const items = splitAtDashBoundaries(atcd);
+    if (items.length <= 1) {
+        return {
+            firstHtml:
+                `<div class="danger-card"><h3>DANGEROSITÉ</h3>` +
+                `<p><span class="danger">Armes Connues :</span> ${nl2brOr(armesConnues)}</p>` +
+                `<p><strong>Dangerosité / ATCD :</strong> ${nl2brOr(atcd)}</p></div>`,
+            extraPagesHtml: '',
+        };
+    }
+
+    const charsPerLine = estimateCharsPerLine(fontPx, columnWidthPt);
+    const heightRatio = geo.contentHeightPt / A4_CONTENT_HEIGHT_PT;
+    const lightExtraMargin = isDark ? 0 : ADV_FIRST_PAGE_LIGHT_EXTRA_MARGIN;
+    const budget = Math.max(1, Math.round(catItemsPerPageBudget(fontPx) * heightRatio * ADV_DANGER_CAPACITY_FACTOR));
+    const overheadLines =
+        1 /* h3 DANGEROSITÉ */ +
+        estimateWrappedLines(`Armes Connues : ${armesConnues}`, charsPerLine) +
+        1 /* label ATCD */ +
+        siblingOverheadLines +
+        lightExtraMargin;
+    const firstBudget = Math.max(1, budget - overheadLines - ADV_CHUNK_SAFETY_MARGIN);
+    const restBudget = Math.max(
+        1,
+        Math.round(catItemsPerPageBudget(fontPx) * heightRatio * ADV_DANGER_REST_CAPACITY_FACTOR) - ADV_CHUNK_SAFETY_MARGIN,
+    );
+    const chunks = chunkItemsByCost(items, (item) => estimateWrappedLines(item, charsPerLine), {
+        first: firstBudget,
+        rest: restBudget,
+    });
+
+    const firstHtml =
+        `<div class="danger-card"><h3>DANGEROSITÉ</h3>` +
+        `<p><span class="danger">Armes Connues :</span> ${nl2brOr(armesConnues)}</p>` +
+        `<p><strong>Dangerosité / ATCD :</strong></p>${dashItemsHtml(chunks[0] ?? [])}</div>`;
+    const extraPagesHtml = chunks
+        .slice(1)
+        .map(
+            (chunk) =>
+                `<div class="adv-page" style="font-size:${fontPx}px;"><h2>${advTitle} (SUITE)</h2>` +
+                `<div class="danger-card"><p><strong>Dangerosité / ATCD (suite) :</strong></p>${dashItemsHtml(chunk)}</div></div>`,
+        )
+        .join('');
+    return { firstHtml, extraPagesHtml };
+}
+
 /** Section 2 — Fiche adversaire dédiée (pdf-engine-v2.ts:894-957). */
 function adversaryFiche(
     adv: OiAdversary,
     index: number,
     photosBase64: Record<string, string>,
     dynamicPhotos: Record<string, OiPhotoMeta[]>,
+    format: OiPdfFormat,
+    isDark: boolean,
 ): string {
     const nom = textOr(adv.nom_adversaire, 'Inconnu');
     const mainPhotoId = (dynamicPhotos[`photo_main_${adv.id}`] ?? [])[0]?.id;
@@ -452,14 +550,16 @@ function adversaryFiche(
     const fontPx = adaptivePagePx(textFields, vehiculesList.length);
     const fillClass = volume < 1000 ? ' adv-fill' : '';
 
-    const identityRows =
-        kvRow('Naissance', `${textOr(adv.date_naissance)} @ ${textOr(adv.lieu_naissance)}`) +
-        kvRow('Profession', textOr(adv.profession_adversaire)) +
-        kvRow('Situation familiale', textOr(adv.situation_familiale)) +
-        kvRow('Signalement', `${textOr(adv.stature_adversaire)} | ${textOr(adv.ethnie_adversaire)}`) +
-        kvRow('Signes particuliers', textOr(adv.signes_particuliers, 'Ras')) +
-        kvRow('Substances', textOr(adv.substances_adversaire)) +
-        (meList.length > 0 ? kvRow('Moyens Employés', meList.join(' / ')) : '');
+    const identityRowsArr = [
+        kvRow('Naissance', `${textOr(adv.date_naissance)} @ ${textOr(adv.lieu_naissance)}`),
+        kvRow('Profession', textOr(adv.profession_adversaire)),
+        kvRow('Situation familiale', textOr(adv.situation_familiale)),
+        kvRow('Signalement', `${textOr(adv.stature_adversaire)} | ${textOr(adv.ethnie_adversaire)}`),
+        kvRow('Signes particuliers', textOr(adv.signes_particuliers, 'Ras')),
+        kvRow('Substances', textOr(adv.substances_adversaire)),
+        ...(meList.length > 0 ? [kvRow('Moyens Employés', meList.join(' / '))] : []),
+    ];
+    const identityRows = identityRowsArr.join('');
 
     // Photo principale : hauteur fixe (75mm) simplifiée — la voie A seule porte
     // le budget vertical exact MAX_ADV_PORTRAIT_H (75/90mm selon le format,
@@ -468,12 +568,6 @@ function adversaryFiche(
     const photoHtml = mainPhotoSrc
         ? `<div class="fiche-photo"><div class="fig" style="width:100%;height:75mm;"><img src="${mainPhotoSrc}"/></div></div>`
         : '';
-
-    const dangerHtml =
-        `<div class="danger-card"><h3>DANGEROSITÉ</h3>` +
-        `<p><span class="danger">Armes Connues :</span> ${nl2brOr(adv.armes_connues)}</p>` +
-        `<p><strong>Dangerosité / ATCD :</strong> ${nl2brOr(adv.antecedents_adversaire)}</p>` +
-        `</div>`;
 
     const localisationMobilite =
         `<div class="row" style="margin-top:6px;">` +
@@ -486,12 +580,38 @@ function adversaryFiche(
         fieldOr('Attitude Attendue', adv.attitude_adversaire) +
         `</div></div></div>`;
 
+    const advTitle = `2.${index} FICHE ADVERSAIRE : ${esc(nom)}`;
+
+    // FB.FIX (point 1/2) — largeur réelle de la colonne DANGEROSITÉ (demi-page
+    // avec photo à gauche fixée à 70mm + 6mm de gap, cf. `.fiche-photo`/
+    // `.fiche-head` de `print-style.ts` ; pleine largeur sans photo), même
+    // méthode que son homologue voie A (`document-builder.ts::buildAdversaryFiche`).
+    // Le surcoût de la MÊME page 1 (bandeau titre + tableau IDENTITÉ + cartes
+    // LOCALISATION/MOBILITÉ, TOUJOURS gardées sur cette page 1 — jamais
+    // déplacées par la scission, mission FB.FIX point 2) est réservé au budget
+    // de la carte DANGEROSITÉ pour que le titre « (SUITE) » se déclenche au
+    // point RÉEL de débordement, jamais après.
+    const geo = pageGeometry(format);
+    const dangerColumnWidthPt = mainPhotoSrc !== undefined ? geo.contentWidthPt - mm(70) - mm(6) : geo.contentWidthPt;
+    const siblingOverheadLines = 1 /* card-head */ + identityRowsArr.length + 6 /* LOCALISATION/MOBILITÉ : 2×(h3 + 2 lignes) */;
+    const { firstHtml: dangerFirstHtml, extraPagesHtml: dangerExtraPagesHtml } = dangerPages({
+        advTitle,
+        armesConnues: textOr(adv.armes_connues),
+        atcd: textOr(adv.antecedents_adversaire),
+        fontPx,
+        columnWidthPt: dangerColumnWidthPt,
+        geo,
+        isDark,
+        siblingOverheadLines,
+    });
+
     let html = `<div class="adv-page${fillClass}" style="font-size:${fontPx}px;">`;
-    html += `<div class="card-head">2.${index} FICHE ADVERSAIRE : ${esc(nom)}</div>`;
+    html += `<div class="card-head">${advTitle}</div>`;
     html += `<div class="fiche-head">${photoHtml}<div class="fiche-id"><table class="avoid">${identityRows}</table></div></div>`;
-    html += dangerHtml;
+    html += dangerFirstHtml;
     html += localisationMobilite;
     html += `</div>`;
+    html += dangerExtraPagesHtml;
 
     const extraPhotos = dynamicPhotos[`photo_extra_${adv.id}`] ?? [];
     const renfortPhotos = dynamicPhotos[`photo_renforts_${adv.id}`] ?? [];
@@ -504,9 +624,11 @@ function adversaryPages(
     formData: OiFormData,
     photosBase64: Record<string, string>,
     dynamicPhotos: Record<string, OiPhotoMeta[]>,
+    format: OiPdfFormat,
+    isDark: boolean,
 ): string {
     const adversaries = formData.adversaries ?? [];
-    return adversaries.map((adv, idx) => adversaryFiche(adv, idx + 1, photosBase64, dynamicPhotos)).join('');
+    return adversaries.map((adv, idx) => adversaryFiche(adv, idx + 1, photosBase64, dynamicPhotos, format, isDark)).join('');
 }
 
 /** Section 3 — « 3. ENVIRONNEMENT ET AMIS » (pdf-engine-v2.ts:972-996). Voie B
@@ -1169,7 +1291,7 @@ export function buildPrintDocument(data: OiPdfCollectedData, opts: { format: OiP
 
     let body = '';
     body += coverPage(formData, photosBase64, dynamicPhotos, p);
-    body += adversaryPages(formData, photosBase64, dynamicPhotos);
+    body += adversaryPages(formData, photosBase64, dynamicPhotos, opts.format, !!isDark);
     body += environnementPage(formData);
     body += missionPage(formData);
     body += executionPage(formData, p);

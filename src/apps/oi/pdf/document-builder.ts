@@ -538,6 +538,24 @@ function buildDangerPages(opts: {
     const itemCosts = items.map((item) => estimateWrappedLines(item, charsPerLine));
     const totalCost = itemCosts.reduce((a, b) => a + b, 0);
     const normalBudget = Math.max(1, Math.round(catItemsPerPageBudget(fontPx) * (geo.contentHeightPt / A4_CONTENT_HEIGHT_PT)));
+    // FB.FIX (point 4) — `rest: budget` (ci-dessous, AVANT ce correctif)
+    // appliquait `DANGER_BUDGET_SAFETY_FACTOR` (0,75) aux pages « (SUITE) »
+    // ÉGALEMENT, alors que cette marge de 25 % compense UNIQUEMENT le
+    // surcoût de la 1re page (bandeau IDENTITÉ/LOCALISATION/MOBILITÉ voisin,
+    // cf. JSDoc `DANGER_BUDGET_SAFETY_FACTOR` ci-dessus) — une page « (SUITE) »
+    // ne porte, elle, que `h2(advTitle SUITE)` + `fieldLabel('… (suite)')`,
+    // un surcoût déjà négligeable face à `catItemsPerPageBudget`. Sous-estimer
+    // sa capacité RÉELLE d'environ 4-5 lignes désynchronisait le découpage :
+    // `adv-atcd30.json` (30 ATCD) produisait 3 tranches `[8, 20, 2]` — une
+    // « page-queue » de 2 lignes alors qu'une seule page « (SUITE) » de 22
+    // lignes suffit RÉELLEMENT (`normalBudget` sans facteur, calibré sur cette
+    // MÊME page dédiée par `catItemsPerPageBudget`/`estimateCharsPerLine`,
+    // cf. leur JSDoc). Correctif : les pages « (SUITE) » visent `normalBudget`
+    // (pas `budget`), avec la même petite marge de sécurité que le reste du
+    // fichier (2 lignes, cf. `EFFRAC_CHUNK_SAFETY_MARGIN`, transposition du
+    // même principe) plutôt que le facteur 0,75 propre à la 1re page.
+    const DANGER_REST_SAFETY_MARGIN = 2;
+    const restBudget = Math.max(1, normalBudget - DANGER_REST_SAFETY_MARGIN);
     // BLIND.FIX (point 1) — `fitsWithoutSplit` ignorait `overheadLines`
     // (bandeau IDENTITÉ/localisation/mobilité voisin sur la MÊME page 1,
     // cf. JSDoc `siblingColumnOverheadLines` ci-dessus) : un volume ATCD
@@ -553,7 +571,7 @@ function buildDangerPages(opts: {
         ? [items]
         : chunkItemsByCost(items, (item) => estimateWrappedLines(item, charsPerLine), {
               first: Math.max(1, budget - overheadLines),
-              rest: budget,
+              rest: restBudget,
           });
 
     const firstCard = card(
