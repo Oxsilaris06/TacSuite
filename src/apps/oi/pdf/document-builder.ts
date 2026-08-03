@@ -1022,7 +1022,7 @@ function splitAtDashBoundaries(text: string): string[] {
  * `preserveLeadingSpaces`). Sans tiret NI retour à la ligne : texte intact en
  * un seul élément, même filet minimal qu'avant (R10 inchangée).
  */
-function splitAtcdBoundaries(text: string): string[] {
+export function splitAtcdBoundaries(text: string): string[] {
     const dashItems = splitAtDashBoundaries(text);
     if (dashItems.length > 1) {
         return dashItems;
@@ -1497,7 +1497,7 @@ function effractionMeasuresBody(block: OiEffractionBlock, p: OiPdfPalette, right
  *      alors qu'avec photo elles vivent dans la colonne réduite
  *      (`specsColWidthPt` = `contentWidthPt - mm(70) - mm(6)`).
  */
-function effractionFirstOverheadPt(
+export function effractionFirstOverheadPt(
     block: OiEffractionBlock,
     fontPx: number,
     contentWidthPt: number,
@@ -2148,7 +2148,7 @@ export function oiPdfFileName(formData: OiFormData): string {
  * Les valeurs vides restent telles quelles (les gardes `figure('')`/
  * `photosBase64[id] === undefined` en aval conservent leur sémantique).
  */
-function internPhotoImages(photosBase64: Record<string, string>): {
+export function internPhotoImages(photosBase64: Record<string, string>): {
     photoRefs: Record<string, string>;
     images: Record<string, string>;
 } {

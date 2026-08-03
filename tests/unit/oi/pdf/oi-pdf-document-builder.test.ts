@@ -23,7 +23,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Content, ContextPageSize, DynamicBackground, DynamicContent } from 'pdfmake/interfaces';
 
-import { buildOiDocDefinition, oiPdfFileName } from '@oi/pdf/document-builder.js';
+import { buildOiDocDefinition, effractionFirstOverheadPt, internPhotoImages, oiPdfFileName, splitAtcdBoundaries } from '@oi/pdf/document-builder.js';
 import { SOFT_HYPHEN } from '@oi/pdf/text-utils.js';
 import { PDF_DARK, PDF_LIGHT } from '@oi/pdf/theme.js';
 import type {
@@ -930,5 +930,96 @@ describe('buildOiDocDefinition — blindage BLIND.A #3 : champs fantômes effrac
         // DANS la cellule et pousse au débordement (cf. champs-fantomes.md #4).
         expect(json).toContain('"text":"Hypothese A"');
         expect(json).not.toContain('Hypothese A\\nDescription longue');
+    });
+});
+
+// ---------------------------------------------------------------------------
+// Non-régression gate ROUND1 (mineur #2) : les trois correctifs D1/D2/D4 du
+// lot « PDF réel fautif » (cas-reel-01) ne sont protégés par AUCUN test du
+// dépôt (le harnais PDF et la fixture fidèle vivent hors repo) — un refactor
+// futur les régresserait avec toute la suite verte. Les fonctions sont
+// exportées à cette seule fin (aucun autre appelant hors module).
+// ---------------------------------------------------------------------------
+
+describe('splitAtcdBoundaries — D1 : frontières ATCD sans tiret (fiche adversaire p2→3 orpheline)', () => {
+    it('replie sur les retours à la ligne saisis quand aucun tiret n’existe, indentation de tête PRÉSERVÉE', () => {
+        // Forme réelle du PDF fautif : lignes nues « 2024 : … », continuation
+        // indentée « ␣␣␣␣DETENTION… ». Avant D1 : texte renvoyé INTACT (1 seul
+        // item), scission NATURELLE pdfmake sans « (SUITE) » (FAIL B10/B11).
+        const items = splitAtcdBoundaries(
+            '2024 : USAGE ILLICITE DE STUPEFIANTS\n    DETENTION DE PRODUITS STUPEFIANTS\n2023 : REFUS D OBTEMPERER',
+        );
+        expect(items).toHaveLength(3);
+        // `trimEnd()` seul : l'indentation SAISIE des lignes de continuation
+        // est une mise en forme volontaire (rendue via `preserveLeadingSpaces`).
+        expect(items[1]).toBe('    DETENTION DE PRODUITS STUPEFIANTS');
+    });
+
+    it('les entrées à tiret gardent la priorité (comportement historique inchangé)', () => {
+        expect(splitAtcdBoundaries('- ATCD 1 : vol\n- ATCD 2 : recel')).toEqual(['- ATCD 1 : vol', '- ATCD 2 : recel']);
+    });
+
+    it('sans tiret NI retour à la ligne : texte intact en un seul élément (filet R10 inchangé)', () => {
+        expect(splitAtcdBoundaries('2024 : FAITS UNIQUES SUR UNE SEULE LIGNE')).toEqual(['2024 : FAITS UNIQUES SUR UNE SEULE LIGNE']);
+    });
+});
+
+describe("effractionFirstOverheadPt — D2 : modèle physique de la 1re page Hypothèses d'Effraction", () => {
+    const sparseBlock = (over?: Partial<OiEffractionBlock>): OiEffractionBlock => ({
+        id: 'e1', title: 'PORTE ALPHA', mission: 'OUVERTURE.', porte: '-', structure: '-', serrurerie: '-',
+        environnement: '-', bati_a_bati: '-', dormant_a_dormant: '-', prof_linteaux: '-', prof_bati: '-',
+        h_porte: '-', h_marche: '-', prof_marche: '-', prof_moulure: '-', members: [], hypotheses: [],
+        ...over,
+    });
+
+    it('le bandeau photo de porte entre dans l’overhead (cause D2 : titre + thead seuls en bas de p11)', () => {
+        // Avant D2, `photoBandPt` (mm(75) + badges ≈ 242 pt) n'entrait NULLE
+        // PART dans le coût de tête : la 1re ligne de données était réputée
+        // tenir, pdfmake la reportait via `headerRows` sans « (SUITE) ».
+        const sans = effractionFirstOverheadPt(sparseBlock(), 10, 523, 300, 0);
+        const avec = effractionFirstOverheadPt(sparseBlock(), 10, 523, 300, 242);
+        expect(avec).toBeGreaterThan(sans);
+        expect(avec).toBeGreaterThanOrEqual(242);
+    });
+
+    it('une mesure blanche (« - ») ne coûte AUCUNE ligne, une mesure réelle en coûte (filtrage aligné sur le rendu)', () => {
+        const blanches = effractionFirstOverheadPt(sparseBlock(), 10, 523, 300, 0);
+        const vides = effractionFirstOverheadPt(
+            sparseBlock({ porte: '', structure: '', bati_a_bati: '' }), 10, 523, 300, 0);
+        expect(blanches).toBe(vides);
+        const reelles = effractionFirstOverheadPt(sparseBlock({ porte: 'Blindée 3 points' }), 10, 523, 300, 0);
+        expect(reelles).toBeGreaterThan(blanches);
+    });
+
+    it('les retours à la ligne SAISIS dans la mission comptent (wrappedLinesWithNewlines, pas un simple ratio de longueur)', () => {
+        const uneLigne = effractionFirstOverheadPt(sparseBlock({ mission: 'A' }), 10, 523, 300, 0);
+        const troisLignes = effractionFirstOverheadPt(sparseBlock({ mission: 'A\nB\nC' }), 10, 523, 300, 0);
+        expect(troisLignes).toBeGreaterThan(uneLigne);
+    });
+});
+
+describe('internPhotoImages — D4 : internement/déduplication des images (poids du PDF)', () => {
+    const PX = 'data:image/png;base64,AAAA';
+    const PX2 = 'data:image/png;base64,BBBB';
+
+    it('deux IDs portant une dataURL IDENTIQUE sont fusionnés sur la première clé (une seule incorporation pdfmake)', () => {
+        // Cause D4 : la même photo de porte (bandeau effraction + page détail
+        // galerie) était embarquée en DEUX objets PDF de 2074 K chacun.
+        const { photoRefs, images } = internPhotoImages({ door_banner: PX, door_detail: PX });
+        expect(Object.keys(images)).toEqual(['door_banner']);
+        expect(images.door_banner).toBe(PX);
+        expect(photoRefs).toEqual({ door_banner: 'door_banner', door_detail: 'door_banner' });
+    });
+
+    it('des dataURL distinctes restent des entrées distinctes (aucune fusion abusive)', () => {
+        const { photoRefs, images } = internPhotoImages({ a: PX, b: PX2 });
+        expect(images).toEqual({ a: PX, b: PX2 });
+        expect(photoRefs).toEqual({ a: 'a', b: 'b' });
+    });
+
+    it('les valeurs vides restent telles quelles (sémantique des gardes aval conservée), jamais dans `images`', () => {
+        const { photoRefs, images } = internPhotoImages({ vide: '', a: PX });
+        expect(photoRefs.vide).toBe('');
+        expect(images).toEqual({ a: PX });
     });
 });
