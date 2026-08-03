@@ -1289,13 +1289,6 @@ function hypothesisTableRow(h: OiEffractionHypothesis, p: OiPdfPalette): TableCe
 const HYP_TABLE_COLUMN_FRACTIONS = [0.2, 0.3, 0.25, 0.25];
 
 /**
- * Coût EN LIGNES d'une hypothèse (mission BLIND.A, généralisation R10/scission
- * pilotée à la table Hypothèses d'Effraction, cf. `chunkItemsByCost` déjà
- * utilisé pour ZMSPCP/MOICP) — le MAX des 4 colonnes (celle qui déborde le
- * plus dicte la hauteur réelle de la ligne de tableau), jamais leur somme.
- * `h.desc` n'entre PAS dans ce coût (rendu à part, cf. `hypothesisTableRow`).
- */
-/**
  * Marge de sécurité appliquée à `estimateCharsPerLine` avant de mesurer une
  * cellule d'hypothèse (BLIND.REFIX round 2, même esprit que
  * `DANGER_BUDGET_SAFETY_FACTOR` ci-dessus). `estimateCharsPerLine` mesure une
@@ -1310,50 +1303,89 @@ const HYP_TABLE_COLUMN_FRACTIONS = [0.2, 0.3, 0.25, 0.25];
  */
 const HYP_ROW_COST_SAFETY_FACTOR = 0.8;
 
-function hypothesisRowCost(h: OiEffractionHypothesis, fontPx: number, contentWidthPt: number): number {
+/* --------------------------------------------------------------------------
+ * MODÈLE PHYSIQUE (POINTS) de la page Hypothèses d'Effraction — correctif D2
+ * (gate ROUND0). L'ancien modèle en « unités » `catItemsPerPageBudget`
+ * mélangeait deux échelles incompatibles : une unité de budget vaut
+ * `contentHeightPt / budget(fontPx)` points (20,8 pt à `fontPx = 9`, 45 pt à
+ * `fontPx = 14`) alors que les coûts étaient comptés en LIGNES DE TEXTE
+ * (17,2 pt à 9, 26,8 pt à 14) — sous-évaluation systématique à petite police
+ * (`effrac-n6` : thead + « Hypothese 6 » débordant p11 SANS « (SUITE) »),
+ * surévaluation à grande police (le correctif BLIND.FIX « sentinel-champs »
+ * n'était qu'un contournement de cette distorsion). Surtout, la hauteur
+ * PHYSIQUE du bandeau photo de porte (`mm(75)` + badges ≈ 242 pt, ~45 % de la
+ * page) n'entrait NULLE PART dans `headCost` (cause D2 du PDF réel
+ * `cas-reel-01` : titre + thead seuls en bas de p11). Toutes les grandeurs
+ * ci-dessous sont désormais des POINTS, MESURÉS sur rendu réel
+ * (pdftotext -bbox sur `effrac-n6`, fontPx 9) :
+ *   - avance de ligne réelle = fontPx × 1,914 (lineHeight 1,45 ×
+ *     (ascender − descender)/1000 ≈ 1,32 em de JetBrainsMono ; mesuré
+ *     17,2 pt à fontPx 9) ;
+ *   - ligne de table = lignes de texte × avance + 9 pt (paddings verticaux +
+ *     bordure ; mesuré : pas de 60,7 pt pour 3 lignes de 17,2) ;
+ *   - h2 de page 47,5 pt ; h3 + marges 27,9 pt ; thead = 1 avance + 9 pt.
+ * ------------------------------------------------------------------------ */
+
+/** Avance de ligne réelle pdfmake pour JetBrainsMono (voir bloc ci-dessus). */
+const PDF_LINE_ADVANCE_EM = 1.914;
+/** Paddings verticaux + bordure d'UNE ligne de la table d'hypothèses (mesuré). */
+const EFFRAC_ROW_VPAD_PT = 9;
+/** Bloc titre `h2` de page (texte + filet souligné + marges — mesuré 47,5). */
+const EFFRAC_H2_PT = 48;
+/** Titre `h3` + ses marges (mesuré 27,9). */
+const EFFRAC_H3_PT = 28;
+/** Paddings verticaux d'une carte (`card()`, haut + bas). */
+const EFFRAC_CARD_VPAD_PT = 16;
+/**
+ * Rangée de badges d'outils (`pillRow`) sous la photo de porte + sa marge —
+ * la colonne photo ne fait que `mm(70)` : des libellés d'outils ordinaires
+ * (« Bélier lourd ») y REPLIENT déjà les pilules sur 2 lignes (mesuré 46 pt
+ * sur `cas-reel-01` p11) — réserve à 2 lignes, direction sûre (photo bande
+ * légèrement surestimée = report/scission AVEC titre, jamais l'inverse).
+ */
+const EFFRAC_BADGES_PT = 50;
+/**
+ * Marge de sécurité globale soustraite de la hauteur utile de page avant
+ * toute décision (imprécision résiduelle du repli des mots, marges
+ * inter-blocs non modélisées — mesuré jusqu'à ~34 pt d'écart cumulé sur
+ * `cas-reel-01` p11, bandeau photo + carte hypothèses) — direction SÛRE :
+ * trop grande = une scission déclenchée un peu tôt AVEC titre « (SUITE) »,
+ * jamais un débordement naturel sans titre.
+ */
+const EFFRAC_FITS_SAFETY_PT = 40;
+
+/**
+ * Lignes rendues d'un texte pouvant contenir des RETOURS À LA LIGNE saisis —
+ * `estimateWrappedLines` seul les ignorait (un `effrac` de 58 caractères sur
+ * 3 lignes saisies était compté 2 lignes, `cas-reel-01` hyp. 2) : chaque
+ * segment replie indépendamment, la somme fait la hauteur réelle.
+ */
+function wrappedLinesWithNewlines(text: string, charsPerLine: number): number {
+    return text.split('\n').reduce((sum, seg) => sum + estimateWrappedLines(seg, charsPerLine), 0);
+}
+
+/** Avance de ligne réelle (pt) au palier `fontPx`. */
+function effracLinePt(fontPx: number): number {
+    return fontPx * PDF_LINE_ADVANCE_EM;
+}
+
+/**
+ * Hauteur RÉELLE (pt) d'une ligne de la table d'hypothèses — le MAX des 4
+ * colonnes (celle qui replie le plus dicte la hauteur), jamais leur somme ;
+ * `h.desc` n'entre pas dans ce coût (rendu à part, `hypothesesDescBlock`).
+ * Même repli par colonne que l'ancien `hypothesisRowCost` (fractions
+ * `HYP_TABLE_COLUMN_FRACTIONS`, marge `HYP_ROW_COST_SAFETY_FACTOR`), converti
+ * en points (avance × lignes + paddings).
+ */
+function hypothesisRowHeightPt(h: OiEffractionHypothesis, fontPx: number, contentWidthPt: number): number {
     const charsPerLineCols = HYP_TABLE_COLUMN_FRACTIONS.map((f) =>
         Math.max(1, Math.floor(estimateCharsPerLine(fontPx, contentWidthPt * f) * HYP_ROW_COST_SAFETY_FACTOR)),
     );
     const cols = [h.title || h.id, h.effrac || '-', h.degag || '-', h.assaut || '-'];
-    return Math.max(...cols.map((text, i) => estimateWrappedLines(text, charsPerLineCols[i] as number)));
+    const lines = Math.max(...cols.map((text, i) => wrappedLinesWithNewlines(text, charsPerLineCols[i] as number)));
+    return lines * effracLinePt(fontPx) + EFFRAC_ROW_VPAD_PT;
 }
 
-/**
- * Coût EN LIGNES (même unité que `hypothesisRowCost`/`catItemsPerPageBudget`)
- * du bandeau fixe présent sur CHAQUE page de la scission Hypothèses
- * d'Effraction — titre `h2` de section (avec filet `canvas` souligné),
- * titre `h3` « Hypothèses d'Effraction (suite) », ligne d'en-tête du tableau
- * répétée (`headerRows:1`) et marges inter-blocs. Calibré empiriquement
- * (BLIND.REFIX round 2) contre `effrac-12-hypotheses.json` : la page
- * « (SUITE) » comportant 7 hypothèses (coût 21) rend confortablement, la
- * 8e (coût 24) déborde SILENCIEUSEMENT hors scission pilotée (preuve
- * `A-effrac12L-13.png`, en-tête de tableau répétée par pdfmake SANS aucun
- * titre) — la capacité réelle d'une page « (suite) » se situe donc entre 21
- * et 23 coûts ; `EFFRAC_CHUNK_HEADER_ROWS = 5` (`budget - 5` ≈ 21 à
- * `fontPx = 9`) retient la borne la plus SÛRE (jamais > 23).
- */
-const EFFRAC_CHUNK_HEADER_ROWS = 5;
-
-/**
- * Coût EN LIGNES (même unité que ci-dessus) du bandeau MISSION + carte
- * « Caractéristiques Techniques » — présent UNIQUEMENT sur la 1re page de la
- * scission (`buildEffractionPages`, `head`/`missionLine`), jamais déduit du
- * budget avant BLIND.REFIX round 2 (cause de la queue orpheline sans
- * « (SUITE) » — preuve `A-effrac12L-11.png`). Mesure grossière ligne par
- * ligne (`estimateWrappedLines`), même esprit que `hypothesisRowCost` : la
- * ligne « Mission » et « Prof. Moulure » en pleine largeur, les 3 champs de
- * chaque colonne du `grid2` central (Structure/Serrurerie/Environnement vs
- * Bâti à Bâti/Dormant à Dormant/Prof. Linteaux) et les 2 `grid2` d'une seule
- * ligne (H. Porte/H. Marche, Prof. Marche/Prof. Bâti) à demi-largeur, plus
- * « Type de Porte » et le titre `h3` « Caractéristiques Techniques » en
- * pleine largeur. Calibré empiriquement (round 2) contre le même fixture :
- * seules 3 hypothèses (coût 9) tiennent réellement sur la page 1 (la 4e
- * déborde sans « (SUITE) », preuve `A-effrac12L-11.png`) — `+2` de marge de
- * sécurité (bordures/paddings de carte non modélisés) porte le budget page 1
- * à `budget - EFFRAC_CHUNK_HEADER_ROWS - headCost` ≈ 9 à `fontPx = 9`, sous
- * la capacité réelle observée plutôt qu'au-dessus (zéro perte de données :
- * mieux vaut une page 1 légèrement sous-remplie qu'une queue orpheline).
- */
 /**
  * Une valeur de mesure technique (§3.4/BLIND.REFIX round 2) est VIDE si
  * blanche OU réduite au repli littéral `-` — port du filtre strategica
@@ -1449,36 +1481,70 @@ function effractionMeasuresBody(block: OiEffractionBlock, p: OiPdfPalette, right
     return [h3('Caractéristiques Techniques', p), ...before, ...separator, ...after];
 }
 
-function effractionHeadRowCost(block: OiEffractionBlock, fontPx: number, contentWidthPt: number): number {
+/**
+ * Hauteur RÉELLE (pt) de tout ce qui précède la PREMIÈRE ligne de données de
+ * la table d'hypothèses sur la page 1 du bloc EFFRACTION — titre `h2` de
+ * page, ligne MISSION, bandeau photo/mesures (`head`), titre `h3`
+ * « Hypothèses d'Effraction » et thead. Correctif D2 (gate ROUND0), deux
+ * sous-évaluations corrigées :
+ *   1. le bandeau photo de porte (`figure` à `mm(topHMm)` + badges
+ *      `pillRow`) n'entrait NULLE PART dans l'ancien `headCost` — or ses
+ *      ~242 pt dominent la carte specs dès que la photo existe (cause D2 du
+ *      PDF réel `cas-reel-01` : titre + thead seuls en bas de p11, données
+ *      p12 via `headerRows` sans « (SUITE) ») — `Math.max(specs, photo)`,
+ *      les deux étant côte à côte en `columns` ;
+ *   2. les mesures techniques étaient mesurées à la largeur PLEINE de page
+ *      alors qu'avec photo elles vivent dans la colonne réduite
+ *      (`specsColWidthPt` = `contentWidthPt - mm(70) - mm(6)`).
+ */
+function effractionFirstOverheadPt(
+    block: OiEffractionBlock,
+    fontPx: number,
+    contentWidthPt: number,
+    specsColWidthPt: number,
+    photoBandPt: number,
+): number {
+    const line = effracLinePt(fontPx);
     const fullCpl = estimateCharsPerLine(fontPx, contentWidthPt);
-    const halfCpl = estimateCharsPerLine(fontPx, contentWidthPt / 2);
+    const specsCpl = estimateCharsPerLine(fontPx, specsColWidthPt);
+    const specsHalfCpl = estimateCharsPerLine(fontPx, specsColWidthPt / 2);
 
-    const missionRows = estimateWrappedLines(`Mission : ${block.mission || '-'}`, fullCpl);
-    const titleRows = 1; // h3 "Caractéristiques Techniques"
+    const missionPt = wrappedLinesWithNewlines(`Mission : ${block.mission || '-'}`, fullCpl) * line + 10;
 
-    // BLINDAGE round 2 : le coût des mesures suit désormais EXACTEMENT le
-    // même filtrage que le rendu réel (`effractionMeasuresBody`, cf. sa
-    // JSDoc) — une mesure blanche/`-` ne coûte plus 1 ligne fantôme.
-    const rowCost = (label: string, value: string | undefined, cpl: number): number =>
+    // BLINDAGE round 2 (conservé) : le coût des mesures suit EXACTEMENT le
+    // même filtrage que le rendu réel (`effractionMeasuresBody`) — une mesure
+    // blanche/`-` ne coûte plus une ligne fantôme.
+    const rowLines = (label: string, value: string | undefined, cpl: number): number =>
         isEffractionMeasureBlank(value) ? 0 : estimateWrappedLines(`${label} : ${value}`, cpl);
 
-    const typePorteRows = rowCost('Type de Porte', block.porte, fullCpl);
+    const typePorteRows = rowLines('Type de Porte', block.porte, specsCpl);
     const leftColRows =
-        rowCost('Structure', block.structure, halfCpl) +
-        rowCost('Serrurerie', block.serrurerie, halfCpl) +
-        rowCost('Environnement', block.environnement, halfCpl);
+        rowLines('Structure', block.structure, specsHalfCpl) +
+        rowLines('Serrurerie', block.serrurerie, specsHalfCpl) +
+        rowLines('Environnement', block.environnement, specsHalfCpl);
     const rightColRows =
-        rowCost('Bâti à Bâti', block.bati_a_bati, halfCpl) +
-        rowCost('Dormant à Dormant', block.dormant_a_dormant, halfCpl) +
-        rowCost('Prof. Linteaux', block.prof_linteaux, halfCpl);
+        rowLines('Bâti à Bâti', block.bati_a_bati, specsHalfCpl) +
+        rowLines('Dormant à Dormant', block.dormant_a_dormant, specsHalfCpl) +
+        rowLines('Prof. Linteaux', block.prof_linteaux, specsHalfCpl);
     const grid2TopRows = Math.max(leftColRows, rightColRows);
+    const hRows = Math.max(rowLines('H. Porte', block.h_porte, specsHalfCpl), rowLines('H. Marche', block.h_marche, specsHalfCpl));
+    const profRows = Math.max(rowLines('Prof. Marche', block.prof_marche, specsHalfCpl), rowLines('Prof. Bâti', block.prof_bati, specsHalfCpl));
+    const profMoulureRows = rowLines('Prof. Moulure', block.prof_moulure, specsCpl);
 
-    const hRows = Math.max(rowCost('H. Porte', block.h_porte, halfCpl), rowCost('H. Marche', block.h_marche, halfCpl));
-    const profRows = Math.max(rowCost('Prof. Marche', block.prof_marche, halfCpl), rowCost('Prof. Bâti', block.prof_bati, halfCpl));
-    const profMoulureRows = rowCost('Prof. Moulure', block.prof_moulure, fullCpl);
+    const specsRows = typePorteRows + grid2TopRows + hRows + profRows + profMoulureRows;
+    const specsCardPt = EFFRAC_H3_PT + specsRows * line + EFFRAC_CARD_VPAD_PT;
+    const headPt = Math.max(specsCardPt, photoBandPt);
 
-    const SAFETY_MARGIN_ROWS = 2;
-    return missionRows + titleRows + typePorteRows + grid2TopRows + hRows + profRows + profMoulureRows + SAFETY_MARGIN_ROWS;
+    const theadPt = line + EFFRAC_ROW_VPAD_PT;
+    return EFFRAC_H2_PT + missionPt + 6 + headPt + 6 + EFFRAC_H3_PT + theadPt + EFFRAC_CARD_VPAD_PT;
+}
+
+/**
+ * Hauteur RÉELLE (pt) du bandeau fixe d'une page « (SUITE) » de la scission
+ * (titre `h2`, `h3` « … (suite) », thead répété, paddings de carte).
+ */
+function effractionRestOverheadPt(fontPx: number): number {
+    return EFFRAC_H2_PT + EFFRAC_H3_PT + (effracLinePt(fontPx) + EFFRAC_ROW_VPAD_PT) + EFFRAC_CARD_VPAD_PT;
 }
 
 /**
@@ -1513,7 +1579,8 @@ function hypothesesDescBlock(hypotheses: OiEffractionHypothesis[], p: OiPdfPalet
 }
 
 /**
- * Coût EN LIGNES (même unité que `hypothesisRowCost`/`headCost` ci-dessous)
+ * Hauteur RÉELLE (pt, même unité que `hypothesisRowHeightPt`/
+ * `effractionFirstOverheadPt` — modèle physique D2)
  * du bloc « Description des Hypothèses » (`hypothesesDescBlock`) — BF.REFIX
  * (round 1, point 3) : ce bloc n'était couvert par AUCUNE garde de budget,
  * contrairement à la table qui le précède — `fitsWithoutSplit`/
@@ -1527,7 +1594,7 @@ function hypothesesDescBlock(hypotheses: OiEffractionHypothesis[], p: OiPdfPalet
  * largeur PLEINE de la carte (`contentWidthPt`, pas la demi-largeur des
  * colonnes de la table).
  */
-function descBlockCost(hypotheses: OiEffractionHypothesis[], fontPx: number, contentWidthPt: number): number {
+function descBlockHeightPt(hypotheses: OiEffractionHypothesis[], fontPx: number, contentWidthPt: number): number {
     const lines = hypotheses
         .map((h, i) => (h.desc && h.desc.trim() !== '' ? `HE${i + 1} — ${h.title || h.id} : ${h.desc}` : null))
         .filter((s): s is string => s !== null);
@@ -1535,9 +1602,9 @@ function descBlockCost(hypotheses: OiEffractionHypothesis[], fontPx: number, con
         return 0;
     }
     const cpl = estimateCharsPerLine(fontPx, contentWidthPt);
-    const titleRows = 1; // h3 "Description des Hypothèses"
-    const marginRows = 1; // margin-top séparant le bloc de la table
-    return titleRows + marginRows + lines.reduce((sum, line) => sum + estimateWrappedLines(line, cpl), 0);
+    const textLines = lines.reduce((sum, line) => sum + wrappedLinesWithNewlines(line, cpl), 0);
+    // h3 « Description des Hypothèses » + marge inter-blocs (6) + lignes.
+    return EFFRAC_H3_PT + 6 + textLines * effracLinePt(fontPx);
 }
 
 /**
@@ -1693,52 +1760,67 @@ function buildEffractionPages(ctx: BuildCtx, block: OiEffractionBlock): Content[
     // `effrac-n4`/`n6`/`n8`/`12-hypotheses` (preuve `A-effrac12L-11.png` /
     // `A-effrac12L-13.png`). `effractionHeadRowCost`/`EFFRAC_CHUNK_HEADER_ROWS`
     // déduisent maintenant cet overhead RÉEL du budget de chaque fragment.
-    const budget = Math.max(1, Math.round(catItemsPerPageBudget(fontPx) * (geo.contentHeightPt / A4_CONTENT_HEIGHT_PT)));
-    const headCost = effractionHeadRowCost(block, fontPx, geo.contentWidthPt);
-    const firstPageBudget = Math.max(1, budget - EFFRAC_CHUNK_HEADER_ROWS - headCost);
-    const restPageBudget = Math.max(1, budget - EFFRAC_CHUNK_HEADER_ROWS);
-    // BLIND.FIX (point 3) — QUALITÉ, scission TROP CONSERVATRICE : `headCost`
-    // (overhead RÉEL de la page 1) ET `EFFRAC_CHUNK_HEADER_ROWS` (marge de
-    // sécurité pour le débordement pdfmake NATUREL, cf. JSDoc ci-dessus)
-    // étaient déduits INCONDITIONNELLEMENT de `firstPageBudget`, cumulant
-    // deux marges de sécurité CONÇUES pour une VRAIE scission (volume qui
-    // dépasse déjà une page) — sur une fiche COURTE (2 hypothèses,
-    // `sentinel-champs.json`, `fontPx=14`/`budget=12`), `headCost=9` +
-    // `EFFRAC_CHUNK_HEADER_ROWS=5` déduisaient à eux seuls PLUS que le
-    // budget total, ramenant `firstPageBudget` à 1 alors que les 2
-    // hypothèses (coût réel total 2) tiennent LARGEMENT sur la même page
-    // que MISSION + CARACTÉRISTIQUES TECHNIQUES (preuve
-    // `A-sentinel-champs-light-10/11.png` : page 2 quasi vide, 1 seule
-    // hypothèse en trop). Même principe qu'au point 1 (`fitsWithoutSplit`,
-    // `buildDangerPages`) : ne consulter cet overhead QUE si le coût TOTAL
-    // réel des hypothèses dépasse déjà le budget de page NORMAL — la marge
-    // de sécurité reste un filet contre le désébordement pdfmake NATUREL
-    // lors d'une VRAIE scission, pas une pénalité payée par les fiches qui
-    // n'en ont jamais besoin.
-    const totalHypCost = hypotheses.reduce((sum, h) => sum + hypothesisRowCost(h, fontPx, geo.contentWidthPt), 0);
-    const fitsWithoutSplit = totalHypCost + headCost <= budget;
+    // Correctif D2 (gate ROUND0) — MODÈLE PHYSIQUE EN POINTS (cf. bloc de
+    // constantes `EFFRAC_*_PT`) : la hauteur utile de page, l'overhead réel
+    // de la page 1 (bandeau photo `mm(topHMm)` + badges INCLUS, mesures dans
+    // leur colonne RÉDUITE réelle) et chaque ligne de table sont désormais
+    // tous exprimés en POINTS mesurés sur rendu réel — plus aucune conversion
+    // « unités de budget » vs « lignes de texte » (cause des deux
+    // sous/surévaluations historiques, cf. JSDoc `effractionFirstOverheadPt`).
+    const availPt = geo.contentHeightPt - EFFRAC_FITS_SAFETY_PT;
+    const photoBandPt = doorSrc !== undefined ? mm(topHMm) + EFFRAC_BADGES_PT : 0;
+    const firstOverheadPt = effractionFirstOverheadPt(block, fontPx, geo.contentWidthPt, rightColWidthPt, photoBandPt);
+    const restOverheadPt = effractionRestOverheadPt(fontPx);
+    const firstAvailPt = availPt - firstOverheadPt;
+    const restAvailPt = Math.max(1, availPt - restOverheadPt);
+    const rowHeightsPt = hypotheses.map((h) => hypothesisRowHeightPt(h, fontPx, geo.contentWidthPt));
+    const totalRowsPt = rowHeightsPt.reduce((a, b) => a + b, 0);
+    const descPt = descBlock !== null ? descBlockHeightPt(hypotheses, fontPx, geo.contentWidthPt) : 0;
+    const fitsWithoutSplit = totalRowsPt + descPt <= firstAvailPt;
+    // Correctif D2 (report de table) : quand la page 1 n'a même plus la place
+    // de la PREMIÈRE ligne de données sous le bandeau photo/mesures (cas
+    // `cas-reel-01` : photo `mm(75)` + specs → titre + thead SEULS en bas de
+    // p11, données p12 via `headerRows` SANS « (SUITE) »), forcer une seule
+    // ligne n'y changerait rien (`dontBreakRows` la reporterait NATURELLEMENT,
+    // sans titre). La table entière est alors REPORTÉE sur sa propre page
+    // « (SUITE) » — même geste que la scission pilotée voie B (`print-view`),
+    // qui n'a jamais présenté D2.
+    const deferTable = !fitsWithoutSplit && firstAvailPt < (rowHeightsPt[0] ?? effracLinePt(fontPx) + EFFRAC_ROW_VPAD_PT);
     const hypChunks: OiEffractionHypothesis[][] =
         !fitsWithoutSplit && hypotheses.length > 0
-            ? chunkItemsByCost(hypotheses, (h) => hypothesisRowCost(h, fontPx, geo.contentWidthPt), {
-                  first: firstPageBudget,
-                  rest: restPageBudget,
+            ? chunkItemsByCost(hypotheses, (h) => hypothesisRowHeightPt(h, fontPx, geo.contentWidthPt), {
+                  first: deferTable ? restAvailPt : firstAvailPt,
+                  rest: restAvailPt,
               })
             : [hypotheses];
 
     // BF.REFIX (round 1, point 3) — le bloc « Description des Hypothèses »
-    // (cf. JSDoc `descBlockCost`) n'est ajouté INLINE à la dernière tranche
+    // (cf. JSDoc `descBlockHeightPt`) n'est ajouté INLINE à la dernière tranche
     // que s'il y tient RÉELLEMENT (même barème que la table qui précède,
     // pas de nouvelle garde ad hoc) : sinon il devient sa PROPRE page
     // titrée « (SUITE) », jamais une page nue en continuation naturelle
     // pdfmake (même défaut que celui déjà corrigé pour la table, point 2).
     const lastChunkIdx = hypChunks.length - 1;
     const lastChunkIsFirst = lastChunkIdx === 0;
-    const descCost = descBlock !== null ? descBlockCost(hypotheses, fontPx, geo.contentWidthPt) : 0;
-    const lastChunkBudget = fitsWithoutSplit ? budget - headCost : lastChunkIsFirst ? firstPageBudget : restPageBudget;
-    const lastChunkCost = hypChunks[lastChunkIdx]?.reduce((sum, h) => sum + hypothesisRowCost(h, fontPx, geo.contentWidthPt), 0) ?? 0;
-    const descFitsOnLastChunkPage = descBlock === null || lastChunkCost + descCost <= lastChunkBudget;
+    const lastChunkBudget = lastChunkIsFirst && !deferTable ? firstAvailPt : restAvailPt;
+    const lastChunkCost = hypChunks[lastChunkIdx]?.reduce((sum, h) => sum + hypothesisRowHeightPt(h, fontPx, geo.contentWidthPt), 0) ?? 0;
+    const descFitsOnLastChunkPage = descBlock === null || lastChunkCost + descPt <= lastChunkBudget;
 
-    const pages = hypChunks.map((chunk, idx): Content => {
+    // Page 1 « bandeau seul » quand la table est reportée (`deferTable`) :
+    // titre + MISSION + photo/mesures, la table commence page suivante.
+    const headOnlyPage: Content[] = deferTable
+        ? [
+              {
+                  stack: [h2(title, p, geo.contentWidthPt), missionLine, { text: '', margin: [0, 4, 0, 0] } as Content, head],
+                  fontSize: fontPx,
+              },
+          ]
+        : [];
+
+    const chunkPages = hypChunks.map((chunk, idx): Content => {
+        // Avec report, la 1re page de table est déjà une continuation (page 2
+        // du bloc) : titre de page « (SUITE) », `head` jamais répété.
+        const isFirstDocPage = idx === 0 && !deferTable;
         const rows: TableCell[][] =
             chunk.length > 0
                 ? chunk.map((h) => hypothesisTableRow(h, p))
@@ -1776,15 +1858,21 @@ function buildEffractionPages(ctx: BuildCtx, block: OiEffractionBlock): Content[
             ...(isLastChunk && descBlock !== null && descFitsOnLastChunkPage ? [descBlock] : []),
         ];
         const pageBody: Content[] =
-            idx === 0
+            isFirstDocPage
                 ? [head, { text: '', margin: [0, 6, 0, 0] }, card(hypCardBody, p, { unbreakable: false })]
                 : [card(hypCardBody, p, { unbreakable: false })];
         return {
-            stack: [h2(idx === 0 ? title : `${title} (SUITE)`, p, geo.contentWidthPt), ...(idx === 0 ? [missionLine, { text: '', margin: [0, 4, 0, 0] } as Content] : []), ...pageBody],
+            stack: [
+                h2(isFirstDocPage ? title : `${title} (SUITE)`, p, geo.contentWidthPt),
+                ...(isFirstDocPage ? [missionLine, { text: '', margin: [0, 4, 0, 0] } as Content] : []),
+                ...pageBody,
+            ],
             fontSize: fontPx,
-            pageBreak: idx === 0 ? undefined : 'before',
+            pageBreak: isFirstDocPage ? undefined : 'before',
         };
     });
+
+    const pages: Content[] = [...headOnlyPage, ...chunkPages];
 
     // BF.REFIX (round 1, point 3) — description trop volumineuse pour tenir
     // sur la page de la dernière tranche : page « (SUITE) » dédiée, même
