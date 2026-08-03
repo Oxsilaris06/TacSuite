@@ -231,6 +231,21 @@ l'un de ces écarts, **ce n'est pas un bug** :
 | **E5** | Suppression du filigrane sur les pages intermédiaires et de `_fitPageToBudget` | Pagination automatique. |
 | **E6** | Palette : accents `#2563eb`/`#dc2626` → `#0033a0`/`#c0392b` (clair), `#3b82f6` → `#5b9bd5` (sombre) | Langage visuel strategica (`OrderPdfStyle.kt:30-56`). |
 
+## FAIL ATTENDUS des fixtures dégénérées (à ne pas confondre avec des régressions)
+
+Gate ROUND0/ROUND1 (mineur reconduit, tranché ici par DOCUMENTATION — les
+gardes ne sont **pas** exemptées, leur verdict est simplement l'attendu) :
+
+- **`empty-partial.json`** (fixture d'audit hors dépôt, volontairement
+  dégénérée : quasi tous les champs vides) — **FAIL B1 p3 en voie A** (les
+  deux thèmes) et **FAIL B3 p3 en voie B** sont **ATTENDUS et stables**
+  (identiques avant/après le lot D1-D4, baseline `f29796f`). Une page
+  portant un titre de section dont TOUT le contenu saisi est vide descend
+  mécaniquement sous les planchers de densité (B1 : 62 car. ; B3) ; c'est le
+  comportement **voulu** des gardes face à un document sans données, pas un
+  défaut de pagination. Toute autre fixture qui remonte B1/B3 reste une
+  vraie alerte à instruire.
+
 ## Démonstration — l'étalon raster ÉCHOUE (c'est voulu)
 
 Commande exécutée (mission P8, vérification obligatoire) :
