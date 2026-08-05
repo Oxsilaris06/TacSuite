@@ -375,6 +375,7 @@ export const PinsMethods = {
             const dt = Date.now() - pdStart.t;
             const threshold = pdStart.isTouch ? 24 : 6;
             const maxTime = pdStart.isTouch ? 450 : 500;
+            const isTouch = pdStart.isTouch;
             const isTap = moved < threshold && dt < maxTime;
             pdStart = null;
             if (!isTap) return;
@@ -393,8 +394,11 @@ export const PinsMethods = {
 
             const now = Date.now();
             const prev = this._lastPinTap;
-            const doubleTapWindow = 450; // 450 ms adaptes au tactile mobile
-            if (prev && prev.id === pinId && (now - prev.t) < doubleTapWindow) {
+            // Mode tactile : double-tap rapide (< 450 ms) OU second tap sur le même ping sélectionné (dans les 3 s)
+            const isDoubleTap = prev && prev.id === pinId && (now - prev.t) < 450;
+            const isSecondTapOnSelected = isTouch && prev && prev.id === pinId && (now - prev.t) < 3000;
+
+            if (isDoubleTap || isSecondTapOnSelected) {
                 this._lastPinTap = null;
                 this._openPingOptionsWheel(pinId);
             } else {

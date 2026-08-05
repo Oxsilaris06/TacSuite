@@ -176,9 +176,14 @@ export class Wheel {
 
   private _onOutside(ev: Event): void {
     if (!this.element) return;
-    // Ignore l'événement qui a probablement ouvert la roue (même tick que open())
-    if (Date.now() - this._mountedAt < 120) return;
-    if (!this.element.contains(ev.target as Node | null)) {
+    const isTouch = ('pointerType' in ev && (ev as PointerEvent).pointerType === 'touch') || ev.type === 'touchstart';
+    const minDelay = isTouch ? 300 : 120;
+    if (Date.now() - this._mountedAt < minDelay) return;
+    const target = ev.target instanceof Element ? ev.target : null;
+    if (target && (target.closest('.plan-pin') || target.closest('.oi-carto-pin'))) {
+      return;
+    }
+    if (!this.element.contains(target)) {
       this.destroy();
     }
   }
