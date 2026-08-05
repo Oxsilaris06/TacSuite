@@ -466,4 +466,26 @@ describe('_renderPins — réconciliation par ID + INVARIANT 2b (draggable, plan
         entry.pinWrap.dispatchEvent(new PointerEvent('pointerdown', { pointerType: 'touch', clientX: 10, clientY: 10 }));
         expect(suppressDblZoom).toHaveBeenCalledTimes(1);
     });
+
+    it('mobile : double click sur pinWrap ouvre la roue (chemin click contournant le bug MapLibre pointercancel)', () => {
+        const openWheel = vi.fn();
+        const map = { getSource: vi.fn(), addSource: vi.fn(), addLayer: vi.fn() };
+        const fake = makeFakeThis({
+            map: map as unknown as PlanMapInternal['map'],
+            _openPingOptionsWheel: openWheel,
+        });
+        fake._savePins([makePin({ id: 'p-click' })]);
+        PinsMethods._renderPins.call(fake);
+
+        const pinMarkers = assertNonNull(fake._pinMarkers);
+        const entry = assertNonNull(pinMarkers.get('p-click'));
+
+        // 1er click
+        entry.pinWrap.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        expect(openWheel).not.toHaveBeenCalled();
+
+        // 2ème click (double-tap) dans la fenêtre de 600 ms
+        entry.pinWrap.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        expect(openWheel).toHaveBeenCalledWith('p-click');
+    });
 });
