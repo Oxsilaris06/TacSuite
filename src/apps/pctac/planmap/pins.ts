@@ -315,20 +315,22 @@ export const PinsMethods = {
         return labelOffset;
     },
 
-    // Attache UNE SEULE FOIS les listeners (tap/double-tap/drag) sur l'entry.
-    // Tous lisent entry.pin (mis à jour à chaque réconciliation) → pas de closure
-    // stale, pas de listeners orphelins, pas de jank tactile.
+    // Attache UNE SEULE FOIS les listeners sur l'entry.
+    //
+    // ─── GESTION MOBILE vs DESKTOP ───
+    // Sur mobile :
+    //   - Touch simple (< 450 ms, mouvement < 15 px) → édition (_openPingOptionsWheel)
+    //   - Touch long (≥ 500 ms) + mouvement → drag & drop manuel du pin
+    //   - Marker créé avec `draggable: false` pour éviter que MapLibre n'intercepte touchstart.
+    //
+    // Desktop :
+    //   - Double-clic → édition (_openPingOptionsWheel)
+    //   - Drag & drop natif MapLibre (`draggable: true`)
     // planMap.js:1376-1488
     _bindPinListeners(this: PlanMapInternal, entry: PinEntry): void {
         const pinWrap = entry.pinWrap;
         const pinMarker = entry.pinMarker;
         const labelMarker = entry.labelMarker;
-        // Adaptation TS (absente de l'original, jamais déclenchée en pratique) :
-        // `PinEntry.pinMarker`/`labelMarker` sont typés `Marker | null` pour la
-        // réconciliation par ID, mais `_bindPinListeners` n'est appelée
-        // qu'immédiatement après leur création dans `_renderPins` (:1522-1530).
-        // Capture locale + garde pour que le narrowing survive aux fermetures
-        // ci-dessous (cf. en-tête de fichier).
         if (!pinMarker || !labelMarker) return;
         let pdStart: { x: number; y: number; t: number; isTouch: boolean } | null = null;
         let originalLngLat: LngLat | null = null;
@@ -349,9 +351,6 @@ export const PinsMethods = {
             );
             if (idx === -1) return;
             const cur = feats[idx];
-            // Garde de typage (noUncheckedIndexedAccess) : `idx` vient de `findIndex`
-            // sur ce même tableau, `idx !== -1` garantit `cur` défini — neutre en
-            // observable, cf. SPEC-PLANMAP-SPLIT.md §6.3.
             if (!cur) return;
             feats[idx] = {
                 ...cur,
@@ -361,37 +360,162 @@ export const PinsMethods = {
         };
         entry._updateLiveCircle = updateLiveCircle;
 
-        // --- Timestamp du dernier drag-end pour filtrer les clics fantômes post-drag ---
-        let lastDragEnd = 0;
+        const onLockBadge = (target: EventTarget | null): boolean =>
+            !!(target instanceof Element && target.closest('.plan-lock-badge'));
 
+        // ═══════════════════════════════════════════════════════════
+        //  1. CHEMIN MOBILE — touch* events
+        // ═══════════════════════════════════════════════════════════
+        const LP_DELAY = 500; // ms avant activation du drag
+        const TAP_MAX_TIME = 450; // ms max pour un tap simple
+        const TAP_MAX_MOVE = 15; // px max pour un tap simple
+
+        let touchState: {
+            startX: number;
+            startY: number;
+            startTime: number;
+            lpTimer: ReturnType<typeof setTimeout> | null;
+            isDragging: boolean;
+            identifier: number;
+        } | null = null;
+
+        pinWrap.addEventListener('touchstart', this._safe((ev: TouchEvent) => {
+            if (ev.touches && ev.touches.length > 1) return;
+            if (onLockBadge(ev.target)) return;
+            const t = (ev.touches && ev.touches[0]) || (ev.changedTouches && ev.changedTouches[0]);
+            if (!t) return;
+
+            if (typeof this._suppressDblZoom === 'function') {
+                this._suppressDblZoom();
+            }
+
+            pinWrap.style.zIndex = '1000';
+            entry.labelEl.style.zIndex = '1000';
+
+            touchState = {
+                startX: t.clientX,
+                startY: t.clientY,
+                startTime: Date.now(),
+                lpTimer: null,
+                isDragging: false,
+                identifier: t.identifier,
+            };
+            originalLngLat = pinMarker.getLngLat();
+
+            // Touch long (500 ms) + mouvement = drag & drop
+            if (!entry.pin.locked && !this._locked) {
+                touchState.lpTimer = setTimeout(() => {
+                    if (!touchState) return;
+                    touchState.isDragging = true;
+                    pinWrap.style.cursor = 'grabbing';
+                    pinWrap.style.opacity = '0.85';
+                    entry.labelEl.style.opacity = '0.5';
+                    try { navigator.vibrate?.(30); } catch { /* pas supporté */ }
+                }, LP_DELAY);
+            }
+        }, 'pin:touchstart'), { passive: true });
+
+        pinWrap.addEventListener('touchmove', this._safe((ev: TouchEvent) => {
+            if (!touchState) return;
+            const t = (ev.changedTouches && ev.changedTouches[0]) || (ev.touches && ev.touches[0]);
+            if (!t) return;
+
+            const dx = t.clientX - touchState.startX;
+            const dy = t.clientY - touchState.startY;
+            const moved = Math.hypot(dx, dy);
+
+            if (!touchState.isDragging) {
+                // Si mouvement > 15px avant le long-press, c'est un scroll de carte → annuler timer
+                if (moved > TAP_MAX_MOVE && touchState.lpTimer) {
+                    clearTimeout(touchState.lpTimer);
+                    touchState.lpTimer = null;
+                }
+                return;
+            }
+
+            // Mode drag actif : déplacer le pin
+            if (!this.map) return;
+            ev.preventDefault();
+            const rect = this.map.getContainer().getBoundingClientRect();
+            const px = t.clientX - rect.left;
+            const py = t.clientY - rect.top;
+            const ll = this.map.unproject([px, py]);
+            pinMarker.setLngLat(ll);
+            labelMarker.setLngLat(ll);
+            const dm = this._pinDiameterLabels && this._pinDiameterLabels[entry.pin.id];
+            if (dm) dm.setLngLat(ll);
+            updateLiveCircle(ll);
+        }, 'pin:touchmove'), { passive: false });
+
+        const onTouchEnd = this._safe((ev: TouchEvent) => {
+            if (!touchState) return;
+            const t = (ev.changedTouches && ev.changedTouches[0]) || (ev.touches && ev.touches[0]);
+            const clientX = t ? t.clientX : touchState.startX;
+            const clientY = t ? t.clientY : touchState.startY;
+
+            const dx = clientX - touchState.startX;
+            const dy = clientY - touchState.startY;
+            const moved = Math.hypot(dx, dy);
+            const dt = Date.now() - touchState.startTime;
+            const wasDragging = touchState.isDragging;
+
+            if (touchState.lpTimer) clearTimeout(touchState.lpTimer);
+            touchState = null;
+            pinWrap.style.zIndex = '';
+            entry.labelEl.style.zIndex = '';
+            pinWrap.style.cursor = '';
+            pinWrap.style.opacity = '1';
+            entry.labelEl.style.opacity = '1';
+
+            if (wasDragging) {
+                // Fin de drag & drop manuel
+                const ll = pinMarker.getLngLat();
+                labelMarker.setLngLat(ll);
+                const pinId = entry.pin.id;
+                const allPins = this._loadPins();
+                const target = allPins.find(p => p.id === pinId);
+                if (target) {
+                    target.lng = ll.lng;
+                    target.lat = ll.lat;
+                    this._savePins(allPins);
+                    entry.pin = target;
+                }
+                this._renderPinDecorations();
+                return;
+            }
+
+            // Touch simple (< 450 ms, < 15 px) → OUVRIR LA ROUE D'ÉDITION
+            if (dt < TAP_MAX_TIME && moved < TAP_MAX_MOVE) {
+                if (originalLngLat) {
+                    pinMarker.setLngLat(originalLngLat);
+                    labelMarker.setLngLat(originalLngLat);
+                    const dm = this._pinDiameterLabels && this._pinDiameterLabels[entry.pin.id];
+                    if (dm) dm.setLngLat(originalLngLat);
+                    updateLiveCircle(originalLngLat);
+                }
+                this._openPingOptionsWheel(entry.pin.id);
+            }
+        }, 'pin:touchend');
+
+        pinWrap.addEventListener('touchend', onTouchEnd);
+        pinWrap.addEventListener('touchcancel', this._safe(() => {
+            if (touchState?.lpTimer) clearTimeout(touchState.lpTimer);
+            touchState = null;
+            pinWrap.style.zIndex = '';
+            entry.labelEl.style.zIndex = '';
+            pinWrap.style.cursor = '';
+            pinWrap.style.opacity = '1';
+            entry.labelEl.style.opacity = '1';
+        }, 'pin:touchcancel'));
+
+        // ═══════════════════════════════════════════════════════════
+        //  2. CHEMIN DESKTOP — pointer* events (souris uniquement)
+        // ═══════════════════════════════════════════════════════════
         const onDown = (clientX: number, clientY: number, isTouch: boolean): void => {
             pdStart = { x: clientX, y: clientY, t: Date.now(), isTouch };
             originalLngLat = pinMarker.getLngLat();
-            // Desactiver temporairement le zoom double-clic natif de MapLibre (fenêtre double-tap)
-            this._suppressDblZoom();
-        };
-
-        // Logique commune de détection de tap (double-tap / second-tap).
-        // Appelée SOIT par pointerup (desktop), SOIT par click (mobile).
-        // `tapSource` empêche les doublons si les deux chemins se déclenchent.
-        let lastTapSource: 'pointer' | 'click' | null = null;
-        let lastTapTime = 0;
-
-        const handleTap = (pinId: string, source: 'pointer' | 'click'): void => {
-            const now = Date.now();
-            // Dé-duplication : si pointer et click tirent pour le même geste (< 300 ms),
-            // on ne traite que le premier.
-            if (lastTapSource && lastTapSource !== source && (now - lastTapTime) < 300) return;
-            lastTapSource = source;
-            lastTapTime = now;
-
-            const prev = this._lastPinTap;
-            const isDoubleTap = prev && prev.id === pinId && (now - prev.t) < 600;
-            if (isDoubleTap) {
-                this._lastPinTap = null;
-                this._openPingOptionsWheel(pinId);
-            } else {
-                this._lastPinTap = { id: pinId, t: now };
+            if (typeof this._suppressDblZoom === 'function') {
+                this._suppressDblZoom();
             }
         };
 
@@ -400,9 +524,7 @@ export const PinsMethods = {
             const dx = clientX - pdStart.x, dy = clientY - pdStart.y;
             const moved = Math.hypot(dx, dy);
             const dt = Date.now() - pdStart.t;
-            const threshold = pdStart.isTouch ? 24 : 6;
-            const maxTime = pdStart.isTouch ? 450 : 500;
-            const isTap = moved < threshold && dt < maxTime;
+            const isTap = moved < 6 && dt < 500;
             pdStart = null;
             if (!isTap) return;
 
@@ -418,24 +540,27 @@ export const PinsMethods = {
                 updateLiveCircle(originalLngLat);
             }
 
-            handleTap(pinId, 'pointer');
+            // Desktop : double-clic pour ouvrir la roue
+            const now = Date.now();
+            const prev = this._lastPinTap;
+            if (prev && prev.id === pinId && (now - prev.t) < 500) {
+                this._lastPinTap = null;
+                this._openPingOptionsWheel(pinId);
+            } else {
+                this._lastPinTap = { id: pinId, t: now };
+            }
         };
 
-        // (`instanceof Element` = équivalent TS-safe de `ev.target && ev.target.closest`
-        // de l'original : seul un `Element` expose `closest`, même duck-typing que
-        // draw-layers.ts.)
-        const onLockBadge = (ev: PointerEvent | MouseEvent): boolean => !!(ev.target instanceof Element && ev.target.closest('.plan-lock-badge'));
         pinWrap.addEventListener('pointerdown', this._safe((ev: PointerEvent) => {
-            if (onLockBadge(ev)) return;   // clic sur le cadenas : ne pas amorcer un geste de ping
+            if (ev.pointerType === 'touch') return; // Géré par touch* ci-dessus
+            if (onLockBadge(ev.target)) return;
             pinWrap.style.zIndex = '1000';
             entry.labelEl.style.zIndex = '1000';
-            onDown(ev.clientX, ev.clientY, ev.pointerType === 'touch');
+            onDown(ev.clientX, ev.clientY, false);
         }, 'pin:pointerdown'), { capture: true });
-        pinWrap.addEventListener('pointermove', this._safe(() => {
-            /* le drag natif maplibre gère le déplacement */
-        }, 'pin:pointermove'), { capture: true });
         pinWrap.addEventListener('pointerup', this._safe((ev: PointerEvent) => {
-            if (onLockBadge(ev)) return;   // idem au relâchement (évite un faux tap)
+            if (ev.pointerType === 'touch') return;
+            if (onLockBadge(ev.target)) return;
             onUp(ev.clientX, ev.clientY, ev);
         }, 'pin:pointerup'), { capture: true });
         pinWrap.addEventListener('pointerleave', this._safe(() => {
@@ -448,21 +573,9 @@ export const PinsMethods = {
             entry.labelEl.style.zIndex = '';
         }, 'pin:pointercancel'), { capture: true });
 
-        // --- CHEMIN CLICK : contournement du bug mobile MapLibre ---
-        // Sur mobile, MapLibre intercepte touchstart sur les marqueurs draggables
-        // et appelle preventDefault(), ce qui provoque un pointercancel sur l'élément.
-        // Le pointerup ne tire JAMAIS → onUp n'est jamais appelé → la roue ne s'ouvre pas.
-        // Le `click` DOM, lui, est TOUJOURS synthétisé par le navigateur après touchend,
-        // même quand touchstart a subi preventDefault. C'est le même pattern que
-        // oi/carto/pins.ts:507-511 qui fonctionne sans problème.
-        pinWrap.addEventListener('click', this._safe((ev: MouseEvent) => {
-            if (onLockBadge(ev as unknown as PointerEvent)) return;
-            // Ignorer le clic synthétique qui suit un vrai drag (< 300 ms après dragend)
-            if (Date.now() - lastDragEnd < 300) return;
-            ev.stopPropagation();
-            handleTap(entry.pin.id, 'click');
-        }, 'pin:click'));
-
+        // ═══════════════════════════════════════════════════════════
+        //  3. CHEMIN MAPLIBRE DRAG (desktop uniquement, draggable = true)
+        // ═══════════════════════════════════════════════════════════
         pinMarker.on('dragstart', this._safe(() => {
             pinWrap.style.cursor = 'grabbing';
             pinWrap.style.opacity = '0.85';
@@ -476,7 +589,6 @@ export const PinsMethods = {
             if (dm) dm.setLngLat(ll);
         }, 'pin:drag'));
         pinMarker.on('dragend', this._safe(() => {
-            lastDragEnd = Date.now();
             pinWrap.style.cursor = 'grab';
             pinWrap.style.opacity = '1';
             entry.labelEl.style.opacity = '1';
@@ -489,7 +601,6 @@ export const PinsMethods = {
                 target.lng = ll.lng;
                 target.lat = ll.lat;
                 this._savePins(allPins);
-                // Maintient entry.pin cohérent avec la nouvelle position.
                 entry.pin = target;
             }
             this._renderPinDecorations();
@@ -505,12 +616,11 @@ export const PinsMethods = {
         if (!this.map) return;
         const map = this.map;
         if (!this._pinMarkers) this._pinMarkers = new Map(); // id -> entry
-        // Capture locale : cf. en-tête de fichier (narrowing de `this._pinMarkers`
-        // invalidé par les appels de méthode qui suivent).
         const pinMarkers = this._pinMarkers;
 
         const pins = this._loadPins();
         const seen = new Set<string>();
+        const isTouchDevice = typeof window !== 'undefined' && ('ontouchstart' in window || (typeof navigator !== 'undefined' && navigator.maxTouchPoints > 0));
 
         for (const pin of pins) {
             seen.add(pin.id);
@@ -520,8 +630,6 @@ export const PinsMethods = {
             if (!entry) {
                 // --- CRÉATION ---
                 const pinWrap = document.createElement('div');
-                // Marqueur identifiable : permet à _shapePointerDown d'ignorer un geste
-                // qui démarre sur un ping (évite de déplacer la forme sous-jacente).
                 pinWrap.classList.add('plan-pin');
                 const labelEl = document.createElement('div');
                 entry = { pin, pinWrap, labelEl, pinMarker: null, labelMarker: null, sig: null, _anchor: null };
@@ -533,9 +641,8 @@ export const PinsMethods = {
                 const labelOffset = this._buildPinVisual(entry);
                 entry._anchor = anchor;
 
-                // INVARIANT 2b (SPEC-PLANMAP-SPLIT §5.3) : verrou par-ping ≠ verrou
-                // global — les deux conditions sont combinées à la création…
-                entry.pinMarker = new maplibregl.Marker({ element: pinWrap, anchor, draggable: !this._locked && !pin.locked })
+                const isDraggable = !isTouchDevice && !this._locked && !pin.locked;
+                entry.pinMarker = new maplibregl.Marker({ element: pinWrap, anchor, draggable: isDraggable })
                     .setLngLat([pin.lng, pin.lat])
                     .addTo(map);
                 entry.labelMarker = new maplibregl.Marker({ element: labelEl, anchor: 'top', offset: labelOffset })

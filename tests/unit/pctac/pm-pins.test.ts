@@ -447,7 +447,7 @@ describe('_renderPins — réconciliation par ID + INVARIANT 2b (draggable, plan
         expect(fake._pinMarkers).toBeNull();
     });
 
-    it('optimisation mobile : pinWrap possède une taille cible tactile (44px) et déclenche _suppressDblZoom au pointerdown', () => {
+    it('optimisation mobile : pinWrap possède une taille cible tactile (44px) et déclenche _suppressDblZoom au touchstart', () => {
         const suppressDblZoom = vi.fn();
         const map = { getSource: vi.fn(), addSource: vi.fn(), addLayer: vi.fn() };
         const fake = makeFakeThis({
@@ -462,30 +462,36 @@ describe('_renderPins — réconciliation par ID + INVARIANT 2b (draggable, plan
         expect(entry.pinWrap.style.minWidth).toBe('44px');
         expect(entry.pinWrap.style.minHeight).toBe('44px');
 
-        // Événement pointerdown tactile
-        entry.pinWrap.dispatchEvent(new PointerEvent('pointerdown', { pointerType: 'touch', clientX: 10, clientY: 10 }));
+        // Événement touchstart tactile
+        const touch = typeof Touch !== 'undefined'
+            ? new Touch({ identifier: 1, target: entry.pinWrap, clientX: 10, clientY: 10 })
+            : { clientX: 10, clientY: 10, identifier: 1 } as Touch;
+        entry.pinWrap.dispatchEvent(new TouchEvent('touchstart', { touches: [touch], changedTouches: [touch] }));
         expect(suppressDblZoom).toHaveBeenCalledTimes(1);
     });
 
-    it('mobile : double click sur pinWrap ouvre la roue (chemin click contournant le bug MapLibre pointercancel)', () => {
+    it('mobile : touch simple sur pinWrap ouvre la roue d\'édition', () => {
         const openWheel = vi.fn();
         const map = { getSource: vi.fn(), addSource: vi.fn(), addLayer: vi.fn() };
         const fake = makeFakeThis({
             map: map as unknown as PlanMapInternal['map'],
             _openPingOptionsWheel: openWheel,
         });
-        fake._savePins([makePin({ id: 'p-click' })]);
+        fake._savePins([makePin({ id: 'p-touch' })]);
         PinsMethods._renderPins.call(fake);
 
         const pinMarkers = assertNonNull(fake._pinMarkers);
-        const entry = assertNonNull(pinMarkers.get('p-click'));
+        const entry = assertNonNull(pinMarkers.get('p-touch'));
 
-        // 1er click
-        entry.pinWrap.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-        expect(openWheel).not.toHaveBeenCalled();
+        // Touch simple : touchstart puis touchend court sans mouvement
+        const touch = typeof Touch !== 'undefined'
+            ? new Touch({ identifier: 1, target: entry.pinWrap, clientX: 10, clientY: 10 })
+            : { clientX: 10, clientY: 10, identifier: 1 } as Touch;
+        entry.pinWrap.dispatchEvent(new TouchEvent('touchstart', { touches: [touch], changedTouches: [touch] }));
+        entry.pinWrap.dispatchEvent(new TouchEvent('touchend', { touches: [], changedTouches: [touch] }));
 
-        // 2ème click (double-tap) dans la fenêtre de 600 ms
-        entry.pinWrap.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-        expect(openWheel).toHaveBeenCalledWith('p-click');
+        expect(openWheel).toHaveBeenCalledWith('p-touch');
     });
 });
+
+
