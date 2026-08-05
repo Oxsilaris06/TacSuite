@@ -70,8 +70,11 @@ export const PanelsMethods = {
             box-shadow: 0 10px 28px rgba(0,0,0,0.6);
             font-family: var(--font-ui, sans-serif);
             z-index: 70;
-            display: flex; align-items: center; gap: 8px;
-            max-width: min(94vw, 420px);
+            display: flex; flex-direction: column; align-items: stretch; gap: 8px;
+            box-sizing: border-box;
+            max-width: calc(100% - 16px);
+            max-height: calc(100% - 16px);
+            overflow: hidden;
         `;
         // Bouton retour optionnel (← roue précédente) ajouté avant le contenu
         const backHtml = onBack ? `
@@ -391,21 +394,21 @@ export const PanelsMethods = {
                        cursor: pointer; flex: 0 0 auto;"></button>
         `).join('');
         const html = `
-            <div style="display: flex; flex-direction: column; gap: 8px; width: min(92vw, 360px); max-width: 100%;">
-                <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 6px;">
+            <div style="display: flex; flex-direction: column; gap: 8px; width: 360px; max-width: 100%; max-height: 100%; box-sizing: border-box; overflow: hidden;">
+                <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 6px; flex: 0 0 auto;">
                     <div style="display: flex; align-items: center; gap: 6px;">
                         <span class="material-symbols-outlined" style="font-size: 20px; color: #fff;">palette</span>
                         <strong style="font-size: 13px;">Couleur</strong>
                     </div>
                     <div style="display: flex; gap: 6px; flex-wrap: wrap; margin-left: auto;">${colorChips}</div>
                 </div>
-                <div style="display: flex; align-items: center; gap: 8px;">
+                <div style="display: flex; align-items: center; gap: 8px; flex: 0 0 auto;">
                     <input type="text" id="cat-filter" placeholder="Filtrer (police, pompier…)" autocomplete="off"
                         style="flex: 1; min-height: 40px; background: rgba(255,255,255,0.08); color: #fff;
                                border: 1px solid rgba(255,255,255,0.18); border-radius: 8px; padding: 6px 10px; font-size: 14px; outline: none;" />
                 </div>
-                <div id="cat-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(64px, 1fr));
-                     gap: 6px; max-height: min(50vh, 260px); overflow-y: auto; touch-action: pan-y; -webkit-overflow-scrolling: touch; padding-right: 2px;"></div>
+                <div id="cat-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(58px, 1fr));
+                     gap: 6px; flex: 1 1 auto; min-height: 60px; max-height: 100%; overflow-y: auto; touch-action: pan-y; -webkit-overflow-scrolling: touch; padding-right: 2px;"></div>
             </div>
         `;
         this._openInlinePanel(lngLat, html, {
@@ -503,8 +506,8 @@ export const PanelsMethods = {
         const ll = { lng: p.lng, lat: p.lat };
         try { if (this.map) this.map.easeTo({ center: [ll.lng, ll.lat], duration: 300 }); } catch { /* best-effort */ }
         const html = `
-            <div style="display: flex; flex-direction: column; gap: 8px; width: min(92vw, 360px); max-width: 100%;">
-                <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 6px;">
+            <div style="display: flex; flex-direction: column; gap: 8px; width: 360px; max-width: 100%; max-height: 100%; box-sizing: border-box; overflow: hidden;">
+                <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 6px; flex: 0 0 auto;">
                     <div style="display: flex; align-items: center; gap: 6px;">
                         <span class="material-symbols-outlined" style="font-size: 20px; color: ${p.color || '#fff'};">${p.icon || 'place'}</span>
                         <strong style="font-size: 13px;">Icône actuelle</strong>
@@ -513,8 +516,8 @@ export const PanelsMethods = {
                         style="flex: 1; min-width: 110px; min-height: 40px; background: rgba(255,255,255,0.08); color: #fff;
                                border: 1px solid rgba(255,255,255,0.18); border-radius: 8px; padding: 6px 10px; font-size: 14px; outline: none;" />
                 </div>
-                <div id="cat-edit-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(64px, 1fr));
-                     gap: 6px; max-height: min(50vh, 260px); overflow-y: auto; touch-action: pan-y; -webkit-overflow-scrolling: touch; padding-right: 2px;"></div>
+                <div id="cat-edit-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(58px, 1fr));
+                     gap: 6px; flex: 1 1 auto; min-height: 60px; max-height: 100%; overflow-y: auto; touch-action: pan-y; -webkit-overflow-scrolling: touch; padding-right: 2px;"></div>
             </div>
         `;
         this._openInlinePanel(ll, html, {

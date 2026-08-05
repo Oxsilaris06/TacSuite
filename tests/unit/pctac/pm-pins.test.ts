@@ -487,12 +487,7 @@ describe('_renderPins — réconciliation par ID + INVARIANT 2b (draggable, plan
             ? new Touch({ identifier: 1, target: entry.pinWrap, clientX: 10, clientY: 10 })
             : { clientX: 10, clientY: 10, identifier: 1 } as Touch;
 
-        // 1er tap
-        entry.pinWrap.dispatchEvent(new TouchEvent('touchstart', { touches: [touch], changedTouches: [touch] }));
-        entry.pinWrap.dispatchEvent(new TouchEvent('touchend', { touches: [], changedTouches: [touch] }));
-        expect(openWheel).not.toHaveBeenCalled();
-
-        // 2ème tap (double tap)
+        // 1er tap (touch simple) : sur mobile, ouvre immédiatement la roue d'édition
         entry.pinWrap.dispatchEvent(new TouchEvent('touchstart', { touches: [touch], changedTouches: [touch] }));
         entry.pinWrap.dispatchEvent(new TouchEvent('touchend', { touches: [], changedTouches: [touch] }));
         expect(openWheel).toHaveBeenCalledWith('p-touch');

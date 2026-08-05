@@ -427,10 +427,10 @@ export const PinsMethods = {
             ev.preventDefault();
         }, 'pin:dblclick'), { capture: true });
 
-        // ─── MOBILE TOUCH EVENTS (détection du touch simple / tap mobile) ───
+        // ─── MOBILE TOUCH EVENTS (touch simple / tap mobile) ───
         let touchStart: { x: number; y: number; t: number } | null = null;
 
-        pinWrap.addEventListener('touchstart', this._safe((ev: TouchEvent) => {
+        const handleTouchStart = (ev: TouchEvent): void => {
             if (onLockBadge(ev.target)) return;
             if (ev.touches && ev.touches.length > 1) return;
             const t = (ev.touches && ev.touches[0]) || (ev.changedTouches && ev.changedTouches[0]);
@@ -441,9 +441,9 @@ export const PinsMethods = {
             entry.labelEl.style.zIndex = '1000';
             touchStart = { x: t.clientX, y: t.clientY, t: Date.now() };
             originalLngLat = pinMarker.getLngLat();
-        }, 'pin:touchstart'), { passive: true });
+        };
 
-        pinWrap.addEventListener('touchend', this._safe((ev: TouchEvent) => {
+        const handleTouchEnd = (ev: TouchEvent): void => {
             pinWrap.style.zIndex = '';
             entry.labelEl.style.zIndex = '';
             if (onLockBadge(ev.target)) return;
@@ -461,8 +461,9 @@ export const PinsMethods = {
             // Ignorer si un drag MapLibre vient d'avoir lieu ou est en cours
             if (isDragging || (Date.now() - lastDragEnd < 300)) return;
 
-            // Touch simple (< 500ms, mouvement < 20px) : vérification de double-tap ou second tap sur le même pin
-            if (moved < 20 && dt < 500) {
+            // Touch simple (< 600ms, mouvement < 25px) : sur mobile, un touch simple sur un pin ou son label ouvre immédiatement la roue d'édition
+            if (moved < 25 && dt < 600) {
+                ev.stopPropagation();
                 const pinId = entry.pin.id;
                 if (originalLngLat) {
                     pinMarker.setLngLat(originalLngLat);
@@ -471,27 +472,26 @@ export const PinsMethods = {
                     if (dm) dm.setLngLat(originalLngLat);
                     updateLiveCircle(originalLngLat);
                 }
-
-                const now = Date.now();
-                const prev = this._lastPinTap;
-                const isDoubleTap = prev && prev.id === pinId && (now - prev.t) < 600;
-                const isSecondTapOnSelected = prev && prev.id === pinId && (now - prev.t) < 3000;
-
-                if (isDoubleTap || isSecondTapOnSelected) {
-                    ev.stopPropagation();
-                    this._lastPinTap = null;
-                    this._openPingOptionsWheel(pinId);
-                } else {
-                    this._lastPinTap = { id: pinId, t: now };
-                }
+                this._lastPinTap = null;
+                this._openPingOptionsWheel(pinId);
             }
-        }, 'pin:touchend'));
+        };
 
+        pinWrap.addEventListener('touchstart', this._safe(handleTouchStart, 'pin:touchstart'), { passive: true });
+        pinWrap.addEventListener('touchend', this._safe(handleTouchEnd, 'pin:touchend'));
         pinWrap.addEventListener('touchcancel', this._safe(() => {
             touchStart = null;
             pinWrap.style.zIndex = '';
             entry.labelEl.style.zIndex = '';
         }, 'pin:touchcancel'));
+
+        entry.labelEl.addEventListener('touchstart', this._safe(handleTouchStart, 'label:touchstart'), { passive: true });
+        entry.labelEl.addEventListener('touchend', this._safe(handleTouchEnd, 'label:touchend'));
+        entry.labelEl.addEventListener('touchcancel', this._safe(() => {
+            touchStart = null;
+            pinWrap.style.zIndex = '';
+            entry.labelEl.style.zIndex = '';
+        }, 'label:touchcancel'));
 
         // ─── MAPLIBRE DRAG EVENTS (NATIF POUR MOBILE & DESKTOP) ───
         pinMarker.on('dragstart', this._safe(() => {
