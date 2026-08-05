@@ -462,8 +462,70 @@ describe('_renderPins — réconciliation par ID + INVARIANT 2b (draggable, plan
         expect(entry.pinWrap.style.minWidth).toBe('44px');
         expect(entry.pinWrap.style.minHeight).toBe('44px');
 
-        // Événement pointerdown tactile
-        entry.pinWrap.dispatchEvent(new PointerEvent('pointerdown', { pointerType: 'touch', clientX: 10, clientY: 10 }));
+        // Événement touchstart tactile
+        const touch = typeof Touch !== 'undefined'
+            ? new Touch({ identifier: 1, target: entry.pinWrap, clientX: 10, clientY: 10 })
+            : { clientX: 10, clientY: 10, identifier: 1 } as Touch;
+        entry.pinWrap.dispatchEvent(new TouchEvent('touchstart', { touches: [touch], changedTouches: [touch] }));
         expect(suppressDblZoom).toHaveBeenCalledTimes(1);
     });
+
+    it('mobile : double tap sur pinWrap (2 taps < 600ms) ouvre la roue d\'édition', () => {
+        const openWheel = vi.fn();
+        const map = { getSource: vi.fn(), addSource: vi.fn(), addLayer: vi.fn() };
+        const fake = makeFakeThis({
+            map: map as unknown as PlanMapInternal['map'],
+            _openPingOptionsWheel: openWheel,
+        });
+        fake._savePins([makePin({ id: 'p-touch' })]);
+        PinsMethods._renderPins.call(fake);
+
+        const pinMarkers = assertNonNull(fake._pinMarkers);
+        const entry = assertNonNull(pinMarkers.get('p-touch'));
+
+        const touch = typeof Touch !== 'undefined'
+            ? new Touch({ identifier: 1, target: entry.pinWrap, clientX: 10, clientY: 10 })
+            : { clientX: 10, clientY: 10, identifier: 1 } as Touch;
+
+        // 1er tap
+        entry.pinWrap.dispatchEvent(new TouchEvent('touchstart', { touches: [touch], changedTouches: [touch] }));
+        entry.pinWrap.dispatchEvent(new TouchEvent('touchend', { touches: [], changedTouches: [touch] }));
+        expect(openWheel).not.toHaveBeenCalled();
+
+        // 2ème tap (double tap)
+        entry.pinWrap.dispatchEvent(new TouchEvent('touchstart', { touches: [touch], changedTouches: [touch] }));
+        entry.pinWrap.dispatchEvent(new TouchEvent('touchend', { touches: [], changedTouches: [touch] }));
+        expect(openWheel).toHaveBeenCalledWith('p-touch');
+    });
+
+    it('mobile : un drag MapLibre empêche l\'ouverture de la roue au touchend', () => {
+        const openWheel = vi.fn();
+        const map = { getSource: vi.fn(), addSource: vi.fn(), addLayer: vi.fn() };
+        const fake = makeFakeThis({
+            map: map as unknown as PlanMapInternal['map'],
+            _openPingOptionsWheel: openWheel,
+        });
+        fake._savePins([makePin({ id: 'p-drag' })]);
+        PinsMethods._renderPins.call(fake);
+
+        const pinMarkers = assertNonNull(fake._pinMarkers);
+        const entry = assertNonNull(pinMarkers.get('p-drag'));
+
+        // Début du touch
+        const touch = typeof Touch !== 'undefined'
+            ? new Touch({ identifier: 1, target: entry.pinWrap, clientX: 10, clientY: 10 })
+            : { clientX: 10, clientY: 10, identifier: 1 } as Touch;
+        entry.pinWrap.dispatchEvent(new TouchEvent('touchstart', { touches: [touch], changedTouches: [touch] }));
+
+        // MapLibre déclenche un drag
+        (entry.pinMarker as unknown as { _fire(t: string): void })._fire('dragstart');
+        (entry.pinMarker as unknown as { _fire(t: string): void })._fire('dragend');
+
+        // Fin du touch
+        entry.pinWrap.dispatchEvent(new TouchEvent('touchend', { touches: [], changedTouches: [touch] }));
+
+        // La roue ne doit PAS être ouverte après un drag
+        expect(openWheel).not.toHaveBeenCalled();
+    });
 });
+
