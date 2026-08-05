@@ -254,7 +254,7 @@ export interface PlanMapState {
     _pinDiameterLabels: Record<string, Marker> | null; // :1427, 1600, 1623
     _pinDecoMarkers: Marker[] | null;       // :1571-1572, 1622
     _pinDiameterSrc: boolean;               // :1573, 1627, 1652
-    _lastPinTap: { id: string; t: number } | null;   // :1433-1438
+    _lastPinTap: { id: string; t: number; x?: number; y?: number } | null;   // :1433-1438
     drawPrecisionMode: boolean;             // :1941, 2019
     moveState: MoveState | null;            // :2848, 4360 (toujours null — §7)
     _measureControls: HTMLDivElement | null;         // :2480, 2491

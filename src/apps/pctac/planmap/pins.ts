@@ -427,7 +427,7 @@ export const PinsMethods = {
             ev.preventDefault();
         }, 'pin:dblclick'), { capture: true });
 
-        // ─── MOBILE TOUCH EVENTS (touch simple / tap mobile) ───
+        // ─── MOBILE TOUCH EVENTS (double tap mobile) ───
         let touchStart: { x: number; y: number; t: number } | null = null;
 
         const handleTouchStart = (ev: TouchEvent): void => {
@@ -459,21 +459,29 @@ export const PinsMethods = {
             touchStart = null;
 
             // Ignorer si un drag MapLibre vient d'avoir lieu ou est en cours
-            if (isDragging || (Date.now() - lastDragEnd < 300)) return;
+            if (isDragging || (Date.now() - lastDragEnd < 250)) return;
 
-            // Touch simple (< 600ms, mouvement < 25px) : sur mobile, un touch simple sur un pin ou son label ouvre immédiatement la roue d'édition
-            if (moved < 25 && dt < 600) {
-                ev.stopPropagation();
+            // Touch propre (mouvement < 30px, durée < 500ms)
+            if (moved < 30 && dt < 500) {
                 const pinId = entry.pin.id;
-                if (originalLngLat) {
-                    pinMarker.setLngLat(originalLngLat);
-                    labelMarker.setLngLat(originalLngLat);
-                    const dm = this._pinDiameterLabels && this._pinDiameterLabels[pinId];
-                    if (dm) dm.setLngLat(originalLngLat);
-                    updateLiveCircle(originalLngLat);
+                const now = Date.now();
+                const prev = this._lastPinTap;
+
+                if (prev && prev.id === pinId && (now - prev.t) < 650 && typeof prev.x === 'number' && typeof prev.y === 'number' && Math.hypot(clientX - prev.x, clientY - prev.y) < 40) {
+                    ev.stopPropagation();
+                    ev.preventDefault();
+                    this._lastPinTap = null;
+                    if (originalLngLat) {
+                        pinMarker.setLngLat(originalLngLat);
+                        labelMarker.setLngLat(originalLngLat);
+                        const dm = this._pinDiameterLabels && this._pinDiameterLabels[pinId];
+                        if (dm) dm.setLngLat(originalLngLat);
+                        updateLiveCircle(originalLngLat);
+                    }
+                    this._openPingOptionsWheel(pinId);
+                } else {
+                    this._lastPinTap = { id: pinId, t: now, x: clientX, y: clientY };
                 }
-                this._lastPinTap = null;
-                this._openPingOptionsWheel(pinId);
             }
         };
 
@@ -559,6 +567,7 @@ export const PinsMethods = {
                 // qui démarre sur un ping (évite de déplacer la forme sous-jacente).
                 pinWrap.classList.add('plan-pin');
                 const labelEl = document.createElement('div');
+                labelEl.classList.add('plan-pin-label');
                 entry = { pin, pinWrap, labelEl, pinMarker: null, labelMarker: null, sig: null, _anchor: null };
 
                 const isVehicle = (pin.kind === 'Vehicule');

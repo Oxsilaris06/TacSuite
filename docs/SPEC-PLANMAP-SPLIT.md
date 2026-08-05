@@ -9,20 +9,19 @@
 
 ---
 
-## 0. Décompte de la surface (vérifié)
+## 0. Décompte surface (vérifié)
 
 | Catégorie | Nombre | Relevé |
 |---|---:|---|
 | Méthodes de l'objet `PlanMap` | **159** | `planMap.js:335 → 5590`, toutes indentées à 4 espaces |
-| Propriétés de données déclarées dans le littéral | **28** | `planMap.js:302-328` |
-| Constantes publiques du littéral | **2** | `AOI_MIN_Z` / `AOI_MAX_Z` (`:5303-5304`) |
-| **Total membres du littéral** | **189** | ≈ « ~190 membres » de `recon-pctac.md` |
+| Propriétés de données déclarées dans littéral | **28** | `planMap.js:302-328` |
+| Constantes publiques littéral | **2** | `AOI_MIN_Z` / `AOI_MAX_Z` (`:5303-5304`) |
+| **Total membres littéral** | **189** | ≈ « ~190 membres » de `recon-pctac.md` |
 | Propriétés ad hoc créées à l'exécution (hors littéral) | **28** | recensées en §3.2 |
 | Helpers/constantes de MODULE (hors objet) | **19** | `planMap.js:23-299` |
 
-Les 159 méthodes et les 30 propriétés/constantes du littéral sont affectées une
-et une seule fois dans les tables §4 → §4.17 (contrôle : la somme des lignes
-« méthodes » de la table §2 vaut 159).
+ 159 méthodes et 30 propriétés/constantes littéral sont affectées et seule fois dans tables §4 → §4.17 (contrôle : somme lignes
+« méthodes » table §2 vaut 159).
 
 ---
 
@@ -30,8 +29,8 @@ et une seule fois dans les tables §4 → §4.17 (contrôle : la somme des ligne
 
 ### 1.1 Contrainte
 
-`planMap.js` est **un objet littéral unique** dont les 159 méthodes s'appellent
-mutuellement par `this._xxx()`, dans un graphe **fortement cyclique**
+`planMap.js` est ** objet littéral unique** dont 159 méthodes s'appellent
+mutuellement par `this._xxx()`, dans graphe **fortement cyclique**
 (`_renderShapes` → `_renderShapeLocks` → `_toggleShapeLock` → `_renderHandles` →
 `_startHandleGesture` → `_renderShapes`, `_renderPins` ↔ `_togglePinLock`,
 `_setTool` ↔ `_startMeasure` ↔ `_clearMeasureState` ↔ `_setTool`…).
@@ -40,32 +39,29 @@ Deux découpages ont été envisagés :
 
 | Option | Verdict |
 |---|---|
-| **A — fonctions libres `f(state, …)`** avec imports croisés entre sous-modules | **REJETÉE.** Réintroduit les cycles au niveau ESM, oblige à réécrire les ~900 sites d'appel `this._x(...)`, casse la comparabilité ligne à ligne avec l'original (protocole §4.7 : *fidélité avant élégance*). |
-| **B — groupes de méthodes `this`-typés, réassemblés par la façade** | **RETENUE.** |
-
+| **A — fonctions libres `f(state, …)`** avec imports croisés entre sous-modules | **REJETÉE.** Réintroduit cycles au niveau ESM, oblige à réécrire ~900 sites d'appel `this._x(...)`, casse comparabilité ligne à ligne avec l'original (protocole §4.7 : *fidélité avant élégance*). |
+| **B — groupes de méthodes `this`-typés, réassemblés par façade** | **RETENUE.** |
 ### 1.2 Option B — règle unique et opposable
 
-> **Chaque sous-module exporte UN objet de méthodes dont chaque méthode déclare
-> `this: PlanMapInternal`. Aucun sous-module de méthodes n'importe un autre
-> sous-module de méthodes.** Les seules dépendances autorisées sont :
+> **Chaque sous-module exporte objet de méthodes dont chaque méthode déclare
+> `this: PlanMapInternal`. Aucun sous-module de méthodes n'importe autre> sous-module de méthodes.** seules dépendances autorisées sont :
 > `./types.js` (types uniquement), `./constants.js`, `./geo.js`, `./tiles.js`
-> (fonctions **pures**), `@shared/*`, `@pctac/*` (modules hors planMap) et les
+> (fonctions **pures**), `@shared/*`, `@pctac/*` (modules hors planMap) et 
 > paquets npm.
 
 Conséquences :
 
-1. **Zéro cycle ESM** : `types.ts`, `constants.ts`, `geo.ts`, `tiles.ts` sont des
-   feuilles ; les 13 groupes de méthodes sont des feuilles entre eux ; seul
-   `index.ts` importe tout le monde.
-2. **Les corps de méthodes sont portés VERBATIM** : `this._renderShapes()`,
-   `this.map`, `this._locked`… restent écrits à l'identique. Le diff avec
-   l'original se limite au typage.
-3. **Parallélisme maximal** : 15 paquets en vague 2 sans se voir.
-4. **Test unitaire trivial** : un groupe se teste en l'appelant avec un `this`
-   factice (`GroupMethods._formatDistance.call(fakeState, 1234)`), ou en montant
-   la façade complète (`index.ts`) en jsdom.
+1. **Zéro cycle ESM** : `types.ts`, `constants.ts`, `geo.ts`, `tiles.ts` sont 
+ feuilles ; 13 groupes de méthodes sont feuilles entre eux ; seul
+ `index.ts` importe tout monde.
+2. ** corps de méthodes sont portés VERBATIM** : `this._renderShapes()`,
+ `this.map`, `this._locked`… restent écrits à l'identique. diff avec
+ l'original se limite au typage.
+3. **Parallélisme maximal** : 15 paquets en vague 2 sans se voir.4. **Test unitaire trivial** : groupe se teste en l'appelant avec `this`
+ factice (`GroupMethods._formatDistance.call(fakeState, 1234)`), ou en montant
+ façade complète (`index.ts`) en jsdom.
 
-### 1.3 Forme exacte d'un groupe de méthodes
+### 1.3 Forme exacte d' groupe de méthodes
 
 ```ts
 // src/apps/pctac/planmap/<module>.ts
@@ -80,13 +76,12 @@ export const XxxMethods = {
 };
 ```
 
-* Le paramètre `this` n'est PAS compté par `noUnusedParameters` (règle TS) : il
-  peut donc être déclaré même si le corps ne l'utilise pas — mais **on ne le
-  déclare que si le corps utilise réellement `this`** (cas de `geo.ts`, qui n'en
-  a pas besoin).
-* **Aucun `export default`** dans les sous-modules (seul `index.ts` en a un).
-* Le nom de l'objet exporté est imposé par la table §2 (colonne « Export »).
-
+* paramètre `this` n'est PAS compté par `noUnusedParameters` (règle TS) : il
+ peut donc être déclaré même si corps ne l'utilise pas — mais **on ne 
+ déclare que si corps utilise réellement `this`** (cas de `geo.ts`, qui n'en
+ a pas besoin).
+* **Aucun `export default`** dans sous-modules (seul `index.ts` en a ).
+* nom de l'objet exporté est imposé par table §2 (colonne « Export »).
 ### 1.4 Réassemblage (`index.ts`)
 
 ```ts
@@ -123,13 +118,13 @@ window.PlanMap = PlanMap;
 export default PlanMap;
 ```
 
-L'annotation `: PlanMapInternal` sur la cible fait la vérification d'exhaustivité :
-**si un seul des 189 membres manque, `tsc` échoue.** C'est le filet de sécurité
-« aucun oubli » exigé par la mission.
+L'annotation `: PlanMapInternal` sur cible fait vérification d'exhaustivité :
+**si seul 189 membres manque, `tsc` échoue.** C'est filet de sécurité
+« aucun oubli » exigé par mission.
 
 ---
 
-## 2. Carte des sous-modules
+## 2. Carte sous-modules
 
 Tous sous `src/apps/pctac/planmap/`.
 
@@ -142,12 +137,12 @@ Tous sous `src/apps/pctac/planmap/`.
 | 5 | `state.ts` | `createPlanMapState`, `SafeMethods` | 1 | 28 | État initial complet (déclaré + ad hoc) + garde `_safe` | `./types.js` |
 | 6 | `map-core.ts` | `MapCoreMethods` | 15 | — | Cycle de vie carte, vue persistée, 3D/relief, overlay noms de rues, pré-cache France | `./types.js`, `./constants.js`, `./tiles.js` |
 | 7 | `chrome.ts` | `ChromeMethods` | 9 | — | Toolbar 6 FABs, plein écran, panneau de recherche + Nominatim, marqueur de recherche, dock dessin, hint | `./types.js`, `./constants.js`, `./geo.js` |
-| 8 | `ping-modal.ts` | `PingModalMethods` | 8 | — | Modale « Ping » hybride : liste d'entités, picker d'icônes, armement du placement libre | `./types.js`, `./constants.js`, `@pctac/storage.js` (`:985-987`), `@pctac/config.js` (`ADVERSARIES_KEY`, `HOSTAGES_KEY`, `FRIENDS_KEY`, `PIN_ICONS`, `suggestPinIcons` — `:985-987, 1044, 1074`) |
-| 9 | `pins.ts` | `PinsMethods` | 15 | — | Pings : CRUD, persistance, réconciliation des markers, cadenas, décorations. **Invariants 1 & 2** | `./types.js`, `./constants.js`, `./geo.js`, `@shared/persist.js` (`:1206, 1213`), `@pctac/storage.js` + `@pctac/config.js` (`:1220-1221`) |
-| 10 | `draw-layers.ts` | `DrawLayersMethods` | 3 | — | Création des sources/couches GeoJSON + bâtiments 3D, câblage du dock de dessin, long-press création de ping | `./types.js` |
-| 11 | `draw-tools.ts` | `DrawToolsMethods` | 16 | — | Outils de tracé (trait/rect/cercle/texte), undo/redo, preview, persistance des formes | `./types.js`, `./constants.js`, `./geo.js` |
+| 8 | `ping-modal.ts` | `PingModalMethods` | 8 | — | Modale « Ping » hybride : liste d'entités, picker d'icônes, armement placement libre | `./types.js`, `./constants.js`, `@pctac/storage.js` (`:985-987`), `@pctac/config.js` (`ADVERSARIES_KEY`, `HOSTAGES_KEY`, `FRIENDS_KEY`, `PIN_ICONS`, `suggestPinIcons` — `:985-987, 1044, 1074`) |
+| 9 | `pins.ts` | `PinsMethods` | 15 | — | Pings : CRUD, persistance, réconciliation markers, cadenas, décorations. **Invariants 1 & 2** | `./types.js`, `./constants.js`, `./geo.js`, `@shared/persist.js` (`:1206, 1213`), `@pctac/storage.js` + `@pctac/config.js` (`:1220-1221`) |
+| 10 | `draw-layers.ts` | `DrawLayersMethods` | 3 | — | Création sources/couches GeoJSON + bâtiments 3D, câblage dock de dessin, long-press création de ping | `./types.js` |
+| 11 | `draw-tools.ts` | `DrawToolsMethods` | 16 | — | Outils de tracé (trait/rect/cercle/texte), undo/redo, preview, persistance formes | `./types.js`, `./constants.js`, `./geo.js` |
 | 12 | `measure.ts` | `MeasureMethods` | 15 | — | Mesure distance/azimut (machine d'états), anneaux d'engagement, étiquettes persistées | `./types.js`, `./geo.js` |
-| 13 | `shapes-render.ts` | `ShapesRenderMethods` | 12 | — | Rendu des formes/textes/diamètres/cadenas + verrous global & par-forme | `./types.js`, `./geo.js` |
+| 13 | `shapes-render.ts` | `ShapesRenderMethods` | 12 | — | Rendu formes/textes/diamètres/cadenas + verrous global & par-forme | `./types.js`, `./geo.js` |
 | 14 | `shapes-gestures.ts` | `ShapesGesturesMethods` | 15 | — | Gestes sur formes : tap/drag/pinch, sélection, poignées | `./types.js`, `./geo.js` |
 | 15 | `wheels.ts` | `WheelsMethods` | 7 | — | Roues contextuelles (création ping, options ping, options forme), copie de coordonnées | `./types.js`, `@pctac/wheel.js`, `@pctac/config.js`, `@shared/coords.js` |
 | 16 | `panels.ts` | `PanelsMethods` | 7 | — | Mini-panneaux flottants inline (texte, diamètre, catalogue d'icônes, couleur) | `./types.js`, `@pctac/config.js` (`suggestPinIcons` `:3921` ; `PIN_ICONS` `:4119, 4206, 4227`) |
@@ -155,18 +150,15 @@ Tous sous `src/apps/pctac/planmap/`.
 | 18 | `capture.ts` | `CaptureMethods` | 2 | — | **Chaîne `captureToDataUrl` — PORT QUASI VERBATIM** + téléchargement PNG | `./types.js` |
 | 19 | `aoi.ts` | `AoiMethods` | 5 | 2 | Zone d'opération hors-ligne : cadrage, estimation, quota, téléchargement, barre de progression | `./types.js`, `./constants.js`, `./tiles.js`, `./geo.js` |
 | 20 | `legacy.ts` | `LegacyMethods` | 10 | — | **Code mort interne** conservé verbatim (cluster « transform » + 2 orphelins) — §7 | `./types.js` |
-| 21 | `index.ts` | `PlanMap` (+ `default`) | — | — | Réassemblage + pose de `window.PlanMap` | tous les précédents |
+| 21 | `index.ts` | `PlanMap` (+ `default`) | — | — | Réassemblage + pose de `window.PlanMap` | tous précédents |
 
-**Contrôle** : 1+12+15+9+8+15+3+16+15+12+15+7+7+7+2+5+10 = **159 méthodes**.
-28 (state) + 2 (aoi) = **30 propriétés**. Total **189**. ✔
-
+**Contrôle** : 1+12+15+9+8+15+3+16+15+12+15+7+7+7+2+5+10 = **159 méthodes**.28 (state) + 2 (aoi) = **30 propriétés**. Total **189**. ✔
 ---
 
 ## 3. `types.ts` — modèle de données (paquet `pm-types`, VAGUE 1)
 
-C'est le **pivot** : tous les autres sous-modules n'en dépendent que par
+C'est **pivot** : tous autres sous-modules n'en dépendent que par
 `import type`. Il ne contient **aucun runtime**.
-
 ### 3.1 Types de données persistées
 
 ```ts
@@ -371,7 +363,7 @@ export interface PinCircleFeature {
 
 > **Ré-export** : `types.ts` ré-exporte `PlanMapPinSummary` depuis
 > `@shared/types/contracts.js` (`export type { PlanMapPinSummary };`) pour que
-> `pins.ts` n'ait qu'un seul point d'import.
+> `pins.ts` n'ait qu' seul point d'import.
 
 ### 3.2 `PlanMapState` — 28 propriétés déclarées + 28 ad hoc
 
@@ -443,16 +435,16 @@ export interface PlanMapState {
 ```
 
 > **Règle d'initialisation opposable.** `createPlanMapState()` initialise chaque
-> propriété ad hoc à la valeur qui **reproduit exactement la première lecture de
+> propriété ad hoc à valeur qui **reproduit exactement première lecture de
 > l'original** (`undefined` → falsy) : `null` pour tout objet/marker/handler,
 > `false` pour tout booléen, `0` pour `_searchSeq` et `_wheelJustClosed`.
-> Vérifié un par un :
+> Vérifié par :
 > - `_wheelJustClosed = 0` → `Date.now() - 0 < 250` est `false`, comme `NaN < 250` ;
 > - `_searchSeq = 0` → `(0 || 0) + 1 === 1`, identique ;
-> - `_pinDiameterLabels = null` → tous les sites d'accès sont gardés
->   (`this._pinDiameterLabels && …`, `:1427`, `:1467`) ;
+> - `_pinDiameterLabels = null` → tous sites d'accès sont gardés
+> (`this._pinDiameterLabels && …`, `:1427`, `:1467`) ;
 > - `_textMarkersById = null` → site gardé (`:2772`).
-> Les 28 propriétés du littéral gardent **littéralement** les valeurs de
+> 28 propriétés littéral gardent **littéralement** valeurs de
 > `planMap.js:302-328` (dont `_pinMarkers: null`, initialisé paresseusement en
 > `Map` par `_renderPins`, `:1496`).
 
@@ -468,25 +460,21 @@ export interface PlanMapInternal extends PlanMapState, PlanMapContract {
 ```
 
 * `PlanMapContract` apporte `map`, `initialized`, `init()`, `refresh()`,
-  `getPinsSummary()`, `captureToDataUrl()`. `PlanMapState` redéclare `map` et
-  `initialized` **avec les mêmes types** (compatible).
-* Les 155 autres méthodes sont déclarées ici, **avec les signatures exactes des
-  tables §4.1 → §4.17**. C'est ce fichier qui rend le réassemblage vérifiable.
+ `getPinsSummary()`, `captureToDataUrl()`. `PlanMapState` redéclare `map` et
+ `initialized` **avec mêmes types** (compatible).* 155 autres méthodes sont déclarées ici, **avec signatures exactes  tables §4.1 → §4.17**. C'est ce fichier qui rend réassemblage vérifiable.
 
 ---
 
 ## 4. Table exhaustive : membre d'origine → sous-module de destination
 
 Légende : « L. » = ligne dans `modules/pctac/planMap.js`.
-Signature = signature TypeScript attendue **dans `PlanMapInternal`** (le
-paramètre `this` n'y figure pas ; il figure dans l'implémentation).
+Signature = signature TypeScript attendue **dans `PlanMapInternal`** (paramètre `this` n'y figure pas ; il figure dans l'implémentation).
 
 ### 4.0 Helpers et constantes de MODULE (hors objet `PlanMap`)
 
 | L. | Membre | Destination | Export / signature |
 |---:|---|---|---|
-| 23 | `escHtml` | `constants.ts` | `export const escHtml: (v: unknown) => string` — **délégué à `esc` de `@shared/ui-platform`** (§6.4) |
-| 29 | `PINS_KEY` | `constants.ts` | `export const PINS_KEY = 'pcTacPlanPins'` |
+| 23 | `escHtml` | `constants.ts` | `export const escHtml: (v: unknown) => string` — **délégué à `esc` de `@shared/ui-platform`** (§6.4) || 29 | `PINS_KEY` | `constants.ts` | `export const PINS_KEY = 'pcTacPlanPins'` |
 | 30 | `VIEW_KEY` | `constants.ts` | `export const VIEW_KEY = 'pcTacPlanView'` |
 | 31 | `SHAPES_KEY` | `constants.ts` | `export const SHAPES_KEY = 'pcTacPlanShapes'` |
 | 35 | `ENTITY_COLORS` | `constants.ts` | `export const ENTITY_COLORS: Record<PlanEntityKind, string>` |
@@ -510,11 +498,11 @@ paramètre `this` n'y figure pas ; il figure dans l'implémentation).
 
 | L. | Membre | Signature |
 |---:|---|---|
-| 302-328 | les 28 propriétés déclarées | cf. §3.2 (valeurs littérales inchangées) |
+| 302-328 | 28 propriétés déclarées | cf. §3.2 (valeurs littérales inchangées) |
 | 335 | `_safe` | `_safe<A extends unknown[], R>(fn: (...args: A) => R, label?: string): (...args: A) => R \| undefined` |
 
 Export additionnel : `export function createPlanMapState(): PlanMapState` (inclut
-aussi les 28 ad hoc et `AOI_MIN_Z: 13` / `AOI_MAX_Z: 18`).
+aussi 28 ad hoc et `AOI_MIN_Z: 13` / `AOI_MAX_Z: 18`).
 
 ### 4.2 `geo.ts` — 12 méthodes (toutes pures)
 
@@ -542,17 +530,15 @@ export function shapeCoords(s: PlanShape): LngLatTuple[];
 export function coordAt(s: PlanShape, i: number): LngLatTuple;
 ```
 
-`GeoMethods` = les 12 méthodes ci-dessus, chacune un one-liner déléguant à la
+`GeoMethods` = 12 méthodes ci-dessus, chacune one-liner déléguant à 
 fonction pure homonyme (sans paramètre `this`).
 
 ### 4.3 `map-core.ts` — 15 méthodes
 
 | L. | Méthode | Signature |
 |---:|---|---|
-| 342 | `init` | `init(): void` *(contrat public)* |
-| 424 | `_initOfflineCache` | `_initOfflineCache(): void` |
-| 441 | `refresh` | `refresh(): void` *(contrat public)* |
-| 451 | `_loadView` | `_loadView(): PlanView` |
+| 342 | `init` | `init(): void` *(contrat public)* || 424 | `_initOfflineCache` | `_initOfflineCache(): void` |
+| 441 | `refresh` | `refresh(): void` *(contrat public)* || 451 | `_loadView` | `_loadView(): PlanView` |
 | 459 | `_saveView` | `_saveView(): void` |
 | 472 | `_toggle3D` | `_toggle3D(): void` |
 | 479 | `_enable3D` | `_enable3D(animate?: boolean): void` |
@@ -611,7 +597,6 @@ fonction pure homonyme (sans paramètre `this`).
 | 1570 | `_renderPinDecorations` | `_renderPinDecorations(): void` |
 | 3727 | `_togglePinLock` | `_togglePinLock(pinId: string, reopenWheel?: boolean): void` |
 | 5025 | `getPinsSummary` | `getPinsSummary(): PlanMapPinSummary[]` *(contrat public C2)* |
-
 ### 4.7 `draw-layers.ts` — 3 méthodes
 
 | L. | Méthode | Signature |
@@ -641,9 +626,9 @@ fonction pure homonyme (sans paramètre `this`).
 | 4953 | `_loadShapes` | `_loadShapes(): PlanShape[]` |
 | 4957 | `_saveShapes` | `_saveShapes(list: readonly PlanShape[]): void` |
 
-> ⚠ `_handleDrawMove` / `_handleDrawUp` sont appelés **aussi bien avec un
-> événement MapLibre qu'avec un objet synthétique** `{ lngLat: center }`
-> (`planMap.js:1908, 1916, 1943`) : le type élargi ci-dessus est **obligatoire**.
+> ⚠ `_handleDrawMove` / `_handleDrawUp` sont appelés **aussi bien avec 
+> événement MapLibre qu'avec objet synthétique** `{ lngLat: center }`
+> (`planMap.js:1908, 1916, 1943`) : type élargi ci-dessus est **obligatoire**.
 
 ### 4.9 `measure.ts` — 15 méthodes
 
@@ -742,8 +727,7 @@ fonction pure homonyme (sans paramètre `this`).
 
 | L. | Méthode | Signature |
 |---:|---|---|
-| 5054 | `captureToDataUrl` | `captureToDataUrl(): Promise<string \| null>` *(contrat public C2)* |
-| 5258 | `_takeScreenshot` | `_takeScreenshot(): Promise<void>` |
+| 5054 | `captureToDataUrl` | `captureToDataUrl(): Promise<string \| null>` *(contrat public C2)* || 5258 | `_takeScreenshot` | `_takeScreenshot(): Promise<void>` |
 
 ### 4.16 `aoi.ts` — 5 méthodes + 2 constantes
 
@@ -757,9 +741,9 @@ fonction pure homonyme (sans paramètre `this`).
 | 5454 | `_runAoiDownload` | `_runAoiDownload(bbox: GeoBBox, minZ: number, maxZ: number, templates: readonly TileTemplate[], estTotal: number): Promise<void>` |
 | 5508 | `_createAoiProgressBar` | `_createAoiProgressBar(estTotal: number): AoiProgressUi` |
 
-> Les valeurs `AOI_MIN_Z`/`AOI_MAX_Z` sont posées par `createPlanMapState()`
-> (§4.1) et non par `aoi.ts` : ce sont des DONNÉES, pas des méthodes, et le
-> groupe `AoiMethods` ne contient que des fonctions. `aoi.ts` les lit via
+> valeurs `AOI_MIN_Z`/`AOI_MAX_Z` sont posées par `createPlanMapState()`
+> (§4.1) et non par `aoi.ts` : ce sont DONNÉES, pas méthodes, et 
+> groupe `AoiMethods` ne contient que fonctions. `aoi.ts` lit via
 > `this.AOI_MIN_Z` exactement comme l'original (`planMap.js:5417`).
 
 ### 4.17 `legacy.ts` — 10 méthodes (code mort interne, §7)
@@ -781,95 +765,90 @@ fonction pure homonyme (sans paramètre `this`).
 
 ## 5. Invariants critiques par sous-module (opposables au gate P2.E)
 
-### 5.1 `pins.ts` — invariant 1 : **jamais de `position` inline sur l'élément d'un Marker**
+### 5.1 `pins.ts` — invariant 1 : **jamais de `position` inline sur l'élément d' Marker**
 
-`planMap.js:1303-1306`. Dans `_buildPinVisual`, la ligne
+`planMap.js:1303-1306`. Dans `_buildPinVisual`, ligne
 `pinWrap.style.cssText = 'width: 38px; height: 38px; cursor: …; display: flex; …'`
-**ne doit contenir NI `position:` NI `inset:`**. Le commentaire d'origine
-(4 lignes) est **reporté tel quel** dans le TS. Le badge cadenas
+**ne doit contenir NI `position:` NI `inset:`**. commentaire d'origine(4 lignes) est **reporté tel quel** dans TS. badge cadenas
 (`position:absolute`, `:1266`) dépend de ce contrat.
-→ *Test unitaire obligatoire* : construire un `PinEntry` factice, appeler
+→ *Test unitaire obligatoire* : construire `PinEntry` factice, appeler
 `PinsMethods._buildPinVisual.call(state, entry)` et asserter
-`entry.pinWrap.style.position === ''` pour les deux branches (icône custom /
+`entry.pinWrap.style.position === ''` pour deux branches (icône custom /
 SVG par défaut).
 
-### 5.2 `pins.ts` — invariant 2a : le cadenas stoppe `pointerdown/mousedown/touchstart`
+### 5.2 `pins.ts` — invariant 2a : cadenas stoppe `pointerdown/mousedown/touchstart`
 
-`planMap.js:1279-1282` (`_makeLockBadge`). Les 3 `stopPropagation` + le
-`{ passive: true }` sur `touchstart` sont **obligatoires** : sans eux, le drag
-natif du marker et la sélection de la forme sous-jacente se déclenchent.
-→ *Test* : dispatcher `pointerdown` sur le badge et vérifier qu'un listener
-posé sur un parent ne le reçoit pas.
+`planMap.js:1279-1282` (`_makeLockBadge`). 3 `stopPropagation` + 
+`{ passive: true }` sur `touchstart` sont **obligatoires** : sans eux, drag
+natif marker et sélection forme sous-jacente se déclenchent.
+→ *Test* : dispatcher `pointerdown` sur badge et vérifier qu' listener
+posé sur parent ne reçoit pas.
 
 ### 5.3 `pins.ts` — invariant 2b : verrou par-ping ≠ verrou global
 
-`draggable: !this._locked && !pin.locked` à la **création** (`:1522`) ET à la
+`draggable: !this._locked && !pin.locked` à **création** (`:1522`) ET à 
 mise à jour (`setDraggable`, `:1545`). `_pinSignature` (`:1231-1243`) inclut
-**à la fois** `pin.locked` et `this._locked` : ne jamais retirer l'un des deux
-du calcul de signature, sinon la bascule du verrou global ne re-rend rien.
-`_togglePinLock(pinId, reopenWheel = true)` : le **défaut `true`** est requis
-(la roue rouvre) alors que le cadenas direct appelle avec `false` (`:1336`).
+**à fois** `pin.locked` et `this._locked` : ne jamais retirer l' deux
+ calcul de signature, sinon bascule verrou global ne re-rend rien.
+`_togglePinLock(pinId, reopenWheel = true)` : **défaut `true`** est requis( roue rouvre) alors que cadenas direct appelle avec `false` (`:1336`).
 
 ### 5.4 `shapes-render.ts` — invariant 2c : verrou par-forme
 
 `_toggleShapeLock(shapeId, reopenWheel = true)` (`:4319`), même défaut.
 `_renderHandles` sort si `this._locked` **ou** `s.locked` (`:3237`, `:3240`).
-`_attachPinchListeners` sort aussi sur les deux (`:3048`, `:3050`).
-`_renderShapeLocks` réconcilie par id (Map) — **ne pas repasser à une
+`_attachPinchListeners` sort aussi sur deux (`:3048`, `:3050`).
+`_renderShapeLocks` réconcilie par id (Map) — **ne pas repasser à 
 destruction/recréation systématique**.
 
 ### 5.5 `capture.ts` — invariant 3 : chaîne `captureToDataUrl` (`planMap.js:5054-5241`)
 
-**Port QUASI VERBATIM. Aucune refactorisation, aucune extraction de sous-fonction,
-aucun changement d'ordre.** Les 10 points suivants sont vérifiés un par un au
+**Port QUASI VERBATIM. Aucune refactorisation, aucune extraction de sous-fonction,aucun changement d'ordre.** 10 points suivants sont vérifiés par au
 gate :
 
 1. Gardes d'entrée dans l'ordre exact : `!this.map` → `typeof html2canvas === 'undefined'` → `!mapContainer` → `!mapContainer.offsetWidth` → double `requestAnimationFrame` puis re-test `clientWidth` → `this._captureBusy`.
-2. `this._captureBusy = true` **avant** toute mutation DOM, remis à `false` **uniquement dans le `finally`**.
-3. Liste `toHide` **exactement** les 7 ids + `.plan-lock-badge` + `.plan-inline-panel` + `_activeWheel.element` + `_handleMarkers[].getElement()` + `_toolbarMarker` + `_drawingDiameterMarker` ; `memo` capture `el.style.display` **avant** masquage.
-4. Attente idle bornée à **2500 ms** (`setTimeout(fin, 2500)` + `map.once('idle', fin)` + garde `done`).
+2. `this._captureBusy = true` **avant** toute mutation DOM, remis à `false` **uniquement dans `finally`**.
+3. Liste `toHide` **exactement** 7 ids + `.plan-lock-badge` + `.plan-inline-panel` + `_activeWheel.element` + `_handleMarkers[].getElement()` + `_toolbarMarker` + `_drawingDiameterMarker` ; `memo` capture `el.style.display` **avant** masquage.4. Attente idle bornée à **2500 ms** (`setTimeout(fin, 2500)` + `map.once('idle', fin)` + garde `done`).
 5. `triggerRepaint()` puis `await new Promise(r => rAF(() => rAF(r)))`.
-6. Aplatissement des markers : boucle sur `.maplibregl-marker, .mapboxgl-marker`, saut si `display === 'none'` ou `offsetWidth/Height === 0`, mémorisation des 6 propriétés (`position,left,top,transform,width,height`), écriture `position:absolute; left/top` relatifs à `parentRect`, `transform:none`, `width/height` en px.
-7. Snapshot `baseCanvas` du canvas WebGL **AVANT** `html2canvas`.
-8. **Épinglage px de 3 niveaux de conteneurs** (`for (let depth = 0; el && depth < 3; depth++, el = el.parentElement)`) via `data-h2c-pin` + restitution dans `onclone` (`width/height/maxWidth:none/maxHeight:none/minHeight:0`). ⚠ *Cause n°1 des markers amputés.*
+6. Aplatissement markers : boucle sur `.maplibregl-marker, .mapboxgl-marker`, saut si `display === 'none'` ou `offsetWidth/Height === 0`, mémorisation 6 propriétés (`position,left,top,transform,width,height`), écriture `position:absolute; left/top` relatifs à `parentRect`, `transform:none`, `width/height` en px.
+7. Snapshot `baseCanvas` canvas WebGL **AVANT** `html2canvas`.
+8. **Épinglage px de 3 niveaux de conteneurs** (`for (let depth = 0; el && depth < 3; depth++, el = el.parentElement)`) via `data-h2c-pin` + restitution dans `onclone` (`width/height/maxWidth:none/maxHeight:none/minHeight:0`). ⚠ *Cause n°1 markers amputés.*
 9. Options `html2canvas` **inchangées** : `useCORS:true, allowTaint:false, backgroundColor:null, logging:false, scale:dpr, width:cssW, height:cssH, scrollX:0, scrollY:0, ignoreElements: n => n.tagName === 'CANVAS'`. **Ne PAS ajouter `windowWidth`/`windowHeight`** (commentaire `:5198-5199`).
-10. `finally` : restauration des markers, `removeAttribute('data-h2c-pin')`, `el.style.display = memo[i] || ''`, `_captureBusy = false`.
+10. `finally` : restauration markers, `removeAttribute('data-h2c-pin')`, `el.style.display = memo[i] || ''`, `_captureBusy = false`.
 
 Adaptations TS **autorisées et limitées à** :
-* `import html2canvas from 'html2canvas'` (le `typeof html2canvas === 'undefined'` devient `typeof html2canvas !== 'function'`) ;
-* typage des tableaux `markersToRestore` / `pinnedEls` / `memo` ;
-* `el` de la boucle d'épinglage typé `HTMLElement | null` ;
-* `baseCanvas.getContext('2d')` → garde `if (!ctx) …` **ajoutée** (TS l'exige) : en cas de `null`, retourner `null` **depuis le `try`** (le `finally` restaure) — documenter en commentaire.
+* `import html2canvas from 'html2canvas'` ( `typeof html2canvas === 'undefined'` devient `typeof html2canvas !== 'function'`) ;
+* typage tableaux `markersToRestore` / `pinnedEls` / `memo` ;
+* `el` boucle d'épinglage typé `HTMLElement | null` ;
+* `baseCanvas.getContext('2d')` → garde `if (!ctx) …` **ajoutée** (TS l'exige) : en cas de `null`, retourner `null` **depuis `try`** ( `finally` restaure) — documenter en commentaire.
 
 ### 5.6 `map-core.ts` — épinglage caméra 3D
 
-`_pinCamera` : les **7 délais** `[0, 120, 280, 500, 850, 1300, 1900]` + le
+`_pinCamera` : **7 délais** `[0, 120, 280, 500, 850, 1300, 1900]` + 
 `setTimeout(…, 2400)` de désabonnement `idle`, et l'annulation sur
 `dragstart/zoomstart/rotatestart` **avec `e.originalEvent` présent uniquement**
-(`:575`). Un nouvel appel annule le précédent via `this._pinCancel`.
+(`:575`). nouvel appel annule précédent via `this._pinCancel`.
 
 ### 5.7 `chrome.ts` — jeton de séquence Nominatim
 
 `_searchAddress` : `const seq = (this._searchSeq = (this._searchSeq || 0) + 1);`
-**avant** la branche GPS (`:834`), et double test `if (seq !== this._searchSeq) return;`
+**avant** branche GPS (`:834`), et double test `if (seq !== this._searchSeq) return;`
 (succès `:856`, échec `:883`).
 
 ### 5.8 `draw-tools.ts` — historique et undo/redo
 
 `_undo`/`_redo` écrivent **directement** `localStorage.setItem(SHAPES_KEY, prev)`
-(`:1975`, `:1985`) et **non** via `Persist` : c'est volontaire (la chaîne
+(`:1975`, `:1985`) et **non** via `Persist` : c'est volontaire ( chaîne
 sérialisée est déjà connue). **Porter tel quel**, sous `try/catch` vide.
 `_pushHistory` borne l'historique à 50 et vide `redoStack`.
 
 ### 5.9 `measure.ts` — `_renderCommittedMeasures` mute `this.drawColor`
 
-`:2681-2684` : la couleur courante est sauvegardée, remplacée par `s.color`, puis
+`:2681-2684` : couleur courante est sauvegardée, remplacée par `s.color`, puis
 restaurée. Ce hack est **nécessaire** car `_renderMeasureLabels` lit
 `this.drawColor`. Porter tel quel.
+### 5.10 `aoi.ts` — seul téléchargement à fois
 
-### 5.10 `aoi.ts` — un seul téléchargement à la fois
-
-`_aoiDownloadBusy` (`:5457`) : garde + remise à `false` sur **les 4 chemins de
+`_aoiDownloadBusy` (`:5457`) : garde + remise à `false` sur ** 4 chemins de
 sortie** (erreur, abandon, succès complet, succès partiel).
 
 ---
@@ -883,68 +862,66 @@ sortie** (erreur, abandon, succès complet, succès partiel).
 
 *Justification (opposable)* : dans l'original, `main.js:7-8` importe `planMap.js`
 **puis** `tchapLive.js` ; `tchapLive.js` s'auto-câble à l'import (`:960-961`) et
-peut atteindre `window.PlanMap` dès sa réhydratation. Poser la façade dans
-`main.ts` (comme pour `UIPlatform`/`PocheTuto`) inverserait l'ordre — les corps
-de modules importés s'exécutent AVANT le corps de `main.ts`. La pose au scope
-module est donc la seule qui reproduit exactement l'ordre d'initialisation.
+peut atteindre `window.PlanMap` dès sa réhydratation. Poser façade dans
+`main.ts` (comme pour `UIPlatform`/`PocheTuto`) inverserait l'ordre — corps
+de modules importés s'exécutent AVANT corps de `main.ts`. pose au scopemodule est donc seule qui reproduit exactement l'ordre d'initialisation.
 `src/apps/pctac/main.ts` **doit** importer `@pctac/planmap` avant
 `@pctac/tchap-live` (cf. `SPEC-PCTAC-CONVERSION.md` §5).
 
 Effet de bord en test : importer `@pctac/planmap` sous Vitest pose
-`window.PlanMap` (jsdom). Sans conséquence — les tests unitaires ciblent les
-groupes de méthodes, pas la façade.
+`window.PlanMap` (jsdom). Sans conséquence — tests unitaires ciblent 
+groupes de méthodes, pas façade.
 
-### 6.2 MapLibre : import npm au lieu du global
+### 6.2 MapLibre : import npm au lieu global
 
 `import maplibregl from 'maplibre-gl';` dans chaque sous-module qui instancie
 `maplibregl.Map`, `maplibregl.Marker`, `maplibregl.Popup`,
 `maplibregl.NavigationControl`, `maplibregl.ScaleControl`, `maplibregl.LngLatBounds`.
-La garde `if (typeof maplibregl === 'undefined')` de `init()` (`:349-354`)
-devient `if (typeof maplibregl?.Map !== 'function')` — **le bloc DOM d'erreur est
+ garde `if (typeof maplibregl === 'undefined')` de `init()` (`:349-354`)
+devient `if (typeof maplibregl?.Map !== 'function')` — ** bloc DOM d'erreur est
 conservé mot pour mot** (message utilisateur inchangé).
 
 ### 6.3 `noUncheckedIndexedAccess` — règle unique
 
-Le projet compile avec `noUncheckedIndexedAccess: true`. Sur les accès indexés à
-`PlanShape['coords']` et aux tableaux de coordonnées :
+ projet compile avec `noUncheckedIndexedAccess: true`. Sur accès indexés à`PlanShape['coords']` et aux tableaux de coordonnées :
 
 * utiliser `coordAt(s, i)` et `shapeCoords(s)` de `geo.ts` (§4.2) ;
-* **ne jamais** utiliser `!` (non-null assertion) — interdit par la revue ;
-* le repli `[0, 0]` de `coordAt` n'est atteignable que sur donnée persistée
-  malformée, cas où l'original levait un `TypeError` capté par `_safe`
-  (interaction morte, aucun état corrompu) : la normalisation est **neutre en
-  observable** et doit être commentée à chaque site.
+* **ne jamais** utiliser `!` (non-null assertion) — interdit par revue ;
+* repli `[0, 0]` de `coordAt` n'est atteignable que sur donnée persistée
+ malformée, cas où l'original levait `TypeError` capté par `_safe`
+ (interaction morte, aucun état corrompu) : normalisation est **neutre en
+ observable** et doit être commentée à chaque site.
 
-Pour les `LngLatTuple` (tuples), la destructuration reste typée `number` : aucun
+Pour `LngLatTuple` (tuples), destructuration reste typée `number` : aucun
 traitement particulier.
 
 ### 6.4 `escHtml`
 
 `planMap.js:23-27` interroge `window.UIPlatform`. En ESM, `esc` est importable :
 `constants.ts` fait `import { esc } from '@shared/ui-platform.js'; export const escHtml = esc;`.
-La branche de repli est **morte par construction** (l'import ne peut pas manquer)
+ branche de repli est **morte par construction** (l'import ne peut pas manquer)
 → supprimée, comportement identique.
 
 ### 6.5 Événements MapLibre typés
 
-`this.map.on('mousedown', handler)` : MapLibre 4.7 type ses événements. Quand un
+`this.map.on('mousedown', handler)` : MapLibre 4.7 type ses événements. Quand 
 même handler sert `mousedown`/`touchstart` (`_shapePointerDown`, `_handleDrawDown`),
-typer le paramètre en union (`MapMouseEvent | MapTouchEvent`, ou
-`MapLayerMouseEvent | MapLayerTouchEvent` pour les handlers liés à une couche).
-Si une surcharge `map.on` refuse l'union, **ne pas caster l'objet map** :
-enrober (`(e) => this._shapePointerDown(e)`) comme le fait déjà `_safe`.
+typer paramètre en union (`MapMouseEvent | MapTouchEvent`, ou
+`MapLayerMouseEvent | MapLayerTouchEvent` pour handlers liés à couche).
+Si surcharge `map.on` refuse l'union, **ne pas caster l'objet map** :
+enrober (`(e) => this._shapePointerDown(e)`) comme fait déjà `_safe`.
 
 ### 6.6 Ce qu'il ne faut PAS faire
 
-* Ne pas convertir les `document.getElementById(...)` en refs mémorisées : le DOM
-  est reconstruit par `UI.switchMainView`, les lookups à chaque appel sont voulus.
+* Ne pas convertir `document.getElementById(...)` en refs mémorisées : DOM
+ est reconstruit par `UI.switchMainView`, lookups à chaque appel sont voulus.
 * Ne pas remplacer `el.onclick = …` par `addEventListener` : l'original s'appuie
-  sur l'écrasement idempotent (`_bindUi` peut être rejoué).
-* Ne pas fusionner les `try {} catch (_) {}` vides : ils bornent des APIs
-  MapLibre qui jettent selon l'état du style.
-* Ne pas « corriger » `_buildPinVisual` : le commentaire `:1341-1350` explique que
-  l'ancre d'un marker MapLibre n'est pas modifiable après création — le code
-  compense volontairement par l'offset du label seulement.
+ sur l'écrasement idempotent (`_bindUi` peut être rejoué).
+* Ne pas fusionner `try {} catch (_) {}` vides : ils bornent APIs
+ MapLibre qui jettent selon l'état style.
+* Ne pas « corriger » `_buildPinVisual` : commentaire `:1341-1350` explique que
+ l'ancre d' marker MapLibre n'est pas modifiable après création — code
+ compense volontairement par l'offset label seulement.
 
 ---
 
@@ -959,26 +936,24 @@ comprise) :
 | `_renderFloatingToolbar` | 1 | jamais appelé — remplacé par `_openShapeWheel` |
 | `_startMoveShape` | 1 | jamais appelé |
 | `_startResizeShape` | 1 | jamais appelé |
-| `_startTransform` | 3 | appelé **uniquement** par les deux précédents |
+| `_startTransform` | 3 | appelé **uniquement** par deux précédents |
 | `_endMoveShape`, `_cancelMoveShape`, `_teardownMove`, `_showTransformToolbar`, `_hideTransformToolbar` | — | atteignables **uniquement** depuis `_startTransform` |
-| `moveState` / `_moveHandlers` | 18 / 6 | **jamais assignés hors du cluster** ⇒ toujours `null` ; les 8 gardes `if (this.moveState) return;` sont donc toujours fausses |
-| `_toolbarMarker` | 6 | assigné **uniquement** par `_renderFloatingToolbar` ⇒ toujours `null` ; `_clearFloatingToolbar` / `_updateFloatingToolbarPos` / `captureToDataUrl` restent des no-op **vivants** |
+| `moveState` / `_moveHandlers` | 18 / 6 | **jamais assignés hors cluster** ⇒ toujours `null` ; 8 gardes `if (this.moveState) return;` sont donc toujours fausses |
+| `_toolbarMarker` | 6 | assigné **uniquement** par `_renderFloatingToolbar` ⇒ toujours `null` ; `_clearFloatingToolbar` / `_updateFloatingToolbarPos` / `captureToDataUrl` restent no-op **vivants** |
 | `_contextPopup` | 1 | déclaré, jamais lu ni écrit |
 | `drawPreviewLayerIds` | 1 | déclaré, jamais lu |
 | `_tileUrl` (module) | 1 | jamais appelé |
 
 **Décision.** Ce code est **PORTÉ VERBATIM** dans `planmap/legacy.ts` (méthodes)
-et conservé dans `state.ts`/`tiles.ts` (propriétés/helper), avec un en-tête
+et conservé dans `state.ts`/`tiles.ts` (propriétés/helper), avec en-tête
 `@deprecated — code mort interne, cf. SPEC-PLANMAP-SPLIT §7 ; ne pas rebrancher`.
 
-*Motifs* : (a) le protocole §4.7 impose la fidélité ; (b) conserver les 189
-membres rend le contrôle d'exhaustivité de `PlanMapInternal` trivialement vert au
-gate P2.E ; (c) les gardes `if (this.moveState)` restent écrites à l'identique,
-donc les corps des méthodes vivantes ne sont pas modifiés.
-*Non-décision* : la suppression définitive est un arbitrage **hors P2**, à porter
-en P2.F ou plus tard, avec preuve de non-régression.
+*Motifs* : (a) protocole §4.7 impose fidélité ; (b) conserver 189membres rend contrôle d'exhaustivité de `PlanMapInternal` trivialement vert au
+gate P2.E ; (c) gardes `if (this.moveState)` restent écrites à l'identique,
+donc corps méthodes vivantes ne sont pas modifiés.
+*Non-décision* : suppression définitive est arbitrage **hors P2**, à porteren P2.F ou plus tard, avec preuve de non-régression.
 
-Ce constat **complète** `docs/SPEC-CONTRATS.md` §4.3 (qui listait le code mort
+Ce constat **complète** `docs/SPEC-CONTRATS.md` §4.3 (qui listait code mort
 au niveau FICHIER : `dashboard.js`, `qrSync.js`, `collectionManagers.js`,
 `modules/shared.js`).
 
@@ -993,14 +968,14 @@ Conformément à `SPEC-CONTRATS.md` §2.1 et §5 :
 | `window.PlanMap` | **posé** par `planmap/index.ts` (§6.1) | **conservé** tant que `tchap-live.ts` lit `window.PlanMap` ; retirable seulement si `tchap-live.ts` importe `PlanMap` (possible sans cycle : planMap n'importe pas tchapLive) |
 | Type de `window.PlanMap` | `PlanMapContract` (déjà déclaré dans `global.d.ts`) — **inchangé** | inchangé |
 | Surface publique réellement lue de l'extérieur | `map`, `initialized`, `init()`, `refresh()`, `getPinsSummary()`, `captureToDataUrl()` | idem |
-| Les 183 autres membres | internes au module TS, typés dans `PlanMapInternal`, **absents** de `PlanMapContract` | idem |
+| 183 autres membres | internes au module TS, typés dans `PlanMapInternal`, **absents** de `PlanMapContract` | idem |
 
-`index.ts` exporte `PlanMap: PlanMapInternal` (typage riche pour les
-consommateurs internes et les tests) ; l'affectation `window.PlanMap = PlanMap`
+`index.ts` exporte `PlanMap: PlanMapInternal` (typage riche pour 
+consommateurs internes et tests) ; l'affectation `window.PlanMap = PlanMap`
 est valide car `PlanMapInternal extends PlanMapContract`.
 
 **Aucune modification de `src/shared/types/contracts.ts` n'est requise par ce
-découpage.** Les types de planMap vivent dans `planmap/types.ts`.
+découpage.** types de planMap vivent dans `planmap/types.ts`.
 
 ---
 
@@ -1010,13 +985,13 @@ découpage.** Les types de planMap vivent dans `planmap/types.ts`.
 |---|---|---|
 | `geo.ts` | **TDD strict.** Valeurs de référence calculées sur l'original exécuté en Node (`node --input-type=module`) : `haversineMeters`, `trueBearing`, `circlePolygon` (65 points, 1er = dernier), `geoEdgeNorth` (rayon exact à 3 latitudes), `formatDistance` (5 paliers : <1 m, <1 km, <10 km, ≥10 km), `formatBearing` (padding 3), `rectPolygon` (5 points fermés), `parseGps` (séparateurs `,` `;` espace, virgule décimale FR, bornes ±90/±180) | pur |
 | `tiles.ts` | **TDD strict.** `lon2tile`/`lat2tile` (valeurs OSM connues), `enumerateTiles` vs `estimateTileCount` (**même total**, propriété invariante), intersection avec `bounds` IGN (zone hors France ⇒ 0 tuile IGN), `fillTileTemplate` (ordre `{z}/{y}/{x}` ESRI), `prefetchTiles` avec `caches`/`fetch` mockés : concurrence 6, `MAX_RETRY` 3, backoff 400·2^n, abandon coopératif via `signal.aborted` | pur + mocks |
-| `state.ts` | `createPlanMapState()` retourne **exactement** les 58 clés attendues avec les bonnes valeurs initiales ; `_safe` capture et journalise sans propager, et retourne la valeur en cas de succès | pur |
+| `state.ts` | `createPlanMapState()` retourne **exactement** 58 clés attendues avec bonnes valeurs initiales ; `_safe` capture et journalise sans propager, et retourne valeur en cas de succès | pur |
 | `constants.ts` | `RASTER_STYLE` : 5 sources, 2 couches, `glyphs` OpenFreeMap, `bounds` IGN `[-5.6,41.1,9.8,51.3]`, `minzoom:11` ; clés localStorage littérales | pur |
 | `pins.ts` | invariants 5.1/5.2/5.3 (cf. ci-dessus) + `_pinSignature` (change si `locked` change, si `_locked` change, si position change) + `_resolvePin` (entité supprimée ⇒ `'[supprimé]'`) + `getPinsSummary` (jamais d'exception, `[]` si stockage cassé) | jsdom |
-| `capture.ts` | `captureToDataUrl()` retourne `null` sur chacune des 5 conditions du CONTRAT C2 ; le `finally` restaure `display` et `_captureBusy` **même si `html2canvas` jette** | jsdom + mocks |
+| `capture.ts` | `captureToDataUrl()` retourne `null` sur chacune 5 conditions CONTRAT C2 ; `finally` restaure `display` et `_captureBusy` **même si `html2canvas` jette** | jsdom + mocks |
 | `map-core.ts` | `_loadView` (JSON corrompu ⇒ défaut Paris `[2.3522, 48.8566]` zoom 5) ; `_initOfflineCache` ne marque `pcTacFranceTilesCached` que si `fail === 0` | jsdom |
 | `draw-tools.ts` | `_pushHistory` borne à 50 + vide `redoStack` ; `_undo`/`_redo` symétriques ; `_setTool` toggle (re-clic ⇒ `null`) | jsdom |
-| `measure.ts` | `_measureTotalMeters`, `_measureAddVertex` (refus du doublon exact), `_finishMeasure` (< 2 sommets ⇒ annulation, pas de shape persisté) | jsdom |
-| `shapes-render.ts`, `shapes-gestures.ts`, `wheels.ts`, `panels.ts`, `text-modal.ts`, `chrome.ts`, `ping-modal.ts`, `draw-layers.ts`, `aoi.ts` | tests de **fumée ciblés** : la méthode ne jette pas quand le DOM attendu est absent (cas réel : vue Plan jamais ouverte) + 1 à 3 assertions métier par module (précisées dans les instructions de paquet) | jsdom |
-| `legacy.ts` | aucun test fonctionnel (code mort) — un seul test : les 10 méthodes existent et sont des fonctions | jsdom |
-| `index.ts` | la façade expose **les 189 membres** ; `window.PlanMap` est posé ; `PlanMap.initialized === false` avant `init()` ; `PlanMap.captureToDataUrl()` résout `null` sans carte | jsdom |
+| `measure.ts` | `_measureTotalMeters`, `_measureAddVertex` (refus doublon exact), `_finishMeasure` (< 2 sommets ⇒ annulation, pas de shape persisté) | jsdom |
+| `shapes-render.ts`, `shapes-gestures.ts`, `wheels.ts`, `panels.ts`, `text-modal.ts`, `chrome.ts`, `ping-modal.ts`, `draw-layers.ts`, `aoi.ts` | tests de **fumée ciblés** : méthode ne jette pas quand DOM attendu est absent (cas réel : vue Plan jamais ouverte) + 1 à 3 assertions métier par module (précisées dans instructions de paquet) | jsdom |
+| `legacy.ts` | aucun test fonctionnel (code mort) — seul test : 10 méthodes existent et sont fonctions | jsdom |
+| `index.ts` | façade expose ** 189 membres** ; `window.PlanMap` est posé ; `PlanMap.initialized === false` avant `init()` ; `PlanMap.captureToDataUrl()` résout `null` sans carte | jsdom |

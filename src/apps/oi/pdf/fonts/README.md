@@ -2,7 +2,7 @@
 
 ## Provenance
 
-Les trois fichiers TrueType `.ttf` sont copiés depuis **Praxis-Rust** (usage interne) :
+ trois fichiers TrueType `.ttf` sont copiés depuis **Praxis-Rust** (usage interne) :
 
 ```
 Praxis-Rust/android/app/src/main/assets/fonts/
@@ -21,18 +21,17 @@ Praxis-Rust/android/app/src/main/assets/fonts/
 
 ## Licence
 
-Les deux familles de polices sont distribuées sous la **SIL Open Font License 1.1** (textes complets : `OFL-Oswald.txt`, `OFL-JetBrainsMono.txt`).
+ deux familles de polices sont distribuées sous **SIL Open Font License 1.1** (textes complets : `OFL-Oswald.txt`, `OFL-JetBrainsMono.txt`).
 
-**Redistribution autorisée** y compris embarquée dans un PDF, **sans obligation de licence sur le document produit**. Seules les polices elles-mêmes restent régies par la SIL OFL.
-
+**Redistribution autorisée** y compris embarquée dans PDF, **sans obligation de licence sur document produit**. Seules polices elles-mêmes restent régies par SIL OFL.
 ## Utilisation
 
-Ces `.ttf` **ne sont jamais servis ni bundlés** — seul le module TypeScript `fonts.generated.ts` (généré par `npm run gen:pdf-fonts`) contient leur codage base64 et entre dans le bundle de distribution.
+Ces `.ttf` **ne sont jamais servis ni bundlés** — seul module TypeScript `fonts.generated.ts` (généré par `npm run gen:pdf-fonts`) contient leur codage base64 et entre dans bundle de distribution.
 
-### Régénération du VFS base64
+### Régénération VFS base64
 
 ```bash
 npm run gen:pdf-fonts
 ```
 
-Cela relit les trois `.ttf` et produit `../fonts.generated.ts` avec les données base64 encodées.
+Cela relit trois `.ttf` et produit `../fonts.generated.ts` avec données base64 encodées.

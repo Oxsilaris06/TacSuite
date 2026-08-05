@@ -5,77 +5,71 @@ organisation par sections) **sous contrôle visuel strict** — gate
 fonctionnel/E2E déjà vert (P2.E), à ne pas casser. Protocole zéro régression
 `docs/PLAN.md` §4 : aucun renommage de sélecteur, aucune spécificité
 effective modifiée, aucun réordonnancement de règles dont l'ordre est
-significatif pour la cascade.
+significatif pour cascade.
 
 ## 1. Approche retenue
 
-1. **Recensement avant modification** : recherche programmatique (script
-   Python, comparaison AST-light par blocs `sélecteur { corps }` normalisés)
-   de véritables règles dupliquées (même sélecteur, même corps, verbatim) sur
-   l'ensemble du fichier. **Résultat : zéro duplicat de règle complète** — le
-   fichier extrait en P0.A5 était déjà propre à ce niveau. Seule trouvaille :
-   un commentaire de bannière recopié deux fois de suite (`/* --- THEME
-   TACTICAL GLASS --- */`, sans effet sur le rendu) — supprimé.
-2. **Dédoublonnage réel constaté à l'échelle des VALEURS** (pas des règles) :
-   plusieurs propriétés (z-index, border-radius, box-shadow, transition)
-   répètent la même valeur littérale sur 2 à 7 sélecteurs différents. Chaque
-   groupe de valeurs strictement identiques a été extrait en une variable
-   `:root` unique, puis chaque occurrence remplacée par `var(--nom)`
-   — substitution **préservant la valeur calculée à l'identique** (donc sans
-   impact visuel possible), vérifiée un par un avant application (comptage
-   des occurrences, aucun remplacement à l'aveugle).
-   **Correctif (P2.FIX reprise 1)** : cette affirmation était fausse pour les
-   3 occurrences de `--shadow-glow-accent` (`.add-btn:hover`,
-   `.add-log-btn:hover`, `.custom-file-upload:hover`) — régression prouvée en
-   mode clair, corrigée depuis ; voir §6 pour l'analyse complète et le
-   correctif appliqué.
-3. **Nouvelles variables ajoutées de façon strictement additive**, à
-   l'intérieur du bloc `:root` du thème "Tactical Glass" déjà existant
-   (`pctac2.html:58 → styles/pctac.css`), à la suite des variables
-   d'élévation/voiles déjà présentes. Ajouter des propriétés personnalisées
-   dans un bloc `:root` existant ne modifie ni l'ordre ni la spécificité
-   d'aucune règle déjà présente — chaque `--xxx` est un nom unique, sans
-   collision avec l'existant (vérifié par grep avant ajout).
-4. **Organisation par sections** : ajout de bannières de commentaires
-   (`SECTION : LAYOUT / PANNEAUX / ANNOTATIONS / MODALES / DOCK FLOTTANT /
-   CARTE`) **en place**, sans déplacer une seule ligne de règle existante —
-   aucun risque sur la cascade. Le fichier gardait déjà des repères
-   `/* --- ... --- */` locaux (thème, dock, toolbar plan, etc.) ; les
-   nouvelles bannières les complètent à un niveau plus large sans les
-   remplacer.
+1. **Recensement avant modification** : recherche programmatique (script Python, comparaison AST-light par blocs `sélecteur { corps }` normalisés)
+ de véritables règles dupliquées (même sélecteur, même corps, verbatim) sur
+ l'ensemble fichier. **Résultat : zéro duplicat de règle complète** — 
+ fichier extrait en P0.A5 était déjà propre à ce niveau. Seule trouvaille :
+ commentaire de bannière recopié deux fois de suite (`/* --- THEME
+ TACTICAL GLASS --- */`, sans effet sur rendu) — supprimé.
+2. **Dédoublonnage réel constaté à l'échelle VALEURS** (pas règles) : plusieurs propriétés (z-index, border-radius, box-shadow, transition)
+ répètent même valeur littérale sur 2 à 7 sélecteurs différents. Chaque
+ groupe de valeurs strictement identiques a été extrait en variable
+ `:root` unique, puis chaque occurrence remplacée par `var(--nom)`
+ — substitution **préservant valeur calculée à l'identique** (donc sans
+ impact visuel possible), vérifiée par avant application (comptage
+ occurrences, aucun remplacement à l'aveugle).
+ **Correctif (P2.FIX reprise 1)** : cette affirmation était fausse pour  3 occurrences de `--shadow-glow-accent` (`.add-btn:hover`,
+ `.add-log-btn:hover`, `.custom-file-upload:hover`) — régression prouvée en
+ mode clair, corrigée depuis ; voir §6 pour l'analyse complète et 
+ correctif appliqué.
+3. **Nouvelles variables ajoutées de façon strictement additive**, à l'intérieur bloc `:root` thème "Tactical Glass" déjà existant
+ (`pctac2.html:58 → styles/pctac.css`), à suite variables
+ d'élévation/voiles déjà présentes. Ajouter propriétés personnalisées
+ dans bloc `:root` existant ne modifie ni l'ordre ni spécificité
+ d'aucune règle déjà présente — chaque `--xxx` est nom unique, sans
+ collision avec l'existant (vérifié par grep avant ajout).
+4. **Organisation par sections** : ajout de bannières de commentaires (`SECTION : LAYOUT / PANNEAUX / ANNOTATIONS / MODALES / DOCK FLOTTANT /
+ CARTE`) **en place**, sans déplacer seule ligne de règle existante —
+ aucun risque sur cascade. fichier gardait déjà repères
+ `/* --- ... --- */` locaux (thème, dock, toolbar plan, etc.) ; 
+ nouvelles bannières complètent à niveau plus large sans 
+ remplacer.
 5. **Suppression de code CSS mort confirmé** : `docs/DECISIONS-DOM-ECARTS.md`
-   §1 note explicitement que `#version-toggle-btn` (bouton STABLE/BETA)
-   est absent du DOM porté (écart assumé, décision utilisateur) et que "la
-   purge [des règles CSS mortes associées] est prévue en P2.F, pas avant".
-   Les 4 règles ciblant ce sélecteur (`#version-toggle-btn`,
-   `#version-toggle-btn:hover`, l'override `@media (max-width: 600px)`, et
-   l'entrée dans la liste partagée `:focus-visible`) ne correspondaient déjà
-   à AUCUN élément du DOM porté — leur suppression est donc **sans aucun
-   effet visuel possible** sur `pctac/index.html` (vérifié par diff visuel
-   avant/après ci-dessous). La variable `--z-action` introduite au point 3,
-   devenue sans consommateur après cette purge, a été retirée avec elle.
-6. **Aucun remplacement de valeurs non identiques.** De nombreuses couleurs
-   `rgba(0, 0, 0, X)` et box-shadows voisines mais NON strictement égales
-   (opacités différentes selon le composant) ont été volontairement laissées
-   telles quelles plutôt que forcées dans un token commun approximatif — un
-   arrondi de valeur, même invisible à l'œil, contredirait le protocole
-   "fidélité avant élégance" et gonflerait le risque de diff visuel pour un
-   gain de lisibilité marginal.
-7. **Espacements** : le fichier disposait déjà d'un barème `--space-1..8`
-   (4/8/12/16/24/32/48/64px, hérité de la parité OI). Beaucoup de paddings/
-   marges du thème "Tactical Glass" (10px, 15px, 30px…) ne correspondent à
-   aucun cran de ce barème — les y forcer aurait exigé soit d'arrondir la
-   valeur (risque visuel), soit d'ajouter un token par valeur ponctuelle
-   (aucun gain de dédoublonnage, une seule occurrence chacune). Non
-   modifiés : cohérent avec le principe "ne variabiliser que les valeurs
-   réellement récurrentes" appliqué au reste de cette mission.
+ §1 note explicitement que `#version-toggle-btn` (bouton STABLE/BETA)
+ est absent DOM porté (écart assumé, décision utilisateur) et que "
+ purge [ règles CSS mortes associées] est prévue en P2.F, pas avant".
+ 4 règles ciblant ce sélecteur (`#version-toggle-btn`,
+ `#version-toggle-btn:hover`, l'override `@media (max-width: 600px)`, et
+ l'entrée dans liste partagée `:focus-visible`) ne correspondaient déjà
+ à AUCUN élément DOM porté — leur suppression est donc **sans aucun
+ effet visuel possible** sur `pctac/index.html` (vérifié par diff visuel
+ avant/après ci-dessous). variable `--z-action` introduite au point 3,
+ devenue sans consommateur après cette purge, a été retirée avec elle.
+6. **Aucun remplacement de valeurs non identiques.** De nombreuses couleurs `rgba(0, 0, 0, X)` et box-shadows voisines mais NON strictement égales
+ (opacités différentes selon composant) ont été volontairement laissées
+ telles quelles plutôt que forcées dans token commun approximatif — 
+ arrondi de valeur, même invisible à l'œil, contredirait protocole
+ "fidélité avant élégance" et gonflerait risque de diff visuel pour 
+ gain de lisibilité marginal.
+7. **Espacements** : fichier disposait déjà d' barème `--space-1..8`
+ (4/8/12/16/24/32/48/64px, hérité parité OI). Beaucoup de paddings/
+ marges thème "Tactical Glass" (10px, 15px, 30px…) ne correspondent à
+ aucun cran de ce barème — y forcer aurait exigé soit d'arrondir 
+ valeur (risque visuel), soit d'ajouter token par valeur ponctuelle
+ (aucun gain de dédoublonnage, seule occurrence chacune). Non
+ modifiés : cohérent avec principe "ne variabiliser que valeurs
+ réellement récurrentes" appliqué au reste de cette mission.
 
 ## 2. Variables créées
 
-Ajoutées dans le bloc `:root` du thème (à la suite de `--inner-glow` /
-`--metal-sheen`), 14 variables actives (`--z-action` retirée après la purge
-du point 5 ; comptage programmatique avant/après re-vérifié en P2.FIX
-reprise 1, cf. §6 — le tableau ci-dessous en listait déjà 14, seul le texte
+Ajoutées dans bloc `:root` thème (à suite de `--inner-glow` /
+`--metal-sheen`), 14 variables actives (`--z-action` retirée après purge
+ point 5 ; comptage programmatique avant/après re-vérifié en P2.FIX
+reprise 1, cf. §6 — tableau ci-dessous en listait déjà 14, seul texte
 annonçait 13 par erreur) :
 
 | Catégorie | Variables | Valeurs |
@@ -89,7 +83,7 @@ annonçait 13 par erreur) :
 
 | Mesure | Avant (P0.A5, verbatim) | Après (P2.F) |
 |---|---|---|
-| LOC `styles/pctac.css` | 1724 | 1748 (1738 à l'issue de P2.F ; +10 lignes par le correctif §6.2 — réaffectation de `--shadow-glow-accent` dans `body.light-mode` ; compte réel vérifié par `wc -l`, P2BIS.FIX) |
+| LOC `styles/pctac.css` | 1724 | 1748 (1738 à l'issue de P2.F ; +10 lignes par correctif §6.2 — réaffectation de `--shadow-glow-accent` dans `body.light-mode` ; compte réel vérifié par `wc -l`, P2BIS.FIX) |
 | Variables `:root` custom properties (thème pctac) | 62 | 76 (+14) |
 | Occurrences littérales remplacées par `var(--token)` | 0 | 37 (7× transition, 6× `border-radius:4px`, 3× `border-radius:999px`, 2× `border-radius:8px`, 3× `box-shadow` glow, 3× `box-shadow` panel-float, 13× z-index restants après purge) |
 | Règles strictement dupliquées trouvées | 0 (vérifié par script) | — |
@@ -98,61 +92,58 @@ annonçait 13 par erreur) :
 | Sélecteurs renommés | — | **0** (interdit respecté) |
 | Règles réordonnées | — | **0** (interdit respecté) |
 
-La légère hausse de LOC malgré la suppression de code mort s'explique par les
-bannières de sections et les commentaires de justification ajoutés (lisibilité
+ légère hausse de LOC malgré suppression de code mort s'explique par 
+bannières de sections et commentaires de justification ajoutés (lisibilité
 > compacité, conformément à l'esprit "organisation par sections commentées"
-de la mission).
+ mission).
 
 ## 4. Validation
 
 Exécuté après chaque lot de changements (variables + substitutions, sections,
-purge du code mort), conformément au protocole :
+purge code mort), conformément au protocole :
 
 - `node tests/visual/compare.mjs pctac` : **20/20 états PASS** — voir §4.1
-  pour les pourcentages réellement mesurés et un correctif d'outillage
-  ultérieur qui a invalidé rétroactivement les chiffres annoncés ici à
-  l'origine.
+ pour pourcentages réellement mesurés et correctif d'outillage
+ ultérieur qui a invalidé rétroactivement chiffres annoncés ici à
+ l'origine.
 - `npm run build` : succès (warning taille de chunk JS pré-existant, sans
-  rapport avec ce CSS).
+ rapport avec ce CSS).
 - `npx tsc --noEmit` : 0 erreur. `npm run lint` : 0 erreur.
-- `npx playwright test tests/e2e/pctac.spec.ts` : 60/60 verts sur 3 des 4
-  exécutions complètes effectuées ; 1 exécution a rencontré 1 échec isolé
-  sur *"Plan — bascule 2D/3D relief"* (chromium-desktop). Investigation :
-  ce même test, rejoué seul 3 fois (`--repeat-each=3`), passe
-  systématiquement ; rejoué avec le CSS D'ORIGINE (non modifié, via
-  `git stash`) sur l'intégralité de la suite, le même échec s'est également
-  produit une fois sur plusieurs tentatives. Conclusion : flakiness
-  préexistante liée à la contention de ressources (chargement WebGL de la
-  carte) quand les 60 tests tournent en parallèle, **indépendante des
-  changements CSS de cette mission** — pas une régression introduite par
-  P2.F.
+- `npx playwright test tests/e2e/pctac.spec.ts` : 60/60 verts sur 3 4
+ exécutions complètes effectuées ; 1 exécution a rencontré 1 échec isolé
+ sur *"Plan — bascule 2D/3D relief"* (chromium-desktop). Investigation :
+ ce même test, rejoué seul 3 fois (`--repeat-each=3`), passe
+ systématiquement ; rejoué avec CSS D'ORIGINE (non modifié, via
+ `git stash`) sur l'intégralité suite, même échec s'est également
+ produit fois sur plusieurs tentatives. Conclusion : flakiness
+ préexistante liée à contention de ressources (chargement WebGL 
+ carte) quand 60 tests tournent en parallèle, **indépendante 
+ changements CSS de cette mission** — pas régression introduite par
+ P2.F.
 
-### 4.1 Correctif d'outillage (P2BIS.FIX) — le masque carte était inerte
+### 4.1 Correctif d'outillage (P2BIS.FIX) — masque carte était inerte
 
-Les chiffres « 20/20 PASS, tous ≤ 0,077 % » annoncés en tête de §4 lors de
-P2.F ont été obtenus avec un `tests/visual/compare.mjs` **dont le masque de
-la carte (canvas MapLibre) ne peignait en réalité aucun pixel**, sans jamais
-le signaler : `paintMask()` lisait `rect.w`/`rect.h`, mais pour les états
-`canvas:true` le rectangle transmis est un `boundingBox()` Playwright — forme
-`{x, y, width, height}`. `rect.w`/`rect.h` valaient donc `undefined`, les
-bornes de boucle devenaient `NaN`, et la boucle de peinture ne s'exécutait
+ chiffres « 20/20 PASS, tous ≤ 0,077 % » annoncés en tête de §4 lors de
+P2.F ont été obtenus avec `tests/visual/compare.mjs` **dont masque de carte (canvas MapLibre) ne peignait en réalité aucun pixel**, sans jamais
+ signaler : `paintMask()` lisait `rect.w`/`rect.h`, mais pour états
+`canvas:true` rectangle transmis est `boundingBox()` Playwright — forme
+`{x, y, width, height}`. `rect.w`/`rect.h` valaient donc `undefined`, 
+bornes de boucle devenaient `NaN`, et boucle de peinture ne s'exécutait
 jamais (toute comparaison `y < NaN` est fausse) : 0 pixel peint, PASS/FAIL
-calculé silencieusement sur l'image carte **non masquée**. Le PASS obtenu
-n'était donc pas la preuve d'un diff CSS négligeable *hors carte* qu'il
-prétendait être — la carte non masquée passait simplement, par coïncidence
-(tuiles chargées identiquement aux deux captures), sous le seuil de 0,1 %.
+calculé silencieusement sur l'image carte **non masquée**. PASS obtenu
+n'était donc pas preuve d' diff CSS négligeable *hors carte* qu'il
+prétendait être — carte non masquée passait , par coïncidence
+(tuiles chargées identiquement aux deux captures), sous seuil de 0,1 %.
 
 **Correctif appliqué (`tests/visual/compare.mjs`)** :
-`paintMask()` accepte désormais les deux formes de rectangle
-(`w ?? width`, `h ?? height`) et retourne le nombre de pixels effectivement
+`paintMask()` accepte désormais deux formes de rectangle
+(`w ?? width`, `h ?? height`) et retourne nombre de pixels 
 peints ; pour tout état déclaré
 `canvas: true`, si 0 pixel est peint côté baseline ou côté capture alors que
-le canvas a été localisé (`canvasBox` non nul), l'outil sort désormais en
-**ERROR** explicite plutôt que de laisser passer un PASS/FAIL calculé sur un
-masque cassé.
+ canvas a été localisé (`canvasBox` non nul), l'outil sort désormais en
+**ERROR** explicite plutôt que de laisser passer PASS/FAIL calculé sur masque cassé.
 
-**Résultats reproductibles obtenus avec l'outil corrigé** (deux exécutions
-indépendantes de `node tests/visual/compare.mjs pctac`, serveur dev
+**Résultats reproductibles obtenus avec l'outil corrigé** (deux exécutionsindépendantes de `node tests/visual/compare.mjs pctac`, serveur dev
 `127.0.0.1:9678`, 1er août 2026) :
 
 | État | Run 1 | Run 2 |
@@ -179,31 +170,29 @@ indépendantes de `node tests/visual/compare.mjs pctac`, serveur dev
 | tab-plan-panneau-tchap-live-mobile (canvas) | 0,042 % | 0,042 % |
 
 **20/20 PASS aux deux runs**, aucune sortie `ERROR` (masque carte désormais
-actif sur les 8 états `canvas:true` — confirmé notamment par
+actif sur 8 états `canvas:true` — confirmé notamment par
 `tab-plan-panneau-tchap-live-desktop` à 0,000 % exact, image intégralement
-masquée des deux côtés), écarts stables d'un run à l'autre (± 1 à
-3 pixels sur ~1,3 M ou ~0,33 M pixels selon le viewport — bruit
-d'anti-aliasing de capture, sans rapport avec le CSS), tous très en-deçà du
-seuil de 0,1 %. Cet outillage corrigé est celui utilisé pour la validation
-CSS de ce document ; les valeurs 6× plus faibles côté desktop que côté
-mobile pour les mêmes états s'expliquent par le rapport pixels-masqués/
+masquée deux côtés), écarts stables d' run à l'autre (± 1 à
+3 pixels sur ~1,3 M ou ~0,33 M pixels selon viewport — bruitd'anti-aliasing de capture, sans rapport avec CSS), tous très en-deçà 
+seuil de 0,1 %. Cet outillage corrigé est celui utilisé pour validation
+CSS de ce document ; valeurs 6× plus faibles côté desktop que côté
+mobile pour mêmes états s'expliquent par rapport pixels-masqués/
 pixels-totaux, plus favorable en haute résolution.
 
 ## 5. Fichier modifié
 
 - `styles/pctac.css` (seul fichier touché par cette mission P2.F d'origine ;
-  voir §6 pour les fichiers touchés par le correctif ultérieur).
-- `tests/visual/compare.mjs` — correctif du masque carte inerte, cf. §4.1
-  (P2BIS.FIX, hors mission P2.F d'origine, documenté ici car il invalide les
-  chiffres §4 tels qu'annoncés à l'origine).
+ voir §6 pour fichiers touchés par correctif ultérieur).
+- `tests/visual/compare.mjs` — correctif masque carte inerte, cf. §4.1
+ (P2BIS.FIX, hors mission P2.F d'origine, documenté ici car il invalide 
+ chiffres §4 tels qu'annoncés à l'origine).
 
 ## 6. Correctif post-mission (P2.FIX reprise 1) — régression mode clair
 
 ### 6.1 Constat
 
-`--shadow-glow-accent`, introduite au §2, est déclarée **une seule fois**,
-dans le bloc `:root` du thème, avec un `var()` **imbriqué** :
-
+`--shadow-glow-accent`, introduite au §2, est déclarée ** seule fois**,
+dans bloc `:root` thème, avec `var()` **imbriqué** :
 ```css
 :root {
     --accent-glow: rgba(79, 141, 255, 0.28);        /* sombre */
@@ -215,16 +204,16 @@ body.light-mode {
 }
 ```
 
-Par la spécification CSS Custom Properties, la valeur calculée d'une custom
-property se substitue en résolvant les `var()` qu'elle contient avec la
+Par spécification CSS Custom Properties, valeur calculée d' custom
+property se substitue en résolvant `var()` qu'elle contient avec 
 valeur cascadée **au point de déclaration de cette custom property**, pas
 par élément consommateur. `--shadow-glow-accent` n'étant déclarée qu'à
-`:root`, son `var(--accent-glow)` s'y résolvait avec la valeur **sombre**,
+`:root`, son `var(--accent-glow)` s'y résolvait avec valeur **sombre**,
 et cette valeur déjà figée était ensuite héritée telle quelle par
-`body.light-mode` — la redéfinition de `--accent-glow` à la ligne 342 n'avait
+`body.light-mode` — redéfinition de `--accent-glow` à ligne 342 n'avait
 donc aucun effet sur `--shadow-glow-accent`.
 
-Mesure empirique avant correctif, sur la page servie
+Mesure empirique avant correctif, sur page servie
 (`127.0.0.1:9678/pctac/`, `getComputedStyle(document.body)` après
 `document.body.classList.add('light-mode')`) :
 
@@ -233,10 +222,9 @@ Mesure empirique avant correctif, sur la page servie
 | `--accent-glow` | `rgba(29, 99, 214, 0.16)` | `rgba(29, 99, 214, 0.16)` (correct — pas de `var()` imbriqué) |
 | `--shadow-glow-accent` | `0 0 15px rgba(29, 99, 214, 0.16)` | `0 0 15px rgba(79, 141, 255, 0.28)` (valeur SOMBRE figée) |
 
-3 sélecteurs affectés, valeur calculée changeant réellement en thème clair
-(contrairement à l'affirmation "sans impact visuel possible" du §1.2/§3
+3 sélecteurs affectés, valeur calculée changeant réellement en thème clair(contrairement à l'affirmation "sans impact visuel possible" §1.2/§3
 d'origine) : `.add-btn:hover` (698-700), `.add-log-btn:hover` (724-726),
-`.custom-file-upload:hover` (1015-1018). Les originaux verbatim
+`.custom-file-upload:hover` (1015-1018). originaux verbatim
 (`pctac2.html:555, 581, 869`, forme littérale `box-shadow: 0 0 15px
 var(--accent-glow)` directement sur la règle) n'ont pas ce défaut : un `var()`
 non imbriqué se résout par élément consommateur, donc correctement en clair
@@ -245,8 +233,8 @@ comme en sombre.
 ### 6.2 Correctif appliqué
 
 Option retenue : réaffecter `--shadow-glow-accent` dans `body.light-mode`
-avec la même forme (`0 0 15px var(--accent-glow)`), pour qu'elle se
-résolve dans CE contexte de cascade (donc avec le `--accent-glow` clair) :
+avec même forme (`0 0 15px var(--accent-glow)`), pour qu'elle se
+résolve dans CE contexte de cascade (donc avec `--accent-glow` clair) :
 
 ```css
 body.light-mode {
@@ -255,11 +243,11 @@ body.light-mode {
 }
 ```
 
-(Alternative non retenue : revenir à la forme littérale sur les 3 sélecteurs
-et supprimer la variable. Écartée pour rester compatible avec le comptage de
-variables au §2/§3, qui suppose son maintien, et parce que la réaffectation
+(Alternative non retenue : revenir à forme littérale sur 3 sélecteurs
+et supprimer variable. Écartée pour rester compatible avec comptage de
+variables au §2/§3, qui suppose son maintien, et parce que réaffectation
 ci-dessus est strictement plus courte tout en respectant "fidélité avant
-élégance" — la substitution redevient, comme dans l'original, résolue par
+élégance" — substitution redevient, comme dans l'original, résolue par
 contexte de cascade plutôt que figée.)
 
 Vérification post-correctif (même relevé `getComputedStyle`, sombre puis
@@ -270,38 +258,38 @@ clair) :
 | `--accent-glow` | `rgba(79, 141, 255, 0.28)` | `rgba(29, 99, 214, 0.16)` |
 | `--shadow-glow-accent` | `0 0 15px rgba(79, 141, 255, 0.28)` | `0 0 15px rgba(29, 99, 214, 0.16)` |
 
-Les deux thèmes donnent désormais la valeur calculée attendue.
+ deux thèmes donnent désormais valeur calculée attendue.
 
-### 6.3 Trou de couverture du gate visuel — corrigé
+### 6.3 Trou de couverture gate visuel — corrigé
 
-Les 20 états de `node tests/visual/compare.mjs pctac` capturent tous en mode
-sombre (`document.body.className` = `dark-mode`, valeur par défaut du DOM
-statique) : aucune baseline ni assertion ne contrôlait le thème clair
-au-delà du simple basculement de classe
+ 20 états de `node tests/visual/compare.mjs pctac` capturent tous en mode
+sombre (`document.body.className` = `dark-mode`, valeur par défaut DOM
+statique) : aucune baseline ni assertion ne contrôlait thème clair
+au-delà simple basculement de classe
 (`tests/e2e/pctac.spec.ts`, test *"Dock global"*, étape "bascule thème
 clair/sombre" — n'asserte que `not.toHaveClass(/dark-mode/)`). C'est
-pourquoi la régression du §6.1 a franchi le gate P2.F "20/20 PASS" sans être
+pourquoi régression §6.1 a franchi gate P2.F "20/20 PASS" sans être
 détectée.
 
-Correctif : ajout d'une étape E2E ciblée juste après la bascule de thème
+Correctif : ajout d' étape E2E ciblée juste après bascule de thème
 (`tests/e2e/pctac.spec.ts`, test *"Dock global — export/import archive,
 import OI, thème, plein écran, PDF, reset"*), comparant en clair
 `getComputedStyle(document.body).getPropertyValue('--shadow-glow-accent')`
-à `0 0 15px ` + la valeur de `--accent-glow` du même contexte — sans capture
-d'écran, donc sans baseline à maintenir. Vérifié dans les deux sens :
-échoue sur le CSS d'avant correctif (`git stash` local, régression reproduite
-puis restaurée), passe sur le CSS corrigé (2/2, chromium-desktop +
+à `0 0 15px ` + valeur de `--accent-glow` même contexte — sans capture
+d'écran, donc sans baseline à maintenir. Vérifié dans deux sens :
+échoue sur CSS d'avant correctif (`git stash` local, régression reproduite
+puis restaurée), passe sur CSS corrigé (2/2, chromium-desktop +
 chromium-mobile).
 
 ### 6.4 Fichiers touchés par ce correctif
 
 - `styles/pctac.css` — réaffectation de `--shadow-glow-accent` dans
-  `body.light-mode` (§6.2).
+ `body.light-mode` (§6.2).
 - `tests/e2e/pctac.spec.ts` — étape E2E de non-régression (§6.3).
-- `docs/DECISIONS-CSS.md` (ce document) — rectification des affirmations
-  §1.2/§3 et des chiffres §2/§3 (13 → 14 variables, 62 → 76, +14).
+- `docs/DECISIONS-CSS.md` (ce document) — rectification affirmations
+ §1.2/§3 et chiffres §2/§3 (13 → 14 variables, 62 → 76, +14).
 - `docs/DECISIONS-DOM-ECARTS.md` — conséquence supplémentaire tracée au §1
-  (texte du tutoriel décrivant `#version-toggle-btn`, absent du portage).
+ (texte tutoriel décrivant `#version-toggle-btn`, absent portage).
 
 ---
 
@@ -313,57 +301,53 @@ préparatoire en lecture seule, méthode identique à P2.F ci-dessus). Gate
 fonctionnel déjà vert (P3.D, 130/130 e2e oi+pctac) — à ne pas casser.
 Protocole zéro régression `docs/PLAN.md` §4 respecté à l'identique de
 §1 ci-dessus : aucun renommage de sélecteur, aucune spécificité modifiée,
-aucun réordonnancement de règle significative pour la cascade.
+aucun réordonnancement de règle significative pour cascade.
 
 ### 7.1 Lots exécutés
 
 **Lot 1 — Dédoublonnage strict + purge CSS morte `#beta-button`.**
-Suppression du mini-bloc `:root { --moicp-zmspcp-purple: #7c6ce0; }`
-(redéclaration exacte de la valeur déjà posée dans le `:root` du thème
-principal — la bannière de section qui le précédait est conservée comme
-repère de navigation) et des 3 points de retouche `#beta-button`
-(`docs/DECISIONS-DOM-ECARTS.md` §2 : sélecteur absent du DOM porté) :
-règle entière (état desktop), entrée `#beta-button:hover` retirée de la
+Suppression mini-bloc `:root { --moicp-zmspcp-purple: #7c6ce0; }`
+(redéclaration exacte valeur déjà posée dans `:root` thème
+principal — bannière de section qui précédait est conservée comme
+repère de navigation) et 3 points de retouche `#beta-button`
+(`docs/DECISIONS-DOM-ECARTS.md` §2 : sélecteur absent DOM porté) :
+règle entière (état desktop), entrée `#beta-button:hover` retirée 
 liste partagée avec `#log-button:hover` (`#log-button:hover` conservé seul),
-règle entière en `@media (max-width: 600px)`. 0 règle strictement dupliquée
-trouvée par ailleurs (même constat qu'en P2.F).
+règle entière en `@media (max-width: 600px)`. 0 règle strictement dupliquéetrouvée (même constat qu'en P2.F).
 
-**Lot 2 — Substitution mécanique des espacements vers le barème `--space-N`
+**Lot 2 — Substitution mécanique espacements vers barème `--space-N`
 existant.** Recherche exhaustive par regex plein-texte (pas seulement
-ligne-à-ligne, pour couvrir aussi les règles compactes sur une seule ligne
+ligne-à-ligne, pour couvrir aussi règles compactes sur seule ligne
 type `.adv-section { margin-block-end: 4px; }`) de toute déclaration
 `padding*/margin*/gap` (formes physiques ET logiques —
 `padding-inline(-start/-end)`, `margin-block(-start/-end)`, etc.) dont
-**tous** les tokens de la valeur correspondent exactement à un cran du
-barème `--space-1..8` (4/8/12/16/24/32/48/64px) déjà déclaré dans `:root`.
-**78 occurrences substituées** (valeur calculée strictement identique par
-construction, `!important` préservé où présent) — chaque remplacement
+**tous** tokens valeur correspondent exactement à cran barème `--space-1..8` (4/8/12/16/24/32/48/64px) déjà déclaré dans `:root`.
+**78 occurrences substituées** (valeur calculée strictement identique parconstruction, `!important` préservé où présent) — chaque remplacement
 vérifié par diff ligne-à-ligne avant/après (156 lignes de diff = 78 paires
 retrait/ajout, aucune ligne inattendue). Écart avec l'estimation
-préparatoire (71, §b.5 du plan) : l'analyse préparatoire ne comptait que les
+préparatoire (71, §b.5 plan) : l'analyse préparatoire ne comptait que 
 formes physiques sur leur propre ligne ; l'exécution réelle, plus
 exhaustive, couvre en plus 6 déclarations en propriétés logiques
 (`margin-block-end`/`-start`, `padding-inline`/`-block-end`) et 2 déclarations
-compactes multi-règles sur une même ligne — mêmes garanties de sûreté
-(substitution 1:1 valeur→variable), pas un changement de méthode. Valeurs
+compactes multi-règles sur même ligne — mêmes garanties de sûreté
+(substitution 1:1 valeur→variable), pas changement de méthode. Valeurs
 récurrentes hors barème (`10px`, `6px`, `20px`, `15px`, `5px`, `14px`,
 `22px`, `30px`) volontairement **non touchées** — même principe qu'en P2.F
-§1.6/§1.7 : forcer un arrondi dans `--space-N` romprait la fidélité visuelle
-pour un gain cosmétique.
+§1.6/§1.7 : forcer arrondi dans `--space-N` romprait fidélité visuelle
+pour gain cosmétique.
 
 **Lot 3 — Nouveaux tokens à correspondance EXACTE avec `styles/pctac.css`
-(même valeur, même rôle sémantique).** 7 tokens réutilisant le nom pctac,
-déclarés dans le `:root` du thème OI : `--z-raised`(5), `--z-panel`(11),
+(même valeur, même rôle sémantique).** 7 tokens réutilisant nom pctac,
+déclarés dans `:root` thème OI : `--z-raised`(5), `--z-panel`(11),
 `--z-toolbar`(12), `--z-sticky`(1000), `--z-scrim`(2000), `--radius-pill`
 (999px), `--transition-quick`(0.2s). 12 occurrences substituées (6 z-index +
 4× `border-radius:999px` + 2× `transition:all 0.2s` bare). Aucun de ces 7
 tokens n'imbrique de `var()` themé (`--accent-*`/`--border-*`/etc.) — donc
-aucun risque de la classe de bug `--shadow-glow-accent` (§6.1) : tous
-déclarés uniquement dans le `:root` sombre, sans besoin de réaffectation en
+aucun risque classe de bug `--shadow-glow-accent` (§6.1) : tous
+déclarés uniquement dans `:root` sombre, sans besoin de réaffectation en
 `body.light-mode`.
 
-**Lot 4 — Nouveaux tokens OI-exclusifs (z-index atelier d'annotation photo +
-modales, substitution `border-radius:12px` → `--radius-md`).** 6 nouveaux
+**Lot 4 — Nouveaux tokens OI-exclusifs (z-index atelier d'annotation photo +modales, substitution `border-radius:12px` → `--radius-md`).** 6 nouveaux
 tokens propres à OI (échelle structurellement distincte de celle de pctac,
 cf. plan §b.1) : `--z-drag-raised`(100, `.draggable.dragging` +
 `.annotation-toolbar` + `#log-button`), `--z-annot-dock`(1100, `#dock-left`/
@@ -374,27 +358,25 @@ cf. plan §b.1) : `--z-drag-raised`(100, `.draggable.dragging` +
 substituées + 7 occurrences `border-radius:12px`/`12px !important` →
 `var(--radius-md)` (déjà présent en `:root`, aucun nouveau token requis).
 
-**Portée volontairement NON exécutée dans ce lot** (le plan préparatoire
-qualifie ces 2 valeurs de « à confirmer en séance », en dehors de la portée
-explicitement chiffrée du Lot 4 — cf. plan §b.1/Lot 4) : z-index `10` (5
+**Portée volontairement NON exécutée dans ce lot** ( plan préparatoirequalifie ces 2 valeurs de « à confirmer en séance », en dehors portée
+explicitement chiffrée Lot 4 — cf. plan §b.1/Lot 4) : z-index `10` (5
 occurrences — `.modal-header`×2/`.modal-footer`×2/`.modal-actions-pdf`,
-rôle « en-tête/pied sticky de modale », **distinct** du rôle pctac de
-`--z-overlay`=10 malgré la valeur identique, cf. plan) et z-index `13` (1
+rôle « en-tête/pied sticky de modale », **distinct** rôle pctac de
+`--z-overlay`=10 malgré valeur identique, cf. plan) et z-index `13` (1
 occurrence, `#oi_carto_hint`, sans équivalent pctac). Laissés littéraux —
 décision de nommage à trancher par l'utilisateur, pas par cette exécution
 autonome. De même pour z-index `2`/`3`/`40` (occurrence unique chacune) et
 `border-radius:10px`/`8px`/`4px`/`50%` (hors barème ou occurrence trop
-faible) : non touchés, conformément au principe « ne variabiliser que les
+faible) : non touchés, conformément au principe « ne variabiliser que 
 valeurs réellement récurrentes ET porteuses de sens » (§1.6/§1.7).
 
-**Lot 5 — Couleurs récurrentes (glass white, rouge corbeille) — NON
-exécuté.** Le plan qualifie ce lot d'« optionnel, à valider en séance »,
-« le plus cosmétique du plan », à faire « seulement si le gain de
+**Lot 5 — Couleurs récurrentes (glass white, rouge corbeille) — NONexécuté.** plan qualifie ce lot d'« optionnel, à valider en séance »,
+« plus cosmétique plan », à faire « seulement si gain de
 lisibilité est jugé suffisant ». Aucune séance de validation utilisateur
-n'a eu lieu pendant cette exécution autonome ; par cohérence avec le
-principe « changements chirurgicaux » (n'éditer que le strict nécessaire),
-ce lot n'a pas été exécuté. Les ~10 valeurs candidates restent documentées
-dans `.tacsuite-prep/plan-css-oi.md` §b.6 si une exécution future est
+n'a eu lieu pendant cette exécution autonome ; par cohérence avec 
+principe « changements chirurgicaux » (n'éditer que strict nécessaire),
+ce lot n'a pas été exécuté. ~10 valeurs candidates restent documentées
+dans `.tacsuite-prep/plan-css-oi.md` §b.6 si exécution future est
 souhaitée.
 
 ### 7.2 Bilan chiffré
@@ -416,35 +398,32 @@ souhaitée.
 ### 7.3 Validation
 
 - `node tests/visual/compare.mjs oi` (mode sombre, 18 états) : **18/18 PASS**
-  à chaque checkpoint de lot (1 à 4), pourcentages de diff **strictement
-  identiques** d'un lot à l'autre (ex. `step0-situation-desktop` à 0,012 %
-  aux 3 checkpoints intermédiaires) — preuve directe qu'aucune substitution
-  n'a changé une seule valeur calculée. Détail du run final :
-  0,001–0,047 % selon l'état (desktop 1296000 px, mobile 329160 px).
-- `node tests/visual/compare.mjs oi-light` (mode clair, 18 états, baselines
-  `.tacsuite-prep/oi-baseline-light/` intégrées en P3.D) : **18/18 PASS** à
-  chaque checkpoint, mêmes constats de stabilité (0,001–0,052 %). Confirme
-  qu'aucun des 7 tokens Lot 3 (theme-agnostiques, cf. §7.1) n'a introduit de
-  divergence clair/sombre — vigilance dédiée du plan (piège
-  `--shadow-glow-accent`, §6.1 ci-dessus) validée : aucun nouveau token créé
-  ne contient de `var()` imbriqué référençant une variable elle-même thémée.
-- Les 2 divergences clair/sombre pré-existantes documentées par le plan
-  (`--focus-ring`, `--field-border`, non réaffectées dans `body.light-mode`
-  — présentes dans l'original `4.html` avant tout portage) : **non
-  corrigées**, conformément à la décision du plan (corriger changerait le
-  rendu clair par rapport à la baseline figée, hors périmètre « fidélité
-  avant élégance »).
+ à chaque checkpoint de lot (1 à 4), pourcentages de diff **strictement
+ identiques** d' lot à l'autre (ex. `step0-situation-desktop` à 0,012 %
+ aux 3 checkpoints intermédiaires) — preuve directe qu'aucune substitution
+ n'a changé seule valeur calculée. Détail run final :
+ 0,001–0,047 % selon l'état (desktop 1296000 px, mobile 329160 px).- `node tests/visual/compare.mjs oi-light` (mode clair, 18 états, baselines
+ `.tacsuite-prep/oi-baseline-light/` intégrées en P3.D) : **18/18 PASS** à
+ chaque checkpoint, mêmes constats de stabilité (0,001–0,052 %). Confirme
+ qu'aucun 7 tokens Lot 3 (theme-agnostiques, cf. §7.1) n'a introduit de
+ divergence clair/sombre — vigilance dédiée plan (piège
+ `--shadow-glow-accent`, §6.1 ci-dessus) validée : aucun nouveau token créé
+ ne contient de `var()` imbriqué référençant variable elle-même thémée.
+- 2 divergences clair/sombre pré-existantes documentées par plan (`--focus-ring`, `--field-border`, non réaffectées dans `body.light-mode`
+ — présentes dans l'original `4.html` avant tout portage) : **non
+ corrigées**, conformément à décision plan (corriger changerait 
+ rendu clair par rapport à baseline figée, hors périmètre « fidélité
+ avant élégance »).
 - `npx tsc --noEmit` : 0 erreur. `npm run lint` (eslint) : 0 erreur.
 - `npm run build` : succès (avertissement taille de chunk JS pré-existant,
-  sans rapport avec ce CSS).
+ sans rapport avec ce CSS).
 - `npx playwright test tests/e2e/oi.spec.ts tests/e2e/pctac.spec.ts` :
-  **130/130 verts** (chromium-desktop + chromium-mobile), incluant les
-  checklists fonctionnelles qui exercent l'atelier d'annotation photo
-  (`#annotationModal`, `#dock-left/-right/-bottom`) et les modales
-  `#quickEditModal`/`#settingsModal`/`#pdfLoadingModal` couvertes par les
-  nouveaux tokens Lot 4 mais absentes des 9 états `compare.mjs oi` (cf.
-  plan, ces états n'ont pas de capture pixel dédiée — gate fonctionnel
-  plutôt que visuel, comme pour PC-Tac).
+ **130/130 verts** (chromium-desktop + chromium-mobile), incluant  checklists fonctionnelles qui exercent l'atelier d'annotation photo
+ (`#annotationModal`, `#dock-left/-right/-bottom`) et modales
+ `#quickEditModal`/`#settingsModal`/`#pdfLoadingModal` couvertes par 
+ nouveaux tokens Lot 4 mais absentes 9 états `compare.mjs oi` (cf.
+ plan, ces états n'ont pas de capture pixel dédiée — gate fonctionnel
+ plutôt que visuel, comme pour PC-Tac).
 
 ### 7.4 Fichier modifié
 
@@ -452,42 +431,40 @@ souhaitée.
 
 ### 7.5 Quirks pré-existants supplémentaires portés verbatim (gate P3, remarque non bloquante #4)
 
-Deux autres particularités de l'original `4.html`, distinctes des 2
+Deux autres particularités de l'original `4.html`, distinctes 2
 divergences clair/sombre déjà documentées en §7.3 (`--focus-ring`,
-`--field-border`), repérées en relisant `styles/oi.css` après la mission
-P3B.E — non touchées, ni par cette mission (hors périmètre des 5 lots
+`--field-border`), repérées en relisant `styles/oi.css` après mission
+P3B.E — non touchées, ni par cette mission (hors périmètre 5 lots
 §7.1) ni par aucune mission ultérieure :
 
-- **`--noise-texture` déclarée uniquement en mode clair.** Le token n'existe
-  que dans le bloc `body.light-mode { ... }` (`styles/oi.css:394`), pas dans
-  le `:root` sombre (`styles/oi.css:69-217`) ni dans le second `:root`
-  (`styles/oi.css:220-...`). Utilisée en `background-image` du `body`
-  (`styles/oi.css:430`, avec `var(--canvas-glow)`) et en `background-image`
-  composite d'un autre élément (`styles/oi.css:552`, avec
-  `var(--metal-sheen)`) : dans les deux cas la déclaration `var()` est
-  toujours présente en mode sombre, mais résout `--noise-texture` en chaîne
-  vide (custom property non définie) — le grain de texture est donc absent
-  en mode sombre, présent seulement en mode clair. Comportement de
-  l'original, reproduit à l'identique par le portage verbatim P0.A5 (aucune
-  substitution du Lot 3/4 ne touche ce token, cf. §7.1 : il n'a pas de
-  correspondance pctac et n'entre dans aucun barème). Confirmé stable par
-  les gates visuels `compare.mjs oi` (18/18) et `compare.mjs oi-light`
-  (18/18, §7.3) : aucune baseline ne le contredit.
-- **`--bg-card` avec repli littéral `#1a1a1a`.** Une unique occurrence,
-  `background: var(--bg-card, #1a1a1a);` (`styles/oi.css:1204`,
-  `.patrac-batch-bar`), diffère de toutes les autres consommations de
-  `--bg-card` dans le fichier qui n'ont pas de valeur de repli. `--bg-card`
-  est bien déclarée dans les deux `:root` (sombre et clair) — ce repli
-  n'est donc jamais activé dans le rendu normal, c'est un vestige défensif
-  de l'original (probablement une règle ajoutée avant que `--bg-card` ne
-  soit garantie disponible partout). Porté verbatim, non nettoyé : changer
-  ou retirer ce repli est une modification de source, pas une
-  relocalisation, et sort du principe « changements chirurgicaux » comme du
-  protocole zéro régression (`docs/PLAN.md` §4) qui encadre cette mission.
+- **`--noise-texture` déclarée uniquement en mode clair.** token n'existe
+ que dans bloc `body.light-mode { ... }` (`styles/oi.css:394`), pas dans
+ `:root` sombre (`styles/oi.css:69-217`) ni dans second `:root`
+ (`styles/oi.css:220-...`). Utilisée en `background-image` `body`
+ (`styles/oi.css:430`, avec `var(--canvas-glow)`) et en `background-image`
+ composite d' autre élément (`styles/oi.css:552`, avec
+ `var(--metal-sheen)`) : dans deux cas déclaration `var()` est
+ toujours présente en mode sombre, mais résout `--noise-texture` en chaîne
+ vide (custom property non définie) — grain de texture est donc absent
+ en mode sombre, présent seulement en mode clair. Comportement de
+ l'original, reproduit à l'identique par portage verbatim P0.A5 (aucune
+ substitution Lot 3/4 ne touche ce token, cf. §7.1 : il n'a pas de
+ correspondance pctac et n'entre dans aucun barème). Confirmé stable par
+ gates visuels `compare.mjs oi` (18/18) et `compare.mjs oi-light`
+ (18/18, §7.3) : aucune baseline ne contredit.
+- **`--bg-card` avec repli littéral `#1a1a1a`.** unique occurrence, `background: var(--bg-card, #1a1a1a);` (`styles/oi.css:1204`,
+ `.patrac-batch-bar`), diffère de toutes autres consommations de
+ `--bg-card` dans fichier qui n'ont pas de valeur de repli. `--bg-card`
+ est bien déclarée dans deux `:root` (sombre et clair) — ce repli
+ n'est donc jamais activé dans rendu normal, c'est vestige défensif
+ de l'original (probablement règle ajoutée avant que `--bg-card` ne
+ soit garantie disponible partout). Porté verbatim, non nettoyé : changer
+ ou retirer ce repli est modification de source, pas 
+ relocalisation, et sort principe « changements chirurgicaux » comme 
+ protocole zéro régression (`docs/PLAN.md` §4) qui encadre cette mission.
 - **Conséquence visuelle** : aucune pour `--bg-card` (repli mort). Pour
-  `--noise-texture`, le grain est un effet de 0,02 d'opacité sur un
-  `feTurbulence` — sous le seuil de détection des gates `compare.mjs`
-  (18/18 oi + 18/18 oi-light, seuils §7.3), cohérent avec l'absence de
-  régression observée sur les 4 lots de la mission P3B.E.
-- **Trouvé et documenté en réponse au gate P3, remarque non bloquante #4**
-  (mission P4.A, solde des 4 remarques non bloquantes).
+ `--noise-texture`, grain est effet de 0,02 d'opacité sur 
+ `feTurbulence` — sous seuil de détection gates `compare.mjs`
+ (18/18 oi + 18/18 oi-light, seuils §7.3), cohérent avec l'absence de
+ régression observée sur 4 lots mission P3B.E.
+- **Trouvé et documenté en réponse au gate P3, remarque non bloquante #4** (mission P4.A, solde 4 remarques non bloquantes).
