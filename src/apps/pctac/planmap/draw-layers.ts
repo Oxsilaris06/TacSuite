@@ -212,7 +212,12 @@ export const DrawLayersMethods = {
         map.on('click', (e) => {
             if (this.drawTool || this.moveState || this._gesture) return;
             if (this._wheelJustClosed && Date.now() - this._wheelJustClosed < 250) return;
-            const hits = map.queryRenderedFeatures(e.point, {
+            // Zone de détection à tolérance tactile (±12px autour du point de clic)
+            const bbox: [maplibregl.PointLike, maplibregl.PointLike] = [
+                [e.point.x - 12, e.point.y - 12],
+                [e.point.x + 12, e.point.y + 12],
+            ];
+            const hits = map.queryRenderedFeatures(bbox, {
                 layers: ['plan-shapes-fill', 'plan-shapes-line-hit', 'plan-shapes-text-hit'],
             });
             if (hits.length) return;

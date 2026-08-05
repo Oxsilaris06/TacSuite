@@ -436,7 +436,7 @@ export const PinsMethods = {
 
             // --- 1) Marqueur = icône Material colorée, halo blanc, ancrée au centre ---
             const pinWrap = document.createElement('div');
-            pinWrap.style.cssText = 'width:38px; height:38px; cursor:grab; display:flex; align-items:center; justify-content:center;';
+            pinWrap.style.cssText = 'min-width:44px; min-height:44px; width:44px; height:44px; cursor:grab; display:flex; align-items:center; justify-content:center; touch-action:none;';
             pinWrap.innerHTML = `
                 <span class="material-symbols-outlined" style="
                     font-size: 38px; color: ${color}; line-height: 1;
@@ -469,8 +469,19 @@ export const PinsMethods = {
                 .setLngLat([pin.lng, pin.lat])
                 .addTo(map);
 
+            pinWrap.addEventListener('pointerdown', this._safe(() => {
+                pinWrap.style.zIndex = '1000';
+                labelEl.style.zIndex = '1000';
+                if (map && map.doubleClickZoom) {
+                    try { map.doubleClickZoom.disable(); } catch { /* API MapLibre selon état */ }
+                    setTimeout(() => {
+                        try { map.doubleClickZoom.enable(); } catch { /* idem */ }
+                    }, 450);
+                }
+            }, 'pin:pointerdown'));
             pinWrap.addEventListener('mouseenter', () => { pinWrap.style.zIndex = '1000'; labelEl.style.zIndex = '1000'; });
             pinWrap.addEventListener('mouseleave', () => { pinWrap.style.zIndex = ''; labelEl.style.zIndex = ''; });
+            pinWrap.addEventListener('pointerleave', () => { pinWrap.style.zIndex = ''; labelEl.style.zIndex = ''; });
 
             // --- Drag : pin + libellé se déplacent ensemble ---
             let lastDragEnd = 0;

@@ -120,9 +120,19 @@ export const ShapesGesturesMethods = {
         // expose `closest`), même principe que draw-layers.ts:453.
         const target = oe && oe.target instanceof Element ? oe.target : null;
         if (target && target.closest('.plan-pin')) return;
-        const feat = e.features && e.features[0];
-        if (!feat) return;
-        const id = feat.properties.shapeId;
+        const features = e.features;
+        if (!features || !features.length) return;
+
+        // Sélection cyclique sur écran tactile lorsque plusieurs formes sont superposées ou proches :
+        // Si la forme supérieure est DÉJÀ sélectionnée, choisir la suivante sous le pointeur.
+        let targetFeat = features[0];
+        if (features.length > 1 && targetFeat && targetFeat.properties && targetFeat.properties.shapeId === this._selectedShapeId) {
+            const nextFeat = features.find(f => f.properties && f.properties.shapeId && f.properties.shapeId !== this._selectedShapeId);
+            if (nextFeat) targetFeat = nextFeat;
+        }
+
+        if (!targetFeat || !targetFeat.properties) return;
+        const id = targetFeat.properties.shapeId;
         if (!id) return;
         // Empêche maplibre de démarrer le pan natif sur cette pression
         if (e.preventDefault) e.preventDefault();

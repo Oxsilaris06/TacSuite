@@ -249,7 +249,7 @@ export const PinsMethods = {
             // `position:absolute` via la classe .maplibregl-marker. L'écraser (relative)
             // casse le positionnement carte (dérive au zoom + décalage du label).
             // Le badge cadenas (position:absolute) s'ancre donc déjà sur ce wrap.
-            pinWrap.style.cssText = `width: 38px; height: 38px; cursor: ${cursor}; display: flex; align-items: center; justify-content: center;`;
+            pinWrap.style.cssText = `min-width: 44px; min-height: 44px; width: 44px; height: 44px; cursor: ${cursor}; display: flex; align-items: center; justify-content: center; touch-action: none;`;
             pinWrap.innerHTML = `
                 <span class="material-symbols-outlined" style="
                     font-size: 36px;
@@ -263,7 +263,7 @@ export const PinsMethods = {
             `;
             labelOffset = [0, 22]; // sous l'icône
         } else {
-            pinWrap.style.cssText = `width: 26px; height: 36px; cursor: ${cursor};`;
+            pinWrap.style.cssText = `min-width: 44px; min-height: 44px; width: 44px; height: 44px; cursor: ${cursor}; display: flex; align-items: center; justify-content: center; touch-action: none;`;
             pinWrap.innerHTML = `
                 <svg width="26" height="36" viewBox="0 0 22 30" style="display: block; filter: drop-shadow(0 2px 3px rgba(0,0,0,0.5));">
                     <path d="M11,0 C5,0 0,5 0,11 C0,18 11,30 11,30 C11,30 22,18 22,11 C22,5 17,0 11,0 Z"
@@ -364,6 +364,8 @@ export const PinsMethods = {
         const onDown = (clientX: number, clientY: number, isTouch: boolean): void => {
             pdStart = { x: clientX, y: clientY, t: Date.now(), isTouch };
             originalLngLat = pinMarker.getLngLat();
+            // Desactiver temporairement le zoom double-clic natif de MapLibre (fenêtre double-tap)
+            this._suppressDblZoom();
         };
 
         const onUp = (clientX: number, clientY: number, ev: PointerEvent): void => {
@@ -371,8 +373,8 @@ export const PinsMethods = {
             const dx = clientX - pdStart.x, dy = clientY - pdStart.y;
             const moved = Math.hypot(dx, dy);
             const dt = Date.now() - pdStart.t;
-            const threshold = pdStart.isTouch ? 20 : 6;
-            const maxTime = pdStart.isTouch ? 350 : 500;
+            const threshold = pdStart.isTouch ? 24 : 6;
+            const maxTime = pdStart.isTouch ? 450 : 500;
             const isTap = moved < threshold && dt < maxTime;
             pdStart = null;
             if (!isTap) return;
@@ -391,7 +393,8 @@ export const PinsMethods = {
 
             const now = Date.now();
             const prev = this._lastPinTap;
-            if (prev && prev.id === pinId && (now - prev.t) < 350) {
+            const doubleTapWindow = 450; // 450 ms adaptes au tactile mobile
+            if (prev && prev.id === pinId && (now - prev.t) < doubleTapWindow) {
                 this._lastPinTap = null;
                 this._openPingOptionsWheel(pinId);
             } else {
@@ -405,6 +408,8 @@ export const PinsMethods = {
         const onLockBadge = (ev: PointerEvent): boolean => !!(ev.target instanceof Element && ev.target.closest('.plan-lock-badge'));
         pinWrap.addEventListener('pointerdown', this._safe((ev: PointerEvent) => {
             if (onLockBadge(ev)) return;   // clic sur le cadenas : ne pas amorcer un geste de ping
+            pinWrap.style.zIndex = '1000';
+            entry.labelEl.style.zIndex = '1000';
             onDown(ev.clientX, ev.clientY, ev.pointerType === 'touch');
         }, 'pin:pointerdown'), { capture: true });
         pinWrap.addEventListener('pointermove', this._safe(() => {
@@ -414,8 +419,14 @@ export const PinsMethods = {
             if (onLockBadge(ev)) return;   // idem au relâchement (évite un faux tap)
             onUp(ev.clientX, ev.clientY, ev);
         }, 'pin:pointerup'), { capture: true });
+        pinWrap.addEventListener('pointerleave', this._safe(() => {
+            pinWrap.style.zIndex = '';
+            entry.labelEl.style.zIndex = '';
+        }, 'pin:pointerleave'));
         pinWrap.addEventListener('pointercancel', this._safe(() => {
             pdStart = null;
+            pinWrap.style.zIndex = '';
+            entry.labelEl.style.zIndex = '';
         }, 'pin:pointercancel'), { capture: true });
 
         pinMarker.on('dragstart', this._safe(() => {
