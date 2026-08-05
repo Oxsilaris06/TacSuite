@@ -177,10 +177,17 @@ export class Wheel {
   private _onOutside(ev: Event): void {
     if (!this.element) return;
     const isTouch = ('pointerType' in ev && (ev as PointerEvent).pointerType === 'touch') || ev.type === 'touchstart';
-    const minDelay = isTouch ? 300 : 120;
+    const minDelay = isTouch ? 400 : 120;
     if (Date.now() - this._mountedAt < minDelay) return;
     const target = ev.target instanceof Element ? ev.target : null;
-    if (target && (target.closest('.plan-pin') || target.closest('.oi-carto-pin'))) {
+    if (target && (
+      target.closest('.plan-pin') ||
+      target.closest('.plan-pin-label') ||
+      target.closest('.oi-carto-pin') ||
+      target.closest('.plan-wheel') ||
+      target.closest('.plan-inline-panel') ||
+      target.closest('.plan-lock-badge')
+    )) {
       return;
     }
     if (!this.element.contains(target)) {

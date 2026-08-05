@@ -137,8 +137,10 @@ export const PanelsMethods = {
         // Outside tap closes
         const mountedAt = Date.now();
         const onOutside = (ev: PointerEvent): void => {
-            if (Date.now() - mountedAt < 120) return;
-            if (!el.contains(ev.target as Node | null)) {
+            if (Date.now() - mountedAt < 300) return;
+            const target = ev.target instanceof Element ? ev.target : null;
+            if (target && (target.closest('.plan-inline-panel') || target.closest('.plan-pin') || target.closest('.plan-wheel'))) return;
+            if (!el.contains(target)) {
                 this._closeInlinePanel();
             }
         };
@@ -384,24 +386,26 @@ export const PanelsMethods = {
         // Construction HTML
         const colorChips = this._otanColors().map((o) => `
             <button type="button" class="cat-col" data-color="${o.color}" data-kind="${o.kind}" title="${o.kind}"
-                style="min-width: 40px; min-height: 40px; border-radius: 50%;
+                style="min-width: 38px; min-height: 38px; border-radius: 50%;
                        background: ${o.color}; border: 3px solid ${o.color === '#94a3b8' ? '#fff' : 'transparent'};
                        cursor: pointer; flex: 0 0 auto;"></button>
         `).join('');
         const html = `
-            <div style="display: flex; flex-direction: column; gap: 10px; width: min(94vw, 380px);">
-                <div style="display: flex; align-items: center; gap: 8px;">
-                    <span class="material-symbols-outlined" style="font-size: 20px; color: #fff;">palette</span>
-                    <strong style="font-size: 13px;">Couleur</strong>
-                    <div style="display: flex; gap: 6px; margin-left: auto;">${colorChips}</div>
+            <div style="display: flex; flex-direction: column; gap: 8px; width: min(92vw, 360px); max-width: 100%;">
+                <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 6px;">
+                    <div style="display: flex; align-items: center; gap: 6px;">
+                        <span class="material-symbols-outlined" style="font-size: 20px; color: #fff;">palette</span>
+                        <strong style="font-size: 13px;">Couleur</strong>
+                    </div>
+                    <div style="display: flex; gap: 6px; flex-wrap: wrap; margin-left: auto;">${colorChips}</div>
                 </div>
                 <div style="display: flex; align-items: center; gap: 8px;">
-                    <input type="text" id="cat-filter" placeholder="Filtrer (police, pompier, drogue…)" autocomplete="off"
-                        style="flex: 1; min-height: 38px; background: rgba(255,255,255,0.08); color: #fff;
+                    <input type="text" id="cat-filter" placeholder="Filtrer (police, pompier…)" autocomplete="off"
+                        style="flex: 1; min-height: 40px; background: rgba(255,255,255,0.08); color: #fff;
                                border: 1px solid rgba(255,255,255,0.18); border-radius: 8px; padding: 6px 10px; font-size: 14px; outline: none;" />
                 </div>
-                <div id="cat-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(70px, 1fr));
-                     gap: 6px; max-height: 42vh; overflow-y: auto;"></div>
+                <div id="cat-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(64px, 1fr));
+                     gap: 6px; max-height: min(50vh, 260px); overflow-y: auto; touch-action: pan-y; -webkit-overflow-scrolling: touch; padding-right: 2px;"></div>
             </div>
         `;
         this._openInlinePanel(lngLat, html, {
@@ -436,12 +440,12 @@ export const PanelsMethods = {
                     });
                     grid.innerHTML = filtered.map((ic) => `
                         <button type="button" class="cat-ic" data-id="${ic.id}" data-label="${ic.label}" title="${ic.label}"
-                            style="display: flex; flex-direction: column; align-items: center; gap: 2px;
-                                   padding: 8px 4px; border-radius: 6px;
-                                   background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.15);
+                            style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+                                   min-height: 52px; padding: 6px 4px; border-radius: 8px;
+                                   background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.18);
                                    color: #fff; cursor: pointer;">
                             <span class="material-symbols-outlined" style="font-size: 22px;">${ic.id}</span>
-                            <span style="font-size: 0.65em; text-align: center; line-height: 1.05;">${ic.label}</span>
+                            <span style="font-size: 0.68em; text-align: center; line-height: 1.05; word-break: break-word;">${ic.label}</span>
                         </button>
                     `).join('');
                     grid.querySelectorAll<HTMLButtonElement>('.cat-ic').forEach((b) => {
@@ -499,16 +503,18 @@ export const PanelsMethods = {
         const ll = { lng: p.lng, lat: p.lat };
         try { if (this.map) this.map.easeTo({ center: [ll.lng, ll.lat], duration: 300 }); } catch { /* best-effort */ }
         const html = `
-            <div style="display: flex; flex-direction: column; gap: 10px; width: min(94vw, 380px);">
-                <div style="display: flex; align-items: center; gap: 8px;">
-                    <span class="material-symbols-outlined" style="font-size: 20px; color: ${p.color || '#fff'};">${p.icon || 'place'}</span>
-                    <strong style="font-size: 13px;">Icône actuelle</strong>
+            <div style="display: flex; flex-direction: column; gap: 8px; width: min(92vw, 360px); max-width: 100%;">
+                <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 6px;">
+                    <div style="display: flex; align-items: center; gap: 6px;">
+                        <span class="material-symbols-outlined" style="font-size: 20px; color: ${p.color || '#fff'};">${p.icon || 'place'}</span>
+                        <strong style="font-size: 13px;">Icône actuelle</strong>
+                    </div>
                     <input type="text" id="cat-edit-filter" placeholder="Filtrer…" autocomplete="off"
-                        style="flex: 1; margin-left: auto; min-height: 38px; background: rgba(255,255,255,0.08); color: #fff;
+                        style="flex: 1; min-width: 110px; min-height: 40px; background: rgba(255,255,255,0.08); color: #fff;
                                border: 1px solid rgba(255,255,255,0.18); border-radius: 8px; padding: 6px 10px; font-size: 14px; outline: none;" />
                 </div>
-                <div id="cat-edit-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(70px, 1fr));
-                     gap: 6px; max-height: 42vh; overflow-y: auto;"></div>
+                <div id="cat-edit-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(64px, 1fr));
+                     gap: 6px; max-height: min(50vh, 260px); overflow-y: auto; touch-action: pan-y; -webkit-overflow-scrolling: touch; padding-right: 2px;"></div>
             </div>
         `;
         this._openInlinePanel(ll, html, {
@@ -527,13 +533,13 @@ export const PanelsMethods = {
                     );
                     grid.innerHTML = filtered.map((ic) => `
                         <button type="button" class="cat-edit-ic" data-id="${ic.id}" title="${ic.label}"
-                            style="display: flex; flex-direction: column; align-items: center; gap: 2px;
-                                   padding: 8px 4px; border-radius: 6px;
-                                   background: ${ic.id === p.icon ? p.color + '40' : 'rgba(255,255,255,0.04)'};
-                                   border: 1px solid ${ic.id === p.icon ? p.color : 'rgba(255,255,255,0.15)'};
+                            style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+                                   min-height: 52px; padding: 6px 4px; border-radius: 8px;
+                                   background: ${ic.id === p.icon ? p.color + '40' : 'rgba(255,255,255,0.06)'};
+                                   border: 1px solid ${ic.id === p.icon ? p.color : 'rgba(255,255,255,0.18)'};
                                    color: #fff; cursor: pointer;">
                             <span class="material-symbols-outlined" style="font-size: 22px;">${ic.id}</span>
-                            <span style="font-size: 0.65em; text-align: center; line-height: 1.05;">${ic.label}</span>
+                            <span style="font-size: 0.68em; text-align: center; line-height: 1.05; word-break: break-word;">${ic.label}</span>
                         </button>
                     `).join('');
                     grid.querySelectorAll<HTMLButtonElement>('.cat-edit-ic').forEach((b) => {
