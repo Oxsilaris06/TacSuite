@@ -361,38 +361,11 @@ export const PinsMethods = {
         };
         entry._updateLiveCircle = updateLiveCircle;
 
-        // --- Timestamp du dernier drag-end pour filtrer les clics fantômes post-drag ---
-        let lastDragEnd = 0;
-
         const onDown = (clientX: number, clientY: number, isTouch: boolean): void => {
             pdStart = { x: clientX, y: clientY, t: Date.now(), isTouch };
             originalLngLat = pinMarker.getLngLat();
             // Desactiver temporairement le zoom double-clic natif de MapLibre (fenêtre double-tap)
             this._suppressDblZoom();
-        };
-
-        // Logique commune de détection de tap (double-tap / second-tap).
-        // Appelée SOIT par pointerup (desktop), SOIT par click (mobile).
-        // `tapSource` empêche les doublons si les deux chemins se déclenchent.
-        let lastTapSource: 'pointer' | 'click' | null = null;
-        let lastTapTime = 0;
-
-        const handleTap = (pinId: string, source: 'pointer' | 'click'): void => {
-            const now = Date.now();
-            // Dé-duplication : si pointer et click tirent pour le même geste (< 300 ms),
-            // on ne traite que le premier.
-            if (lastTapSource && lastTapSource !== source && (now - lastTapTime) < 300) return;
-            lastTapSource = source;
-            lastTapTime = now;
-
-            const prev = this._lastPinTap;
-            const isDoubleTap = prev && prev.id === pinId && (now - prev.t) < 600;
-            if (isDoubleTap) {
-                this._lastPinTap = null;
-                this._openPingOptionsWheel(pinId);
-            } else {
-                this._lastPinTap = { id: pinId, t: now };
-            }
         };
 
         const onUp = (clientX: number, clientY: number, ev: PointerEvent): void => {
@@ -402,6 +375,7 @@ export const PinsMethods = {
             const dt = Date.now() - pdStart.t;
             const threshold = pdStart.isTouch ? 24 : 6;
             const maxTime = pdStart.isTouch ? 450 : 500;
+            const isTouch = pdStart.isTouch;
             const isTap = moved < threshold && dt < maxTime;
             pdStart = null;
             if (!isTap) return;
@@ -418,13 +392,24 @@ export const PinsMethods = {
                 updateLiveCircle(originalLngLat);
             }
 
-            handleTap(pinId, 'pointer');
+            const now = Date.now();
+            const prev = this._lastPinTap;
+            // Mode tactile : double-tap rapide (< 450 ms) OU second tap sur le même ping sélectionné (dans les 3 s)
+            const isDoubleTap = prev && prev.id === pinId && (now - prev.t) < 450;
+            const isSecondTapOnSelected = isTouch && prev && prev.id === pinId && (now - prev.t) < 3000;
+
+            if (isDoubleTap || isSecondTapOnSelected) {
+                this._lastPinTap = null;
+                this._openPingOptionsWheel(pinId);
+            } else {
+                this._lastPinTap = { id: pinId, t: now };
+            }
         };
 
         // (`instanceof Element` = équivalent TS-safe de `ev.target && ev.target.closest`
         // de l'original : seul un `Element` expose `closest`, même duck-typing que
         // draw-layers.ts.)
-        const onLockBadge = (ev: PointerEvent | MouseEvent): boolean => !!(ev.target instanceof Element && ev.target.closest('.plan-lock-badge'));
+        const onLockBadge = (ev: PointerEvent): boolean => !!(ev.target instanceof Element && ev.target.closest('.plan-lock-badge'));
         pinWrap.addEventListener('pointerdown', this._safe((ev: PointerEvent) => {
             if (onLockBadge(ev)) return;   // clic sur le cadenas : ne pas amorcer un geste de ping
             pinWrap.style.zIndex = '1000';
@@ -448,21 +433,6 @@ export const PinsMethods = {
             entry.labelEl.style.zIndex = '';
         }, 'pin:pointercancel'), { capture: true });
 
-        // --- CHEMIN CLICK : contournement du bug mobile MapLibre ---
-        // Sur mobile, MapLibre intercepte touchstart sur les marqueurs draggables
-        // et appelle preventDefault(), ce qui provoque un pointercancel sur l'élément.
-        // Le pointerup ne tire JAMAIS → onUp n'est jamais appelé → la roue ne s'ouvre pas.
-        // Le `click` DOM, lui, est TOUJOURS synthétisé par le navigateur après touchend,
-        // même quand touchstart a subi preventDefault. C'est le même pattern que
-        // oi/carto/pins.ts:507-511 qui fonctionne sans problème.
-        pinWrap.addEventListener('click', this._safe((ev: MouseEvent) => {
-            if (onLockBadge(ev as unknown as PointerEvent)) return;
-            // Ignorer le clic synthétique qui suit un vrai drag (< 300 ms après dragend)
-            if (Date.now() - lastDragEnd < 300) return;
-            ev.stopPropagation();
-            handleTap(entry.pin.id, 'click');
-        }, 'pin:click'));
-
         pinMarker.on('dragstart', this._safe(() => {
             pinWrap.style.cursor = 'grabbing';
             pinWrap.style.opacity = '0.85';
@@ -476,7 +446,6 @@ export const PinsMethods = {
             if (dm) dm.setLngLat(ll);
         }, 'pin:drag'));
         pinMarker.on('dragend', this._safe(() => {
-            lastDragEnd = Date.now();
             pinWrap.style.cursor = 'grab';
             pinWrap.style.opacity = '1';
             entry.labelEl.style.opacity = '1';
