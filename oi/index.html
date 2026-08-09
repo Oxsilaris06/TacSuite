@@ -33,15 +33,15 @@
             </div>
             <button id="presentHereBtn" type="button" class="wizard-nav-btn btn-present-here"
                 title="Ouvrir la présentation plein écran dans un nouvel onglet (téléphone, bureau, TV, projecteur)">
-                Présenter ici <span class="material-symbols-outlined icon-1-2em">slideshow</span>
+                Présenter ici <span class="material-symbols-outlined icon-1-2em" aria-hidden="true">slideshow</span>
             </button>
             <button id="printHqBtn" type="button" class="wizard-nav-btn"
                 data-action="print-oi-high-quality"
                 title="Ouvre la boîte d'impression du navigateur : PDF entièrement vectoriel, texte sélectionnable (qualité maximale)">
-                Imprimer — qualité maximale <span class="material-symbols-outlined icon-1-2em">print</span>
+                Imprimer — qualité maximale <span class="material-symbols-outlined icon-1-2em" aria-hidden="true">print</span>
             </button>
             <button id="downloadPdfBtn" type="button" class="wizard-nav-btn">
-                Télécharger le PDF <span class="material-symbols-outlined icon-1-2em">picture_as_pdf</span>
+                Télécharger le PDF <span class="material-symbols-outlined icon-1-2em" aria-hidden="true">picture_as_pdf</span>
             </button>
             <button id="closePresentationModalBtn" type="button" class="wizard-nav-btn btn-close-danger"
                 data-action="close-presentation-modal">
@@ -54,7 +54,7 @@
         <div class="modal-form">
             <div class="modal-header">
                 <h3>Réinitialisation</h3>
-                <button type="button" class="close-modal-btn modal-close-btn-transparent" id="cancelResetBtn">
+                <button type="button" class="close-modal-btn modal-close-btn-transparent" id="cancelResetBtn" aria-label="Fermer la fenêtre de réinitialisation">
                     <span class="material-symbols-outlined">close</span>
                 </button>
             </div>
@@ -67,10 +67,10 @@
             </div>
             <div class="modal-footer">
                 <button type="button" id="resetPageBtn" class="btn-save">
-                    <span class="material-symbols-outlined">restart_alt</span> Page Active
+                    <span class="material-symbols-outlined" aria-hidden="true">restart_alt</span> Page Active
                 </button>
                 <button type="button" id="resetAllBtn" class="btn-save btn-danger-reset-all">
-                    <span class="material-symbols-outlined">delete_sweep</span> Tout
+                    <span class="material-symbols-outlined" aria-hidden="true">delete_sweep</span> Tout
                 </button>
             </div>
         </div>
@@ -80,7 +80,7 @@
         <div class="modal-form">
             <div class="modal-header">
                 <h3 id="quick_modal_title">Édition rapide</h3>
-                <button type="button" class="close-modal-btn modal-close-btn-transparent" data-action="close-quick-edit-modal">
+                <button type="button" class="close-modal-btn modal-close-btn-transparent" data-action="close-quick-edit-modal" aria-label="Fermer l'édition rapide">
                     <span class="material-symbols-outlined">close</span>
                 </button>
             </div>
@@ -91,10 +91,10 @@
             
             <div class="modal-footer">
                 <button type="button" id="quick_modal_cancelBtn" class="btn-cancel">
-                    <span class="material-symbols-outlined">undo</span> Retour
+                    <span class="material-symbols-outlined" aria-hidden="true">undo</span> Retour
                 </button>
                 <button type="button" id="quick_modal_saveBtn" class="btn-save">
-                    <span class="material-symbols-outlined">check_circle</span> Valider
+                    <span class="material-symbols-outlined" aria-hidden="true">check_circle</span> Valider
                 </button>
             </div>
         </div>
@@ -105,7 +105,7 @@
             <div class="modal-header">
                 <h3>Configuration Unité</h3>
                 <button type="button" class="close-modal-btn modal-close-btn-transparent"
-                    data-action="close-unite-config-modal">
+                    data-action="close-unite-config-modal" aria-label="Fermer la configuration unité">
                     <span class="material-symbols-outlined">close</span>
                 </button>
             </div>
@@ -119,10 +119,10 @@
             <div class="modal-footer">
                 <button type="button" class="btn-cancel"
                     data-action="close-unite-config-modal">
-                    <span class="material-symbols-outlined">undo</span> Retour
+                    <span class="material-symbols-outlined" aria-hidden="true">undo</span> Retour
                 </button>
                 <button type="button" id="unite_config_saveBtn" class="btn-save">
-                    <span class="material-symbols-outlined">check_circle</span> Enregistrer
+                    <span class="material-symbols-outlined" aria-hidden="true">check_circle</span> Enregistrer
                 </button>
             </div>
         </div>
@@ -132,7 +132,7 @@
         <div class="modal-form">
             <div class="modal-header">
                 <h3>Importer une archive</h3>
-                <button type="button" class="close-modal-btn modal-close-btn-transparent" id="importSelectCloseBtn">
+                <button type="button" class="close-modal-btn modal-close-btn-transparent" id="importSelectCloseBtn" aria-label="Fermer l'import d'archive">
                     <span class="material-symbols-outlined">close</span>
                 </button>
             </div>
@@ -149,10 +149,10 @@
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn-cancel" id="importSelectCancelBtn">
-                    <span class="material-symbols-outlined">undo</span> Annuler
+                    <span class="material-symbols-outlined" aria-hidden="true">undo</span> Annuler
                 </button>
                 <button type="button" class="btn-save" id="importSelectConfirmBtn">
-                    <span class="material-symbols-outlined">download</span> Importer la sélection
+                    <span class="material-symbols-outlined" aria-hidden="true">download</span> Importer la sélection
                 </button>
             </div>
         </div>
@@ -168,13 +168,13 @@
                     <button type="button" id="annotation_cancel_header" class="btn-cancel compact wizard-nav-btn annotation-header-btn" data-action="close-annotation-modal">Annuler</button>
                     <button type="button" id="annotation_save_header" class="btn-save compact wizard-nav-btn annotation-header-btn">Valider</button>
                 </div>
-                <button type="button" class="close-modal-btn annotation-close-btn" data-action="close-annotation-modal">
+                <button type="button" class="close-modal-btn annotation-close-btn" data-action="close-annotation-modal" aria-label="Fermer l'annotation photo">
                     <span class="material-symbols-outlined">close</span>
                 </button>
             </div>
             
             <div class="modal-body annotation-wrapper">
-                <button id="mobile-dock-fab" type="button" data-action="toggle-mobile-dock" class="tool-btn icon-only" title="Outils" style="position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 1000; width: 50px; height: 50px; border-radius: 50%; padding: 0; display: flex; justify-content: center; align-items: center; background: var(--accent-blue); box-shadow: 0 4px 15px rgba(0,0,0,0.5);">
+                <button id="mobile-dock-fab" type="button" data-action="toggle-mobile-dock" class="tool-btn icon-only" title="Outils" style="position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 1000; width: 50px; height: 50px; border-radius: 50%; padding: 0; display: flex; justify-content: center; align-items: center; background: var(--accent-blue); box-shadow: 0 4px 15px rgba(0,0,0,0.5);" aria-label="Afficher le menu d'outils">
                     <span class="material-symbols-outlined dock-fab-icon">build</span>
                 </button>
                 
@@ -182,12 +182,12 @@
                     <!-- 1. Outils Principaux (Gauche) -->
                     <div id="dock-left" class="mobile-dock vertical">
                         <div class="toolbar-vertical-group">
-                            <button type="button" id="tool_move" class="tool-btn active" title="Bouger"><span class="material-symbols-outlined">pan_tool</span><span class="btn-text">Bouger</span></button>
-                            <button type="button" id="tool_location" class="tool-btn" title="Zone"><span class="material-symbols-outlined">pin_drop</span><span class="btn-text">Zone</span></button>
-                            <button type="button" id="tool_arrow" class="tool-btn" title="Axe"><span class="material-symbols-outlined">north_east</span><span class="btn-text">Axe</span></button>
-                            <button type="button" id="tool_box" class="tool-btn" title="Box"><span class="material-symbols-outlined">crop_square</span><span class="btn-text">Box</span></button>
-                            <button type="button" id="tool_text" class="tool-btn" title="Texte"><span class="material-symbols-outlined">title</span><span class="btn-text">Texte</span></button>
-                            <button type="button" id="tool_member" class="tool-btn" title="Membre"><span class="material-symbols-outlined">badge</span><span class="btn-text">Membre</span></button>
+                            <button type="button" id="tool_move" class="tool-btn active" title="Bouger"><span class="material-symbols-outlined" aria-hidden="true">pan_tool</span><span class="btn-text">Bouger</span></button>
+                            <button type="button" id="tool_location" class="tool-btn" title="Zone"><span class="material-symbols-outlined" aria-hidden="true">pin_drop</span><span class="btn-text">Zone</span></button>
+                            <button type="button" id="tool_arrow" class="tool-btn" title="Axe"><span class="material-symbols-outlined" aria-hidden="true">north_east</span><span class="btn-text">Axe</span></button>
+                            <button type="button" id="tool_box" class="tool-btn" title="Box"><span class="material-symbols-outlined" aria-hidden="true">crop_square</span><span class="btn-text">Box</span></button>
+                            <button type="button" id="tool_text" class="tool-btn" title="Texte"><span class="material-symbols-outlined" aria-hidden="true">title</span><span class="btn-text">Texte</span></button>
+                            <button type="button" id="tool_member" class="tool-btn" title="Membre"><span class="material-symbols-outlined" aria-hidden="true">badge</span><span class="btn-text">Membre</span></button>
                         </div>
                     </div>
 
@@ -195,7 +195,7 @@
                     <div id="dock-right" class="mobile-dock vertical">
                         <div class="sheet-grabber" aria-hidden="true"></div>
                         <div class="sheet-title">Réglages</div>
-                        <button type="button" data-action="close-mobile-sheet" class="tool-btn icon-only danger close-dock-btn mobile-sheet-close-btn" title="Fermer">
+                        <button type="button" data-action="close-mobile-sheet" class="tool-btn icon-only danger close-dock-btn mobile-sheet-close-btn" title="Fermer" aria-label="Fermer le panneau de réglages">
                             <span class="material-symbols-outlined mobile-sheet-close-icon">close</span>
                         </button>
                         <div id="contextual_tools" class="toolbar-vertical-group" style="margin-top: 45px; width: 100%; display: flex; flex-direction: column; align-items: center;">
@@ -219,7 +219,7 @@
                             </div>
                             <input type="hidden" id="text_size_tool" value="30">
 
-                            <button type="button" id="edit_text_btn" class="tool-btn icon-only" title="Modifier le texte"><span class="material-symbols-outlined">edit_note</span></button>
+                            <button type="button" id="edit_text_btn" class="tool-btn icon-only" title="Modifier le texte" aria-label="Modifier le texte"><span class="material-symbols-outlined">edit_note</span></button>
                         </div>
                     </div>
 
@@ -236,10 +236,10 @@
                         <div style="width: 1px; height: 30px; background: rgba(255,255,255,0.2); margin: 0 10px;"></div>
 
                         <div class="toolbar-horizontal-group" style="display: flex; gap: 10px; align-items: center;">
-                            <button type="button" id="annotation_undo" class="tool-btn icon-only" title="Annuler (Ctrl+Z)"><span class="material-symbols-outlined">undo</span></button>
-                            <button type="button" id="annotation_redo" class="tool-btn icon-only" title="Rétablir (Ctrl+Y)"><span class="material-symbols-outlined">redo</span></button>
-                            <button type="button" id="delete_btn" class="tool-btn icon-only danger" title="Supprimer l'objet"><span class="material-symbols-outlined">delete</span></button>
-                            <button type="button" id="tool_reset" class="tool-btn icon-only danger tool-reset-btn" title="Réinitialiser tout"><span class="material-symbols-outlined">delete_sweep</span></button>
+                            <button type="button" id="annotation_undo" class="tool-btn icon-only" title="Annuler (Ctrl+Z)" aria-label="Annuler la dernière action"><span class="material-symbols-outlined">undo</span></button>
+                            <button type="button" id="annotation_redo" class="tool-btn icon-only" title="Rétablir (Ctrl+Y)" aria-label="Rétablir l'action annulée"><span class="material-symbols-outlined">redo</span></button>
+                            <button type="button" id="delete_btn" class="tool-btn icon-only danger" title="Supprimer l'objet" aria-label="Supprimer l'objet sélectionné"><span class="material-symbols-outlined">delete</span></button>
+                            <button type="button" id="tool_reset" class="tool-btn icon-only danger tool-reset-btn" title="Réinitialiser tout" aria-label="Réinitialiser toute l'annotation"><span class="material-symbols-outlined">delete_sweep</span></button>
                         </div>
                     </div>
                 </div>
@@ -253,7 +253,7 @@
 
     <div class="container">
         <button type="button" id="log-button" data-action="open-logs">
-            <span class="material-symbols-outlined log-btn-icon">terminal</span> LOG
+            <span class="material-symbols-outlined log-btn-icon" aria-hidden="true">terminal</span> LOG
         </button>
         <h1>Générateur d'OI</h1>
 
@@ -282,20 +282,20 @@
                     <h2>2. Adversaire(s)</h2>
                     <div id="adversaries_container"></div>
                     <button type="button" id="createAdversaryBtn" class="add-btn btn-add-adversary" data-action="add-adversary">
-                        <span class="material-symbols-outlined">person_add</span> Créer Adversaire
+                        <span class="material-symbols-outlined" aria-hidden="true">person_add</span> Créer Adversaire
                     </button>
                 </div>
 
                 <div class="wizard-step oi-grid">
                     <h2>3. Environnement</h2>
-                    <label>Ami(e)s (Unités en soutien):</label><input type="text" id="amies" data-action="sync-dom-to-store">
-                    <label>Terrain / Météo:</label><input type="text" id="terrain_info" data-action="sync-dom-to-store">
-                    <label>Éclairage:</label><input type="text" id="eclairage" data-action="sync-dom-to-store">
-                    <label>Lever du soleil (Heure prévisionnelle):</label><input type="time" id="lever_soleil" data-action="sync-dom-to-store">
-                    <label>Population:</label><input type="text" id="population" data-action="sync-dom-to-store">
-                    <label>Faune / Animaux:</label><input type="text" id="faune_animaux" data-action="sync-dom-to-store">
-                    <label>Accès Principal:</label><textarea id="acces_principal" rows="2" data-action="sync-dom-to-store"></textarea>
-                    <label>Cheminement initial:</label><textarea id="cheminement_initial" rows="2" data-action="sync-dom-to-store"></textarea>
+                    <label for="amies">Ami(e)s (Unités en soutien):</label><input type="text" id="amies" data-action="sync-dom-to-store">
+                    <label for="terrain_info">Terrain / Météo:</label><input type="text" id="terrain_info" data-action="sync-dom-to-store">
+                    <label for="eclairage">Éclairage:</label><input type="text" id="eclairage" data-action="sync-dom-to-store">
+                    <label for="lever_soleil">Lever du soleil (Heure prévisionnelle):</label><input type="time" id="lever_soleil" data-action="sync-dom-to-store">
+                    <label for="population">Population:</label><input type="text" id="population" data-action="sync-dom-to-store">
+                    <label for="faune_animaux">Faune / Animaux:</label><input type="text" id="faune_animaux" data-action="sync-dom-to-store">
+                    <label for="acces_principal">Accès Principal:</label><textarea id="acces_principal" rows="2" data-action="sync-dom-to-store"></textarea>
+                    <label for="cheminement_initial">Cheminement initial:</label><textarea id="cheminement_initial" rows="2" data-action="sync-dom-to-store"></textarea>
                     <label for="cadre_juridique">Cadre juridique:</label><input type="text" id="cadre_juridique" data-action="sync-dom-to-store">
                 </div>
 
@@ -323,18 +323,18 @@ présumé de (Nom Adversaire 1) et (Nom Adversaire 2) après avoir bouclé celui
                     </div>
                     <h3>Chronologie</h3>
                     <div id="time_events_container"></div><button type="button" class="add-btn"
-                        data-action="add-time-event"><span class="material-symbols-outlined">add_box</span> Ajouter Événement</button>
+                        data-action="add-time-event"><span class="material-symbols-outlined" aria-hidden="true">add_box</span> Ajouter Événement</button>
                     <h3>Hypothèses</h3>
                     <div id="hypotheses_container"></div>
                     <button type="button" class="add-btn btn-add-hypothesis" data-action="add-hypothesis">
-                        <span class="material-symbols-outlined">add_box</span> Créer Hypothèse
+                        <span class="material-symbols-outlined" aria-hidden="true">add_box</span> Créer Hypothèse
                     </button>
 
                     <h3 class="mt-20"><span class="material-symbols-outlined">photo_camera</span> Cheminement</h3>
                     <div style="display: flex; gap: 10px; flex-wrap: wrap;">
                         <button type="button" class="add-btn btn-flex-center"
                             data-action="trigger-file-input" data-target="photo_container_transport_pr_input">
-                            <span class="material-symbols-outlined">photo_camera</span> Transport PSIG → PR
+                            <span class="material-symbols-outlined" aria-hidden="true">photo_camera</span> Transport PSIG → PR
                         </button>
                         <input type="file" id="photo_container_transport_pr_input" class="photo-input"
                             class="sr-only-input" accept="image/*" multiple
@@ -342,7 +342,7 @@ présumé de (Nom Adversaire 1) et (Nom Adversaire 2) après avoir bouclé celui
 
                         <button type="button" class="add-btn btn-flex-center"
                             data-action="trigger-file-input" data-target="photo_container_transport_domicile_input">
-                            <span class="material-symbols-outlined">photo_camera</span> Transport PR → Domicile/LE
+                            <span class="material-symbols-outlined" aria-hidden="true">photo_camera</span> Transport PR → Domicile/LE
                         </button>
                         <input type="file" id="photo_container_transport_domicile_input" class="photo-input"
                             class="sr-only-input" accept="image/*" multiple
@@ -421,7 +421,7 @@ présumé de (Nom Adversaire 1) et (Nom Adversaire 2) après avoir bouclé celui
                     <div id="moicp_container"></div>
                     <button type="button" class="add-btn" id="addMoicpBtn"
                         style="margin-top: 10px; background: var(--accent-blue); color: white; display: flex; align-items: center; gap: 8px;">
-                        <span class="material-symbols-outlined">add_box</span> Créer MOICP
+                        <span class="material-symbols-outlined" aria-hidden="true">add_box</span> Créer MOICP
                     </button>
 
                     <!-- Blocs ZMSPCP dynamiques -->
@@ -433,7 +433,7 @@ présumé de (Nom Adversaire 1) et (Nom Adversaire 2) après avoir bouclé celui
                     <div id="zmspcp_container"></div>
                     <button type="button" class="add-btn" id="addZmspcpBtn"
                         style="margin-top: 10px; background: var(--moicp-zmspcp-purple, #8e44ad); color: white; display: flex; align-items: center; gap: 8px;">
-                        <span class="material-symbols-outlined">add_box</span> Créer ZMSPCP
+                        <span class="material-symbols-outlined" aria-hidden="true">add_box</span> Créer ZMSPCP
                     </button>
 
                     <!-- Cellule Effraction dynamiques -->
@@ -445,7 +445,7 @@ présumé de (Nom Adversaire 1) et (Nom Adversaire 2) après avoir bouclé celui
                     <div id="effraction_container"></div>
                     <button type="button" class="add-btn" id="addEffractionBtn"
                         style="margin-top: 10px; background: var(--effraction-gold); color: white; display: flex; align-items: center; gap: 8px;">
-                        <span class="material-symbols-outlined">add_box</span> Ajouter Cellule Effraction
+                        <span class="material-symbols-outlined" aria-hidden="true">add_box</span> Ajouter Cellule Effraction
                     </button>
                 </div>
 
@@ -454,15 +454,15 @@ présumé de (Nom Adversaire 1) et (Nom Adversaire 2) après avoir bouclé celui
                     <div class="patracdvr-toolbar">
                         <button type="button" id="openUniteConfigBtn" class="patracdvr-member-btn"
                             title="Configuration Unité : gérer les options (fonctions, cellules, armes, équipement, tenue…)">
-                            <span class="material-symbols-outlined">settings</span> Configuration Unité
+                            <span class="material-symbols-outlined" aria-hidden="true">settings</span> Configuration Unité
                         </button>
                         <button type="button" id="patracdvrPdfBtn" class="patracdvr-member-btn"
                             title="Générer le PDF du PATRACDVR">
-                            <span class="material-symbols-outlined">picture_as_pdf</span> PDF PATRACDVR
+                            <span class="material-symbols-outlined" aria-hidden="true">picture_as_pdf</span> PDF PATRACDVR
                         </button>
                         <button type="button" id="resetPatracdvrBtn" class="patracdvr-member-btn patracdvr-reset-btn"
                             title="Réinitialiser uniquement le PATRACDVR actuel">
-                            <span class="material-symbols-outlined">delete_forever</span> Réinitialiser
+                            <span class="material-symbols-outlined" aria-hidden="true">delete_forever</span> Réinitialiser
                         </button>
                     </div>
 
@@ -470,25 +470,25 @@ présumé de (Nom Adversaire 1) et (Nom Adversaire 2) après avoir bouclé celui
                     <div class="patrac-batch-controls">
                         <button type="button" id="patracBatchToggleBtn" class="add-btn"
                             title="Sélectionner plusieurs PAX (ou une cellule entière) pour les déplacer d'un seul geste">
-                            <span class="material-symbols-outlined">checklist</span> Déplacement groupé
+                            <span class="material-symbols-outlined" aria-hidden="true">checklist</span> Déplacement groupé
                         </button>
                     </div>
                     <div id="patracBatchBar" class="patrac-batch-bar" style="display:none;">
                         <span id="patracBatchCount" class="patrac-batch-count">0 PAX sélectionné</span>
                         <button type="button" id="patracBatchSelectCell" class="add-btn" disabled
                             title="Étendre la sélection à toute la cellule des PAX déjà sélectionnés">
-                            <span class="material-symbols-outlined">select_all</span> Toute la cellule
+                            <span class="material-symbols-outlined" aria-hidden="true">select_all</span> Toute la cellule
                         </button>
                         <button type="button" id="patracBatchMove" class="add-btn" disabled
                             title="Déplacer les PAX sélectionnés vers un véhicule">
-                            <span class="material-symbols-outlined">drive_file_move</span> Déplacer vers…
+                            <span class="material-symbols-outlined" aria-hidden="true">drive_file_move</span> Déplacer vers…
                         </button>
                         <button type="button" id="patracBatchUnassign" class="add-btn" disabled
                             title="Renvoyer les PAX sélectionnés vers « Personnel à attribuer »">
-                            <span class="material-symbols-outlined">logout</span> Désattribuer
+                            <span class="material-symbols-outlined" aria-hidden="true">logout</span> Désattribuer
                         </button>
                         <button type="button" id="patracBatchClear" class="add-btn btn-batch-clear" disabled>
-                            <span class="material-symbols-outlined">close</span> Effacer
+                            <span class="material-symbols-outlined" aria-hidden="true">close</span> Effacer
                         </button>
                         <div id="patracBatchTargets" class="patrac-batch-targets" style="display:none;"></div>
                     </div>
@@ -525,17 +525,17 @@ présumé de (Nom Adversaire 1) et (Nom Adversaire 2) après avoir bouclé celui
                     <h4 class="mt-20">Ajouter un VL ou un PAX</h4>
                     <div id="vehicle_creation_buttons"
                         style=" display: flex; flex-wrap: wrap; justify-content: space-between; gap: 10px;">
-                        <button type="button" class="add-btn add-vehicle-btn" id="addManualVehicleBtn"><span class="material-symbols-outlined">add</span> Ajouter
+                        <button type="button" class="add-btn add-vehicle-btn" id="addManualVehicleBtn"><span class="material-symbols-outlined" aria-hidden="true">add</span> Ajouter
                             VL</button>
-                        <button type="button" class="add-btn add-vehicle-btn add-pax-btn" id="addManualMemberBtn"><span class="material-symbols-outlined">add</span>
+                        <button type="button" class="add-btn add-vehicle-btn add-pax-btn" id="addManualMemberBtn"><span class="material-symbols-outlined" aria-hidden="true">add</span>
                             Ajouter PAX</button>
                     </div>
 
                     <h4 class="mt-20">Créer une cellule (2 PAX minimum)</h4>
                     <div id="cell_batch_buttons" style="display: flex; flex-wrap: wrap; gap: 10px;">
-                        <button type="button" class="add-btn cell-batch-btn" data-cell="India" title="Crée une cellule India (Inter) avec plusieurs PAX d'un coup"><span class="material-symbols-outlined">add</span> Cellule India</button>
-                        <button type="button" class="add-btn cell-batch-btn" data-cell="AO" title="Crée une cellule AO avec plusieurs PAX d'un coup"><span class="material-symbols-outlined">add</span> Cellule AO</button>
-                        <button type="button" class="add-btn cell-batch-btn" data-cell="Effrac" title="Crée la cellule Effraction avec plusieurs PAX d'un coup"><span class="material-symbols-outlined">add</span> Cellule Effraction</button>
+                        <button type="button" class="add-btn cell-batch-btn" data-cell="India" title="Crée une cellule India (Inter) avec plusieurs PAX d'un coup"><span class="material-symbols-outlined" aria-hidden="true">add</span> Cellule India</button>
+                        <button type="button" class="add-btn cell-batch-btn" data-cell="AO" title="Crée une cellule AO avec plusieurs PAX d'un coup"><span class="material-symbols-outlined" aria-hidden="true">add</span> Cellule AO</button>
+                        <button type="button" class="add-btn cell-batch-btn" data-cell="Effrac" title="Crée la cellule Effraction avec plusieurs PAX d'un coup"><span class="material-symbols-outlined" aria-hidden="true">add</span> Cellule Effraction</button>
                     </div>
 
                     <h4 class="mt-20">Composition des véhicules (Cliquer sur le nom pour renommer)</h4>
@@ -566,7 +566,7 @@ présumé de (Nom Adversaire 1) et (Nom Adversaire 2) après avoir bouclé celui
                                 <button type="button" class="add-btn"
                                     data-action="trigger-file-input" data-target="custom_bg_input">📂 Choisir
                                     Image</button>
-                                <button type="button" class="remove-btn" data-action="remove-custom-background"><span class="material-symbols-outlined">restore</span> Rétablir
+                                <button type="button" class="remove-btn" data-action="remove-custom-background"><span class="material-symbols-outlined" aria-hidden="true">restore</span> Rétablir
                                     Défaut</button>
                             </div>
                             <input type="file" id="custom_bg_input" class="photo-input sr-only-input"
@@ -618,7 +618,7 @@ Gestuelle et visuelle entre les éléments INDIA</textarea>
                     </div>
                     <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 20px;">
                         <button class="wizard-nav-btn" id="previewBtn" type="button">Aperçu (Mode Présentation) <span
-                                class="material-symbols-outlined icon-1-2em">visibility</span></button>
+                                class="material-symbols-outlined icon-1-2em" aria-hidden="true">visibility</span></button>
                     </div>
                 </div>
             </div>
@@ -681,7 +681,7 @@ Gestuelle et visuelle entre les éléments INDIA</textarea>
                 <h3 class="heading-effraction-gold">
                     <span class="material-symbols-outlined">hardware</span> Outils Effraction
                 </h3>
-                <button type="button" class="close-modal-btn" data-action="close-effraction-tools-modal">
+                <button type="button" class="close-modal-btn" data-action="close-effraction-tools-modal" aria-label="Fermer les outils d'effraction">
                     <span class="material-symbols-outlined">close</span>
                 </button>
             </div>
@@ -722,10 +722,10 @@ Gestuelle et visuelle entre les éléments INDIA</textarea>
 
             <div class="modal-footer">
                 <button type="button" class="btn-cancel" data-action="close-effraction-tools-modal">
-                    <span class="material-symbols-outlined">undo</span> Retour
+                    <span class="material-symbols-outlined" aria-hidden="true">undo</span> Retour
                 </button>
                 <button type="button" class="btn-save btn-save-effraction" data-action="save-effraction-tools">
-                    <span class="material-symbols-outlined">check_circle</span> Valider
+                    <span class="material-symbols-outlined" aria-hidden="true">check_circle</span> Valider
                 </button>
             </div>
         </div>
@@ -750,10 +750,10 @@ Gestuelle et visuelle entre les éléments INDIA</textarea>
     </dialog>
     <div id="memberContextMenu" class="context-menu" style="display:none; position:fixed; z-index:9999; background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 8px; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); padding: 5px;">
         <button type="button" data-action="clone-member-from-context" style="display:flex; align-items:center; gap:8px; width:100%; padding:8px 12px; background:none; border:none; color:var(--text-primary); cursor:pointer; text-align:left;">
-            <span class="material-symbols-outlined icon-18">content_copy</span> Cloner
+            <span class="material-symbols-outlined icon-18" aria-hidden="true">content_copy</span> Cloner
         </button>
         <button type="button" data-action="delete-member-from-context" style="display:flex; align-items:center; gap:8px; width:100%; padding:8px 12px; background:none; border:none; color:var(--danger-red); cursor:pointer; text-align:left;">
-            <span class="material-symbols-outlined icon-18">delete</span> Supprimer
+            <span class="material-symbols-outlined icon-18" aria-hidden="true">delete</span> Supprimer
         </button>
     </div>
     <!-- ==================== CARTOGRAPHIE OI (MapLibre) ==================== -->
@@ -769,10 +769,10 @@ Gestuelle et visuelle entre les éléments INDIA</textarea>
                 <div style="display: flex; gap: 6px;">
                     <input type="text" id="oi_carto_address_input"
                         placeholder="Adresse ou coordonnées GPS (lat, lng)" class="carto-address-input">
-                    <button type="button" id="oi_carto_search_btn" class="add-btn carto-search-btn">
+                    <button type="button" id="oi_carto_search_btn" class="add-btn carto-search-btn" aria-label="Rechercher l'adresse">
                         <span class="material-symbols-outlined">search</span>
                     </button>
-                    <button type="button" id="oi_carto_search_close" class="add-btn carto-search-close-btn">
+                    <button type="button" id="oi_carto_search_close" class="add-btn carto-search-close-btn" aria-label="Fermer la recherche">
                         <span class="material-symbols-outlined">close</span>
                     </button>
                 </div>
@@ -785,69 +785,69 @@ Gestuelle et visuelle entre les éléments INDIA</textarea>
             <!-- Toolbar verticale : Recherche / Pin / Dessin / 3D / Plein écran / Fermer -->
             <div class="oi-carto-toolbar">
                 <button type="button" id="oi_carto_btn_search" class="oi-carto-fab"
-                    title="Recherche adresse / coordonnées GPS">
+                    title="Recherche adresse / coordonnées GPS" aria-label="Rechercher une adresse ou des coordonnées GPS">
                     <span class="material-symbols-outlined">search</span>
                 </button>
                 <button type="button" id="oi_carto_btn_ping" class="oi-carto-fab"
-                    title="Ajouter un point (membre ou pin OI)">
+                    title="Ajouter un point (membre ou pin OI)" aria-label="Ajouter un point sur la carte">
                     <span class="material-symbols-outlined">add_location</span>
                 </button>
-                <button type="button" id="oi_carto_btn_draw" class="oi-carto-fab" title="Outils de dessin">
+                <button type="button" id="oi_carto_btn_draw" class="oi-carto-fab" title="Outils de dessin" aria-label="Ouvrir les outils de dessin">
                     <span class="material-symbols-outlined">draw</span>
                 </button>
                 <button type="button" id="oi_carto_btn_capture" class="oi-carto-fab"
-                    title="Capture de la carte (télécharger ou exporter vers un champ photo)">
+                    title="Capture de la carte (télécharger ou exporter vers un champ photo)" aria-label="Capturer la carte">
                     <span class="material-symbols-outlined">photo_camera</span>
                 </button>
                 <button type="button" id="oi_carto_btn_labels" class="oi-carto-fab"
-                    title="Afficher / masquer les libellés des pins">
+                    title="Afficher / masquer les libellés des pins" aria-label="Afficher ou masquer les libellés des pins">
                     <span class="material-symbols-outlined">label</span>
                 </button>
                 <button type="button" id="oi_carto_btn_3d" class="oi-carto-fab"
-                    title="Basculer vue 2D / 3D relief">
+                    title="Basculer vue 2D / 3D relief" aria-label="Basculer entre vue 2D et 3D">
                     <span class="material-symbols-outlined">deployed_code</span>
                 </button>
-                <button type="button" id="oi_carto_btn_fullscreen" class="oi-carto-fab" title="Plein écran">
+                <button type="button" id="oi_carto_btn_fullscreen" class="oi-carto-fab" title="Plein écran" aria-label="Basculer le plein écran">
                     <span class="material-symbols-outlined">fullscreen</span>
                 </button>
                 <button type="button" id="oi_carto_btn_close" class="oi-carto-fab close-fab"
-                    title="Fermer la cartographie">
+                    title="Fermer la cartographie" aria-label="Fermer la cartographie">
                     <span class="material-symbols-outlined">close</span>
                 </button>
             </div>
 
             <!-- Dock dessin réductible (ouvert via le FAB Dessin) -->
             <div id="oi_carto_draw_dock">
-                <button type="button" class="oi-carto-draw-btn" data-tool="line" title="Tracer un trait">
+                <button type="button" class="oi-carto-draw-btn" data-tool="line" title="Tracer un trait" aria-label="Tracer un trait">
                     <span class="material-symbols-outlined">timeline</span>
                 </button>
                 <button type="button" class="oi-carto-draw-btn" data-tool="rectangle"
-                    title="Tracer un rectangle">
+                    title="Tracer un rectangle" aria-label="Tracer un rectangle">
                     <span class="material-symbols-outlined">crop_square</span>
                 </button>
-                <button type="button" class="oi-carto-draw-btn" data-tool="circle" title="Tracer un cercle">
+                <button type="button" class="oi-carto-draw-btn" data-tool="circle" title="Tracer un cercle" aria-label="Tracer un cercle">
                     <span class="material-symbols-outlined">circle</span>
                 </button>
                 <div class="oi-carto-dock-sep"></div>
                 <div id="oi_carto_draw_colors">
-                    <button type="button" class="oi-carto-draw-color oi-carto-draw-color-red" data-color="#ef4444" title="Rouge"></button>
-                    <button type="button" class="oi-carto-draw-color oi-carto-draw-color-yellow" data-color="#eab308" title="Jaune"></button>
-                    <button type="button" class="oi-carto-draw-color oi-carto-draw-color-blue" data-color="#3b82f6" title="Bleu"></button>
-                    <button type="button" class="oi-carto-draw-color oi-carto-draw-color-green" data-color="#22c55e" title="Vert"></button>
-                    <button type="button" class="oi-carto-draw-color oi-carto-draw-color-white" data-color="#ffffff" title="Blanc"></button>
+                    <button type="button" class="oi-carto-draw-color oi-carto-draw-color-red" data-color="#ef4444" title="Rouge" aria-label="Choisir la couleur rouge"></button>
+                    <button type="button" class="oi-carto-draw-color oi-carto-draw-color-yellow" data-color="#eab308" title="Jaune" aria-label="Choisir la couleur jaune"></button>
+                    <button type="button" class="oi-carto-draw-color oi-carto-draw-color-blue" data-color="#3b82f6" title="Bleu" aria-label="Choisir la couleur bleue"></button>
+                    <button type="button" class="oi-carto-draw-color oi-carto-draw-color-green" data-color="#22c55e" title="Vert" aria-label="Choisir la couleur verte"></button>
+                    <button type="button" class="oi-carto-draw-color oi-carto-draw-color-white" data-color="#ffffff" title="Blanc" aria-label="Choisir la couleur blanche"></button>
                 </div>
                 <div class="oi-carto-dock-sep"></div>
                 <button type="button" id="oi_carto_draw_undo" class="oi-carto-draw-btn"
-                    title="Annuler (Ctrl+Z)">
+                    title="Annuler (Ctrl+Z)" aria-label="Annuler le dernier tracé">
                     <span class="material-symbols-outlined">undo</span>
                 </button>
                 <button type="button" id="oi_carto_draw_redo" class="oi-carto-draw-btn"
-                    title="Rétablir (Ctrl+Y)">
+                    title="Rétablir (Ctrl+Y)" aria-label="Rétablir le tracé annulé">
                     <span class="material-symbols-outlined">redo</span>
                 </button>
                 <div class="oi-carto-dock-sep"></div>
                 <button type="button" id="oi_carto_draw_clear" class="oi-carto-draw-btn carto-draw-clear-btn"
-                    title="Effacer tous les dessins">
+                    title="Effacer tous les dessins" aria-label="Effacer tous les dessins">
                     <span class="material-symbols-outlined">delete_sweep</span>
                 </button>
             </div>
@@ -895,7 +895,7 @@ Gestuelle et visuelle entre les éléments INDIA</textarea>
             </p>
             <div style="display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap;">
                 <button type="button" class="remove-btn" id="oi_carto_clear_pins">
-                    <span class="material-symbols-outlined icon-mid-18">delete_sweep</span>
+                    <span class="material-symbols-outlined icon-mid-18" aria-hidden="true">delete_sweep</span>
                     Supprimer tous les pins
                 </button>
                 <button type="button" class="remove-btn" id="oi_carto_ping_cancel">Annuler</button>
@@ -912,15 +912,15 @@ Gestuelle et visuelle entre les éléments INDIA</textarea>
             </h2>
 
             <button type="button" class="add-btn mt-16" id="oi_carto_capture_download">
-                <span class="material-symbols-outlined">download</span> Télécharger la capture (PNG)
+                <span class="material-symbols-outlined" aria-hidden="true">download</span> Télécharger la capture (PNG)
             </button>
 
             <div class="divider-18"></div>
 
-            <label>Exporter la capture vers un champ photo de l'OI</label>
+            <label for="oi_carto_capture_target">Exporter la capture vers un champ photo de l'OI</label>
             <select id="oi_carto_capture_target" class="mt-6"></select>
             <button type="button" class="add-btn mt-10" id="oi_carto_capture_export">
-                <span class="material-symbols-outlined">add_photo_alternate</span> Exporter vers ce champ
+                <span class="material-symbols-outlined" aria-hidden="true">add_photo_alternate</span> Exporter vers ce champ
             </button>
 
             <p class="hint-text-top">
@@ -933,7 +933,7 @@ Gestuelle et visuelle entre les éléments INDIA</textarea>
     </dialog>
 
     <!-- Modale de Chargement PDF (V6.10) -->
-    <div id="pdfLoadingModal">
+    <div id="pdfLoadingModal" role="status" aria-live="polite">
         <div class="pdf-loading-card">
             <div class="pdf-spinner"></div>
             <div id="pdfLoadingStatus">Initialisation...</div>

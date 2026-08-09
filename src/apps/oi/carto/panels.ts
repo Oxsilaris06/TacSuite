@@ -164,7 +164,7 @@ export const PanelsMethods = {
                 style="display:flex; flex-direction:column; align-items:center; gap:2px; padding:7px 4px; border-radius:8px; cursor:pointer;
                        background:${(pin.icon || '') === ic.id ? 'rgba(59,130,246,0.35)' : 'rgba(255,255,255,0.05)'};
                        border:1px solid ${(pin.icon || '') === ic.id ? '#3b82f6' : 'rgba(255,255,255,0.12)'}; color:#fff;">
-                <span class="material-symbols-outlined" style="font-size:22px;">${ic.id}</span>
+                <span class="material-symbols-outlined" style="font-size:22px;" aria-hidden="true">${ic.id}</span>
                 <span style="font-size:0.6em; text-align:center; line-height:1.05;">${esc(ic.label)}</span>
             </button>`).join('');
         const html = `
@@ -198,8 +198,12 @@ export const PanelsMethods = {
         const pin = this._loadPins().find((p) => p.id === pinId);
         if (!pin) return;
         const colors = ['#3b82f6', '#ef4444', '#eab308', '#22c55e', '#a855f7', '#f97316', '#14b8a6', '#ffffff'];
+        const colorNames: Record<string, string> = {
+            '#3b82f6': 'bleue', '#ef4444': 'rouge', '#eab308': 'jaune', '#22c55e': 'verte',
+            '#a855f7': 'violette', '#f97316': 'orange', '#14b8a6': 'turquoise', '#ffffff': 'blanche',
+        };
         const chips = colors.map((c) => `
-            <button type="button" class="oi-col" data-c="${c}"
+            <button type="button" class="oi-col" data-c="${c}" aria-label="Choisir la couleur ${colorNames[c] || c}"
                 style="width:30px; height:30px; border-radius:50%; cursor:pointer; background:${c};
                        border:2px solid ${(pin.color || '') === c ? '#fff' : 'rgba(255,255,255,0.25)'};"></button>`).join('');
         const html = `
@@ -240,7 +244,7 @@ export const PanelsMethods = {
                 <input type="text" id="oi_pin_rename_input" value="${esc(current)}"
                     style="flex:1; min-width:170px; background:rgba(255,255,255,0.08); color:#fff; border:1px solid rgba(255,255,255,0.2);
                            border-radius:8px; padding:7px 10px; font-size:14px; outline:none;">
-                <button type="button" id="oi_pin_rename_ok"
+                <button type="button" id="oi_pin_rename_ok" aria-label="Valider le renommage"
                     style="background:#22c55e; border:none; color:#000; border-radius:8px; width:38px; height:38px; cursor:pointer;">
                     <span class="material-symbols-outlined" style="font-size:20px;">check</span>
                 </button>

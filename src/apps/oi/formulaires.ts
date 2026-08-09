@@ -215,7 +215,7 @@ function addDynamicField(containerId: string, value: string = ''): void {
     const item = document.createElement('div');
     item.className = 'dynamic-list-item';
     const fieldId = `dyn_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
-    item.innerHTML = `<label for="${fieldId}" class="sr-only">Champ dynamique</label><input type="text" id="${fieldId}" class="dynamic-input" value="${value}" oninput="syncDomToStore()"><button type="button" class="remove-btn" onclick="this.parentElement.remove(); syncDomToStore();"><span class="material-symbols-outlined">close</span></button>`;
+    item.innerHTML = `<label for="${fieldId}" class="sr-only">Champ dynamique</label><input type="text" id="${fieldId}" class="dynamic-input" value="${value}" oninput="syncDomToStore()"><button type="button" class="remove-btn" onclick="this.parentElement.remove(); syncDomToStore();" aria-label="Supprimer le champ"><span class="material-symbols-outlined">close</span></button>`;
     container.appendChild(item);
 }
 
@@ -311,7 +311,7 @@ function addMeField(value: string = '', containerId: string = 'me_container', fr
     const meIndex = currentItems.length + 1;
     const fieldId = `me_${containerId}_${meIndex}_${Date.now()}`;
     const safeVal = (window.UIPlatform ? window.UIPlatform.esc(value) : value);
-    item.innerHTML = `<label for="${fieldId}">ME${meIndex}:</label><input type="text" id="${fieldId}" name="${fieldId}" class="me-input" value="${safeVal}" oninput="syncDomToStore()"><button type="button" class="remove-btn" onclick="this.parentElement.remove(); syncDomToStore();"><span class="material-symbols-outlined">close</span></button>`;
+    item.innerHTML = `<label for="${fieldId}">ME${meIndex}:</label><input type="text" id="${fieldId}" name="${fieldId}" class="me-input" value="${safeVal}" oninput="syncDomToStore()"><button type="button" class="remove-btn" onclick="this.parentElement.remove(); syncDomToStore();" aria-label="Supprimer ce moyen employé"><span class="material-symbols-outlined">close</span></button>`;
     container.appendChild(item);
 }
 
@@ -362,7 +362,7 @@ function addTimeEvent(type_from_load?: string, hour_from_load: string = '', desc
                 <input type="time" id="${hourId}" class="time-hour-input" value="${hour}" onchange="syncDomToStore()">
                 <label for="${descId}" class="sr-only">Description</label>
                 <input type="text" id="${descId}" class="time-description-input" placeholder="Description" value="${desc || ''}" oninput="syncDomToStore()">
-                <button type="button" class="remove-btn" onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation()" onclick="this.parentElement.remove(); syncDomToStore();"><span class="material-symbols-outlined">close</span></button>`;
+                <button type="button" class="remove-btn" onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation()" onclick="this.parentElement.remove(); syncDomToStore();" aria-label="Supprimer cet événement"><span class="material-symbols-outlined">close</span></button>`;
     container.appendChild(item);
 }
 
@@ -427,7 +427,7 @@ function addAdversary(data: OiAdversary | null = null): void {
             <h3 class="adv-title">${title}</h3>
             <div style="display: flex; gap: 10px; align-items: center;">
                 <div onclick="event.stopPropagation()">
-                    <button type="button" class="remove-btn" onclick="removeAdversary('${id}')" title="Supprimer cet adversaire"><span class="material-symbols-outlined">close</span></button>
+                    <button type="button" class="remove-btn" onclick="removeAdversary('${id}')" title="Supprimer cet adversaire" aria-label="Supprimer cet adversaire"><span class="material-symbols-outlined">close</span></button>
                 </div>
                 <span class="material-symbols-outlined">expand_more</span>
             </div>
@@ -437,26 +437,26 @@ function addAdversary(data: OiAdversary | null = null): void {
             <!-- SECTION : Photos & signalement visuel (repliable pour se concentrer sur la saisie) -->
             <section class="adv-section adv-collapsible" data-collapsed="false">
                 <button type="button" class="adv-section-head adv-section-toggle" aria-expanded="true" aria-label="Replier ou déplier les photos" onclick="toggleAdvSection(this)">
-                    <span class="material-symbols-outlined">photo_camera</span>
+                    <span class="material-symbols-outlined" aria-hidden="true">photo_camera</span>
                     <h4>Photos &amp; signalement</h4>
                     <span class="adv-section-hint">replier</span>
-                    <span class="material-symbols-outlined adv-section-chevron">expand_more</span>
+                    <span class="material-symbols-outlined adv-section-chevron" aria-hidden="true">expand_more</span>
                 </button>
                 <div class="adv-section-body">
                     <div class="adv-section-body-inner">
                         <label for="input_main_${id}">Photo principale&nbsp;:</label>
                         <div id="photo_main_${id}" class="image-preview-container single-photo photo-display-area" data-is-single="true" style="margin-bottom: 5px;"></div>
-                        <button type="button" class="add-btn adv-photo-btn" onclick="document.getElementById('input_main_${id}').click()"><span class="material-symbols-outlined">add_a_photo</span> Photo principale</button>
+                        <button type="button" class="add-btn adv-photo-btn" onclick="document.getElementById('input_main_${id}').click()"><span class="material-symbols-outlined" aria-hidden="true">add_a_photo</span> Photo principale</button>
                         <input type="file" id="input_main_${id}" name="input_main_${id}" class="sr-only-input" accept="image/*" onchange="handleFileChange(this, 'photo_main_${id}', true)">
 
                         <label for="input_extra_${id}">Photos supplémentaires&nbsp;:</label>
                         <div id="photo_extra_${id}" class="image-preview-container extra-photos photo-display-area" style="margin-bottom: 5px;"></div>
-                        <button type="button" class="add-btn adv-photo-btn" onclick="document.getElementById('input_extra_${id}').click()"><span class="material-symbols-outlined">add_photo_alternate</span> Photos supplémentaires</button>
+                        <button type="button" class="add-btn adv-photo-btn" onclick="document.getElementById('input_extra_${id}').click()"><span class="material-symbols-outlined" aria-hidden="true">add_photo_alternate</span> Photos supplémentaires</button>
                         <input type="file" id="input_extra_${id}" name="input_extra_${id}" class="sr-only-input" accept="image/*" multiple onchange="handleFileChange(this, 'photo_extra_${id}', false)">
 
                         <label for="input_renforts_${id}" class="adv-sublabel-danger"><span class="material-symbols-outlined">group_add</span> Renforts potentiels&nbsp;:</label>
                         <div id="photo_renforts_${id}" class="image-preview-container photo-display-area" style="margin-bottom: 5px;"></div>
-                        <button type="button" class="add-btn adv-photo-btn" onclick="document.getElementById('input_renforts_${id}').click()"><span class="material-symbols-outlined">add</span> Photo(s) renforts</button>
+                        <button type="button" class="add-btn adv-photo-btn" onclick="document.getElementById('input_renforts_${id}').click()"><span class="material-symbols-outlined" aria-hidden="true">add</span> Photo(s) renforts</button>
                         <input type="file" id="input_renforts_${id}" class="sr-only-input" accept="image/*" multiple onchange="handleFileChange(this, 'photo_renforts_${id}', false)">
                     </div>
                 </div>
@@ -531,11 +531,11 @@ function addAdversary(data: OiAdversary | null = null): void {
 
                 <label class="adv-block-label">Moyens employés (ME)&nbsp;:</label>
                 <div id="me_${id}" class="me-container"></div>
-                <button type="button" class="add-btn" onclick="addMeField('', 'me_${id}')"><span class="material-symbols-outlined">add</span> Moyen employé</button>
+                <button type="button" class="add-btn" onclick="addMeField('', 'me_${id}')"><span class="material-symbols-outlined" aria-hidden="true">add</span> Moyen employé</button>
 
                 <label class="adv-block-label" style="margin-top: 18px;">Véhicules&nbsp;:</label>
                 <div id="vehicules_${id}" class="vehicules-container"></div>
-                <button type="button" class="add-btn" onclick="addDynamicField('vehicules_${id}')"><span class="material-symbols-outlined">add</span> Véhicule</button>
+                <button type="button" class="add-btn" onclick="addDynamicField('vehicules_${id}')"><span class="material-symbols-outlined" aria-hidden="true">add</span> Véhicule</button>
             </section>
         </div>
     `;
@@ -583,7 +583,7 @@ function addHypothesis(val: string = ''): void {
     div.innerHTML = `
         <label for="${id}" class="sr-only">Hypothèse</label>
         <input type="text" id="${id}" class="hypothese-input" value="${val.replace(/"/g, '&quot;')}" placeholder="Saisir une hypothèse..." oninput="syncDomToStore()" style="flex-grow: 1; padding: 10px; border-radius: 8px; border: 1px solid var(--border-color); background-color: var(--bg-body); color: var(--text-primary);">
-        <button type="button" class="remove-btn" onclick="this.parentElement.remove(); syncDomToStore()" style="padding: 0 10px;" title="Supprimer"><span class="material-symbols-outlined">close</span></button>
+        <button type="button" class="remove-btn" onclick="this.parentElement.remove(); syncDomToStore()" style="padding: 0 10px;" title="Supprimer" aria-label="Supprimer cette hypothèse"><span class="material-symbols-outlined">close</span></button>
     `;
     container.appendChild(div);
     syncDomToStore();
@@ -984,9 +984,9 @@ async function loadFormData(): Promise<boolean> {
                                             style="width: 100%; margin-top: 5px; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); color: white; border-radius: 4px; padding: 2px 5px; font-size: 0.8em;"
                                             oninput="syncDomToStore()">
                                         <div style="display: flex; gap: 5px; margin-top: 5px;">
-                                            <button type="button" class="add-btn" style="background-color: var(--accent-blue); padding: 4px 8px;" onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation()" onclick="openAnnotationModal('${imgData.id}')"><span class="material-symbols-outlined" style="font-size: 1.2em;">edit</span></button>
-                                            ${isEffrac ? `<button type="button" class="add-btn" style="background-color: var(--effraction-gold); padding: 4px 8px;" onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation()" onclick="openEffractionToolsModal('${imgData.id}')"><span class="material-symbols-outlined" style="font-size: 1.2em;">hardware</span></button>` : ''}
-                                            <button type="button" class="remove-btn" style="padding: 4px 8px;" onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation()" onclick="removeImage('${imgData.id}', this.closest('.image-preview-item'))">&times;</button>
+                                            <button type="button" class="add-btn" style="background-color: var(--accent-blue); padding: 4px 8px;" onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation()" onclick="openAnnotationModal('${imgData.id}')" aria-label="Annoter la photo"><span class="material-symbols-outlined" style="font-size: 1.2em;">edit</span></button>
+                                            ${isEffrac ? `<button type="button" class="add-btn" style="background-color: var(--effraction-gold); padding: 4px 8px;" onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation()" onclick="openEffractionToolsModal('${imgData.id}')" aria-label="Sélectionner les outils d'effraction"><span class="material-symbols-outlined" style="font-size: 1.2em;">hardware</span></button>` : ''}
+                                            <button type="button" class="remove-btn" style="padding: 4px 8px;" onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation()" onclick="removeImage('${imgData.id}', this.closest('.image-preview-item'))" aria-label="Supprimer la photo">&times;</button>
                                         </div>`;
                             previewContainer.appendChild(interactiveItem);
                         }

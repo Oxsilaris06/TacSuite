@@ -138,7 +138,7 @@ export function addMoicp(data?: Partial<OiMoicpBlock> | null): void {
             </h3>
             <div style="display: flex; align-items: center; gap: 8px;">
                 <button type="button" class="remove-btn" onclick="event.stopPropagation(); this.closest('.moicp-block').remove(); syncDomToStore();"
-                    style="min-height: 36px; height: 36px; width: 36px; padding: 0; border-radius: 50%;" title="Supprimer ce MOICP"><span class="material-symbols-outlined">close</span></button>
+                    style="min-height: 36px; height: 36px; width: 36px; padding: 0; border-radius: 50%;" title="Supprimer ce MOICP" aria-label="Supprimer ce MOICP"><span class="material-symbols-outlined">close</span></button>
                 <span class="material-symbols-outlined">expand_more</span>
             </div>
         </div>
@@ -177,10 +177,10 @@ export function addMoicp(data?: Partial<OiMoicpBlock> | null): void {
                 <span class="material-symbols-outlined" style="vertical-align: middle;">route</span> Photos Itinéraire
             </h4>
             <div style="display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 10px;">
-                <button type="button" class="add-btn" style="flex:1; justify-content: center; min-height: 44px;" onclick="document.getElementById('input_itin_ext_${blockId}').click()"><span class="material-symbols-outlined">photo_camera</span> Extérieur</button>
+                <button type="button" class="add-btn" style="flex:1; justify-content: center; min-height: 44px;" onclick="document.getElementById('input_itin_ext_${blockId}').click()"><span class="material-symbols-outlined" aria-hidden="true">photo_camera</span> Extérieur</button>
                 <input type="file" id="input_itin_ext_${blockId}" class="sr-only-input" accept="image/*" multiple onchange="handleFileChange(this, 'photo_itin_ext_${blockId}', false)">
 
-                <button type="button" class="add-btn" style="flex:1; justify-content: center; min-height: 44px;" onclick="document.getElementById('input_itin_int_${blockId}').click()"><span class="material-symbols-outlined">photo_camera</span> Intérieur</button>
+                <button type="button" class="add-btn" style="flex:1; justify-content: center; min-height: 44px;" onclick="document.getElementById('input_itin_int_${blockId}').click()"><span class="material-symbols-outlined" aria-hidden="true">photo_camera</span> Intérieur</button>
                 <input type="file" id="input_itin_int_${blockId}" class="sr-only-input" accept="image/*" multiple onchange="handleFileChange(this, 'photo_itin_int_${blockId}', false)">
             </div>
             <div id="photo_itin_ext_${blockId}" class="image-preview-container photo-display-area" style="margin-bottom:10px;"></div>
@@ -239,7 +239,7 @@ export function addZmspcp(data?: Partial<OiZmspcpBlock> | null): void {
             </h3>
             <div style="display: flex; align-items: center; gap: 8px;">
                 <button type="button" class="remove-btn" onclick="event.stopPropagation(); this.closest('.zmspcp-block').remove(); syncDomToStore();"
-                    style="min-height: 36px; height: 36px; width: 36px; padding: 0; border-radius: 50%;" title="Supprimer ce ZMSPCP"><span class="material-symbols-outlined">close</span></button>
+                    style="min-height: 36px; height: 36px; width: 36px; padding: 0; border-radius: 50%;" title="Supprimer ce ZMSPCP" aria-label="Supprimer ce ZMSPCP"><span class="material-symbols-outlined">close</span></button>
                 <span class="material-symbols-outlined">expand_more</span>
             </div>
         </div>
@@ -278,10 +278,10 @@ export function addZmspcp(data?: Partial<OiZmspcpBlock> | null): void {
                 <span class="material-symbols-outlined" style="vertical-align: middle;">terrain</span> Photos Terrain / AO
             </h4>
             <div style="display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 10px;">
-                <button type="button" class="add-btn" style="flex:1; justify-content: center;" onclick="document.getElementById('input_bapteme_${blockId}').click()"><span class="material-symbols-outlined">photo_camera</span> Baptême Terrain</button>
+                <button type="button" class="add-btn" style="flex:1; justify-content: center;" onclick="document.getElementById('input_bapteme_${blockId}').click()"><span class="material-symbols-outlined" aria-hidden="true">photo_camera</span> Baptême Terrain</button>
                 <input type="file" id="input_bapteme_${blockId}" hidden accept="image/*" multiple onchange="handleFileChange(this, 'photo_bapteme_${blockId}', false)">
 
-                <button type="button" class="add-btn" style="flex:1; justify-content: center;" onclick="document.getElementById('input_empl_ao_${blockId}').click()"><span class="material-symbols-outlined">photo_camera</span> Emplacement AO</button>
+                <button type="button" class="add-btn" style="flex:1; justify-content: center;" onclick="document.getElementById('input_empl_ao_${blockId}').click()"><span class="material-symbols-outlined" aria-hidden="true">photo_camera</span> Emplacement AO</button>
                 <input type="file" id="input_empl_ao_${blockId}" hidden accept="image/*" multiple onchange="handleFileChange(this, 'photo_empl_ao_${blockId}', false)">
             </div>
             <div id="photo_bapteme_${blockId}" class="image-preview-container photo-display-area" style="margin-bottom:10px;"></div>
@@ -394,7 +394,7 @@ function _addArticulationMemberChip(zone: HTMLElement, trigramme: string, type: 
     chip.innerHTML = `
         <span class="art-member-trigramme">${trigramme}</span>
         ${subtitle ? `<span class="art-member-detail">${subtitle}</span>` : ''}
-        <button type="button" class="art-member-remove" onclick="this.parentElement.remove(); syncDomToStore();" title="Retirer"><span class="material-symbols-outlined">close</span></button>
+        <button type="button" class="art-member-remove" onclick="this.parentElement.remove(); syncDomToStore();" title="Retirer" aria-label="Retirer ce membre"><span class="material-symbols-outlined">close</span></button>
     `;
 
     // Drag events pour réordonner
@@ -954,7 +954,7 @@ export function addEffraction(data?: Partial<OiEffractionBlock> | null): void {
             </h3>
             <div style="display: flex; align-items: center; gap: 8px;">
                 <button type="button" class="remove-btn" onclick="event.stopPropagation(); this.closest('.effraction-block').remove(); syncDomToStore();"
-                    style="min-height: 36px; height: 36px; width: 36px; padding: 0; border-radius: 50%;" title="Supprimer"><span class="material-symbols-outlined">close</span></button>
+                    style="min-height: 36px; height: 36px; width: 36px; padding: 0; border-radius: 50%;" title="Supprimer" aria-label="Supprimer cette cellule effraction"><span class="material-symbols-outlined">close</span></button>
                 <span class="material-symbols-outlined">expand_more</span>
             </div>
         </div>
@@ -1024,7 +1024,7 @@ export function addEffraction(data?: Partial<OiEffractionBlock> | null): void {
                 <span class="material-symbols-outlined" style="vertical-align: middle;">psychology</span> Hypothèses & Déroulement
             </h4>
             <div class="effrac-hypotheses-list" id="effrac_hyp_list_${blockId}"></div>
-            <button type="button" class="add-btn" style="width:100%; justify-content: center; margin-bottom: 20px;" onclick="addEffractionHypothesis('${blockId}')"><span class="material-symbols-outlined">add</span> Ajouter Hypothèse</button>
+            <button type="button" class="add-btn" style="width:100%; justify-content: center; margin-bottom: 20px;" onclick="addEffractionHypothesis('${blockId}')"><span class="material-symbols-outlined" aria-hidden="true">add</span> Ajouter Hypothèse</button>
 
             <h4 style="margin-top: 15px; color: var(--effraction-gold);">
                 <span class="material-symbols-outlined" style="vertical-align: middle;">add_a_photo</span> Photos Effraction
@@ -1033,7 +1033,7 @@ export function addEffraction(data?: Partial<OiEffractionBlock> | null): void {
                 <span class="material-symbols-outlined" style="font-size: 1em; vertical-align: middle;">info</span>
                 Ajoutez des photos et précisez les outils pour chacune.
             </div>
-            <button type="button" class="add-btn" style="width:100%; justify-content: center;" onclick="document.getElementById('input_effrac_${blockId}').click()"><span class="material-symbols-outlined">add</span> Ajouter Photo(s)</button>
+            <button type="button" class="add-btn" style="width:100%; justify-content: center;" onclick="document.getElementById('input_effrac_${blockId}').click()"><span class="material-symbols-outlined" aria-hidden="true">add</span> Ajouter Photo(s)</button>
             <input type="file" id="input_effrac_${blockId}" class="sr-only-input" accept="image/*" multiple onchange="handleFileChange(this, 'photo_effrac_${blockId}', false)">
             <div id="photo_effrac_${blockId}" class="image-preview-container photo-display-area" style="margin-top:10px;"></div>
         </div>
@@ -1097,7 +1097,7 @@ export function addEffractionHypothesis(blockId: string, data?: Partial<OiEffrac
     div.innerHTML = `
         <div style="display:flex; justify-content: space-between; align-items:center; margin-bottom: 10px;">
             <input type="text" class="effrac-hyp-title" value="${data?.title || 'Hypothèse ' + (list.children.length + 1)}" placeholder="Titre..." style="font-weight: bold; background: transparent; border: none; border-bottom: 1px solid var(--border-color); color: var(--text-primary); font-size: 1.1em; width: 60%;" oninput="syncDomToStore()">
-            <button type="button" class="remove-btn" onclick="this.closest('.effrac-hypothesis-item').remove(); syncDomToStore();" style="padding: 5px;"><span class="material-symbols-outlined">close</span></button>
+            <button type="button" class="remove-btn" onclick="this.closest('.effrac-hypothesis-item').remove(); syncDomToStore();" style="padding: 5px;" aria-label="Supprimer cette hypothèse"><span class="material-symbols-outlined">close</span></button>
         </div>
 
         <label style="font-size: 0.85em;">Description Initiale:</label>

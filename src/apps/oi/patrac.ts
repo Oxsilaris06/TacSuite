@@ -180,7 +180,7 @@ function addPatracdvrRow(vehicleName: string, members: readonly Partial<OiPatrac
     row.innerHTML = `
                 <div class="vehicle-header">
                     <span class="vehicle-name" onclick="renameVehicle(this)" title="Cliquer pour renommer">${vehicleName}</span>
-                    <button type="button" class="remove-btn" title="Supprimer le véhicule"><span class="material-symbols-outlined">close</span></button>
+                    <button type="button" class="remove-btn" title="Supprimer le véhicule" aria-label="Supprimer le véhicule"><span class="material-symbols-outlined">close</span></button>
                 </div>
                 <div class="patracdvr-members-container"></div>`;
 
@@ -581,7 +581,7 @@ export function setupQuickEditPanel(): void {
         head.innerHTML =
             `<span class="qe-row-label">${title}</span>` +
             `<span class="qe-row-value"></span>` +
-            `<span class="material-symbols-outlined qe-row-chevron">chevron_right</span>`;
+            `<span class="material-symbols-outlined qe-row-chevron" aria-hidden="true">chevron_right</span>`;
         row.appendChild(head);
 
         const body = document.createElement('div');
@@ -829,7 +829,7 @@ function patracBatchShowTargets(): void {
         const b = document.createElement('button');
         b.type = 'button';
         b.className = 'add-btn patrac-batch-target-btn';
-        b.innerHTML = '<span class="material-symbols-outlined">directions_car</span> ' + name;
+        b.innerHTML = '<span class="material-symbols-outlined" aria-hidden="true">directions_car</span> ' + name;
         b.onclick = () => patracBatchMoveTo(row.querySelector<HTMLElement>('.patracdvr-members-container'));
         wrap.appendChild(b);
     });
@@ -837,7 +837,7 @@ function patracBatchShowTargets(): void {
     u.type = 'button';
     u.className = 'add-btn patrac-batch-target-btn';
     u.style.background = 'var(--bg-interactive, #333)';
-    u.innerHTML = '<span class="material-symbols-outlined">logout</span> Non affectés';
+    u.innerHTML = '<span class="material-symbols-outlined" aria-hidden="true">logout</span> Non affectés';
     u.onclick = () => patracBatchUnassign();
     wrap.appendChild(u);
 

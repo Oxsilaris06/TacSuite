@@ -289,12 +289,12 @@ export const PinsMethods = {
             const reset = document.createElement('button');
             reset.type = 'button'; reset.className = 'add-btn';
             reset.style.cssText = 'width:auto; padding:5px 9px; background:rgba(239,68,68,0.18); color:#fca5a5; border:1px solid #ef4444; font-size:0.8em;';
-            reset.innerHTML = '<span class="material-symbols-outlined" style="font-size:15px; vertical-align:middle;">restart_alt</span> Réinitialiser';
+            reset.innerHTML = '<span class="material-symbols-outlined" style="font-size:15px; vertical-align:middle;" aria-hidden="true">restart_alt</span> Réinitialiser';
             reset.onclick = (e) => { e.stopPropagation(); this._resetMember(tri); };
             const go = document.createElement('button');
             go.type = 'button'; go.className = 'add-btn';
             go.style.cssText = 'width:auto; padding:5px 9px; background:rgba(59,130,246,0.18); color:#93c5fd; border:1px solid #3b82f6; font-size:0.8em;';
-            go.innerHTML = '<span class="material-symbols-outlined" style="font-size:15px; vertical-align:middle;">my_location</span> Aller à';
+            go.innerHTML = '<span class="material-symbols-outlined" style="font-size:15px; vertical-align:middle;" aria-hidden="true">my_location</span> Aller à';
             go.onclick = (e) => { e.stopPropagation(); this._goToMember(tri); };
             actions.appendChild(reset);
             actions.appendChild(go);

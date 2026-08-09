@@ -128,7 +128,7 @@ export class OIWheel {
             border:2px solid rgba(255,255,255,0.35); color:#fff; cursor:pointer;
             display:flex; flex-direction:column; align-items:center; justify-content:center; gap:1px;
             pointer-events:auto; box-shadow:0 4px 16px rgba(0,0,0,0.55); touch-action:none; font-family:var(--font-ui,sans-serif);`;
-        center.innerHTML = `<span class="material-symbols-outlined" style="font-size:22px; line-height:1;">${this.centerIcon}</span>
+        center.innerHTML = `<span class="material-symbols-outlined" style="font-size:22px; line-height:1;" aria-hidden="true">${this.centerIcon}</span>
             <span style="font-size:9px; font-weight:700; letter-spacing:0.5px; opacity:0.85;">FERMER</span>`;
         center.addEventListener('pointerdown', (ev) => ev.stopPropagation());
         center.onclick = (ev) => { ev.stopPropagation(); this.destroy(); };
@@ -156,7 +156,7 @@ export class OIWheel {
                 width:${btnSize}px; height:${btnSize}px; border-radius:50%; background:${bg2};
                 border:2px solid ${border}; color:${col}; cursor:pointer; display:flex; align-items:center; justify-content:center;
                 pointer-events:auto; box-shadow:0 3px 12px rgba(0,0,0,0.55); touch-action:none; padding:0;`;
-            b.innerHTML = `<span class="material-symbols-outlined" style="font-size:${btnSize >= 56 ? 26 : 22}px; line-height:1;">${opt.icon}</span>`;
+            b.innerHTML = `<span class="material-symbols-outlined" style="font-size:${btnSize >= 56 ? 26 : 22}px; line-height:1;" aria-hidden="true">${opt.icon}</span>`;
             const labelBelow = y > -radius * 0.3;
             const labelOffset = labelBelow ? (btnSize / 2 + 6) : -(btnSize / 2 + 16);
             const tip = document.createElement('span');
