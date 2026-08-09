@@ -19,9 +19,9 @@ Spec détaillée : `docs/superpowers/specs/2026-08-09-tacsuite-roadmap-design.md
 | QW | Quick wins : contraste dark, `esc` partagé côté OI carto, indicateurs de chargement PC-Tac | ✅ fait (e669585, a3f700a) |
 | R0 | Filet CI local+workflow (typecheck, lint, vitest, test:pdf) + fixture volumétrique 50 photos | ✅ fait (a968dd9) |
 | R1 | Design system unifié : `styles/tacsuite-tokens.css`, migration oi/pctac, purge styles inline, z-index/breakpoints/durées tokenisés | ✅ noyau fait : T1 socle (e269c99), T2 (d19568b), T3 (04dde70), T4 (voir log), T5 (f0fc194), gate portail (c574e4f). Reste (tranches optionnelles à arbitrer) : normalisation des valeurs hors échelle (re-baseline volontaire), `--inter-blue` (attente décision AA), harmonisation breakpoints |
-| R2 | Composants cliniques : `<dialog>` natif partout, remplacement des 62 alert/confirm, aria/labels, validation inline, états loading | ⬜ à faire |
-| R3 | Socle carto commun : geo helpers → shared, Wheel générique, `MapPersistenceAdapter`, machine à gestes PC-Tac généralisée consommée par OI, réconciliation `_renderPins`, durcissements capture | ⬜ à faire |
-| R4 | PDF : source unique document-builder, aperçu = vrai PDF, suppression print-view + generateHTML v2, gardes pagination mesurés en CI, photos hors thread principal, fixture 50 photos verte | ⬜ à faire |
+| R2 | Composants cliniques : `<dialog>` natif partout, remplacement des 62 alert/confirm, aria/labels, validation inline, états loading | 🔄 T1 dialogs pctac (2c7027d), T3a aria oi (fe90337), T3b aria pctac (4ed3705), T4 validation inline (f926bc7), T2a feedback pctac (43f323e) faits ; T2b feedback oi en vol |
+| R3 | Socle carto commun : geo helpers → shared, Wheel générique, `MapPersistenceAdapter`, machine à gestes PC-Tac généralisée consommée par OI, réconciliation `_renderPins`, durcissements capture | 🔄 R3-a geo (23264ed), R3-b RadialMenu + durcissements OI (0b6ebe2) faits ; R3-c persistance en vol ; reste R3-d gestes, R3-e renderPins/capture |
+| R4 | PDF : source unique document-builder, aperçu = vrai PDF, suppression print-view + generateHTML v2, gardes pagination mesurés en CI, photos hors thread principal, fixture 50 photos verte | 🔄 R4-a voie unique + aperçu blob (132f71c, −3100 lignes) fait ; R4-b pagination effraction en vol ; reste R4-c photos hors thread |
 | R5 | SOLID continu : split god files (pattern `XxxMethods`), split contracts.ts, persist côté OI, réduction bus `window.*` — au fil des phases | ⬜ transversal |
 
 ## Journal
