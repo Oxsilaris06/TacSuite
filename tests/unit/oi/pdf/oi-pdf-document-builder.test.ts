@@ -23,7 +23,15 @@
 import { describe, expect, it } from 'vitest';
 import type { Content, ContextPageSize, DynamicBackground, DynamicContent } from 'pdfmake/interfaces';
 
-import { buildOiDocDefinition, effractionFirstOverheadPt, internPhotoImages, oiPdfFileName, splitAtcdBoundaries } from '@oi/pdf/document-builder.js';
+import {
+    buildOiDocDefinition,
+    effractionFirstOverheadPt,
+    expandOversizedHypothesis,
+    hypothesisRowHeightPt,
+    internPhotoImages,
+    oiPdfFileName,
+    splitAtcdBoundaries,
+} from '@oi/pdf/document-builder.js';
 import { SOFT_HYPHEN } from '@oi/pdf/text-utils.js';
 import { PDF_DARK, PDF_LIGHT } from '@oi/pdf/theme.js';
 import type {
@@ -849,6 +857,160 @@ describe('buildOiDocDefinition — blindage BLIND.A #1 : scission Hypothèses d�
         for (let i = 1; i <= 4; i++) {
             expect(json).toContain(`Hypothese ${i}`);
         }
+    });
+});
+
+// ===========================================================================
+// R4-b — GUARDRAIL PAGINATION round 6 : une hypothèse dont la RANGÉE seule
+// dépasse une page de continuation (`restAvailPt`) — cause racine mesurée sur
+// `tests/pdf/fixtures/volumetric-stress.json` (colonne « Technique / Moyen » à
+// 2296 caractères, fontPx 9 : ~72 lignes estimées, ~2,5× la place utile d'une
+// page). `dontBreakRows: true` (BLIND.REFIX round 1) interdisait à pdfmake de
+// scinder la ligne EN INTERNE — SANS fragmentation explicite, la ligne est
+// SILENCIEUSEMENT PERDUE (constat mesuré : 0/2296 caractères survivants dans
+// le PDF fautif) tandis que l'en-tête de table se répète, orpheline, sur
+// chaque page suivante (guardrail B1/B9/B11), sans jamais reposer le titre
+// « (SUITE) » (guardrail B7/B10). Cf. JSDoc `expandOversizedHypothesis`,
+// `document-builder.ts`.
+// ===========================================================================
+
+/**
+ * Regroupe les entrées TOP-LEVEL de `TDocumentDefinitions.content` en
+ * « pages logiques » d'après le marqueur `pageBreak: 'before'` posé
+ * explicitement par `buildEffractionPages`/`buildArticulationCorePages` (une
+ * entrée SANS ce marqueur commence un nouveau groupe uniquement si le groupe
+ * courant est vide). Approximation suffisante pour un test au niveau JS (pas
+ * de rendu PDF réel) : elle tient tant que chaque entrée top-level rend sur
+ * UNE SEULE page physique — exactement l'invariant que R4-b restaure pour la
+ * table Hypothèses d'Effraction (avant le correctif, une rangée surdimensionnée
+ * débordait SILENCIEUSEMENT plusieurs pages physiques depuis une seule entrée
+ * top-level, désynchronisant cette approximation — c'est précisément le
+ * défaut que ce test protège).
+ */
+function extractLogicalPages(content: Content[]): Content[][] {
+    const pages: Content[][] = [];
+    let current: Content[] = [];
+    for (const item of content) {
+        const pageBreak = (item as { pageBreak?: string }).pageBreak;
+        if (pageBreak === 'before' && current.length > 0) {
+            pages.push(current);
+            current = [];
+        }
+        current.push(item);
+    }
+    if (current.length > 0) {
+        pages.push(current);
+    }
+    return pages;
+}
+
+describe('expandOversizedHypothesis — R4-b : fragmentation d’une rangée plus grande qu’une page de continuation', () => {
+    it('une hypothèse dont la rangée tient dans restAvailPt est retournée INCHANGÉE (aucune fragmentation superflue)', () => {
+        const h = { id: 'h1', title: 'Hypothese 1', desc: '', effrac: 'Pied de biche', degag: 'Evacuation', assaut: 'Assaut direct' };
+        const fragments = expandOversizedHypothesis(h, 9, 780, 500);
+        expect(fragments).toEqual([h]);
+    });
+
+    it('une hypothèse dont la colonne « Technique / Moyen » dépasse restAvailPt est fragmentée en PLUSIEURS pseudo-hypothèses', () => {
+        const effrac = 'A'.repeat(2296);
+        const h = { id: 'h1', title: 'Hypothese 1', desc: 'Description longue.', effrac, degag: '-', assaut: '-' };
+        const fragments = expandOversizedHypothesis(h, 9, 780, 500);
+
+        expect(fragments.length).toBeGreaterThan(1);
+        // AUCUNE PERTE : la concaténation des fragments de la colonne « effrac »
+        // reconstitue EXACTEMENT le texte source (constat cause racine :
+        // avant ce correctif, ce texte disparaissait ENTIÈREMENT du PDF rendu).
+        expect(fragments.map((f) => f.effrac).join('')).toBe(effrac);
+        // Chaque fragment individuel tient RÉELLEMENT dans son budget de page.
+        for (const f of fragments) {
+            expect(hypothesisRowHeightPt(f, 9, 780)).toBeLessThanOrEqual(500);
+        }
+    });
+
+    it('le TITRE n’est jamais vide sur un fragment de continuation (garde B5 anti-libellés-vides) — suffixé « (suite) »', () => {
+        const effrac = 'B'.repeat(3000);
+        const h = { id: 'h1', title: 'Hypothese 1', desc: '', effrac, degag: '-', assaut: '-' };
+        const fragments = expandOversizedHypothesis(h, 9, 780, 500);
+
+        expect(fragments[0]?.title).toBe('Hypothese 1');
+        for (const f of fragments.slice(1)) {
+            expect(f.title).toBe('Hypothese 1 (suite)');
+            expect(f.title.length).toBeGreaterThan(0);
+        }
+    });
+
+    it('desc n’est porté QUE par le premier fragment (jamais dupliqué dans hypothesesDescBlock)', () => {
+        const effrac = 'C'.repeat(3000);
+        const h = { id: 'h1', title: 'Hypothese 1', desc: 'Description unique.', effrac, degag: '-', assaut: '-' };
+        const fragments = expandOversizedHypothesis(h, 9, 780, 500);
+
+        expect(fragments[0]?.desc).toBe('Description unique.');
+        for (const f of fragments.slice(1)) {
+            expect(f.desc).toBe('');
+        }
+    });
+
+    it('un budget de continuation PLUS GÉNÉREUX produit MOINS de fragments (remplissage — R4-b point 3)', () => {
+        const effrac = 'D'.repeat(3000);
+        const h = { id: 'h1', title: 'Hypothese 1', desc: '', effrac, degag: '-', assaut: '-' };
+        const petitBudget = expandOversizedHypothesis(h, 9, 780, 200);
+        const grandBudget = expandOversizedHypothesis(h, 9, 780, 700);
+        expect(grandBudget.length).toBeLessThan(petitBudget.length);
+    });
+});
+
+describe('buildOiDocDefinition — R4-b : pagination du tableau Hypothèses d’Effraction retitrée, en-tête jamais orphelin', () => {
+    /** Hypothèse dont la seule rangée dépasse une page de continuation (même ordre de grandeur que `volumetric-stress.json`, cf. JSDoc `expandOversizedHypothesis`). */
+    function oversizedEffractionBlock(): OiEffractionBlock {
+        return {
+            id: 'e1', title: 'PORTE ALPHA', mission: '-', porte: '-', structure: '-', serrurerie: '-',
+            environnement: '-', bati_a_bati: '-', dormant_a_dormant: '-', prof_linteaux: '-', prof_bati: '-',
+            h_porte: '-', h_marche: '-', prof_marche: '-', prof_moulure: '-', members: [],
+            hypotheses: [
+                {
+                    id: 'he0',
+                    title: 'Hypothese 1',
+                    desc: '',
+                    effrac: Array.from({ length: 2296 }, (_, i) => 'ABCDEFGHIJ'[i % 10]).join(''),
+                    degag: 'Degagement 1 : evacuation par le couloir principal vers le point de regroupement Alpha.',
+                    assaut: 'Assaut 1 : penetration en Y inverse, binome de tete puis binome de couverture.',
+                },
+            ],
+        };
+    }
+
+    it('les pages de continuation portent TOUTES le titre « ARTICULATION : EFFRACTION … (SUITE) » — jamais d’en-tête de table orphelin', () => {
+        const doc = buildOiDocDefinition(collect({ effraction_blocks: [oversizedEffractionBlock()] }), { format: 'a4' });
+        const json = JSON.stringify(doc);
+
+        // Au moins une continuation a été nécessaire (rangée surdimensionnée).
+        const suiteCount = (json.match(/\(SUITE\)/g) ?? []).length;
+        expect(suiteCount).toBeGreaterThan(0);
+        expect(json).toContain('ARTICULATION : EFFRACTION - PORTE ALPHA (SUITE)');
+
+        // Chaque page top-level (`content` du doc pdfmake) qui contient l'en-tête
+        // de table « Technique / Moyen » doit AUSSI porter, sur cette même page
+        // (le même bloc `stack`), le titre EFFRACTION ou un fragment « (SUITE) »
+        // — même garde que `verify-structure.mjs` B7, appliquée directement à
+        // l'arbre pdfmake plutôt qu'au texte extrait du PDF rendu.
+        const pages = extractLogicalPages(doc.content as Content[]);
+        for (const page of pages) {
+            const pageJson = JSON.stringify(page);
+            if (pageJson.includes('Technique / Moyen')) {
+                const hasTitle = pageJson.includes('ARTICULATION : EFFRACTION') || /\(SUITE\)/i.test(pageJson);
+                expect(hasTitle, `page sans titre EFFRACTION/(SUITE) alors qu'elle porte l'en-tête de table : ${pageJson.slice(0, 200)}`).toBe(true);
+            }
+        }
+    });
+
+    it('aucune perte de données : la totalité du texte saisi (2296 caractères) survit, répartie sur les fragments', () => {
+        const block = oversizedEffractionBlock();
+        const json = JSON.stringify(buildOiDocDefinition(collect({ effraction_blocks: [block] }), { format: 'a4' }));
+        // Le motif cyclique ABCDEFGHIJ répété 2296/10 fois : un extrait pris en
+        // fin de texte (jamais couvert par un budget de première page) doit
+        // survivre quelque part dans le document.
+        const tail = block.hypotheses[0]?.effrac.slice(-40) ?? '';
+        expect(json).toContain(tail);
     });
 });
 

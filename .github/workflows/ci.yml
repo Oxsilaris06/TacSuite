@@ -40,3 +40,9 @@ jobs:
 
       - name: PDF structural non-regression (verify-structure)
         run: node tests/pdf/verify-structure.mjs /tmp/ci-long-case.pdf --lenient
+
+      - name: Generate PDF from volumetric-stress fixture (R4-b gate)
+        run: node tests/pdf/generate-from-fixture.mjs tests/pdf/fixtures/volumetric-stress.json --out=/tmp/ci-volumetric-stress.pdf
+
+      - name: PDF structural non-regression — volumetric gate (verify-structure, 19/19 requis)
+        run: node tests/pdf/verify-structure.mjs /tmp/ci-volumetric-stress.pdf --photos=58

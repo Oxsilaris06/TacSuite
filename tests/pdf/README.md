@@ -285,3 +285,40 @@ précisément cet anti-pattern — texte absent, polices non vectorielles,
 image plein cadre par page, poids conséquent — que moteur v3 (pdfmake,
 `docs/SPEC-PDF-V3.md` §1-§3) supprime ; PDF v3 conforme doit au contraire
 faire passer A1 à A6 (et A7 en l'absence de photos embarquées).
+
+## Gate volumétrique CI (`volumetric-stress.json`, mission R4-b)
+
+`.github/workflows/ci.yml` génère et vérifie, en plus de `long-case.json`
+(`--lenient`), la fixture `tests/pdf/fixtures/volumetric-stress.json` —
+2 blocs Effraction, 4 hypothèses chacun, dont la colonne « Technique / Moyen »
+atteint 2296 caractères par hypothèse (fontPx 9, ~72 lignes estimées, ~2,5×
+la place utile d'une page de continuation). Commande CI (mode strict, sans
+`--lenient` : cette fixture porte tous les marqueurs conditionnels) :
+
+```bash
+node tests/pdf/generate-from-fixture.mjs tests/pdf/fixtures/volumetric-stress.json --out=/tmp/ci-volumetric-stress.pdf
+node tests/pdf/verify-structure.mjs /tmp/ci-volumetric-stress.pdf --photos=58
+```
+
+**19/19 requis** (code de sortie `0`). Avant le correctif R4-b
+(`expandOversizedHypothesis`, `src/apps/oi/pdf/document-builder.ts`), une
+rangée de table plus grande qu'une page entière était SILENCIEUSEMENT
+PERDUE par `dontBreakRows: true` (0/2296 caractères survivants dans le PDF
+rendu) : **B1, B7, B9, B10, B11 échouaient** (8 à 16 pages orphelines,
+en-tête de table « Technique / Moyen » répété sans titre
+« ARTICULATION : EFFRACTION (SUITE) »). Non-régression : `long-case.json`
+et `blind-a-combined-stress.json` restent 19/19 (`--lenient` — le marqueur
+conditionnel #8 « 6. LOGISTIQUE & TRANSPORTS » est absent de leurs deux
+jeux de données, sans rapport avec ce correctif).
+
+`--sample` n'est volontairement PAS activé sur ce step (ni sur celui de
+`long-case.json`) : `tests/pdf/sample-reference.json` cible un jeu de
+données `oi-reference/recipe-data.json` externe au dépôt (cadre juridique,
+date, trigramme rédacteur propres à cet étalon) — appliqué tel quel à
+`long-case.json` ou `volumetric-stress.json`, il échoue par **désaccord de
+données** (`cadre_juridique` diffère y compris en casse : « Commission
+Rogatoire » attendu vs « Commission rogatoire » saisi — la faute constatée
+lors de l'audit R0 de cette tranche, cf. `normalize()` qui ne fait PAS de
+`toLowerCase()`), pas par régression de pagination — corriger l'ASSERTION en
+supprimant l'appel `--sample` plutôt que le moteur (`normalize()` reste
+volontairement sensible à la casse, cf. A3/A8).

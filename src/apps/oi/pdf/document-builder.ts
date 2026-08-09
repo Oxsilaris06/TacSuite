@@ -1377,13 +1377,93 @@ function effracLinePt(fontPx: number): number {
  * `HYP_TABLE_COLUMN_FRACTIONS`, marge `HYP_ROW_COST_SAFETY_FACTOR`), converti
  * en points (avance × lignes + paddings).
  */
-function hypothesisRowHeightPt(h: OiEffractionHypothesis, fontPx: number, contentWidthPt: number): number {
+export function hypothesisRowHeightPt(h: OiEffractionHypothesis, fontPx: number, contentWidthPt: number): number {
     const charsPerLineCols = HYP_TABLE_COLUMN_FRACTIONS.map((f) =>
         Math.max(1, Math.floor(estimateCharsPerLine(fontPx, contentWidthPt * f) * HYP_ROW_COST_SAFETY_FACTOR)),
     );
     const cols = [h.title || h.id, h.effrac || '-', h.degag || '-', h.assaut || '-'];
     const lines = Math.max(...cols.map((text, i) => wrappedLinesWithNewlines(text, charsPerLineCols[i] as number)));
     return lines * effracLinePt(fontPx) + EFFRAC_ROW_VPAD_PT;
+}
+
+/**
+ * Fragmente une hypothèse dont la RANGÉE de table dépasserait, À ELLE SEULE
+ * (`dontBreakRows: true`), la place utile d'une page de continuation dédiée
+ * (`restAvailPt`) — mission R4-b, cause racine mesurée de B1/B7/B9/B10/B11 sur
+ * `volumetric-stress.json` : une hypothèse dont la colonne « Technique / Moyen »
+ * fait 2296 caractères (fontPx 9, cpl 0,8-margé ≈ 32) coûte ≈ 72 lignes
+ * (≈ 1249 pt), ~2,5× `restAvailPt` (≈ 500 pt) — AUCUNE page ne peut jamais
+ * l'accueillir. `dontBreakRows: true` (BLIND.REFIX round 1) interdit à
+ * pdfmake de scinder la ligne EN INTERNE : sans ce correctif, la ligne est
+ * SILENCIEUSEMENT PERDUE (jamais rendue sur AUCUNE page — constat mesuré :
+ * `pdftotext` sur le PDF fautif ne contenait plus AUCUNE occurrence du texte
+ * saisi, 0/2296 caractères survivants), tandis que `headerRows: 1` continue
+ * de répéter l'en-tête de table SEUL sur chaque page suivante (pages
+ * orphelines à 80 car., guardrail B1/B9/B11), sans jamais reposer le titre
+ * `(SUITE)` que seule la scission pilotée (`chunkItemsByCost` ci-dessous)
+ * sait poser (guardrail B7/B10).
+ *
+ * Plutôt que de dupliquer le pipeline de scission/titrage pour ce cas
+ * pathologique, cette fonction re-brise l'hypothèse en N « pseudo-hypothèses »
+ * de taille NORMALE (chacune ≤ `restAvailPt`), réinjectées comme items
+ * ordinaires dans `chunkItemsByCost` : chaque fragment redevient une rangée
+ * que le pipeline EXISTANT pagine/retitre sans aucune logique dupliquée — y
+ * compris le partage d'une page de continuation avec d'AUTRES hypothèses plus
+ * courtes (remplissage naturel, objectif B1/B11 de la mission). Découpe par
+ * TRANCHES de `charsPerLineCols[i] × linesPerFragment` caractères (même cpl
+ * 0,8-margé qu'`hypothesisRowHeightPt`, cohérence du modèle — direction sûre :
+ * une tranche légèrement sous-estimée en caractères occupe légèrement MOINS
+ * de lignes que prévu, jamais plus). Le TITRE (`title`/`id`) n'est jamais
+ * tronqué ni vidé — répété avec un suffixe « (suite) » sur les fragments ≥ 1
+ * (jamais de cellule vide, cf. garde B5 anti-libellés-vides). `desc` (rendu à
+ * part par `hypothesesDescBlock`, jamais dans la cellule table) n'est porté
+ * QUE par le premier fragment — jamais dupliqué.
+ *
+ * Exportée à seule fin de test unitaire direct (même convention que
+ * `effractionFirstOverheadPt` ci-dessous — aucun autre appelant hors module).
+ */
+export function expandOversizedHypothesis(
+    h: OiEffractionHypothesis,
+    fontPx: number,
+    contentWidthPt: number,
+    restAvailPt: number,
+): OiEffractionHypothesis[] {
+    if (hypothesisRowHeightPt(h, fontPx, contentWidthPt) <= restAvailPt) {
+        return [h];
+    }
+    const linePt = effracLinePt(fontPx);
+    const linesPerFragment = Math.max(1, Math.floor((restAvailPt - EFFRAC_ROW_VPAD_PT) / linePt));
+    const charsPerLineCols = HYP_TABLE_COLUMN_FRACTIONS.map((f) =>
+        Math.max(1, Math.floor(estimateCharsPerLine(fontPx, contentWidthPt * f) * HYP_ROW_COST_SAFETY_FACTOR)),
+    );
+    const effracSliceLen = (charsPerLineCols[1] as number) * linesPerFragment;
+    const degagSliceLen = (charsPerLineCols[2] as number) * linesPerFragment;
+    const assautSliceLen = (charsPerLineCols[3] as number) * linesPerFragment;
+    const effracText = h.effrac || '-';
+    const degagText = h.degag || '-';
+    const assautText = h.assaut || '-';
+    const fragmentCount = Math.max(
+        1,
+        Math.ceil(effracText.length / effracSliceLen),
+        Math.ceil(degagText.length / degagSliceLen),
+        Math.ceil(assautText.length / assautSliceLen),
+    );
+    const title = h.title || h.id;
+    const sliceOrDash = (text: string, sliceLen: number, idx: number): string => {
+        const start = idx * sliceLen;
+        if (start >= text.length) {
+            return idx === 0 ? text : '';
+        }
+        return text.slice(start, start + sliceLen);
+    };
+    return Array.from({ length: fragmentCount }, (_, idx) => ({
+        ...h,
+        title: idx === 0 ? title : `${title} (suite)`,
+        effrac: sliceOrDash(effracText, effracSliceLen, idx),
+        degag: sliceOrDash(degagText, degagSliceLen, idx),
+        assaut: sliceOrDash(assautText, assautSliceLen, idx),
+        desc: idx === 0 ? h.desc : '',
+    }));
 }
 
 /**
@@ -1773,7 +1853,14 @@ function buildEffractionPages(ctx: BuildCtx, block: OiEffractionBlock): Content[
     const restOverheadPt = effractionRestOverheadPt(fontPx);
     const firstAvailPt = availPt - firstOverheadPt;
     const restAvailPt = Math.max(1, availPt - restOverheadPt);
-    const rowHeightsPt = hypotheses.map((h) => hypothesisRowHeightPt(h, fontPx, geo.contentWidthPt));
+    // R4-b : fragmente toute hypothèse dont la rangée seule dépasserait
+    // `restAvailPt` (cf. JSDoc `expandOversizedHypothesis`) — la table est
+    // toujours chunkée/rendue à partir de `tableHypotheses` (jamais
+    // `hypotheses` directement), le bloc « Description des Hypothèses »
+    // (`descBlock`/`descPt` ci-dessous) reste lui basé sur `hypotheses`
+    // (une entrée par hypothèse SAISIE, jamais par fragment de rangée).
+    const tableHypotheses = hypotheses.flatMap((h) => expandOversizedHypothesis(h, fontPx, geo.contentWidthPt, restAvailPt));
+    const rowHeightsPt = tableHypotheses.map((h) => hypothesisRowHeightPt(h, fontPx, geo.contentWidthPt));
     const totalRowsPt = rowHeightsPt.reduce((a, b) => a + b, 0);
     const descPt = descBlock !== null ? descBlockHeightPt(hypotheses, fontPx, geo.contentWidthPt) : 0;
     const fitsWithoutSplit = totalRowsPt + descPt <= firstAvailPt;
@@ -1787,12 +1874,12 @@ function buildEffractionPages(ctx: BuildCtx, block: OiEffractionBlock): Content[
     // qui n'a jamais présenté D2.
     const deferTable = !fitsWithoutSplit && firstAvailPt < (rowHeightsPt[0] ?? effracLinePt(fontPx) + EFFRAC_ROW_VPAD_PT);
     const hypChunks: OiEffractionHypothesis[][] =
-        !fitsWithoutSplit && hypotheses.length > 0
-            ? chunkItemsByCost(hypotheses, (h) => hypothesisRowHeightPt(h, fontPx, geo.contentWidthPt), {
+        !fitsWithoutSplit && tableHypotheses.length > 0
+            ? chunkItemsByCost(tableHypotheses, (h) => hypothesisRowHeightPt(h, fontPx, geo.contentWidthPt), {
                   first: deferTable ? restAvailPt : firstAvailPt,
                   rest: restAvailPt,
               })
-            : [hypotheses];
+            : [tableHypotheses];
 
     // BF.REFIX (round 1, point 3) — le bloc « Description des Hypothèses »
     // (cf. JSDoc `descBlockHeightPt`) n'est ajouté INLINE à la dernière tranche
