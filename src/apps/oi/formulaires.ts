@@ -192,6 +192,7 @@ import { createAnnotatedImageBlob } from '@oi/dessin.js';
 import { setupQuickEditPanel } from '@oi/patrac.js';
 // R2-T4 — validation inline (nouveau module, cf. son en-tête).
 import { attachValidation, required } from '@oi/validation.js';
+import { confirmDialog, toast } from '@shared/feedback.js';
 import type {
     OiAdversary,
     OiAnnotation,
@@ -379,8 +380,15 @@ function updateAdvTitle(id: string, val: string): void {
 }
 
 // formulaires.js:164-176
-function removeAdversary(id: string): void {
-    if (confirm('Supprimer définitivement cette fiche adversaire ?')) {
+// R2-T2b : signature élargie en `Promise<void>` (`confirmDialog` async) — compatible
+// avec le contrat `removeAdversary(id): void` (règle « void » TS, cf. en-tête formulaires.ts).
+async function removeAdversary(id: string): Promise<void> {
+    const confirmed = await confirmDialog({
+        message: 'Supprimer définitivement cette fiche adversaire ?',
+        confirmLabel: 'Supprimer',
+        danger: true,
+    });
+    if (confirmed) {
         const entry = document.getElementById(id);
         if (entry) {
             // Supprimer les photos d'abord
@@ -1176,7 +1184,7 @@ function exportSession(): void {
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
     } else {
-        alert('Aucune donnée à exporter.');
+        toast('Aucune donnée à exporter.', { kind: 'error' });
     }
 }
 window.exportSession = exportSession;
@@ -1212,13 +1220,15 @@ function importSession(file: File): void {
             // le DOM encore vierge et efface la session tout juste importée.
             // Même garde que applyArchiveImport (formulaires.js:1234) et resetAllData (:1309).
             window.isFormLoading = true;
-            alert('Session importée avec succès. Rechargement du formulaire...');
+            toast('Session importée avec succès. Rechargement du formulaire...', { kind: 'success' });
 
             // Le rechargement est la méthode la plus sûre pour reconstruire tout le DOM
-            // proprement à partir du nouvel état localStorage.
-            location.reload();
+            // proprement à partir du nouvel état localStorage. R2-T2b : `toast` n'étant
+            // PAS bloquant (contrairement à l'`alert()` remplacé), un court délai laisse
+            // le temps au message d'être visible avant que le reload ne coupe le rendu.
+            setTimeout(() => location.reload(), 600);
         } catch (err) {
-            alert('Erreur: Fichier de session invalide.');
+            toast('Erreur: Fichier de session invalide.', { kind: 'error' });
             console.error(err);
         }
     };
@@ -1242,7 +1252,7 @@ async function exportArchive(): Promise<void> {
     // formulaires.js:926 — garde « lib absente » réécrite en test de forme
     // (JSZip est désormais un import statique, toujours défini).
     if (typeof JSZip !== 'function') {
-        alert("JSZip indisponible (réseau ?). Impossible de générer l'archive.");
+        toast("JSZip indisponible (réseau ?). Impossible de générer l'archive.", { kind: 'error' });
         return;
     }
     try {
@@ -1311,7 +1321,7 @@ async function exportArchive(): Promise<void> {
         if (typeof window.toast === 'function') window.toast(`Archive exportée (${imgCount} photo${imgCount > 1 ? 's' : ''})`, 'success');
     } catch (e) {
         console.error('[OI Archive] export échec:', e);
-        alert("Erreur d'export d'archive : " + (e instanceof Error ? e.message : String(e)));
+        toast("Erreur d'export d'archive : " + (e instanceof Error ? e.message : String(e)), { kind: 'error' });
     }
 }
 window.exportArchive = exportArchive;
@@ -1394,16 +1404,16 @@ async function importArchive(file: File): Promise<void> {
     // Compat : ancienne session JSON -> on délègue à importSession (si dispo).
     if (name.endsWith('.json')) {
         if (typeof window.importSession === 'function') { window.importSession(file); return; }
-        alert('Import JSON indisponible : fonction de session absente.');
+        toast('Import JSON indisponible : fonction de session absente.', { kind: 'error' });
         return;
     }
 
     // 1) Analyse robuste : toute exception est interceptée et explicitée.
     const parsed = await window.parseArchive(file);
-    if (!parsed.ok) { alert(parsed.error); return; }
+    if (!parsed.ok) { toast(parsed.error, { kind: 'error' }); return; }
     // 2) Détection des catégories réellement présentes + modale de sélection.
     const cats = detectImportCategories(parsed);
-    if (!cats.length) { alert("L'archive ne contient aucune donnée importable."); return; }
+    if (!cats.length) { toast("L'archive ne contient aucune donnée importable.", { kind: 'error' }); return; }
     const selectedIds = await showImportSelectModal(cats);
     if (!selectedIds || !selectedIds.length) return; // annulé, fermé, ou rien coché
 
@@ -1584,11 +1594,13 @@ async function applyArchiveImport(parsed: OiParsedArchiveOk, cats: readonly OiIm
         const labels = selected.map((c) => c.label.split(' (')[0] ?? c.label).join(', ');
         const warn = imgFail > 0 ? ` (${imgFail} photo(s) ignorée(s))` : '';
         window.isFormLoading = true;
-        alert(`Import effectué : ${labels}${warn}. Rechargement…`);
-        location.reload();
+        toast(`Import effectué : ${labels}${warn}. Rechargement…`, { kind: 'success' });
+        // R2-T2b : `toast` non bloquant — court délai avant reload pour laisser le
+        // message visible (même rationale que `importSession` ci-dessus).
+        setTimeout(() => location.reload(), 600);
     } catch (e) {
         console.error('[OI Archive] import sélectif échec:', e);
-        alert("Erreur d'import : " + (e instanceof Error ? e.message : String(e)));
+        toast("Erreur d'import : " + (e instanceof Error ? e.message : String(e)), { kind: 'error' });
     }
 }
 window.detectImportCategories = detectImportCategories; // formulaires.js:1242
@@ -1608,7 +1620,12 @@ async function resetActivePage(): Promise<void> {
         return;
     }
 
-    if (!confirm('Réinitialiser uniquement les champs de la page active ?')) return;
+    const confirmedReset = await confirmDialog({
+        message: 'Réinitialiser uniquement les champs de la page active ?',
+        confirmLabel: 'Réinitialiser',
+        danger: true,
+    });
+    if (!confirmedReset) return;
 
     // 1. Vider les champs standards
     activeStep.querySelectorAll<FieldValueElement>('input:not([type="file"]), textarea, select').forEach((el) => {
@@ -1654,7 +1671,8 @@ async function resetAllData(keepPatrac: boolean = true): Promise<void> {
         ? 'Réinitialisation complète : Effacer toutes les données et photos (SAUF la configuration PATRAC) ?'
         : 'Réinitialisation TOTALE : Effacer TOUTES les données, y compris le personnel ?';
 
-    if (!confirm(msg)) return;
+    const confirmedResetAll = await confirmDialog({ message: msg, confirmLabel: 'Réinitialiser', danger: true });
+    if (!confirmedResetAll) return;
 
     // Neutraliser le flush de fermeture (pagehide/beforeunload) ET la sauvegarde
     // débouncée : sans ça, le DOM courant — encore rempli, car le reset n'efface

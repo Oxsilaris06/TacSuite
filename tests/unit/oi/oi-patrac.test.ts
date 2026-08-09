@@ -37,6 +37,16 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+// R2-T2b : `confirm()`/`alert()` natifs → `confirmDialog`/`toast`
+// (`@shared/feedback.js`) mockés, même pattern que `pc-archive.test.ts`. Mock
+// statique : reste actif à travers les `vi.resetModules()` de ce fichier.
+const confirmDialogSpy = vi.hoisted(() => vi.fn(async () => true));
+const toastSpy = vi.hoisted(() => vi.fn());
+vi.mock('@shared/feedback.js', () => ({
+    confirmDialog: confirmDialogSpy,
+    toast: toastSpy,
+}));
+
 /** Remplace une assertion non-null `!` (interdite, règle commune §13.1.3) par une garde explicite. */
 function must<T>(value: T | undefined | null, message = 'valeur attendue non-null/undefined'): T {
     if (value === undefined || value === null) throw new Error(message);
@@ -94,6 +104,9 @@ afterEach(() => {
     delete win.contextMemberId;
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
+    confirmDialogSpy.mockClear();
+    confirmDialogSpy.mockImplementation(async () => true);
+    toastSpy.mockClear();
 });
 
 describe('Plafonds de cellule (SPEC §11.5, patrac.js:138-193)', () => {
@@ -219,7 +232,6 @@ describe('addPatracdvrRow câble son conteneur (preuve wireDropContainer, SPEC �
         setupDom();
         await import('@oi/patrac.js');
         window.syncDomToStore = vi.fn();
-        vi.stubGlobal('confirm', vi.fn(() => true));
 
         window.addPatracdvrRow('SHARAN');
         const row = must(document.querySelector<HTMLElement>('.patracdvr-vehicle-row'));
@@ -229,7 +241,11 @@ describe('addPatracdvrRow câble son conteneur (preuve wireDropContainer, SPEC �
         const removeBtn = must(row.querySelector<HTMLElement>('.remove-btn'));
         removeBtn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
 
-        expect(document.body.contains(row)).toBe(false);
+        // R2-T2b : le handler de clic est désormais async (`await confirmDialog`) —
+        // la suppression n'est effective qu'après résolution de la micro-tâche.
+        await vi.waitFor(() => {
+            expect(document.body.contains(row)).toBe(false);
+        });
         expect(document.getElementById('unassigned_members_container')?.contains(member)).toBe(true);
         expect(member.dataset.cellule).toBe('Sans');
     });
@@ -240,7 +256,6 @@ describe('addPatracdvrMember câble les événements tactiles (preuve wireDragga
         setupDom();
         await import('@oi/patrac.js');
         window.syncDomToStore = vi.fn();
-        vi.stubGlobal('confirm', vi.fn(() => true));
 
         const trash = document.createElement('div');
         trash.id = 'trashCan';
@@ -255,7 +270,11 @@ describe('addPatracdvrMember câble les événements tactiles (preuve wireDragga
         btn.dispatchEvent(new TouchEvent('touchstart', { touches: [{ clientX: 1, clientY: 1 } as unknown as Touch] }));
         btn.dispatchEvent(new TouchEvent('touchend', { changedTouches: [{ clientX: 1, clientY: 1 } as unknown as Touch] }));
 
-        expect(document.getElementById(btn.id)).toBeNull();
+        // R2-T2b : `handleTouchEnd` est désormais async (`await confirmDialog`) —
+        // la suppression n'est effective qu'après résolution de la micro-tâche.
+        await vi.waitFor(() => {
+            expect(document.getElementById(btn.id)).toBeNull();
+        });
     });
 
     it('les 3 autres listeners (click/contextmenu) restent en dur, non redupliqués par wireDraggableMember', async () => {
@@ -389,12 +408,12 @@ describe('Bonus — rendu et structure (hors preuves mandatées)', () => {
         setupDom();
         await import('@oi/patrac.js');
         window.syncDomToStore = vi.fn();
-        vi.stubGlobal('confirm', vi.fn(() => false));
+        confirmDialogSpy.mockResolvedValueOnce(false);
 
         const container = must(document.getElementById('unassigned_members_container'));
         window.addPatracdvrMember(container, { trigramme: 'KEEP' });
 
-        window.resetPatracdvrUI();
+        await window.resetPatracdvrUI();
 
         expect(document.querySelectorAll('.patracdvr-member-btn')).toHaveLength(1);
     });
@@ -403,12 +422,12 @@ describe('Bonus — rendu et structure (hors preuves mandatées)', () => {
         setupDom();
         await import('@oi/patrac.js');
         window.syncDomToStore = vi.fn();
-        vi.stubGlobal('confirm', vi.fn(() => true));
+        confirmDialogSpy.mockResolvedValueOnce(true);
 
         const container = must(document.getElementById('unassigned_members_container'));
         window.addPatracdvrMember(container, { trigramme: 'GONE' });
 
-        window.resetPatracdvrUI();
+        await window.resetPatracdvrUI();
 
         expect(document.querySelectorAll('.patracdvr-member-btn')).toHaveLength(0);
     });

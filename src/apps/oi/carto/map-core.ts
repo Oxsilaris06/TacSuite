@@ -96,6 +96,8 @@
 import maplibregl from 'maplibre-gl';
 import type { MapMouseEvent, MapTouchEvent, SkySpecification } from 'maplibre-gl';
 
+import { toast } from '@shared/feedback.js';
+
 import { OI_CARTO_RASTER_STYLE } from './constants.js';
 import type { OICartoInternal } from './types.js';
 
@@ -115,7 +117,7 @@ export const MapCoreMethods = {
         // oi_cartographie.js:297-300 — garde MapLibre, test de forme (cf. note
         // de tête de fichier), message VERBATIM.
         if (typeof maplibregl?.Map !== 'function') {
-            alert('Librairie cartographique indisponible (réseau ?). Réessayez en ligne.');
+            toast('Librairie cartographique indisponible (réseau ?). Réessayez en ligne.', { kind: 'error' });
             return;
         }
         if (!modal.open) {
@@ -429,7 +431,7 @@ export const MapCoreMethods = {
             this.map.setTerrain({ source: 'terrain-dem', exaggeration: 1.4 });
         } catch (e) {
             console.error('[OICarto] setTerrain échec:', e);
-            alert('Relief 3D indisponible (réseau ?). Les tuiles d\'élévation AWS sont peut-être bloquées.');
+            toast('Relief 3D indisponible (réseau ?). Les tuiles d\'élévation AWS sont peut-être bloquées.', { kind: 'error' });
             return;
         }
         try {

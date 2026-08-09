@@ -14,10 +14,20 @@
  * `draw.ts` sont mockées : `_loadShapes`/`_saveShapes` (groupe `carto/state.ts`,
  * simulées ici par un tableau en mémoire fermé sur les mocks — persistance non
  * réimplémentée, cf. §6.2) et `_hideHint` (groupe `carto/map-core.ts`).
+ *
+ * R2-T2b : `confirm()` natif retiré (« Effacer tous les dessins »/« Supprimer ce
+ * dessin » sont désormais des actions directes + toast, réversibles via l'Undo
+ * existant — cf. en-tête `carto/draw.ts`) ; `toast` (`@shared/feedback.js`) mocké
+ * plutôt que `vi.stubGlobal('alert', ...)`, même pattern que `pc-archive.test.ts`.
  */
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Mock } from 'vitest';
 import type { MapLayerMouseEvent, MapMouseEvent, MapTouchEvent } from 'maplibre-gl';
+
+const toastSpy = vi.hoisted(() => vi.fn());
+vi.mock('@shared/feedback.js', () => ({
+    toast: toastSpy,
+}));
 
 import { DrawMethods } from '../../../src/apps/oi/carto/draw.js';
 import type { LngLatTuple, OICartoInternal, OiCartoShape } from '../../../src/apps/oi/carto/types.js';
@@ -64,14 +74,11 @@ function makeFakeState(map: FakeMap | null): OICartoInternal {
     return state as unknown as OICartoInternal;
 }
 
-beforeEach(() => {
-    vi.stubGlobal('confirm', vi.fn(() => true));
-});
-
 afterEach(() => {
     document.body.innerHTML = '';
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
+    toastSpy.mockClear();
 });
 
 describe('_rectPolygon (oi_cartographie.js:1572-1575)', () => {
@@ -573,17 +580,9 @@ describe('_onShapeClick (oi_cartographie.js:1524-1535)', () => {
         expect(state._loadShapes()).toEqual([{ id: 'keep', type: 'line', color: '#fff', coords: [] }]);
         expect(renderSpy).toHaveBeenCalledTimes(1);
         expect(refreshSpy).toHaveBeenCalledTimes(1);
-    });
-
-    it('sans confirmation : ne supprime rien', () => {
-        vi.stubGlobal('confirm', vi.fn(() => false));
-        const state = makeFakeState(null);
-        state._saveShapes([{ id: 'del', type: 'line', color: '#fff', coords: [] }]);
-        const e = { features: [{ properties: { shapeId: 'del' } }] } as unknown as MapLayerMouseEvent;
-
-        state._onShapeClick(e);
-
-        expect(state._loadShapes()).toEqual([{ id: 'del', type: 'line', color: '#fff', coords: [] }]);
+        // R2-T2b : plus de `confirm()` — suppression directe (réversible via Undo, `_pushHistory`
+        // appelée avant le retrait) + toast de confirmation non bloquant.
+        expect(toastSpy).toHaveBeenCalledWith(expect.stringContaining('supprimé'), { kind: 'success' });
     });
 
     it('un outil de dessin actif bloque la suppression au clic (priorité au tracé)', () => {

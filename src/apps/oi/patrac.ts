@@ -132,6 +132,7 @@
 import { wireDraggableMember, wireDropContainer } from '@oi/drag-drop.js';
 import { memberConfig, multiSelectAttributes, quickEditMapping } from '@oi/init.js';
 import { oiState } from '@oi/state.js';
+import { confirmDialog, toast } from '@shared/feedback.js';
 import type { OiFormData, OiMemberConfig, OiPatracMember } from '@shared/types/contracts.js';
 import * as PDFLib from 'pdf-lib';
 
@@ -189,9 +190,13 @@ function addPatracdvrRow(vehicleName: string, members: readonly Partial<OiPatrac
     const membersContainer = row.querySelector<HTMLElement>('.patracdvr-members-container');
     const removeBtn = row.querySelector<HTMLElement>('.remove-btn');
     if (removeBtn) {
-        removeBtn.addEventListener('click', () => {
-            // Utilisation d'un `confirm` natif
-            const confirmation = confirm(`Voulez-vous vraiment supprimer le véhicule "${vehicleName}" et désattribuer ses membres ?`);
+        removeBtn.addEventListener('click', async () => {
+            // R2-T2b : `confirm()` natif → `confirmDialog` (@shared/feedback.js), danger (suppression définitive).
+            const confirmation = await confirmDialog({
+                message: `Voulez-vous vraiment supprimer le véhicule "${vehicleName}" et désattribuer ses membres ?`,
+                confirmLabel: 'Supprimer',
+                danger: true,
+            });
             if (confirmation) {
                 // Désattribution des membres
                 membersContainer?.querySelectorAll<HTMLElement>('.patracdvr-member-btn').forEach(memberBtn => {
@@ -245,7 +250,7 @@ function addManualMember(): void {
         trigramme = trigramme.trim().toUpperCase();
         const existingMember = document.querySelector(`.patracdvr-member-btn[data-trigramme="${trigramme}"]`);
         if (existingMember) {
-            alert(`Le membre avec le trigramme "${trigramme}" existe déjà. Veuillez en choisir un autre.`);
+            toast(`Le membre avec le trigramme "${trigramme}" existe déjà. Veuillez en choisir un autre.`, { kind: 'error' });
             return;
         }
 
@@ -271,7 +276,7 @@ function addManualMember(): void {
             }
             // syncDomToStore(); // Déjà appelé dans addPatracdvrMember
         } else {
-            alert('Le trigramme doit contenir entre 2 et 4 caractères.');
+            toast('Le trigramme doit contenir entre 2 et 4 caractères.', { kind: 'error' });
         }
     }
 }
@@ -292,7 +297,7 @@ function addCellBatch(type: string): void {
     if (input === null) return;
     const trigs = input.split(/[\s,;]+/).map(t => t.trim().toUpperCase()).filter(Boolean);
     if (trigs.length < 2) {
-        alert('Une cellule comporte au moins 2 personnels.');
+        toast('Une cellule comporte au moins 2 personnels.', { kind: 'error' });
         return;
     }
 
@@ -337,7 +342,7 @@ function addCellBatch(type: string): void {
             window.toast(`Cellule ${cellule} : ${created} PAX ajouté(s)${skipped ? ', ' + skipped + ' ignoré(s)' : ''}.`, 'success');
         }
     } else {
-        alert('Aucun PAX valide créé (trigrammes invalides ou déjà existants).');
+        toast('Aucun PAX valide créé (trigrammes invalides ou déjà existants).', { kind: 'error' });
     }
 }
 
@@ -437,13 +442,20 @@ function cloneMemberFromContext(): void {
 }
 
 // patrac.js:276-291
-function deleteMemberFromContext(): void {
+// R2-T2b : signature élargie en `Promise<void>` (`confirmDialog` async) — compatible
+// avec le contrat `deleteMemberFromContext(): void` (règle « void » TS, cf. en-tête).
+async function deleteMemberFromContext(): Promise<void> {
     const id = window.contextMemberId;
     if (!id) return;
     const el = document.getElementById(id);
     if (!el) return;
 
-    if (confirm(`Supprimer définitivement le membre ${el.dataset.trigramme || ''} ?`)) {
+    const confirmed = await confirmDialog({
+        message: `Supprimer définitivement le membre ${el.dataset.trigramme || ''} ?`,
+        confirmLabel: 'Supprimer',
+        danger: true,
+    });
+    if (confirmed) {
         if (oiState.activeMemberId === id) {
             oiState.activeMemberId = null;
             const quickEditPanel = document.getElementById('quickEditPanel') as HTMLElement | null;
@@ -509,8 +521,15 @@ function initializePatracdvr(dataFromStorage?: OiFormData | Record<string, never
 }
 
 // patrac.js:341-352
-function resetPatracdvrUI(): void {
-    if (confirm('Voulez-vous vraiment réinitialiser tout le personnel et les véhicules du PATRACDVR ?')) {
+// R2-T2b : signature élargie en `Promise<void>` (`confirmDialog` async) — compatible
+// avec le contrat `resetPatracdvrUI(): void` (règle « void » TS, cf. en-tête).
+async function resetPatracdvrUI(): Promise<void> {
+    const confirmed = await confirmDialog({
+        message: 'Voulez-vous vraiment réinitialiser tout le personnel et les véhicules du PATRACDVR ?',
+        confirmLabel: 'Réinitialiser',
+        danger: true,
+    });
+    if (confirmed) {
         initializePatracdvr({});
         // patrac.js:344 — `typeof activeMemberId !== 'undefined'` : conservé
         // verbatim (fidélité), bien que toujours vrai pour une propriété
@@ -795,7 +814,7 @@ function patracBatchSelectWholeCell(): void {
         if (cel && cel !== 'Sans') cells.add(cel);
     });
     if (!cells.size) {
-        alert("Sélectionnez d'abord au moins un PAX appartenant à une cellule (India, AO, Effraction…).");
+        toast("Sélectionnez d'abord au moins un PAX appartenant à une cellule (India, AO, Effraction…).", { kind: 'error' });
         return;
     }
     document.querySelectorAll<HTMLElement>('.patracdvr-member-btn').forEach(btn => {
@@ -1497,7 +1516,7 @@ async function generatePatracdvrPdf(): Promise<void> {
         // même précédent que `@pctac/main.ts:582,614`.
         const message = e instanceof Error ? e.message : String(e);
         if (typeof window.toast === 'function') window.toast('Erreur de génération PDF : ' + message, 'error');
-        else alert('Erreur PDF PATRACDVR : ' + message);
+        else toast('Erreur PDF PATRACDVR : ' + message, { kind: 'error' });
     }
 }
 window.generatePatracdvrPdf = generatePatracdvrPdf;

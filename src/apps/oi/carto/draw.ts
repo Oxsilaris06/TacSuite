@@ -44,6 +44,7 @@
 
 import type { GeoJSONSource, MapLayerMouseEvent, MapMouseEvent, MapTouchEvent } from 'maplibre-gl';
 
+import { toast } from '@shared/feedback.js';
 import { circlePolygon as sharedCirclePolygon, rectPolygon as sharedRectPolygon } from '@shared/geo-shapes.js';
 
 import type { LngLatTuple, OICartoInternal, OiCartoDrawTool, OiCartoShape } from './types.js';
@@ -126,11 +127,15 @@ export const DrawMethods = {
         const clearBtn = document.getElementById('oi_carto_draw_clear');
         if (clearBtn) clearBtn.onclick = () => {
             if (!this._loadShapes().length) return;
-            if (!confirm('Effacer tous les dessins ?')) return;
+            // R2-T2b (même précédent que `@pctac/planmap/draw-layers.ts` R2-T2a) : plus de
+            // `confirm()` bloquant — l'action est capturée par `_pushHistory()` AVANT le
+            // vidage, donc trivialement réversible via le bouton Undo (`_undo`, ci-dessous) :
+            // action directe + toast plutôt qu'une double confirmation redondante avec l'undo.
             this._pushHistory();
             this._saveShapes([]);
             this._renderShapes();
             this._refreshUndoRedoButtons();
+            toast('Dessins effacés — Annuler pour revenir en arrière.', { kind: 'success' });
         };
         const undoBtn = document.getElementById('oi_carto_draw_undo');
         if (undoBtn) undoBtn.onclick = () => this._undo();
@@ -319,11 +324,13 @@ export const DrawMethods = {
         if (!feat) return;
         const id = feat.properties.shapeId;
         if (!id) return;
-        if (!confirm('Supprimer ce dessin ?')) return;
+        // R2-T2b : même rationale que le bouton « Effacer » ci-dessus — `_pushHistory()`
+        // rend la suppression réversible via Undo, `confirm()` natif devenu redondant.
         this._pushHistory();
         this._saveShapes(this._loadShapes().filter(s => s.id !== id));
         this._renderShapes();
         this._refreshUndoRedoButtons();
+        toast('Dessin supprimé — Annuler pour revenir en arrière.', { kind: 'success' });
     },
 
     // oi_cartographie.js:1537-1541

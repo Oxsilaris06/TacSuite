@@ -65,6 +65,13 @@ import { dbManager, Store } from '@oi/init.js';
 import { PDFEngineV2 } from '@oi/pdf-engine-v2.js';
 import type { OiPdfCollectedData } from '@shared/types/contracts.js';
 
+// R2-T2b : `alert()` natif → `toast` (`@shared/feedback.js`) mocké plutôt que
+// `vi.spyOn(window, 'alert')`, même pattern que `pc-archive.test.ts`.
+const toastSpy = vi.hoisted(() => vi.fn());
+vi.mock('@shared/feedback.js', () => ({
+    toast: toastSpy,
+}));
+
 // ---------------------------------------------------------------------------
 // createAnnotatedImageBlob (@oi/dessin.js) — import NOMMÉ de fonction, mocké
 // via vi.mock + vi.hoisted (même précédent que compressImage, oi-medias.test.ts).
@@ -120,6 +127,7 @@ afterEach(() => {
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
     document.body.innerHTML = '';
+    toastSpy.mockClear();
 });
 
 // ===========================================================================
@@ -357,7 +365,6 @@ describe('openPresentInPlace', () => {
 
     it('popup bloquée (window.open renvoie null) : révoque IMMÉDIATEMENT et alerte', async () => {
         vi.spyOn(window, 'open').mockReturnValue(null);
-        const alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => {});
 
         await PDFEngineV2.openPresentInPlace({
             collect: () => Promise.resolve(makeCollectedData()),
@@ -365,7 +372,7 @@ describe('openPresentInPlace', () => {
         });
 
         expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:present-1');
-        expect(alertSpy).toHaveBeenCalledWith(expect.stringContaining('bloquée'));
+        expect(toastSpy).toHaveBeenCalledWith(expect.stringContaining('bloquée'), { kind: 'error' });
     });
 
     it("échec de collecte/build : notifie via window.toast('error', …) plutôt que de laisser planter", async () => {

@@ -90,6 +90,7 @@
 
 import { getDragAfterElement } from '@oi/outils.js';
 import { oiState } from '@oi/state.js';
+import { confirmDialog } from '@shared/feedback.js';
 
 // ==================== DragDrop.js ====================
 // drag.js:7-10 — état de module (jamais dans state.ts : local à ce fichier).
@@ -203,7 +204,9 @@ function handleTouchMove(e: TouchEvent): void {
 }
 
 // drag.js:91-151
-function handleTouchEnd(e: TouchEvent): void {
+// R2-T2b : signature élargie en `Promise<void>` (`confirmDialog` async) — écouteur
+// DOM (`touchend`), la promesse renvoyée n'est pas consommée par l'appelant.
+async function handleTouchEnd(e: TouchEvent): Promise<void> {
     if (!touchDragItem) return;
 
     // drag.js:94 — `TouchList[0]` (changedTouches) : même garde que
@@ -228,9 +231,18 @@ function handleTouchEnd(e: TouchEvent): void {
     // 1. Gestion Drop : POUBELLE
     const trashCan = elemBelow ? elemBelow.closest('#trashCan') : null;
     if (trashCan) {
-        if (confirm(`Voulez-vous vraiment SUPPRIMER DÉFINITIVEMENT le membre ${touchDragItem.dataset.trigramme || 'N/A'} ?`)) {
-            const memberId = touchDragItem.id;
-            touchDragItem.remove();
+        // R2-T2b : capture locale AVANT `await confirmDialog` — `touchDragItem` (variable
+        // de module) est remis à `null` en fin de fonction et pourrait en théorie être
+        // réaffecté par un nouveau `touchstart` pendant l'attente de la confirmation.
+        const item = touchDragItem;
+        const confirmed = await confirmDialog({
+            message: `Voulez-vous vraiment SUPPRIMER DÉFINITIVEMENT le membre ${item.dataset.trigramme || 'N/A'} ?`,
+            confirmLabel: 'Supprimer',
+            danger: true,
+        });
+        if (confirmed) {
+            const memberId = item.id;
+            item.remove();
             if (oiState.activeMemberId === memberId) {
                 oiState.activeMemberId = null;
                 // drag.js:115 — `#quickEditPanel` est toujours dans le DOM en
@@ -398,7 +410,9 @@ function handleDrop(e: DragEvent): void {
 }
 
 // drag.js:268-292
-function handleDeleteDrop(e: DragEvent): void {
+// R2-T2b : signature élargie en `Promise<void>` (`confirmDialog` async) — appelée
+// depuis `handleDrop` en fire-and-forget (`handleDeleteDrop(e); return;`).
+async function handleDeleteDrop(e: DragEvent): Promise<void> {
     e.preventDefault();
     (e.currentTarget as HTMLElement).classList.remove('drag-over');
 
@@ -407,8 +421,11 @@ function handleDeleteDrop(e: DragEvent): void {
     const draggedItem = document.getElementById(draggedId);
 
     if (draggedItem && draggedItem.classList.contains('patracdvr-member-btn')) {
-        // Utilisation d'un `confirm` natif
-        const confirmation = confirm(`Voulez-vous vraiment SUPPRIMER DÉFINITIVEMENT le membre ${draggedItem.dataset.trigramme || 'N/A'} de la session ?`);
+        const confirmation = await confirmDialog({
+            message: `Voulez-vous vraiment SUPPRIMER DÉFINITIVEMENT le membre ${draggedItem.dataset.trigramme || 'N/A'} de la session ?`,
+            confirmLabel: 'Supprimer',
+            danger: true,
+        });
 
         if (confirmation) {
             const memberId = draggedItem.id;

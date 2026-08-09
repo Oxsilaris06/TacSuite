@@ -35,6 +35,14 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+// R2-T2b : `confirm()` natif → `confirmDialog` (`@shared/feedback.js`) mocké,
+// même pattern que `pc-archive.test.ts`. Mock statique : reste actif à travers
+// les `vi.resetModules()` de ce fichier (import dynamique par test).
+const confirmDialogSpy = vi.hoisted(() => vi.fn(async () => true));
+vi.mock('@shared/feedback.js', () => ({
+    confirmDialog: confirmDialogSpy,
+}));
+
 /** jsdom : ni `DataTransfer` ni `DragEvent` n'existent — double minimal. */
 class FakeDataTransfer {
     private readonly data = new Map<string, string>();
@@ -85,6 +93,8 @@ afterEach(() => {
     delete (window as unknown as { updateMemberButtonVisuals?: unknown }).updateMemberButtonVisuals;
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
+    confirmDialogSpy.mockClear();
+    confirmDialogSpy.mockImplementation(async () => true);
 });
 
 describe('wireDropContainer (SPEC §5.2 — preuve (a))', () => {
@@ -114,7 +124,6 @@ describe('wireDropContainer (SPEC §5.2 — preuve (a))', () => {
     it('un drop sur la poubelle câblée déclenche la suppression après confirm()', async () => {
         const { wireDropContainer } = await import('@oi/drag-drop.js');
         window.syncDomToStore = vi.fn();
-        vi.stubGlobal('confirm', vi.fn(() => true));
 
         const member = makeMemberBtn('member_trash');
         document.body.appendChild(member);
@@ -128,7 +137,11 @@ describe('wireDropContainer (SPEC §5.2 — preuve (a))', () => {
         dt.setData('text/plain', 'member_trash');
         trash.dispatchEvent(makeDragEvent('drop', { dataTransfer: dt as unknown as DataTransfer }));
 
-        expect(document.getElementById('member_trash')).toBeNull();
+        // R2-T2b : `handleDeleteDrop` est désormais async (`await confirmDialog`) —
+        // la suppression n'est effective qu'après résolution de la micro-tâche.
+        await vi.waitFor(() => {
+            expect(document.getElementById('member_trash')).toBeNull();
+        });
     });
 });
 
@@ -332,7 +345,6 @@ describe('wireDraggableMember (SPEC §5.2, fusion patrac.js:224-226 — bonus, h
     it('touchstart puis touchend au-dessus de la poubelle supprime le membre après confirm()', async () => {
         const { wireDraggableMember } = await import('@oi/drag-drop.js');
         window.syncDomToStore = vi.fn();
-        vi.stubGlobal('confirm', vi.fn(() => true));
 
         const trash = document.createElement('div');
         trash.id = 'trashCan';
@@ -350,7 +362,11 @@ describe('wireDraggableMember (SPEC §5.2, fusion patrac.js:224-226 — bonus, h
         member.dispatchEvent(new TouchEvent('touchstart', { touches: [{ clientX: 1, clientY: 1 } as unknown as Touch] }));
         member.dispatchEvent(new TouchEvent('touchend', { changedTouches: [{ clientX: 1, clientY: 1 } as unknown as Touch] }));
 
-        expect(document.getElementById('member_touch_1')).toBeNull();
+        // R2-T2b : `handleTouchEnd` est désormais async (`await confirmDialog`) —
+        // la suppression n'est effective qu'après résolution de la micro-tâche.
+        await vi.waitFor(() => {
+            expect(document.getElementById('member_touch_1')).toBeNull();
+        });
         expect(window.syncDomToStore).toHaveBeenCalled();
     });
 });

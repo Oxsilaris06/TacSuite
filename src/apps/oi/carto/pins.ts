@@ -60,6 +60,7 @@
 import maplibregl from 'maplibre-gl';
 import type { MapMouseEvent, Marker } from 'maplibre-gl';
 
+import { confirmDialog, toast } from '@shared/feedback.js';
 import { esc } from '@shared/ui-platform.js';
 
 import { OI_PIN_DEFS, OI_PIN_FALLBACK, oiIconForMember } from './constants.js';
@@ -402,12 +403,21 @@ export const PinsMethods = {
     },
 
     // oi_cartographie.js:893-902
-    _clearAllPins(this: OICartoInternal): void {
+    // R2-T2b : signature élargie en `Promise<void>` (`confirmDialog` async) — compatible
+    // avec le contrat `_clearAllPins(): void` (règle « void » TS, cf. en-tête OI R2-T2b).
+    async _clearAllPins(this: OICartoInternal): Promise<void> {
         if (!this._loadPins().length) {
-            alert('Aucun pin à supprimer.');
+            toast('Aucun pin à supprimer.', { kind: 'error' });
             return;
         }
-        if (!confirm('Supprimer tous les pins de la carte ?')) return;
+        // Pas d'historique undo pour les pins (contrairement aux dessins, cf. draw.ts) :
+        // suppression irréversible ⇒ confirmation conservée (danger).
+        const confirmed = await confirmDialog({
+            message: 'Supprimer tous les pins de la carte ?',
+            confirmLabel: 'Supprimer',
+            danger: true,
+        });
+        if (!confirmed) return;
         this._savePins([]);
         this._renderPins();
         this._closePingModal();

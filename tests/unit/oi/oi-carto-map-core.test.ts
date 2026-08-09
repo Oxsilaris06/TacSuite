@@ -33,6 +33,13 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+// R2-T2b : `alert()` natif → `toast` (`@shared/feedback.js`) mocké plutôt que
+// `vi.stubGlobal('alert', ...)`, même pattern que `pc-archive.test.ts`.
+const toastSpy = vi.hoisted(() => vi.fn());
+vi.mock('@shared/feedback.js', () => ({
+    toast: toastSpy,
+}));
+
 const { mapLibreState } = vi.hoisted(() => ({ mapLibreState: { hasMap: true } }));
 
 // Mock minimal de 'maplibre-gl' : seul `.Map` est lu par map-core.ts en dehors
@@ -204,6 +211,7 @@ afterEach(() => {
     vi.restoreAllMocks();
     mapLibreState.hasMap = true;
     Object.defineProperty(document, 'fullscreenElement', { value: null, configurable: true });
+    toastSpy.mockClear();
 });
 
 // ---------------------------------------------------------------------------
@@ -222,14 +230,12 @@ describe('open (oi_cartographie.js:294-311)', () => {
         const modal = document.getElementById('cartographyModal') as HTMLDialogElement;
         const showModalSpy = vi.fn();
         modal.showModal = showModalSpy;
-        const alertSpy = vi.fn();
-        vi.stubGlobal('alert', alertSpy);
         const init = vi.fn();
         const fake = makeFakeThis({ initialized: false, _init: init });
 
         MapCoreMethods.open.call(fake);
 
-        expect(alertSpy).toHaveBeenCalledWith('Librairie cartographique indisponible (réseau ?). Réessayez en ligne.');
+        expect(toastSpy).toHaveBeenCalledWith('Librairie cartographique indisponible (réseau ?). Réessayez en ligne.', { kind: 'error' });
         expect(showModalSpy).not.toHaveBeenCalled();
         expect(init).not.toHaveBeenCalled();
     });
@@ -1030,15 +1036,13 @@ describe('_enable3D (oi_cartographie.js:1614-1650)', () => {
     });
 
     it('setTerrain jette ⇒ alerte, sort AVANT d\'activer is3D', () => {
-        const alertSpy = vi.fn();
-        vi.stubGlobal('alert', alertSpy);
         const map = makeFakeMap({ setTerrain: vi.fn(() => { throw new Error('DEM indisponible'); }) });
         const saveView = vi.fn();
         const fake = makeFakeThis({ map, is3D: false, _saveView: saveView });
 
         expect(() => MapCoreMethods._enable3D.call(fake)).not.toThrow();
 
-        expect(alertSpy).toHaveBeenCalledWith('Relief 3D indisponible (réseau ?). Les tuiles d\'élévation AWS sont peut-être bloquées.');
+        expect(toastSpy).toHaveBeenCalledWith('Relief 3D indisponible (réseau ?). Les tuiles d\'élévation AWS sont peut-être bloquées.', { kind: 'error' });
         expect(fake.is3D).toBe(false);
         expect(saveView).not.toHaveBeenCalled();
     });

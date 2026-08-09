@@ -24,6 +24,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { MapMouseEvent } from 'maplibre-gl';
 
+// R2-T2b : `alert()`/`confirm()` natifs → `toast`/`confirmDialog`
+// (`@shared/feedback.js`) mockés, même pattern que `pc-archive.test.ts`.
+const toastSpy = vi.hoisted(() => vi.fn());
+const confirmDialogSpy = vi.hoisted(() => vi.fn(async () => true));
+vi.mock('@shared/feedback.js', () => ({
+    toast: toastSpy,
+    confirmDialog: confirmDialogSpy,
+}));
+
 import { PinsMethods } from '../../../src/apps/oi/carto/pins.js';
 import type { OiCartoPendingPin, OiCartoPin } from '../../../src/apps/oi/carto/types.js';
 import type { OICartoInternal } from '../../../src/apps/oi/carto/types.js';
@@ -167,6 +176,9 @@ beforeEach(() => {
 afterEach(() => {
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
+    toastSpy.mockClear();
+    confirmDialogSpy.mockClear();
+    confirmDialogSpy.mockImplementation(async () => true);
 });
 
 describe('_getPatracdvrVehicles (oi_cartographie.js:833-837)', () => {
@@ -307,34 +319,31 @@ describe('_removePin (oi_cartographie.js:887-891)', () => {
 });
 
 describe('_clearAllPins (oi_cartographie.js:893-902)', () => {
-    it('aucun pin → alerte, ne persiste rien, ne demande pas confirmation', () => {
-        const confirmSpy = vi.fn();
-        vi.stubGlobal('alert', vi.fn());
-        vi.stubGlobal('confirm', confirmSpy);
+    it('aucun pin → alerte, ne persiste rien, ne demande pas confirmation', async () => {
         const fake = makeFakeThis({ _loadPins: () => [] });
 
-        PinsMethods._clearAllPins.call(fake);
+        await PinsMethods._clearAllPins.call(fake);
 
-        expect(alert).toHaveBeenCalledWith('Aucun pin à supprimer.');
-        expect(confirmSpy).not.toHaveBeenCalled();
+        expect(toastSpy).toHaveBeenCalledWith('Aucun pin à supprimer.', { kind: 'error' });
+        expect(confirmDialogSpy).not.toHaveBeenCalled();
         expect(fake._savePins).not.toHaveBeenCalled();
     });
 
-    it('confirmation refusée → ne supprime rien', () => {
-        vi.stubGlobal('confirm', vi.fn(() => false));
+    it('confirmation refusée → ne supprime rien', async () => {
+        confirmDialogSpy.mockResolvedValueOnce(false);
         const fake = makeFakeThis({ _loadPins: () => [makePin({ id: 'p1' })] });
 
-        PinsMethods._clearAllPins.call(fake);
+        await PinsMethods._clearAllPins.call(fake);
 
         expect(fake._savePins).not.toHaveBeenCalled();
         expect(fake._renderPins).not.toHaveBeenCalled();
     });
 
-    it('confirmation acceptée → vide les pins, rafraîchit les markers, ferme la modale', () => {
-        vi.stubGlobal('confirm', vi.fn(() => true));
+    it('confirmation acceptée → vide les pins, rafraîchit les markers, ferme la modale', async () => {
+        confirmDialogSpy.mockResolvedValueOnce(true);
         const fake = makeFakeThis({ _loadPins: () => [makePin({ id: 'p1' })] });
 
-        PinsMethods._clearAllPins.call(fake);
+        await PinsMethods._clearAllPins.call(fake);
 
         expect(fake._savePins).toHaveBeenCalledWith([]);
         expect(fake._renderPins).toHaveBeenCalledTimes(1);

@@ -164,6 +164,21 @@ async function withPrompt<T>(value: string, action: () => Promise<T>): Promise<T
   return action();
 }
 
+/**
+ * R2-T2b : les `confirm()`/`alert()` natifs d'OI sont remplacés par
+ * `confirmDialog()`/`toast()` (`src/shared/feedback.ts`, `<dialog>` HTML
+ * injecté, PAS un dialogue navigateur natif) — `page.on('dialog')` (handler
+ * `beforeEach` ci-dessous) ne les intercepte donc plus (cette API Playwright
+ * ne couvre QUE les vrais `alert()`/`confirm()`/`prompt()`/`beforeunload` du
+ * moteur ; `prompt()`, lui, reste natif dans le flux PATRACDVR — inchangé).
+ * Chaque site d'appel qui ouvrait un `confirm()` bloquant est désormais
+ * cliqué explicitement via ce sélecteur stable (`data-tac-confirm="ok"`, posé
+ * par `confirmDialog()`) — même helper que `tests/e2e/pctac.spec.ts`.
+ */
+async function clickConfirmDialogOk(page: Page): Promise<void> {
+  await page.locator('[data-tac-confirm="ok"]').click();
+}
+
 // R4-a (D2, « une seule voie d'output PDF ») : `channel: 'chromium'` FORCE le
 // binaire Chromium COMPLET (celui que Playwright installe à côté du
 // « headless shell » minimal utilisé par défaut en mode headless depuis
@@ -352,13 +367,14 @@ test.describe('OI — Checklist fonctionnelle (docs/recon-oi.md §9)', () => {
       await expect.soft(advBlock.locator('.me-input')).toHaveCount(3, { timeout: 1500 });
     });
 
-    await step('suppression de la fiche adversaire (removeAdversary, résidu window, confirm natif)', async () => {
+    await step('suppression de la fiche adversaire (removeAdversary, résidu window, confirmDialog)', async () => {
       // Résolu (formulaires.ts:430) : bouton `.remove-btn` distingué des
       // autres (photos, ME, chronologie…) par son `title` unique posé par
       // `addAdversary` — `onclick="removeAdversary('${id}')"` appelle
-      // `confirm()` (auto-accepté par le handler global de `beforeEach`).
+      // désormais `confirmDialog()` (R2-T2b) — clic explicite requis.
       const removeBtn = page.locator('#adversaries_container .remove-btn[title="Supprimer cet adversaire"]').first();
       await removeBtn.click();
+      await clickConfirmDialogOk(page);
       await expect.soft(page.locator('#adversaries_container .adv-title')).toHaveCount(0, { timeout: 1500 });
     });
   });
@@ -533,7 +549,7 @@ test.describe('OI — Checklist fonctionnelle (docs/recon-oi.md §9)', () => {
         .toHaveCount(1, { timeout: 1500 });
     });
 
-    await step('glisser vers #trashCan supprime définitivement (confirm natif accepté par beforeEach)', async () => {
+    await step('glisser vers #trashCan supprime définitivement (confirmDialog, R2-T2b)', async () => {
       // Même défaut de test que le drag précédent (settle avant un dragTo
       // HTML5 natif juste après un DOM ré-affecté par le drop précédent).
       // P3B.FIX (reprise 1), BLOQUANT R2 : releve de 300 a 600ms, meme
@@ -541,6 +557,7 @@ test.describe('OI — Checklist fonctionnelle (docs/recon-oi.md §9)', () => {
       await page.waitForTimeout(600);
       const member = page.locator('.patracdvr-member-btn[data-trigramme="XYZ"]');
       await member.dragTo(page.locator('#trashCan'), { timeout: 4000 });
+      await clickConfirmDialogOk(page);
       await expect.soft(page.locator('.patracdvr-member-btn[data-trigramme="XYZ"]')).toHaveCount(0, { timeout: 1500 });
     });
   });
@@ -654,14 +671,15 @@ test.describe('OI — Checklist fonctionnelle (docs/recon-oi.md §9)', () => {
     });
   });
 
-  test('PATRACDVR — réinitialisation isolée du reste des données (resetPatracdvrUI, confirm natif)', async ({ page }) => {
+  test('PATRACDVR — réinitialisation isolée du reste des données (resetPatracdvrUI, confirmDialog)', async ({ page }) => {
     await goToStepViaBullet(page, 0);
     await page.locator('#situation_generale').fill('Doit survivre au reset PATRAC');
     await goToStepViaBullet(page, 6);
     await withPrompt('RST', () => page.locator('#addManualMemberBtn').click());
 
-    await step('#resetPatracdvrBtn vide le PATRACDVR (confirm auto-accepté par beforeEach)', async () => {
+    await step('#resetPatracdvrBtn vide le PATRACDVR (confirmDialog, R2-T2b)', async () => {
       await page.locator('#resetPatracdvrBtn').click();
+      await clickConfirmDialogOk(page);
       await expect.soft(page.locator('.patracdvr-member-btn[data-trigramme="RST"]')).toHaveCount(0, { timeout: 1500 });
     });
     await step('les autres étapes ne sont pas affectées (isolation du reset)', async () => {
@@ -1128,8 +1146,10 @@ test.describe('OI — Checklist fonctionnelle (docs/recon-oi.md §9)', () => {
         mimeType: 'application/json',
         buffer: Buffer.from(sessionJson, 'utf-8'),
       });
-      // importSession() déclenche alert() (auto-accepté par beforeEach) puis
-      // location.reload() : attendre la navigation induite.
+      // R2-T2b : importSession() déclenche désormais un toast() non bloquant
+      // (@shared/feedback.js) puis location.reload() après un court délai
+      // (setTimeout 600ms, laisse le temps au toast d'être visible) : attendre
+      // la navigation induite.
       await page.waitForLoadState('domcontentloaded', { timeout: 5000 }).catch(() => {});
     });
 
@@ -1160,6 +1180,7 @@ test.describe('OI — Checklist fonctionnelle (docs/recon-oi.md §9)', () => {
     });
     await step('« Page Active » (#resetPageBtn) ne vide que l\'étape courante (Environnement)', async () => {
       await page.locator('#resetPageBtn').click();
+      await clickConfirmDialogOk(page);
       await expect.soft(page.locator('#amies')).toHaveValue('', { timeout: 1500 });
       await goToStepViaBullet(page, 0);
       await expect.soft(page.locator('#situation_generale')).toHaveValue('Sera effacé par reset Page Active');
@@ -1167,6 +1188,7 @@ test.describe('OI — Checklist fonctionnelle (docs/recon-oi.md §9)', () => {
     await step('« Tout » (#resetAllBtn) efface l\'intégralité du formulaire (config PATRAC conservée)', async () => {
       await page.locator('#resetMenuBtn').click();
       await page.locator('#resetAllBtn').click();
+      await clickConfirmDialogOk(page);
       await expect.soft(page.locator('#situation_generale')).toHaveValue('', { timeout: 1500 });
     });
   });

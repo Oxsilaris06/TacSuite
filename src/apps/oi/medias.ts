@@ -112,6 +112,7 @@
  */
 import { Store, dbManager } from '@oi/init.js';
 import { compressImage } from '@oi/outils.js';
+import { toast } from '@shared/feedback.js';
 
 // ==================== MediaManager.js ====================
 
@@ -298,10 +299,10 @@ export async function handleCustomBackgroundChange(input: HTMLInputElement): Pro
         try {
             await dbManager.putItem('custom_pdf_background', file);
             updateCustomBgPreview();
-            alert("Fond personnalisé enregistré.");
+            toast("Fond personnalisé enregistré.", { kind: 'success' });
         } catch (e) {
             console.error(e);
-            alert("Erreur lors de l'enregistrement du fond.");
+            toast("Erreur lors de l'enregistrement du fond.", { kind: 'error' });
         }
     }
     input.value = '';
@@ -312,7 +313,7 @@ export async function removeCustomBackground(): Promise<void> {
     try {
         await dbManager.deleteItem('custom_pdf_background');
         updateCustomBgPreview();
-        alert("Fond personnalisé supprimé. Le fond par défaut sera utilisé.");
+        toast("Fond personnalisé supprimé. Le fond par défaut sera utilisé.", { kind: 'success' });
     } catch (e) {
         console.error(e);
     }

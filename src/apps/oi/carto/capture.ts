@@ -46,6 +46,8 @@
 
 import html2canvas from 'html2canvas';
 
+import { toast } from '@shared/feedback.js';
+
 import type { OICartoInternal, OiCartoPhotoTarget } from './types.js';
 
 export const CaptureMethods = {
@@ -106,7 +108,7 @@ export const CaptureMethods = {
     // oi_cartographie.js:1215-1260
     async _captureCanvas(this: OICartoInternal): Promise<HTMLCanvasElement | null> {
         if (typeof html2canvas !== 'function') {
-            alert('Librairie html2canvas indisponible (réseau ?).');
+            toast('Librairie html2canvas indisponible (réseau ?).', { kind: 'error' });
             return null;
         }
         const mapContainer = document.getElementById('oi_carto_map_wrap');
@@ -148,7 +150,7 @@ export const CaptureMethods = {
             ctx.drawImage(overlay, 0, 0, w, h);
         } catch (e) {
             console.error('[OICarto] capture échec:', e);
-            alert('Erreur lors de la capture : ' + (e instanceof Error ? e.message : String(e)));
+            toast('Erreur lors de la capture : ' + (e instanceof Error ? e.message : String(e)), { kind: 'error' });
             outCanvas = null;
         } finally {
             toHide.forEach((el, i) => { el.style.display = memo[i] || ''; });
@@ -182,13 +184,13 @@ export const CaptureMethods = {
         // oi_cartographie.js:1283 — RÈGLE D'OR (§2.2/§6.5) : MÊME garde que
         // l'original, résolue sur `window` (OiMediaGlobals, non importée).
         if (typeof window.handleFileChange !== 'function') {
-            alert('Pipeline photo indisponible.');
+            toast('Pipeline photo indisponible.', { kind: 'error' });
             return;
         }
         const canvas = await this._captureCanvas();
         if (!canvas) return;
         const blob = await new Promise<Blob | null>((r) => canvas.toBlob(r, 'image/jpeg', 0.95));
-        if (!blob) { alert('Capture échouée.'); return; }
+        if (!blob) { toast('Capture échouée.', { kind: 'error' }); return; }
 
         // On réutilise handleFileChange via un <input> détaché alimenté par DataTransfer.
         try {
@@ -203,10 +205,10 @@ export const CaptureMethods = {
             // oi_cartographie.js:1302 — MÊME garde `typeof toast === 'function'`
             // que l'original, repli `alert` (`toast` = OiNotificationGlobals).
             if (typeof window.toast === 'function') window.toast('Capture de carte ajoutée au champ photo.');
-            else alert('Capture de carte ajoutée au champ photo.');
+            else toast('Capture de carte ajoutée au champ photo.', { kind: 'success' });
         } catch (e) {
             console.error('[OICarto] export champ photo échec:', e);
-            alert('Export impossible : ' + (e instanceof Error ? e.message : String(e)));
+            toast('Export impossible : ' + (e instanceof Error ? e.message : String(e)), { kind: 'error' });
         }
     },
 };

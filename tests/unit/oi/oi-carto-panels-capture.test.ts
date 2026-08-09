@@ -39,6 +39,15 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+// R2-T2b : `alert()` natif → `toast` (`@shared/feedback.js`) mocké plutôt que
+// `vi.stubGlobal('alert', ...)`, même pattern que `pc-archive.test.ts`. Le mock
+// statique reste actif à travers les `vi.resetModules()` de `loadCaptureMethods`
+// (seul le cache de modules est vidé, pas les factories `vi.mock` enregistrées).
+const toastSpy = vi.hoisted(() => vi.fn());
+vi.mock('@shared/feedback.js', () => ({
+    toast: toastSpy,
+}));
+
 import { PanelsMethods } from '../../../src/apps/oi/carto/panels.js';
 import type { OICartoInternal, OiCartoPin } from '../../../src/apps/oi/carto/types.js';
 import { OIWheel } from '../../../src/apps/oi/carto/wheel.js';
@@ -126,6 +135,7 @@ afterEach(() => {
     document.body.innerHTML = '';
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
+    toastSpy.mockClear();
 });
 
 // ---------------------------------------------------------------------------
@@ -628,26 +638,22 @@ describe('_captureCanvas (oi_cartographie.js:1215-1260)', () => {
 
     it('alerte et renvoie null si html2canvas est indisponible', async () => {
         const CaptureMethods = await loadCaptureMethods(undefined);
-        const alertSpy = vi.fn();
-        vi.stubGlobal('alert', alertSpy);
         const state = makeCaptureState(CaptureMethods, makeFakeMap());
 
         const result = await state._captureCanvas();
 
         expect(result).toBeNull();
-        expect(alertSpy).toHaveBeenCalledWith('Librairie html2canvas indisponible (réseau ?).');
+        expect(toastSpy).toHaveBeenCalledWith('Librairie html2canvas indisponible (réseau ?).', { kind: 'error' });
     });
 
     it('renvoie null SANS alerter si #oi_carto_map_wrap est absent', async () => {
         const CaptureMethods = await loadCaptureMethods(vi.fn());
-        const alertSpy = vi.fn();
-        vi.stubGlobal('alert', alertSpy);
         const state = makeCaptureState(CaptureMethods, makeFakeMap());
 
         const result = await state._captureCanvas();
 
         expect(result).toBeNull();
-        expect(alertSpy).not.toHaveBeenCalled();
+        expect(toastSpy).not.toHaveBeenCalled();
     });
 
     it('renvoie null si this.map est absent (même avec #oi_carto_map_wrap présent)', async () => {
@@ -695,15 +701,13 @@ describe('_captureCanvas (oi_cartographie.js:1215-1260)', () => {
         document.body.appendChild(hint);
         const boom = new Error('html2canvas a explosé');
         const CaptureMethods = await loadCaptureMethods(vi.fn().mockRejectedValue(boom));
-        const alertSpy = vi.fn();
-        vi.stubGlobal('alert', alertSpy);
         const errSpy = vi.spyOn(console, 'error').mockImplementation(() => { /* silence */ });
         const state = makeCaptureState(CaptureMethods, makeFakeMap(makeGlCanvas()));
 
         const result = await state._captureCanvas();
 
         expect(result).toBeNull();
-        expect(alertSpy).toHaveBeenCalledWith('Erreur lors de la capture : html2canvas a explosé');
+        expect(toastSpy).toHaveBeenCalledWith('Erreur lors de la capture : html2canvas a explosé', { kind: 'error' });
         expect(hint.style.display).toBe('block');
         expect(errSpy).toHaveBeenCalled();
     });
@@ -804,14 +808,12 @@ describe('_exportToField (oi_cartographie.js:1281-1308)', () => {
     it('alerte « Pipeline photo indisponible. » si window.handleFileChange est absent', async () => {
         const CaptureMethods = await loadCaptureMethods(vi.fn());
         const state = makeCaptureState(CaptureMethods, null);
-        const alertSpy = vi.fn();
-        vi.stubGlobal('alert', alertSpy);
         const captureSpy = vi.fn();
         state._captureCanvas = captureSpy;
 
         await state._exportToField('container_x');
 
-        expect(alertSpy).toHaveBeenCalledWith('Pipeline photo indisponible.');
+        expect(toastSpy).toHaveBeenCalledWith('Pipeline photo indisponible.', { kind: 'error' });
         expect(captureSpy).not.toHaveBeenCalled();
     });
 
@@ -841,7 +843,7 @@ describe('_exportToField (oi_cartographie.js:1281-1308)', () => {
         expect(toastMock).toHaveBeenCalledWith('Capture de carte ajoutée au champ photo.');
     });
 
-    it('replie sur alert() si window.toast est absent', async () => {
+    it('replie sur toast() (@shared/feedback.js) si window.toast est absent', async () => {
         const CaptureMethods = await loadCaptureMethods(vi.fn());
         const state = makeCaptureState(CaptureMethods, null);
         state._closeCaptureModal = vi.fn();
@@ -849,12 +851,10 @@ describe('_exportToField (oi_cartographie.js:1281-1308)', () => {
         const blob = new Blob(['x'], { type: 'image/jpeg' });
         vi.spyOn(HTMLCanvasElement.prototype, 'toBlob').mockImplementation(function (cb: BlobCallback) { cb(blob); });
         (window as unknown as Record<string, unknown>).handleFileChange = vi.fn().mockResolvedValue(undefined);
-        const alertSpy = vi.fn();
-        vi.stubGlobal('alert', alertSpy);
 
         await state._exportToField('container_y');
 
-        expect(alertSpy).toHaveBeenCalledWith('Capture de carte ajoutée au champ photo.');
+        expect(toastSpy).toHaveBeenCalledWith('Capture de carte ajoutée au champ photo.', { kind: 'success' });
     });
 
     it('alerte « Capture échouée. » si le blob est null', async () => {
@@ -863,12 +863,10 @@ describe('_exportToField (oi_cartographie.js:1281-1308)', () => {
         state._captureCanvas = vi.fn().mockResolvedValue(document.createElement('canvas'));
         vi.spyOn(HTMLCanvasElement.prototype, 'toBlob').mockImplementation(function (cb: BlobCallback) { cb(null); });
         (window as unknown as Record<string, unknown>).handleFileChange = vi.fn();
-        const alertSpy = vi.fn();
-        vi.stubGlobal('alert', alertSpy);
 
         await state._exportToField('container_z');
 
-        expect(alertSpy).toHaveBeenCalledWith('Capture échouée.');
+        expect(toastSpy).toHaveBeenCalledWith('Capture échouée.', { kind: 'error' });
     });
 
     it('ne fait rien si _captureCanvas résout null (capture échouée en amont)', async () => {
@@ -876,12 +874,10 @@ describe('_exportToField (oi_cartographie.js:1281-1308)', () => {
         const state = makeCaptureState(CaptureMethods, null);
         state._captureCanvas = vi.fn().mockResolvedValue(null);
         (window as unknown as Record<string, unknown>).handleFileChange = vi.fn();
-        const alertSpy = vi.fn();
-        vi.stubGlobal('alert', alertSpy);
 
         await state._exportToField('container_w');
 
-        expect(alertSpy).not.toHaveBeenCalled();
+        expect(toastSpy).not.toHaveBeenCalled();
     });
 
     it('alerte « Export impossible : … » si handleFileChange jette', async () => {
@@ -891,13 +887,11 @@ describe('_exportToField (oi_cartographie.js:1281-1308)', () => {
         const blob = new Blob(['x'], { type: 'image/jpeg' });
         vi.spyOn(HTMLCanvasElement.prototype, 'toBlob').mockImplementation(function (cb: BlobCallback) { cb(blob); });
         (window as unknown as Record<string, unknown>).handleFileChange = vi.fn().mockRejectedValue(new Error('pipeline HS'));
-        const alertSpy = vi.fn();
-        vi.stubGlobal('alert', alertSpy);
         const errSpy = vi.spyOn(console, 'error').mockImplementation(() => { /* silence */ });
 
         await state._exportToField('container_v');
 
-        expect(alertSpy).toHaveBeenCalledWith('Export impossible : pipeline HS');
+        expect(toastSpy).toHaveBeenCalledWith('Export impossible : pipeline HS', { kind: 'error' });
         expect(errSpy).toHaveBeenCalled();
     });
 });

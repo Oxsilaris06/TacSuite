@@ -34,6 +34,7 @@ import type {
 import { createAnnotatedImageBlob } from '@oi/dessin.js';
 import { dbManager, Store } from '@oi/init.js';
 import type { OiPdfFormat } from '@oi/pdf/theme.js';
+import { toast } from '@shared/feedback.js';
 
 // pdf_engine_v2.js:14-16 — Parse JSON tolérant : retourne le fallback si la
 // donnée est corrompue. Générique ajouté pour le typage (aucun changement de
@@ -214,7 +215,7 @@ export const PDFEngineV2 = {
             const win = window.open(url, '_blank');
             if (!win) {
                 URL.revokeObjectURL(url);
-                alert("La fenêtre de présentation a été bloquée par le navigateur.\nAutorisez les pop-ups pour ce site, puis réessayez.");
+                toast("La fenêtre de présentation a été bloquée par le navigateur. Autorisez les pop-ups pour ce site, puis réessayez.", { kind: 'error' });
                 return;
             }
             // On révoque l'URL après un délai large : l'onglet a eu le temps de charger.
@@ -225,7 +226,7 @@ export const PDFEngineV2 = {
             // → RÈGLE D'OR (SPEC §2.2) : appel cross-module vers un symbole exposé sur
             // window (OiNotificationGlobals.toast) ⇒ window.toast, même garde.
             if (typeof window.toast === 'function') window.toast("Erreur lors de l'ouverture de la présentation.", 'error');
-            else alert("Erreur lors de l'ouverture de la présentation.");
+            else toast("Erreur lors de l'ouverture de la présentation.", { kind: 'error' });
         } finally {
             if (loader) loader.style.display = 'none';
         }

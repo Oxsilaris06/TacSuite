@@ -87,6 +87,7 @@ import type {
 import { Store, dbManager } from '@oi/init.js';
 import { getAnnotationAtPosition, getEventPos, getRotatedPoint, hexToRgb } from '@oi/outils.js';
 import { oiState } from '@oi/state.js';
+import { toast } from '@shared/feedback.js';
 
 // ---------------------------------------------------------------------------
 // Écart de contrat (cf. en-tête) — vue élargie locale, en lecture ET écriture.
@@ -586,12 +587,12 @@ async function openAnnotationModal(previewImgId: string): Promise<void> {
                     Store.state.objectUrlsCache[previewImgId] = objectURL;
                     previewImg.src = objectURL;
                 } else {
-                    alert("Impossible de charger l'image pour l'annotation. Données non trouvées.");
+                    toast("Impossible de charger l'image pour l'annotation. Données non trouvées.", { kind: 'error' });
                     return;
                 }
             } catch (e) {
                 console.error('Erreur DB:', e);
-                alert("Erreur lors de la récupération de l'image.");
+                toast("Erreur lors de la récupération de l'image.", { kind: 'error' });
                 return;
             }
         }
@@ -671,11 +672,11 @@ async function openAnnotationModal(previewImgId: string): Promise<void> {
                 previewImg.src = newUrl;
                 oiState.baseImage.src = newUrl; // Ré-essayer
             } else {
-                alert("Impossible de charger l'image. Données corrompues.");
+                toast("Impossible de charger l'image. Données corrompues.", { kind: 'error' });
             }
         } catch (err) {
             console.error('Échec définitif du chargement image:', err);
-            alert("Erreur critique de chargement d'image.");
+            toast("Erreur critique de chargement d'image.", { kind: 'error' });
         }
     };
 
