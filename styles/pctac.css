@@ -405,7 +405,7 @@ body.up-kb-open .up-kb-aware {
 
         body.light-mode .tab-btn.active {
             background: var(--accent-fill);
-            color: #fff !important;
+            color: var(--tac-paper-50) !important;
         }
 
         body.light-mode label {
@@ -418,8 +418,8 @@ body.up-kb-open .up-kb-aware {
         /* --- RESET & GLOBAL LAYOUT --- */
         * {
             box-sizing: border-box;
-            margin: 0;
-            padding: 0;
+            margin: var(--tac-zero);
+            padding: var(--tac-zero);
             outline: none;
             -webkit-tap-highlight-color: transparent;
         }
@@ -435,7 +435,7 @@ body.up-kb-open .up-kb-aware {
             background-size: 40px 40px;
             min-height: 100vh;
             padding: 20px 10px 100px 10px;
-            transition: background 0.3s ease;
+            transition: background var(--tac-duration-normal) ease;
             line-height: 1.6;
         }
 
@@ -447,7 +447,7 @@ body.up-kb-open .up-kb-aware {
 
         .container {
             max-width: 1000px;
-            margin: 0 auto;
+            margin: var(--tac-zero) auto;
             background: transparent;
             padding: 10px;
             position: relative;
@@ -470,7 +470,7 @@ body.up-kb-open .up-kb-aware {
             background: rgba(0, 0, 0, 0.4);
             border: 1px solid var(--border-glass);
             margin-bottom: 20px;
-            padding: 4px;
+            padding: var(--tac-space-1);
             gap: 10px;
             border-radius: var(--radius-md);
             position: sticky;
@@ -480,19 +480,19 @@ body.up-kb-open .up-kb-aware {
         }
 
         .tab-btn {
-            padding: 8px 4px;
+            padding: var(--tac-space-2) var(--tac-space-1);
             background: transparent;
             border: none;
             color: var(--text-muted);
             border-radius: var(--radius-sm);
             cursor: pointer;
-            transition: all 0.3s;
+            transition: all var(--tac-duration-normal);
             font-weight: bold;
             display: flex;
             flex-direction: column;
             align-items: center;
             justify-content: center;
-            gap: 4px;
+            gap: var(--tac-space-1);
             font-size: 0.7em;
             text-align: center;
             line-height: 1.1;
@@ -634,7 +634,7 @@ body.up-kb-open .up-kb-aware {
            de statut partagées avec les annotations carte/photos ci-dessous. */
         .pax-select {
             display: flex;
-            gap: 8px;
+            gap: var(--tac-space-2);
             flex-wrap: wrap;
         }
 
@@ -658,7 +658,7 @@ body.up-kb-open .up-kb-aware {
 
         .pax-select-option.selected {
             transform: scale(1.05);
-            color: #fff;
+            color: var(--tac-paper-50);
             font-weight: bold;
             box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
             border-color: rgba(255, 255, 255, 0.3);
@@ -688,7 +688,7 @@ body.up-kb-open .up-kb-aware {
 
         .add-btn,
         .mode-toggle-btn {
-            padding: 12px;
+            padding: var(--tac-space-3);
             border: none;
             border-radius: var(--radius-sm);
             cursor: pointer;
@@ -700,7 +700,7 @@ body.up-kb-open .up-kb-aware {
             display: flex;
             align-items: center;
             justify-content: center;
-            gap: 8px;
+            gap: var(--tac-space-2);
             background: var(--bg-input);
             color: var(--text-muted);
             border: 1px solid var(--border-glass);
@@ -728,7 +728,7 @@ body.up-kb-open .up-kb-aware {
             background: var(--accent-fill);
             color: white;
             width: 100%;
-            padding: 12px;
+            padding: var(--tac-space-3);
             border: none;
             border-radius: var(--radius-sm);
             cursor: pointer;
@@ -799,7 +799,7 @@ body.up-kb-open .up-kb-aware {
 
         .log-table th {
             text-align: left;
-            padding: 12px;
+            padding: var(--tac-space-3);
             color: var(--text-muted);
             font-size: 0.7em;
             text-transform: uppercase;
@@ -808,7 +808,7 @@ body.up-kb-open .up-kb-aware {
         }
 
         .log-table td {
-            padding: 10px 12px;
+            padding: 10px var(--tac-space-3);
             border-bottom: 1px solid var(--border-glass);
             color: var(--text-main);
             font-size: 0.9em;
@@ -831,7 +831,7 @@ body.up-kb-open .up-kb-aware {
             border: 1px solid var(--border-glass);
             border-radius: var(--radius-md);
             overflow: hidden;
-            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.3s, border-color 0.3s;
+            transition: transform var(--tac-duration-normal) cubic-bezier(0.4, 0, 0.2, 1), box-shadow var(--tac-duration-normal), border-color var(--tac-duration-normal);
             cursor: move;
             position: relative;
             box-shadow: var(--shadow-lg), var(--inner-glow);
@@ -868,7 +868,7 @@ body.up-kb-open .up-kb-aware {
             right: 10px;
             background: var(--danger-red);
             color: white;
-            padding: 4px 10px;
+            padding: var(--tac-space-1) 10px;
             border-radius: var(--radius-badge);
             font-size: 0.7em;
             font-weight: bold;
@@ -885,7 +885,7 @@ body.up-kb-open .up-kb-aware {
             right: 10px;
             background: var(--ao-green);
             color: black;
-            padding: 4px 10px;
+            padding: var(--tac-space-1) 10px;
             border-radius: var(--radius-badge);
             font-size: 0.7em;
             font-weight: bold;
@@ -924,7 +924,7 @@ body.up-kb-open .up-kb-aware {
             position: absolute;
             top: 10px;
             right: 10px;
-            padding: 4px 8px;
+            padding: var(--tac-space-1) var(--tac-space-2);
             border-radius: var(--radius-badge);
             font-size: 0.7em;
             font-weight: bold;
@@ -937,7 +937,7 @@ body.up-kb-open .up-kb-aware {
             position: absolute;
             top: 10px;
             right: 10px;
-            padding: 4px 8px;
+            padding: var(--tac-space-1) var(--tac-space-2);
             border-radius: var(--radius-badge);
             font-size: 0.7em;
             font-weight: bold;
@@ -950,7 +950,7 @@ body.up-kb-open .up-kb-aware {
             position: absolute;
             top: 10px;
             right: 10px;
-            padding: 4px 8px;
+            padding: var(--tac-space-1) var(--tac-space-2);
             border-radius: var(--radius-badge);
             font-size: 0.7em;
             font-weight: bold;
@@ -963,7 +963,7 @@ body.up-kb-open .up-kb-aware {
             position: absolute;
             top: 10px;
             right: 10px;
-            padding: 4px 8px;
+            padding: var(--tac-space-1) var(--tac-space-2);
             border-radius: var(--radius-badge);
             font-size: 0.7em;
             font-weight: bold;
@@ -1039,7 +1039,7 @@ body.up-kb-open .up-kb-aware {
         .color-palette {
             display: grid;
             grid-template-columns: repeat(auto-fill, minmax(40px, 1fr));
-            gap: 12px;
+            gap: var(--tac-space-3);
             margin-bottom: 20px;
             padding: 5px;
         }
@@ -1086,7 +1086,7 @@ body.up-kb-open .up-kb-aware {
         }
 
         .color-swatch.selected {
-            border: 3px solid #fff;
+            border: 3px solid var(--tac-paper-50);
             transform: scale(1.2);
             box-shadow: 0 0 15px rgba(255, 255, 255, 0.4);
         }
@@ -1134,14 +1134,14 @@ body.up-kb-open .up-kb-aware {
         .pctac-input-lg {
             min-height: 46px;
             font-size: 1.02em;
-            padding: 12px 14px;
+            padding: var(--tac-space-3) 14px;
         }
         .pctac-textarea-lg {
             width: 100%;
             min-height: 100px;
             font-size: 1.02em;
             line-height: 1.45;
-            padding: 12px 14px;
+            padding: var(--tac-space-3) 14px;
             resize: vertical;
             font-family: var(--font-ui, system-ui, sans-serif);
         }
@@ -1151,7 +1151,7 @@ body.up-kb-open .up-kb-aware {
             display: grid;
             grid-template-columns: 170px 1fr;
             gap: 18px;
-            margin: 15px 0;
+            margin: 15px var(--tac-zero);
             align-items: flex-start;
         }
         .pctac-edit-photo {
@@ -1162,12 +1162,12 @@ body.up-kb-open .up-kb-aware {
         .pctac-edit-fields {
             display: flex;
             flex-direction: column;
-            gap: 12px;
+            gap: var(--tac-space-3);
         }
         .pctac-edit-fields .row-2 {
             display: grid;
             grid-template-columns: 1fr 1fr;
-            gap: 12px;
+            gap: var(--tac-space-3);
         }
         @media (max-width: 640px) {
             .pctac-edit-grid {
@@ -1175,7 +1175,7 @@ body.up-kb-open .up-kb-aware {
             }
             .pctac-edit-photo {
                 flex-direction: row;
-                gap: 12px;
+                gap: var(--tac-space-3);
                 align-self: stretch;
             }
             .pctac-edit-photo > div:first-child {
@@ -1206,18 +1206,18 @@ body.up-kb-open .up-kb-aware {
                 max-height: 100% !important;
                 top: 0; left: 0;
                 transform: none;
-                border-radius: 0;
+                border-radius: var(--tac-zero);
                 padding: 18px 14px;
                 overflow-y: auto;
             }
             #pingModal h3 { font-size: 1.05em; }
             #pingModal #pin_icon_suggestions {
-                gap: 8px;
+                gap: var(--tac-space-2);
             }
             #pingModal .pin-icon-suggest {
                 flex: 1 1 calc(50% - 8px);
                 justify-content: center;
-                padding: 10px 8px;
+                padding: 10px var(--tac-space-2);
                 font-size: 0.9em;
             }
             #pingModal #pin_icon_grid > div > div:nth-child(2) {
@@ -1298,14 +1298,14 @@ body.up-kb-open .up-kb-aware {
             transform: translateX(-50%);
             display: flex;
             gap: 10px;
-            padding: 8px 15px;
+            padding: var(--tac-space-2) 15px;
             z-index: var(--z-sticky);
             background: var(--bg-glass-heavy);
             backdrop-filter: blur(15px);
             border: 1px solid var(--border-glass);
             border-radius: 30px;
             box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6);
-            transition: width 0.3s, padding 0.3s;
+            transition: width var(--tac-duration-normal), padding var(--tac-duration-normal);
             max-width: 90vw;
             width: auto;
             overflow-x: auto;
@@ -1342,7 +1342,7 @@ body.up-kb-open .up-kb-aware {
         .dock-menu.collapsed {
             width: 50px;
             height: 50px;
-            padding: 0;
+            padding: var(--tac-zero);
             justify-content: center;
             overflow: hidden;
             border-radius: 50%;
@@ -1372,7 +1372,7 @@ body.up-kb-open .up-kb-aware {
             z-index: var(--z-toolbar);
             display: flex;
             flex-direction: column;
-            gap: 8px;
+            gap: var(--tac-space-2);
         }
 
         .plan-tool-fab {
@@ -1388,7 +1388,7 @@ body.up-kb-open .up-kb-aware {
             justify-content: center;
             cursor: pointer;
             box-shadow: var(--shadow-panel-float);
-            transition: transform 0.15s, background 0.2s;
+            transition: transform var(--tac-duration-fast), background var(--tac-duration-quick);
         }
 
         .plan-tool-fab:hover {
@@ -1401,7 +1401,7 @@ body.up-kb-open .up-kb-aware {
 
         .plan-tool-fab.active {
             background: var(--accent-fill);
-            color: #fff;
+            color: var(--tac-paper-50);
         }
 
         .plan-tool-fab .material-symbols-outlined {
@@ -1451,9 +1451,9 @@ body.up-kb-open .up-kb-aware {
             display: flex !important;
             flex-wrap: wrap;
             justify-content: center;
-            gap: 4px !important;
+            gap: var(--tac-space-1) !important;
             width: 48px;
-            padding: 2px 0 !important;
+            padding: 2px var(--tac-zero) !important;
         }
 
         #plan_draw_color_picker .plan-draw-color {
@@ -1465,7 +1465,7 @@ body.up-kb-open .up-kb-aware {
             height: 1px;
             width: 80%;
             background: var(--border-glass);
-            margin: 1px 0;
+            margin: 1px var(--tac-zero);
         }
 
         /* Bandeau de recherche (adresse + GPS) — ouvert via le FAB Recherche */
@@ -1498,8 +1498,8 @@ body.up-kb-open .up-kb-aware {
             /* Sur mobile, la carte prend plus de hauteur utile */
             #plan_legend {
                 font-size: 0.75em !important;
-                padding: 6px 8px !important;
-                gap: 8px !important;
+                padding: 6px var(--tac-space-2) !important;
+                gap: var(--tac-space-2) !important;
             }
 
             #plan_legend span span {
@@ -1539,7 +1539,7 @@ body.up-kb-open .up-kb-aware {
             }
 
             .log-entry-form {
-                padding: 12px;
+                padding: var(--tac-space-3);
             }
 
             .photo-grid {
@@ -1548,7 +1548,7 @@ body.up-kb-open .up-kb-aware {
 
             #logTable th,
             #logTable td {
-                padding: 8px 5px;
+                padding: var(--tac-space-2) 5px;
                 font-size: 0.8em;
             }
 
@@ -1600,7 +1600,7 @@ body.up-kb-open .up-kb-aware {
         #plan_draw_crosshair .reticle-center {
             width: 4px;
             height: 4px;
-            background: #fff;
+            background: var(--tac-paper-50);
             border-radius: 50%;
             position: absolute;
             box-shadow: 0 0 4px var(--accent-blue);
@@ -1628,7 +1628,7 @@ body.up-kb-open .up-kb-aware {
                 width: auto !important;
                 justify-content: space-around !important;
                 align-items: center !important;
-                padding: 8px 10px !important;
+                padding: var(--tac-space-2) 10px !important;
                 border-radius: var(--radius-md) !important;
                 gap: 2px !important;
                 box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5) !important;
@@ -1642,7 +1642,7 @@ body.up-kb-open .up-kb-aware {
             #plan_draw_dock #plan_draw_clear {
                 width: 42px !important;
                 height: 42px !important;
-                padding: 0 !important;
+                padding: var(--tac-zero) !important;
                 display: flex !important;
                 align-items: center !important;
                 justify-content: center !important;
@@ -1653,7 +1653,7 @@ body.up-kb-open .up-kb-aware {
                 flex-direction: row !important;
                 width: auto !important;
                 gap: 6px !important;
-                padding: 0 4px !important;
+                padding: var(--tac-zero) var(--tac-space-1) !important;
             }
 
             #plan_draw_color_picker .plan-draw-color {
@@ -1675,13 +1675,13 @@ body.up-kb-open .up-kb-aware {
                 padding: 6px 10px !important;
                 border-radius: 30px !important;
                 box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5) !important;
-                gap: 8px !important;
+                gap: var(--tac-space-2) !important;
             }
 
             #plan_draw_precision_controls button {
-                padding: 8px 14px !important;
+                padding: var(--tac-space-2) 14px !important;
                 font-size: 0.9em !important;
-                border-radius: 20px !important;
+                border-radius: var(--tac-radius-lg) !important;
                 box-shadow: none !important;
                 border: none !important;
             }
@@ -1692,7 +1692,7 @@ body.up-kb-open .up-kb-aware {
         .plan-lock-badge {
             opacity: 0 !important;
             pointer-events: none !important;
-            transition: opacity 0.2s ease-in-out;
+            transition: opacity var(--tac-duration-quick) ease-in-out;
         }
 
         /* En mode édition (quand le dock de dessin est ouvert) : afficher tous les cadenas */
@@ -1719,19 +1719,19 @@ body.up-kb-open .up-kb-aware {
  * ------------------------------------------------------------------------- */
                 /* Liste opérateurs — tableau d'ordre de bataille (accordéon par fonction/cellule) */
                 #tl_ops { display: flex; flex-direction: column; gap: 6px; }
-                .tl-ops-bar { display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding: 0 2px 6px; position: sticky; top: 0; background: var(--bg-glass-heavy); z-index: 2; }
+                .tl-ops-bar { display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding: var(--tac-zero) 2px 6px; position: sticky; top: 0; background: var(--bg-glass-heavy); z-index: 2; }
                 .tl-ops-states { display: inline-flex; gap: 9px; font-size: 11px; color: var(--text-muted); white-space: nowrap; }
-                .tl-batch-toggle { flex: 0 0 auto; appearance: none; border: 1px solid var(--border-glass); background: var(--bg-input); color: var(--text-muted); font: 600 11px/1 inherit; padding: 5px 12px; border-radius: var(--radius-pill); cursor: pointer; }
-                .tl-batch-toggle.active { background: var(--inter-blue, #4f8dff); color: #fff; border-color: var(--inter-blue, #4f8dff); }
-                .tl-batch-bar { display: flex; align-items: center; gap: 6px; padding: 0 2px 8px; }
+                .tl-batch-toggle { flex: 0 0 auto; appearance: none; border: 1px solid var(--border-glass); background: var(--bg-input); color: var(--text-muted); font: 600 11px/1 inherit; padding: 5px var(--tac-space-3); border-radius: var(--radius-pill); cursor: pointer; }
+                .tl-batch-toggle.active { background: var(--inter-blue, #4f8dff); color: var(--tac-paper-50); border-color: var(--inter-blue, #4f8dff); }
+                .tl-batch-bar { display: flex; align-items: center; gap: 6px; padding: var(--tac-zero) 2px var(--tac-space-2); }
                 .tl-batch-bar .tl-batch-fn { flex: 1 1 auto; min-width: 0; font-size: 11px; background: var(--bg-input); color: var(--text-main); border: 1px solid var(--border-glass); border-radius: 5px; padding: 3px 5px; }
-                .tl-batch-all { flex: 0 0 auto; appearance: none; border: 1px solid var(--border-glass); background: var(--bg-input); color: var(--text-main); font: 600 11px/1 inherit; padding: 5px 9px; border-radius: 6px; cursor: pointer; }
-                .tl-batch-apply { flex: 0 0 auto; appearance: none; border: 1px solid var(--ao-green, #2ecf91); background: var(--ao-green, #2ecf91); color: #06281c; font: 700 11px/1 inherit; padding: 5px 10px; border-radius: 6px; cursor: pointer; }
-                .tl-op-check { flex: 0 0 auto; width: 15px; height: 15px; accent-color: var(--inter-blue, #4f8dff); cursor: pointer; margin: 0; }
+                .tl-batch-all { flex: 0 0 auto; appearance: none; border: 1px solid var(--border-glass); background: var(--bg-input); color: var(--text-main); font: 600 11px/1 inherit; padding: 5px 9px; border-radius: var(--tac-radius-sm); cursor: pointer; }
+                .tl-batch-apply { flex: 0 0 auto; appearance: none; border: 1px solid var(--ao-green, #2ecf91); background: var(--ao-green, #2ecf91); color: #06281c; font: 700 11px/1 inherit; padding: 5px 10px; border-radius: var(--tac-radius-sm); cursor: pointer; }
+                .tl-op-check { flex: 0 0 auto; width: 15px; height: 15px; accent-color: var(--inter-blue, #4f8dff); cursor: pointer; margin: var(--tac-zero); }
                 .tl-op.selected { background: rgba(79, 141, 255, 0.12); }
                 .tl-ops-states b { font-weight: 700; color: var(--text-main); }
                 .tl-grp { border: 1px solid var(--border-glass); border-radius: var(--radius-sm, 8px); overflow: hidden; background: rgba(255,255,255,.02); }
-                .tl-grp-head { display: flex; align-items: center; gap: 8px; padding: 7px 9px; cursor: pointer; user-select: none; }
+                .tl-grp-head { display: flex; align-items: center; gap: var(--tac-space-2); padding: 7px 9px; cursor: pointer; user-select: none; }
                 .tl-grp-head:hover { background: rgba(255,255,255,.05); }
                 .tl-grp-caret { font-size: 10px; color: var(--text-muted); width: 10px; flex: 0 0 auto; }
                 .tl-grp-icon { font-size: 18px; color: var(--text-main); flex: 0 0 auto; }
@@ -1739,8 +1739,8 @@ body.up-kb-open .up-kb-aware {
                 .tl-grp-count { font-size: 11px; color: var(--text-muted); background: var(--bg-input); border-radius: var(--radius-pill); padding: 1px 7px; flex: 0 0 auto; }
                 .tl-grp-gauge { flex: 1 1 auto; display: flex; height: 5px; border-radius: var(--radius-pill); overflow: hidden; background: rgba(255,255,255,.07); min-width: 28px; }
                 .tl-grp-gauge i { display: block; height: 100%; }
-                .tl-grp-follow { flex: 0 0 auto; appearance: none; border: 1px solid var(--border-glass); background: var(--bg-input); color: var(--text-muted); border-radius: 6px; width: 28px; height: 24px; cursor: pointer; font-size: 13px; line-height: 1; }
-                .tl-grp-follow:hover { color: #fff; border-color: var(--inter-blue, #4f8dff); }
+                .tl-grp-follow { flex: 0 0 auto; appearance: none; border: 1px solid var(--border-glass); background: var(--bg-input); color: var(--text-muted); border-radius: var(--tac-radius-sm); width: 28px; height: 24px; cursor: pointer; font-size: 13px; line-height: 1; }
+                .tl-grp-follow:hover { color: var(--tac-paper-50); border-color: var(--inter-blue, #4f8dff); }
                 .tl-grp.collapsed .tl-grp-body { display: none; }
                 .tl-grp-body { display: flex; flex-direction: column; }
                 .tl-op { display: flex; align-items: center; gap: 7px; padding: 6px 9px 6px 13px; border-top: 1px solid var(--border-glass); }
@@ -1749,10 +1749,10 @@ body.up-kb-open .up-kb-aware {
                 @keyframes tlDotPulse { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.4); opacity: .65; } }
                 .tl-op-name { flex: 1 1 auto; min-width: 0; font-size: 12px; color: var(--text-main); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
                 .tl-op-age { flex: 0 0 auto; font-size: 10.5px; color: var(--text-muted); font-variant-numeric: tabular-nums; min-width: 28px; text-align: right; }
-                .tl-op-fn { flex: 0 0 auto; font-size: 10.5px; max-width: 120px; background: var(--bg-input); color: var(--text-main); border: 1px solid var(--border-glass); border-radius: 5px; padding: 2px 4px; }
-                .tl-op-follow { flex: 0 0 auto; appearance: none; border: 1px solid var(--border-glass); background: var(--bg-input); color: var(--text-muted); border-radius: 6px; width: 28px; height: 24px; cursor: pointer; }
-                .tl-op-follow.on { color: #fff; border-color: var(--inter-blue, #4f8dff); background: var(--inter-blue, #4f8dff); }
-                .tl-empty { color: var(--text-muted); font-size: .8em; padding: 6px 0; }
+                .tl-op-fn { flex: 0 0 auto; font-size: 10.5px; max-width: 120px; background: var(--bg-input); color: var(--text-main); border: 1px solid var(--border-glass); border-radius: 5px; padding: 2px var(--tac-space-1); }
+                .tl-op-follow { flex: 0 0 auto; appearance: none; border: 1px solid var(--border-glass); background: var(--bg-input); color: var(--text-muted); border-radius: var(--tac-radius-sm); width: 28px; height: 24px; cursor: pointer; }
+                .tl-op-follow.on { color: var(--tac-paper-50); border-color: var(--inter-blue, #4f8dff); background: var(--inter-blue, #4f8dff); }
+                .tl-empty { color: var(--text-muted); font-size: .8em; padding: 6px var(--tac-zero); }
 
 /* ---------------------------------------------------------------------------
  * AJOUT (indicateurs de chargement PC-Tac) — overlay busy générique, pendant
@@ -1771,7 +1771,7 @@ body.up-kb-open .up-kb-aware {
     align-items: center; justify-content: center;
     flex-direction: column;
     color: var(--text-main);
-    transition: all 0.3s ease;
+    transition: all var(--tac-duration-normal) ease;
 }
 .pctac-busy-card {
     background: var(--bg-container);
