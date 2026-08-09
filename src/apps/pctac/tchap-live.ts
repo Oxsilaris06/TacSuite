@@ -774,7 +774,7 @@ function renderOps(force?: boolean): void {
       + `<span class="tl-grp-name">${escapeHtml(key)}</span>`
       + `<span class="tl-grp-count">${list.length}</span>`
       + gaugeHtml(stateCounts(list))
-      + '<button type="button" class="tl-grp-follow" title="Centrer ce groupe">⊙</button>'
+      + '<button type="button" class="tl-grp-follow" title="Centrer ce groupe" aria-label="Centrer la carte sur ce groupe">⊙</button>'
       + '</div><div class="tl-grp-body">';
     for (const [s, m] of list) {
       const a = cfg.assign[s] || {};
@@ -790,7 +790,7 @@ function renderOps(force?: boolean): void {
         + `<span class="tl-op-name" title="${escapeHtml(name ?? '')}">${escapeHtml(tag + (name ?? ''))}</span>`
         + `<span class="tl-op-age">${fmtAge(now - (m.ts || now))}</span>`
         + fnCtrl
-        + `<button type="button" class="tl-op-follow ${followed === s ? 'on' : ''}" title="Suivre (centrage live)">${followed === s ? '◉' : '◎'}</button>`
+        + `<button type="button" class="tl-op-follow ${followed === s ? 'on' : ''}" title="Suivre (centrage live)" aria-label="Suivre cet opérateur (centrage live)">${followed === s ? '◉' : '◎'}</button>`
         + '</div>';
     }
     html += '</div></div>';

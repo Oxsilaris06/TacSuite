@@ -78,7 +78,7 @@ export const PanelsMethods = {
         `;
         // Bouton retour optionnel (← roue précédente) ajouté avant le contenu
         const backHtml = onBack ? `
-            <button type="button" data-panel-back="1" title="Retour"
+            <button type="button" data-panel-back="1" title="Retour" aria-label="Revenir à l'étape précédente"
                 style="min-width: 38px; min-height: 38px; border-radius: 8px; cursor: pointer;
                        background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.2);
                        color: #fff; display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto;">
@@ -185,12 +185,12 @@ export const PanelsMethods = {
                         style="flex:1; min-width: 140px; min-height: 38px; background: rgba(255,255,255,0.08); color: #fff;
                                border: 1px solid rgba(255,255,255,0.18); border-radius: 8px; padding: 6px 10px; font-size: 15px;
                                outline: none;" />
-                    <button type="button" data-act="save" title="Enregistrer"
+                    <button type="button" data-act="save" title="Enregistrer" aria-label="Enregistrer le texte du ping"
                         style="min-width: 40px; min-height: 38px; border-radius: 8px; cursor: pointer; flex:0 0 auto;
                                background: #22c55e; border: 1px solid #16a34a; color: #fff; display: inline-flex; align-items: center; justify-content: center;">
                         <span class="material-symbols-outlined" style="font-size: 20px;">check</span>
                     </button>
-                    <button type="button" data-act="clear" title="Effacer le texte"
+                    <button type="button" data-act="clear" title="Effacer le texte" aria-label="Effacer le texte du ping"
                         style="min-width: 40px; min-height: 38px; border-radius: 8px; cursor: pointer; flex:0 0 auto;
                                background: rgba(239,68,68,0.18); border: 1px solid #ef4444; color: #fff; display: inline-flex; align-items: center; justify-content: center;">
                         <span class="material-symbols-outlined" style="font-size: 20px;">delete</span>
@@ -239,7 +239,7 @@ export const PanelsMethods = {
                                        background:${on ? 'rgba(34,197,94,0.22)' : 'rgba(59,130,246,0.12)'};
                                        border:1px solid ${on ? '#22c55e' : 'rgba(59,130,246,0.4)'};
                                        color:#fff; font-size:0.82em;">
-                                <span class="material-symbols-outlined" style="font-size:19px;">${ic.id}</span>${ic.label}
+                                <span class="material-symbols-outlined" aria-hidden="true" style="font-size:19px;">${ic.id}</span>${ic.label}
                             </button>`;
                         }).join('');
                     suggest.querySelectorAll<HTMLButtonElement>('.pin-suggest').forEach((btn) => {
@@ -302,7 +302,7 @@ export const PanelsMethods = {
         const toggleColor = visible ? '#22c55e' : '#94a3b8';
         const toggleTitle = visible ? 'Cercle visible (cliquer pour masquer)' : 'Cercle masqué (cliquer pour afficher)';
         this._openInlinePanel(ll, `
-            <button type="button" data-act="toggle" title="${toggleTitle}"
+            <button type="button" data-act="toggle" title="${toggleTitle}" aria-label="${toggleTitle}"
                 style="min-width: 44px; min-height: 38px; border-radius: 8px; cursor: pointer;
                        background: rgba(255,255,255,0.06); border: 1px solid ${toggleColor};
                        color: ${toggleColor}; display: inline-flex; align-items: center; justify-content: center;">
@@ -316,7 +316,7 @@ export const PanelsMethods = {
                            border: 1px solid rgba(255,255,255,0.18); border-radius: 8px; padding: 6px 10px; font-size: 14px;
                            outline: none;" />
             </div>
-            <button type="button" data-act="clear" title="Retirer complètement"
+            <button type="button" data-act="clear" title="Retirer complètement" aria-label="Retirer complètement le diamètre"
                 style="min-width: 40px; min-height: 38px; border-radius: 8px; cursor: pointer;
                        background: rgba(239,68,68,0.18); border: 1px solid #ef4444; color: #fff; display: inline-flex; align-items: center; justify-content: center;">
                 <span class="material-symbols-outlined" style="font-size: 20px;">close</span>
@@ -388,7 +388,7 @@ export const PanelsMethods = {
         try { if (this.map) this.map.easeTo({ center: [lngLat.lng, lngLat.lat], duration: 300 }); } catch { /* best-effort */ }
         // Construction HTML
         const colorChips = this._otanColors().map((o) => `
-            <button type="button" class="cat-col" data-color="${o.color}" data-kind="${o.kind}" title="${o.kind}"
+            <button type="button" class="cat-col" data-color="${o.color}" data-kind="${o.kind}" title="${o.kind}" aria-label="Choisir le type ${o.kind}"
                 style="min-width: 38px; min-height: 38px; border-radius: 50%;
                        background: ${o.color}; border: 3px solid ${o.color === '#94a3b8' ? '#fff' : 'transparent'};
                        cursor: pointer; flex: 0 0 auto;"></button>
@@ -447,7 +447,7 @@ export const PanelsMethods = {
                                    min-height: 52px; padding: 6px 4px; border-radius: 8px;
                                    background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.18);
                                    color: #fff; cursor: pointer;">
-                            <span class="material-symbols-outlined" style="font-size: 22px;">${ic.id}</span>
+                            <span class="material-symbols-outlined" aria-hidden="true" style="font-size: 22px;">${ic.id}</span>
                             <span style="font-size: 0.68em; text-align: center; line-height: 1.05; word-break: break-word;">${ic.label}</span>
                         </button>
                     `).join('');
@@ -473,7 +473,7 @@ export const PanelsMethods = {
         if (!p) return;
         const ll = { lng: p.lng, lat: p.lat };
         const chips = this._otanColors().map((o) => `
-            <button type="button" data-color="${o.color}" data-kind="${o.kind}" title="${o.kind}"
+            <button type="button" data-color="${o.color}" data-kind="${o.kind}" title="${o.kind}" aria-label="Choisir le type ${o.kind}"
                 style="min-width: 44px; min-height: 44px; border-radius: 50%;
                        background: ${o.color}; cursor: pointer;
                        border: 3px solid ${p.color === o.color ? '#fff' : 'transparent'};
@@ -541,7 +541,7 @@ export const PanelsMethods = {
                                    background: ${ic.id === p.icon ? p.color + '40' : 'rgba(255,255,255,0.06)'};
                                    border: 1px solid ${ic.id === p.icon ? p.color : 'rgba(255,255,255,0.18)'};
                                    color: #fff; cursor: pointer;">
-                            <span class="material-symbols-outlined" style="font-size: 22px;">${ic.id}</span>
+                            <span class="material-symbols-outlined" aria-hidden="true" style="font-size: 22px;">${ic.id}</span>
                             <span style="font-size: 0.68em; text-align: center; line-height: 1.05; word-break: break-word;">${ic.label}</span>
                         </button>
                     `).join('');

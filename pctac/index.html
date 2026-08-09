@@ -26,31 +26,31 @@
         <!-- NAVIGATION PRINCIPALE -->
         <nav class="main-tab-bar">
             <button type="button" class="tab-btn active" data-view="view-main-courante">
-                <span class="material-symbols-outlined">description</span>
+                <span class="material-symbols-outlined" aria-hidden="true">description</span>
                 <span>Main Courante</span>
             </button>
             <button type="button" class="tab-btn" data-view="view-adversaires">
-                <span class="material-symbols-outlined">groups</span>
+                <span class="material-symbols-outlined" aria-hidden="true">groups</span>
                 <span>Adversaires</span>
             </button>
             <button type="button" class="tab-btn" data-view="view-otages">
-                <span class="material-symbols-outlined">person_off</span>
+                <span class="material-symbols-outlined" aria-hidden="true">person_off</span>
                 <span>Otages</span>
             </button>
             <button type="button" class="tab-btn" data-view="view-amis">
-                <span class="material-symbols-outlined">shield_person</span>
+                <span class="material-symbols-outlined" aria-hidden="true">shield_person</span>
                 <span>Amis</span>
             </button>
             <button type="button" class="tab-btn" data-view="view-photos">
-                <span class="material-symbols-outlined">photo_library</span>
+                <span class="material-symbols-outlined" aria-hidden="true">photo_library</span>
                 <span>Photos</span>
             </button>
             <button type="button" class="tab-btn" data-view="view-plan">
-                <span class="material-symbols-outlined">map</span>
+                <span class="material-symbols-outlined" aria-hidden="true">map</span>
                 <span>Plan</span>
             </button>
             <button type="button" class="tab-btn" data-view="view-liens">
-                <span class="material-symbols-outlined">link</span>
+                <span class="material-symbols-outlined" aria-hidden="true">link</span>
                 <span>Liens</span>
             </button>
         </nav>
@@ -61,7 +61,7 @@
                 <form id="log-form">
                     <div class="form-row pctac-row-log">
                         <div class="pctac-field-heure">
-                            <label>Heure</label>
+                            <label for="heure_input">Heure</label>
                             <input type="time" id="heure_input" required class="pctac-input-heure">
                         </div>
                         <div>
@@ -71,7 +71,7 @@
                                 <span class="pax-select-option" data-pax="Otage">Otage</span>
                                 <span class="pax-select-option" data-pax="Inter">Inter</span>
                                 <span class="pax-select-option" data-pax="Oscar">Oscar</span>
-                                <button type="button" id="openCreatePaxBtn" class="pax-select-option pax-select-option--add">
+                                <button type="button" id="openCreatePaxBtn" class="pax-select-option pax-select-option--add" aria-label="Créer un nouvel intervenant">
                                     <span class="material-symbols-outlined">add</span>
                                 </button>
                             </div>
@@ -81,17 +81,17 @@
                         </div>
                     </div>
                     <div class="pctac-mt-15">
-                        <label>Localisation</label>
+                        <label for="lieu_input">Localisation</label>
                         <input type="text" id="lieu_input" placeholder="Localisation" list="lieu_suggestions"
                             autocomplete="off" class="pctac-input-lieu">
                         <datalist id="lieu_suggestions"></datalist>
                     </div>
                     <div class="pctac-mt-15">
-                        <label>Remarques</label>
+                        <label for="remarques_input">Remarques</label>
                         <textarea id="remarques_input" rows="2" placeholder="Saisir un compte-rendu..."></textarea>
                     </div>
                     <button type="submit" class="add-log-btn pctac-mt-15">
-                        <span class="material-symbols-outlined">add_task</span> Ajouter au Log
+                        <span class="material-symbols-outlined" aria-hidden="true">add_task</span> Ajouter au Log
                     </button>
                 </form>
             </div>
@@ -237,9 +237,9 @@
                 <h3 class="pctac-mb-15"><span class="material-symbols-outlined">add_a_photo</span> Dashboard
                     Opération</h3>
                 <form id="photo-form" class="form-row pctac-row-photo">
-                    <div><label>Titre</label><input type="text" id="photo_title" placeholder="Description courte"></div>
+                    <div><label for="photo_title">Titre</label><input type="text" id="photo_title" placeholder="Description courte"></div>
                     <div>
-                        <label>Catégorie</label>
+                        <label for="photo_category">Catégorie</label>
                         <select id="photo_category">
                             <option value="hostage">Otages</option>
                             <option value="location">Lieu</option>
@@ -274,10 +274,10 @@
                 <div id="plan_search_panel">
                     <div class="pctac-search-row">
                         <input type="text" id="plan_address_input" placeholder="Adresse ou coordonnées GPS (lat, lng)" class="pctac-flex-1">
-                        <button type="button" id="plan_search_btn" class="add-btn pctac-btn-auto-sm">
+                        <button type="button" id="plan_search_btn" class="add-btn pctac-btn-auto-sm" aria-label="Lancer la recherche">
                             <span class="material-symbols-outlined">search</span>
                         </button>
-                        <button type="button" id="plan_search_close" class="add-btn pctac-btn-search-close">
+                        <button type="button" id="plan_search_close" class="add-btn pctac-btn-search-close" aria-label="Fermer la recherche">
                             <span class="material-symbols-outlined">close</span>
                         </button>
                     </div>
@@ -287,72 +287,72 @@
 
                 <!-- Toolbar unifiée : 6 FABs (Recherche / Plein écran / 3D / Capture / Ping / Dessin) -->
                 <div id="plan_unified_toolbar">
-                    <button type="button" id="plan_btn_search" class="plan-tool-fab" title="Recherche adresse / coordonnées GPS">
+                    <button type="button" id="plan_btn_search" class="plan-tool-fab" title="Recherche adresse / coordonnées GPS" aria-label="Rechercher une adresse ou des coordonnées GPS">
                         <span class="material-symbols-outlined">search</span>
                     </button>
-                    <button type="button" id="plan_btn_fullscreen" class="plan-tool-fab" title="Plein écran">
+                    <button type="button" id="plan_btn_fullscreen" class="plan-tool-fab" title="Plein écran" aria-label="Basculer le plein écran">
                         <span class="material-symbols-outlined">fullscreen</span>
                     </button>
-                    <button type="button" id="plan_btn_3d" class="plan-tool-fab" title="Basculer vue 2D / 3D relief">
+                    <button type="button" id="plan_btn_3d" class="plan-tool-fab" title="Basculer vue 2D / 3D relief" aria-label="Basculer entre vue 2D et 3D">
                         <span class="material-symbols-outlined">deployed_code</span>
                     </button>
-                    <button type="button" id="plan_btn_capture" class="plan-tool-fab" title="Capture haute qualité du plan">
+                    <button type="button" id="plan_btn_capture" class="plan-tool-fab" title="Capture haute qualité du plan" aria-label="Capturer le plan">
                         <span class="material-symbols-outlined">photo_camera</span>
                     </button>
-                    <button type="button" id="plan_btn_ping" class="plan-tool-fab" title="Ajouter un point (entité ou libre)">
+                    <button type="button" id="plan_btn_ping" class="plan-tool-fab" title="Ajouter un point (entité ou libre)" aria-label="Ajouter un point sur la carte">
                         <span class="material-symbols-outlined">add_location</span>
                     </button>
-                    <button type="button" id="plan_btn_draw" class="plan-tool-fab" title="Outils de dessin">
+                    <button type="button" id="plan_btn_draw" class="plan-tool-fab" title="Outils de dessin" aria-label="Ouvrir les outils de dessin">
                         <span class="material-symbols-outlined">draw</span>
                     </button>
-                    <button type="button" id="plan_btn_labels" class="plan-tool-fab" title="Afficher les noms de rues">
+                    <button type="button" id="plan_btn_labels" class="plan-tool-fab" title="Afficher les noms de rues" aria-label="Afficher ou masquer les noms de rues">
                         <span class="material-symbols-outlined">signpost</span>
                     </button>
-                    <button type="button" id="plan_btn_aoi" class="plan-tool-fab" title="Télécharger la carte d'une zone (hors-ligne)">
+                    <button type="button" id="plan_btn_aoi" class="plan-tool-fab" title="Télécharger la carte d'une zone (hors-ligne)" aria-label="Télécharger la carte d'une zone hors ligne">
                         <span class="material-symbols-outlined">sim_card_download</span>
                     </button>
                 </div>
 
                 <!-- Dock dessin réductible (ouvert via le FAB Dessin) -->
                 <div id="plan_draw_dock">
-                    <button type="button" class="plan-draw-btn" data-tool="line" title="Tracer un trait" style="background: transparent; border: 1px solid transparent; color: var(--text-main); padding: 7px 10px; border-radius: 4px; cursor: pointer;">
+                    <button type="button" class="plan-draw-btn" data-tool="line" title="Tracer un trait" aria-label="Tracer un trait" style="background: transparent; border: 1px solid transparent; color: var(--text-main); padding: 7px 10px; border-radius: 4px; cursor: pointer;">
                         <span class="material-symbols-outlined pctac-icon-24">timeline</span>
                     </button>
-                    <button type="button" class="plan-draw-btn" data-tool="rectangle" title="Tracer un rectangle" style="background: transparent; border: 1px solid transparent; color: var(--text-main); padding: 7px 10px; border-radius: 4px; cursor: pointer;">
+                    <button type="button" class="plan-draw-btn" data-tool="rectangle" title="Tracer un rectangle" aria-label="Tracer un rectangle" style="background: transparent; border: 1px solid transparent; color: var(--text-main); padding: 7px 10px; border-radius: 4px; cursor: pointer;">
                         <span class="material-symbols-outlined pctac-icon-24">crop_square</span>
                     </button>
-                    <button type="button" class="plan-draw-btn" data-tool="circle" title="Tracer un cercle" style="background: transparent; border: 1px solid transparent; color: var(--text-main); padding: 7px 10px; border-radius: 4px; cursor: pointer;">
+                    <button type="button" class="plan-draw-btn" data-tool="circle" title="Tracer un cercle" aria-label="Tracer un cercle" style="background: transparent; border: 1px solid transparent; color: var(--text-main); padding: 7px 10px; border-radius: 4px; cursor: pointer;">
                         <span class="material-symbols-outlined pctac-icon-24">circle</span>
                     </button>
-                    <button type="button" class="plan-draw-btn" data-tool="text" title="Texte libre (clic sur la carte)" style="background: transparent; border: 1px solid transparent; color: var(--text-main); padding: 7px 10px; border-radius: 4px; cursor: pointer;">
+                    <button type="button" class="plan-draw-btn" data-tool="text" title="Texte libre (clic sur la carte)" aria-label="Ajouter du texte libre sur la carte" style="background: transparent; border: 1px solid transparent; color: var(--text-main); padding: 7px 10px; border-radius: 4px; cursor: pointer;">
                         <span class="material-symbols-outlined pctac-icon-24">title</span>
                     </button>
-                    <button type="button" class="plan-draw-btn" data-tool="measure" title="Mesurer distance / azimut" style="background: transparent; border: 1px solid transparent; color: var(--text-main); padding: 7px 10px; border-radius: 4px; cursor: pointer;">
+                    <button type="button" class="plan-draw-btn" data-tool="measure" title="Mesurer distance / azimut" aria-label="Mesurer une distance ou un azimut" style="background: transparent; border: 1px solid transparent; color: var(--text-main); padding: 7px 10px; border-radius: 4px; cursor: pointer;">
                         <span class="material-symbols-outlined pctac-icon-24">straighten</span>
                     </button>
                     <div class="plan-dock-sep"></div>
                     <div id="plan_draw_color_picker" class="pctac-color-picker-row">
-                        <button type="button" class="plan-draw-color" data-color="#ef4444" title="Rouge" style="width: 24px; height: 24px; border-radius: 50%; background: #ef4444; border: 2px solid #fff; cursor: pointer;"></button>
-                        <button type="button" class="plan-draw-color" data-color="#eab308" title="Jaune" style="width: 24px; height: 24px; border-radius: 50%; background: #eab308; border: 2px solid transparent; cursor: pointer;"></button>
-                        <button type="button" class="plan-draw-color" data-color="#3b82f6" title="Bleu" style="width: 24px; height: 24px; border-radius: 50%; background: #3b82f6; border: 2px solid transparent; cursor: pointer;"></button>
-                        <button type="button" class="plan-draw-color" data-color="#22c55e" title="Vert" style="width: 24px; height: 24px; border-radius: 50%; background: #22c55e; border: 2px solid transparent; cursor: pointer;"></button>
-                        <button type="button" class="plan-draw-color" data-color="#ffffff" title="Blanc" style="width: 24px; height: 24px; border-radius: 50%; background: #ffffff; border: 2px solid transparent; cursor: pointer;"></button>
+                        <button type="button" class="plan-draw-color" data-color="#ef4444" title="Rouge" aria-label="Choisir la couleur rouge" style="width: 24px; height: 24px; border-radius: 50%; background: #ef4444; border: 2px solid #fff; cursor: pointer;"></button>
+                        <button type="button" class="plan-draw-color" data-color="#eab308" title="Jaune" aria-label="Choisir la couleur jaune" style="width: 24px; height: 24px; border-radius: 50%; background: #eab308; border: 2px solid transparent; cursor: pointer;"></button>
+                        <button type="button" class="plan-draw-color" data-color="#3b82f6" title="Bleu" aria-label="Choisir la couleur bleue" style="width: 24px; height: 24px; border-radius: 50%; background: #3b82f6; border: 2px solid transparent; cursor: pointer;"></button>
+                        <button type="button" class="plan-draw-color" data-color="#22c55e" title="Vert" aria-label="Choisir la couleur verte" style="width: 24px; height: 24px; border-radius: 50%; background: #22c55e; border: 2px solid transparent; cursor: pointer;"></button>
+                        <button type="button" class="plan-draw-color" data-color="#ffffff" title="Blanc" aria-label="Choisir la couleur blanche" style="width: 24px; height: 24px; border-radius: 50%; background: #ffffff; border: 2px solid transparent; cursor: pointer;"></button>
                     </div>
                     <div class="plan-dock-sep"></div>
-                    <button type="button" id="plan_draw_undo" title="Annuler (Ctrl+Z)" style="background: transparent; border: 1px solid transparent; color: var(--text-main); padding: 7px 10px; border-radius: 4px; cursor: pointer;">
+                    <button type="button" id="plan_draw_undo" title="Annuler (Ctrl+Z)" aria-label="Annuler le dernier tracé" style="background: transparent; border: 1px solid transparent; color: var(--text-main); padding: 7px 10px; border-radius: 4px; cursor: pointer;">
                         <span class="material-symbols-outlined pctac-icon-24">undo</span>
                     </button>
-                    <button type="button" id="plan_draw_redo" title="Rétablir (Ctrl+Y)" style="background: transparent; border: 1px solid transparent; color: var(--text-main); padding: 7px 10px; border-radius: 4px; cursor: pointer;">
+                    <button type="button" id="plan_draw_redo" title="Rétablir (Ctrl+Y)" aria-label="Rétablir le tracé annulé" style="background: transparent; border: 1px solid transparent; color: var(--text-main); padding: 7px 10px; border-radius: 4px; cursor: pointer;">
                         <span class="material-symbols-outlined pctac-icon-24">redo</span>
                     </button>
                     <div class="plan-dock-sep"></div>
-                    <button type="button" id="plan_draw_diameter_toggle" title="Diamètres affichés (cliquer pour masquer)" style="background: transparent; border: 1px solid transparent; color: #22c55e; padding: 7px 10px; border-radius: 4px; cursor: pointer;">
+                    <button type="button" id="plan_draw_diameter_toggle" title="Diamètres affichés (cliquer pour masquer)" aria-label="Afficher ou masquer les diamètres" style="background: transparent; border: 1px solid transparent; color: #22c55e; padding: 7px 10px; border-radius: 4px; cursor: pointer;">
                         <span class="material-symbols-outlined pctac-icon-24">straighten</span>
                     </button>
-                    <button type="button" id="plan_draw_lock" title="Verrouiller la position des pings/dessins" style="background: transparent; border: 1px solid transparent; color: var(--text-main); padding: 7px 10px; border-radius: 4px; cursor: pointer;">
+                    <button type="button" id="plan_draw_lock" title="Verrouiller la position des pings/dessins" aria-label="Verrouiller la position des pings et dessins" style="background: transparent; border: 1px solid transparent; color: var(--text-main); padding: 7px 10px; border-radius: 4px; cursor: pointer;">
                         <span class="material-symbols-outlined pctac-icon-24">lock_open</span>
                     </button>
-                    <button type="button" id="plan_draw_clear" title="Effacer tous les dessins" class="pctac-draw-btn-clear">
+                    <button type="button" id="plan_draw_clear" title="Effacer tous les dessins" aria-label="Effacer tous les dessins" class="pctac-draw-btn-clear">
                         <span class="material-symbols-outlined pctac-icon-24">delete_sweep</span>
                     </button>
                 </div>
@@ -366,15 +366,15 @@
                 <!-- Boutons d'action pour le tracé de précision sur mobile -->
                 <div id="plan_draw_precision_controls">
                     <button type="button" id="plan_draw_precision_start" class="pctac-precision-btn" style="display: flex;">
-                        <span class="material-symbols-outlined pctac-icon-20">add_circle</span>
+                        <span class="material-symbols-outlined pctac-icon-20" aria-hidden="true">add_circle</span>
                         <span>Débuter tracé</span>
                     </button>
                     <button type="button" id="plan_draw_precision_confirm" class="pctac-precision-btn" style="display: none;">
-                        <span class="material-symbols-outlined pctac-icon-20">check_circle</span>
+                        <span class="material-symbols-outlined pctac-icon-20" aria-hidden="true">check_circle</span>
                         <span>Valider</span>
                     </button>
                     <button type="button" id="plan_draw_precision_cancel" class="pctac-precision-btn" style="display: none;">
-                        <span class="material-symbols-outlined pctac-icon-20">cancel</span>
+                        <span class="material-symbols-outlined pctac-icon-20" aria-hidden="true">cancel</span>
                         <span>Annuler</span>
                     </button>
                 </div>
@@ -397,29 +397,29 @@
             <!-- ===== Géoloc équipe live (Tchap) — panneau paramètres sous la carte ===== -->
             <div id="tl_bar" class="pctac-mt-14">
                 <button type="button" id="tl_toggle" class="add-btn pctac-toggle-btn">
-                    <span class="material-symbols-outlined">share_location</span>
+                    <span class="material-symbols-outlined" aria-hidden="true">share_location</span>
                     <span>Géoloc équipe (Tchap)</span>
                     <span id="tl_dot" style="width: 9px; height: 9px; border-radius: 50%; background: var(--text-muted); display: inline-block;"></span>
                 </button>
                 <div id="tl_panel" style="display: none; margin-top: 10px; background: var(--bg-glass-heavy); backdrop-filter: blur(10px); border: 1px solid var(--border-glass); border-radius: var(--radius-md); padding: 16px; max-width: 580px;">
                     <div class="pctac-col-gap-10">
                         <div>
-                            <label class="pctac-muted-08">Homeserver</label>
+                            <label class="pctac-muted-08" for="tl_hs">Homeserver</label>
                             <input type="text" id="tl_hs" placeholder="https://matrix.agent.interieur.tchap.gouv.fr" class="pctac-w-100">
                         </div>
                         <div>
-                            <label class="pctac-muted-08">Room ID du salon (Forum non chiffré)</label>
+                            <label class="pctac-muted-08" for="tl_room">Room ID du salon (Forum non chiffré)</label>
                             <input type="text" id="tl_room" placeholder="!xxxxx:agent.interieur.tchap.gouv.fr" class="pctac-w-100">
                         </div>
                         <details class="pctac-muted-08">
                             <summary class="pctac-cursor-pointer">Repli / avancé (token manuel, client_id)</summary>
                             <div class="pctac-advanced-fields">
                                 <div>
-                                    <label class="pctac-muted-09">Token manuel (repli — Tchap Web → Aide &amp; à propos → Token, ~5 min, non renouvelé)</label>
+                                    <label class="pctac-muted-09" for="tl_token">Token manuel (repli — Tchap Web → Aide &amp; à propos → Token, ~5 min, non renouvelé)</label>
                                     <input type="password" id="tl_token" placeholder="mat_… ou syt_…" class="pctac-w-100">
                                 </div>
                                 <div>
-                                    <label class="pctac-muted-09">client_id OAuth (optionnel — fourni par l'admin DNUM si l'auto-enregistrement est bloqué)</label>
+                                    <label class="pctac-muted-09" for="tl_clientid">client_id OAuth (optionnel — fourni par l'admin DNUM si l'auto-enregistrement est bloqué)</label>
                                     <input type="text" id="tl_clientid" placeholder="laisser vide pour auto-enregistrement" class="pctac-w-100">
                                 </div>
                             </div>
@@ -447,7 +447,7 @@
 
         <!-- Modale PING hybride : entités existantes OU nouveau point libre -->
         <dialog class="modal pctac-modal-large pctac-modal-scroll" id="pingModal" aria-labelledby="pingModalTitle">
-            <button type="button" id="pingModalCloseBtn" class="pctac-modal-close-btn">
+            <button type="button" id="pingModalCloseBtn" class="pctac-modal-close-btn" aria-label="Fermer la fenêtre d'ajout de point">
                 <span class="material-symbols-outlined pctac-icon-24">close</span>
             </button>
             <h3 id="pingModalTitle"><span class="material-symbols-outlined pctac-icon-accent-mid">add_location</span> Ajouter un point</h3>
@@ -462,7 +462,7 @@
 
             <!-- Section 2 : nouveau point libre -->
             <div>
-                <label>Ou créer un nouveau point</label>
+                <label for="free_pin_label">Ou créer un nouveau point</label>
                 <input type="text" id="free_pin_label" placeholder="Libellé (ex: PC repli, FPT pompier, sniper toit...)" class="pctac-mt-6" autocomplete="off">
 
                 <div class="pctac-m-12-0">
@@ -489,7 +489,7 @@
                     <div class="pctac-space-between-row">
                         <label class="pctac-m-0">Icône du point</label>
                         <button type="button" id="pin_icon_picker_toggle" class="add-btn">
-                            <span class="material-symbols-outlined pctac-icon-18-mid">apps</span>
+                            <span class="material-symbols-outlined pctac-icon-18-mid" aria-hidden="true">apps</span>
                             Choisir
                         </button>
                     </div>
@@ -564,7 +564,7 @@
     <!-- MODALS -->
 
     <dialog class="modal pctac-modal-scroll-90" id="createPaxModal" aria-labelledby="createPaxModalTitle">
-        <button onclick="UI.hideCreatePaxModal()" class="pctac-modal-close-btn">
+        <button onclick="UI.hideCreatePaxModal()" class="pctac-modal-close-btn" aria-label="Fermer la fenêtre de création d'intervenant">
             <span class="material-symbols-outlined pctac-icon-24">close</span>
         </button>
         <div class="pctac-create-pax-header">
@@ -573,7 +573,7 @@
         </div>
 
         <div class="pctac-mb-20">
-            <label class="pctac-mb-8">Nom / Unité</label>
+            <label class="pctac-mb-8" for="new_pax_name">Nom / Unité</label>
             <input type="text" id="new_pax_name" placeholder="Ex: GIGN - EQUIPE 1" class="pctac-input-1em">
         </div>
 
@@ -587,7 +587,7 @@
 
         <div class="pctac-create-pax-actions">
             <button type="button" class="add-btn pctac-btn-flex-2-45" id="confirmCreatePaxBtn">
-                <span class="material-symbols-outlined pctac-icon-20-mid-mr5">check_circle</span>
+                <span class="material-symbols-outlined pctac-icon-20-mid-mr5" aria-hidden="true">check_circle</span>
                 CRÉER
             </button>
             <button type="button" class="add-btn pctac-btn-flex-1-input-45" id="cancelCreatePaxBtn">
@@ -613,14 +613,14 @@
         <h3 id="editModalTitle">Modifier l'entrée</h3>
         <input type="hidden" id="edit_id">
         <div class="form-row pctac-row-edit">
-            <div><label>Heure</label><input type="time" id="edit_heure"></div>
+            <div><label for="edit_heure">Heure</label><input type="time" id="edit_heure"></div>
             <div>
-                <label>Localisation</label>
+                <label for="edit_lieu">Localisation</label>
                 <textarea id="edit_lieu" rows="2" class="pctac-textarea-lg"></textarea>
             </div>
         </div>
         <div class="pctac-mt-12">
-            <label>Remarques</label>
+            <label for="edit_remarques">Remarques</label>
             <textarea id="edit_remarques" rows="6" class="pctac-textarea-lg"></textarea>
         </div>
         <div class="pctac-actions-row">
@@ -644,14 +644,14 @@
                 </label>
             </div>
             <div class="pctac-edit-fields">
-                <div class="row-2"><div><label>Nom</label><input type="text" id="edit_adv_nom" class="pctac-input-lg"></div>
-                <div><label>Prénom</label><input type="text" id="edit_adv_prenom" class="pctac-input-lg"></div></div>
-                <div class="row-2"><div><label>D.N.</label><input type="text" id="edit_adv_dob" class="pctac-input-lg"></div>
-                <div><label>Lien Victimes</label><input type="text" id="edit_adv_lien" class="pctac-input-lg"></div></div>
-                <div><label>Antécédents</label><textarea id="edit_adv_antecedents" rows="2" class="pctac-textarea-lg"></textarea></div>
-                <div class="row-2"><div><label>Attitude</label><input type="text" id="edit_adv_attitude" class="pctac-input-lg"></div>
-                <div><label>Substance</label><input type="text" id="edit_adv_substance" class="pctac-input-lg"></div></div>
-                <div><label>Armes</label><textarea id="edit_adv_armes" rows="2" class="pctac-textarea-lg"></textarea></div>
+                <div class="row-2"><div><label for="edit_adv_nom">Nom</label><input type="text" id="edit_adv_nom" class="pctac-input-lg"></div>
+                <div><label for="edit_adv_prenom">Prénom</label><input type="text" id="edit_adv_prenom" class="pctac-input-lg"></div></div>
+                <div class="row-2"><div><label for="edit_adv_dob">D.N.</label><input type="text" id="edit_adv_dob" class="pctac-input-lg"></div>
+                <div><label for="edit_adv_lien">Lien Victimes</label><input type="text" id="edit_adv_lien" class="pctac-input-lg"></div></div>
+                <div><label for="edit_adv_antecedents">Antécédents</label><textarea id="edit_adv_antecedents" rows="2" class="pctac-textarea-lg"></textarea></div>
+                <div class="row-2"><div><label for="edit_adv_attitude">Attitude</label><input type="text" id="edit_adv_attitude" class="pctac-input-lg"></div>
+                <div><label for="edit_adv_substance">Substance</label><input type="text" id="edit_adv_substance" class="pctac-input-lg"></div></div>
+                <div><label for="edit_adv_armes">Armes</label><textarea id="edit_adv_armes" rows="2" class="pctac-textarea-lg"></textarea></div>
             </div>
         </div>
         <div class="pctac-actions-row">
@@ -675,12 +675,12 @@
                 </label>
             </div>
             <div class="pctac-edit-fields">
-                <div class="row-2"><div><label>Nom</label><input type="text" id="edit_host_nom" class="pctac-input-lg"></div>
-                <div><label>Prénom</label><input type="text" id="edit_host_prenom" class="pctac-input-lg"></div></div>
-                <div class="row-2"><div><label>D.N.</label><input type="text" id="edit_host_dob" class="pctac-input-lg"></div>
-                <div><label>Lien Adversaire</label><input type="text" id="edit_host_lien" class="pctac-input-lg"></div></div>
-                <div><label>État</label><textarea id="edit_host_etat" rows="2" class="pctac-textarea-lg"></textarea></div>
-                <div><label>Blessures</label><textarea id="edit_host_blessures" rows="3" class="pctac-textarea-lg"></textarea></div>
+                <div class="row-2"><div><label for="edit_host_nom">Nom</label><input type="text" id="edit_host_nom" class="pctac-input-lg"></div>
+                <div><label for="edit_host_prenom">Prénom</label><input type="text" id="edit_host_prenom" class="pctac-input-lg"></div></div>
+                <div class="row-2"><div><label for="edit_host_dob">D.N.</label><input type="text" id="edit_host_dob" class="pctac-input-lg"></div>
+                <div><label for="edit_host_lien">Lien Adversaire</label><input type="text" id="edit_host_lien" class="pctac-input-lg"></div></div>
+                <div><label for="edit_host_etat">État</label><textarea id="edit_host_etat" rows="2" class="pctac-textarea-lg"></textarea></div>
+                <div><label for="edit_host_blessures">Blessures</label><textarea id="edit_host_blessures" rows="3" class="pctac-textarea-lg"></textarea></div>
             </div>
         </div>
         <div class="pctac-actions-row">
@@ -694,7 +694,7 @@
         <h3 id="planTextModalTitle">Annoter le dessin</h3>
         <input type="hidden" id="plan_text_target_id">
         <div class="pctac-mt-12">
-            <label>Texte (laisser vide pour supprimer l'annotation)</label>
+            <label for="plan_text_input">Texte (laisser vide pour supprimer l'annotation)</label>
             <textarea id="plan_text_input" rows="4" class="pctac-textarea-lg"
                 placeholder="Ex : Cellule 1 - 4 pax, ZRA, etc."></textarea>
         </div>
@@ -702,22 +702,22 @@
             <div>
                 <label class="pctac-muted-sm">Couleur du texte</label>
                 <div id="plan_text_color_palette" class="pctac-text-color-row">
-                    <button type="button" class="plan-text-color" data-color="#ffffff" style="width: 28px; height: 28px; border-radius: 50%; background: #ffffff; border: 2px solid #fff; cursor: pointer;"></button>
-                    <button type="button" class="plan-text-color" data-color="#fbbf24" style="width: 28px; height: 28px; border-radius: 50%; background: #fbbf24; border: 2px solid transparent; cursor: pointer;"></button>
-                    <button type="button" class="plan-text-color" data-color="#ef4444" style="width: 28px; height: 28px; border-radius: 50%; background: #ef4444; border: 2px solid transparent; cursor: pointer;"></button>
-                    <button type="button" class="plan-text-color" data-color="#22c55e" style="width: 28px; height: 28px; border-radius: 50%; background: #22c55e; border: 2px solid transparent; cursor: pointer;"></button>
-                    <button type="button" class="plan-text-color" data-color="#3b82f6" style="width: 28px; height: 28px; border-radius: 50%; background: #3b82f6; border: 2px solid transparent; cursor: pointer;"></button>
+                    <button type="button" class="plan-text-color" data-color="#ffffff" aria-label="Choisir la couleur blanche" style="width: 28px; height: 28px; border-radius: 50%; background: #ffffff; border: 2px solid #fff; cursor: pointer;"></button>
+                    <button type="button" class="plan-text-color" data-color="#fbbf24" aria-label="Choisir la couleur ambre" style="width: 28px; height: 28px; border-radius: 50%; background: #fbbf24; border: 2px solid transparent; cursor: pointer;"></button>
+                    <button type="button" class="plan-text-color" data-color="#ef4444" aria-label="Choisir la couleur rouge" style="width: 28px; height: 28px; border-radius: 50%; background: #ef4444; border: 2px solid transparent; cursor: pointer;"></button>
+                    <button type="button" class="plan-text-color" data-color="#22c55e" aria-label="Choisir la couleur verte" style="width: 28px; height: 28px; border-radius: 50%; background: #22c55e; border: 2px solid transparent; cursor: pointer;"></button>
+                    <button type="button" class="plan-text-color" data-color="#3b82f6" aria-label="Choisir la couleur bleue" style="width: 28px; height: 28px; border-radius: 50%; background: #3b82f6; border: 2px solid transparent; cursor: pointer;"></button>
                 </div>
                 <input type="hidden" id="plan_text_color_val" value="#ffffff">
             </div>
             <div>
                 <label class="pctac-muted-sm">Taille</label>
                 <div class="pctac-size-controls-row">
-                    <button type="button" id="plan_text_size_minus" title="Réduire" class="pctac-icon-btn-sq">
+                    <button type="button" id="plan_text_size_minus" title="Réduire" aria-label="Réduire la taille du texte" class="pctac-icon-btn-sq">
                         <span class="material-symbols-outlined pctac-icon-20">text_decrease</span>
                     </button>
                     <span id="plan_text_size_val" class="pctac-text-size-val">13</span>
-                    <button type="button" id="plan_text_size_plus" title="Agrandir" class="pctac-icon-btn-sq">
+                    <button type="button" id="plan_text_size_plus" title="Agrandir" aria-label="Agrandir la taille du texte" class="pctac-icon-btn-sq">
                         <span class="material-symbols-outlined pctac-icon-20">text_increase</span>
                     </button>
                 </div>
@@ -739,7 +739,7 @@
     <dialog class="lightbox" id="lightboxModal" aria-labelledby="lightboxTitle">
         <img id="lightboxImage" src="" alt="">
         <div class="lightbox-title" id="lightboxTitle"></div>
-        <button type="button" onclick="UI.closeLightbox()" class="pctac-lightbox-close-btn">
+        <button type="button" onclick="UI.closeLightbox()" class="pctac-lightbox-close-btn" aria-label="Fermer l'aperçu photo">
             <span class="material-symbols-outlined pctac-icon-40">close</span>
         </button>
     </dialog>
@@ -747,7 +747,7 @@
     <!-- Dock Flottant -->
     <div class="dock-menu collapsed" id="dockMenu">
         <!-- Bouton de bascule du dock -->
-        <button type="button" class="dock-menu-item" id="dockToggleBtn" title="Ouvrir/Réduire">
+        <button type="button" class="dock-menu-item" id="dockToggleBtn" title="Ouvrir/Réduire" aria-label="Ouvrir ou réduire le dock">
             <span class="material-symbols-outlined">expand_less</span>
         </button>
         <!-- Retour au portail TacSuite -->

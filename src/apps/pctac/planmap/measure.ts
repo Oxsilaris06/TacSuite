@@ -227,7 +227,7 @@ export const MeasureMethods = {
                 font-size: 14px; font-weight: 700; cursor: pointer;
                 touch-action: manipulation; -webkit-tap-highlight-color: transparent;
             `;
-            b.innerHTML = `<span class="material-symbols-outlined" style="font-size:22px;">${icon}</span><span>${label}</span>`;
+            b.innerHTML = `<span class="material-symbols-outlined" aria-hidden="true" style="font-size:22px;">${icon}</span><span>${label}</span>`;
             b.onclick = this._safe(onClick, 'measureCtl:' + label);
             return b;
         };

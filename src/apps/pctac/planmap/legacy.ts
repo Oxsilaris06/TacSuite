@@ -69,7 +69,7 @@ export const LegacyMethods = {
 			-webkit-user-select: none;
 		`;
 		const btn = (icon: string, title: string, color?: string | undefined) => `
-			<button type="button" data-act="${icon}" title="${title}"
+			<button type="button" data-act="${icon}" title="${title}" aria-label="${title}"
 				style="background: transparent; border: 0; color: ${color || '#fff'};
 				       padding: 6px; min-width: 34px; min-height: 34px;
 				       border-radius: 6px; cursor: pointer; display: inline-flex;
@@ -289,14 +289,14 @@ export const LegacyMethods = {
 				background: rgba(34,197,94,0.2); border: 1px solid #22c55e;
 				color: #22c55e; padding: 6px 12px; border-radius: 6px;
 				cursor: pointer; font-weight: 600; min-height: 36px;">
-				<span class="material-symbols-outlined" style="font-size: 18px;">check</span>Valider
+				<span class="material-symbols-outlined" aria-hidden="true" style="font-size: 18px;">check</span>Valider
 			</button>
 			<button type="button" data-act="cancel" style="
 				display: inline-flex; align-items: center; gap: 4px;
 				background: rgba(239,68,68,0.2); border: 1px solid #ef4444;
 				color: #ef4444; padding: 6px 12px; border-radius: 6px;
 				cursor: pointer; font-weight: 600; min-height: 36px;">
-				<span class="material-symbols-outlined" style="font-size: 18px;">close</span>Annuler
+				<span class="material-symbols-outlined" aria-hidden="true" style="font-size: 18px;">close</span>Annuler
 			</button>
 		`;
 		const okBtn = bar.querySelector('[data-act="ok"]') as HTMLButtonElement | null;

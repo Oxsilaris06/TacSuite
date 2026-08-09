@@ -283,7 +283,7 @@ export class Wheel {
             font-family: var(--font-ui, sans-serif);
         `;
     center.innerHTML = `
-            <span class="material-symbols-outlined" style="font-size: 22px; line-height: 1;">${this.centerIcon}</span>
+            <span class="material-symbols-outlined" aria-hidden="true" style="font-size: 22px; line-height: 1;">${this.centerIcon}</span>
             <span style="font-size: 9px; font-weight: 700; letter-spacing: 0.5px; opacity: 0.85;">${isBack ? 'RETOUR' : 'FERMER'}</span>
         `;
     center.addEventListener('pointerdown', (ev) => ev.stopPropagation());
@@ -345,7 +345,7 @@ export class Wheel {
                 touch-action: none;
                 padding: 0;
             `;
-      b.innerHTML = `<span class="material-symbols-outlined" style="font-size: ${btnSize >= 56 ? 26 : 22}px; line-height: 1;">${opt.icon}</span>`;
+      b.innerHTML = `<span class="material-symbols-outlined" aria-hidden="true" style="font-size: ${btnSize >= 56 ? 26 : 22}px; line-height: 1;">${opt.icon}</span>`;
 
       // LABEL TOUJOURS VISIBLE en dessous du bouton, sur fond foncé
       // Position : ajustée selon l'angle pour éviter la superposition avec d'autres

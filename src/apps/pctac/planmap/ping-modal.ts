@@ -165,7 +165,7 @@ export const PingModalMethods = {
                        background: rgba(59,130,246,0.12);
                        border: 1px solid rgba(59,130,246,0.4);
                        color: var(--text-main); cursor: pointer; font-size: 0.85em;">
-                <span class="material-symbols-outlined" style="font-size: 20px;">${ic.id}</span>
+                <span class="material-symbols-outlined" aria-hidden="true" style="font-size: 20px;">${ic.id}</span>
                 ${ic.label}
             </button>
         `).join('');
@@ -202,7 +202,7 @@ export const PingModalMethods = {
                                    background: rgba(255,255,255,0.04);
                                    border: 1px solid var(--border-glass);
                                    color: var(--text-main); cursor: pointer; font-size: 0.7em;">
-                            <span class="material-symbols-outlined" style="font-size: 24px;">${ic.id}</span>
+                            <span class="material-symbols-outlined" aria-hidden="true" style="font-size: 24px;">${ic.id}</span>
                             <span style="text-align: center; line-height: 1.1;">${ic.label}</span>
                         </button>
                     `).join('')}

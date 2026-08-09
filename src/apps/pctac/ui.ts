@@ -304,10 +304,10 @@ export const UI: UIContract = {
                 <td style="width: 15%;">
                     <div class="heure-cell-container">
                         <span class="heure-cell-text">${esc(entry.heure)}</span>
-                        <button type="button" class="action-btn-small edit" onclick="window.openEditModal('${entry.id}')" title="Modifier">
+                        <button type="button" class="action-btn-small edit" onclick="window.openEditModal('${entry.id}')" title="Modifier" aria-label="Modifier cette entrée">
                             <span class="material-symbols-outlined" style="font-size: 18px;">edit</span>
                         </button>
-                        <button type="button" class="delete-btn" onclick="window.deleteLogEntry('${entry.id}')">
+                        <button type="button" class="delete-btn" onclick="window.deleteLogEntry('${entry.id}')" aria-label="Supprimer cette entrée">
                             <span class="material-symbols-outlined" style="font-size: 18px;">close</span>
                         </button>
                     </div>
@@ -579,8 +579,8 @@ export const UI: UIContract = {
                 </td>
                 <td style="width: 50px;">
                     <div style="display: flex; gap: 5px;">
-                        <button class="action-btn-small edit" onclick="window.UI.showEditAdversaryModal('${item.id}')" title="Modifier"><span class="material-symbols-outlined" style="font-size: 18px;">edit</span></button>
-                        <button class="delete-btn" onclick="window.deleteCollectionItem('pcTacAdversaries', '${item.id}', 'view-adversaires')"><span class="material-symbols-outlined" style="font-size: 18px;">delete</span></button>
+                        <button class="action-btn-small edit" onclick="window.UI.showEditAdversaryModal('${item.id}')" title="Modifier" aria-label="Modifier cet adversaire"><span class="material-symbols-outlined" style="font-size: 18px;">edit</span></button>
+                        <button class="delete-btn" onclick="window.deleteCollectionItem('pcTacAdversaries', '${item.id}', 'view-adversaires')" aria-label="Supprimer cet adversaire"><span class="material-symbols-outlined" style="font-size: 18px;">delete</span></button>
                     </div>
                 </td>
             </tr>
@@ -610,8 +610,8 @@ export const UI: UIContract = {
                 </td>
                 <td style="width: 50px;">
                     <div style="display: flex; gap: 5px;">
-                        <button class="action-btn-small edit" onclick="window.UI.showEditHostageModal('${item.id}')" title="Modifier"><span class="material-symbols-outlined" style="font-size: 18px;">edit</span></button>
-                        <button class="delete-btn" onclick="window.deleteCollectionItem('pcTacHostages', '${item.id}', 'view-otages')"><span class="material-symbols-outlined" style="font-size: 18px;">delete</span></button>
+                        <button class="action-btn-small edit" onclick="window.UI.showEditHostageModal('${item.id}')" title="Modifier" aria-label="Modifier cet otage"><span class="material-symbols-outlined" style="font-size: 18px;">edit</span></button>
+                        <button class="delete-btn" onclick="window.deleteCollectionItem('pcTacHostages', '${item.id}', 'view-otages')" aria-label="Supprimer cet otage"><span class="material-symbols-outlined" style="font-size: 18px;">delete</span></button>
                     </div>
                 </td>
             </tr>
@@ -629,7 +629,7 @@ export const UI: UIContract = {
                 <td>${esc(item.unite)}</td>
                 <td>${esc(item.tph)}</td>
                 <td>${esc(item.mission)}</td>
-                <td><button class="delete-btn" onclick="window.deleteCollectionItem('pcTacFriends', '${item.id}', 'view-amis')"><span class="material-symbols-outlined" style="font-size: 18px;">delete</span></button></td>
+                <td><button class="delete-btn" onclick="window.deleteCollectionItem('pcTacFriends', '${item.id}', 'view-amis')" aria-label="Supprimer cet ami"><span class="material-symbols-outlined" style="font-size: 18px;">delete</span></button></td>
             </tr>
         `).join('');
   },
@@ -675,8 +675,8 @@ export const UI: UIContract = {
                     <div style="display: flex; justify-content: space-between; align-items: center;">
                         <span class="photo-title-text" style="font-size: 0.9em; font-weight: bold;">${esc(item.title)}</span>
                         <div style="display: flex; gap: 5px;">
-                            <button class="action-btn-small edit" title="Renommer" onclick="window.UI.editPhotoTitle('${item.id}')"><span class="material-symbols-outlined" style="font-size: 16px;">edit</span></button>
-                            <button class="action-btn-small delete" title="Supprimer" onclick="window.deleteCollectionItem('pcTacPhotos', '${item.id}', 'view-photos')"><span class="material-symbols-outlined" style="font-size: 16px;">delete</span></button>
+                            <button class="action-btn-small edit" title="Renommer" onclick="window.UI.editPhotoTitle('${item.id}')" aria-label="Renommer cette photo"><span class="material-symbols-outlined" style="font-size: 16px;">edit</span></button>
+                            <button class="action-btn-small delete" title="Supprimer" onclick="window.deleteCollectionItem('pcTacPhotos', '${item.id}', 'view-photos')" aria-label="Supprimer cette photo"><span class="material-symbols-outlined" style="font-size: 16px;">delete</span></button>
                         </div>
                     </div>
                     <div style="display: flex; justify-content: space-between; align-items: center;">
