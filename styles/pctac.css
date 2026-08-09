@@ -1095,17 +1095,19 @@ body.up-kb-open .up-kb-aware {
          * SECTION : MODALES — backdrop, boîte de dialogue générique, variantes
          * d'édition, modale Ping, lightbox image
          * ════════════════════════════════════════════════════════════════ */
-        /* Modal / Lightbox */
-        .modal-backdrop {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
+        /* Modal / Lightbox
+         * R2-T1 (migration <dialog> natif) : `.modal`/`.lightbox` sont maintenant des
+         * <dialog> ouverts via `.showModal()` — le fond assombri partagé `#modalBackdrop`
+         * (ex-div sœur, `.modal-backdrop`) est remplacé par le pseudo-élément natif
+         * `::backdrop` de chaque dialog (mêmes rgba/blur qu'avant, cf. dialog::backdrop
+         * ci-dessous). `display: none` n'est plus déclaré ici : la UA stylesheet gère déjà
+         * `dialog:not([open]) { display: none }` / `dialog[open] { display: block }` — le
+         * redéclarer casserait l'affichage (une règle auteur `display:none` inconditionnelle
+         * bat toujours une règle UA, même `[open]`, cf. OI `#quickEditModal[open]` pour le
+         * même piège documenté). */
+        dialog.modal::backdrop {
             background: rgba(0, 0, 0, 0.8);
             backdrop-filter: blur(8px);
-            z-index: var(--z-scrim);
-            display: none;
         }
 
         .modal {
@@ -1113,6 +1115,7 @@ body.up-kb-open .up-kb-aware {
             top: 50%;
             left: 50%;
             transform: translate(-50%, -50%);
+            margin: 0;
             width: 95%;
             max-width: 500px;
             background: var(--bg-glass-heavy);
@@ -1121,7 +1124,6 @@ body.up-kb-open .up-kb-aware {
             border-radius: var(--radius-md);
             padding: 30px;
             z-index: var(--z-dialog);
-            display: none;
             box-shadow: var(--shadow-float), var(--inner-glow);
         }
 
@@ -1254,9 +1256,10 @@ body.up-kb-open .up-kb-aware {
             left: 0;
             width: 100%;
             height: 100%;
+            margin: 0;
+            border: none;
             background: rgba(0, 0, 0, 0.95);
             z-index: var(--z-top);
-            display: none;
             flex-direction: column;
             align-items: center;
             justify-content: center;
@@ -1264,7 +1267,10 @@ body.up-kb-open .up-kb-aware {
             backdrop-filter: blur(10px);
         }
 
-        .lightbox.active {
+        /* R2-T1 : `<dialog>` natif — flex requis (pas le `display:block` par défaut de la
+         * UA stylesheet une fois ouvert), remplace l'ex-classe `.active` posée par
+         * `classList` (désormais géré par `.showModal()`/`.close()`, cf. ui.ts). */
+        .lightbox[open] {
             display: flex;
         }
 

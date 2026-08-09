@@ -4,21 +4,30 @@
  *
  * 7 méthodes de `planMap.js:4546 → 4719` (cf. `docs/SPEC-PLANMAP-SPLIT.md` §4.14) :
  *   - `_openTextModal`             (:4546) — ouvre la modale d'édition de texte
- *   - `_mountModalInFullscreen`    (:4583) — reparente modal+backdrop dans l'élément fullscreen
- *   - `_restoreModalFromFullscreen`(:4597) — restaure modal+backdrop à leur emplacement d'origine
+ *   - `_mountModalInFullscreen`    (:4583) — reparente le modal dans l'élément fullscreen
+ *   - `_restoreModalFromFullscreen`(:4597) — restaure le modal à son emplacement d'origine
  *   - `_hideTextModal`             (:4607) — ferme la modale (purge la forme fantôme si texte vide)
  *   - `_confirmTextModal`          (:4629) — applique la saisie sur la forme cible
  *   - `_bindTextModalOnce`         (:4670) — câble les listeners (idempotent via `_textModalBound`)
  *   - `_addFreeText`               (:4705) — place une nouvelle forme `text` libre
  *
- * Cœur du module : le reparentage plein écran mémorise SIX références dans
- * `this._modalReparent` (modal, backdrop, modalParent, modalNext, bdParent,
- * bdNext) — `_restoreModalFromFullscreen` les réinsère via `insertBefore(node,
- * next)`. Perdre `modalNext`/`bdNext` ferait réapparaître la modale au mauvais
- * endroit du DOM après la sortie du plein écran.
+ * Cœur du module : le reparentage plein écran mémorise TROIS références dans
+ * `this._modalReparent` (modal, modalParent, modalNext) —
+ * `_restoreModalFromFullscreen` les réinsère via `insertBefore(node, next)`.
+ * Perdre `modalNext` ferait réapparaître la modale au mauvais endroit du DOM
+ * après la sortie du plein écran.
+ *
+ * R2-T1 (migration `<dialog>` natif, cf. état de PC-Tac courant) : `#planTextModal`
+ * est désormais un `<dialog>` ouvert via `.showModal()`/`.close()` — l'ex-fond
+ * partagé `#modalBackdrop` (reparenté en miroir jusqu'ici, d'où les SIX
+ * références historiques ci-dessus dans le port initial) a disparu, remplacé
+ * par le `::backdrop` intrinsèque du dialog qui suit automatiquement son
+ * hôte. Seul le `<dialog>` lui-même reste à reparenter.
  *
  * Source : `/home/nico/Bureau/Web/GStart-main/modules/pctac/planMap.js`
- * (lecture seule). Port VERBATIM (typage uniquement, cf. §8.3 SPEC-PCTAC-CONVERSION.md).
+ * (lecture seule). Port VERBATIM à l'origine (typage uniquement, cf. §8.3
+ * SPEC-PCTAC-CONVERSION.md) ; adapté pour R2-T1 (suppression du backdrop
+ * partagé, `<dialog>` natif).
  */
 
 import type { LngLatObj, PlanMapInternal } from './types.js';
@@ -30,11 +39,12 @@ export const TextModalMethods = {
      * Sinon, on ajoute / modifie l'annotation `text` d'une forme dessinée.
      */
     // planMap.js:4546
+    // R2-T1 : `<dialog>` natif — `.showModal()` remplace le fond partagé
+    // `#modalBackdrop` (disparu) + `style.display`.
     _openTextModal(this: PlanMapInternal, targetId: string): void {
         this._bindTextModalOnce(); // défensif : assure que les listeners sont en place
-        const modal = document.getElementById('planTextModal');
-        const backdrop = document.getElementById('modalBackdrop');
-        if (!modal || !backdrop) return;
+        const modal = document.getElementById('planTextModal') as HTMLDialogElement | null;
+        if (!modal) return;
         const target = this._loadShapes().find((s) => s.id === targetId);
         const input = document.getElementById('plan_text_input') as HTMLInputElement | null;
         const idHidden = document.getElementById('plan_text_target_id') as HTMLInputElement | null;
@@ -56,40 +66,40 @@ export const TextModalMethods = {
         // En plein écran, le modal (enfant de <body>) n'est pas rendu : seul le
         // sous-arbre de l'élément fullscreen l'est. On le déplace donc dans cet
         // élément le temps de l'édition, puis on le restaure à la fermeture.
-        this._mountModalInFullscreen(modal, backdrop);
-        backdrop.style.display = 'block';
-        modal.style.display = 'block';
+        this._mountModalInFullscreen(modal);
+        modal.showModal();
         setTimeout(() => input && input.focus(), 50);
     },
 
     /**
      * Si un élément est en plein écran et que le modal n'en fait pas partie,
-     * on réinsère modal + backdrop dans l'élément fullscreen (sinon invisibles).
-     * Mémorise l'emplacement d'origine pour pouvoir restaurer.
+     * on le réinsère dans l'élément fullscreen (sinon invisible). Mémorise
+     * l'emplacement d'origine pour pouvoir restaurer.
+     * R2-T1 : ne reparente plus qu'un seul nœud (le `<dialog>`) — l'ex-fond
+     * `#modalBackdrop`, reparenté en miroir avant la migration `<dialog>`
+     * natif, a disparu (remplacé par le `::backdrop` intrinsèque du dialog,
+     * qui suit automatiquement son hôte, aucun reparentage requis pour lui).
      */
     // planMap.js:4583
-    _mountModalInFullscreen(this: PlanMapInternal, modal: HTMLElement, backdrop: HTMLElement | null): void {
+    _mountModalInFullscreen(this: PlanMapInternal, modal: HTMLElement): void {
         // `webkitFullscreenElement` : vendor-prefix absent du lib DOM standard TS (planMap.js:4584).
         const fsEl = document.fullscreenElement || (document as { webkitFullscreenElement?: Element | null }).webkitFullscreenElement;
         if (!fsEl || !modal) return;
         if (fsEl.contains(modal)) return; // déjà dedans
         this._modalReparent = {
-            modal, backdrop,
+            modal,
             modalParent: modal.parentNode, modalNext: modal.nextSibling,
-            bdParent: backdrop ? backdrop.parentNode : null, bdNext: backdrop ? backdrop.nextSibling : null,
         };
-        if (backdrop) fsEl.appendChild(backdrop);
         fsEl.appendChild(modal);
     },
 
-    /** Restaure modal + backdrop à leur emplacement d'origine (post-plein écran). */
+    /** Restaure le modal à son emplacement d'origine (post-plein écran). */
     // planMap.js:4597
     _restoreModalFromFullscreen(this: PlanMapInternal): void {
         const r = this._modalReparent;
         if (!r) return;
         try {
             if (r.modalParent) r.modalParent.insertBefore(r.modal, r.modalNext);
-            if (r.bdParent && r.backdrop) r.bdParent.insertBefore(r.backdrop, r.bdNext);
         } catch {
             // MapLibre/DOM peut jeter selon l'état du document — catch vide intentionnel (planMap.js:4603).
         }
@@ -97,6 +107,8 @@ export const TextModalMethods = {
     },
 
     // planMap.js:4607
+    // R2-T1 : `<dialog>` natif — `.close()` remplace le fond partagé
+    // `#modalBackdrop` (disparu) + `style.display`.
     _hideTextModal(this: PlanMapInternal): void {
         // Si l'utilisateur ferme la modale d'un texte libre vide jamais validé,
         // on retire la forme fantôme du store (évite les invisibles persistants).
@@ -115,10 +127,8 @@ export const TextModalMethods = {
                 this._renderShapes();
             }
         }
-        const modal = document.getElementById('planTextModal');
-        const backdrop = document.getElementById('modalBackdrop');
-        if (modal) modal.style.display = 'none';
-        if (backdrop) backdrop.style.display = 'none';
+        const modal = document.getElementById('planTextModal') as HTMLDialogElement | null;
+        if (modal) modal.close();
         this._restoreModalFromFullscreen();
     },
 
@@ -162,10 +172,8 @@ export const TextModalMethods = {
         const stillExists = this._loadShapes().some((s) => s.id === id);
         if (stillExists) this._selectShape(id);
         // Ferme la modale (sans retrigger le cleanup vide)
-        const modal = document.getElementById('planTextModal');
-        const backdrop = document.getElementById('modalBackdrop');
-        if (modal) modal.style.display = 'none';
-        if (backdrop) backdrop.style.display = 'none';
+        const modal = document.getElementById('planTextModal') as HTMLDialogElement | null;
+        if (modal) modal.close();
         this._restoreModalFromFullscreen();
     },
 
@@ -199,9 +207,14 @@ export const TextModalMethods = {
         if (minusBtn) minusBtn.onclick = () => setSize(parseInt((sizeInput as HTMLInputElement).value, 10) - 2);
         if (plusBtn)  plusBtn.onclick  = () => setSize(parseInt((sizeInput as HTMLInputElement).value, 10) + 2);
         // Échap / Ctrl-Entrée dans la modale
+        // R2-T1 : `modal.open` remplace `style.display === 'block'` (le
+        // `<dialog>` natif ferme déjà sur Escape ; ce handler tourne quand
+        // même en premier — cf. ordre événement/action-par-défaut — et
+        // applique le nettoyage métier via `_hideTextModal`, pas juste la
+        // fermeture visuelle).
         document.addEventListener('keydown', (e) => {
-            const modal = document.getElementById('planTextModal');
-            if (!modal || modal.style.display !== 'block') return;
+            const modal = document.getElementById('planTextModal') as HTMLDialogElement | null;
+            if (!modal || !modal.open) return;
             if (e.key === 'Escape') this._hideTextModal();
             if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) this._confirmTextModal();
         });

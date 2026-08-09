@@ -446,11 +446,11 @@
         </div>
 
         <!-- Modale PING hybride : entités existantes OU nouveau point libre -->
-        <div class="modal pctac-modal-large pctac-modal-scroll" id="pingModal">
+        <dialog class="modal pctac-modal-large pctac-modal-scroll" id="pingModal" aria-labelledby="pingModalTitle">
             <button type="button" id="pingModalCloseBtn" class="pctac-modal-close-btn">
                 <span class="material-symbols-outlined pctac-icon-24">close</span>
             </button>
-            <h3><span class="material-symbols-outlined pctac-icon-accent-mid">add_location</span> Ajouter un point</h3>
+            <h3 id="pingModalTitle"><span class="material-symbols-outlined pctac-icon-accent-mid">add_location</span> Ajouter un point</h3>
 
             <!-- Section 1 : entités déjà créées -->
             <div class="pctac-m-18-0">
@@ -509,7 +509,7 @@
                 <button type="button" class="add-btn" id="freePinConfirmBtn">Créer ce point</button>
             </div>
             <p class="pctac-ping-footer-note">Après sélection, clique sur la carte pour placer le point.</p>
-        </div>
+        </dialog>
 
         <!-- VUE : LIENS EXTERNES -->
         <div id="view-liens" class="tab-content-view">
@@ -562,15 +562,14 @@
     </div>
 
     <!-- MODALS -->
-    <div class="modal-backdrop" id="modalBackdrop"></div>
 
-    <div class="modal pctac-modal-scroll-90" id="createPaxModal">
+    <dialog class="modal pctac-modal-scroll-90" id="createPaxModal" aria-labelledby="createPaxModalTitle">
         <button onclick="UI.hideCreatePaxModal()" class="pctac-modal-close-btn">
             <span class="material-symbols-outlined pctac-icon-24">close</span>
         </button>
         <div class="pctac-create-pax-header">
             <span class="material-symbols-outlined pctac-text-accent">person_add</span>
-            <h3 class="pctac-m-0">Nouvel Intervenant</h3>
+            <h3 class="pctac-m-0" id="createPaxModalTitle">Nouvel Intervenant</h3>
         </div>
 
         <div class="pctac-mb-20">
@@ -595,11 +594,11 @@
                 ANNULER
             </button>
         </div>
-    </div>
+    </dialog>
 
     <!-- Modale de réinitialisation -->
-    <div class="modal" id="resetModal">
-        <h3><span class="material-symbols-outlined pctac-icon-danger-mid">warning</span> RESET COMPLET</h3>
+    <dialog class="modal" id="resetModal" aria-labelledby="resetModalTitle">
+        <h3 id="resetModalTitle"><span class="material-symbols-outlined pctac-icon-danger-mid">warning</span> RESET COMPLET</h3>
         <p class="pctac-reset-warning-text">Attention, toutes les données (logs,
             adversaires, otages, photos) seront définitivement supprimées. Cette action est irréversible.</p>
         <div class="pctac-actions-row-gap10">
@@ -607,11 +606,11 @@
                 RESET</button>
             <button type="button" class="add-btn pctac-btn-bg-input" id="cancelResetBtn">ANNULER</button>
         </div>
-    </div>
+    </dialog>
 
     <!-- Modale d'édition de log -->
-    <div class="modal pctac-modal-large" id="editModal">
-        <h3>Modifier l'entrée</h3>
+    <dialog class="modal pctac-modal-large" id="editModal" aria-labelledby="editModalTitle">
+        <h3 id="editModalTitle">Modifier l'entrée</h3>
         <input type="hidden" id="edit_id">
         <div class="form-row pctac-row-edit">
             <div><label>Heure</label><input type="time" id="edit_heure"></div>
@@ -628,11 +627,11 @@
             <button type="button" class="add-btn" id="confirmEditBtn">Enregistrer</button>
             <button type="button" class="add-btn pctac-btn-bg-input" onclick="UI.hideEditModal()">Annuler</button>
         </div>
-    </div>
+    </dialog>
 
     <!-- Modale d'édition d'adversaire (champs + photo) -->
-    <div class="modal pctac-modal-large pctac-modal-scroll" id="editAdversaryModal">
-        <h3>Modifier Adversaire</h3>
+    <dialog class="modal pctac-modal-large pctac-modal-scroll" id="editAdversaryModal" aria-labelledby="editAdversaryModalTitle">
+        <h3 id="editAdversaryModalTitle">Modifier Adversaire</h3>
         <input type="hidden" id="edit_adv_id">
         <div class="pctac-edit-grid">
             <div class="pctac-edit-photo">
@@ -659,11 +658,11 @@
             <button type="button" class="add-btn" id="confirmEditAdvBtn">Enregistrer</button>
             <button class="add-btn pctac-btn-bg-input" onclick="UI.hideEditAdversaryModal()">Annuler</button>
         </div>
-    </div>
+    </dialog>
 
     <!-- Modale d'édition d'otage (champs + photo) -->
-    <div class="modal pctac-modal-large pctac-modal-scroll" id="editHostageModal">
-        <h3>Modifier Otage</h3>
+    <dialog class="modal pctac-modal-large pctac-modal-scroll" id="editHostageModal" aria-labelledby="editHostageModalTitle">
+        <h3 id="editHostageModalTitle">Modifier Otage</h3>
         <input type="hidden" id="edit_host_id">
         <div class="pctac-edit-grid">
             <div class="pctac-edit-photo">
@@ -688,10 +687,10 @@
             <button type="button" class="add-btn" id="confirmEditHostBtn">Enregistrer</button>
             <button class="add-btn pctac-btn-bg-input" onclick="UI.hideEditHostageModal()">Annuler</button>
         </div>
-    </div>
+    </dialog>
 
     <!-- Modale de saisie de texte pour annotation dans/sur un dessin -->
-    <div class="modal pctac-modal-large pctac-plan-text-modal" id="planTextModal">
+    <dialog class="modal pctac-modal-large pctac-plan-text-modal" id="planTextModal" aria-labelledby="planTextModalTitle">
         <h3 id="planTextModalTitle">Annoter le dessin</h3>
         <input type="hidden" id="plan_text_target_id">
         <div class="pctac-mt-12">
@@ -729,7 +728,7 @@
             <button type="button" class="add-btn" id="planTextConfirmBtn">Enregistrer</button>
             <button type="button" class="add-btn pctac-btn-bg-input" id="planTextCancelBtn">Annuler</button>
         </div>
-    </div>
+    </dialog>
 
     <!-- Input caché pour import archive .pctac.zip -->
     <input type="file" id="archiveImportInput" accept=".zip,.pctac,.pctac.zip,application/zip" style="display:none;">
@@ -737,13 +736,13 @@
     <!-- Input caché pour la passerelle OI → PC TAC (.oi.zip ou session .json) -->
     <input type="file" id="oiImportInput" accept=".zip,.oi.zip,.json,application/zip,application/json" style="display:none;">
 
-    <div class="lightbox" id="lightboxModal">
+    <dialog class="lightbox" id="lightboxModal" aria-labelledby="lightboxTitle">
         <img id="lightboxImage" src="" alt="">
         <div class="lightbox-title" id="lightboxTitle"></div>
         <button type="button" onclick="UI.closeLightbox()" class="pctac-lightbox-close-btn">
             <span class="material-symbols-outlined pctac-icon-40">close</span>
         </button>
-    </div>
+    </dialog>
 
     <!-- Dock Flottant -->
     <div class="dock-menu collapsed" id="dockMenu">

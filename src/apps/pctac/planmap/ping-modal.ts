@@ -50,11 +50,11 @@ import type { PlanEntityKind, PlanMapInternal } from './types.js';
 
 export const PingModalMethods = {
     // planMap.js:957-970
+    // R2-T1 : `<dialog>` natif — `.showModal()` remplace le fond partagé
+    // `#modalBackdrop` (disparu) + `style.display`.
     _openPingModal(this: PlanMapInternal): void {
-        const backdrop = document.getElementById('modalBackdrop');
-        if (backdrop) backdrop.style.display = 'block';
-        const modal = document.getElementById('pingModal');
-        if (modal) modal.style.display = 'block';
+        const modal = document.getElementById('pingModal') as HTMLDialogElement | null;
+        if (modal) modal.showModal();
         const labelInput = document.getElementById('free_pin_label') as HTMLInputElement | null;
         if (labelInput) labelInput.value = '';
         const veh = document.getElementById('free_pin_is_vehicle') as HTMLInputElement | null;
@@ -70,10 +70,8 @@ export const PingModalMethods = {
 
     // planMap.js:972-975
     _closePingModal(this: PlanMapInternal): void {
-        const backdrop = document.getElementById('modalBackdrop');
-        if (backdrop) backdrop.style.display = 'none';
-        const modal = document.getElementById('pingModal');
-        if (modal) modal.style.display = 'none';
+        const modal = document.getElementById('pingModal') as HTMLDialogElement | null;
+        if (modal) modal.close();
     },
 
     /** Rend la liste des entités existantes (Adv/Otage/Ami) dans la modale Ping */

@@ -48,10 +48,22 @@ function makeFakeThis(pins: PlanPin[] = []): {
     return { fake: base as unknown as PlanMapInternal, showHint, hideHint };
 }
 
-/** Monte le DOM minimal de la modale Ping + du picker d'icônes (pctac2.html:2009-2154). */
+/**
+ * Monte le DOM minimal de la modale Ping + du picker d'icônes (pctac2.html:2009-2154).
+ * R2-T1 (migration `<dialog>` natif) : `#pingModal` est un `<dialog>` (plus un
+ * `<div>`) — sans fond `#modalBackdrop` séparé (remplacé par le `::backdrop`
+ * intrinsèque du dialog).
+ *
+ * `HTMLDialogElement.showModal`/`.close` n'existent PAS sous jsdom (vérifié :
+ * jsdom 30.0.1 génère l'interface IDL — `.open` est un booléen réactif — mais
+ * `HTMLDialogElementImpl` n'implémente ni `showModal` ni `close`, cf. le sujet
+ * dépend du rendu/« top layer » que jsdom ne fait pas). Même limite déjà
+ * documentée et contournée côté OI (`tests/unit/oi/oi-dessin.test.ts:25-26`,
+ * `populateMemberCanvasModal`) : on stubbe `showModal`/`close` en `vi.fn()` sur
+ * l'élément monté, puis on assert `toHaveBeenCalled()` au lieu de lire `.open`.
+ */
 function mountPingModalDom(): {
-    backdrop: HTMLElement;
-    modal: HTMLElement;
+    modal: HTMLDialogElement;
     labelInput: HTMLInputElement;
     colorInput: HTMLInputElement;
     kindInput: HTMLInputElement;
@@ -68,8 +80,7 @@ function mountPingModalDom(): {
     entitiesList: HTMLElement;
 } {
     document.body.innerHTML = `
-        <div class="modal-backdrop" id="modalBackdrop"></div>
-        <div class="modal" id="pingModal">
+        <dialog class="modal" id="pingModal">
             <div id="ping_entities_list"></div>
             <input type="text" id="free_pin_label" autocomplete="off">
             <input type="hidden" id="free_pin_color" value="#3b82f6">
@@ -86,11 +97,13 @@ function mountPingModalDom(): {
                 <input type="text" id="pin_icon_search" autocomplete="off">
                 <div id="pin_icon_grid"></div>
             </div>
-        </div>
+        </dialog>
     `;
+    const modal = document.getElementById('pingModal') as HTMLDialogElement;
+    modal.showModal = vi.fn();
+    modal.close = vi.fn();
     return {
-        backdrop: document.getElementById('modalBackdrop') as HTMLElement,
-        modal: document.getElementById('pingModal') as HTMLElement,
+        modal,
         labelInput: document.getElementById('free_pin_label') as HTMLInputElement,
         colorInput: document.getElementById('free_pin_color') as HTMLInputElement,
         kindInput: document.getElementById('free_pin_kind') as HTMLInputElement,
@@ -166,8 +179,7 @@ describe('_openPingModal / _closePingModal (planMap.js:957-975) — DOM présent
 
         fake._openPingModal();
 
-        expect(dom.backdrop.style.display).toBe('block');
-        expect(dom.modal.style.display).toBe('block');
+        expect(dom.modal.showModal).toHaveBeenCalled();
         expect(dom.labelInput.value).toBe('');
         expect(dom.vehicleInput.checked).toBe(false);
         expect(dom.catalog.style.display).toBe('none');
@@ -178,16 +190,13 @@ describe('_openPingModal / _closePingModal (planMap.js:957-975) — DOM présent
         expect(fake._iconPickerBound).toBe(true);
     });
 
-    it('_closePingModal masque la modale et le backdrop', () => {
+    it('_closePingModal ferme la modale', () => {
         const { fake } = makeFakeThis();
         const dom = mountPingModalDom();
-        dom.backdrop.style.display = 'block';
-        dom.modal.style.display = 'block';
 
         fake._closePingModal();
 
-        expect(dom.backdrop.style.display).toBe('none');
-        expect(dom.modal.style.display).toBe('none');
+        expect(dom.modal.close).toHaveBeenCalled();
     });
 });
 
@@ -359,15 +368,12 @@ describe('_armFreePinPlacement (planMap.js:1142-1154)', () => {
         dom.kindInput.value = 'Inter';
         dom.iconHidden.value = 'local_police';
         fake.pendingEntityPin = { kind: 'adv', id: 'a1' };
-        dom.backdrop.style.display = 'block';
-        dom.modal.style.display = 'block';
 
         fake._armFreePinPlacement();
 
         expect(fake.pendingEntityPin).toBeNull();
         expect(fake.pendingFreePin).toEqual({ label: 'PC repli', color: '#eab308', kind: 'Inter', icon: 'local_police' });
-        expect(dom.backdrop.style.display).toBe('none');
-        expect(dom.modal.style.display).toBe('none');
+        expect(dom.modal.close).toHaveBeenCalled();
         expect(showHint).toHaveBeenCalledWith('Clique sur la carte pour placer "PC repli"');
     });
 

@@ -65,10 +65,22 @@ function createFakePlanMap(initialShapes: PlanShape[] = []): {
     };
 }
 
-/** Monte le DOM minimal de la modale de texte (`#planTextModal` + champs + palette). */
+/**
+ * Monte le DOM minimal de la modale de texte (`#planTextModal` + champs + palette).
+ * R2-T1 (migration `<dialog>` natif) : `#planTextModal` est un `<dialog>` (plus un
+ * `<div>`) — sans fond `#modalBackdrop` séparé (remplacé par le `::backdrop`
+ * intrinsèque du dialog).
+ *
+ * `HTMLDialogElement.showModal`/`.close` n'existent PAS sous jsdom (vérifié :
+ * jsdom 30.0.1 génère l'interface IDL — `.open` est un booléen réactif — mais
+ * `HTMLDialogElementImpl` n'implémente ni `showModal` ni `close`, le sujet
+ * dépend du rendu/« top layer » que jsdom ne fait pas). Même limite déjà
+ * documentée et contournée côté OI (`tests/unit/oi/oi-dessin.test.ts:25-26`,
+ * `populateMemberCanvasModal`) : on stubbe `showModal`/`close` en `vi.fn()` sur
+ * l'élément monté, puis on assert `toHaveBeenCalled()` au lieu de lire `.open`.
+ */
 function mountTextModalDom(): {
-    modal: HTMLElement;
-    backdrop: HTMLElement;
+    modal: HTMLDialogElement;
     input: HTMLInputElement;
     idHidden: HTMLInputElement;
     colorVal: HTMLInputElement;
@@ -77,7 +89,7 @@ function mountTextModalDom(): {
     titleEl: HTMLElement;
 } {
     document.body.innerHTML = `
-        <div id="planTextModal">
+        <dialog id="planTextModal">
             <h3 id="planTextModalTitle"></h3>
             <input id="plan_text_target_id" type="hidden" />
             <input id="plan_text_input" type="text" />
@@ -92,12 +104,13 @@ function mountTextModalDom(): {
             <button id="plan_text_size_plus" type="button"></button>
             <button id="planTextConfirmBtn" type="button"></button>
             <button id="planTextCancelBtn" type="button"></button>
-        </div>
-        <div id="modalBackdrop"></div>
+        </dialog>
     `;
+    const modal = document.getElementById('planTextModal') as HTMLDialogElement;
+    modal.showModal = vi.fn();
+    modal.close = vi.fn();
     return {
-        modal: document.getElementById('planTextModal') as HTMLElement,
-        backdrop: document.getElementById('modalBackdrop') as HTMLElement,
+        modal,
         input: document.getElementById('plan_text_input') as HTMLInputElement,
         idHidden: document.getElementById('plan_text_target_id') as HTMLInputElement,
         colorVal: document.getElementById('plan_text_color_val') as HTMLInputElement,
@@ -120,7 +133,7 @@ describe('TextModalMethods — les 7 méthodes ne jettent pas quand #planTextMod
     it('_mountModalInFullscreen', () => {
         const { instance: fake } = createFakePlanMap();
         const modal = document.createElement('div');
-        expect(() => fake._mountModalInFullscreen(modal, null)).not.toThrow();
+        expect(() => fake._mountModalInFullscreen(modal)).not.toThrow();
     });
 
     it('_restoreModalFromFullscreen', () => {
@@ -150,6 +163,11 @@ describe('TextModalMethods — les 7 méthodes ne jettent pas quand #planTextMod
 });
 
 describe('_mountModalInFullscreen / _restoreModalFromFullscreen — reparentage plein écran (planMap.js:4583-4605, piège §5.1)', () => {
+    // R2-T1 (migration <dialog> natif) : `_mountModalInFullscreen` ne prend plus
+    // qu'un seul nœud (le `<dialog>`) — l'ex-fond `#modalBackdrop`, reparenté en
+    // miroir avant la migration, a disparu (remplacé par le `::backdrop`
+    // intrinsèque du dialog, qui suit automatiquement son hôte). `ModalReparent`
+    // ne mémorise donc plus que `{ modal, modalParent, modalNext }`.
     afterEach(() => {
         Object.defineProperty(document, 'fullscreenElement', { value: null, configurable: true });
     });
@@ -160,13 +178,13 @@ describe('_mountModalInFullscreen / _restoreModalFromFullscreen — reparentage 
         const modal = document.getElementById('planTextModal') as HTMLElement;
         const { instance: fake } = createFakePlanMap();
 
-        fake._mountModalInFullscreen(modal, null);
+        fake._mountModalInFullscreen(modal);
 
         expect(modal.parentElement).toBe(root);
         expect(fake._modalReparent).toBeNull();
     });
 
-    it('TEST CLÉ — déplace modal ET backdrop dans l\'élément fullscreen puis les restaure EXACTEMENT (même parent, même nextSibling)', () => {
+    it('TEST CLÉ — déplace le modal dans l\'élément fullscreen puis le restaure EXACTEMENT (même parent, même nextSibling)', () => {
         // Construction par l'API DOM (pas d'innerHTML) : évite tout nœud texte
         // d'indentation parasite entre les frères, pour un test de position exact.
         document.body.innerHTML = '';
@@ -178,13 +196,7 @@ describe('_mountModalInFullscreen / _restoreModalFromFullscreen — reparentage 
         modal.id = 'planTextModal';
         const afterModal = document.createElement('span');
         afterModal.id = 'after-modal';
-        const beforeBackdrop = document.createElement('span');
-        beforeBackdrop.id = 'before-backdrop';
-        const backdrop = document.createElement('div');
-        backdrop.id = 'modalBackdrop';
-        const afterBackdrop = document.createElement('span');
-        afterBackdrop.id = 'after-backdrop';
-        root.append(beforeModal, modal, afterModal, beforeBackdrop, backdrop, afterBackdrop);
+        root.append(beforeModal, modal, afterModal);
         const fsContainer = document.createElement('div');
         fsContainer.id = 'fsContainer';
         document.body.append(root, fsContainer);
@@ -192,26 +204,20 @@ describe('_mountModalInFullscreen / _restoreModalFromFullscreen — reparentage 
 
         const { instance: fake } = createFakePlanMap();
 
-        fake._mountModalInFullscreen(modal, backdrop);
+        fake._mountModalInFullscreen(modal);
 
-        // Reparentés dans l'élément fullscreen — les SIX références sont mémorisées.
+        // Reparenté dans l'élément fullscreen — les TROIS références sont mémorisées.
         expect(modal.parentElement).toBe(fsContainer);
-        expect(backdrop.parentElement).toBe(fsContainer);
         expect(fake._modalReparent).not.toBeNull();
         expect(fake._modalReparent?.modal).toBe(modal);
-        expect(fake._modalReparent?.backdrop).toBe(backdrop);
         expect(fake._modalReparent?.modalParent).toBe(root);
         expect(fake._modalReparent?.modalNext).toBe(afterModal);
-        expect(fake._modalReparent?.bdParent).toBe(root);
-        expect(fake._modalReparent?.bdNext).toBe(afterBackdrop);
 
         fake._restoreModalFromFullscreen();
 
-        // Restaurés EXACTEMENT : même parent ET même position (nextSibling identique).
+        // Restauré EXACTEMENT : même parent ET même position (nextSibling identique).
         expect(modal.parentElement).toBe(root);
         expect(modal.nextSibling).toBe(afterModal);
-        expect(backdrop.parentElement).toBe(root);
-        expect(backdrop.nextSibling).toBe(afterBackdrop);
         expect(fake._modalReparent).toBeNull();
     });
 
@@ -222,7 +228,7 @@ describe('_mountModalInFullscreen / _restoreModalFromFullscreen — reparentage 
         Object.defineProperty(document, 'fullscreenElement', { value: fsContainer, configurable: true });
         const { instance: fake } = createFakePlanMap();
 
-        fake._mountModalInFullscreen(modal, null);
+        fake._mountModalInFullscreen(modal);
 
         expect(fake._modalReparent).toBeNull();
     });
@@ -325,12 +331,11 @@ describe('_confirmTextModal — distingue création (forme "text") et édition (
         const dom = mountTextModalDom();
         const { instance: fake, spies } = createFakePlanMap([{ id: 'z', type: 'text', text: 'inchangé', coords: [[0, 0]] }]);
         dom.idHidden.value = '';
-        dom.modal.style.display = 'block';
 
         fake._confirmTextModal();
 
         expect(spies.saveShapes).not.toHaveBeenCalled();
-        expect(dom.modal.style.display).toBe('none');
+        expect(dom.modal.close).toHaveBeenCalled();
     });
 });
 
@@ -355,16 +360,13 @@ describe('_hideTextModal — purge la forme fantôme "text" vide (planMap.js:460
         expect(fake._loadShapes()).toHaveLength(1);
     });
 
-    it('modal et backdrop masqués (display: none) dans tous les cas', () => {
+    it('modal.close() appelé dans tous les cas', () => {
         const dom = mountTextModalDom();
         const { instance: fake } = createFakePlanMap();
-        dom.modal.style.display = 'block';
-        dom.backdrop.style.display = 'block';
 
         fake._hideTextModal();
 
-        expect(dom.modal.style.display).toBe('none');
-        expect(dom.backdrop.style.display).toBe('none');
+        expect(dom.modal.close).toHaveBeenCalled();
     });
 });
 
@@ -392,7 +394,7 @@ describe('_addFreeText — place une forme "text" libre puis ouvre la modale (pl
         fake._addFreeText({ lng: 1, lat: 2 });
 
         const shapes = fake._loadShapes();
-        expect(dom.modal.style.display).toBe('block');
+        expect(dom.modal.showModal).toHaveBeenCalled();
         expect(dom.idHidden.value).toBe(shapes[0]?.id);
     });
 });

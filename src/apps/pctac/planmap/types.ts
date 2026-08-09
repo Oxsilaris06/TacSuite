@@ -196,11 +196,16 @@ export interface AoiFramingHandlers {
     _start?: LngLatTuple | undefined;
 }
 
-/** Mémo de reparentage de modale en plein écran (planMap.js:4587-4591). */
+/**
+ * Mémo de reparentage de modale en plein écran (planMap.js:4587-4591).
+ * R2-T1 (migration `<dialog>` natif) : ne mémorise plus que le `<dialog>` —
+ * l'ex-fond `#modalBackdrop` (reparenté en miroir avant la migration) a
+ * disparu, remplacé par le `::backdrop` intrinsèque du dialog (suit
+ * automatiquement son hôte, aucun reparentage requis).
+ */
 export interface ModalReparent {
-    modal: HTMLElement; backdrop: HTMLElement | null;
+    modal: HTMLElement;
     modalParent: ParentNode | null; modalNext: ChildNode | null;
-    bdParent: ParentNode | null; bdNext: ChildNode | null;
 }
 
 /** Feature GeoJSON d'un cercle de ping (planMap.js:1591-1595). */
@@ -448,7 +453,7 @@ export interface PlanMapInternal extends PlanMapState, PlanMapContract {
 
     /* --- text-modal.ts (7) --- */
     _openTextModal(targetId: string): void;
-    _mountModalInFullscreen(modal: HTMLElement, backdrop: HTMLElement | null): void;
+    _mountModalInFullscreen(modal: HTMLElement): void;
     _restoreModalFromFullscreen(): void;
     _hideTextModal(): void;
     _confirmTextModal(): void;

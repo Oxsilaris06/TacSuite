@@ -114,18 +114,25 @@ export const UI: UIContract = {
   },
 
   /**
-   * Ferme toute modale active au clic sur le fond assombri (m5).
-   * Les modales (.modal) et le fond (#modalBackdrop) sont des éléments frères :
-   * un clic sur le fond est donc toujours un clic « hors modale ».
-   * ui.js:58-66
+   * Ferme la modale au clic sur son fond assombri (m5).
+   * ui.js:58-66 — RÉÉCRIT pour R2-T1 (migration `<dialog>` natif) : le fond
+   * partagé `#modalBackdrop` (div sœur) a disparu, remplacé par le
+   * `::backdrop` natif de chaque `<dialog class="modal">`. Un clic sur ce
+   * pseudo-élément (ou sur le padding du dialog, hors de tout enfant) cible
+   * TOUJOURS le `<dialog>` lui-même (`e.target === dialog`) — jamais un
+   * descendant — c'est le pattern natif standard de fermeture « clic hors
+   * contenu ». Même comportement observable qu'avant (clic hors modale =
+   * fermeture), mais désormais par-dialog au lieu d'un seul fond partagé (nom
+   * de méthode conservé : signature `UIContract.bindModalBackdrop` inchangée,
+   * cf. tests + contracts.ts non modifié).
    */
   bindModalBackdrop(): void {
-    const backdrop = document.getElementById('modalBackdrop');
-    if (!backdrop || backdrop.dataset.bound) return;
-    backdrop.dataset.bound = '1';
-    backdrop.addEventListener('click', () => {
-      document.querySelectorAll<HTMLElement>('.modal').forEach((m) => { m.style.display = 'none'; });
-      backdrop.style.display = 'none';
+    document.querySelectorAll<HTMLDialogElement>('dialog.modal').forEach((dialog) => {
+      if (dialog.dataset.bound) return;
+      dialog.dataset.bound = '1';
+      dialog.addEventListener('click', (e) => {
+        if (e.target === dialog) dialog.close();
+      });
     });
   },
 
@@ -393,8 +400,7 @@ export const UI: UIContract = {
     (document.getElementById('edit_heure') as HTMLInputElement).value = entry.heure;
     (document.getElementById('edit_lieu') as HTMLTextAreaElement).value = entry.lieu || '';
     (document.getElementById('edit_remarques') as HTMLTextAreaElement).value = entry.remarques || '';
-    (document.getElementById('modalBackdrop') as HTMLElement).style.display = 'block';
-    (document.getElementById('editModal') as HTMLElement).style.display = 'block';
+    (document.getElementById('editModal') as HTMLDialogElement).showModal();
   },
 
   // ui.js:298-311
@@ -415,8 +421,7 @@ export const UI: UIContract = {
 
   // ui.js:313-316
   hideEditModal(): void {
-    (document.getElementById('modalBackdrop') as HTMLElement).style.display = 'none';
-    (document.getElementById('editModal') as HTMLElement).style.display = 'none';
+    (document.getElementById('editModal') as HTMLDialogElement).close();
   },
 
   /** Recharge les suggestions de localisation dans le datalist
@@ -477,8 +482,7 @@ export const UI: UIContract = {
 
   // ui.js:367-378
   showCreatePaxModal(): void {
-    (document.getElementById('modalBackdrop') as HTMLElement).style.display = 'block';
-    (document.getElementById('createPaxModal') as HTMLElement).style.display = 'block';
+    (document.getElementById('createPaxModal') as HTMLDialogElement).showModal();
     (document.getElementById('new_pax_name') as HTMLInputElement).value = '';
     (document.getElementById('new_pax_name') as HTMLInputElement).focus();
 
@@ -491,8 +495,7 @@ export const UI: UIContract = {
 
   // ui.js:380-383
   hideCreatePaxModal(): void {
-    (document.getElementById('modalBackdrop') as HTMLElement).style.display = 'none';
-    (document.getElementById('createPaxModal') as HTMLElement).style.display = 'none';
+    (document.getElementById('createPaxModal') as HTMLDialogElement).close();
   },
 
   // ui.js:385-434
@@ -769,7 +772,7 @@ export const UI: UIContract = {
 
   // ui.js:631-643
   openLightbox(src: string, title?: string): void {
-    const modal = document.getElementById('lightboxModal');
+    const modal = document.getElementById('lightboxModal') as HTMLDialogElement | null;
     const img = document.getElementById('lightboxImage') as HTMLImageElement | null;
     const titleEl = document.getElementById('lightboxTitle');
     if (!modal || !img) return;
@@ -778,18 +781,23 @@ export const UI: UIContract = {
     // typage pur, jamais exercée en pratique (title est toujours fourni par
     // les appelants de ce module, ui.js:545).
     if (titleEl) titleEl.textContent = title || '';
-    modal.classList.add('active');
+    // R2-T1 : `<dialog>` natif au lieu de `classList.add('active')`.
+    modal.showModal();
     document.body.style.overflow = 'hidden';
     modal.onclick = (e) => { if (e.target === modal) this.closeLightbox(); };
+    // Conservé malgré l'Escape natif du <dialog> : redondant mais inoffensif
+    // (`this.closeLightbox()` ferme un dialog déjà fermé sans jeter, cf.
+    // spec `HTMLDialogElement.close()`), et évite de dépendre de l'ordre
+    // événement/action-par-défaut du navigateur pour restaurer le scroll.
     this._lightboxKeydown = (e) => { if (e.key === 'Escape') this.closeLightbox(); };
     window.addEventListener('keydown', this._lightboxKeydown);
   },
 
   // ui.js:645-651
   closeLightbox(): void {
-    const modal = document.getElementById('lightboxModal');
+    const modal = document.getElementById('lightboxModal') as HTMLDialogElement | null;
     if (!modal) return;
-    modal.classList.remove('active');
+    modal.close();
     document.body.style.overflow = '';
     if (this._lightboxKeydown) window.removeEventListener('keydown', this._lightboxKeydown);
   },
@@ -883,14 +891,12 @@ export const UI: UIContract = {
 
   // ui.js:722-725
   showResetModal(): void {
-    (document.getElementById('modalBackdrop') as HTMLElement).style.display = 'block';
-    (document.getElementById('resetModal') as HTMLElement).style.display = 'block';
+    (document.getElementById('resetModal') as HTMLDialogElement).showModal();
   },
 
   // ui.js:727-731
   hideResetModal(): void {
-    (document.getElementById('modalBackdrop') as HTMLElement).style.display = 'none';
-    (document.getElementById('resetModal') as HTMLElement).style.display = 'none';
+    (document.getElementById('resetModal') as HTMLDialogElement).close();
     this.hideEditModal();
   },
 
@@ -915,14 +921,12 @@ export const UI: UIContract = {
     const fileInput = document.getElementById('edit_adv_photo_input') as HTMLInputElement | null;
     if (fileInput) { fileInput.value = ''; delete fileInput.dataset.compressedBase64; }
 
-    (document.getElementById('modalBackdrop') as HTMLElement).style.display = 'block';
-    (document.getElementById('editAdversaryModal') as HTMLElement).style.display = 'block';
+    (document.getElementById('editAdversaryModal') as HTMLDialogElement).showModal();
   },
 
   // ui.js:757-760
   hideEditAdversaryModal(): void {
-    (document.getElementById('modalBackdrop') as HTMLElement).style.display = 'none';
-    (document.getElementById('editAdversaryModal') as HTMLElement).style.display = 'none';
+    (document.getElementById('editAdversaryModal') as HTMLDialogElement).close();
   },
 
   // ui.js:762-806
@@ -995,14 +999,12 @@ export const UI: UIContract = {
     const fileInput = document.getElementById('edit_host_photo_input') as HTMLInputElement | null;
     if (fileInput) { fileInput.value = ''; delete fileInput.dataset.compressedBase64; }
 
-    (document.getElementById('modalBackdrop') as HTMLElement).style.display = 'block';
-    (document.getElementById('editHostageModal') as HTMLElement).style.display = 'block';
+    (document.getElementById('editHostageModal') as HTMLDialogElement).showModal();
   },
 
   // ui.js:832-835
   hideEditHostageModal(): void {
-    (document.getElementById('modalBackdrop') as HTMLElement).style.display = 'none';
-    (document.getElementById('editHostageModal') as HTMLElement).style.display = 'none';
+    (document.getElementById('editHostageModal') as HTMLDialogElement).close();
   },
 
   // ui.js:837-881
