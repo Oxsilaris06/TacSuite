@@ -190,6 +190,8 @@ import JSZip from 'jszip';
 import { LOCAL_STORAGE_KEY, Store, dbManager, memberConfig } from '@oi/init.js';
 import { createAnnotatedImageBlob } from '@oi/dessin.js';
 import { setupQuickEditPanel } from '@oi/patrac.js';
+// R2-T4 — validation inline (nouveau module, cf. son en-tête).
+import { attachValidation, required } from '@oi/validation.js';
 import type {
     OiAdversary,
     OiAnnotation,
@@ -541,6 +543,20 @@ function addAdversary(data: OiAdversary | null = null): void {
     `;
 
     container.appendChild(div);
+
+    // R2-T4 — validation inline : « Nom » et « Domicile » sont les 2 seuls
+    // champs de la fiche adversaire signalés « manquant(s) » par
+    // `checkCoherence()` ci-dessous (:1032-1033) — requis pour une fiche
+    // exploitable en génération PDF. Pas d'invention : les autres champs de
+    // la fiche restent libres.
+    const nomAdvInput = document.getElementById(`nom_adv_${id}`) as HTMLInputElement | null;
+    if (nomAdvInput) {
+        attachValidation(nomAdvInput, [required("Le nom de l'adversaire est requis.")]);
+    }
+    const domicileAdvInput = document.getElementById(`domicile_adv_${id}`) as HTMLTextAreaElement | null;
+    if (domicileAdvInput) {
+        attachValidation(domicileAdvInput, [required("Le domicile de l'adversaire est requis.")]);
+    }
 
     // Initialisation des composants
     initChipContainer(`esprit_${id}`, (data?.etat_esprit_list as string[] | undefined) || []);

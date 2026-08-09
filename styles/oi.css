@@ -4082,3 +4082,40 @@ body.light-mode .image-preview-item button[onclick^="openAnnotationModal"] {
  * Ancrage sur l'ID pour reproduire exactement le rendu de l'ancien inline
  * (border:none; color:var(--text-secondary);). */
 #cancelResetBtn.modal-close-btn-transparent { background:none; border:none; color:var(--text-secondary); cursor:pointer; }
+
+/* R2-T4 — validation inline */
+/* Le message n'existe dans le DOM QUE quand un champ est invalide (jamais au
+   repos) : les baselines visuelles, capturées sans état d'erreur, restent
+   donc identiques au pixel près (gate visuelle inchangée). `--danger-red`/
+   `--danger-bg` sont déjà désaturés en thème clair (cf. body.light-mode
+   :root, oi.css:378) — aucune redéfinition spécifique au thème requise ici.
+   L'apparition est un fondu discret (≤200ms, ease-out) ; le bloc
+   prefers-reduced-motion partagé (oi.css:135) le neutralise déjà pour les
+   utilisateurs concernés, pas de redite nécessaire. */
+.field-error {
+    margin-block: 0 var(--space-4);
+    padding: var(--space-2) var(--space-3);
+    font-size: 0.85em;
+    line-height: 1.4;
+    color: var(--danger-red);
+    background-color: var(--danger-bg);
+    border: 1px solid color-mix(in srgb, var(--danger-red) 35%, transparent);
+    border-radius: var(--radius-sm);
+    animation: field-error-in 180ms ease-out;
+}
+
+@keyframes field-error-in {
+    from { opacity: 0; transform: translateY(-4px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+input[aria-invalid="true"],
+textarea[aria-invalid="true"] {
+    border-color: color-mix(in srgb, var(--danger-red) 60%, var(--field-border));
+}
+
+input[aria-invalid="true"]:focus-visible,
+textarea[aria-invalid="true"]:focus-visible {
+    border-color: var(--danger-red);
+    box-shadow: 0 0 0 3px var(--danger-bg);
+}

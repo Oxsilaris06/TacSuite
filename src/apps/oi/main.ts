@@ -196,6 +196,9 @@ if (!window.PocheTuto || !window.PocheTuto.mount) {
 // import nommé de ce fichier, nécessaire pour écrire les 14 refs DOM du
 // wizard (§12.3 étapes 4-5). ────────────────────────────────────────────────
 import { oiState } from '@oi/state.js';
+// R2-T4 — infrastructure de validation inline (nouveau module, pas un port
+// verbatim ; import nommé au même titre que `oiState` ci-dessus).
+import { attachValidation, required, lengthRange } from '@oi/validation.js';
 
 // ── §12.2 — Imports applicatifs, ordre de 4.html:4517-4534 à la ligne près.
 // Tous en side-effect only : chaque module pose ses globales `window.*` à
@@ -622,10 +625,42 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (window.Store) window.Store.state.currentStep = savedStep;
         window.showStep(savedStep);
 
+        // R2-T4 — validation inline des champs statiques à contrainte réelle.
+        // Hors des 18 étapes §12.3 (ajout de la tranche, pas du portage verbatim).
+        initOiStaticFieldValidation();
+
     } catch (err) {
         console.error("Erreur d'initialisation OI:", err);
     }
 });
+
+/**
+ * R2-T4 — branche la validation inline sur les champs STATIQUES (présents
+ * dans `oi/index.html`, jamais recréés). Les champs dynamiques (fiches
+ * adversaire) sont branchés à la création, dans `formulaires.ts`
+ * (`addAdversary`) — cf. SPEC R2-T4.
+ *
+ * Cible : uniquement les champs à contrainte métier RÉELLE et déjà établie
+ * ailleurs dans l'app (pas d'invention) :
+ *  - `date_op` : requis — seul champ signalé « manquant » par
+ *    `checkCoherence()` (formulaires.ts) hors listes dynamiques.
+ *  - `quick_edit_trigramme_input` : 2 à 4 caractères — même règle que
+ *    `addManualMember`/`addCellBatch` (patrac.ts), jusqu'ici non appliquée à
+ *    l'édition rapide d'un trigramme existant.
+ */
+function initOiStaticFieldValidation(): void {
+    const dateOp = document.getElementById('date_op') as HTMLInputElement | null;
+    if (dateOp) {
+        attachValidation(dateOp, [required("La date de l'opération est requise.")]);
+    }
+
+    const quickEditTrigramme = document.getElementById('quick_edit_trigramme_input') as HTMLInputElement | null;
+    if (quickEditTrigramme) {
+        attachValidation(quickEditTrigramme, [
+            lengthRange(2, 4, 'Le trigramme doit contenir entre 2 et 4 caractères.'),
+        ]);
+    }
+}
 
 // ── §12.3 étape 18 — Toggle Format PDF, VERBATIM de 4.html:4794-4812. Hors
 // du handler DOMContentLoaded dans l'original (script de fin de body, exécuté
