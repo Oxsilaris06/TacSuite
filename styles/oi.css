@@ -219,42 +219,42 @@ body.up-kb-open .up-kb-aware {
    ========================================================================== */
         :root {
             /* Graphite Liquide — substrat near-black NEUTRE (gunmetal, zéro bleu) */
-            --bg-body: #0a0a0b;
-            --bg-container: #141416;
-            --bg-interactive: #1d1d21;
-            --bg-interactive-hover: #29292e;
+            --bg-body: var(--tac-graphite-950);
+            --bg-container: var(--tac-graphite-900);
+            --bg-interactive: var(--tac-graphite-800);
+            --bg-interactive-hover: var(--tac-graphite-700);
 
             --text-primary: #f6f6f7;
-            --text-secondary: #b6b6bc;
-            --text-muted: #8a8a91;
+            --text-secondary: var(--tac-text-300);
+            --text-muted: var(--tac-text-500);
 
-            --border-color: #2b2b30;
+            --border-color: var(--tac-graphite-600);
             --border-light: rgba(255, 255, 255, 0.07);
 
             /* BLEU = intervention / primaire / actif / focus / surbrillance */
-            --accent-blue: #4f8dff;
-            --accent-hover: #74a6ff;
+            --accent-blue: var(--tac-blue-500);
+            --accent-hover: var(--tac-blue-400);
             --accent-glow: rgba(79, 141, 255, 0.28);
             /* Fond des surfaces remplies à texte blanc (boutons actifs/sélectionnés) —
                distinct de --accent-blue (bordures/focus/textes) car #4f8dff sur blanc
                ne fait que 3.19:1 (< 4.5:1 AA). #2563eb sur blanc = 5.17:1 (AA OK). */
-            --accent-fill: #2563eb;
+            --accent-fill: var(--tac-blue-550);
 
             --moicp-zmspcp-purple: #7c6ce0;
             /* AMBRE = otages / civils (hors des 3 sémantiques) */
-            --effraction-gold: #f0b53e;
+            --effraction-gold: var(--tac-amber-500);
             --effraction-glow: rgba(240, 181, 62, 0.30);
 
             /* ROUGE = adversaire / dangers / armes */
-            --danger-red: #f0556a;
-            --danger-hover: #f87d8d;
+            --danger-red: var(--tac-red-500);
+            --danger-hover: var(--tac-red-400);
             --danger-bg: rgba(240, 85, 106, 0.12);
 
             /* VERT = validation / AO / oscar */
-            --success-green: #2ecf91;
-            --success-hover: #54e0a8;
+            --success-green: var(--tac-green-500);
+            --success-hover: var(--tac-green-400);
 
-            --trash-color: #8a8a91;
+            --trash-color: var(--tac-text-500);
             /* Anneau d'accent réutilisable (membre actif, etc.) */
             --ring-color: rgba(79, 141, 255, 0.55);
 
@@ -297,7 +297,7 @@ body.up-kb-open .up-kb-aware {
             /* Anneau de focus discret mais net (remplace le halo 4px diffus) */
             --focus-ring: 0 0 0 3px var(--accent-glow);
             --field-border: var(--border-color);
-            --field-border-hover: #52525b;
+            --field-border-hover: var(--tac-graphite-500);
 
             /* Voile métallique neutre (sheen « métal liquide » depuis le haut, zéro teinte). */
             --canvas-glow: radial-gradient(120% 80% at 50% -8%, rgba(255, 255, 255, 0.05) 0%, transparent 55%);
@@ -355,37 +355,37 @@ body.up-kb-open .up-kb-aware {
 
         body.light-mode {
             /* OLED Command — thème clair : blanc cassé chaud, accents assombris pour AA */
-            --bg-body: #f4f2ec;
-            --bg-container: #fdfdfb;
-            --bg-interactive: #efece4;
-            --bg-interactive-hover: #e6e2d8;
+            --bg-body: var(--tac-paper-warm-100);
+            --bg-container: var(--tac-paper-warm-50);
+            --bg-interactive: var(--tac-paper-warm-200);
+            --bg-interactive-hover: var(--tac-paper-warm-300);
 
-            --text-primary: #16181f;
-            --text-secondary: #4a4f5c;
-            --text-muted: #5f6573;
+            --text-primary: var(--tac-ink-app-900);
+            --text-secondary: var(--tac-ink-app-700);
+            --text-muted: var(--tac-ink-app-500);
 
-            --border-color: #e0ddd3;
+            --border-color: var(--tac-paper-warm-400);
             --border-light: rgba(22, 24, 31, 0.06);
 
-            --accent-blue: #1d63d6;
-            --accent-hover: #1751b5;
+            --accent-blue: var(--tac-blue-650);
+            --accent-hover: var(--tac-blue-750);
             --accent-glow: rgba(29, 99, 214, 0.16);
             /* Thème clair : déjà conforme (5.51:1 sur blanc), même valeur que --accent-blue. */
-            --accent-fill: #1d63d6;
+            --accent-fill: var(--tac-blue-650);
 
-            --danger-red: #c8344a;
-            --danger-hover: #a8283b;
+            --danger-red: var(--tac-red-650);
+            --danger-hover: var(--tac-red-700);
             --danger-bg: rgba(200, 52, 74, 0.07);
 
-            --success-green: #0b7a52;
-            --success-hover: #096643;
+            --success-green: var(--tac-green-650);
+            --success-hover: var(--tac-green-700);
 
-            --effraction-gold: #8f6109;
+            --effraction-gold: var(--tac-amber-650);
             --effraction-glow: rgba(143, 97, 9, 0.18);
             --moicp-zmspcp-purple: #5343c2;
             --ring-color: rgba(29, 99, 214, 0.45);
 
-            --trash-color: #837d70;
+            --trash-color: var(--tac-taupe-500);
 
             --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
             --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.08), 0 2px 4px -2px rgba(0, 0, 0, 0.04);
@@ -399,7 +399,7 @@ body.up-kb-open .up-kb-aware {
 
             --noise-texture: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)' opacity='0.02'/%3E%3C/svg%3E");
 
-            --field-border-hover: #a1a1aa;
+            --field-border-hover: var(--tac-gray-400);
         }
 
         /* ==========================================================================

@@ -1,0 +1,185 @@
+/* ============================================================================
+ * styles/tacsuite-tokens.css — Socle de primitives partage TacSuite (R1-T1).
+ *
+ * COUCHE PRIMITIVES UNIQUEMENT : constantes de palette/echelle, SANS
+ * condition de theme (pas de [data-theme], pas de body.light-mode ici — ce
+ * sont les 3 feuilles applicatives qui choisissent QUAND les consommer).
+ *
+ * Origine : deplacees telles quelles depuis styles/portal.css (memes noms,
+ * memes valeurs) puis completees avec les constantes reellement utilisees
+ * par styles/oi.css et styles/pctac.css (theme "tactical/OLED" sombre par
+ * defaut + body.light-mode), releve fait sur les BLOCS DE THEME des 3
+ * fichiers uniquement. Aucune valeur n'a ete inventee ni modifiee.
+ *
+ * Chargee AVANT la feuille d'app dans les 3 <head> (index.html, oi/index.html,
+ * pctac/index.html) : portal.css, oi.css et pctac.css la consomment via var().
+ * ========================================================================== */
+:root {
+    /* --- Graphite liquide (pctac.css:207-212, 266-268, 275-276 ; oi.css:222-225, 231) - */
+    --tac-graphite-950: #0a0a0b;
+    --tac-graphite-900: #141416;
+    --tac-graphite-850: #18181b;
+    --tac-graphite-800: #1d1d21;
+    --tac-graphite-700: #29292e;
+    --tac-graphite-600: #2b2b30;
+    --tac-graphite-500: #52525b;
+
+    /* --- Verres et voiles (pctac.css:208-211) ----------------------------- */
+    --tac-glass-dark: rgba(22, 22, 26, 0.70);
+    --tac-glass-heavy: rgba(16, 16, 19, 0.95);
+    --tac-white-a04: rgba(255, 255, 255, 0.04);
+    --tac-white-a07: rgba(255, 255, 255, 0.07);
+    --tac-white-a08: rgba(255, 255, 255, 0.08);
+    --tac-black-a42: rgba(0, 0, 0, 0.42);
+
+    /* --- Papier (rampe claire derivee du portail, absente des apps) ------- */
+    --tac-paper-50: #ffffff;
+    --tac-paper-100: #f7f8fa;
+    --tac-paper-200: #eef0f4;
+    --tac-paper-300: #e2e5ec;
+    --tac-paper-400: #d0d5df;
+    --tac-paper-500: #9aa1ae;
+    --tac-paper-glass: rgba(255, 255, 255, 0.72);
+    --tac-black-a06: rgba(0, 0, 0, 0.06);
+    --tac-black-a10: rgba(0, 0, 0, 0.10);
+
+    /* --- Papier chaud (rampe claire REELLE de oi.css/pctac.css — distincte de
+       la rampe --tac-paper-* ci-dessus, propre au portail) --------------- */
+    --tac-paper-warm-50: #fdfdfb;   /* --bg-container clair (oi.css:359, pctac.css:339 bg-glass-heavy) */
+    --tac-paper-warm-100: #f4f2ec;  /* --bg-body clair (oi.css:358, pctac.css:337) */
+    --tac-paper-warm-200: #efece4;  /* --bg-interactive clair (oi.css:360, pctac.css:357) */
+    --tac-paper-warm-300: #e6e2d8;  /* --bg-interactive-hover clair (oi.css:361, pctac.css:358) */
+    --tac-paper-warm-400: #e0ddd3;  /* --border-color clair (oi.css:367, pctac.css:360) */
+
+    /* --- Accent bleu tactique (pctac.css:219-221, 230, 287) --------------- */
+    --tac-blue-400: #74a6ff;
+    --tac-blue-500: #4f8dff;
+    --tac-blue-550: #2563eb;
+    /* Fond de surface plein AA (5.17:1 sur blanc) — --accent-fill sombre
+       (oi.css:241, pctac.css:225), distinct de --tac-blue-500 (bordures/focus). */
+    --tac-blue-600: #2f6fe0;
+    /* Bleu profond : seule teinte d'accent tenant AA (>=4.5:1) pour du petit
+       texte pose sur un fond teinte clair (badges). */
+    --tac-blue-650: #1d63d6;  /* --accent-blue/--accent-fill clair (oi.css:370+374, pctac.css:344+348) */
+    --tac-blue-700: #1c4fa8;
+    --tac-blue-750: #1751b5;  /* --accent-hover clair (oi.css:371, pctac.css:345) */
+    --tac-blue-a28: rgba(79, 141, 255, 0.28);
+    --tac-blue-a55: rgba(79, 141, 255, 0.55);
+    --tac-blue-a12: rgba(79, 141, 255, 0.12);
+    --tac-blue-600-a20: rgba(47, 111, 224, 0.20);
+    --tac-blue-600-a35: rgba(47, 111, 224, 0.35);
+
+    /* --- Signaletique operationnelle (pctac.css:226-231, 284) ------------- */
+    --tac-green-400: #54e0a8;  /* --success-hover sombre (oi.css:256, pctac.css:286) */
+    --tac-green-500: #2ecf91;
+    --tac-green-600: #0b573a;
+    --tac-green-650: #0b7a52;  /* --success-green/--ao-green clair (oi.css:380, pctac.css:352) */
+    --tac-green-700: #096643;  /* --success-hover clair (oi.css:381, pctac.css:363) */
+    --tac-green-a18: rgba(46, 207, 145, 0.18);
+    --tac-green-600-a14: rgba(11, 87, 58, 0.14);
+    --tac-amber-500: #f0b53e;
+    --tac-amber-650: #8f6109;  /* --effraction-gold/--civil-yellow clair (oi.css:383, pctac.css:350) */
+    --tac-amber-700: #6b3f00;
+    --tac-amber-a20: rgba(240, 181, 62, 0.20);
+    --tac-amber-700-a16: rgba(107, 63, 0, 0.16);
+    --tac-red-400: #f87d8d;  /* --danger-hover sombre (oi.css:250, pctac.css:289) */
+    --tac-red-500: #f0556a;
+    --tac-red-650: #c8344a;  /* --danger-red clair (oi.css:376, pctac.css:349) */
+    --tac-red-700: #a8283b;  /* --danger-hover clair (oi.css:377, pctac.css:365) */
+
+    /* --- Neutres additionnels (rampe claire reelle des apps) -------------- */
+    --tac-gray-400: #a1a1aa;   /* --field-border-hover clair (oi.css:402, pctac.css:362) */
+    --tac-taupe-500: #837d70;  /* --trash-color clair (oi.css:388, pctac.css:353) */
+
+    /* --- Texte (pctac.css:222-223, 271-272) ------------------------------- */
+    --tac-text-100: #f0f0f1;
+    --tac-text-300: #b6b6bc;
+    --tac-text-500: #8a8a91;
+    --tac-ink-900: #101114;
+    --tac-ink-700: #3c414b;
+    --tac-ink-500: #5d6472;
+
+    /* --- Encre chaude (rampe claire REELLE de oi.css/pctac.css — distincte de
+       la rampe --tac-ink-* ci-dessus, propre au portail) -------------------- */
+    --tac-ink-app-900: #16181f;  /* --text-primary/--text-main clair (oi.css:363, pctac.css:342) */
+    --tac-ink-app-700: #4a4f5c;  /* --text-secondary clair (oi.css:364, pctac.css:359) */
+    --tac-ink-app-500: #5f6573;  /* --text-muted clair (oi.css:365, pctac.css:343) */
+
+    /* --- Typographie (pctac.css:214-216) ---------------------------------- */
+    --tac-font-ui: 'Inter', system-ui, sans-serif;
+    --tac-font-title: 'Oswald', sans-serif;
+    --tac-font-data: 'JetBrains Mono', monospace;
+    --tac-size-xs: 0.75rem;
+    --tac-size-sm: 0.875rem;
+    --tac-size-md: 1rem;
+    --tac-size-lg: 1.125rem;
+    --tac-size-xl: 1.5rem;
+    --tac-size-2xl: clamp(2rem, 7vw, 3.25rem);
+    --tac-weight-regular: 400;
+    --tac-weight-medium: 500;
+    --tac-weight-semibold: 600;
+    --tac-weight-bold: 700;
+    --tac-leading-tight: 1.15;
+    --tac-leading-normal: 1.55;
+    --tac-tracking-wide: 0.06em;
+    --tac-tracking-wider: 0.14em;
+
+    /* --- Rayons (pctac.css:236-239, 321-323) ------------------------------ */
+    --tac-radius-sm: 6px;
+    --tac-radius-md: 12px;
+    --tac-radius-lg: 20px;
+    --tac-radius-pill: 999px;
+    --tac-radius-full: 9999px;
+
+    /* --- Espacement (pctac.css:242-249) ----------------------------------- */
+    --tac-space-1: 4px;
+    --tac-space-2: 8px;
+    --tac-space-3: 12px;
+    --tac-space-4: 16px;
+    --tac-space-5: 24px;
+    --tac-space-6: 32px;
+    --tac-space-7: 48px;
+    --tac-space-8: 64px;
+
+    /* --- Mouvement (pctac.css:252-255) ------------------------------------ */
+    --tac-ease-out-spring: cubic-bezier(0.175, 0.885, 0.32, 1.1);
+    --tac-ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+    --tac-duration-fast: 0.15s;
+    --tac-duration-normal: 0.3s;
+    --tac-duration-quick: 0.2s;  /* --transition-quick (oi.css:329, pctac.css:332) */
+
+    /* --- Echelle z-index (oi.css:308-321, dont 5 valeurs partagees avec
+       pctac.css a correspondance exacte valeur+role demontree) ------------- */
+    --tac-z-raised: 5;
+    --tac-z-panel: 11;
+    --tac-z-toolbar: 12;
+    --tac-z-sticky: 1000;
+    --tac-z-scrim: 2000;
+
+    /* --- Ombres (pctac.css:296-300, 326-327) ------------------------------ */
+    --tac-shadow-sm-dark: 0 1px 2px rgba(0, 0, 0, 0.4);
+    --tac-shadow-md-dark: 0 4px 6px -1px rgba(0, 0, 0, 0.4), 0 2px 4px -2px rgba(0, 0, 0, 0.4);
+    --tac-shadow-lg-dark: 0 10px 15px -3px rgba(0, 0, 0, 0.5), 0 4px 6px -4px rgba(0, 0, 0, 0.5);
+    --tac-shadow-sm-light: 0 1px 2px rgba(16, 17, 20, 0.06);
+    --tac-shadow-md-light: 0 4px 10px -2px rgba(16, 17, 20, 0.10);
+    --tac-shadow-lg-light: 0 12px 24px -6px rgba(16, 17, 20, 0.14);
+    --tac-inner-glow-dark: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+    --tac-inner-glow-light: inset 0 1px 0 rgba(255, 255, 255, 0.9);
+
+    /* --- Halos / textures (pctac.css:303-304) ----------------------------- */
+    --tac-canvas-glow-dark: radial-gradient(120% 80% at 50% -8%, rgba(255, 255, 255, 0.05) 0%, transparent 55%);
+    --tac-canvas-glow-light: radial-gradient(120% 80% at 50% -8%, rgba(47, 111, 224, 0.10) 0%, transparent 60%);
+
+    /* --- Divers ----------------------------------------------------------- */
+    --tac-border-width: 1px;
+    --tac-border-width-thick: 2px;
+    --tac-focus-width: 3px;
+    --tac-outline-width: 2px;
+    --tac-outline-offset: 2px;
+    --tac-dot-size: 8px;
+    --tac-content-max: 1080px;
+    --tac-lift: -2px;
+    --tac-z-skip: 10;
+    --tac-zero: 0;
+    --tac-full: 100%;
+}

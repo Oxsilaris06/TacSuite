@@ -204,7 +204,7 @@ body.up-kb-open .up-kb-aware {
         /* --- THEME TACTICAL GLASS --- */
         :root {
             /* Graphite Liquide — substrat near-black NEUTRE (gunmetal, zéro bleu) */
-            --bg-body: #0a0a0b;
+            --bg-body: var(--tac-graphite-950);
             --bg-glass: rgba(22, 22, 26, 0.70);
             --bg-glass-heavy: rgba(16, 16, 19, 0.95);
             --bg-input: rgba(0, 0, 0, 0.42);
@@ -216,23 +216,23 @@ body.up-kb-open .up-kb-aware {
             --font-title: 'Oswald', sans-serif;
 
             /* BLEU = intervention / primaire / actif / focus / surbrillance */
-            --accent-blue: #4f8dff;
+            --accent-blue: var(--tac-blue-500);
             --accent-glow: rgba(79, 141, 255, 0.28);
-            --accent-hover: #74a6ff;
+            --accent-hover: var(--tac-blue-400);
             /* Fond des surfaces remplies à texte blanc (boutons actifs/sélectionnés) —
                distinct de --accent-blue (bordures/focus/textes) car #4f8dff sur blanc
                ne fait que 3.19:1 (< 4.5:1 AA). #2563eb sur blanc = 5.17:1 (AA OK). */
-            --accent-fill: #2563eb;
-            --text-main: #f0f0f1;
-            --text-muted: #8a8a91;
+            --accent-fill: var(--tac-blue-550);
+            --text-main: var(--tac-text-100);
+            --text-muted: var(--tac-text-500);
 
             /* Statuts — contrat inter-apps : inter≡accent, ao≡success, civil≡ambre */
-            --danger-red: #f0556a;
+            --danger-red: var(--tac-red-500);
             /* ROUGE = adversaire / dangers / armes */
-            --civil-yellow: #f0b53e;
+            --civil-yellow: var(--tac-amber-500);
             /* AMBRE = otages / civils */
             --inter-blue: #4f8dff;
-            --ao-green: #2ecf91;
+            --ao-green: var(--tac-green-500);
             /* VERT = validation / AO / oscar */
             --trash-color: #868fa6;
 
@@ -267,26 +267,26 @@ body.up-kb-open .up-kb-aware {
                noms OI + alias croisés (un seul lieu de vérité sémantique).
                ──────────────────────────────────────────────────────────── */
             /* Surfaces solides (graphite) en complément des surfaces "glass" */
-            --bg-container: #141416;
-            --bg-interactive: #1d1d21;
-            --bg-interactive-hover: #29292e;
+            --bg-container: var(--tac-graphite-900);
+            --bg-interactive: var(--tac-graphite-800);
+            --bg-interactive-hover: var(--tac-graphite-700);
 
             /* Texte : alias OI + niveau secondaire */
             --text-primary: var(--text-main);
-            --text-secondary: #b6b6bc;
+            --text-secondary: var(--tac-text-300);
 
             /* Bordures nommées comme l'OI */
-            --border-color: #2b2b30;
+            --border-color: var(--tac-graphite-600);
             --border-light: rgba(255, 255, 255, 0.07);
             --field-border: var(--border-color);
-            --field-border-hover: #52525b;
+            --field-border-hover: var(--tac-graphite-500);
 
             /* Sémantiques : alias croisés (inter≡bleu, ao≡vert, civil≡ambre) */
             --success-green: var(--ao-green);
-            --success-hover: #54e0a8;
+            --success-hover: var(--tac-green-400);
             --effraction-gold: var(--civil-yellow);
             --effraction-glow: rgba(240, 181, 62, 0.30);
-            --danger-hover: #f87d8d;
+            --danger-hover: var(--tac-red-400);
             --danger-bg: rgba(240, 85, 106, 0.12);
             --ring-color: rgba(79, 141, 255, 0.55);
 
@@ -334,35 +334,35 @@ body.up-kb-open .up-kb-aware {
 
         body.light-mode {
             /* OLED Command — thème clair : blanc cassé chaud, accents assombris pour AA */
-            --bg-body: #f4f2ec;
+            --bg-body: var(--tac-paper-warm-100);
             --bg-glass: rgba(253, 253, 251, 0.85);
-            --bg-glass-heavy: #fdfdfb;
+            --bg-glass-heavy: var(--tac-paper-warm-50);
             --bg-input: rgba(255, 255, 255, 0.60);
             --border-glass: rgba(22, 24, 31, 0.10);
-            --text-main: #16181f;
-            --text-muted: #5f6573;
-            --accent-blue: #1d63d6;
-            --accent-hover: #1751b5;
+            --text-main: var(--tac-ink-app-900);
+            --text-muted: var(--tac-ink-app-500);
+            --accent-blue: var(--tac-blue-650);
+            --accent-hover: var(--tac-blue-750);
             --accent-glow: rgba(29, 99, 214, 0.16);
             /* Thème clair : déjà conforme (5.51:1 sur blanc), même valeur que --accent-blue. */
-            --accent-fill: #1d63d6;
-            --danger-red: #c8344a;
-            --civil-yellow: #8f6109;
+            --accent-fill: var(--tac-blue-650);
+            --danger-red: var(--tac-red-650);
+            --civil-yellow: var(--tac-amber-650);
             --inter-blue: #1d63d6;
-            --ao-green: #0b7a52;
-            --trash-color: #837d70;
+            --ao-green: var(--tac-green-650);
+            --trash-color: var(--tac-taupe-500);
 
             /* Parité OI — variantes claires des tokens ajoutés */
-            --bg-container: #fdfdfb;
-            --bg-interactive: #efece4;
-            --bg-interactive-hover: #e6e2d8;
-            --text-secondary: #4a4f5c;
-            --border-color: #e0ddd3;
+            --bg-container: var(--tac-paper-warm-50);
+            --bg-interactive: var(--tac-paper-warm-200);
+            --bg-interactive-hover: var(--tac-paper-warm-300);
+            --text-secondary: var(--tac-ink-app-700);
+            --border-color: var(--tac-paper-warm-400);
             --border-light: rgba(22, 24, 31, 0.06);
-            --field-border-hover: #a1a1aa;
-            --success-hover: #096643;
+            --field-border-hover: var(--tac-gray-400);
+            --success-hover: var(--tac-green-700);
             --effraction-glow: rgba(143, 97, 9, 0.18);
-            --danger-hover: #a8283b;
+            --danger-hover: var(--tac-red-700);
             --danger-bg: rgba(200, 52, 74, 0.07);
             --ring-color: rgba(29, 99, 214, 0.45);
             --moicp-zmspcp-purple: #5343c2;
