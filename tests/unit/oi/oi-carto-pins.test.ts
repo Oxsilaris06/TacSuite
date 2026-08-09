@@ -1,7 +1,7 @@
 /**
  * oi-carto-pins.test.ts — Comportement OBSERVÉ de `modules/oi_cartographie.js`
  * (GStart-main, 1681 LOC, lecture seule) pour le paquet `oi-carto-pins` :
- * `carto/pins.ts` (21 méthodes PINS, oi_cartographie.js:614-991). Écrit AVANT
+ * `carto/pins.ts` (20 méthodes PINS, oi_cartographie.js:614-991). Écrit AVANT
  * le port (TDD, mission P3.CONV). Références `oi_cartographie.js:<ligne>` en
  * commentaire, cf. SPEC-OI-CONVERSION.md §6.2/§6.3, PAQUETS-OI.json
  * (`oi-carto-pins`).
@@ -409,17 +409,6 @@ describe('_armPinPlacement (oi_cartographie.js:849-854)', () => {
         const fake = makeFakeThis({ drawTool: 'line' });
         PinsMethods._armPinPlacement.call(fake, { kind: 'cyno', label: 'Cyno' });
         expect(fake._setTool).toHaveBeenCalledWith(null);
-    });
-});
-
-describe('_esc (oi_cartographie.js:987-991)', () => {
-    it('échappe &, <, >, ", \'', () => {
-        expect(PinsMethods._esc('<a href="x">A&B\'</a>')).toBe('&lt;a href=&quot;x&quot;&gt;A&amp;B&#39;&lt;/a&gt;');
-    });
-
-    it('null/undefined → chaîne vide', () => {
-        expect(PinsMethods._esc(null)).toBe('');
-        expect(PinsMethods._esc(undefined)).toBe('');
     });
 });
 

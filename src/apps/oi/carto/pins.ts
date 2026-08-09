@@ -3,7 +3,7 @@
  * (P3.CONV, paquet `oi-carto-pins`).
  * ===========================================================================
  *
- * Port TypeScript VERBATIM des 21 méthodes de la section « PINS — membres
+ * Port TypeScript VERBATIM des 20 méthodes de la section « PINS — membres
  * PATRACDVR + pins OI dédiés » de `oi_cartographie.js` (GStart-main, lecture
  * seule, lignes 614-991) : `_openPingModal` (:618), `_closePingModal` (:627),
  * `_renderPingLists` (:633-700), `_memberLabel` (:701), `_customOr` (:708),
@@ -12,7 +12,7 @@
  * (:817), `_goToMember` (:825), `_getPatracdvrVehicles` (:833),
  * `_getAdversaryVehicles` (:840), `_armPinPlacement` (:849), `_onMapClick`
  * (:856), `_addPin` (:880), `_removePin` (:887), `_clearAllPins` (:893),
- * `_renderPins` (:904-986, CŒUR du module), `_esc` (:987). Cf.
+ * `_renderPins` (:904-986, CŒUR du module). Cf.
  * `docs/SPEC-OI-CONVERSION.md` §6.2/§6.3, `PAQUETS-OI.json` (`oi-carto-pins`).
  *
  * COUPLAGE DOM ASSUMÉ (mission, à préserver) : ce groupe scrute directement le
@@ -28,8 +28,10 @@
  * EXACTEMENT comme l'original (halo icône + label séparé, drag groupé).
  *
  * Les `innerHTML` (:648, 670, 682, 694, 738, 740, 757, 798, 803, 921, 943)
- * sont portés VERBATIM avec leur échappement d'origine (`_esc`, appelé
- * seulement aux sites où l'original l'appelle, :943-944) — rien n'est ajouté.
+ * sont portés VERBATIM avec leur échappement d'origine (`_esc` d'origine,
+ * remplacé par `esc` de `@shared/ui-platform.js` — doublon, même
+ * implémentation, cf. `@pctac/planmap/constants.ts:13` — appelé seulement aux
+ * sites où l'original l'appelle, :943-944) — rien d'autre n'est ajouté.
  *
  * Adaptations de TYPAGE PUR (aucune restructuration de logique, cf. règle
  * commune §3/§9) :
@@ -46,10 +48,6 @@
  *   - `_getPatracdvrVehicles` (:836) : `.filter(Boolean)` → prédicat de type
  *     explicite (`(name): name is string => Boolean(name)`), même filtrage,
  *     retour bien `string[]`.
- *   - `_esc` (:988) : le littéral d'échappement est typé `Record<string,
- *     string>` (l'original n'a que des clés fixes, `c` n'est pas un type
- *     littéral pour TS) ; le repli `?? c` n'est jamais emprunté (la regex ne
- *     capture que les 5 caractères présents dans le littéral).
  *   - `#oi_carto_ping_modal` (dialog) / `#oi_carto_pin_label` (input) :
  *     `document.getElementById` renvoie `HTMLElement | null` en TS strict ;
  *     casts `as HTMLDialogElement | null` / `as HTMLInputElement | null`
@@ -61,6 +59,8 @@
 
 import maplibregl from 'maplibre-gl';
 import type { MapMouseEvent, Marker } from 'maplibre-gl';
+
+import { esc } from '@shared/ui-platform.js';
 
 import { OI_PIN_DEFS, OI_PIN_FALLBACK, oiIconForMember } from './constants.js';
 import type { OICartoInternal, OiCartoPendingPin, OiCartoPin, OiCartoPinKind } from './types.js';
@@ -459,8 +459,8 @@ export const PinsMethods = {
                 pointer-events: none; text-shadow: 0 1px 2px rgba(0,0,0,0.9); letter-spacing: 0.3px;`;
             if (pin.memberTri) {
                 const sub = pin.text || (pin.fonction && pin.fonction !== 'Sans' ? pin.fonction : '');
-                labelEl.innerHTML = `<div style="font-weight:700; font-size:13px;">${this._esc(pin.memberTri)}</div>` +
-                    (sub ? `<div style="font-size:11px; opacity:0.85;">${this._esc(sub)}</div>` : '');
+                labelEl.innerHTML = `<div style="font-weight:700; font-size:13px;">${esc(pin.memberTri)}</div>` +
+                    (sub ? `<div style="font-size:11px; opacity:0.85;">${esc(sub)}</div>` : '');
             } else {
                 labelEl.textContent = pin.text || pin.label;
             }
@@ -512,18 +512,5 @@ export const PinsMethods = {
 
             this.markers.set(pin.id, { pin: pinMarker, label: labelMarker });
         }
-    },
-
-    // oi_cartographie.js:987-991
-    _esc(s: string | null | undefined): string {
-        // oi_cartographie.js:988 — le littéral `{ '&':…, '<':…, … }` n'a que des
-        // clés littérales (pas de signature d'index) : `c` (issu du replacer de
-        // la regex) est un `string` non littéral, TS ne peut pas l'indexer sans
-        // signature d'index explicite. Adaptation de TYPAGE PUR (aucun
-        // changement de logique) : le littéral est typé `Record<string,
-        // string>` ; le repli `?? c` n'est JAMAIS emprunté en pratique car la
-        // regex ne capture que les 5 caractères présents dans le littéral.
-        const map: Record<string, string> = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
-        return (s == null ? '' : String(s)).replace(/[&<>"']/g, c => map[c] ?? c);
     },
 };

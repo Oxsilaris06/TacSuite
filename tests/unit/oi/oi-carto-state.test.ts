@@ -106,7 +106,6 @@ function makeFakeThis(overrides: Record<string, unknown> = {}): OICartoInternal 
         _removePin: vi.fn(),
         _clearAllPins: vi.fn(),
         _renderPins: vi.fn(),
-        _esc: vi.fn((s: string | null | undefined) => s ?? ''),
 
         // --- Roue d'un pin + panneaux inline (carto/panels.ts, autre paquet) ---
         _closeWheel: vi.fn(),

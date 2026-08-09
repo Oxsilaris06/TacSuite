@@ -13,7 +13,7 @@
  * `getZoom`, `triggerRepaint`, `getCanvas`).
  *
  * `PanelsMethods` est importé STATIQUEMENT (dépendances externes au groupe —
- * `_loadPins`/`_savePins`/`_renderPins`/`_esc`/`_removePin`/`_renderPingLists`,
+ * `_loadPins`/`_savePins`/`_renderPins`/`_removePin`/`_renderPingLists`,
  * groupes `state.ts`/`pins.ts` — mockées, § « seules les dépendances externes
  * au groupe sont mockées », même patron que `oi-carto-draw.test.ts`).
  *
@@ -146,7 +146,6 @@ function makePanelsState(opts: {
         _loadPins: vi.fn((): OiCartoPin[] => pins),
         _savePins: vi.fn((list: readonly OiCartoPin[]): void => { pins = [...list]; }),
         _renderPins: vi.fn(),
-        _esc: vi.fn((s: string | null | undefined): string => (s == null ? '' : String(s))),
         _removePin: vi.fn((id: string): void => { pins = pins.filter((p) => p.id !== id); }),
         _renderPingLists: vi.fn(),
     };

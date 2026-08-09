@@ -43,6 +43,8 @@
  * (lecture seule).
  */
 
+import { esc } from '@shared/ui-platform.js';
+
 import { OI_ICON_CATALOG } from './constants.js';
 import type { LngLatObj, OICartoInternal } from './types.js';
 import { OIWheel } from './wheel.js';
@@ -158,12 +160,12 @@ export const PanelsMethods = {
         const pin = this._loadPins().find((p) => p.id === pinId);
         if (!pin) return;
         const cells = OI_ICON_CATALOG.map((ic) => `
-            <button type="button" class="oi-ic" data-id="${ic.id}" title="${this._esc(ic.label)}"
+            <button type="button" class="oi-ic" data-id="${ic.id}" title="${esc(ic.label)}"
                 style="display:flex; flex-direction:column; align-items:center; gap:2px; padding:7px 4px; border-radius:8px; cursor:pointer;
                        background:${(pin.icon || '') === ic.id ? 'rgba(59,130,246,0.35)' : 'rgba(255,255,255,0.05)'};
                        border:1px solid ${(pin.icon || '') === ic.id ? '#3b82f6' : 'rgba(255,255,255,0.12)'}; color:#fff;">
                 <span class="material-symbols-outlined" style="font-size:22px;">${ic.id}</span>
-                <span style="font-size:0.6em; text-align:center; line-height:1.05;">${this._esc(ic.label)}</span>
+                <span style="font-size:0.6em; text-align:center; line-height:1.05;">${esc(ic.label)}</span>
             </button>`).join('');
         const html = `
             <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
@@ -235,7 +237,7 @@ export const PanelsMethods = {
                 <strong style="font-size:13px;">${pin.memberTri ? 'Intitulé du membre' : 'Renommer le point'}</strong>
             </div>
             <div style="display:flex; gap:6px; align-items:center;">
-                <input type="text" id="oi_pin_rename_input" value="${this._esc(current)}"
+                <input type="text" id="oi_pin_rename_input" value="${esc(current)}"
                     style="flex:1; min-width:170px; background:rgba(255,255,255,0.08); color:#fff; border:1px solid rgba(255,255,255,0.2);
                            border-radius:8px; padding:7px 10px; font-size:14px; outline:none;">
                 <button type="button" id="oi_pin_rename_ok"

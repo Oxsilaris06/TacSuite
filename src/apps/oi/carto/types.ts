@@ -213,7 +213,6 @@ export interface OICartoInternal extends OICartoContract {
     _removePin(id: string): void; // :887
     _clearAllPins(): void; // :893
     _renderPins(): void; // :904
-    _esc(s: string | null | undefined): string; // :987
 
     // --- Roue d'options d'un pin + panneaux inline (panels.ts) ---
     _closeWheel(): void; // :997
