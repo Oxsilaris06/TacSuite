@@ -42,11 +42,10 @@
 import maplibregl from 'maplibre-gl';
 import type { GeoJSONSource, LngLat, MapMouseEvent } from 'maplibre-gl';
 
-import { Persist } from '@shared/persist.js';
 import { Storage } from '@pctac/storage.js';
 import { ADVERSARIES_KEY, FRIENDS_KEY, HOSTAGES_KEY } from '@pctac/config.js';
 
-import { ENTITY_COLORS, PINS_KEY } from './constants.js';
+import { ENTITY_COLORS } from './constants.js';
 import type {
     LngLatTuple,
     PinCircleFeature,
@@ -109,18 +108,19 @@ export const PinsMethods = {
     },
 
     // planMap.js:1203-1207
-    _loadPins(): PlanPin[] {
-        // Persist.get tolère localStorage indisponible, JSON corrompu (→ .bak) et
-        // valide que c'est bien un tableau ; fallback [] dans tous les cas.
-        return Persist.get<PlanPin[]>(PINS_KEY, { validator: Array.isArray, fallback: [] }) || [];
+    // R3-c : délègue à `this.persistence` (adapter posé par createPlanMapState(),
+    // state.ts) — enrobe Persist.get sur PINS_KEY, comportement bit-identique
+    // (JSON corrompu → .bak, valide un tableau, fallback [] dans tous les cas).
+    _loadPins(this: PlanMapInternal): PlanPin[] {
+        return this.persistence.loadPins();
     },
 
     // planMap.js:1209-1214
-    _savePins(pins: readonly PlanPin[]): void {
-        // Via Persist → garde QuotaExceededError (événement 'pctac:quota' non bloquant,
-        // ne jette jamais). Pas d'alert ici : la persistance des pings ne doit pas
-        // bloquer le déplacement tactile sur le terrain.
-        Persist.set(PINS_KEY, pins);
+    // R3-c : idem, délègue à `this.persistence.savePins` — garde QuotaExceededError
+    // (événement 'pctac:quota' non bloquant, ne jette jamais). Pas d'alert ici : la
+    // persistance des pings ne doit pas bloquer le déplacement tactile sur le terrain.
+    _savePins(this: PlanMapInternal, pins: readonly PlanPin[]): void {
+        this.persistence.savePins(pins);
     },
 
     // planMap.js:1216-1226

@@ -22,8 +22,12 @@
  * ⚠ INVARIANT (§5.8) : `_undo`/`_redo` écrivent DIRECTEMENT
  * `localStorage.setItem(SHAPES_KEY, …)` (planMap.js:1975, 1985), PAS via
  * `Persist` — volontaire (la chaîne sérialisée est déjà connue). `_loadShapes`/
- * `_saveShapes` passent EN REVANCHE par `Persist` (planMap.js:4954, 4960) :
- * la différence est délibérée, ne pas uniformiser (SPEC-PCTAC-CONVERSION §6).
+ * `_saveShapes` passent EN REVANCHE par `Persist` (planMap.js:4954, 4960),
+ * DEPUIS mission R3-c via `this.persistence` (adapter posé par
+ * `createPlanMapState()`, state.ts — cf. `@shared/map-persistence.ts`),
+ * qui enrobe `Persist` sans en changer le comportement : la différence
+ * `_undo`/`_redo` vs `_loadShapes`/`_saveShapes` reste délibérée, ne pas
+ * uniformiser (SPEC-PCTAC-CONVERSION §6).
  *
  * Source : `/home/nico/Bureau/Web/GStart-main/modules/pctac/planMap.js`
  * (lecture seule).
@@ -31,8 +35,6 @@
 
 import maplibregl from 'maplibre-gl';
 import type { GeoJSONSource, MapMouseEvent, MapTouchEvent } from 'maplibre-gl';
-
-import { Persist } from '@shared/persist.js';
 
 import { SHAPES_KEY } from './constants.js';
 import type { LngLatObj, LngLatTuple, PlanMapInternal, PlanMapState, PlanShape } from './types.js';
@@ -413,14 +415,19 @@ export const DrawToolsMethods = {
     },
 
     // planMap.js:4953-4955
-    _loadShapes(): PlanShape[] {
-        return Persist.get<PlanShape[]>(SHAPES_KEY, { validator: Array.isArray, fallback: [] }) || [];
+    // R3-c : délègue à `this.persistence` (adapter posé par createPlanMapState(),
+    // state.ts) — enrobe Persist.get sur SHAPES_KEY, comportement bit-identique.
+    // NB : `_undo`/`_redo` ci-dessus restent volontairement en écriture DIRECTE
+    // localStorage (§5.8), PAS via l'adapter — divergence délibérée, inchangée.
+    _loadShapes(this: PlanMapInternal): PlanShape[] {
+        return this.persistence.loadShapes();
     },
 
     // planMap.js:4957-4961
-    _saveShapes(list: readonly PlanShape[]): void {
-        // Via Persist → la garde QuotaExceededError dispatch 'pctac:quota' sans jeter
-        // ni bloquer (plus d'alert() synchrone qui figerait l'UI sur le terrain).
-        Persist.set(SHAPES_KEY, list);
+    // R3-c : idem, délègue à `this.persistence.saveShapes` — garde QuotaExceededError
+    // (dispatch 'pctac:quota' sans jeter ni bloquer, plus d'alert() synchrone qui
+    // figerait l'UI sur le terrain).
+    _saveShapes(this: PlanMapInternal, list: readonly PlanShape[]): void {
+        this.persistence.saveShapes(list);
     },
 };

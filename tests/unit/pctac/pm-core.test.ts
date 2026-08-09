@@ -24,14 +24,16 @@ import { SafeMethods, createPlanMapState } from '../../../src/apps/pctac/planmap
 import type { PlanMapInternal } from '../../../src/apps/pctac/planmap/types.js';
 
 describe('state.ts — createPlanMapState() (planMap.js:301-328 + ad hoc §3.2)', () => {
-    it('retourne exactement les 57 clés attendues, avec les bonnes valeurs initiales', () => {
+    it('retourne exactement les 58 clés attendues, avec les bonnes valeurs initiales', () => {
         const s = createPlanMapState();
 
         // Décompte exhaustif : 27 (littéral, planMap.js:302-328 — vérifié par lecture
         // directe et par `grep -c` : SPEC-PLANMAP-SPLIT.md §0/§9 annonce « 28 » et
         // « 58 clés », mais le littéral source n'a que 27 propriétés ; écart de
         // comptage du document, signalé au gate, source de vérité = planMap.js)
-        // + 28 (ad hoc, §3.2) + 2 (AOI_MIN_Z/MAX_Z) = 57.
+        // + 28 (ad hoc, §3.2) + 2 (AOI_MIN_Z/MAX_Z) + 1 (`persistence`, mission
+        // R3-c, hors littéral `planMap.js` — cf. commentaire de
+        // `PlanMapState.persistence`, types.ts) = 58.
         expect(Object.keys(s).sort()).toEqual(
             [
                 // 28 propriétés du littéral (planMap.js:302-328)
@@ -94,9 +96,27 @@ describe('state.ts — createPlanMapState() (planMap.js:301-328 + ad hoc §3.2)'
                 // 2 constantes publiques
                 'AOI_MIN_Z',
                 'AOI_MAX_Z',
+                // 1 adapter de persistance (mission R3-c, hors littéral)
+                'persistence',
             ].sort(),
         );
-        expect(Object.keys(s)).toHaveLength(57);
+        expect(Object.keys(s)).toHaveLength(58);
+    });
+
+    it('`persistence` : adapter fonctionnel posé par défaut (mission R3-c) — round-trip pins/shapes via localStorage', () => {
+        localStorage.clear();
+        const s = createPlanMapState();
+
+        expect(s.persistence.loadPins()).toEqual([]);
+        expect(s.persistence.savePins([{ id: 'p1', lng: 1, lat: 2 }])).toBe(true);
+        expect(s.persistence.loadPins()).toEqual([{ id: 'p1', lng: 1, lat: 2 }]);
+
+        expect(s.persistence.loadShapes()).toEqual([]);
+        expect(s.persistence.saveShapes([{ id: 's1', type: 'line', coords: [[1, 2]] }])).toBe(true);
+        expect(s.persistence.loadShapes()).toEqual([{ id: 's1', type: 'line', coords: [[1, 2]] }]);
+
+        expect(s.persistence.loadView()).toBeNull();
+        localStorage.clear();
     });
 
     it('valeurs littérales exactes des 28 propriétés du littéral (planMap.js:302-328)', () => {

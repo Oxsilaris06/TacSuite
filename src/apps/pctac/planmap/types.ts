@@ -12,6 +12,7 @@
 
 import type { Map as MapLibreMap, Marker, LngLat, MapMouseEvent, MapTouchEvent, MapLayerMouseEvent, MapLayerTouchEvent } from 'maplibre-gl';
 import type { PlanMapContract, PlanMapPinSummary } from '@shared/types/contracts.js';
+import type { MapPersistenceAdapter } from '@shared/map-persistence.js';
 
 export type { PlanMapPinSummary };
 
@@ -284,6 +285,18 @@ export interface PlanMapState {
     /* --- 2 constantes publiques (planMap.js:5303-5304) --- */
     AOI_MIN_Z: number;
     AOI_MAX_Z: number;
+
+    /**
+     * Adapter de persistance carto (mission R3-c, décision D1, hors littéral
+     * `planMap.js` — introduit par le port, aucune contrepartie source).
+     * Posé par `createPlanMapState()` (state.ts) avec un
+     * `createLocalStorageAdapter` sur `Persist` (mêmes clés PINS_KEY/
+     * SHAPES_KEY/VIEW_KEY, comportement bit-identique). Consommé par
+     * `_loadPins`/`_savePins` (pins.ts) et `_loadShapes`/`_saveShapes`
+     * (draw-tools.ts). `_loadView`/`_saveView` (map-core.ts) ne sont PAS
+     * migrées ici : hors périmètre de ce paquet (map-core.ts n'y figure pas).
+     */
+    persistence: MapPersistenceAdapter<PlanPin, PlanShape, PlanView>;
 }
 
 /**

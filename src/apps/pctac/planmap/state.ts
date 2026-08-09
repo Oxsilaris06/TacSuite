@@ -13,7 +13,11 @@
  * (lecture seule).
  */
 
-import type { PlanMapInternal, PlanMapState } from './types.js';
+import { Persist } from '@shared/persist.js';
+import { createLocalStorageAdapter } from '@shared/map-persistence.js';
+
+import { PINS_KEY, SHAPES_KEY, VIEW_KEY } from './constants.js';
+import type { PlanMapInternal, PlanMapState, PlanPin, PlanShape, PlanView } from './types.js';
 
 // planMap.js:301-328
 export function createPlanMapState(): PlanMapState {
@@ -84,6 +88,23 @@ export function createPlanMapState(): PlanMapState {
         /* --- 2 constantes publiques (planMap.js:5303-5304) --- */
         AOI_MIN_Z: 13,
         AOI_MAX_Z: 18,
+
+        /**
+         * Adapter de persistance (mission R3-c, hors littéral `planMap.js` —
+         * cf. commentaire de `PlanMapState.persistence`, types.ts). Enrobe
+         * `Persist` sur les 3 clés localStorage existantes : comportement
+         * bit-identique à l'usage direct de `Persist.get`/`Persist.set` qu'il
+         * remplace dans `pins.ts` (_loadPins/_savePins) et `draw-tools.ts`
+         * (_loadShapes/_saveShapes). `view` est câblé pour cohérence de
+         * l'interface mais n'est pas encore consommé : `_loadView`/`_saveView`
+         * (map-core.ts) écrivent aujourd'hui `localStorage` en direct, hors
+         * périmètre de ce paquet.
+         */
+        persistence: createLocalStorageAdapter<PlanPin, PlanShape, PlanView>(Persist, {
+            pins: PINS_KEY,
+            shapes: SHAPES_KEY,
+            view: VIEW_KEY,
+        }),
     };
 }
 

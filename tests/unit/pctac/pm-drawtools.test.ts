@@ -18,6 +18,7 @@ import type { MapMouseEvent } from 'maplibre-gl';
 
 import { SHAPES_KEY } from '../../../src/apps/pctac/planmap/constants.js';
 import { DrawToolsMethods } from '../../../src/apps/pctac/planmap/draw-tools.js';
+import { createPlanMapState } from '../../../src/apps/pctac/planmap/state.js';
 import type { LngLatTuple, PlanMapInternal, PlanShape } from '../../../src/apps/pctac/planmap/types.js';
 
 function makeFakeMap() {
@@ -53,6 +54,11 @@ function makeFakeState(map: FakeMap | null): PlanMapInternal {
         _diameterGlobal: false,
         _drawingDiameterMarker: null,
         _selectedShapeId: null,
+        // R3-c : `_loadShapes`/`_saveShapes` délèguent à `this.persistence`
+        // (adapter posé par `createPlanMapState()`, cf. state.ts) — même
+        // instance que la production, enrobe `Persist` sur les vraies clés
+        // localStorage (comportement bit-identique aux tests existants).
+        persistence: createPlanMapState().persistence,
 
         // Les 16 méthodes sous test — implémentations réelles.
         ...DrawToolsMethods,

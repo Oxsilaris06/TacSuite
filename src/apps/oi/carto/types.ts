@@ -24,6 +24,7 @@ import type {
     OiCartographyState,
     OiCartoView,
 } from '@shared/types/contracts.js';
+import type { MapPersistenceAdapter } from '@shared/map-persistence.js';
 
 /** Couple `[lng, lat]` tel que persisté dans les tracés (oi_cartographie.js:1482-1486,1573-1602). */
 export type LngLatTuple = [number, number];
@@ -166,6 +167,16 @@ export interface OICartoInternal extends OICartoContract {
     _init(): void; // :318
 
     // --- Persistance — Store.state.formData.cartography (state.ts) ---
+    /**
+     * Adapter de persistance carto (mission R3-c, décision D1, hors littéral
+     * `oi_cartographie.js` — introduit par le port, aucune contrepartie
+     * source). Posé par `createOICartoState()` (state.ts) avec un
+     * `createStoreAdapter` enrobant `Store.state.formData.cartography` — SEUL
+     * endroit où vivent les casts « ÉCART SIGNALÉ » pins/shapes (cf.
+     * commentaire de tête de `state.ts`). Consommé par `_loadPins`/`_savePins`/
+     * `_loadShapes`/`_saveShapes`/`_loadView`/`_saveView` ci-dessous.
+     */
+    persistence: MapPersistenceAdapter<OiCartoPin, OiCartoShape, OiCartoViewState>;
     _getCartoState(): OiCartographyState | null; // :366
     _loadView(): OiCartoViewState; // :374
     _saveView(): void; // :381

@@ -19,10 +19,15 @@
  * méthodes RÉELLEMENT sous test (`_safe`, les 7 méthodes de `PersistMethods`)
  * portent l'implémentation RÉELLE par défaut, appelées via
  * `PersistMethods.xxx.call(fake, ...)` / `SafeMethods._safe.call(fake, ...)`,
- * jamais via `fake.xxx()` directement (sauf quand l'appel interne
- * `this._getCartoState()` d'une autre méthode du même groupe doit résoudre
- * dynamiquement — auquel cas `fake._getCartoState` porte déjà l'implémentation
- * réelle par défaut).
+ * jamais via `fake.xxx()` directement. `fake.persistence` (posé par
+ * `createOICartoState()`) porte TOUJOURS l'implémentation RÉELLE de l'adapter
+ * (mission R3-c, `@shared/map-persistence.ts`) : `_loadView`/`_saveView`/
+ * `_loadPins`/`_savePins`/`_loadShapes`/`_saveShapes` délèguent à
+ * `this.persistence`, dont les accesseurs lisent `Store` via la fonction de
+ * MODULE `getCartoState()` (state.ts) — PAS via `this._getCartoState()`
+ * (dispatch dynamique). Conséquence pour les tests "Store indisponible" :
+ * on vide `Store.state.formData` directement plutôt que de mocker
+ * `fake._getCartoState` (qui n'a plus d'effet sur ces 6 méthodes).
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -313,9 +318,18 @@ describe('_loadView / _saveView (oi_cartographie.js:374-393)', () => {
         expect(Store.state.formData.cartography).toBeUndefined();
     });
 
-    it('_saveView avec _getCartoState ⇒ null (Store indisponible) ⇒ ne jette pas', () => {
+    // R3-c : `_saveView` délègue désormais à `this.persistence.saveView()`
+    // (adapter posé par `createOICartoState()`, cf. `buildCartoPersistenceAdapter`
+    // dans state.ts) dont les accesseurs appellent la fonction de MODULE
+    // `getCartoState()` — plus `this._getCartoState()` (dispatch dynamique) —
+    // donc mocker `fake._getCartoState` n'a plus d'effet sur `_saveView`.
+    // Adaptation du mock (attendu inchangé : ne jette pas) : on simule
+    // "Store indisponible" à la source, en vidant `Store.state.formData`
+    // (même garde `!Store.state.formData` que l'original `_getCartoState`).
+    it('_saveView avec Store indisponible (formData vide) ⇒ ne jette pas', () => {
         const map = makeFakeMap();
-        const fake = makeFakeThis({ map, _getCartoState: vi.fn(() => null) });
+        const fake = makeFakeThis({ map });
+        Store.state.formData = undefined as unknown as typeof Store.state.formData;
 
         expect(() => PersistMethods._saveView.call(fake)).not.toThrow();
     });
@@ -381,8 +395,12 @@ describe('_loadPins / _savePins (oi_cartographie.js:395-403)', () => {
         expect(PersistMethods._loadPins.call(fake)).toEqual([]);
     });
 
-    it('_savePins avec _getCartoState ⇒ null ⇒ ne jette pas (no-op)', () => {
-        const fake = makeFakeThis({ _getCartoState: vi.fn(() => null) });
+    // R3-c : cf. commentaire de `_saveView avec Store indisponible` ci-dessus —
+    // même adaptation (mock `_getCartoState` sans effet sur `_savePins`,
+    // qui délègue à `this.persistence.savePins()`).
+    it('_savePins avec Store indisponible (formData vide) ⇒ ne jette pas (no-op)', () => {
+        const fake = makeFakeThis();
+        Store.state.formData = undefined as unknown as typeof Store.state.formData;
         expect(() => PersistMethods._savePins.call(fake, [])).not.toThrow();
     });
 
@@ -451,8 +469,11 @@ describe('_loadShapes / _saveShapes (oi_cartographie.js:405-413)', () => {
         expect(PersistMethods._loadShapes.call(fake)).toEqual([]);
     });
 
-    it('_saveShapes avec _getCartoState ⇒ null ⇒ ne jette pas (no-op)', () => {
-        const fake = makeFakeThis({ _getCartoState: vi.fn(() => null) });
+    // R3-c : cf. commentaire de `_saveView avec Store indisponible` (plus haut) —
+    // même adaptation.
+    it('_saveShapes avec Store indisponible (formData vide) ⇒ ne jette pas (no-op)', () => {
+        const fake = makeFakeThis();
+        Store.state.formData = undefined as unknown as typeof Store.state.formData;
         expect(() => PersistMethods._saveShapes.call(fake, [])).not.toThrow();
     });
 
