@@ -1,24 +1,24 @@
 /**
- * wheel.ts — Roue contextuelle (radial menu) — composant générique.
+ * wheel.ts — Roue contextuelle (radial menu) — adaptateur PC-Tac.
  * =====================================================================
  *
  * Port TypeScript de `modules/pctac/wheel.js` (GStart-main, 351 LOC),
- * vérifié ligne à ligne. Aucun import dans l'original.
- *
- * Ouvre un menu radial à un point lng/lat sur la carte. Les options sont
- * disposées sur un arc. La roue suit la carte (pan/zoom). Fermée par :
- *  - tap sur le bouton central (close)
- *  - tap sur une option
- *  - tap en dehors
- *  - touche Échap
- *  - destroy() programmatique
- *
- * Support sous-menus : une option peut renvoyer une nouvelle liste d'options
- * via `children: () => [...]` → la roue se reconstruit.
+ * vérifié ligne à ligne, puis EXTRAIT (R3-b, décision D1 : PC-Tac = socle)
+ * vers `@shared/radial-menu.js` (`RadialMenu`). `Wheel` est désormais un
+ * adaptateur mince : il garde exactement les types publics et le
+ * comportement d'origine (options, sous-menus, positionnement, fermeture
+ * extérieure, clavier, durcissement anti-clics-fantômes du commit 75dc04d)
+ * en déléguant à `RadialMenu` par composition — `map: MaplibreMap | null`
+ * est adapté en `RadialMenuHost` minimal (project/getContainer/on/off),
+ * `WheelOption.action`/`children` sont adaptés pour continuer à recevoir
+ * `this` (le `Wheel`, pas le `RadialMenu` interne) comme avant.
  *
  * Design : verre dépoli sombre, icônes Material, label au survol, animé.
  */
 import type { Map as MaplibreMap } from 'maplibre-gl';
+
+import { RadialMenu } from '@shared/radial-menu.js';
+import type { RadialMenuHost, RadialMenuOption } from '@shared/radial-menu.js';
 
 /** Point {lng,lat} — même forme que `LngLatObj` (SPEC-PLANMAP-SPLIT §3.1). */
 export interface WheelLngLat {
@@ -52,372 +52,106 @@ export interface WheelOptions {
   onClose?: () => void;
 }
 
+/** Adapte un `maplibre-gl.Map` en `RadialMenuHost` minimal. */
+function toHost(map: MaplibreMap | null): RadialMenuHost | null {
+  if (!map) return null;
+  return {
+    getContainer: () => map.getContainer(),
+    project: (lngLat) => map.project(lngLat),
+    on: (event, handler) => {
+      map.on(event, handler);
+    },
+    off: (event, handler) => {
+      map.off(event, handler);
+    },
+  };
+}
+
+/**
+ * Adapte `WheelOption[]` en `RadialMenuOption[]` : les callbacks
+ * `action`/`children` déclarés par l'appelant reçoivent `self` (le `Wheel`
+ * public), pas le `RadialMenu` interne — comportement identique à l'ancien
+ * `Wheel` monolithique où `opt.action(this)` recevait l'instance `Wheel`.
+ */
+function adaptOptions(options: WheelOption[], self: Wheel): RadialMenuOption[] {
+  return options.map((opt) => {
+    const adapted: RadialMenuOption = {
+      icon: opt.icon,
+      label: opt.label,
+    };
+    if (opt.id !== undefined) adapted.id = opt.id;
+    if (opt.color !== undefined) adapted.color = opt.color;
+    if (opt.bg !== undefined) adapted.bg = opt.bg;
+    if (opt.keepOpen !== undefined) adapted.keepOpen = opt.keepOpen;
+    if (opt.action) {
+      const action = opt.action;
+      adapted.action = () => action(self);
+    }
+    if (opt.children) {
+      const children = opt.children;
+      adapted.children = () => adaptOptions(children(), self);
+    }
+    return adapted;
+  });
+}
+
 export class Wheel {
   map: MaplibreMap | null;
-  lngLat: WheelLngLat | null;
-  title: string | undefined;
-  centerIcon: string;
-  options: WheelOption[];
-  radius: number;
-  onClose: (() => void) | undefined;
-  element: HTMLElement | null;
 
-  private _destroyed: boolean;
-  private _mountedAt: number;
-  /** Rayon utile total (bouton compris) pour le clamp de `_position()` (wheel.js:159). */
-  private _extent: number | undefined;
-  /** Mémorise l'état initial pour le "back" (wheel.js:322-323). */
-  private _initialOptions: WheelOption[] | undefined;
-  private _initialTitle: string | undefined;
+  private readonly _menu: RadialMenu;
 
   constructor(opts: WheelOptions) {
     this.map = opts.map;
-    this.lngLat = opts.lngLat;
-    this.title = opts.title;
-    this.centerIcon = opts.centerIcon || 'close';
-    this.options = opts.options || [];
-    this.radius = opts.radius || 78;
-    this.onClose = opts.onClose;
-    this.element = null;
-    this._onMove = this._onMove.bind(this);
-    this._onOutside = this._onOutside.bind(this);
-    this._onKey = this._onKey.bind(this);
-    this._destroyed = false;
-    this._mountedAt = 0;
-  }
-
-  open(): void {
-    if (this.element) return;
-    this.element = this._buildElement();
-    // On monte dans le container de la carte (positionnement absolute)
-    const parent = this.map ? this.map.getContainer() : document.body;
-    parent.appendChild(this.element);
-    this._position();
-    if (this.map) {
-      this.map.on('move', this._onMove);
-      this.map.on('zoom', this._onMove);
-    }
-    // Ignore le 1er pointerdown (celui qui a ouvert la roue)
-    this._mountedAt = Date.now();
-    // Capture pour intercepter avant que le map handler ne réagisse
-    document.addEventListener('pointerdown', this._onOutside, { capture: true });
-    document.addEventListener('touchstart', this._onOutside, { capture: true, passive: true });
-    document.addEventListener('keydown', this._onKey);
-    // Anim d'apparition
-    requestAnimationFrame(() => {
-      if (this.element) this.element.classList.add('open');
+    this._menu = new RadialMenu({
+      host: toHost(opts.map),
+      lngLat: opts.lngLat,
+      ...(opts.title !== undefined ? { title: opts.title } : {}),
+      ...(opts.centerIcon !== undefined ? { centerIcon: opts.centerIcon } : {}),
+      options: adaptOptions(opts.options || [], this),
+      ...(opts.radius !== undefined ? { radius: opts.radius } : {}),
+      ...(opts.onClose ? { onClose: opts.onClose } : {}),
+      wrapperClassName: 'plan-wheel',
     });
   }
 
+  get lngLat(): WheelLngLat | null {
+    return this._menu.lngLat;
+  }
+
+  get title(): string | undefined {
+    return this._menu.title;
+  }
+
+  get centerIcon(): string {
+    return this._menu.centerIcon;
+  }
+
+  get radius(): number {
+    return this._menu.radius;
+  }
+
+  get onClose(): (() => void) | undefined {
+    return this._menu.onClose;
+  }
+
+  get element(): HTMLElement | null {
+    return this._menu.element;
+  }
+
+  open(): void {
+    this._menu.open();
+  }
+
   destroy(): void {
-    if (this._destroyed) return;
-    this._destroyed = true;
-    if (this.element) {
-      try {
-        this.element.remove();
-      } catch {
-        /* ignore */
-      }
-      this.element = null;
-    }
-    if (this.map) {
-      try {
-        this.map.off('move', this._onMove);
-      } catch {
-        /* ignore */
-      }
-      try {
-        this.map.off('zoom', this._onMove);
-      } catch {
-        /* ignore */
-      }
-    }
-    document.removeEventListener('pointerdown', this._onOutside, { capture: true });
-    document.removeEventListener('touchstart', this._onOutside, { capture: true });
-    document.removeEventListener('keydown', this._onKey);
-    if (this.onClose) {
-      try {
-        this.onClose();
-      } catch {
-        /* ignore */
-      }
-    }
+    this._menu.destroy();
   }
 
   /** Remplace dynamiquement les options et redéploie la roue. */
   setOptions(
     options: WheelOption[] | null | undefined,
-    {
-      title,
-      centerIcon,
-    }: { title?: string | undefined; centerIcon?: string | undefined } = {},
+    opts: { title?: string | undefined; centerIcon?: string | undefined } = {},
   ): void {
-    this.options = options || [];
-    if (title !== undefined) this.title = title;
-    if (centerIcon !== undefined) this.centerIcon = centerIcon;
-    if (!this.element) return;
-    // Reconstruction
-    const parent = this.element.parentElement;
-    const oldEl = this.element;
-    this.element = this._buildElement();
-    if (parent) {
-      parent.insertBefore(this.element, oldEl);
-      oldEl.remove();
-    }
-    this._position();
-    requestAnimationFrame(() => {
-      if (this.element) this.element.classList.add('open');
-    });
-  }
-
-  private _onMove(): void {
-    this._position();
-  }
-
-  private _onOutside(ev: Event): void {
-    if (!this.element) return;
-    const isTouch = ('pointerType' in ev && (ev as PointerEvent).pointerType === 'touch') || ev.type === 'touchstart';
-    const minDelay = isTouch ? 400 : 120;
-    if (Date.now() - this._mountedAt < minDelay) return;
-    const target = ev.target instanceof Element ? ev.target : null;
-    if (target && (
-      target.closest('.plan-pin') ||
-      target.closest('.plan-pin-label') ||
-      target.closest('.oi-carto-pin') ||
-      target.closest('.plan-wheel') ||
-      target.closest('.plan-inline-panel') ||
-      target.closest('.plan-lock-badge')
-    )) {
-      return;
-    }
-    if (!this.element.contains(target)) {
-      this.destroy();
-    }
-  }
-
-  private _onKey(ev: KeyboardEvent): void {
-    if (ev.key === 'Escape') this.destroy();
-  }
-
-  private _position(): void {
-    if (!this.element || !this.map) return;
-    const r = this.map.getContainer().getBoundingClientRect();
-    if (!this.lngLat) {
-      // Centre écran
-      this.element.style.left = `${r.width / 2}px`;
-      this.element.style.top = `${r.height / 2}px`;
-      return;
-    }
-    const p = this.map.project(this.lngLat);
-    const ext = this._extent || 150;
-    // Ancre sortie de la vue (pan/zoom) : on FERME la roue plutôt que de la
-    // laisser collée au bord, cliquable mais détachée de son point d'ancrage.
-    if (p.x < -ext || p.x > r.width + ext || p.y < -ext || p.y > r.height + ext) {
-      this.destroy();
-      return;
-    }
-    // Clamp DANS le conteneur (overflow:hidden du wrapper carte) : près d'un
-    // bord, une partie des options de la roue était rognée et inatteignable.
-    const cx = Math.max(ext, Math.min(r.width - ext, p.x));
-    const cy = Math.max(ext, Math.min(r.height - ext, p.y));
-    this.element.style.left = `${cx}px`;
-    this.element.style.top = `${cy}px`;
-  }
-
-  private _buildElement(): HTMLElement {
-    const n = this.options.length;
-    // Rayon adaptatif : plus compact sur mobile (< 480px de largeur écran)
-    const vw = typeof window !== 'undefined' ? window.innerWidth : 1024;
-    const radius = vw < 480 ? Math.min(this.radius, 86) : Math.max(this.radius, 96);
-    // Pour 1-2 options, on étale en arc semi-circulaire pour éviter les superpositions.
-    const arcSpan = n <= 2 ? Math.PI : 2 * Math.PI;
-    const arcStart = n <= 2 ? -Math.PI / 2 - arcSpan / 2 : -Math.PI / 2; // 12h
-    const btnSize = vw < 480 ? 52 : 58;
-    // Rayon utile total (bouton compris) pour le clamp de _position().
-    this._extent = radius + btnSize / 2 + 10;
-    const wrap = document.createElement('div');
-    wrap.className = 'plan-wheel';
-    wrap.style.cssText = `
-            position: absolute;
-            width: ${radius * 2 + btnSize + 36}px;
-            height: ${radius * 2 + btnSize + 36}px;
-            transform: translate(-50%, -50%) scale(0.85);
-            opacity: 0;
-            transition: transform 160ms cubic-bezier(.34,1.56,.64,1), opacity 140ms ease-out;
-            z-index: 60;
-            pointer-events: none;
-        `;
-
-    // Cercle de fond (verre dépoli)
-    const bg = document.createElement('div');
-    bg.style.cssText = `
-            position: absolute; inset: 0;
-            border-radius: 50%;
-            background: radial-gradient(circle at center, rgba(20,24,32,0.55) 0%, rgba(20,24,32,0.10) 70%, transparent 100%);
-            pointer-events: none;
-        `;
-    wrap.appendChild(bg);
-
-    // Bouton central (close ou back) - plus grand et explicite
-    const center = document.createElement('button');
-    center.type = 'button';
-    center.className = 'plan-wheel-center';
-    const isBack = this.centerIcon === 'arrow_back';
-    center.title = isBack ? 'Retour' : 'Fermer';
-    center.style.cssText = `
-            position: absolute;
-            left: 50%; top: 50%;
-            transform: translate(-50%, -50%);
-            width: 54px; height: 54px;
-            border-radius: 50%;
-            background: ${isBack ? 'rgba(59,130,246,0.95)' : 'rgba(20,24,32,0.95)'};
-            border: 2px solid ${isBack ? '#60a5fa' : 'rgba(255,255,255,0.35)'};
-            color: #fff;
-            cursor: pointer;
-            display: flex; flex-direction: column; align-items: center; justify-content: center;
-            gap: 1px;
-            pointer-events: auto;
-            box-shadow: 0 4px 16px rgba(0,0,0,0.55);
-            transition: transform 100ms ease;
-            touch-action: none;
-            font-family: var(--font-ui, sans-serif);
-        `;
-    center.innerHTML = `
-            <span class="material-symbols-outlined" aria-hidden="true" style="font-size: 22px; line-height: 1;">${this.centerIcon}</span>
-            <span style="font-size: 9px; font-weight: 700; letter-spacing: 0.5px; opacity: 0.85;">${isBack ? 'RETOUR' : 'FERMER'}</span>
-        `;
-    center.addEventListener('pointerdown', (ev) => ev.stopPropagation());
-    center.onclick = (ev) => {
-      ev.stopPropagation();
-      this.destroy();
-    };
-    wrap.appendChild(center);
-
-    // Titre optionnel (sous la roue)
-    if (this.title) {
-      const t = document.createElement('div');
-      t.style.cssText = `
-                position: absolute;
-                left: 50%; bottom: -28px;
-                transform: translateX(-50%);
-                background: rgba(20,24,32,0.92);
-                color: #fff;
-                padding: 3px 10px;
-                border-radius: 12px;
-                font-family: var(--font-ui, sans-serif);
-                font-size: 0.78em;
-                font-weight: 600;
-                white-space: nowrap;
-                pointer-events: none;
-                box-shadow: 0 2px 8px rgba(0,0,0,0.4);
-            `;
-      t.textContent = this.title;
-      wrap.appendChild(t);
-    }
-
-    // Boutons en arc avec labels TOUJOURS visibles (mobile-friendly)
-    this.options.forEach((opt, i) => {
-      const angle =
-        arcStart +
-        (n === 1 ? 0 : (i / Math.max(1, n - (arcSpan >= 2 * Math.PI ? 0 : 1))) * arcSpan);
-      const x = Math.cos(angle) * radius;
-      const y = Math.sin(angle) * radius;
-      const b = document.createElement('button');
-      b.type = 'button';
-      b.title = opt.label;
-      const bg2 = opt.bg || 'rgba(20,24,32,0.92)';
-      const col = opt.color || '#fff';
-      const border = opt.color || (opt.bg ? 'rgba(255,255,255,0.5)' : 'rgba(255,255,255,0.18)');
-      b.style.cssText = `
-                position: absolute;
-                left: 50%; top: 50%;
-                transform: translate(calc(-50% + ${x}px), calc(-50% + ${y}px));
-                width: ${btnSize}px; height: ${btnSize}px;
-                border-radius: 50%;
-                background: ${bg2};
-                border: 2px solid ${border};
-                color: ${col};
-                cursor: pointer;
-                display: flex; align-items: center; justify-content: center;
-                pointer-events: auto;
-                box-shadow: 0 3px 12px rgba(0,0,0,0.55);
-                transition: transform 100ms ease, box-shadow 100ms ease;
-                touch-action: none;
-                padding: 0;
-            `;
-      b.innerHTML = `<span class="material-symbols-outlined" aria-hidden="true" style="font-size: ${btnSize >= 56 ? 26 : 22}px; line-height: 1;">${opt.icon}</span>`;
-
-      // LABEL TOUJOURS VISIBLE en dessous du bouton, sur fond foncé
-      // Position : ajustée selon l'angle pour éviter la superposition avec d'autres
-      const labelBelow = y > -radius * 0.3; // si bouton dans la moitié basse/centre → label dessous
-      const labelOffset = labelBelow ? btnSize / 2 + 6 : -(btnSize / 2 + 16);
-      const tip = document.createElement('span');
-      tip.textContent = opt.label;
-      tip.style.cssText = `
-                position: absolute;
-                top: calc(50% + ${labelOffset}px);
-                left: 50%;
-                transform: translateX(-50%);
-                background: rgba(0,0,0,0.85);
-                color: #fff;
-                font-family: var(--font-ui, sans-serif);
-                font-size: 0.7em;
-                font-weight: 700;
-                letter-spacing: 0.3px;
-                padding: 2px 7px;
-                border-radius: 8px;
-                white-space: nowrap;
-                pointer-events: none;
-                box-shadow: 0 1px 4px rgba(0,0,0,0.5);
-                max-width: 110px;
-                overflow: hidden;
-                text-overflow: ellipsis;
-            `;
-      b.appendChild(tip);
-
-      b.addEventListener('pointerdown', (ev) => ev.stopPropagation());
-      b.onclick = (ev) => {
-        ev.stopPropagation();
-        if (opt.children) {
-          const childOpts = typeof opt.children === 'function' ? opt.children() : opt.children;
-          this.setOptions(childOpts, { title: opt.label, centerIcon: 'arrow_back' });
-          // Quand on est dans un sous-menu, le bouton central revient au précédent
-          const center2 = this.element ? this.element.querySelector('.plan-wheel-center') : null;
-          if (center2 instanceof HTMLElement) {
-            (center2 as HTMLButtonElement).onclick = (e) => {
-              e.stopPropagation();
-              this.setOptions(this._initialOptions || this.options, {
-                title: this._initialTitle,
-                centerIcon: 'close',
-              });
-              const c3 = this.element ? this.element.querySelector('.plan-wheel-center') : null;
-              if (c3 instanceof HTMLElement) {
-                (c3 as HTMLButtonElement).onclick = (ee) => {
-                  ee.stopPropagation();
-                  this.destroy();
-                };
-              }
-            };
-          }
-          return;
-        }
-        if (opt.action) {
-          try {
-            opt.action(this);
-          } catch (e) {
-            console.error('[Wheel] action erreur:', e);
-          }
-        }
-        if (!opt.keepOpen) this.destroy();
-      };
-      wrap.appendChild(b);
-    });
-
-    // Mémorise l'état initial pour le "back"
-    this._initialOptions = this._initialOptions || this.options;
-    this._initialTitle = this._initialTitle || this.title;
-
-    return wrap;
+    this._menu.setOptions(adaptOptions(options || [], this), opts);
   }
 }
 

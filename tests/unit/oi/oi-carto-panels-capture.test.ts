@@ -85,6 +85,15 @@ function makeGlCanvas(clientWidth = 800, clientHeight = 600): HTMLCanvasElement 
 /** Sous-ensemble RÉELLEMENT appelé de `maplibregl.Map` par panels.ts/capture.ts. */
 function makeFakeMap(canvas?: HTMLCanvasElement): FakeMap {
     const container = document.createElement('div');
+    // jsdom ne calcule pas de mise en page réelle : `getBoundingClientRect()`
+    // renverrait des zéros. Le socle `RadialMenu` (`@shared/radial-menu.ts`,
+    // R3-b, durcissement porté depuis PC-Tac) ferme la roue quand le point
+    // projeté sort de ce rect — un rect généreux évite de faire dépendre ce
+    // fichier (logique métier, pas positionnement) des coordonnées de test.
+    Object.defineProperty(container, 'getBoundingClientRect', {
+        configurable: true,
+        value: () => ({ width: 2000, height: 2000, left: 0, top: 0, right: 2000, bottom: 2000, x: 0, y: 0, toJSON() { return {}; } }),
+    });
     document.body.appendChild(container);
     return {
         getContainer: vi.fn(() => container),

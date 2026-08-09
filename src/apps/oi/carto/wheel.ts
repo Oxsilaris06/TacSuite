@@ -1,24 +1,36 @@
 import type { Map as MapLibreMap } from 'maplibre-gl';
 
+import { RadialMenu } from '@shared/radial-menu.js';
+import type { RadialMenuHost, RadialMenuOption } from '@shared/radial-menu.js';
+
 /**
- * Roue contextuelle (radial menu) — portée depuis pctac2 (wheel.js) en script
- * global. Ouvre un menu radial à un point lng/lat ; suit la carte ; se ferme
+ * Roue contextuelle (radial menu) — adaptateur OI. Portée depuis pctac2
+ * (wheel.js) en script global, puis EXTRAITE (R3-b, décision D1 : PC-Tac =
+ * socle) vers `@shared/radial-menu.js` (`RadialMenu`) : `OIWheel` délègue
+ * désormais au même moteur que `Wheel` (`@pctac/wheel.js`) par composition,
+ * en gardant son type d'options et ses classes CSS (`.oi-wheel`) propres.
+ *
+ * Durcissements résorbés par cette extraction (alignement sur la version
+ * PC-Tac, la plus mûre — commit 75dc04d puis affinages ultérieurs) :
+ *  - fenêtre d'ignore tactile du clic extérieur : 300ms → 400ms ;
+ *  - sélecteurs exclus de la fermeture extérieure : `.plan-pin`/`.oi-carto-pin`
+ *    → liste élargie (`.plan-pin-label`, `.plan-wheel`, `.plan-inline-panel`,
+ *    `.plan-lock-badge` en plus) ;
+ *  - `_position()` ne se contentait pas de `map.project()` : ferme désormais
+ *    la roue quand l'ancre sort de la vue (pan/zoom) et clampe la position
+ *    dans le conteneur près des bords (`_extent`), comme PC-Tac ;
+ *  - sous-menus (`children`) désormais disponibles au niveau moteur (non
+ *    exposés par le type d'options public `OiCartoWheelOption`, inchangé).
+ * Écart mineur, cosmétique, accepté par cette unification de socle : le
+ * clamp de rayon "desktop" passe de 98 à 96px (bornes PC-Tac).
+ *
+ * Ouvre un menu radial à un point lng/lat ; suit la carte ; se ferme
  * sur clic extérieur / Échap / bouton central / choix d'une option.
  */
 export class OIWheel {
     map: MapLibreMap | null;
-    lngLat: { lng: number; lat: number } | null;
-    title: string | null;
-    centerIcon: string;
-    options: Array<{ label: string; icon: string; action?: (wheel: OIWheel) => void; keepOpen?: boolean; bg?: string; color?: string }>;
-    radius: number;
-    onClose: (() => void) | null;
-    element: HTMLElement | null;
-    _onMove: (() => void) | null;
-    _onOutsideHandler: ((ev: PointerEvent | TouchEvent) => void) | null;
-    _onKey: ((ev: KeyboardEvent) => void) | null;
-    _destroyed: boolean;
-    _mountedAt: number;
+
+    private readonly _menu: RadialMenu;
 
     constructor(opts: {
         map?: MapLibreMap;
@@ -30,152 +42,92 @@ export class OIWheel {
         onClose?: () => void;
     }) {
         this.map = opts.map || null;
-        this.lngLat = opts.lngLat || null;
-        this.title = opts.title || null;
-        this.centerIcon = opts.centerIcon || 'close';
-        this.options = opts.options || [];
-        this.radius = opts.radius || 80;
-        this.onClose = opts.onClose || null;
-        this.element = null;
-        this._onMove = () => this._position();
-        this._onOutsideHandler = this._onOutside.bind(this);
-        this._onKey = (ev) => { if (ev.key === 'Escape') this.destroy(); };
-        this._destroyed = false;
-        this._mountedAt = 0;
+        this._menu = new RadialMenu({
+            host: toHost(this.map),
+            lngLat: opts.lngLat || null,
+            ...(opts.title !== undefined ? { title: opts.title } : {}),
+            ...(opts.centerIcon !== undefined ? { centerIcon: opts.centerIcon } : {}),
+            options: adaptOptions(opts.options || [], this),
+            radius: opts.radius || 80,
+            ...(opts.onClose ? { onClose: opts.onClose } : {}),
+            wrapperClassName: 'oi-wheel',
+        });
+    }
+
+    get lngLat(): { lng: number; lat: number } | null {
+        return this._menu.lngLat;
+    }
+
+    get title(): string | null {
+        return this._menu.title ?? null;
+    }
+
+    get centerIcon(): string {
+        return this._menu.centerIcon;
+    }
+
+    get radius(): number {
+        return this._menu.radius;
+    }
+
+    get onClose(): (() => void) | null {
+        return this._menu.onClose ?? null;
+    }
+
+    get element(): HTMLElement | null {
+        return this._menu.element;
+    }
+
+    get options(): Array<{ label: string; icon: string; action?: (wheel: OIWheel) => void; keepOpen?: boolean; bg?: string; color?: string }> {
+        // Reflète la forme publique d'origine (pas de `children`/`id`) — usage
+        // lecture seule (tests : valeur par défaut `[]`).
+        return this._menu.options as unknown as Array<{ label: string; icon: string; action?: (wheel: OIWheel) => void; keepOpen?: boolean; bg?: string; color?: string }>;
     }
 
     open(): void {
-        if (this.element) return;
-        this.element = this._buildElement();
-        const parent = this.map ? this.map.getContainer() : document.body;
-        parent.appendChild(this.element);
-        this._position();
-        if (this.map && this._onMove) { this.map.on('move', this._onMove); this.map.on('zoom', this._onMove); }
-        this._mountedAt = Date.now();
-        if (this._onOutsideHandler) {
-            document.addEventListener('pointerdown', this._onOutsideHandler as EventListener, { capture: true });
-            document.addEventListener('touchstart', this._onOutsideHandler as EventListener, { capture: true, passive: true });
-        }
-        if (this._onKey) {
-            document.addEventListener('keydown', this._onKey as EventListener);
-        }
-        requestAnimationFrame(() => { if (this.element) this.element.classList.add('open'); });
+        this._menu.open();
     }
 
     destroy(): void {
-        if (this._destroyed) return;
-        this._destroyed = true;
-        if (this.element) { try { this.element.remove(); } catch { /* ignore */ } this.element = null; }
-        if (this.map && this._onMove) {
-            try { this.map.off('move', this._onMove); } catch { /* ignore */ }
-            try { this.map.off('zoom', this._onMove); } catch { /* ignore */ }
-        }
-        if (this._onOutsideHandler) {
-            document.removeEventListener('pointerdown', this._onOutsideHandler as EventListener, { capture: true });
-            document.removeEventListener('touchstart', this._onOutsideHandler as EventListener, { capture: true });
-        }
-        if (this._onKey) {
-            document.removeEventListener('keydown', this._onKey as EventListener);
-        }
-        if (this.onClose) { try { this.onClose(); } catch { /* ignore */ } }
+        this._menu.destroy();
     }
+}
 
-    _onOutside(ev: PointerEvent | TouchEvent): void {
-        if (!this.element) return;
-        const isTouch = ('pointerType' in ev && ev.pointerType === 'touch') || ev.type === 'touchstart';
-        const minDelay = isTouch ? 300 : 120;
-        if (Date.now() - this._mountedAt < minDelay) return;
-        const target = ev.target instanceof Element ? ev.target : null;
-        if (target && (target.closest('.plan-pin') || target.closest('.oi-carto-pin'))) return;
-        if (!this.element.contains(target)) this.destroy();
-    }
+/** Adapte un `maplibre-gl.Map` en `RadialMenuHost` minimal. */
+function toHost(map: MapLibreMap | null): RadialMenuHost | null {
+    if (!map) return null;
+    return {
+        getContainer: () => map.getContainer(),
+        project: (lngLat) => map.project(lngLat),
+        on: (event, handler) => { map.on(event, handler); },
+        off: (event, handler) => { map.off(event, handler); },
+    };
+}
 
-    _position(): void {
-        if (!this.element || !this.map) return;
-        if (!this.lngLat) {
-            const r = this.map.getContainer().getBoundingClientRect();
-            this.element.style.left = `${r.width / 2}px`;
-            this.element.style.top = `${r.height / 2}px`;
-            return;
+/**
+ * Adapte les options publiques OI en `RadialMenuOption[]` : `action` reçoit
+ * `self` (l'`OIWheel` public), pas le `RadialMenu` interne — comportement
+ * identique à l'ancien `OIWheel` monolithique où `opt.action(this)` recevait
+ * l'instance `OIWheel`.
+ */
+function adaptOptions(
+    options: Array<{ label: string; icon: string; action?: (wheel: OIWheel) => void; keepOpen?: boolean; bg?: string; color?: string }>,
+    self: OIWheel,
+): RadialMenuOption[] {
+    return options.map((opt) => {
+        const adapted: RadialMenuOption = {
+            icon: opt.icon,
+            label: opt.label,
+        };
+        if (opt.color !== undefined) adapted.color = opt.color;
+        if (opt.bg !== undefined) adapted.bg = opt.bg;
+        if (opt.keepOpen !== undefined) adapted.keepOpen = opt.keepOpen;
+        if (opt.action) {
+            const action = opt.action;
+            adapted.action = () => action(self);
         }
-        const p = this.map.project(this.lngLat);
-        this.element.style.left = `${p.x}px`;
-        this.element.style.top = `${p.y}px`;
-    }
-
-    _buildElement(): HTMLElement {
-        const n = this.options.length;
-        const vw = (typeof window !== 'undefined' ? window.innerWidth : 1024);
-        const radius = vw < 480 ? Math.min(this.radius, 88) : Math.max(this.radius, 98);
-        const arcSpan = n <= 2 ? Math.PI : 2 * Math.PI;
-        const arcStart = n <= 2 ? -Math.PI / 2 - arcSpan / 2 : -Math.PI / 2;
-        const btnSize = vw < 480 ? 52 : 58;
-        const wrap = document.createElement('div');
-        wrap.className = 'oi-wheel';
-        wrap.style.cssText = `position:absolute; width:${radius * 2 + btnSize + 36}px; height:${radius * 2 + btnSize + 36}px;
-            transform:translate(-50%,-50%) scale(0.85); opacity:0;
-            transition:transform 160ms cubic-bezier(.34,1.56,.64,1), opacity 140ms ease-out; z-index:60; pointer-events:none;`;
-        const bg = document.createElement('div');
-        bg.style.cssText = `position:absolute; inset:0; border-radius:50%;
-            background:radial-gradient(circle at center, rgba(20,24,32,0.55) 0%, rgba(20,24,32,0.10) 70%, transparent 100%); pointer-events:none;`;
-        wrap.appendChild(bg);
-        const center = document.createElement('button');
-        center.type = 'button';
-        center.className = 'oi-wheel-center';
-        center.title = 'Fermer';
-        center.style.cssText = `position:absolute; left:50%; top:50%; transform:translate(-50%,-50%);
-            width:54px; height:54px; border-radius:50%; background:rgba(20,24,32,0.95);
-            border:2px solid rgba(255,255,255,0.35); color:#fff; cursor:pointer;
-            display:flex; flex-direction:column; align-items:center; justify-content:center; gap:1px;
-            pointer-events:auto; box-shadow:0 4px 16px rgba(0,0,0,0.55); touch-action:none; font-family:var(--font-ui,sans-serif);`;
-        center.innerHTML = `<span class="material-symbols-outlined" style="font-size:22px; line-height:1;" aria-hidden="true">${this.centerIcon}</span>
-            <span style="font-size:9px; font-weight:700; letter-spacing:0.5px; opacity:0.85;">FERMER</span>`;
-        center.addEventListener('pointerdown', (ev) => ev.stopPropagation());
-        center.onclick = (ev) => { ev.stopPropagation(); this.destroy(); };
-        wrap.appendChild(center);
-        if (this.title) {
-            const t = document.createElement('div');
-            t.style.cssText = `position:absolute; left:50%; bottom:-28px; transform:translateX(-50%);
-                background:rgba(20,24,32,0.92); color:#fff; padding:3px 10px; border-radius:12px;
-                font-family:var(--font-ui,sans-serif); font-size:0.78em; font-weight:600; white-space:nowrap;
-                pointer-events:none; box-shadow:0 2px 8px rgba(0,0,0,0.4);`;
-            t.textContent = this.title;
-            wrap.appendChild(t);
-        }
-        this.options.forEach((opt, i) => {
-            const angle = arcStart + (n === 1 ? 0 : (i / Math.max(1, n - (arcSpan >= 2 * Math.PI ? 0 : 1))) * arcSpan);
-            const x = Math.cos(angle) * radius, y = Math.sin(angle) * radius;
-            const b = document.createElement('button');
-            b.type = 'button';
-            b.title = opt.label;
-            const bg2 = opt.bg || 'rgba(20,24,32,0.92)';
-            const col = opt.color || '#fff';
-            const border = opt.color || (opt.bg ? 'rgba(255,255,255,0.5)' : 'rgba(255,255,255,0.18)');
-            b.style.cssText = `position:absolute; left:50%; top:50%;
-                transform:translate(calc(-50% + ${x}px), calc(-50% + ${y}px));
-                width:${btnSize}px; height:${btnSize}px; border-radius:50%; background:${bg2};
-                border:2px solid ${border}; color:${col}; cursor:pointer; display:flex; align-items:center; justify-content:center;
-                pointer-events:auto; box-shadow:0 3px 12px rgba(0,0,0,0.55); touch-action:none; padding:0;`;
-            b.innerHTML = `<span class="material-symbols-outlined" style="font-size:${btnSize >= 56 ? 26 : 22}px; line-height:1;" aria-hidden="true">${opt.icon}</span>`;
-            const labelBelow = y > -radius * 0.3;
-            const labelOffset = labelBelow ? (btnSize / 2 + 6) : -(btnSize / 2 + 16);
-            const tip = document.createElement('span');
-            tip.textContent = opt.label;
-            tip.style.cssText = `position:absolute; top:calc(50% + ${labelOffset}px); left:50%; transform:translateX(-50%);
-                background:rgba(0,0,0,0.85); color:#fff; font-family:var(--font-ui,sans-serif); font-size:0.7em; font-weight:700;
-                letter-spacing:0.3px; padding:2px 7px; border-radius:8px; white-space:nowrap; pointer-events:none;
-                box-shadow:0 1px 4px rgba(0,0,0,0.5); max-width:110px; overflow:hidden; text-overflow:ellipsis;`;
-            b.appendChild(tip);
-            b.addEventListener('pointerdown', (ev) => ev.stopPropagation());
-            b.onclick = (ev) => {
-                ev.stopPropagation();
-                if (opt.action) { try { opt.action(this); } catch (e) { console.error('[OIWheel] action:', e); } }
-                if (!opt.keepOpen) this.destroy();
-            };
-            wrap.appendChild(b);
-        });
-        return wrap;
-    }
+        return adapted;
+    });
 }
 
 // Injection CSS du style #oi-wheel-style

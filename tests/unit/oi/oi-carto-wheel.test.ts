@@ -26,6 +26,16 @@ describe('OIWheel', () => {
         container.id = 'test-container';
         container.style.width = '1024px';
         container.style.height = '768px';
+        // jsdom ne calcule pas de mise en page réelle : `getBoundingClientRect()`
+        // renverrait des zéros malgré le CSS ci-dessus. Le socle `RadialMenu`
+        // (`@shared/radial-menu.ts`, R3-b) s'appuie désormais sur ce rect pour
+        // détecter la sortie de vue et clamper la position près des bords
+        // (durcissement porté depuis PC-Tac) — on aligne le mock sur la taille
+        // déclarée pour que ce comportement reste testable.
+        Object.defineProperty(container, 'getBoundingClientRect', {
+            configurable: true,
+            value: () => ({ width: 1024, height: 768, left: 0, top: 0, right: 1024, bottom: 768, x: 0, y: 0, toJSON() { return {}; } }),
+        });
         document.body.appendChild(container);
     });
 
@@ -146,12 +156,10 @@ describe('OIWheel', () => {
         const outsideElement = document.createElement('div');
         document.body.appendChild(outsideElement);
 
-        const event = new PointerEvent('pointerdown', { bubbles: true });
-        Object.defineProperty(event, 'target', { value: outsideElement, enumerable: true });
-
-        if (wheel._onOutsideHandler) {
-            wheel._onOutsideHandler(event as never);
-        }
+        // Dispatché depuis l'élément lui-même : jsdom pose `ev.target` sur
+        // l'élément d'origine, capté par le listener `document` (capture:true)
+        // posé par `RadialMenu.open()` — pas d'accès à un handler interne.
+        outsideElement.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
 
         // La roue ne devrait pas être détruite car elle a été ouverte à l'instant
         expect(wheel.element).not.toBeNull();
@@ -178,12 +186,7 @@ describe('OIWheel', () => {
         // Attendre 130ms
         await new Promise(resolve => setTimeout(resolve, 130));
 
-        const event = new PointerEvent('pointerdown', { bubbles: true });
-        Object.defineProperty(event, 'target', { value: outsideElement, enumerable: true });
-
-        if (wheel._onOutsideHandler) {
-            wheel._onOutsideHandler(event as never);
-        }
+        outsideElement.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
 
         // La roue devrait être détruite
         expect(wheel.element).toBeNull();
@@ -255,10 +258,7 @@ describe('OIWheel', () => {
         const wheel = new OIWheel({ map: mockMap as never });
         wheel.open();
 
-        const keyEvent = new KeyboardEvent('keydown', { key: 'Escape' });
-        if (wheel._onKey) {
-            wheel._onKey(keyEvent);
-        }
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
 
         expect(wheel.element).toBeNull();
     });
