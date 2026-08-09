@@ -44,6 +44,8 @@
 
 import type { GeoJSONSource, MapLayerMouseEvent, MapMouseEvent, MapTouchEvent } from 'maplibre-gl';
 
+import { circlePolygon as sharedCirclePolygon, rectPolygon as sharedRectPolygon } from '@shared/geo-shapes.js';
+
 import type { LngLatTuple, OICartoInternal, OiCartoDrawTool, OiCartoShape } from './types.js';
 
 export const DrawMethods = {
@@ -373,36 +375,25 @@ export const DrawMethods = {
         }
     },
 
-    /** Rectangle aligné carte = polygone fermé à 5 points. oi_cartographie.js:1572-1575 — VERBATIM. */
+    /**
+     * Rectangle aligné carte = polygone fermé à 5 points.
+     * oi_cartographie.js:1572-1575 — délègue au socle commun
+     * `@shared/geo-shapes.js` (R3-a, décision D1) : formule bit-identique à
+     * l'original (aucun écart numérique constaté vs PC-Tac), comportement
+     * inchangé.
+     */
     _rectPolygon(this: OICartoInternal, a: LngLatTuple, b: LngLatTuple): LngLatTuple[] {
-        return [[a[0], a[1]], [b[0], a[1]], [b[0], b[1]], [a[0], b[1]], [a[0], a[1]]];
+        return sharedRectPolygon(a, b);
     },
 
-    /** Approximation polygonale d'un cercle géodésique (64 segments). oi_cartographie.js:1577-1603 — VERBATIM, formule NON simplifiée. */
+    /**
+     * Approximation polygonale d'un cercle géodésique (64 segments).
+     * oi_cartographie.js:1577-1603 — délègue au socle commun
+     * `@shared/geo-shapes.js` (R3-a, décision D1) : formule NON simplifiée,
+     * bit-identique à l'original (aucun écart numérique constaté vs PC-Tac),
+     * comportement inchangé.
+     */
     _circlePolygon(this: OICartoInternal, center: LngLatTuple, edge: LngLatTuple): LngLatTuple[] {
-        const R = 6371000;
-        const toRad = (d: number): number => d * Math.PI / 180;
-        const toDeg = (r: number): number => r * 180 / Math.PI;
-        const [lng1, lat1] = center;
-        const [lng2, lat2] = edge;
-        const phi1 = toRad(lat1), phi2 = toRad(lat2);
-        const dPhi = toRad(lat2 - lat1);
-        const dLambda = toRad(lng2 - lng1);
-        const a = Math.sin(dPhi / 2) ** 2 + Math.cos(phi1) * Math.cos(phi2) * Math.sin(dLambda / 2) ** 2;
-        const radiusMeters = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-        const N = 64;
-        const coords: LngLatTuple[] = [];
-        for (let i = 0; i <= N; i++) {
-            const brg = (2 * Math.PI * i) / N;
-            const sinPhi = Math.sin(phi1) * Math.cos(radiusMeters / R) +
-                Math.cos(phi1) * Math.sin(radiusMeters / R) * Math.cos(brg);
-            const phi = Math.asin(sinPhi);
-            const lambda = toRad(lng1) + Math.atan2(
-                Math.sin(brg) * Math.sin(radiusMeters / R) * Math.cos(phi1),
-                Math.cos(radiusMeters / R) - Math.sin(phi1) * sinPhi,
-            );
-            coords.push([toDeg(lambda), toDeg(phi)]);
-        }
-        return coords;
+        return sharedCirclePolygon(center, edge);
     },
 };
