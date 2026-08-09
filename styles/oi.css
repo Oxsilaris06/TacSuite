@@ -3924,3 +3924,97 @@ body.up-kb-open .up-kb-aware {
             }
         }
 
+
+/* ============================================================================
+ * T5 — classes extraites des styles inline (oi/index.html)
+ * Purge R1-T5 : ~123 attributs style="..." presentationnels statiques deplaces
+ * ici. Selecteurs en classe doublee (`.x.x`) pour garantir la meme specificite
+ * qu'un style inline face aux regles `element.classe` deja en place (ex.
+ * `button.add-btn`), sans introduire de nouveau !important. Declarations
+ * copiees a l'identique depuis l'attribut inline d'origine.
+ * ============================================================================ */
+.pdf-format-dims-note.pdf-format-dims-note { color: var(--text-muted); font-size:0.72em; }
+.btn-present-here.btn-present-here { background-color: var(--accent-blue); }
+.icon-1-2em.icon-1-2em { font-size: 1.2em; }
+.btn-close-danger.btn-close-danger { background-color: var(--danger-red); color: white; }
+.modal-close-btn-transparent.modal-close-btn-transparent { background:none; border:none; color:var(--text-secondary); cursor:pointer; }
+.modal-body-center.modal-body-center { text-align:center; }
+.reset-modal-question.reset-modal-question { margin:0; font-size:1.05em; font-weight:600; }
+.reset-modal-desc.reset-modal-desc { margin:10px 0 0; color:var(--text-secondary); font-size:0.85em; line-height:1.5; }
+.btn-danger-reset-all.btn-danger-reset-all { background: var(--danger-red); box-shadow: 0 4px 12px rgba(240, 85, 106, 0.3); }
+.modal-intro-text.modal-intro-text { color: var(--text-muted); font-size: 0.85em; margin-bottom: 14px; }
+.annotation-header-btn.annotation-header-btn { border-radius: 8px; }
+.annotation-close-btn.annotation-close-btn { margin-left: 10px; }
+.dock-fab-icon.dock-fab-icon { margin: 0; font-size: 24px; color: white; }
+.mobile-sheet-close-btn.mobile-sheet-close-btn { width: 26px; height: 26px; min-width: 26px; position: absolute; top: 8px; left: 50%; transform: translateX(-50%); z-index: 1001; }
+.mobile-sheet-close-icon.mobile-sheet-close-icon { font-size: 15px; }
+.tool-settings-icon.tool-settings-icon { font-size: 16px; color: var(--text-secondary); }
+.color-circle-red.color-circle-red { background:#c0392b; }
+.color-circle-green.color-circle-green { background:#2ecc71; }
+.color-circle-blue.color-circle-blue { background:#3498db; }
+.color-circle-yellow.color-circle-yellow { background:#f1c40f; }
+.color-circle-white.color-circle-white { background:#ffffff; border:1px solid #777; }
+.tool-reset-btn.tool-reset-btn { opacity: 0.8; }
+.log-btn-icon.log-btn-icon { font-size: 1.25em; }
+.wizard-step-icon.wizard-step-icon { font-size: 1.2em; margin-right: 5px; }
+.btn-add-adversary.btn-add-adversary { margin-top: 10px; width: 100%; justify-content: center; font-weight: bold; }
+.btn-add-hypothesis.btn-add-hypothesis { margin-top: 10px; width: 100%; justify-content: center; font-weight: bold; background-color: var(--bg-interactive); }
+.mt-20.mt-20 { margin-top: 20px; }
+.btn-flex-center.btn-flex-center { flex: 1; justify-content: center; }
+.icon-align-mid.icon-align-mid { vertical-align: middle; }
+.hint-text-block.hint-text-block { font-size: 0.85em; color: var(--text-muted); margin-bottom: 10px; }
+.empty-state-note.empty-state-note { color: var(--text-muted); font-style: italic; }
+.section-heading-blue.section-heading-blue { margin-top: 25px; color: var(--accent-blue); border-bottom: 2px solid var(--accent-blue); padding-bottom: 8px; }
+.section-heading-purple.section-heading-purple { margin-top: 25px; color: var(--moicp-zmspcp-purple, #8e44ad); border-bottom: 2px solid var(--moicp-zmspcp-purple, #8e44ad); padding-bottom: 8px; }
+.section-heading-gold.section-heading-gold { margin-top: 25px; color: var(--effraction-gold); border-bottom: 2px solid var(--effraction-gold); padding-bottom: 8px; }
+.btn-batch-clear.btn-batch-clear { background: var(--bg-interactive); }
+.qe-member-label.qe-member-label { margin: 0; }
+.qe-member-trigramme.qe-member-trigramme { font-size: 1.1em; font-weight: bold; }
+.qe-field-trigramme.qe-field-trigramme { flex:1 1 140px; }
+.qe-field-label.qe-field-label { font-size:0.78em; margin-bottom:2px; }
+.qe-field-input.qe-field-input { margin-bottom:0; min-height:40px; }
+.qe-field-dir.qe-field-dir { flex:1 1 120px; }
+.qe-field-label-accent.qe-field-label-accent { font-size:0.78em; margin-bottom:2px; color:var(--accent-blue); }
+.mt-10.mt-10 { margin-top: 10px; }
+.card-accent-blue.card-accent-blue { margin-top: 15px; border-left: 4px solid var(--accent-blue); }
+.heading-accent-blue.heading-accent-blue { color: var(--accent-blue); }
+.mt-25.mt-25 { margin-top: 25px; }
+.finalisation-check-text.finalisation-check-text { text-align:center; margin-top: 20px; }
+.coherence-check-box.coherence-check-box { border: 1px solid var(--border-color); padding: 15px; border-radius: 5px; margin-top: 20px; }
+.coherence-alert-neutral.coherence-alert-neutral { color:var(--text-secondary); background-color:var(--bg-interactive); }
+.recap-finalisation.recap-finalisation { margin-top: 15px; }
+.heading-effraction-gold.heading-effraction-gold { color: var(--effraction-gold); }
+.effraction-modal-intro.effraction-modal-intro { font-size: 0.9em; color: var(--text-secondary); margin-bottom: 20px; }
+.effraction-section-heading-tight.effraction-section-heading-tight { margin-top: 15px; border-bottom: 1px solid var(--border-color); padding-bottom: 5px; }
+.effraction-section-heading.effraction-section-heading { margin-top: 25px; border-bottom: 1px solid var(--border-color); padding-bottom: 5px; }
+.effrac-other-input.effrac-other-input { width:100%; padding: 12px; margin-top: 8px; background: var(--bg-interactive); border: 1px solid var(--border-color); color: var(--text-primary); border-radius: 8px; }
+.btn-save-effraction.btn-save-effraction { background-color: var(--effraction-gold) !important; color: white; }
+.modal-transparent-2000.modal-transparent-2000 { padding: 0; background: transparent; border: none; overflow: visible; z-index: 2000; margin: auto; }
+.modal-content-400.modal-content-400 { max-width: 400px; }
+.icon-18.icon-18 { font-size:18px; }
+.carto-address-input.carto-address-input { flex: 1; }
+.carto-search-btn.carto-search-btn { width: auto; padding: 8px 12px; }
+.carto-search-close-btn.carto-search-close-btn { width: auto; padding: 8px 10px; background: var(--bg-interactive); border: 1px solid var(--border-color); color: var(--text-primary); }
+.carto-search-results.carto-search-results { margin-top: 6px; max-height: 200px; overflow-y: auto; }
+.oi-carto-draw-color-red.oi-carto-draw-color-red { background:#ef4444; }
+.oi-carto-draw-color-yellow.oi-carto-draw-color-yellow { background:#eab308; }
+.oi-carto-draw-color-blue.oi-carto-draw-color-blue { background:#3b82f6; }
+.oi-carto-draw-color-green.oi-carto-draw-color-green { background:#22c55e; }
+.oi-carto-draw-color-white.oi-carto-draw-color-white { background:#ffffff; }
+.carto-draw-clear-btn.carto-draw-clear-btn { color: var(--danger-red); }
+.modal-transparent-3000.modal-transparent-3000 { padding: 0; background: transparent; border: none; overflow: visible; z-index: 3000; margin: auto; }
+.modal-content-480.modal-content-480 { max-width: 480px; }
+.carto-pin-label-input.carto-pin-label-input { margin-top: 14px; }
+.icon-mid-18.icon-mid-18 { font-size:18px; vertical-align:middle; }
+.hint-text-top.hint-text-top { color: var(--text-muted); font-size: 0.85em; margin-top: 12px; }
+.modal-content-460.modal-content-460 { max-width: 460px; }
+.mt-16.mt-16 { margin-top: 16px; }
+.divider-18.divider-18 { border-top: 1px solid var(--border-color); margin: 18px 0; }
+.mt-6.mt-6 { margin-top: 6px; }
+
+/* #cancelResetBtn porte deja une regle ID (background-color:transparent;
+ * border:1px solid var(--text-secondary); color:var(--text-primary);) qui,
+ * a specificite egale de classe, battrait .modal-close-btn-transparent.
+ * Ancrage sur l'ID pour reproduire exactement le rendu de l'ancien inline
+ * (border:none; color:var(--text-secondary);). */
+#cancelResetBtn.modal-close-btn-transparent { background:none; border:none; color:var(--text-secondary); cursor:pointer; }

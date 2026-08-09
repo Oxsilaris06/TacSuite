@@ -29,27 +29,22 @@
                     <button type="button" id="btnFormatA4" class="active" data-action="set-pdf-format" data-format="a4">A4 Paysage</button>
                     <button type="button" id="btnFormat169" data-action="set-pdf-format" data-format="16:9">16:9</button>
                 </div>
-                <span id="pdfFormatDims" class="toggle-label" style="color: var(--text-muted); font-size:0.72em;">297×210 mm</span>
+                <span id="pdfFormatDims" class="toggle-label pdf-format-dims-note">297×210 mm</span>
             </div>
-            <button id="presentHereBtn" type="button" class="wizard-nav-btn"
-                title="Ouvrir la présentation plein écran dans un nouvel onglet (téléphone, bureau, TV, projecteur)"
-                style="background-color: var(--accent-blue);">
-                Présenter ici <span class="material-symbols-outlined"
-                    style="font-size: 1.2em;">slideshow</span>
+            <button id="presentHereBtn" type="button" class="wizard-nav-btn btn-present-here"
+                title="Ouvrir la présentation plein écran dans un nouvel onglet (téléphone, bureau, TV, projecteur)">
+                Présenter ici <span class="material-symbols-outlined icon-1-2em">slideshow</span>
             </button>
             <button id="printHqBtn" type="button" class="wizard-nav-btn"
                 data-action="print-oi-high-quality"
                 title="Ouvre la boîte d'impression du navigateur : PDF entièrement vectoriel, texte sélectionnable (qualité maximale)">
-                Imprimer — qualité maximale <span class="material-symbols-outlined"
-                    style="font-size: 1.2em;">print</span>
+                Imprimer — qualité maximale <span class="material-symbols-outlined icon-1-2em">print</span>
             </button>
             <button id="downloadPdfBtn" type="button" class="wizard-nav-btn">
-                Télécharger le PDF <span class="material-symbols-outlined"
-                    style="font-size: 1.2em;">picture_as_pdf</span>
+                Télécharger le PDF <span class="material-symbols-outlined icon-1-2em">picture_as_pdf</span>
             </button>
-            <button id="closePresentationModalBtn" type="button" class="wizard-nav-btn"
-                data-action="close-presentation-modal"
-                style="background-color: var(--danger-red); color: white;">
+            <button id="closePresentationModalBtn" type="button" class="wizard-nav-btn btn-close-danger"
+                data-action="close-presentation-modal">
                 Fermer
             </button>
         </div>
@@ -59,14 +54,13 @@
         <div class="modal-form">
             <div class="modal-header">
                 <h3>Réinitialisation</h3>
-                <button type="button" class="close-modal-btn" id="cancelResetBtn"
-                    style="background:none; border:none; color:var(--text-secondary); cursor:pointer;">
+                <button type="button" class="close-modal-btn modal-close-btn-transparent" id="cancelResetBtn">
                     <span class="material-symbols-outlined">close</span>
                 </button>
             </div>
-            <div class="modal-body" style="text-align:center;">
-                <p style="margin:0; font-size:1.05em; font-weight:600;">Que souhaitez-vous réinitialiser ?</p>
-                <p style="margin:10px 0 0; color:var(--text-secondary); font-size:0.85em; line-height:1.5;">
+            <div class="modal-body modal-body-center">
+                <p class="reset-modal-question">Que souhaitez-vous réinitialiser ?</p>
+                <p class="reset-modal-desc">
                     « Page Active » vide uniquement l'étape courante. « Tout » efface l'intégralité du
                     formulaire (la configuration PATRAC est conservée).
                 </p>
@@ -75,8 +69,7 @@
                 <button type="button" id="resetPageBtn" class="btn-save">
                     <span class="material-symbols-outlined">restart_alt</span> Page Active
                 </button>
-                <button type="button" id="resetAllBtn" class="btn-save"
-                    style="background: var(--danger-red); box-shadow: 0 4px 12px rgba(240, 85, 106, 0.3);">
+                <button type="button" id="resetAllBtn" class="btn-save btn-danger-reset-all">
                     <span class="material-symbols-outlined">delete_sweep</span> Tout
                 </button>
             </div>
@@ -87,7 +80,7 @@
         <div class="modal-form">
             <div class="modal-header">
                 <h3 id="quick_modal_title">Édition rapide</h3>
-                <button type="button" class="close-modal-btn" data-action="close-quick-edit-modal" style="background:none; border:none; color:var(--text-secondary); cursor:pointer;">
+                <button type="button" class="close-modal-btn modal-close-btn-transparent" data-action="close-quick-edit-modal">
                     <span class="material-symbols-outlined">close</span>
                 </button>
             </div>
@@ -111,14 +104,13 @@
         <div class="modal-form">
             <div class="modal-header">
                 <h3>Configuration Unité</h3>
-                <button type="button" class="close-modal-btn"
-                    data-action="close-unite-config-modal"
-                    style="background:none; border:none; color:var(--text-secondary); cursor:pointer;">
+                <button type="button" class="close-modal-btn modal-close-btn-transparent"
+                    data-action="close-unite-config-modal">
                     <span class="material-symbols-outlined">close</span>
                 </button>
             </div>
             <div class="modal-body">
-                <p style="color: var(--text-muted); font-size: 0.85em; margin-bottom: 14px;">
+                <p class="modal-intro-text">
                     Une option par ligne ou séparée par des virgules. Ces options alimentent directement les boutons
                     de la fenêtre d'édition de membre (équipement, tenue, armes, etc.).
                 </p>
@@ -140,13 +132,12 @@
         <div class="modal-form">
             <div class="modal-header">
                 <h3>Importer une archive</h3>
-                <button type="button" class="close-modal-btn" id="importSelectCloseBtn"
-                    style="background:none; border:none; color:var(--text-secondary); cursor:pointer;">
+                <button type="button" class="close-modal-btn modal-close-btn-transparent" id="importSelectCloseBtn">
                     <span class="material-symbols-outlined">close</span>
                 </button>
             </div>
             <div class="modal-body">
-                <p style="color: var(--text-muted); font-size: 0.85em; margin-bottom: 14px;">
+                <p class="modal-intro-text">
                     Sélectionnez les éléments à importer depuis l'archive. Les éléments non cochés ne seront pas modifiés.
                 </p>
                 <label class="import-cat-row import-cat-all">
@@ -174,17 +165,17 @@
                     <span class="material-symbols-outlined">edit</span> Annotation Photo
                 </h3>
                 <div class="header-actions" style="display: flex; gap: 10px; margin-left: auto;">
-                    <button type="button" id="annotation_cancel_header" class="btn-cancel compact wizard-nav-btn" style="border-radius: 8px;" data-action="close-annotation-modal">Annuler</button>
-                    <button type="button" id="annotation_save_header" class="btn-save compact wizard-nav-btn" style="border-radius: 8px;">Valider</button>
+                    <button type="button" id="annotation_cancel_header" class="btn-cancel compact wizard-nav-btn annotation-header-btn" data-action="close-annotation-modal">Annuler</button>
+                    <button type="button" id="annotation_save_header" class="btn-save compact wizard-nav-btn annotation-header-btn">Valider</button>
                 </div>
-                <button type="button" class="close-modal-btn" data-action="close-annotation-modal" style="margin-left: 10px;">
+                <button type="button" class="close-modal-btn annotation-close-btn" data-action="close-annotation-modal">
                     <span class="material-symbols-outlined">close</span>
                 </button>
             </div>
             
             <div class="modal-body annotation-wrapper">
                 <button id="mobile-dock-fab" type="button" data-action="toggle-mobile-dock" class="tool-btn icon-only" title="Outils" style="position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 1000; width: 50px; height: 50px; border-radius: 50%; padding: 0; display: flex; justify-content: center; align-items: center; background: var(--accent-blue); box-shadow: 0 4px 15px rgba(0,0,0,0.5);">
-                    <span class="material-symbols-outlined" style="margin: 0; font-size: 24px; color: white;">build</span>
+                    <span class="material-symbols-outlined dock-fab-icon">build</span>
                 </button>
                 
                 <div class="annotation-toolbar triple-dock-ui" id="annotation-toolbar-panel">
@@ -204,26 +195,26 @@
                     <div id="dock-right" class="mobile-dock vertical">
                         <div class="sheet-grabber" aria-hidden="true"></div>
                         <div class="sheet-title">Réglages</div>
-                        <button type="button" data-action="close-mobile-sheet" class="tool-btn icon-only danger close-dock-btn" style="width: 26px; height: 26px; min-width: 26px; position: absolute; top: 8px; left: 50%; transform: translateX(-50%); z-index: 1001;" title="Fermer">
-                            <span class="material-symbols-outlined" style="font-size: 15px;">close</span>
+                        <button type="button" data-action="close-mobile-sheet" class="tool-btn icon-only danger close-dock-btn mobile-sheet-close-btn" title="Fermer">
+                            <span class="material-symbols-outlined mobile-sheet-close-icon">close</span>
                         </button>
                         <div id="contextual_tools" class="toolbar-vertical-group" style="margin-top: 45px; width: 100%; display: flex; flex-direction: column; align-items: center;">
                             <div class="tool-settings-group vertical-slider-group" title="Rotation">
-                                <span class="material-symbols-outlined" style="font-size: 16px; color: var(--text-secondary);">rotate_right</span>
+                                <span class="material-symbols-outlined tool-settings-icon">rotate_right</span>
                                 <input type="range" id="rotation_input_slider" min="0" max="360" value="0" class="vertical-slider" data-action="sync-rotation-slider">
                                 <input type="hidden" id="rotation_input" value="0">
                             </div>
                             <div class="tool-settings-group vertical-slider-group" title="Trait">
-                                <span class="material-symbols-outlined" style="font-size: 16px; color: var(--text-secondary);">line_weight</span>
+                                <span class="material-symbols-outlined tool-settings-icon">line_weight</span>
                                 <input type="range" id="stroke_width_edit" min="1" max="20" value="5" class="vertical-slider">
                             </div>
                             
                             <div id="text_size_control" class="tool-settings-group vertical-slider-group" style="display: none;" title="Taille">
-                                <span class="material-symbols-outlined" style="font-size: 16px; color: var(--text-secondary);">format_size</span>
+                                <span class="material-symbols-outlined tool-settings-icon">format_size</span>
                                 <input type="range" id="text_size_edit" min="10" max="200" step="5" value="30" class="vertical-slider">
                             </div>
                             <div id="zone_settings" class="tool-settings-group vertical-slider-group" style="display: none;" title="Opacité">
-                                <span class="material-symbols-outlined" style="font-size: 16px; color: var(--text-secondary);">opacity</span>
+                                <span class="material-symbols-outlined tool-settings-icon">opacity</span>
                                 <input type="range" id="circle_opacity" min="0" max="1" step="0.1" value="0.5" class="vertical-slider">
                             </div>
                             <input type="hidden" id="text_size_tool" value="30">
@@ -235,11 +226,11 @@
                     <!-- 3. Couleurs et Actions (Bas) -->
                     <div id="dock-bottom" class="mobile-dock horizontal">
                         <div class="color-picker horizontal" style="display: flex; gap: 10px; justify-content: center; align-items: center;">
-                            <div class="color-circle active" style="background:#c0392b" data-action="set-annotation-color" data-color="#c0392b"></div>
-                            <div class="color-circle" style="background:#2ecc71" data-action="set-annotation-color" data-color="#2ecc71"></div>
-                            <div class="color-circle" style="background:#3498db" data-action="set-annotation-color" data-color="#3498db"></div>
-                            <div class="color-circle" style="background:#f1c40f" data-action="set-annotation-color" data-color="#f1c40f"></div>
-                            <div class="color-circle" style="background:#ffffff; border:1px solid #777;" data-action="set-annotation-color" data-color="#ffffff"></div>
+                            <div class="color-circle active color-circle-red" data-action="set-annotation-color" data-color="#c0392b"></div>
+                            <div class="color-circle color-circle-green" data-action="set-annotation-color" data-color="#2ecc71"></div>
+                            <div class="color-circle color-circle-blue" data-action="set-annotation-color" data-color="#3498db"></div>
+                            <div class="color-circle color-circle-yellow" data-action="set-annotation-color" data-color="#f1c40f"></div>
+                            <div class="color-circle color-circle-white" data-action="set-annotation-color" data-color="#ffffff"></div>
                         </div>
                         
                         <div style="width: 1px; height: 30px; background: rgba(255,255,255,0.2); margin: 0 10px;"></div>
@@ -248,7 +239,7 @@
                             <button type="button" id="annotation_undo" class="tool-btn icon-only" title="Annuler (Ctrl+Z)"><span class="material-symbols-outlined">undo</span></button>
                             <button type="button" id="annotation_redo" class="tool-btn icon-only" title="Rétablir (Ctrl+Y)"><span class="material-symbols-outlined">redo</span></button>
                             <button type="button" id="delete_btn" class="tool-btn icon-only danger" title="Supprimer l'objet"><span class="material-symbols-outlined">delete</span></button>
-                            <button type="button" id="tool_reset" class="tool-btn icon-only danger" style="opacity: 0.8;" title="Réinitialiser tout"><span class="material-symbols-outlined">delete_sweep</span></button>
+                            <button type="button" id="tool_reset" class="tool-btn icon-only danger tool-reset-btn" title="Réinitialiser tout"><span class="material-symbols-outlined">delete_sweep</span></button>
                         </div>
                     </div>
                 </div>
@@ -262,27 +253,19 @@
 
     <div class="container">
         <button type="button" id="log-button" data-action="open-logs">
-            <span class="material-symbols-outlined" style="font-size: 1.25em;">terminal</span> LOG
+            <span class="material-symbols-outlined log-btn-icon">terminal</span> LOG
         </button>
         <h1>Générateur d'OI</h1>
 
         <ul class="wizard-progress">
-            <li class="wizard-progress-step" data-action="go-to-step" data-step="0"><span class="material-symbols-outlined"
-                    style="font-size: 1.2em; margin-right: 5px;">info</span>1. Situation</li>
-            <li class="wizard-progress-step" data-action="go-to-step" data-step="1"><span class="material-symbols-outlined"
-                    style="font-size: 1.2em; margin-right: 5px;">person_search</span>2. Adversaire</li>
-            <li class="wizard-progress-step" data-action="go-to-step" data-step="2"><span class="material-symbols-outlined"
-                    style="font-size: 1.2em; margin-right: 5px;">landscape</span>3. Environnement</li>
-            <li class="wizard-progress-step" data-action="go-to-step" data-step="3"><span class="material-symbols-outlined"
-                    style="font-size: 1.2em; margin-right: 5px;">flag</span>4. Mission</li>
-            <li class="wizard-progress-step" data-action="go-to-step" data-step="4"><span class="material-symbols-outlined"
-                    style="font-size: 1.2em; margin-right: 5px;">schedule</span>5. Exécution</li>
-            <li class="wizard-progress-step" data-action="go-to-step" data-step="5"><span class="material-symbols-outlined"
-                    style="font-size: 1.2em; margin-right: 5px;">route</span>6. Articulation</li>
-            <li class="wizard-progress-step" data-action="go-to-step" data-step="6"><span class="material-symbols-outlined"
-                    style="font-size: 1.2em; margin-right: 5px;">directions_car</span>7. PATRACDVR</li>
-            <li class="wizard-progress-step" data-action="go-to-step" data-step="7"><span class="material-symbols-outlined"
-                    style="font-size: 1.2em; margin-right: 5px;">check_circle</span>8. Finalisation</li>
+            <li class="wizard-progress-step" data-action="go-to-step" data-step="0"><span class="material-symbols-outlined wizard-step-icon">info</span>1. Situation</li>
+            <li class="wizard-progress-step" data-action="go-to-step" data-step="1"><span class="material-symbols-outlined wizard-step-icon">person_search</span>2. Adversaire</li>
+            <li class="wizard-progress-step" data-action="go-to-step" data-step="2"><span class="material-symbols-outlined wizard-step-icon">landscape</span>3. Environnement</li>
+            <li class="wizard-progress-step" data-action="go-to-step" data-step="3"><span class="material-symbols-outlined wizard-step-icon">flag</span>4. Mission</li>
+            <li class="wizard-progress-step" data-action="go-to-step" data-step="4"><span class="material-symbols-outlined wizard-step-icon">schedule</span>5. Exécution</li>
+            <li class="wizard-progress-step" data-action="go-to-step" data-step="5"><span class="material-symbols-outlined wizard-step-icon">route</span>6. Articulation</li>
+            <li class="wizard-progress-step" data-action="go-to-step" data-step="6"><span class="material-symbols-outlined wizard-step-icon">directions_car</span>7. PATRACDVR</li>
+            <li class="wizard-progress-step" data-action="go-to-step" data-step="7"><span class="material-symbols-outlined wizard-step-icon">check_circle</span>8. Finalisation</li>
         </ul>
 
         <form id="oi-form">
@@ -298,8 +281,7 @@
                 <div class="wizard-step">
                     <h2>2. Adversaire(s)</h2>
                     <div id="adversaries_container"></div>
-                    <button type="button" id="createAdversaryBtn" class="add-btn" data-action="add-adversary"
-                        style="margin-top: 10px; width: 100%; justify-content: center; font-weight: bold;">
+                    <button type="button" id="createAdversaryBtn" class="add-btn btn-add-adversary" data-action="add-adversary">
                         <span class="material-symbols-outlined">person_add</span> Créer Adversaire
                     </button>
                 </div>
@@ -344,14 +326,13 @@ présumé de (Nom Adversaire 1) et (Nom Adversaire 2) après avoir bouclé celui
                         data-action="add-time-event"><span class="material-symbols-outlined">add_box</span> Ajouter Événement</button>
                     <h3>Hypothèses</h3>
                     <div id="hypotheses_container"></div>
-                    <button type="button" class="add-btn" data-action="add-hypothesis"
-                        style="margin-top: 10px; width: 100%; justify-content: center; font-weight: bold; background-color: var(--bg-interactive);">
+                    <button type="button" class="add-btn btn-add-hypothesis" data-action="add-hypothesis">
                         <span class="material-symbols-outlined">add_box</span> Créer Hypothèse
                     </button>
 
-                    <h3 style="margin-top: 20px;"><span class="material-symbols-outlined">photo_camera</span> Cheminement</h3>
+                    <h3 class="mt-20"><span class="material-symbols-outlined">photo_camera</span> Cheminement</h3>
                     <div style="display: flex; gap: 10px; flex-wrap: wrap;">
-                        <button type="button" class="add-btn" style="flex: 1; justify-content: center;"
+                        <button type="button" class="add-btn btn-flex-center"
                             data-action="trigger-file-input" data-target="photo_container_transport_pr_input">
                             <span class="material-symbols-outlined">photo_camera</span> Transport PSIG → PR
                         </button>
@@ -359,7 +340,7 @@ présumé de (Nom Adversaire 1) et (Nom Adversaire 2) après avoir bouclé celui
                             class="sr-only-input" accept="image/*" multiple
                             data-action="handle-file-change" data-preview-container="photo_container_transport_pr_preview_container" data-single="false">
 
-                        <button type="button" class="add-btn" style="flex: 1; justify-content: center;"
+                        <button type="button" class="add-btn btn-flex-center"
                             data-action="trigger-file-input" data-target="photo_container_transport_domicile_input">
                             <span class="material-symbols-outlined">photo_camera</span> Transport PR → Domicile/LE
                         </button>
@@ -379,17 +360,16 @@ présumé de (Nom Adversaire 1) et (Nom Adversaire 2) après avoir bouclé celui
                     <!-- Ordre de la rame VL -->
                     <div class="collapsible-container">
                         <div class="collapsible-header">
-                            <h3><span class="material-symbols-outlined"
-                                    style="vertical-align: middle;">directions_car</span> Ordre de la rame VL</h3>
+                            <h3><span class="material-symbols-outlined icon-align-mid">directions_car</span> Ordre de la rame VL</h3>
                             <span class="material-symbols-outlined">expand_more</span>
                         </div>
                         <div class="collapsible-content">
-                            <p style="font-size: 0.85em; color: var(--text-muted); margin-bottom: 10px;">
+                            <p class="hint-text-block">
                                 Glissez les véhicules pour définir l'ordre de la rame. Mis à jour automatiquement depuis
                                 le PATRACDVR.
                             </p>
                             <div id="rame_vl_container" class="rame-vl-zone">
-                                <p style="color: var(--text-muted); font-style: italic;">Aucun VL dans le PATRACDVR.</p>
+                                <p class="empty-state-note">Aucun VL dans le PATRACDVR.</p>
                             </div>
                         </div>
                     </div>
@@ -397,18 +377,17 @@ présumé de (Nom Adversaire 1) et (Nom Adversaire 2) après avoir bouclé celui
                     <!-- Ordre colonne de progression -->
                     <div class="collapsible-container">
                         <div class="collapsible-header">
-                            <h3><span class="material-symbols-outlined"
-                                    style="vertical-align: middle;">trending_flat</span> Ordre de la colonne de
+                            <h3><span class="material-symbols-outlined icon-align-mid">trending_flat</span> Ordre de la colonne de
                                 progression</h3>
                             <span class="material-symbols-outlined">expand_more</span>
                         </div>
                         <div class="collapsible-content">
-                            <p style="font-size: 0.85em; color: var(--text-muted); margin-bottom: 10px;">
+                            <p class="hint-text-block">
                                 Par défaut : India 1 → India X. Glissez pour modifier l'ordre. Ne modifie pas la cellule
                                 du membre.
                             </p>
                             <div id="colonne_progression_container" class="order-zone">
-                                <p style="color: var(--text-muted); font-style: italic;">Aucun membre India dans le
+                                <p class="empty-state-note">Aucun membre India dans le
                                     PATRACDVR.</p>
                             </div>
                         </div>
@@ -417,17 +396,17 @@ présumé de (Nom Adversaire 1) et (Nom Adversaire 2) après avoir bouclé celui
                     <!-- Ordre de pénétration -->
                     <div class="collapsible-container">
                         <div class="collapsible-header">
-                            <h3><span class="material-symbols-outlined" style="vertical-align: middle;">login</span>
+                            <h3><span class="material-symbols-outlined icon-align-mid">login</span>
                                 Ordre de pénétration</h3>
                             <span class="material-symbols-outlined">expand_more</span>
                         </div>
                         <div class="collapsible-content">
-                            <p style="font-size: 0.85em; color: var(--text-muted); margin-bottom: 10px;">
+                            <p class="hint-text-block">
                                 Par défaut : même ordre que la colonne. Glissez pour modifier. Ne modifie pas la cellule
                                 du membre.
                             </p>
                             <div id="ordre_penetration_container" class="order-zone">
-                                <p style="color: var(--text-muted); font-style: italic;">Aucun membre India dans le
+                                <p class="empty-state-note">Aucun membre India dans le
                                     PATRACDVR.</p>
                             </div>
                         </div>
@@ -435,8 +414,8 @@ présumé de (Nom Adversaire 1) et (Nom Adversaire 2) après avoir bouclé celui
 
                     <!-- Blocs MOICP dynamiques -->
                     <h3
-                        style="margin-top: 25px; color: var(--accent-blue); border-bottom: 2px solid var(--accent-blue); padding-bottom: 8px;">
-                        <span class="material-symbols-outlined" style="vertical-align: middle;">shield</span> MOICP —
+                        class="section-heading-blue">
+                        <span class="material-symbols-outlined icon-align-mid">shield</span> MOICP —
                         Équipes d'Intervention
                     </h3>
                     <div id="moicp_container"></div>
@@ -447,8 +426,8 @@ présumé de (Nom Adversaire 1) et (Nom Adversaire 2) après avoir bouclé celui
 
                     <!-- Blocs ZMSPCP dynamiques -->
                     <h3
-                        style="margin-top: 25px; color: var(--moicp-zmspcp-purple, #8e44ad); border-bottom: 2px solid var(--moicp-zmspcp-purple, #8e44ad); padding-bottom: 8px;">
-                        <span class="material-symbols-outlined" style="vertical-align: middle;">visibility</span> ZMSPCP
+                        class="section-heading-purple">
+                        <span class="material-symbols-outlined icon-align-mid">visibility</span> ZMSPCP
                         — Appui / Observation
                     </h3>
                     <div id="zmspcp_container"></div>
@@ -459,8 +438,8 @@ présumé de (Nom Adversaire 1) et (Nom Adversaire 2) après avoir bouclé celui
 
                     <!-- Cellule Effraction dynamiques -->
                     <h3
-                        style="margin-top: 25px; color: var(--effraction-gold); border-bottom: 2px solid var(--effraction-gold); padding-bottom: 8px;">
-                        <span class="material-symbols-outlined" style="vertical-align: middle;">hardware</span>
+                        class="section-heading-gold">
+                        <span class="material-symbols-outlined icon-align-mid">hardware</span>
                         Cellule Effraction
                     </h3>
                     <div id="effraction_container"></div>
@@ -508,8 +487,7 @@ présumé de (Nom Adversaire 1) et (Nom Adversaire 2) après avoir bouclé celui
                             title="Renvoyer les PAX sélectionnés vers « Personnel à attribuer »">
                             <span class="material-symbols-outlined">logout</span> Désattribuer
                         </button>
-                        <button type="button" id="patracBatchClear" class="add-btn" disabled
-                            style="background: var(--bg-interactive);">
+                        <button type="button" id="patracBatchClear" class="add-btn btn-batch-clear" disabled>
                             <span class="material-symbols-outlined">close</span> Effacer
                         </button>
                         <div id="patracBatchTargets" class="patrac-batch-targets" style="display:none;"></div>
@@ -518,25 +496,25 @@ présumé de (Nom Adversaire 1) et (Nom Adversaire 2) après avoir bouclé celui
                     <div id="quickEditPanel" style="display:none;">
                         <div class="member-info-header">
                             <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
-                                <h4 style="margin: 0;">Membre : <span id="selectedMemberTrigramme"
-                                        style="font-size: 1.1em; font-weight: bold;">Aucun</span></h4>
+                                <h4 class="qe-member-label">Membre : <span id="selectedMemberTrigramme"
+                                        class="qe-member-trigramme">Aucun</span></h4>
                                 <span class="qe-autosave" id="qeAutosave">
                                     <span class="material-symbols-outlined">check_circle</span> Enregistré
                                 </span>
                             </div>
                             <div style="display:flex; gap:12px; margin-top:8px; flex-wrap:wrap;">
-                                <div style="flex:1 1 140px;">
+                                <div class="qe-field-trigramme">
                                     <label for="quick_edit_trigramme_input"
-                                        style="font-size:0.78em; margin-bottom:2px;">Trigramme</label>
+                                        class="qe-field-label">Trigramme</label>
                                     <input type="text" id="quick_edit_trigramme_input" placeholder="Nouveau trigramme"
-                                        style="margin-bottom:0; min-height:40px;">
+                                        class="qe-field-input">
                                 </div>
-                                <div style="flex:1 1 120px;">
+                                <div class="qe-field-dir">
                                     <label for="quick_edit_dir_input"
-                                        style="font-size:0.78em; margin-bottom:2px; color:var(--accent-blue);">DIR
+                                        class="qe-field-label-accent">DIR
                                         (CANAL)</label>
                                     <input type="text" id="quick_edit_dir_input" placeholder="Ex: 42, 101…"
-                                        style="margin-bottom:0; min-height:40px;">
+                                        class="qe-field-input">
                                 </div>
                             </div>
                         </div>
@@ -544,7 +522,7 @@ présumé de (Nom Adversaire 1) et (Nom Adversaire 2) après avoir bouclé celui
                         <div class="quick-edit-content"></div>
                     </div>
 
-                    <h4 style="margin-top: 20px;">Ajouter un VL ou un PAX</h4>
+                    <h4 class="mt-20">Ajouter un VL ou un PAX</h4>
                     <div id="vehicle_creation_buttons"
                         style=" display: flex; flex-wrap: wrap; justify-content: space-between; gap: 10px;">
                         <button type="button" class="add-btn add-vehicle-btn" id="addManualVehicleBtn"><span class="material-symbols-outlined">add</span> Ajouter
@@ -553,17 +531,17 @@ présumé de (Nom Adversaire 1) et (Nom Adversaire 2) après avoir bouclé celui
                             Ajouter PAX</button>
                     </div>
 
-                    <h4 style="margin-top: 20px;">Créer une cellule (2 PAX minimum)</h4>
+                    <h4 class="mt-20">Créer une cellule (2 PAX minimum)</h4>
                     <div id="cell_batch_buttons" style="display: flex; flex-wrap: wrap; gap: 10px;">
                         <button type="button" class="add-btn cell-batch-btn" data-cell="India" title="Crée une cellule India (Inter) avec plusieurs PAX d'un coup"><span class="material-symbols-outlined">add</span> Cellule India</button>
                         <button type="button" class="add-btn cell-batch-btn" data-cell="AO" title="Crée une cellule AO avec plusieurs PAX d'un coup"><span class="material-symbols-outlined">add</span> Cellule AO</button>
                         <button type="button" class="add-btn cell-batch-btn" data-cell="Effrac" title="Crée la cellule Effraction avec plusieurs PAX d'un coup"><span class="material-symbols-outlined">add</span> Cellule Effraction</button>
                     </div>
 
-                    <h4 style="margin-top: 20px;">Composition des véhicules (Cliquer sur le nom pour renommer)</h4>
+                    <h4 class="mt-20">Composition des véhicules (Cliquer sur le nom pour renommer)</h4>
                     <div id="patracdvr_container"></div>
 
-                    <h4 style="margin-top: 20px;">Personnel à attribuer</h4>
+                    <h4 class="mt-20">Personnel à attribuer</h4>
                     <div id="unassigned_members_container"></div>
 
                     <div id="trashCan" class="mt-4">
@@ -593,13 +571,12 @@ présumé de (Nom Adversaire 1) et (Nom Adversaire 2) après avoir bouclé celui
                             </div>
                             <input type="file" id="custom_bg_input" class="photo-input sr-only-input"
                                 accept="image/jpeg, image/png, image/jpg" data-action="handle-custom-background-change">
-                            <div id="custom_bg_preview_container" class="image-preview-container"
-                                style="margin-top: 10px;"></div>
+                            <div id="custom_bg_preview_container" class="image-preview-container mt-10"></div>
                         </div>
                     </div>
 
-                    <div class="card" style="margin-top: 15px; border-left: 4px solid var(--accent-blue);">
-                        <h3 style="color: var(--accent-blue);"><span class="material-symbols-outlined" style="vertical-align: middle;">person_edit</span> Informations de Rédaction</h3>
+                    <div class="card card-accent-blue">
+                        <h3 class="heading-accent-blue"><span class="material-symbols-outlined icon-align-mid">person_edit</span> Informations de Rédaction</h3>
                         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-top: 10px;">
                             <div>
                                 <label for="trigramme_redacteur">Trigramme Rédacteur (ex: ABC):</label>
@@ -612,7 +589,7 @@ présumé de (Nom Adversaire 1) et (Nom Adversaire 2) après avoir bouclé celui
                         </div>
                     </div>
 
-                    <h3 style="margin-top: 25px;">Conduites à tenir (CAT) Générales</h3>
+                    <h3 class="mt-25">Conduites à tenir (CAT) Générales</h3>
                     <textarea id="cat_generales" rows="6" data-action="sync-dom-to-store">- Si rébellion, user du strict niveau de force nécessaire
 - Si retranché, alerter en mesure de se ré-articuler
 - Si tente de fuir, alerter en mesure de jalonner/interpeller
@@ -625,24 +602,23 @@ présumé de (Nom Adversaire 1) et (Nom Adversaire 2) après avoir bouclé celui
 DIR: 
 Gestuelle et visuelle entre les éléments INDIA</textarea>
 
-                    <p style="text-align:center; margin-top: 20px;">Vérifiez les points de cohérence avant de générer
+                    <p class="finalisation-check-text">Vérifiez les points de cohérence avant de générer
                         l'Ordre Initial.</p>
 
                     <div
-                        style="border: 1px solid var(--border-color); padding: 15px; border-radius: 5px; margin-top: 20px;">
+                        class="coherence-check-box">
                         <h3>Vérification des Données Critiques</h3>
                         <div id="coherence_alerts_container">
-                            <div class="coherence-alert"
-                                style="color:var(--text-secondary); background-color:var(--bg-interactive);"><span
+                            <div class="coherence-alert coherence-alert-neutral"><span
                                     class="material-symbols-outlined">info</span> Cliquez sur "Aperçu" pour lancer la
                                 vérification de cohérence.</div>
                         </div>
-                        <div id="recap_finalisation" style="margin-top: 15px;">
+                        <div id="recap_finalisation" class="recap-finalisation">
                         </div>
                     </div>
                     <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 20px;">
                         <button class="wizard-nav-btn" id="previewBtn" type="button">Aperçu (Mode Présentation) <span
-                                class="material-symbols-outlined" style="font-size: 1.2em;">visibility</span></button>
+                                class="material-symbols-outlined icon-1-2em">visibility</span></button>
                     </div>
                 </div>
             </div>
@@ -702,7 +678,7 @@ Gestuelle et visuelle entre les éléments INDIA</textarea>
     <dialog id="effractionToolsModal">
         <div class="modal-form">
             <div class="modal-header">
-                <h3 style="color: var(--effraction-gold);">
+                <h3 class="heading-effraction-gold">
                     <span class="material-symbols-outlined">hardware</span> Outils Effraction
                 </h3>
                 <button type="button" class="close-modal-btn" data-action="close-effraction-tools-modal">
@@ -711,17 +687,17 @@ Gestuelle et visuelle entre les éléments INDIA</textarea>
             </div>
 
             <div class="modal-body">
-                <p style="font-size: 0.9em; color: var(--text-secondary); margin-bottom: 20px;">Sélectionnez les outils préconisés pour cette photo.</p>
+                <p class="effraction-modal-intro">Sélectionnez les outils préconisés pour cette photo.</p>
 
                 <div id="tools_sections_container">
-                    <h4 style="margin-top: 15px; border-bottom: 1px solid var(--border-color); padding-bottom: 5px;">Hydraulique</h4>
+                    <h4 class="effraction-section-heading-tight">Hydraulique</h4>
                     <div class="effrac-tool-grid" data-category="hydraulique">
                         <button type="button" class="effrac-tool-btn" data-tool="HDR50">HDR50</button>
                         <button type="button" class="effrac-tool-btn" data-tool="DOOR">DOOR</button>
                         <button type="button" class="effrac-tool-btn" data-tool="OP71">OP71</button>
                     </div>
 
-                    <h4 style="margin-top: 25px; border-bottom: 1px solid var(--border-color); padding-bottom: 5px;">Mécanique</h4>
+                    <h4 class="effraction-section-heading">Mécanique</h4>
                     <div class="effrac-tool-grid" data-category="mecanique">
                         <button type="button" class="effrac-tool-btn" data-tool="Multy Pry">Multy Pry</button>
                         <button type="button" class="effrac-tool-btn" data-tool="Multi Sledge">Multi Sledge</button>
@@ -731,16 +707,16 @@ Gestuelle et visuelle entre les éléments INDIA</textarea>
                         <button type="button" class="effrac-tool-btn" data-tool="Pince Monseigneur">Pince Monseigneur</button>
                     </div>
 
-                    <h4 style="margin-top: 25px; border-bottom: 1px solid var(--border-color); padding-bottom: 5px;">Autres</h4>
+                    <h4 class="effraction-section-heading">Autres</h4>
                     <div class="effrac-tool-grid" data-category="autres">
                         <button type="button" class="effrac-tool-btn" data-tool="Pass PTT">Pass PTT</button>
                         <button type="button" class="effrac-tool-btn" data-tool="VIGIK">VIGIK</button>
                         <button type="button" class="effrac-tool-btn" data-tool="Double clé">Double clé</button>
                     </div>
 
-                    <h4 style="margin-top: 25px;">Outil Nouveau / Autre :</h4>
+                    <h4 class="mt-25">Outil Nouveau / Autre :</h4>
                     <input type="text" id="effrac_other_tools" placeholder="Saisir d'autres outils..." 
-                           style="width:100%; padding: 12px; margin-top: 8px; background: var(--bg-interactive); border: 1px solid var(--border-color); color: var(--text-primary); border-radius: 8px;">
+                           class="effrac-other-input">
                 </div>
             </div>
 
@@ -748,7 +724,7 @@ Gestuelle et visuelle entre les éléments INDIA</textarea>
                 <button type="button" class="btn-cancel" data-action="close-effraction-tools-modal">
                     <span class="material-symbols-outlined">undo</span> Retour
                 </button>
-                <button type="button" class="btn-save" style="background-color: var(--effraction-gold) !important; color: white;" data-action="save-effraction-tools">
+                <button type="button" class="btn-save btn-save-effraction" data-action="save-effraction-tools">
                     <span class="material-symbols-outlined">check_circle</span> Valider
                 </button>
             </div>
@@ -757,8 +733,8 @@ Gestuelle et visuelle entre les éléments INDIA</textarea>
 
     <!-- MODAL SELECTION DE MEMBRE POUR ANNOTATION -->
     <dialog id="memberSelectionModalCanvas"
-        style="padding: 0; background: transparent; border: none; overflow: visible; z-index: 2000; margin: auto;">
-        <div class="modal-content" style="max-width: 400px;">
+        class="modal-transparent-2000">
+        <div class="modal-content modal-content-400">
             <h2 style="color: var(--accent-blue); display: flex; align-items: center; gap: 10px;">
                 <span class="material-symbols-outlined">badge</span> Sélectionner un Membre
             </h2>
@@ -774,10 +750,10 @@ Gestuelle et visuelle entre les éléments INDIA</textarea>
     </dialog>
     <div id="memberContextMenu" class="context-menu" style="display:none; position:fixed; z-index:9999; background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 8px; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); padding: 5px;">
         <button type="button" data-action="clone-member-from-context" style="display:flex; align-items:center; gap:8px; width:100%; padding:8px 12px; background:none; border:none; color:var(--text-primary); cursor:pointer; text-align:left;">
-            <span class="material-symbols-outlined" style="font-size:18px;">content_copy</span> Cloner
+            <span class="material-symbols-outlined icon-18">content_copy</span> Cloner
         </button>
         <button type="button" data-action="delete-member-from-context" style="display:flex; align-items:center; gap:8px; width:100%; padding:8px 12px; background:none; border:none; color:var(--danger-red); cursor:pointer; text-align:left;">
-            <span class="material-symbols-outlined" style="font-size:18px;">delete</span> Supprimer
+            <span class="material-symbols-outlined icon-18">delete</span> Supprimer
         </button>
     </div>
     <!-- ==================== CARTOGRAPHIE OI (MapLibre) ==================== -->
@@ -792,18 +768,16 @@ Gestuelle et visuelle entre les éléments INDIA</textarea>
             <div id="oi_carto_search_panel">
                 <div style="display: flex; gap: 6px;">
                     <input type="text" id="oi_carto_address_input"
-                        placeholder="Adresse ou coordonnées GPS (lat, lng)" style="flex: 1;">
-                    <button type="button" id="oi_carto_search_btn" class="add-btn"
-                        style="width: auto; padding: 8px 12px;">
+                        placeholder="Adresse ou coordonnées GPS (lat, lng)" class="carto-address-input">
+                    <button type="button" id="oi_carto_search_btn" class="add-btn carto-search-btn">
                         <span class="material-symbols-outlined">search</span>
                     </button>
-                    <button type="button" id="oi_carto_search_close" class="add-btn"
-                        style="width: auto; padding: 8px 10px; background: var(--bg-interactive); border: 1px solid var(--border-color); color: var(--text-primary);">
+                    <button type="button" id="oi_carto_search_close" class="add-btn carto-search-close-btn">
                         <span class="material-symbols-outlined">close</span>
                     </button>
                 </div>
                 <div id="oi_carto_search_results"
-                    style="margin-top: 6px; max-height: 200px; overflow-y: auto;"></div>
+                    class="carto-search-results"></div>
                 <div class="oi-carto-search-hint">Ex&nbsp;: «&nbsp;12 rue de la Paix, Paris&nbsp;» ou
                     «&nbsp;48.8566, 2.3522&nbsp;»</div>
             </div>
@@ -856,16 +830,11 @@ Gestuelle et visuelle entre les éléments INDIA</textarea>
                 </button>
                 <div class="oi-carto-dock-sep"></div>
                 <div id="oi_carto_draw_colors">
-                    <button type="button" class="oi-carto-draw-color" data-color="#ef4444" title="Rouge"
-                        style="background:#ef4444;"></button>
-                    <button type="button" class="oi-carto-draw-color" data-color="#eab308" title="Jaune"
-                        style="background:#eab308;"></button>
-                    <button type="button" class="oi-carto-draw-color" data-color="#3b82f6" title="Bleu"
-                        style="background:#3b82f6;"></button>
-                    <button type="button" class="oi-carto-draw-color" data-color="#22c55e" title="Vert"
-                        style="background:#22c55e;"></button>
-                    <button type="button" class="oi-carto-draw-color" data-color="#ffffff" title="Blanc"
-                        style="background:#ffffff;"></button>
+                    <button type="button" class="oi-carto-draw-color oi-carto-draw-color-red" data-color="#ef4444" title="Rouge"></button>
+                    <button type="button" class="oi-carto-draw-color oi-carto-draw-color-yellow" data-color="#eab308" title="Jaune"></button>
+                    <button type="button" class="oi-carto-draw-color oi-carto-draw-color-blue" data-color="#3b82f6" title="Bleu"></button>
+                    <button type="button" class="oi-carto-draw-color oi-carto-draw-color-green" data-color="#22c55e" title="Vert"></button>
+                    <button type="button" class="oi-carto-draw-color oi-carto-draw-color-white" data-color="#ffffff" title="Blanc"></button>
                 </div>
                 <div class="oi-carto-dock-sep"></div>
                 <button type="button" id="oi_carto_draw_undo" class="oi-carto-draw-btn"
@@ -877,8 +846,8 @@ Gestuelle et visuelle entre les éléments INDIA</textarea>
                     <span class="material-symbols-outlined">redo</span>
                 </button>
                 <div class="oi-carto-dock-sep"></div>
-                <button type="button" id="oi_carto_draw_clear" class="oi-carto-draw-btn"
-                    title="Effacer tous les dessins" style="color: var(--danger-red);">
+                <button type="button" id="oi_carto_draw_clear" class="oi-carto-draw-btn carto-draw-clear-btn"
+                    title="Effacer tous les dessins">
                     <span class="material-symbols-outlined">delete_sweep</span>
                 </button>
             </div>
@@ -887,52 +856,46 @@ Gestuelle et visuelle entre les éléments INDIA</textarea>
 
     <!-- Modale d'ajout de point cartographie : pins membres / cyno / véhicules / rassemblement -->
     <dialog id="oi_carto_ping_modal"
-        style="padding: 0; background: transparent; border: none; overflow: visible; z-index: 3000; margin: auto;">
-        <div class="modal-content" style="max-width: 480px;">
+        class="modal-transparent-3000">
+        <div class="modal-content modal-content-480">
             <h2 style="color: var(--accent-blue); display: flex; align-items: center; gap: 10px;">
                 <span class="material-symbols-outlined">add_location</span> Ajouter un point
             </h2>
 
             <input type="text" id="oi_carto_pin_label"
-                placeholder="Libellé personnalisé (appliqué aux pins génériques)" style="margin-top: 14px;">
+                placeholder="Libellé personnalisé (appliqué aux pins génériques)" class="carto-pin-label-input">
 
             <div style="overflow-y: auto; margin-top: 14px; padding-right: 4px;">
                 <div class="oi-carto-ping-section">
-                    <label><span class="material-symbols-outlined"
-                            style="font-size:18px; vertical-align:middle;">local_police</span> Membres PATRACDVR</label>
+                    <label><span class="material-symbols-outlined icon-mid-18">local_police</span> Membres PATRACDVR</label>
                     <div id="oi_carto_member_list" class="oi-carto-ping-list"></div>
                 </div>
                 <div class="oi-carto-ping-section">
-                    <label><span class="material-symbols-outlined"
-                            style="font-size:18px; vertical-align:middle;">pets</span> Cyno</label>
+                    <label><span class="material-symbols-outlined icon-mid-18">pets</span> Cyno</label>
                     <div id="oi_carto_cyno_list" class="oi-carto-ping-list"></div>
                 </div>
                 <div class="oi-carto-ping-section">
-                    <label><span class="material-symbols-outlined"
-                            style="font-size:18px; vertical-align:middle;">directions_car</span> Rame VL — véhicule de la
+                    <label><span class="material-symbols-outlined icon-mid-18">directions_car</span> Rame VL — véhicule de la
                         force</label>
                     <div id="oi_carto_ramevl_list" class="oi-carto-ping-list"></div>
                 </div>
                 <div class="oi-carto-ping-section">
-                    <label><span class="material-symbols-outlined"
-                            style="font-size:18px; vertical-align:middle;">directions_car</span> VL Target — véhicule
+                    <label><span class="material-symbols-outlined icon-mid-18">directions_car</span> VL Target — véhicule
                         adverse</label>
                     <div id="oi_carto_vltarget_list" class="oi-carto-ping-list"></div>
                 </div>
                 <div class="oi-carto-ping-section">
-                    <label><span class="material-symbols-outlined"
-                            style="font-size:18px; vertical-align:middle;">groups</span> Rassemblement</label>
+                    <label><span class="material-symbols-outlined icon-mid-18">groups</span> Rassemblement</label>
                     <div id="oi_carto_rassemblement_list" class="oi-carto-ping-list"></div>
                 </div>
             </div>
 
-            <p style="color: var(--text-muted); font-size: 0.85em; margin-top: 12px;">
+            <p class="hint-text-top">
                 Après sélection, cliquez sur la carte pour placer le point.
             </p>
             <div style="display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap;">
                 <button type="button" class="remove-btn" id="oi_carto_clear_pins">
-                    <span class="material-symbols-outlined"
-                        style="font-size:18px; vertical-align:middle;">delete_sweep</span>
+                    <span class="material-symbols-outlined icon-mid-18">delete_sweep</span>
                     Supprimer tous les pins
                 </button>
                 <button type="button" class="remove-btn" id="oi_carto_ping_cancel">Annuler</button>
@@ -942,25 +905,25 @@ Gestuelle et visuelle entre les éléments INDIA</textarea>
 
     <!-- Modale de capture cartographie : téléchargement ou export vers un champ photo -->
     <dialog id="oi_carto_capture_modal"
-        style="padding: 0; background: transparent; border: none; overflow: visible; z-index: 3000; margin: auto;">
-        <div class="modal-content" style="max-width: 460px;">
+        class="modal-transparent-3000">
+        <div class="modal-content modal-content-460">
             <h2 style="color: var(--accent-blue); display: flex; align-items: center; gap: 10px;">
                 <span class="material-symbols-outlined">photo_camera</span> Capture de la carte
             </h2>
 
-            <button type="button" class="add-btn" id="oi_carto_capture_download" style="margin-top: 16px;">
+            <button type="button" class="add-btn mt-16" id="oi_carto_capture_download">
                 <span class="material-symbols-outlined">download</span> Télécharger la capture (PNG)
             </button>
 
-            <div style="border-top: 1px solid var(--border-color); margin: 18px 0;"></div>
+            <div class="divider-18"></div>
 
             <label>Exporter la capture vers un champ photo de l'OI</label>
-            <select id="oi_carto_capture_target" style="margin-top: 6px;"></select>
-            <button type="button" class="add-btn" id="oi_carto_capture_export" style="margin-top: 10px;">
+            <select id="oi_carto_capture_target" class="mt-6"></select>
+            <button type="button" class="add-btn mt-10" id="oi_carto_capture_export">
                 <span class="material-symbols-outlined">add_photo_alternate</span> Exporter vers ce champ
             </button>
 
-            <p style="color: var(--text-muted); font-size: 0.85em; margin-top: 12px;">
+            <p class="hint-text-top">
                 La capture est ajoutée comme photo dans le champ choisi (avec compression standard de l'OI).
             </p>
             <div style="display: flex; justify-content: flex-end; gap: 10px;">
