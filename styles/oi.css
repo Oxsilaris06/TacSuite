@@ -238,7 +238,9 @@ body.up-kb-open .up-kb-aware {
             /* Fond des surfaces remplies à texte blanc (boutons actifs/sélectionnés) —
                distinct de --accent-blue (bordures/focus/textes) car #4f8dff sur blanc
                ne fait que 3.19:1 (< 4.5:1 AA). #2563eb sur blanc = 5.17:1 (AA OK). */
-            --accent-fill: var(--tac-blue-550);
+            /* Dérogation AA actée (state.md 2026-08-09) : Nico impose le bleu
+               d'origine #4f8dff en fond rempli malgré 3.19:1 avec texte blanc. */
+            --accent-fill: var(--tac-blue-500);
 
             --moicp-zmspcp-purple: #7c6ce0;
             /* AMBRE = otages / civils (hors des 3 sémantiques) */
