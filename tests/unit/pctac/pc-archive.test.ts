@@ -6,7 +6,9 @@
  *
  * Contexte : indexedDB n'existe pas en jsdom (SPEC-PCTAC-CONVERSION.md §8.4) —
  * `@pctac/image-store.js` est mocké par un store en mémoire (`vi.mock`).
- * `confirm`/`alert` sont stubés (`vi.stubGlobal`).
+ * R2-T2a : `confirm()`/`alert()` natifs remplacés par `@shared/feedback.js`
+ * (`confirmDialog`/`toast`) — module mocké (`confirmSpy`/`toastSpy`) plutôt
+ * que `vi.stubGlobal('confirm'/'alert', ...)`.
  *
  * Couverture exigée par la mission P2.CONV :
  *  - manifest invalide (absent / mauvaise appName) ⇒ refus ET localStorage
@@ -18,7 +20,7 @@
  *    trigrammes) et repli sur le nom d'image non encodé (archive.js:369-370).
  */
 
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import JSZip from 'jszip';
 
 import { ADVERSARIES_KEY, LOCAL_STORAGE_KEY } from '@pctac/config.js';
@@ -71,6 +73,16 @@ vi.mock('@pctac/image-store.js', () => {
     },
   };
 });
+
+// R2-T2a : `confirmDialog`/`toast` mockés (remplacent `confirm()`/`alert()`
+// natifs). `confirmSpy` retourne `true` par défaut (équivalent de l'ancien
+// `vi.stubGlobal('confirm', vi.fn(() => true))`), surchargeable par test.
+const confirmSpy = vi.hoisted(() => vi.fn(async () => true));
+const toastSpy = vi.hoisted(() => vi.fn());
+vi.mock('@shared/feedback.js', () => ({
+  confirmDialog: confirmSpy,
+  toast: toastSpy,
+}));
 
 // Imports APRÈS vi.mock (hissé de toute façon, mais garde l'ordre lisible).
 import { Archive } from '@pctac/archive.js';
@@ -149,12 +161,9 @@ beforeEach(() => {
   localStorage.clear();
   imageStoreState.store.clear();
   imageStoreState.failClearOnce = false;
-  vi.stubGlobal('confirm', vi.fn(() => true));
-  vi.stubGlobal('alert', vi.fn());
-});
-
-afterEach(() => {
-  vi.unstubAllGlobals();
+  confirmSpy.mockClear();
+  confirmSpy.mockImplementation(async () => true);
+  toastSpy.mockClear();
 });
 
 describe('Archive — window.Archive posé au scope module (archive.js:459)', () => {
@@ -188,7 +197,7 @@ describe('importFile — validation du manifest AVANT toute modification (archiv
   it('annule proprement si l\'utilisateur refuse la confirmation : aucune modification', async () => {
     localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify([{ id: '1' }]));
     const before = dumpLocalStorage();
-    vi.stubGlobal('confirm', vi.fn(() => false));
+    confirmSpy.mockImplementation(async () => false);
 
     const file = await buildPctacZip({ data: { [LOCAL_STORAGE_KEY]: JSON.stringify([{ id: 'z' }]) } });
 

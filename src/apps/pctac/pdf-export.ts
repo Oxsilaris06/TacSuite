@@ -34,6 +34,7 @@ import { Storage } from '@pctac/storage.js';
 import { ImageStore } from '@pctac/image-store.js';
 import { PDF_PAX_COLORS, PHOTO_CATEGORIES, FREE_MODE_COLORS } from '@pctac/config.js';
 import { showBusy, hideBusy } from '@pctac/busy.js';
+import { toast } from '@shared/feedback.js';
 import type { PdfExportContract, PlanMapPinSummary } from '@shared/types/contracts.js';
 
 // FREE_MODE_COLORS : importé pour fidélité avec l'import original (pdfExport.js:3),
@@ -177,7 +178,7 @@ export const PdfExport: PdfExportContract = {
             // pdfExport.js:97-99 — en ESM le namespace importé n'est jamais `undefined` ;
             // on vérifie donc la présence réelle de la classe utilisée, message inchangé.
             if (typeof PDFLib?.PDFDocument !== 'function') {
-                alert('Librairie pdf-lib non chargée (réseau ?). Réessaie dans quelques secondes.');
+                toast('Librairie pdf-lib non chargée (réseau ?). Réessaie dans quelques secondes.', { kind: 'error' });
                 return;
             }
             const { PDFDocument, rgb: pdfRgb, StandardFonts, PageSizes } = PDFLib;
@@ -647,7 +648,7 @@ export const PdfExport: PdfExportContract = {
         } catch (e) {
             console.error("PDF Export Critical Error:", e);
             const detail: unknown = (e && typeof e === 'object' && 'message' in e) ? (e as { message: unknown }).message : e;
-            alert("Erreur lors de la génération du PDF :\n\n" + String(detail));
+            toast("Erreur lors de la génération du PDF : " + String(detail), { kind: 'error' });
         } finally {
             hideBusy();
         }

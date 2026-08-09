@@ -42,7 +42,6 @@ vi.mock('@pctac/image-store.js', () => ({
 beforeEach(() => {
   localStorage.clear();
   vi.resetModules();
-  vi.stubGlobal('alert', vi.fn());
   // jsdom n'implémente pas ces deux méthodes : indispensables au téléchargement
   // final de buildPdf() (pdfExport.js:583-587).
   (URL as unknown as { createObjectURL: () => string }).createObjectURL = vi.fn(() => 'blob:mock-url');

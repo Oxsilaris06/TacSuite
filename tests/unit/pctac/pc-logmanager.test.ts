@@ -9,7 +9,7 @@
  *   - :107-112 — importJson : `paxMode` recalculé d'ABORD, puis sert au fallback couleur
  *   - :123-126 — déduplication des entrées importées par `id`
  *   - :64-73 — historique des lieux : LRU borné à 30, insensible à la casse
- *   - :23-40 — addEntry : alert() + retour null si PAX ou heure manquants
+ *   - :23-40 — addEntry : toast d'erreur (R2-T2a, ex-alert()) + retour null si PAX ou heure manquants
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -24,11 +24,16 @@ import { LogManager } from '../../../src/apps/pctac/log-manager.js';
 import { Storage } from '../../../src/apps/pctac/storage.js';
 import { FREE_MODE_COLORS, PDF_PAX_COLORS } from '../../../src/apps/pctac/config.js';
 
-describe('LogManager.addEntry — validation et rejet avec alert()', () => {
+// R2-T2a : `alert()` → `toast(..., { kind: 'error' })`. Le module partagé
+// est mocké pour espionner les appels sans dépendre du DOM réel injecté par
+// `feedback.ts` (cohérent avec `vi.stubGlobal('alert', ...)` qu'il remplace).
+const toastSpy = vi.hoisted(() => vi.fn());
+vi.mock('../../../src/shared/feedback.js', () => ({ toast: toastSpy }));
+
+describe('LogManager.addEntry — validation et rejet avec toast (R2-T2a, ex-alert())', () => {
   beforeEach(() => {
     localStorage.clear();
-    vi.clearAllMocks();
-    vi.stubGlobal('alert', vi.fn());
+    toastSpy.mockClear();
   });
 
   it('rejette si PAX manque en mode standard et retourne null', () => {
@@ -42,7 +47,7 @@ describe('LogManager.addEntry — validation et rejet avec alert()', () => {
     const result = LogManager.addEntry(input);
 
     expect(result).toBeNull();
-    expect(alert).toHaveBeenCalledWith('Veuillez sélectionner un type de PAX.');
+    expect(toastSpy).toHaveBeenCalledWith('Veuillez sélectionner un type de PAX.', { kind: 'error' });
   });
 
   it('rejette si heure manque et retourne null', () => {
@@ -56,7 +61,7 @@ describe('LogManager.addEntry — validation et rejet avec alert()', () => {
     const result = LogManager.addEntry(input);
 
     expect(result).toBeNull();
-    expect(alert).toHaveBeenCalledWith('Veuillez renseigner l\'heure.');
+    expect(toastSpy).toHaveBeenCalledWith('Veuillez renseigner l\'heure.', { kind: 'error' });
   });
 
   it('accepte en mode libre avec fallback « Pax Libre » quand pax et freePax vides', () => {

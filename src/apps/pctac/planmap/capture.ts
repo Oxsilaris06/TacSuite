@@ -16,6 +16,7 @@
 
 import html2canvas from 'html2canvas';
 
+import { toast } from '@shared/feedback.js';
 import type { PlanMapInternal } from './types.js';
 
 export const CaptureMethods = {
@@ -280,7 +281,7 @@ export const CaptureMethods = {
     async _takeScreenshot(this: PlanMapInternal): Promise<void> {
         // planMap.js:5259 — même adaptation (a) que captureToDataUrl.
         if (typeof html2canvas !== 'function') {
-            alert('Librairie html2canvas indisponible (réseau ?)');
+            toast('Librairie html2canvas indisponible (réseau ?)', { kind: 'error' });
             return;
         }
         if (!this.map) return;
@@ -300,11 +301,11 @@ export const CaptureMethods = {
             // captureToDataUrl) : `catch (e)` typé `unknown` (useUnknownInCatchVariables,
             // inclus dans `strict`) — `e.message` exige un narrowing. Idiome déjà en
             // place dans le projet (src/shared/ui-platform.ts:100).
-            alert('Erreur lors de la capture : ' + (e instanceof Error ? e.message : String(e)));
+            toast('Erreur lors de la capture : ' + (e instanceof Error ? e.message : String(e)), { kind: 'error' });
             return;
         }
         if (!dataUrl) {
-            alert('Capture impossible (carte non initialisée ?)');
+            toast('Capture impossible (carte non initialisée ?)', { kind: 'error' });
             return;
         }
 

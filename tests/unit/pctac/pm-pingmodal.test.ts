@@ -18,6 +18,11 @@
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+// R2-T2a : `alert()` → `toast(..., { kind: 'error' })` (`_armFreePinPlacement`,
+// planMap.js:1142-1154). Module mocké plutôt que `vi.stubGlobal('alert', ...)`.
+const toastSpy = vi.hoisted(() => vi.fn());
+vi.mock('../../../src/shared/feedback.js', () => ({ toast: toastSpy }));
+
 import { ADVERSARIES_KEY, FRIENDS_KEY, HOSTAGES_KEY, PIN_ICONS } from '../../../src/apps/pctac/config.js';
 import { Storage } from '../../../src/apps/pctac/storage.js';
 import { PingModalMethods } from '../../../src/apps/pctac/planmap/ping-modal.js';
@@ -125,6 +130,7 @@ afterEach(() => {
     document.body.innerHTML = '';
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
+    toastSpy.mockClear();
 });
 
 describe('PingModalMethods — les 8 méthodes ne jettent pas quand le DOM attendu est absent (planMap.js:957-1154)', () => {
@@ -164,7 +170,6 @@ describe('PingModalMethods — les 8 méthodes ne jettent pas quand le DOM atten
     });
 
     it('_armFreePinPlacement', () => {
-        vi.stubGlobal('alert', vi.fn());
         const { fake } = makeFakeThis();
         expect(() => fake._armFreePinPlacement()).not.toThrow();
     });
@@ -348,15 +353,13 @@ describe('_bindIconPickerOnce (planMap.js:1113-1140)', () => {
 });
 
 describe('_armFreePinPlacement (planMap.js:1142-1154)', () => {
-    it('sans libellé : alerte et ne pose ni pendingFreePin ni pendingEntityPin', () => {
-        const alertSpy = vi.fn();
-        vi.stubGlobal('alert', alertSpy);
+    it('sans libellé : toast d\'erreur (R2-T2a, ex-alert()) et ne pose ni pendingFreePin ni pendingEntityPin', () => {
         const { fake } = makeFakeThis();
         mountPingModalDom(); // labelInput.value === ''
 
         fake._armFreePinPlacement();
 
-        expect(alertSpy).toHaveBeenCalledWith('Libellé requis');
+        expect(toastSpy).toHaveBeenCalledWith('Libellé requis', { kind: 'error' });
         expect(fake.pendingFreePin).toBeNull();
     });
 

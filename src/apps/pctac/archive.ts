@@ -27,6 +27,7 @@ import type {
 } from '@shared/types/contracts.js';
 import { Storage } from '@pctac/storage.js';
 import { ImageStore } from '@pctac/image-store.js';
+import { confirmDialog, toast } from '@shared/feedback.js';
 import {
     LOCAL_STORAGE_KEY, TP_ASSOC_KEY,
     ADVERSARIES_KEY, HOSTAGES_KEY, FRIENDS_KEY, PHOTOS_KEY, CUSTOM_PAX_KEY,
@@ -130,7 +131,7 @@ export const Archive: ArchiveContract = {
         // le branchement (alerte + retour) est conservé mot pour mot, la condition
         // devient un test de forme puisque JSZip est désormais un import statique.
         if (typeof JSZip !== 'function') {
-            alert('JSZip indisponible (réseau ?). Impossible de générer l\'archive.');
+            toast('JSZip indisponible (réseau ?). Impossible de générer l\'archive.', { kind: 'error' });
             return;
         }
         try {
@@ -194,7 +195,7 @@ export const Archive: ArchiveContract = {
             setTimeout(() => URL.revokeObjectURL(a.href), 2000);
         } catch (e) {
             console.error('[Archive] export échec:', e);
-            alert('Erreur d\'export : ' + (e instanceof Error ? e.message : String(e)));
+            toast('Erreur d\'export : ' + (e instanceof Error ? e.message : String(e)), { kind: 'error' });
         }
     },
 
@@ -243,7 +244,13 @@ export const Archive: ArchiveContract = {
         try { dataJson = JSON.parse(await dataFile.async('string')) as Record<string, string>; }
         catch { throw new Error('Archive corrompue : « data.json » illisible.'); }
 
-        if (!confirm('Importer cette archive ? Les données actuelles seront remplacées.')) {
+        const confirmed = await confirmDialog({
+            title: 'Importer cette archive ?',
+            message: 'Les données actuelles seront remplacées.',
+            confirmLabel: 'Importer',
+            danger: true,
+        });
+        if (!confirmed) {
             return { ok: false, cancelled: true };
         }
 
@@ -285,7 +292,7 @@ export const Archive: ArchiveContract = {
         } catch (e) {
             await rollback();
             console.error('[Archive] import localStorage échec, rollback effectué:', e);
-            alert("Échec de l'import (stockage insuffisant). Vos données précédentes ont été conservées.");
+            toast("Échec de l'import (stockage insuffisant). Vos données précédentes ont été conservées.", { kind: 'error' });
             return { ok: false, error: e };
         }
 
@@ -297,7 +304,7 @@ export const Archive: ArchiveContract = {
         } catch (e) {
             await rollback();
             console.error('[Archive] clear images échec, rollback effectué:', e);
-            alert("Échec de l'import (impossible de réinitialiser les photos). Vos données précédentes ont été conservées.");
+            toast("Échec de l'import (impossible de réinitialiser les photos). Vos données précédentes ont été conservées.", { kind: 'error' });
             return { ok: false, error: e };
         }
         const imagesFolder = zip.folder('images');
@@ -319,7 +326,7 @@ export const Archive: ArchiveContract = {
             // Les photos sont best-effort : un échec partiel ne justifie pas de jeter
             // l'import du localStorage déjà validé. On prévient sans rollback.
             console.warn('[Archive] certaines images non restaurées:', imgError);
-            alert("Import terminé, mais certaines photos n'ont pas pu être restaurées (stockage). Les fiches sont intactes.");
+            toast("Import terminé, mais certaines photos n'ont pas pu être restaurées (stockage). Les fiches sont intactes.", { kind: 'error' });
         }
         return { ok: true };
     },

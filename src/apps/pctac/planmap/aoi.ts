@@ -39,6 +39,7 @@ import type {
     TileTemplate,
 } from './types.js';
 import { Persist } from '@shared/persist.js';
+import { confirmDialog, toast } from '@shared/feedback.js';
 
 export const AoiMethods = {
     // ============================================================
@@ -56,7 +57,7 @@ export const AoiMethods = {
     _startAoiFraming(this: PlanMapInternal): void {
         if (!this.map) return;
         if (typeof caches === 'undefined') {
-            alert('Cache hors-ligne indisponible sur ce navigateur (Cache Storage absent).');
+            toast('Cache hors-ligne indisponible sur ce navigateur (Cache Storage absent).', { kind: 'error' });
             return;
         }
         if (this._aoiFraming) return; // déjà en cours
@@ -182,13 +183,13 @@ export const AoiMethods = {
     // planMap.js:5414-5451
     async _confirmAoi(this: PlanMapInternal, bbox: GeoBBox): Promise<void> {
         const templates: TileTemplate[] = styleTileTemplates();
-        if (!templates.length) { alert('Aucune source cartographique disponible.'); return; }
+        if (!templates.length) { toast('Aucune source cartographique disponible.', { kind: 'error' }); return; }
         const minZ = this.AOI_MIN_Z, maxZ = this.AOI_MAX_Z;
         const tileCount = estimateTileCount(bbox, minZ, maxZ, templates);
-        if (tileCount === 0) { alert('Zone hors couverture des sources cartographiques.'); return; }
+        if (tileCount === 0) { toast('Zone hors couverture des sources cartographiques.', { kind: 'error' }); return; }
         if (tileCount > AOI_MAX_TILES) {
-            alert(`Zone trop vaste : ${tileCount.toLocaleString('fr-FR')} tuiles (max ${AOI_MAX_TILES.toLocaleString('fr-FR')}).\n`
-                + 'Réduis l\'emprise ou refais un rectangle plus petit.');
+            toast(`Zone trop vaste : ${tileCount.toLocaleString('fr-FR')} tuiles (max ${AOI_MAX_TILES.toLocaleString('fr-FR')}). `
+                + 'Réduis l\'emprise ou refais un rectangle plus petit.', { kind: 'error' });
             return;
         }
         // Estimation volume : ~22 Ko/tuile satellite/ortho, ~12 Ko/tuile DEM (ordre de grandeur).
@@ -209,12 +210,13 @@ export const AoiMethods = {
             }
         } catch { /* estimate indispo : on tente quand même */ }
 
-        const ok = confirm(
-            `Télécharger la carte de cette zone pour usage hors-ligne ?\n\n`
-            + `Zoom ${minZ} → ${maxZ}\n`
-            + `Tuiles : ~${tileCount.toLocaleString('fr-FR')}\n`
-            + `Volume estimé : ~${mb < 1 ? '<1' : mb.toFixed(0)} Mo${quotaWarn}`
-        );
+        const ok = await confirmDialog({
+            title: 'Télécharger la carte de cette zone pour usage hors-ligne ?',
+            message: `Zoom ${minZ} → ${maxZ}\n`
+                + `Tuiles : ~${tileCount.toLocaleString('fr-FR')}\n`
+                + `Volume estimé : ~${mb < 1 ? '<1' : mb.toFixed(0)} Mo${quotaWarn}`,
+            confirmLabel: 'Télécharger',
+        });
         if (!ok) return;
         this._runAoiDownload(bbox, minZ, maxZ, templates, tileCount);
     },
@@ -232,7 +234,7 @@ export const AoiMethods = {
         // Un seul téléchargement AOI à la fois : sinon deux barres de progression
         // (même id DOM) se superposent et les requêtes de tuiles se cumulent.
         if (this._aoiDownloadBusy) {
-            alert('Un téléchargement de zone est déjà en cours. Attends la fin (ou annule-le) avant d\'en lancer un autre.');
+            toast('Un téléchargement de zone est déjà en cours. Attends la fin (ou annule-le) avant d\'en lancer un autre.', { kind: 'error' });
             return;
         }
         this._aoiDownloadBusy = true;

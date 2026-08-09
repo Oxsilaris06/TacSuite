@@ -25,6 +25,13 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+// R2-T2a : `alert()` → `toast(..., { kind: 'error' })` (`_takeScreenshot`,
+// planMap.js:5258-5291). Module mocké (survit à `vi.resetModules()` /
+// `loadCapture()` : la factory `vi.mock` reste enregistrée, seul le cache de
+// modules est vidé) plutôt que `vi.stubGlobal('alert', ...)`.
+const toastSpy = vi.hoisted(() => vi.fn());
+vi.mock('../../../src/shared/feedback.js', () => ({ toast: toastSpy }));
+
 import type { PlanMapInternal } from '../../../src/apps/pctac/planmap/types.js';
 
 // ---------------------------------------------------------------------------
@@ -106,6 +113,7 @@ afterEach(() => {
     document.body.innerHTML = '';
     vi.restoreAllMocks();
     vi.doUnmock('html2canvas');
+    toastSpy.mockClear();
 });
 
 describe('capture.ts — captureToDataUrl (planMap.js:5054-5241) — CONTRAT C2, 5 conditions null', () => {
@@ -231,45 +239,37 @@ describe('capture.ts — captureToDataUrl — finally (planMap.js:5227-5240)', (
 });
 
 describe('capture.ts — _takeScreenshot (planMap.js:5258-5291)', () => {
-    it('alerte et ne déclenche pas de capture si html2canvas est indisponible', async () => {
+    it('toast d\'erreur (R2-T2a, ex-alert()) et ne déclenche pas de capture si html2canvas est indisponible', async () => {
         const CaptureMethods = await loadCapture(undefined);
-        const alertSpy = vi.fn();
-        vi.stubGlobal('alert', alertSpy);
         const captureSpy = vi.fn();
         const fake = makeFakeThis({ map: {}, captureToDataUrl: captureSpy });
 
         await CaptureMethods._takeScreenshot.call(fake);
 
-        expect(alertSpy).toHaveBeenCalledWith('Librairie html2canvas indisponible (réseau ?)');
+        expect(toastSpy).toHaveBeenCalledWith('Librairie html2canvas indisponible (réseau ?)', { kind: 'error' });
         expect(captureSpy).not.toHaveBeenCalled();
     });
 
     it('ne fait rien (silencieux) si !this.map', async () => {
         const CaptureMethods = await loadCapture(vi.fn());
-        const alertSpy = vi.fn();
-        vi.stubGlobal('alert', alertSpy);
         const fake = makeFakeThis({ map: null });
 
         await CaptureMethods._takeScreenshot.call(fake);
 
-        expect(alertSpy).not.toHaveBeenCalled();
+        expect(toastSpy).not.toHaveBeenCalled();
     });
 
     it('ne fait rien (silencieux) si this._captureBusy — évite le mensonge "Capture impossible"', async () => {
         const CaptureMethods = await loadCapture(vi.fn());
-        const alertSpy = vi.fn();
-        vi.stubGlobal('alert', alertSpy);
         const fake = makeFakeThis({ map: {}, _captureBusy: true });
 
         await CaptureMethods._takeScreenshot.call(fake);
 
-        expect(alertSpy).not.toHaveBeenCalled();
+        expect(toastSpy).not.toHaveBeenCalled();
     });
 
-    it('alerte avec le message d\'erreur si captureToDataUrl() jette (catch e instanceof Error)', async () => {
+    it('toast d\'erreur (R2-T2a, ex-alert()) avec le message d\'erreur si captureToDataUrl() jette (catch e instanceof Error)', async () => {
         const CaptureMethods = await loadCapture(vi.fn());
-        const alertSpy = vi.fn();
-        vi.stubGlobal('alert', alertSpy);
         const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
         const fake = makeFakeThis({
             map: {},
@@ -278,20 +278,18 @@ describe('capture.ts — _takeScreenshot (planMap.js:5258-5291)', () => {
 
         await CaptureMethods._takeScreenshot.call(fake);
 
-        expect(alertSpy).toHaveBeenCalledWith('Erreur lors de la capture : kaboom');
+        expect(toastSpy).toHaveBeenCalledWith('Erreur lors de la capture : kaboom', { kind: 'error' });
         expect(errSpy).toHaveBeenCalled();
         errSpy.mockRestore();
     });
 
-    it('alerte "Capture impossible" si captureToDataUrl() résout null', async () => {
+    it('toast "Capture impossible" (R2-T2a, ex-alert()) si captureToDataUrl() résout null', async () => {
         const CaptureMethods = await loadCapture(vi.fn());
-        const alertSpy = vi.fn();
-        vi.stubGlobal('alert', alertSpy);
         const fake = makeFakeThis({ map: {}, captureToDataUrl: vi.fn().mockResolvedValue(null) });
 
         await CaptureMethods._takeScreenshot.call(fake);
 
-        expect(alertSpy).toHaveBeenCalledWith('Capture impossible (carte non initialisée ?)');
+        expect(toastSpy).toHaveBeenCalledWith('Capture impossible (carte non initialisée ?)', { kind: 'error' });
     });
 
     it('déclenche le téléchargement (lien <a download> cliqué) quand captureToDataUrl() résout un dataURL', async () => {

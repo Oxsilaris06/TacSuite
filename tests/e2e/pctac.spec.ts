@@ -149,14 +149,22 @@ async function step(name: string, fn: () => Promise<void>): Promise<void> {
   });
 }
 
+/**
+ * R2-T2a : les `confirm()`/`alert()` natifs de PC-Tac sont remplacés par
+ * `confirmDialog()`/`toast()` (`src/shared/feedback.ts`, `<dialog>` HTML
+ * injecté, PAS un dialogue navigateur natif) — `page.on('dialog')` ne les
+ * intercepte donc plus (cette API Playwright ne couvre QUE les vrais
+ * `alert()`/`confirm()`/`prompt()`/`beforeunload` du moteur). Chaque site
+ * d'appel qui ouvrait un `confirm()` bloquant est désormais cliqué
+ * explicitement via ce sélecteur stable (`data-tac-confirm="ok"`, posé par
+ * `confirmDialog()`), à l'endroit de chaque test concerné.
+ */
+async function clickConfirmDialogOk(page: Page): Promise<void> {
+  await page.locator('[data-tac-confirm="ok"]').click();
+}
+
 test.describe('PC-Tac — Checklist fonctionnelle (docs/recon-pctac.md §6)', () => {
   test.beforeEach(async ({ page }) => {
-    // P2.D pose de vrais `confirm()`/`alert()` natifs (deleteCollectionItem,
-    // import d'archive...) — sans accepteur, Playwright les auto-DISMISS par
-    // défaut (confirm() → false), ce qui bloquerait silencieusement toute
-    // action réellement câblée. Aucun test de cette suite n'attend une
-    // annulation de confirm().
-    page.on('dialog', (dialog) => { void dialog.accept(); });
     await gotoPctac(page);
   });
 
@@ -380,6 +388,9 @@ test.describe('PC-Tac — Checklist fonctionnelle (docs/recon-pctac.md §6)', ()
     await step(`${viewId} — suppression`, async () => {
       const row = page.locator(`#${tbodyId} tr`, { hasText: matchText });
       await row.locator('.delete-btn').click();
+      // R2-T2a : window.deleteCollectionItem ouvre désormais confirmDialog()
+      // (danger:true) au lieu de confirm() natif — clic explicite requis.
+      await clickConfirmDialogOk(page);
       await expect.soft(page.locator(`#${tbodyId} tr`, { hasText: matchText })).toHaveCount(0, {
         timeout: 1500,
       });
@@ -668,8 +679,9 @@ test.describe('PC-Tac — Checklist fonctionnelle (docs/recon-pctac.md §6)', ()
         await expect.poll(shapesCount, { timeout: 1500 }).toBe(0);
         await page.keyboard.press('Control+y');
         await expect.poll(shapesCount, { timeout: 1500 }).toBe(1);
-        // beforeEach câble page.on('dialog') → accept() : le confirm() natif de
-        // #plan_draw_clear est accepté automatiquement.
+        // R2-T2a (design-taste) : #plan_draw_clear n'ouvre plus de confirm()
+        // — action directe (déjà réversible par Ctrl+Z, _pushHistory() posé
+        // avant le vidage) + toast, donc aucun clic de confirmation à faire ici.
         await page.locator('#plan_draw_clear').click();
         await expect.poll(shapesCount, { timeout: 1500 }).toBe(0);
       });
@@ -883,6 +895,9 @@ test.describe('PC-Tac — Checklist fonctionnelle (docs/recon-pctac.md §6)', ()
         mimeType: 'application/zip',
         buffer,
       });
+      // R2-T2a : Archive.importFile ouvre désormais confirmDialog() (danger:true,
+      // « Les données actuelles seront remplacées. ») au lieu de confirm() natif.
+      await clickConfirmDialogOk(page);
       await expect
         .soft(page.locator('#logTable tbody tr', { hasText: 'Lieu Import ZIP E2E' }))
         .toBeVisible({ timeout: 3000 });

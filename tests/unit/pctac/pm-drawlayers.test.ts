@@ -10,6 +10,13 @@
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+// R2-T2a (design-taste) : le bouton "Effacer" n'ouvre plus de confirm() —
+// action directe (réversible par Ctrl+Z, _pushHistory() posé avant le vidage)
+// + toast de confirmation. Module mocké pour isoler le test du DOM réel
+// injecté par feedback.ts.
+const toastSpy = vi.hoisted(() => vi.fn());
+vi.mock('@shared/feedback.js', () => ({ toast: toastSpy }));
+
 import { DrawLayersMethods } from '../../../src/apps/pctac/planmap/draw-layers.js';
 import type { PlanMapInternal } from '../../../src/apps/pctac/planmap/types.js';
 
@@ -165,12 +172,10 @@ describe('_bindDrawUi (planMap.js:1829-1961)', () => {
         expect(state._setTool).toHaveBeenCalledTimes(1);
         expect(state._setTool).toHaveBeenCalledWith('line');
 
-        // Idem pour le bouton "Effacer" (confirm() mocké à true pour déclencher le handler).
-        vi.stubGlobal('confirm', vi.fn(() => true));
+        // Idem pour le bouton "Effacer" (R2-T2a : action directe, plus de confirm()).
         const clearBtn = document.getElementById('plan_draw_clear') as HTMLButtonElement;
         clearBtn.click();
         expect(state._pushHistory).toHaveBeenCalledTimes(1);
-        vi.unstubAllGlobals();
     });
 
     it('le bouton couleur appelle _setDrawColor avec la couleur data-color', () => {

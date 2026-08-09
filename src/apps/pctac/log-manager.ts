@@ -3,14 +3,14 @@
  * (Port de modules/pctac/logManager.js:139 LOC)
  *
  * Contrat : LogManagerContract (src/shared/types/contracts.ts:450-462)
- * Imports obligatoires (alias + .js) : @pctac/storage.js, @shared/persist.js, @pctac/config.js
+ * Imports obligatoires (alias + .js) : @pctac/storage.js, @shared/persist.js, @shared/feedback.js, @pctac/config.js
  *
  * Pièges critiques (logManager.js:107-112) :
  *   - importJson : paxMode recalculé D'ABORD (ligne 111), puis sert au repli couleur (ligne 117)
  *   - Ordre = correctif volontaire : historique des imports avait perdu les couleurs
  * - Déduplication des entrées importées par id (logManager.js:123-126)
  * - Historique des lieux : LRU max 30, insensible à la casse (logManager.js:64-73)
- * - addEntry : alert() + retour null en cas de refus (logManager.js:23-40)
+ * - addEntry : toast d'erreur (R2-T2a, ex-alert()) + retour null en cas de refus (logManager.js:23-40)
  * - window.LogManager = LogManager (logManager.js:139)
  */
 
@@ -24,6 +24,7 @@ import type {
 } from '@shared/types/contracts.js';
 import { Storage } from '@pctac/storage.js';
 import { Persist } from '@shared/persist.js';
+import { toast } from '@shared/feedback.js';
 import { FREE_MODE_COLORS, PDF_PAX_COLORS } from '@pctac/config.js';
 
 /**
@@ -38,7 +39,7 @@ export const LogManager: LogManagerContract = {
    * @param data Données du formulaire
    * @returns La nouvelle entrée créée, ou null si PAX/heure invalide
    *
-   * Comportement : valide mode+pax+heure, sinon alert() + retour null.
+   * Comportement : valide mode+pax+heure, sinon toast d'erreur (R2-T2a, ex-alert()) + retour null.
    */
   addEntry(data: PctacLogEntryInput): PctacLogEntry | null {
     const { mode, pax, freePax, paxColor, heure, lieu, remarques } = data;
@@ -50,7 +51,7 @@ export const LogManager: LogManagerContract = {
       paxName = pax;
       paxColorHex = '';
       if (!paxName) {
-        alert('Veuillez sélectionner un type de PAX.');
+        toast('Veuillez sélectionner un type de PAX.', { kind: 'error' });
         return null;
       }
     } else {
@@ -59,13 +60,13 @@ export const LogManager: LogManagerContract = {
       paxName = pax || (freePax || '').trim() || 'Pax Libre';
       paxColorHex = paxColor;
       if (!paxName) {
-        alert('Veuillez donner un nom à l\'intervenant.');
+        toast('Veuillez donner un nom à l\'intervenant.', { kind: 'error' });
         return null;
       }
     }
 
     if (!heure) {
-      alert('Veuillez renseigner l\'heure.');
+      toast('Veuillez renseigner l\'heure.', { kind: 'error' });
       return null;
     }
 

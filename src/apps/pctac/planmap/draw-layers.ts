@@ -59,6 +59,7 @@ import type {
 } from 'maplibre-gl';
 
 import type { LngLatObj, LngLatTuple, PlanMapInternal, PlanMapState } from './types.js';
+import { toast } from '@shared/feedback.js';
 
 export const DrawLayersMethods = {
     // planMap.js:1665-1827
@@ -274,11 +275,15 @@ export const DrawLayersMethods = {
         });
         const clearBtn = document.getElementById('plan_draw_clear');
         if (clearBtn) clearBtn.onclick = () => {
-            if (!confirm('Effacer tous les dessins ?')) return;
+            // R2-T2a (design-taste) : plus de confirm() bloquant — l'action est
+            // capturée par _pushHistory() AVANT le vidage, donc trivialement
+            // réversible par Ctrl+Z (_undo, cf. draw-tools.ts) : action directe
+            // + toast plutôt qu'une double confirmation redondante avec l'undo.
             this._pushHistory();
             this._saveShapes([]);
             this._renderShapes();
             this._refreshUndoRedoButtons();
+            toast('Dessins effacés — Ctrl+Z pour annuler.', { kind: 'success' });
         };
 
         const undoBtn = document.getElementById('plan_draw_undo');

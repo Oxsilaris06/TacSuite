@@ -85,6 +85,7 @@ import '@pctac/tchap-live.js'; // géoloc équipe live (Tchap) → marqueurs sur
 // en l'état, mis de côté. Ne pas réimporter sans décision explicite.
 import { Persist } from '@shared/persist.js';
 import { registerServiceWorker } from '@shared/register-sw.js';
+import { confirmDialog, toast } from '@shared/feedback.js';
 import {
     CUSTOM_PAX_KEY,
     ADVERSARIES_KEY,
@@ -194,13 +195,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         confirmCreatePaxBtn.onclick = () => {
             const name = (document.getElementById('new_pax_name') as HTMLInputElement).value.trim();
             const color = (document.getElementById('new_pax_color_val') as HTMLInputElement).value;
-            if (!name) { alert('Nom requis'); return; }
+            if (!name) { toast('Nom requis', { kind: 'error' }); return; }
             const list = Storage.loadCollection(CUSTOM_PAX_KEY);
             // Unicité de la couleur (garde au submit, en plus du blocage visuel :
             // l'état a pu changer pendant que la modale était ouverte).
             const taken = list.find((p) => p && p.color && String(p.color).toLowerCase() === String(color).toLowerCase());
             if (taken) {
-                alert(`Couleur déjà utilisée par « ${String(taken.name)} ». Choisis-en une autre.`);
+                toast(`Couleur déjà utilisée par « ${String(taken.name)} ». Choisis-en une autre.`, { kind: 'error' });
                 UI.refreshNewPaxPalette();
                 return;
             }
@@ -370,7 +371,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             const categorySelect = document.getElementById('photo_category') as HTMLSelectElement | null;
             const category = categorySelect ? categorySelect.value : 'other';
             const file = fileInput.files?.[0];
-            if (!title || !file) { alert('Titre et fichier requis'); return; }
+            if (!title || !file) { toast('Titre et fichier requis', { kind: 'error' }); return; }
 
             try {
                 const compressedData = await Utils.compressImage(file, 1024, 1024, 0.7);
@@ -384,7 +385,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 await UI.renderPhotos();
             } catch (err) {
                 console.error('Erreur de compression/sauvegarde:', err);
-                alert("Erreur lors de l'ajout de la photo.");
+                toast("Erreur lors de l'ajout de la photo.", { kind: 'error' });
             }
         });
     }
@@ -411,7 +412,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         v !== null && typeof v === 'object';
 
     window.deleteCollectionItem = async (key, id, viewId) => {
-        if (!confirm('Confirmer la suppression ?')) return;
+        const confirmed = await confirmDialog({
+            message: 'Confirmer la suppression ?',
+            confirmLabel: 'Supprimer',
+            danger: true,
+        });
+        if (!confirmed) return;
         const list = Storage.loadCollection(key).filter((item) => item.id !== id);
         Storage.saveCollection(key, list);
 
@@ -580,10 +586,10 @@ document.addEventListener('DOMContentLoaded', async () => {
                 UI.renderFriends();
                 await UI.renderPhotos();
                 if (window.PlanMap && window.PlanMap.initialized) window.PlanMap.refresh();
-                alert('Archive importée avec succès.');
+                toast('Archive importée avec succès.', { kind: 'success' });
             } catch (err) {
                 console.error('[Archive] import échec:', err);
-                alert("Erreur d'import : " + (err instanceof Error ? err.message : String(err)));
+                toast("Erreur d'import : " + (err instanceof Error ? err.message : String(err)), { kind: 'error' });
             } finally {
                 hideBusy();
             }
@@ -612,13 +618,14 @@ document.addEventListener('DOMContentLoaded', async () => {
                 if (res.advPhotos) parts.push(`${res.advPhotos} photo(s)`);
                 parts.push(`${res.paxAdded} intervenant(s)`);
                 const skipped = (res.advSkipped || 0) + (res.paxSkipped || 0);
-                alert(
+                toast(
                     `Passerelle OI → PC TAC : ${parts.join(', ')} importé(s) avec succès.`
-                    + (skipped ? `\n${skipped} doublon(s) déjà présent(s) ignoré(s).` : ''),
+                    + (skipped ? ` ${skipped} doublon(s) déjà présent(s) ignoré(s).` : ''),
+                    { kind: 'success' },
                 );
             } catch (err) {
                 console.error('[OI→PCTAC] import échec:', err);
-                alert('Import OI impossible : ' + (err instanceof Error ? err.message : String(err)));
+                toast('Import OI impossible : ' + (err instanceof Error ? err.message : String(err)), { kind: 'error' });
             } finally {
                 hideBusy();
             }

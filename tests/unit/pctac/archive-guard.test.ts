@@ -15,7 +15,7 @@
  * → rejet AVANT toute écriture localStorage/IndexedDB (aucun wipe partiel).
  */
 
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import JSZip from 'jszip';
 
 import { ADVERSARIES_KEY } from '@pctac/config.js';
@@ -44,6 +44,16 @@ vi.mock('@pctac/image-store.js', () => {
   };
 });
 
+// R2-T2a : `confirm()`/`alert()` natifs → `confirmDialog`/`toast`
+// (`@shared/feedback.js`, mocké). `confirmSpy` résout `true` par défaut
+// (équivalent de l'ancien `vi.stubGlobal('confirm', vi.fn(() => true))`).
+const confirmSpy = vi.hoisted(() => vi.fn(async () => true));
+const toastSpy = vi.hoisted(() => vi.fn());
+vi.mock('@shared/feedback.js', () => ({
+  confirmDialog: confirmSpy,
+  toast: toastSpy,
+}));
+
 import { Archive } from '@pctac/archive.js';
 import { ImageStore } from '@pctac/image-store.js';
 import { Storage } from '@pctac/storage.js';
@@ -68,12 +78,9 @@ async function buildZip(manifest: Record<string, unknown> | null, data: Record<s
 beforeEach(() => {
   localStorage.clear();
   imageStoreState.store.clear();
-  vi.stubGlobal('confirm', vi.fn(() => true));
-  vi.stubGlobal('alert', vi.fn());
-});
-
-afterEach(() => {
-  vi.unstubAllGlobals();
+  confirmSpy.mockClear();
+  confirmSpy.mockImplementation(async () => true);
+  toastSpy.mockClear();
 });
 
 describe('Archive.importFile — garde de sécurité manifest.appName (archive.js:140-147)', () => {

@@ -15,8 +15,11 @@
  * couverte par pm-geo.test.ts, ce paquet teste l'ORCHESTRATION AOI seule
  * (quota, invariant §5.10, index persisté, cadrage).
  *
- * `caches`/`fetch`/`alert`/`confirm` sont ABSENTS ou non implémentés sous
- * jsdom (SPEC-PCTAC-CONVERSION §8.4) : stubbés explicitement par test.
+ * `caches`/`fetch` sont ABSENTS ou non implémentés sous jsdom
+ * (SPEC-PCTAC-CONVERSION §8.4) : stubbés explicitement par test.
+ *
+ * R2-T2a : `alert()`/`confirm()` natifs → `toast()`/`confirmDialog()`
+ * (`@shared/feedback.js`, mocké). `confirmSpy` résout `true` par défaut.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -25,6 +28,10 @@ vi.mock('@pctac/planmap/tiles.js', () => ({
     estimateTileCount: vi.fn(),
     prefetchTiles: vi.fn(),
 }));
+
+const toastSpy = vi.hoisted(() => vi.fn());
+const confirmSpy = vi.hoisted(() => vi.fn(async () => true));
+vi.mock('@shared/feedback.js', () => ({ toast: toastSpy, confirmDialog: confirmSpy }));
 
 import { AoiMethods } from '@pctac/planmap/aoi.js';
 import { AOI_INDEX_KEY, AOI_MAX_TILES } from '@pctac/planmap/constants.js';
@@ -117,6 +124,7 @@ beforeEach(() => {
     styleTileTemplatesMock.mockReturnValue([]);
     estimateTileCountMock.mockReturnValue(0);
     prefetchTilesMock.mockResolvedValue({ total: 0, ok: 0, fail: 0, aborted: false });
+    confirmSpy.mockImplementation(async () => true);
     localStorage.clear();
     document.body.innerHTML = '';
 });
@@ -141,7 +149,6 @@ describe('smoke — les 5 méthodes ne jettent pas sans DOM (vue Plan jamais ouv
 
     it('_confirmAoi (aucune source cartographique)', async () => {
         const state = makeFakeState(null);
-        vi.stubGlobal('alert', vi.fn());
         await expect(AoiMethods._confirmAoi.call(state, makeBbox())).resolves.toBeUndefined();
     });
 
@@ -221,16 +228,14 @@ describe('_startAoiFraming (planMap.js:5307-5380) puis _endAoiFraming (planMap.j
         expect(hintRemoveSpy).toHaveBeenCalledWith('click', hintAddSpy.mock.calls[0]?.[1]);
     });
 
-    it('alerte et ne fait rien si Cache Storage est absent (message d\'origine inchangé)', () => {
+    it('toast d\'erreur (R2-T2a, ex-alert()) et ne fait rien si Cache Storage est absent (message d\'origine inchangé)', () => {
         vi.stubGlobal('caches', undefined);
         const map = makeFakeMap();
         const state = makeFakeState(map);
-        const alertSpy = vi.fn();
-        vi.stubGlobal('alert', alertSpy);
 
         AoiMethods._startAoiFraming.call(state);
 
-        expect(alertSpy).toHaveBeenCalledWith('Cache hors-ligne indisponible sur ce navigateur (Cache Storage absent).');
+        expect(toastSpy).toHaveBeenCalledWith('Cache hors-ligne indisponible sur ce navigateur (Cache Storage absent).', { kind: 'error' });
         expect(state._aoiFraming).toBe(false);
         expect(map.on).not.toHaveBeenCalled();
     });
@@ -271,68 +276,61 @@ describe('_startAoiFraming (planMap.js:5307-5380) puis _endAoiFraming (planMap.j
 });
 
 describe('_confirmAoi (planMap.js:5414-5451) — quota et confirmation', () => {
-    it('alerte "Aucune source cartographique disponible." et ne lance rien si styleTileTemplates() est vide', async () => {
+    it('toast d\'erreur "Aucune source cartographique disponible." (R2-T2a, ex-alert()) et ne lance rien si styleTileTemplates() est vide', async () => {
         const state = makeFakeState(null);
         styleTileTemplatesMock.mockReturnValue([]);
-        const alertSpy = vi.fn();
-        vi.stubGlobal('alert', alertSpy);
 
         await AoiMethods._confirmAoi.call(state, makeBbox());
 
-        expect(alertSpy).toHaveBeenCalledWith('Aucune source cartographique disponible.');
+        expect(toastSpy).toHaveBeenCalledWith('Aucune source cartographique disponible.', { kind: 'error' });
         expect(state._runAoiDownload).not.toHaveBeenCalled();
     });
 
-    it('alerte "Zone hors couverture des sources cartographiques." si l\'estimation vaut 0', async () => {
+    it('toast d\'erreur "Zone hors couverture des sources cartographiques." (R2-T2a, ex-alert()) si l\'estimation vaut 0', async () => {
         const state = makeFakeState(null);
         styleTileTemplatesMock.mockReturnValue([makeTemplate()]);
         estimateTileCountMock.mockReturnValue(0);
-        const alertSpy = vi.fn();
-        vi.stubGlobal('alert', alertSpy);
 
         await AoiMethods._confirmAoi.call(state, makeBbox());
 
-        expect(alertSpy).toHaveBeenCalledWith('Zone hors couverture des sources cartographiques.');
+        expect(toastSpy).toHaveBeenCalledWith('Zone hors couverture des sources cartographiques.', { kind: 'error' });
         expect(state._runAoiDownload).not.toHaveBeenCalled();
     });
 
-    it('refuse le téléchargement si l\'estimation dépasse AOI_MAX_TILES, avec le message d\'origine INCHANGÉ', async () => {
+    it('refuse le téléchargement si l\'estimation dépasse AOI_MAX_TILES, avec le message d\'origine INCHANGÉ (R2-T2a : toast d\'erreur, ex-alert())', async () => {
         const state = makeFakeState(null);
         const templates = [makeTemplate()];
         styleTileTemplatesMock.mockReturnValue(templates);
         const overCount = AOI_MAX_TILES + 1;
         estimateTileCountMock.mockReturnValue(overCount);
-        const alertSpy = vi.fn();
-        vi.stubGlobal('alert', alertSpy);
 
         await AoiMethods._confirmAoi.call(state, makeBbox());
 
-        expect(alertSpy).toHaveBeenCalledWith(
-            `Zone trop vaste : ${overCount.toLocaleString('fr-FR')} tuiles (max ${AOI_MAX_TILES.toLocaleString('fr-FR')}).\n`
-            + 'Réduis l\'emprise ou refais un rectangle plus petit.'
+        expect(toastSpy).toHaveBeenCalledWith(
+            `Zone trop vaste : ${overCount.toLocaleString('fr-FR')} tuiles (max ${AOI_MAX_TILES.toLocaleString('fr-FR')}). `
+            + 'Réduis l\'emprise ou refais un rectangle plus petit.',
+            { kind: 'error' },
         );
         expect(state._runAoiDownload).not.toHaveBeenCalled();
     });
 
-    it('n\'appelle pas _runAoiDownload si l\'utilisateur refuse la boîte de confirmation', async () => {
+    it('n\'appelle pas _runAoiDownload si l\'utilisateur refuse la boîte de confirmation (confirmDialog, R2-T2a ex-confirm())', async () => {
         const state = makeFakeState(null);
         styleTileTemplatesMock.mockReturnValue([makeTemplate()]);
         estimateTileCountMock.mockReturnValue(500);
-        vi.stubGlobal('alert', vi.fn());
-        vi.stubGlobal('confirm', vi.fn(() => false));
+        confirmSpy.mockImplementation(async () => false);
 
         await AoiMethods._confirmAoi.call(state, makeBbox());
 
         expect(state._runAoiDownload).not.toHaveBeenCalled();
     });
 
-    it('lance _runAoiDownload(bbox, AOI_MIN_Z, AOI_MAX_Z, templates, tileCount) si l\'utilisateur confirme', async () => {
+    it('lance _runAoiDownload(bbox, AOI_MIN_Z, AOI_MAX_Z, templates, tileCount) si l\'utilisateur confirme (confirmDialog, R2-T2a ex-confirm())', async () => {
         const state = makeFakeState(null);
         const templates = [makeTemplate()];
         styleTileTemplatesMock.mockReturnValue(templates);
         estimateTileCountMock.mockReturnValue(500);
-        vi.stubGlobal('alert', vi.fn());
-        vi.stubGlobal('confirm', vi.fn(() => true));
+        confirmSpy.mockImplementation(async () => true);
         const bbox = makeBbox();
 
         await AoiMethods._confirmAoi.call(state, bbox);
@@ -342,16 +340,15 @@ describe('_confirmAoi (planMap.js:5414-5451) — quota et confirmation', () => {
 });
 
 describe('_runAoiDownload (planMap.js:5454-5505) — invariant §5.10 : _aoiDownloadBusy sur les 4 chemins de sortie', () => {
-    it('refuse un second téléchargement si _aoiDownloadBusy est déjà true, avec le message d\'origine INCHANGÉ', async () => {
+    it('refuse un second téléchargement si _aoiDownloadBusy est déjà true, avec le message d\'origine INCHANGÉ (R2-T2a : toast d\'erreur, ex-alert())', async () => {
         const state = makeFakeState(null);
         state._aoiDownloadBusy = true;
-        const alertSpy = vi.fn();
-        vi.stubGlobal('alert', alertSpy);
 
         await AoiMethods._runAoiDownload.call(state, makeBbox(), 13, 18, [], 10);
 
-        expect(alertSpy).toHaveBeenCalledWith(
-            'Un téléchargement de zone est déjà en cours. Attends la fin (ou annule-le) avant d\'en lancer un autre.'
+        expect(toastSpy).toHaveBeenCalledWith(
+            'Un téléchargement de zone est déjà en cours. Attends la fin (ou annule-le) avant d\'en lancer un autre.',
+            { kind: 'error' },
         );
         expect(prefetchTilesMock).not.toHaveBeenCalled();
     });

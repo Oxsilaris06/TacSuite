@@ -44,6 +44,7 @@
 
 import { Storage } from '@pctac/storage.js';
 import { ADVERSARIES_KEY, FRIENDS_KEY, HOSTAGES_KEY, PIN_ICONS, suggestPinIcons } from '@pctac/config.js';
+import { toast } from '@shared/feedback.js';
 
 import { ENTITY_COLORS } from './constants.js';
 import type { PlanEntityKind, PlanMapInternal } from './types.js';
@@ -260,7 +261,7 @@ export const PingModalMethods = {
         const isVehicle = (document.getElementById('free_pin_is_vehicle') as HTMLInputElement | null)?.checked;
         if (isVehicle) kind = 'Vehicule';
         const icon = ((document.getElementById('free_pin_icon') as HTMLInputElement | null)?.value || '').trim();
-        if (!label) return alert('Libellé requis');
+        if (!label) { toast('Libellé requis', { kind: 'error' }); return; }
         this.pendingEntityPin = null;
         this.pendingFreePin = { label, color, kind, icon };
         this._closePingModal();

@@ -37,6 +37,10 @@ vi.mock('@pctac/planmap/tiles.js', () => ({
     prefetchFranceTiles: vi.fn(),
 }));
 
+// R2-T2a : `alert()` → `toast(..., { kind: 'error' })` (`_enable3D`).
+const toastSpy = vi.hoisted(() => vi.fn());
+vi.mock('@shared/feedback.js', () => ({ toast: toastSpy }));
+
 import { VIEW_KEY } from '../../../src/apps/pctac/planmap/constants.js';
 import { MapCoreMethods } from '../../../src/apps/pctac/planmap/map-core.js';
 import { prefetchFranceTiles } from '../../../src/apps/pctac/planmap/tiles.js';
@@ -537,8 +541,7 @@ describe('smoke — méthodes restantes de map-core.ts', () => {
         expect(map.once).toHaveBeenCalledWith('idle', expect.any(Function));
     });
 
-    it('_enable3D() : setTerrain qui jette ⇒ alerte et sort sans activer is3D', () => {
-        vi.stubGlobal('alert', vi.fn());
+    it('_enable3D() : setTerrain qui jette ⇒ toast d\'erreur (R2-T2a, ex-alert()) et sort sans activer is3D', () => {
         const map = makeFakeMap({ setTerrain: vi.fn(() => { throw new Error('DEM indisponible'); }) });
         const fake = makeFakeThis({ map, is3D: false });
 

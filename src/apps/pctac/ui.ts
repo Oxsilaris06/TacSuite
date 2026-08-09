@@ -68,6 +68,7 @@ import { Storage } from '@pctac/storage.js';
 import { ImageStore } from '@pctac/image-store.js';
 import { LogManager } from '@pctac/log-manager.js';
 import { esc } from '@shared/ui-platform.js';
+import { confirmDialog } from '@shared/feedback.js';
 
 // Écart signalé en tête de fichier : remplace la propriété dynamique
 // `this._logDndBound` (ui.js:246, 249), absente de UIContract.
@@ -261,8 +262,13 @@ export const UI: UIContract = {
    * Supprime un intervenant personnalisé
    * ui.js:180-186
    */
-  deleteCustomPax(id: string): void {
-    if (!confirm('Supprimer cet intervenant ?')) return;
+  async deleteCustomPax(id: string): Promise<void> {
+    const confirmed = await confirmDialog({
+      message: 'Supprimer cet intervenant ?',
+      confirmLabel: 'Supprimer',
+      danger: true,
+    });
+    if (!confirmed) return;
     const list = Storage.loadCollection('pcTacCustomPax');
     const newList = list.filter((p) => p.id !== id);
     Storage.saveCollection('pcTacCustomPax', newList);

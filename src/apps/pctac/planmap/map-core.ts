@@ -61,6 +61,7 @@ import type {
 import { RASTER_STYLE, VIEW_KEY } from './constants.js';
 import { prefetchFranceTiles } from './tiles.js';
 import type { PlanMapInternal, PlanView } from './types.js';
+import { toast } from '@shared/feedback.js';
 
 export const MapCoreMethods = {
     // planMap.js:342-415
@@ -236,7 +237,7 @@ export const MapCoreMethods = {
             map.setTerrain({ source: 'terrain-dem', exaggeration: 1.4 });
         } catch (e) {
             console.error('[PlanMap] setTerrain échec:', e);
-            alert('Relief 3D indisponible (réseau ?). Les tuiles d\'élévation AWS sont peut-être bloquées.');
+            toast('Relief 3D indisponible (réseau ?). Les tuiles d\'élévation AWS sont peut-être bloquées.', { kind: 'error' });
             return;
         }
         // Ciel atmosphérique (si supporté par la version MapLibre)
