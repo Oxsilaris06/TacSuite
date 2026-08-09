@@ -235,6 +235,10 @@ body.up-kb-open .up-kb-aware {
             --accent-blue: #4f8dff;
             --accent-hover: #74a6ff;
             --accent-glow: rgba(79, 141, 255, 0.28);
+            /* Fond des surfaces remplies à texte blanc (boutons actifs/sélectionnés) —
+               distinct de --accent-blue (bordures/focus/textes) car #4f8dff sur blanc
+               ne fait que 3.19:1 (< 4.5:1 AA). #2563eb sur blanc = 5.17:1 (AA OK). */
+            --accent-fill: #2563eb;
 
             --moicp-zmspcp-purple: #7c6ce0;
             /* AMBRE = otages / civils (hors des 3 sémantiques) */
@@ -366,6 +370,8 @@ body.up-kb-open .up-kb-aware {
             --accent-blue: #1d63d6;
             --accent-hover: #1751b5;
             --accent-glow: rgba(29, 99, 214, 0.16);
+            /* Thème clair : déjà conforme (5.51:1 sur blanc), même valeur que --accent-blue. */
+            --accent-fill: #1d63d6;
 
             --danger-red: #c8344a;
             --danger-hover: #a8283b;
@@ -623,7 +629,7 @@ body.up-kb-open .up-kb-aware {
 
         .wizard-progress-step.active {
             color: #fff;
-            background-color: var(--accent-blue);
+            background-color: var(--accent-fill);
             border-color: var(--accent-blue);
             box-shadow: 0 2px 10px var(--accent-glow);
             font-weight: 600;
@@ -886,7 +892,7 @@ body.up-kb-open .up-kb-aware {
         }
 
         #nextBtn {
-            background-color: var(--accent-blue);
+            background-color: var(--accent-fill);
             color: white;
             box-shadow: 0 4px 12px var(--accent-glow), var(--inner-glow);
         }
@@ -1145,7 +1151,7 @@ body.up-kb-open .up-kb-aware {
         }
 
         .chip-btn.selected {
-            background-color: var(--accent-blue);
+            background-color: var(--accent-fill);
             color: #fff;
             border-color: var(--accent-blue);
             box-shadow: 0 2px 8px var(--accent-glow);
@@ -1189,7 +1195,7 @@ body.up-kb-open .up-kb-aware {
         /* PROPOSITION 4 — Déplacement en lot (batch) */
         .patrac-batch-controls { margin-block: var(--space-3); }
         #patracBatchToggleBtn.active {
-            background-color: var(--accent-blue);
+            background-color: var(--accent-fill);
             color: #fff;
             border-color: var(--accent-blue);
         }
@@ -1456,7 +1462,7 @@ body.up-kb-open .up-kb-aware {
         }
 
         .image-preview-item .add-btn:hover {
-            background: var(--accent-blue);
+            background: var(--accent-fill);
             color: white;
         }
 
@@ -1830,7 +1836,7 @@ body.up-kb-open .up-kb-aware {
             align-items: center;
             justify-content: center;
             border-radius: 50%;
-            background: var(--accent-blue);
+            background: var(--accent-fill);
             color: white;
             font-weight: 700;
             font-family: 'Oswald', sans-serif;
@@ -1880,7 +1886,7 @@ body.up-kb-open .up-kb-aware {
             align-items: center;
             justify-content: center;
             border-radius: 50%;
-            background: var(--accent-blue);
+            background: var(--accent-fill);
             color: white;
             font-weight: 700;
             font-family: 'Oswald', sans-serif;
@@ -2125,7 +2131,7 @@ body.up-kb-open .up-kb-aware {
         }
 
         .btn-save {
-            background: var(--accent-blue);
+            background: var(--accent-fill);
             border: none;
             color: white;
             box-shadow: 0 4px 12px rgba(47, 129, 247, 0.3);
@@ -2236,7 +2242,7 @@ body.up-kb-open .up-kb-aware {
             background: var(--bg-interactive);
         }
         .quick-edit-btn.selected {
-            background-color: var(--accent-blue);
+            background-color: var(--accent-fill);
             color: #fff;
             border-color: var(--accent-blue);
             box-shadow: 0 2px 8px var(--accent-glow);
@@ -2308,7 +2314,7 @@ body.up-kb-open .up-kb-aware {
         }
 
         .annotation-toolbar .tool-btn.active {
-            background: var(--accent-blue) !important;
+            background: var(--accent-fill) !important;
             color: #ffffff !important;
             border-color: var(--accent-blue) !important;
             box-shadow: 0 0 0 3px var(--accent-glow);
@@ -2580,7 +2586,7 @@ body.up-kb-open .up-kb-aware {
         }
 
         .tool-btn.active {
-            background: var(--accent-blue) !important;
+            background: var(--accent-fill) !important;
             color: white !important;
             box-shadow: 0 4px 15px rgba(59, 130, 246, 0.4);
             border-color: transparent !important;
@@ -2759,7 +2765,7 @@ body.up-kb-open .up-kb-aware {
                 color: #e4e4e7 !important;
             }
             #annotationModal .modal-header #annotation_save_header {
-                background: var(--accent-blue) !important;
+                background: var(--accent-fill) !important;
                 border: 1px solid var(--accent-blue) !important;
                 color: #fff !important;
                 box-shadow: 0 4px 18px rgba(59,130,246,0.45);
@@ -2867,7 +2873,7 @@ body.up-kb-open .up-kb-aware {
             }
             #dock-left .tool-btn:active { transform: scale(0.92) !important; }
             #dock-left .tool-btn.active {
-                background: var(--accent-blue) !important;
+                background: var(--accent-fill) !important;
                 color: #fff !important;
                 border-color: var(--accent-blue) !important;
                 box-shadow: 0 4px 16px rgba(59,130,246,0.5) !important;
@@ -3249,7 +3255,7 @@ body.up-kb-open .up-kb-aware {
             width: auto !important;
         }
         .pdf-format-track button.active {
-            background: var(--accent-blue);
+            background: var(--accent-fill);
             color: white;
             box-shadow: 0 2px 8px rgba(59,130,246,0.4);
         }
@@ -3757,7 +3763,7 @@ body.up-kb-open .up-kb-aware {
         }
 
         .oi-carto-fab.active {
-            background: var(--accent-blue);
+            background: var(--accent-fill);
             color: #fff;
         }
 
@@ -3881,7 +3887,7 @@ body.up-kb-open .up-kb-aware {
             transform: translateX(-50%);
             z-index: 13;
             display: none;
-            background: var(--accent-blue);
+            background: var(--accent-fill);
             color: #fff;
             padding: var(--space-2) var(--space-4);
             border-radius: var(--radius-sm);

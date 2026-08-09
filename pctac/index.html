@@ -840,6 +840,16 @@
 
     <!-- Tutoriel interactif -->
 
+    <!-- Overlay de chargement générique (export PDF, export/import archive, capture carte) —
+         piloté par src/apps/pctac/busy.ts (showBusy/hideBusy). Pattern repris de
+         l'OI (#pdfLoadingModal, oi/index.html:972). -->
+    <div id="pctacBusyOverlay" role="status" aria-live="polite">
+        <div class="pctac-busy-card">
+            <div class="pctac-busy-spinner"></div>
+            <div id="pctacBusyMessage">Chargement…</div>
+        </div>
+    </div>
+
     <script type="module" src="/src/apps/pctac/main.ts"></script>
 </body>
 

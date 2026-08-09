@@ -219,6 +219,10 @@ body.up-kb-open .up-kb-aware {
             --accent-blue: #4f8dff;
             --accent-glow: rgba(79, 141, 255, 0.28);
             --accent-hover: #74a6ff;
+            /* Fond des surfaces remplies à texte blanc (boutons actifs/sélectionnés) —
+               distinct de --accent-blue (bordures/focus/textes) car #4f8dff sur blanc
+               ne fait que 3.19:1 (< 4.5:1 AA). #2563eb sur blanc = 5.17:1 (AA OK). */
+            --accent-fill: #2563eb;
             --text-main: #f0f0f1;
             --text-muted: #8a8a91;
 
@@ -340,6 +344,8 @@ body.up-kb-open .up-kb-aware {
             --accent-blue: #1d63d6;
             --accent-hover: #1751b5;
             --accent-glow: rgba(29, 99, 214, 0.16);
+            /* Thème clair : déjà conforme (5.51:1 sur blanc), même valeur que --accent-blue. */
+            --accent-fill: #1d63d6;
             --danger-red: #c8344a;
             --civil-yellow: #8f6109;
             --inter-blue: #1d63d6;
@@ -396,7 +402,7 @@ body.up-kb-open .up-kb-aware {
         }
 
         body.light-mode .tab-btn.active {
-            background: var(--accent-blue);
+            background: var(--accent-fill);
             color: #fff !important;
         }
 
@@ -495,7 +501,7 @@ body.up-kb-open .up-kb-aware {
         }
 
         .tab-btn.active {
-            background: var(--accent-blue);
+            background: var(--accent-fill);
             color: white;
             box-shadow: 0 0 15px rgba(52, 152, 219, 0.4);
         }
@@ -699,7 +705,7 @@ body.up-kb-open .up-kb-aware {
         }
 
         .add-btn {
-            background: var(--accent-blue);
+            background: var(--accent-fill);
             color: white;
             width: 100%;
             border: none;
@@ -711,13 +717,13 @@ body.up-kb-open .up-kb-aware {
         }
 
         .mode-toggle-btn.active {
-            background: var(--accent-blue);
+            background: var(--accent-fill);
             color: white;
             border-color: var(--accent-blue);
         }
 
         .add-log-btn {
-            background: var(--accent-blue);
+            background: var(--accent-fill);
             color: white;
             width: 100%;
             padding: 12px;
@@ -1392,7 +1398,7 @@ body.up-kb-open .up-kb-aware {
         }
 
         .plan-tool-fab.active {
-            background: var(--accent-blue);
+            background: var(--accent-fill);
             color: #fff;
         }
 
@@ -1745,4 +1751,49 @@ body.up-kb-open .up-kb-aware {
                 .tl-op-follow { flex: 0 0 auto; appearance: none; border: 1px solid var(--border-glass); background: var(--bg-input); color: var(--text-muted); border-radius: 6px; width: 28px; height: 24px; cursor: pointer; }
                 .tl-op-follow.on { color: #fff; border-color: var(--inter-blue, #4f8dff); background: var(--inter-blue, #4f8dff); }
                 .tl-empty { color: var(--text-muted); font-size: .8em; padding: 6px 0; }
+
+/* ---------------------------------------------------------------------------
+ * AJOUT (indicateurs de chargement PC-Tac) — overlay busy générique, pendant
+ * de #pdfLoadingModal / .pdf-spinner côté OI (styles/oi.css:3573-3611).
+ * Visibilité pilotée en style.display inline par src/apps/pctac/busy.ts
+ * (showBusy/hideBusy) ; l'animation du spinner est déjà neutralisée par le
+ * bloc prefers-reduced-motion partagé plus haut dans ce fichier (T14).
+ * ------------------------------------------------------------------------- */
+#pctacBusyOverlay {
+    display: none;
+    position: fixed;
+    top: 0; left: 0; width: 100%; height: 100%;
+    background: rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(10px);
+    z-index: var(--z-top, 3000);
+    align-items: center; justify-content: center;
+    flex-direction: column;
+    color: var(--text-main);
+    transition: all 0.3s ease;
+}
+.pctac-busy-card {
+    background: var(--bg-container);
+    border: 1px solid var(--border-light);
+    padding: 40px;
+    border-radius: var(--radius-lg);
+    text-align: center;
+    box-shadow: var(--shadow-float);
+    max-width: 350px; width: 85%;
+    display: flex; flex-direction: column; align-items: center; gap: 20px;
+}
+.pctac-busy-spinner {
+    width: 60px; height: 60px;
+    border: 5px solid rgba(255, 255, 255, 0.05);
+    border-top: 5px solid var(--accent-blue);
+    border-radius: 50%;
+    animation: pctac-busy-spin 0.8s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+@keyframes pctac-busy-spin { to { transform: rotate(360deg); } }
+#pctacBusyMessage {
+    font-family: var(--font-data);
+    font-size: 0.95em;
+    color: var(--accent-blue);
+    font-weight: bold;
+    min-height: 1.5em;
+}
 

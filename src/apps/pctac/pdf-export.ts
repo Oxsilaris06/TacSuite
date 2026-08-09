@@ -33,6 +33,7 @@ import * as PDFLib from 'pdf-lib';
 import { Storage } from '@pctac/storage.js';
 import { ImageStore } from '@pctac/image-store.js';
 import { PDF_PAX_COLORS, PHOTO_CATEGORIES, FREE_MODE_COLORS } from '@pctac/config.js';
+import { showBusy, hideBusy } from '@pctac/busy.js';
 import type { PdfExportContract, PlanMapPinSummary } from '@shared/types/contracts.js';
 
 // FREE_MODE_COLORS : importé pour fidélité avec l'import original (pdfExport.js:3),
@@ -171,6 +172,7 @@ interface PdfExportContext {
 
 export const PdfExport: PdfExportContract = {
     async buildPdf(): Promise<void> {
+        showBusy('Génération du PDF…');
         try {
             // pdfExport.js:97-99 — en ESM le namespace importé n'est jamais `undefined` ;
             // on vérifie donc la présence réelle de la classe utilisée, message inchangé.
@@ -646,6 +648,8 @@ export const PdfExport: PdfExportContract = {
             console.error("PDF Export Critical Error:", e);
             const detail: unknown = (e && typeof e === 'object' && 'message' in e) ? (e as { message: unknown }).message : e;
             alert("Erreur lors de la génération du PDF :\n\n" + String(detail));
+        } finally {
+            hideBusy();
         }
     }
 };

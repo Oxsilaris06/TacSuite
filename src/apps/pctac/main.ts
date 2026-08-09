@@ -76,6 +76,7 @@ import { Storage } from '@pctac/storage.js';
 import { UI } from '@pctac/ui.js';
 import { LogManager } from '@pctac/log-manager.js';
 import { PdfExport } from '@pctac/pdf-export.js';
+import { showBusy, hideBusy } from '@pctac/busy.js';
 import { Utils } from '@pctac/utils.js';
 import { ImageStore } from '@pctac/image-store.js';
 import '@pctac/planmap/index.js'; // expose window.PlanMap (utilisé par UI.switchMainView)
@@ -553,7 +554,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     const { Archive } = await import('@pctac/archive.js');
 
     const exportArchiveBtn = document.getElementById('exportJsonDockBtn');
-    if (exportArchiveBtn) exportArchiveBtn.onclick = () => { void Archive.exportZip(); };
+    if (exportArchiveBtn) exportArchiveBtn.onclick = () => {
+        showBusy("Export de l'archive…");
+        void Archive.exportZip().finally(hideBusy);
+    };
 
     const importArchiveBtn = document.getElementById('importJsonDockBtn');
     const archiveFileInput = document.getElementById('archiveImportInput') as HTMLInputElement | null;
@@ -562,6 +566,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         archiveFileInput.onchange = async (e) => {
             const file = (e.target as HTMLInputElement).files?.[0];
             if (!file) return;
+            showBusy("Import de l'archive…");
             try {
                 const res = await Archive.importFile(file);
                 if ('cancelled' in res && res.cancelled) {
@@ -579,6 +584,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             } catch (err) {
                 console.error('[Archive] import échec:', err);
                 alert("Erreur d'import : " + (err instanceof Error ? err.message : String(err)));
+            } finally {
+                hideBusy();
             }
             archiveFileInput.value = '';
         };
@@ -594,6 +601,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         oiFileInput.onchange = async (e) => {
             const file = (e.target as HTMLInputElement).files?.[0];
             if (!file) return;
+            showBusy('Import de la passerelle OI…');
             try {
                 const res = await Archive.importOiArchive(file);
                 await UI.renderAdversaries();
@@ -611,6 +619,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             } catch (err) {
                 console.error('[OI→PCTAC] import échec:', err);
                 alert('Import OI impossible : ' + (err instanceof Error ? err.message : String(err)));
+            } finally {
+                hideBusy();
             }
             oiFileInput.value = '';
         };

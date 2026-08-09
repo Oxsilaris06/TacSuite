@@ -53,6 +53,7 @@
 import maplibregl from 'maplibre-gl';
 
 import { escHtml } from './constants.js';
+import { showBusy, hideBusy } from '@pctac/busy.js';
 import type { PlanMapInternal } from './types.js';
 
 /** Résultat Nominatim (endpoint `/search`) — seuls les champs lus par `_searchAddress`. */
@@ -89,7 +90,12 @@ export const ChromeMethods = {
         if (btn3d) btn3d.onclick = () => this._toggle3D();
 
         const captureBtn = document.getElementById('plan_btn_capture');
-        if (captureBtn) captureBtn.onclick = () => this._takeScreenshot();
+        // Indicateur de chargement autour du SEUL appel (pas de la logique de capture
+        // elle-même, cf. src/apps/pctac/planmap/capture.ts — fichier verbatim sensible).
+        if (captureBtn) captureBtn.onclick = () => {
+            showBusy('Capture de la carte…');
+            void this._takeScreenshot().finally(hideBusy);
+        };
 
         const pingBtn = document.getElementById('plan_btn_ping');
         if (pingBtn) pingBtn.onclick = () => {
