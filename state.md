@@ -33,6 +33,8 @@ Spec détaillée : `docs/superpowers/specs/2026-08-09-tacsuite-roadmap-design.md
 - **R0 livré** (a968dd9) : ci.yml (gate PDF long-case 19/19), e2e.yml nightly (build + vite preview), `npm run check`, fixture `volumetric-stress.json` (56 photos, textes 2000+ car.). Diagnostic R4 : PDF 70 pages, 13/19 gardes — B1/B7/B9/B10/B11 KO sur continuations tableau Hypothèses d'Effraction (16 pages en-tête orphelin, 8 pages sans « (suite) »).
 - Vérification globale : typecheck 0, lint 0, vitest 62 fichiers / 1688 tests verts. Servi sur localhost:9678.
 - Graphe graphify mis à jour incrémentalement (52 code + 27 docs, skills IDE et images exclus du corpus).
+- **R1 noyau livré** : T1 socle tokens (e269c99), T2 pctac (d19568b), T3 oi (04dde70), T4 purge inline pctac 195/230 (ea8d703), T5 purge inline oi 123/162 (f0fc194), gate portail + fix colorScheme Playwright (c574e4f). Re-baseline post-QW (a328231), bleu #4f8dff rétabli (3992fa5).
+- **Remarques thème clair Nico livrées** : PC-Tac Liens pastel + copy « Liens Externes » + footer (c549cfe) ; OI modales (racine : rgba sombres en dur dans .modal-header → color-mix sur tokens), Créer Adversaire pastel, accents étape 6, bouton annotation photo (25913ad). Sombre bit-exact, baselines clairs re-promues.
 - Rien poussé sur GitHub.
 
 ## Dérogations actées
@@ -42,4 +44,5 @@ Spec détaillée : `docs/superpowers/specs/2026-08-09-tacsuite-roadmap-design.md
 ## Blocages / questions ouvertes
 
 - ~~Portail sans gate visuel~~ → réglé (c574e4f) : états `portal`/`portal-light`, masque #net-status, colorScheme dark forcé.
-- Décisions Nico en attente : (1) alternative AA texte sombre sur #4f8dff — appliquer ou non ; (2) `--inter-blue` même sujet ; (3) tranche « normalisation des valeurs hors échelle » (rayons 13/14/18/24px, durées 0.06–0.8s, ~140 littéraux pctac + ~90 oi) = changements visuels volontaires avec re-baseline — lancer ou différer.
+- Décisions Nico (2026-08-09) : (1) alternative AA texte sombre — REFUSÉE, on ne touche à rien ; (2) `--inter-blue` — NE PAS MODIFIER ; (3) normalisation hors échelle — DIFFÉRÉE (explications jugées insuffisantes ; à représenter avec démonstration visuelle avant/après quand pertinent).
+- Directive thème clair (Nico) : fond blanc, accentuations PASTELS, code couleur des éléments particuliers identique au mode sombre (hue conservée, saturation/luminosité adaptées).
