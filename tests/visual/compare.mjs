@@ -30,6 +30,39 @@
  * thème ne change que des couleurs, aucune propriété de layout (vérifié
  * dans `oi-baseline-light/README.md`).
  *
+ * `portal`/`portal-light` : couvre la page de garde (`/`, `index.html`
+ * racine), seule app encore hors gate visuel. Un unique état par config
+ * (« vue initiale », rien à cliquer côté navigation — page statique sans
+ * onglets) : `portal` capture le thème PAR DÉFAUT (sombre, cf.
+ * `styles/portal.css` — `:root`/`:root[data-theme='dark']` partagent la
+ * même palette, le clair n'intervenant QUE via `@media
+ * (prefers-color-scheme: light)` si `data-theme` est absent, ou via
+ * `data-theme='light'` explicite) ; `portal-light` bascule par clic réel
+ * sur `#theme-toggle` (`src/apps/portal/main.ts` → `applyTheme()`, clé de
+ * persistance `tacsuite.portal.theme`, DISTINCTE de la clé `theme`
+ * oi/pctac — le portail n'écrit jamais dans les clés des apps, cf.
+ * commentaire d'en-tête de `main.ts`). Contrairement à `oi-light`
+ * (mécanisme `body.classList.contains('light-mode')`), le portail pose son
+ * choix via l'attribut `data-theme` sur `<html>` — cf. `THEME_TOGGLE`
+ * ci-dessous, qui généralise le sélecteur/la détection « déjà clair » par
+ * app plutôt que de les coder en dur dans `captureState()`.
+ *
+ * Portail = seule app dont le rendu PAR DÉFAUT (sans `data-theme` posé)
+ * dépend de `prefers-color-scheme` (oi/pctac ignorent ce media query,
+ * verbatim : `grep prefers-color-scheme styles/{oi,pctac}.css` ne matche
+ * rien — leur défaut sombre est inconditionnel). Le défaut Playwright
+ * Chromium pour `colorScheme` est **`light`** (mesuré en direct : sondage
+ * `page.evaluate(() => matchMedia('(prefers-color-scheme: light)').matches)`
+ * → `true` sans override) — sans correctif, l'état `portal` (censé capturer
+ * le thème sombre par défaut) capturerait en réalité le thème CLAIR, et
+ * `portal-light` (censé partir de sombre pour basculer vers clair par
+ * clic) ferait l'inverse du clic attendu (`effectiveTheme()` lisant déjà
+ * `light` faute de `data-theme`, le clic bascule alors vers SOMBRE — cf.
+ * `applyTheme()`/`main.ts`). D'où `colorScheme: 'dark'` posé sur CHAQUE
+ * contexte navigateur (cf. `run()`) : inerte pour oi/pctac (vérifié
+ * ci-dessus), rend `portal`/`portal-light` déterministes quel que soit
+ * l'environnement d'exécution (poste dev, CI).
+ *
  * Prérequis : le serveur TacSuite dev tourne sur 127.0.0.1:9678
  * (scripts/dev.sh) ET les baselines existent dans tests/visual/baseline/<app>/.
  *
@@ -132,6 +165,63 @@ const PORTAL_LINK_MASK = {
 // APP_CONFIG['oi-light'] plus haut et oi-baseline-light/README.md).
 HEADER_MASK['oi-light'] = HEADER_MASK.oi;
 PORTAL_LINK_MASK['oi-light'] = PORTAL_LINK_MASK.oi;
+
+// Mission portail — indicateur réseau `#net-status` (« En ligne »/« Hors
+// ligne »), REFLET DIRECT de `navigator.onLine` (cf. `initNetworkStatus()`,
+// `src/apps/portal/main.ts`) : contenu ET position non déterministes, pas
+// seulement contenu. Mesuré EN DIRECT sur le porté (`page.locator(
+// '#net-status').boundingBox()`, `colorScheme:'dark'`, les deux états
+// simulés via `Object.defineProperty(navigator, 'onLine', ...)` +
+// `dispatchEvent(new Event('offline'))`) : le libellé « Hors ligne » (10
+// caractères) est plus large que « En ligne » (8) — la barre d'en-tête
+// (`.portal-header__bar`, flex) se réajuste en conséquence et TRANSLATE
+// `#net-status` lui-même (bord droit du groupe stable, bord gauche mobile) :
+//   desktop sombre  : x 999,5→1015,3 (Δ15,8) pour un bord droit constant
+//                     à 1120,7 ; desktop clair : x 1015,2→1031,0 (bord
+//                     droit constant à 1136,4 — le libellé du bouton
+//                     thème, « Sombre »/« Clair », a lui aussi une largeur
+//                     différente selon le thème, d'où le décalage entre
+//                     rects sombre/clair ci-dessous) ;
+//   mobile (sombre ET clair) : x fixe à 16 (colonne, pas de réajustement
+//                     horizontal), largeur 105,4→121,2.
+// Rectangle retenu par app/viewport : englobe les DEUX états (en ligne/hors
+// ligne) mesurés pour le thème réellement rendu par cette config (`portal`
+// = sombre, `portal-light` = clair après clic), plus ~3px de marge. Pas de
+// correctif `-scrollY` : `.portal-header` est en flux normal (non
+// `position:fixed`) mais l'unique état capturé ne fait jamais défiler la
+// page (pas d'action déclenchant un scroll, contrairement à
+// `tab-plan-panneau-tchap-live` côté PC-Tac) — translation appliquée quand
+// même ci-dessous par cohérence/robustesse si un état scrollant est ajouté
+// plus tard (`scrollY` vaut alors 0, sans effet).
+const NET_STATUS_MASK = {
+  portal: {
+    desktop: { x: 996, y: 60, w: 128, h: 35 },
+    mobile: { x: 13, y: 69, w: 127, h: 35 },
+  },
+  'portal-light': {
+    desktop: { x: 1012, y: 60, w: 127, h: 35 },
+    mobile: { x: 13, y: 69, w: 127, h: 35 },
+  },
+};
+
+// Sélecteur/détection « thème déjà clair » PAR APP — généralise le
+// mécanisme oi (`body.classList.contains('light-mode')`) et l'étend au
+// portail, qui pose son choix via `data-theme` sur `<html>` plutôt qu'une
+// classe sur `<body>` (cf. `applyTheme()`, `src/apps/portal/main.ts`).
+// Utilisé par `captureState()` pour le garde « ne cliquer que si pas déjà
+// clair » (cf. commentaire `oi-light` en tête de fichier).
+const THEME_TOGGLE = {
+  oi: {
+    selector: '#darkModeToggle',
+    isLight: () => document.body.classList.contains('light-mode'),
+  },
+  portal: {
+    selector: '#theme-toggle',
+    isLight: () => document.documentElement.getAttribute('data-theme') === 'light',
+  },
+};
+THEME_TOGGLE['oi-light'] = THEME_TOGGLE.oi;
+THEME_TOGGLE['portal-light'] = THEME_TOGGLE.portal;
 
 // Sélecteur du canvas cartographique à masquer (tuiles réseau non déterministes) —
 // mesuré EN DIRECT sur la page vivante (le porté), puis réutilisé tel quel sur
@@ -282,10 +372,26 @@ const APP_CONFIG = {
 // commentaire en tête de fichier.
 APP_CONFIG['oi-light'] = { entryUrl: APP_CONFIG.oi.entryUrl, theme: 'light', states: APP_CONFIG.oi.states };
 
+// Mission portail — page de garde (`/`, `index.html` racine), pas de
+// navigation interne (pas d'onglets/wizard) : un seul état, « vue
+// initiale », rien à cliquer. `id: 'initial'` reprend le préfixe déjà
+// reconnu par `captureState()` (`state.id.startsWith('initial')` → attente
+// 1.2s avant capture, cf. `initial-main-courante` côté pctac) pour laisser
+// le temps aux polices auto-hébergées (`@fontsource/oswald`/`inter`, cf.
+// `main.ts`) de se poser.
+APP_CONFIG.portal = {
+  entryUrl: '/',
+  states: [{ id: 'initial', canvas: false, run: async () => {} }],
+};
+// `portal-light` : même état/entryUrl, bascule par clic réel sur
+// `#theme-toggle` (cf. `THEME_TOGGLE.portal` et commentaire d'en-tête de
+// fichier) au lieu de `#darkModeToggle`.
+APP_CONFIG['portal-light'] = { entryUrl: APP_CONFIG.portal.entryUrl, theme: 'light', states: APP_CONFIG.portal.states };
+
 function parseArgs(argv) {
   const app = argv[2];
   if (!app || !APP_CONFIG[app]) {
-    console.error(`Usage: node tests/visual/compare.mjs <pctac|oi|oi-light> [--viewport=desktop|mobile]`);
+    console.error(`Usage: node tests/visual/compare.mjs <pctac|oi|oi-light|portal|portal-light> [--viewport=desktop|mobile]`);
     process.exit(2);
   }
   const viewportArg = argv.find((a) => a.startsWith('--viewport='));
@@ -382,17 +488,25 @@ async function captureState(page, app, entryUrl, state, viewportName, theme) {
   if (theme === 'light') {
     // Bascule vers le mode clair par clic réel (même mécanisme que
     // .tacsuite-prep/capture-oi-light.mjs) — l'app démarre en mode sombre
-    // par défaut (aucune classe 'light-mode' au chargement initial, cf.
-    // oi-baseline-light/README.md). Contrairement à capture-oi-light.mjs
-    // (une seule navigation par viewport, thème basculé une fois), ce script
-    // fait un `page.goto` par ÉTAT : dès le 2e état, `localStorage.theme`
-    // ('light', persistée par handleThemeToggle() au 1er clic) fait déjà
-    // démarrer la page en 'light-mode' — cliquer à nouveau la ferait
-    // REBASCULER en sombre. D'où ce garde : ne cliquer que si pas déjà clair.
-    const alreadyLight = await page.evaluate(() => document.body.classList.contains('light-mode'));
+    // par défaut (aucune classe 'light-mode'/`data-theme` au chargement
+    // initial, cf. oi-baseline-light/README.md et `colorScheme:'dark'` posé
+    // sur le contexte, cf. commentaire d'en-tête de fichier § portail).
+    // Contrairement à capture-oi-light.mjs (une seule navigation par
+    // viewport, thème basculé une fois), ce script fait un `page.goto` par
+    // ÉTAT : dès le 2e état, le thème persisté (localStorage, clé propre à
+    // chaque app) fait déjà démarrer la page en mode clair — cliquer à
+    // nouveau la ferait REBASCULER en sombre. D'où ce garde : ne cliquer que
+    // si pas déjà clair. Sélecteur/détection PAR APP (`THEME_TOGGLE`,
+    // défini en tête de fichier) : oi/oi-light posent une classe
+    // `light-mode` sur `<body>` (`#darkModeToggle`), le portail pose
+    // `data-theme='light'` sur `<html>` (`#theme-toggle`) — deux mécanismes
+    // distincts, jamais mélangés (`main.ts` du portail n'écrit jamais dans
+    // les clés oi/pctac, cf. son commentaire d'en-tête).
+    const toggle = THEME_TOGGLE[app];
+    const alreadyLight = await page.evaluate(toggle.isLight);
     if (!alreadyLight) {
-      await page.locator('#darkModeToggle').click();
-      await page.waitForFunction(() => document.body.classList.contains('light-mode'), undefined, { timeout: 5000 });
+      await page.locator(toggle.selector).click();
+      await page.waitForFunction(toggle.isLight, undefined, { timeout: 5000 });
     }
     await page.waitForTimeout(300); // laisse filer la transition CSS background-color/color
   }
@@ -518,7 +632,11 @@ async function run() {
   const results = [];
 
   for (const viewportName of viewports) {
-    const context = await browser.newContext({ viewport: VIEWPORTS[viewportName] });
+    // `colorScheme: 'dark'` : cf. commentaire d'en-tête de fichier § portail
+    // — rend `portal`/`portal-light` déterministes (Chromium défaut à
+    // `light`) ; inerte pour oi/pctac (aucune référence à
+    // `prefers-color-scheme` dans leurs CSS, vérifié en direct).
+    const context = await browser.newContext({ viewport: VIEWPORTS[viewportName], colorScheme: 'dark' });
     const page = await context.newPage();
     // Sans cette borne, une action (click) sur un element rendu inactionnable
     // par l'absence de cablage JS (P2.D non execute cote pctac au moment de
@@ -580,8 +698,10 @@ async function run() {
 
         // Translation verticale par -scrollY : voir commentaire HEADER_MASK
         // en tête de fichier. Sans effet (scrollY=0) sur les états qui ne
-        // font pas défiler la page.
-        const headerRectBase = HEADER_MASK[app][viewportName];
+        // font pas défiler la page. `?.` : HEADER_MASK n'a pas d'entrée
+        // `portal`/`portal-light` (pas de bouton BETA/version-toggle sur le
+        // portail, rien à masquer à ce titre).
+        const headerRectBase = HEADER_MASK[app]?.[viewportName];
         const headerRect = headerRectBase
           ? { ...headerRectBase, y: headerRectBase.y - scrollY }
           : headerRectBase;
@@ -594,6 +714,18 @@ async function run() {
         const portalLinkRect = PORTAL_LINK_MASK[app]?.[viewportName];
         paintMask(basePng, portalLinkRect);
         paintMask(actualPng, portalLinkRect);
+
+        // Indicateur réseau `#net-status` (mission portail) — voir
+        // commentaire `NET_STATUS_MASK` en tête de fichier. Translation
+        // -scrollY par cohérence avec headerRect (même hypothèse : en flux
+        // normal, pas `position:fixed`), sans effet tant qu'aucun état
+        // portail ne fait défiler la page.
+        const netStatusRectBase = NET_STATUS_MASK[app]?.[viewportName];
+        const netStatusRect = netStatusRectBase
+          ? { ...netStatusRectBase, y: netStatusRectBase.y - scrollY }
+          : netStatusRectBase;
+        paintMask(basePng, netStatusRect);
+        paintMask(actualPng, netStatusRect);
 
         if (state.canvas) {
           if (canvasBox) {

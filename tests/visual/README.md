@@ -357,6 +357,59 @@ se repositionneraient), ce qui changerait baseline au-delà seule
 zone bouton — effet de bord non maîtrisé que rectangle fixe évite
 totalement.
 
+### Portail (`portal`/`portal-light`, mission « couverture portail »)
+
+`index.html` racine (`/`) n'a ni onglets ni wizard — un seul état, « vue
+initiale », rien à cliquer. `portal` capture le thème PAR DÉFAUT
+(`styles/portal.css` : `:root`/`:root[data-theme='dark']` partagent la même
+palette, seul `@media (prefers-color-scheme: light)` bascule en clair en
+l'absence de `data-theme`) ; `portal-light` bascule par clic réel sur
+`#theme-toggle` (`src/apps/portal/main.ts` → `applyTheme()`, clé de
+persistance `tacsuite.portal.theme`, distincte de la clé `theme` oi/pctac).
+
+| Fichier (`<etat>`) | Config | Sélecteur utilisé |
+|---|---|---|
+| `initial` | `portal` (thème par défaut, sombre) | (état de chargement, aucun clic) |
+| `initial` | `portal-light` (bascule clic réel) | `#theme-toggle` |
+
+**`colorScheme: 'dark'` posé sur chaque contexte navigateur (`run()`)** :
+le portail est la seule app dont le rendu par défaut dépend de
+`prefers-color-scheme` (oi/pctac l'ignorent totalement — vérifié,
+`grep prefers-color-scheme styles/{oi,pctac}.css` ne matche rien, leur
+défaut sombre est inconditionnel). Or le défaut Chromium/Playwright pour
+`colorScheme` est `light` (mesuré en direct) : sans ce correctif, l'état
+`portal` capturerait en réalité le thème clair, et le clic de
+`portal-light` basculerait dans le mauvais sens (`effectiveTheme()`
+lisant déjà `light` faute de `data-theme`, cf. `main.ts`). Inerte pour
+oi/pctac (revérifié : `compare.mjs pctac` toujours 20/20 PASS après ajout).
+
+**Masque ajouté : `#net-status`** (pastille « En ligne »/« Hors ligne »,
+reflet direct de `navigator.onLine`, cf. `initNetworkStatus()` dans
+`main.ts`) — contenu ET position non déterministes : le libellé plus long
+(« Hors ligne ») élargit la pastille et réajuste toute la barre flex
+d'en-tête, ce qui TRANSLATE `#net-status` (bord droit du groupe stable,
+bord gauche mobile, mesuré en direct sur le porté avec
+`Object.defineProperty(navigator, 'onLine', ...)` + `dispatchEvent(new
+Event('offline'))`). Rectangle par app/viewport englobant les deux états
+(`NET_STATUS_MASK`, `tests/visual/compare.mjs`) :
+
+| Config | Viewport | x | y | w | h |
+|---|---:|---:|---:|---:|---:|
+| `portal` (sombre) | desktop 1440×900 | 996 | 60 | 128 | 35 |
+| `portal` (sombre) | mobile 390×844 | 13 | 69 | 127 | 35 |
+| `portal-light` (clair) | desktop 1440×900 | 1012 | 60 | 127 | 35 |
+| `portal-light` (clair) | mobile 390×844 | 13 | 69 | 127 | 35 |
+
+Pas de masque carte (aucune carte sur le portail) ni de masque en-tête
+BETA/`#portalLink` (page de garde, pas de dock).
+
+Baselines : 1ère capture des `.actual.png` produits dans
+`tests/visual/diffs/portal{,-light}/` copiée telle quelle dans
+`tests/visual/baseline/portal{,-light}/initial-{desktop,mobile}.png`.
+
+`node tests/visual/compare.mjs portal` et `... portal-light` → **4/4 PASS
+chacun** (0,000 %), stable sur re-runs consécutifs.
+
 ## États inatteignables / notes d'exécution
 
 Voir compte-rendu tâche pour résultat effectif run (nombre de
