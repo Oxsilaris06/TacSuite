@@ -16,8 +16,8 @@ Spec détaillée : `docs/superpowers/specs/2026-08-09-tacsuite-roadmap-design.md
 
 | Phase | Contenu | Statut |
 |---|---|---|
-| QW | Quick wins : contraste dark, `esc` partagé côté OI carto, indicateurs de chargement PC-Tac | 🔄 en cours |
-| R0 | Filet CI local+workflow (typecheck, lint, vitest, test:pdf) + fixture volumétrique 50 photos | 🔄 en cours |
+| QW | Quick wins : contraste dark, `esc` partagé côté OI carto, indicateurs de chargement PC-Tac | ✅ fait (e669585, a3f700a) |
+| R0 | Filet CI local+workflow (typecheck, lint, vitest, test:pdf) + fixture volumétrique 50 photos | ✅ fait (a968dd9) |
 | R1 | Design system unifié : `styles/tacsuite-tokens.css`, migration oi/pctac, purge styles inline, z-index/breakpoints/durées tokenisés | ⬜ à faire |
 | R2 | Composants cliniques : `<dialog>` natif partout, remplacement des 62 alert/confirm, aria/labels, validation inline, états loading | ⬜ à faire |
 | R3 | Socle carto commun : geo helpers → shared, Wheel générique, `MapPersistenceAdapter`, machine à gestes PC-Tac généralisée consommée par OI, réconciliation `_renderPins`, durcissements capture | ⬜ à faire |
@@ -29,6 +29,11 @@ Spec détaillée : `docs/superpowers/specs/2026-08-09-tacsuite-roadmap-design.md
 ### 2026-08-09
 - Brainstorming complet (4 audits subagents : carto, PDF, architecture, UI/UX). Décisions 1-3 validées.
 - Création state.md + spec. Lancement QW + R0 en délégation parallèle.
+- **QW livrés** : `esc` partagé (doublon `_esc` supprimé de oi/carto, e669585) ; token `--accent-fill` AA dark 5.17:1 sur 23 sites boutons remplis + overlay busy PC-Tac aria-live (a3f700a). Hors périmètre signalé : `--inter-blue` (même hex fautif, sites Tchap-live/pax Inter) — à traiter en R1.
+- **R0 livré** (a968dd9) : ci.yml (gate PDF long-case 19/19), e2e.yml nightly (build + vite preview), `npm run check`, fixture `volumetric-stress.json` (56 photos, textes 2000+ car.). Diagnostic R4 : PDF 70 pages, 13/19 gardes — B1/B7/B9/B10/B11 KO sur continuations tableau Hypothèses d'Effraction (16 pages en-tête orphelin, 8 pages sans « (suite) »).
+- Vérification globale : typecheck 0, lint 0, vitest 62 fichiers / 1688 tests verts. Servi sur localhost:9678.
+- Graphe graphify mis à jour incrémentalement (52 code + 27 docs, skills IDE et images exclus du corpus).
+- Rien poussé sur GitHub.
 
 ## Blocages / questions ouvertes
 
