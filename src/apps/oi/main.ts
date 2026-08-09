@@ -306,13 +306,11 @@ const oiClickActions: Record<string, OiActionHandler> = {
     'clone-member-from-context': () => { window.cloneMemberFromContext(); },
     // index.html:768
     'delete-member-from-context': () => { window.deleteMemberFromContext(); },
-    // PDF.INTEG (SPEC-PDF-V3.md §5.2) — #printHqBtn, entre #presentHereBtn et
-    // #downloadPdfBtn. Import dynamique : isole la voie B (print-view.ts +
-    // print-style.ts) dans son propre chunk, jamais chargé si le bouton n'est
-    // pas cliqué.
-    'print-oi-high-quality': () => {
-        void import('@oi/pdf/print-view.js').then((m) => m.printOiHighQuality());
-    },
+    // R4-a (D2, « une seule voie d'output PDF ») : `print-oi-high-quality`
+    // (#printHqBtn → printOiHighQuality() → print-view.ts/print-style.ts,
+    // voie B) RETIRÉE. On imprime désormais le PDF vectoriel (téléchargé ou
+    // affiché dans l'aperçu/la présentation) via le bouton natif du
+    // visualiseur PDF du navigateur.
 };
 
 const oiInputActions: Record<string, OiActionHandler> = {

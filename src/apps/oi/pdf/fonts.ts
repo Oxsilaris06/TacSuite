@@ -1,6 +1,9 @@
 /**
- * Polices embarquées pour le moteur PDF vectoriel de l'OI.
- * Module reutilisable par pdfmake (voie A) et impression HTML (voie B).
+ * Polices embarquées pour le moteur PDF vectoriel de l'OI (pdfmake, voie A —
+ * seule voie restante depuis R4-a, D2 « une seule voie d'output PDF »).
+ * `fontFacesCss()` (déclarations `@font-face` pour l'impression HTML de la
+ * voie B) a été retirée avec `print-view.ts`/`print-style.ts` (R4-a) : son
+ * seul consommateur.
  * AUCUN import de pdfmake — reste indépendant du moteur.
  */
 
@@ -17,31 +20,3 @@ export const PDF_FONTS = {
   Oswald: { normal: 'Oswald-500.ttf', bold: 'Oswald-500.ttf' },
   JetBrainsMono: { normal: 'JetBrainsMono-400.ttf', bold: 'JetBrainsMono-700.ttf' },
 } as const;
-
-/**
- * Déclarations CSS @font-face pour les trois faces.
- * Résultat mémoïsé — calculé une seule fois.
- */
-let fontFaceCssCache: string | null = null;
-
-export function fontFacesCss(): string {
-  if (fontFaceCssCache !== null) {
-    return fontFaceCssCache;
-  }
-
-  const faces = [
-    { family: 'Oswald', weight: 500, key: 'Oswald-500.ttf' },
-    { family: 'JetBrains Mono', weight: 400, key: 'JetBrainsMono-400.ttf' },
-    { family: 'JetBrains Mono', weight: 700, key: 'JetBrainsMono-700.ttf' },
-  ];
-
-  fontFaceCssCache = faces
-    .map(
-      (face) =>
-        `@font-face { font-family:'${face.family}'; font-weight:${face.weight}; ` +
-        `src:url(data:font/ttf;base64,${PDF_FONT_VFS[face.key]}) format('truetype'); }`,
-    )
-    .join('\n');
-
-  return fontFaceCssCache;
-}

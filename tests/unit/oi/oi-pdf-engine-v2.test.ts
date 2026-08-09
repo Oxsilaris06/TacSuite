@@ -1,15 +1,15 @@
 /**
  * oi-pdf-engine-v2.test.ts — Tests unitaires de `pdf-engine-v2.ts` (P3.CONV,
  * paquet `oi-pdf-engine-v2`, port de `modules/pdf_engine_v2.js`, GStart-main,
- * 1156 LOC intégral, lecture seule). Cf. SPEC-OI-CONVERSION.md §7 (ARBITRAGE 3),
- * PAQUETS-OI.json (`oi-pdf-engine-v2`).
+ * 1156 LOC intégral à l'origine, lecture seule). Cf. SPEC-OI-CONVERSION.md §7
+ * (ARBITRAGE 3), PAQUETS-OI.json (`oi-pdf-engine-v2`).
  *
  * `Store`/`dbManager` RÉELS (pas de double), importés depuis `@oi/init.js` —
  * même précédent que `oi-medias.test.ts`/`oi-articulation.test.ts` :
  * `Store.state.formData` est réinitialisé avant chaque test ;
  * `dbManager.getItem` est MOCKÉ via `vi.spyOn` sur l'objet réel exporté
  * (aucune vraie IndexedDB ouverte, absente sous jsdom, règle commune §13.5).
- * Utilisé pour les describe `collectAllData` / `generateHTML` / `_fitPageToBudget`.
+ * Utilisé pour le describe `collectAllData`.
  *
  * `createAnnotatedImageBlob` (`@oi/dessin.js`, import NOMMÉ de fonction, pas
  * un objet/méthode — impossible à intercepter par `vi.spyOn`) MOCKÉ via
@@ -20,25 +20,41 @@
  *
  * PDF.INTEG (SPEC-PDF-V3.md §4) : `downloadOiPdf()` (html2canvas + jsPDF,
  * ancien `pdf_engine_v2.js:189-349`) a été RETIRÉE de `pdf-engine-v2.ts` — le
- * describe `downloadOiPdf` correspondant, ainsi que le mocking html2canvas/
- * jsPDF dédié (`loadPdfEngine()`), sont SUPPRIMÉS de ce fichier. Ces tests
- * sont RÉORIENTÉS vers `tests/unit/oi/pdf/oi-pdf-engine-v3.test.ts` (describe
- * `downloadOiPdfV3`, moteur vectoriel pdfmake, `@oi/pdf/engine-v3.js`).
- * `generateHTML`/`_fitPageToBudget` restent testés ICI, INCHANGÉS : ils
- * continuent de servir l'aperçu HTML in-app (`openPreview`) et le mode
- * « Présenter ici » (`openPresentInPlace`), qui ne rastérisent jamais.
+ * describe `downloadOiPdf` correspondant est RÉORIENTÉ vers
+ * `tests/unit/oi/pdf/oi-pdf-engine-v3.test.ts` (describe `downloadOiPdfV3`,
+ * moteur vectoriel pdfmake, `@oi/pdf/engine-v3.js`).
+ *
+ * R4-a (D2, « une seule voie d'output PDF ») : `generateHTML`/
+ * `_fitPageToBudget`/`_buildPresentationDocument` (gabarit HTML dupliqué de
+ * l'aperçu/présentation, ~740 LOC) sont RETIRÉES de `pdf-engine-v2.ts` — les
+ * describe correspondants disparaissent avec elles. `openPreview()`/
+ * `openPresentInPlace()` construisent désormais le MÊME blob PDF que le
+ * téléchargement ; testés ICI via la couture `deps.buildBlob`/`deps.collect`
+ * (même précédent que `downloadOiPdfV3({ collect })`,
+ * `oi-pdf-engine-v3.test.ts`) — AUCUN mock de `pdfmake`/import dynamique
+ * requis, `buildBlob` est directement injecté.
  *
  * Tests obligatoires (PAQUETS-OI.json id="oi-pdf-engine-v2") :
  *  (a) collectAllData avec un Store mocké contenant une photo (avec et sans
  *      annotations) et un `custom_pdf_background` → `photosBase64` peuplé aux
  *      bonnes clés, ET la copie de `formData` est bien PROFONDE (muter la
  *      copie ne touche pas le Store).
- *  (b) generateHTML produit les marqueurs de section dans l'ORDRE attendu
- *      (assertions sur la présence et l'ordre des titres, pas sur le rendu
- *      pixel), y compris les DEUX sections « 7. » (artefact reproduit).
- *  (c) _fitPageToBudget avec différentes géométries simulées (pas de
- *      débordement / débordement modéré / débordement extrême clampé à
- *      MIN_SCALE / idempotence / préservation des éléments position:absolute).
+ *  (b) openPreview : injecte le blob dans un `<iframe class="pdf-preview-frame">`
+ *      de `#presentation-content` (Blob URL), révoque l'URL précédente à
+ *      chaque nouvel appel ET à la fermeture de `#presentationModal`
+ *      (événement natif `close`), REPLIE sur un message clair (SANS tenter
+ *      l'iframe) quand `navigator.pdfViewerEnabled === false` — un navigateur
+ *      qui ne sait pas rendre un PDF embarqué déclenche en coulisses une
+ *      tentative de téléchargement fantôme pour la navigation de l'iframe
+ *      (constaté empiriquement, cf. tests/e2e/oi.spec.ts qui force le canal
+ *      Chromium complet — PAS le « headless shell » par défaut, dépourvu de
+ *      visualiseur PDF — pour éviter que ce fantôme ne percute un
+ *      téléchargement légitime survenant peu après), affiche/masque le
+ *      loader `#pdfLoadingModal`, affiche un message d'erreur en cas d'échec.
+ *  (c) openPresentInPlace : ouvre le blob dans un nouvel onglet
+ *      (`window.open`), révoque l'URL après le délai différé en cas
+ *      d'ouverture réussie, révoque IMMÉDIATEMENT et alerte si la popup est
+ *      bloquée, notifie via `window.toast` en cas d'échec de collecte/build.
  *  (d)/(e) anciennement downloadOiPdf() (nom de fichier + repli SANS_DATE/RED
  *      + branches « librairie absente ») : voir désormais le describe
  *      `downloadOiPdfV3` de `tests/unit/oi/pdf/oi-pdf-engine-v3.test.ts`.
@@ -47,14 +63,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { dbManager, Store } from '@oi/init.js';
 import { PDFEngineV2 } from '@oi/pdf-engine-v2.js';
-import type {
-    OiEffractionBlock,
-    OiFormData,
-    OiMoicpBlock,
-    OiPatracRow,
-    OiPdfCollectedData,
-    OiZmspcpBlock,
-} from '@shared/types/contracts.js';
+import type { OiPdfCollectedData } from '@shared/types/contracts.js';
 
 // ---------------------------------------------------------------------------
 // createAnnotatedImageBlob (@oi/dessin.js) — import NOMMÉ de fonction, mocké
@@ -72,65 +81,33 @@ vi.mock('@oi/dessin.js', () => ({
 // Fixtures
 // ---------------------------------------------------------------------------
 
-function makePatracRow(): OiPatracRow {
+function makeCollectedData(): OiPdfCollectedData {
     return {
-        vehicle: 'VL1',
-        members: [
-            {
-                trigramme: 'ABC',
-                fonction: 'Chef inter',
-                cellule: 'AO1',
-                principales: 'UMP9',
-                secondaires: 'PSA',
-                afis: 'PIE',
-                grenades: 'GENL',
-                equipement: 'Sans',
-                equipement2: 'Sans',
-                tenue: 'UBAS',
-                gpb: 'Sans',
-                dir: '',
-            },
-        ],
+        formData: { date_op: '2026-05-15', trigramme_redacteur: 'REF' },
+        photosBase64: {},
+        isDark: false,
     };
 }
 
-/** Fixture riche (sections 1 à 8) pour vérifier l'ORDRE des marqueurs de `generateHTML`. */
-function makeRichFormData(): OiFormData {
-    const zmspcpBlocks: OiZmspcpBlock[] = [
-        {
-            id: 'z1', title: 'ZONE ALPHA', zone: '-', mission: '-', secteur: '-',
-            points_particuliers: '-', cat: '-', place_chef: '-', members: [],
-        },
-    ];
-    const moicpBlocks: OiMoicpBlock[] = [
-        {
-            id: 'm1', title: 'ITIN BRAVO', mission: '-', objectif: '-', itineraire: '-',
-            points_particuliers: '-', cat: '-', place_chef: '-', members: [],
-        },
-    ];
-    const effractionBlocks: OiEffractionBlock[] = [
-        {
-            id: 'e1', title: 'PORTE CHARLIE', mission: '-', porte: '-', structure: '-',
-            serrurerie: '-', environnement: '-', bati_a_bati: '-', dormant_a_dormant: '-',
-            prof_linteaux: '-', prof_bati: '-', h_porte: '-', h_marche: '-',
-            prof_marche: '-', prof_moulure: '-', members: [], hypotheses: [],
-        },
-    ];
-    return {
-        date_op: '2026-05-15',
-        trigramme_redacteur: 'REF',
-        adversaries: [{ id: 'adv1', nom_adversaire: 'DUPONT', me_list: [], etat_esprit_list: [], volume_list: [], vehicules_list: [] }],
-        dynamic_photos: {
-            photo_container_transport_pr_preview_container: [
-                { id: 'logphoto', annotations: '[]', tools: '[]', other_tools: '', customTitle: '' },
-            ],
-        },
-        zmspcp_blocks: zmspcpBlocks,
-        moicp_blocks: moicpBlocks,
-        effraction_blocks: effractionBlocks,
-        cat_generales: 'RAS',
-        patracdvr_rows: [makePatracRow()],
-    };
+/** Construit `#presentationModal` (dialog) + `#presentation-content`, comme `oi/index.html`. */
+function buildPresentationDom(): { modal: HTMLDialogElement; content: HTMLDivElement } {
+    const modal = document.createElement('dialog');
+    modal.id = 'presentationModal';
+    document.body.appendChild(modal);
+    const content = document.createElement('div');
+    content.id = 'presentation-content';
+    modal.appendChild(content);
+    return { modal, content };
+}
+
+function buildLoaderDom(): { loader: HTMLDivElement; statusText: HTMLDivElement } {
+    const loader = document.createElement('div');
+    loader.id = 'pdfLoadingModal';
+    const statusText = document.createElement('div');
+    statusText.id = 'pdfLoadingStatus';
+    loader.appendChild(statusText);
+    document.body.appendChild(loader);
+    return { loader, statusText };
 }
 
 // ---------------------------------------------------------------------------
@@ -141,6 +118,7 @@ beforeEach(() => {
 
 afterEach(() => {
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
     document.body.innerHTML = '';
 });
 
@@ -235,135 +213,180 @@ describe('collectAllData', () => {
 });
 
 // ===========================================================================
-// generateHTML (pdf_engine_v2.js:465-1151)
+// openPreview (R4-a : aperçu = vrai PDF, remplace generateHTML)
 // ===========================================================================
-describe('generateHTML', () => {
-    it('produit les marqueurs de section dans l\'ordre attendu, y compris les DEUX sections « 7. » (artefact reproduit tel quel)', () => {
-        const data: OiPdfCollectedData = {
-            formData: makeRichFormData(),
-            photosBase64: { logphoto: 'data:image/jpeg;base64,bG9n' },
-            isDark: false,
+describe('openPreview', () => {
+    let createObjectURLSpy: ReturnType<typeof vi.spyOn>;
+
+    beforeEach(() => {
+        createObjectURLSpy = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:preview-1');
+        vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
+    });
+
+    it("ne fait rien si #presentation-content est absent (pas de modale montée)", async () => {
+        const collect = vi.fn(async () => makeCollectedData());
+        const buildBlob = vi.fn(async () => new Blob(['%PDF-fake'], { type: 'application/pdf' }));
+
+        await PDFEngineV2.openPreview({ collect, buildBlob });
+
+        expect(collect).not.toHaveBeenCalled();
+        expect(buildBlob).not.toHaveBeenCalled();
+    });
+
+    it('construit le blob (collect → buildBlob avec le format courant) et injecte un <iframe class="pdf-preview-frame"> pointant sur son URL blob', async () => {
+        const { content } = buildPresentationDom();
+        window.pdfOutputFormat = '16:9';
+        const blob = new Blob(['%PDF-fake'], { type: 'application/pdf' });
+        const collect = vi.fn(async () => makeCollectedData());
+        const buildBlob = vi.fn(async () => blob);
+
+        await PDFEngineV2.openPreview({ collect, buildBlob });
+
+        expect(collect).toHaveBeenCalledTimes(1);
+        expect(buildBlob).toHaveBeenCalledWith(expect.anything(), { format: '16:9' });
+        const iframe = content.querySelector<HTMLIFrameElement>('.pdf-preview-frame');
+        expect(iframe).not.toBeNull();
+        expect(iframe?.src).toBe('blob:preview-1');
+    });
+
+    it("affiche/masque le loader #pdfLoadingModal pendant la génération", async () => {
+        buildPresentationDom();
+        const { loader } = buildLoaderDom();
+        let resolveBuild: (blob: Blob) => void = () => {};
+        const pending = new Promise<Blob>((resolve) => { resolveBuild = resolve; });
+
+        const openPromise = PDFEngineV2.openPreview({
+            collect: () => Promise.resolve(makeCollectedData()),
+            buildBlob: () => pending,
+        });
+
+        // Toujours en attente de buildBlob : le loader doit être visible.
+        await Promise.resolve();
+        await Promise.resolve();
+        expect(loader.style.display).toBe('flex');
+
+        resolveBuild(new Blob(['%PDF-fake'], { type: 'application/pdf' }));
+        await openPromise;
+
+        expect(loader.style.display).toBe('none');
+    });
+
+    it("replie sur un message clair quand navigator.pdfViewerEnabled === false, SANS appeler collect/buildBlob ni créer d'iframe (un navigateur incapable de rendre un PDF embarqué déclenche en coulisses un téléchargement fantôme pour la navigation de l'iframe — évité en ne la tentant pas)", async () => {
+        const { content } = buildPresentationDom();
+        vi.stubGlobal('navigator', { pdfViewerEnabled: false });
+        const collect = vi.fn(async () => makeCollectedData());
+        const buildBlob = vi.fn(async () => new Blob(['%PDF-fake'], { type: 'application/pdf' }));
+
+        await PDFEngineV2.openPreview({ collect, buildBlob });
+
+        expect(collect).not.toHaveBeenCalled();
+        expect(buildBlob).not.toHaveBeenCalled();
+        expect(content.querySelector('.pdf-preview-frame')).toBeNull();
+        expect(content.querySelector('.pdf-preview-fallback')).not.toBeNull();
+        expect(content.textContent).toContain('Télécharger le PDF');
+    });
+
+    it("affiche un message d'erreur si buildBlob échoue", async () => {
+        const { content } = buildPresentationDom();
+        vi.spyOn(console, 'error').mockImplementation(() => {});
+
+        await PDFEngineV2.openPreview({
+            collect: () => Promise.resolve(makeCollectedData()),
+            buildBlob: () => Promise.reject(new Error('pdfmake KO')),
+        });
+
+        expect(content.querySelector('.pdf-preview-error')).not.toBeNull();
+    });
+
+    it('révoque l\'URL blob PRÉCÉDENTE quand un nouvel aperçu est généré', async () => {
+        buildPresentationDom();
+        createObjectURLSpy.mockReturnValueOnce('blob:preview-1').mockReturnValueOnce('blob:preview-2');
+        const revokeSpy = vi.spyOn(URL, 'revokeObjectURL');
+        const deps = {
+            collect: () => Promise.resolve(makeCollectedData()),
+            buildBlob: () => Promise.resolve(new Blob(['%PDF-fake'], { type: 'application/pdf' })),
         };
 
-        const html = PDFEngineV2.generateHTML(data, false, { pageW: 297, pageH: 210 });
+        await PDFEngineV2.openPreview(deps);
+        await PDFEngineV2.openPreview(deps);
 
-        const markers = [
-            'ORDRE INITIAL',
-            '1. SITUATION GLOBALE',
-            'CIBLES(S)',
-            '2.1 FICHE ADVERSAIRE : DUPONT',
-            '3. ENVIRONNEMENT ET AMIS',
-            "4. MISSION DE L'UNITÉ",
-            '5. EXÉCUTION',
-            '6. LOGISTIQUE &amp; TRANSPORTS (Cheminement)'.replace('&amp;', '&'),
-            '7. ARTICULATION &amp; ORDRES DE MOUVEMENT'.replace('&amp;', '&'),
-            'Articulation : ZMSPCP - ZONE ALPHA',
-            'Articulation : MOICP - ITIN BRAVO',
-            'Articulation : EFFRACTION - PORTE CHARLIE',
-            '8. CONDUITES À TENIR GÉNÉRALES',
-            '7. RÉCAPITULATIF PATRACDVR',
-            'AVEZ-VOUS DES QUESTIONS ?',
-        ];
-
-        const indices = markers.map((m) => html.indexOf(m));
-        indices.forEach((idx, i) => expect(idx, `marqueur introuvable : ${markers[i]}`).toBeGreaterThanOrEqual(0));
-        for (let i = 1; i < indices.length; i++) {
-            expect(indices[i], `« ${markers[i]} » doit venir après « ${markers[i - 1]} »`).toBeGreaterThan(indices[i - 1] as number);
-        }
-
-        // NUMÉROTATION INCOHÉRENTE reproduite telle quelle (SPEC §7) : exactement
-        // deux titres « 7. » distincts (articulation ET patracdvr).
-        expect((html.match(/>7\. /g) ?? []).length).toBe(2);
+        expect(revokeSpy).toHaveBeenCalledWith('blob:preview-1');
     });
 
-    it('sans cat_generales/no_go/cat_liaison, la page "8. CONDUITES À TENIR GÉNÉRALES" est omise', () => {
-        const formData = makeRichFormData();
-        delete formData.cat_generales;
-        const data: OiPdfCollectedData = { formData, photosBase64: {}, isDark: false };
+    it("révoque l'URL blob à la fermeture de #presentationModal (événement natif `close`)", async () => {
+        const { modal } = buildPresentationDom();
+        const revokeSpy = vi.spyOn(URL, 'revokeObjectURL');
 
-        const html = PDFEngineV2.generateHTML(data, false, {});
+        await PDFEngineV2.openPreview({
+            collect: () => Promise.resolve(makeCollectedData()),
+            buildBlob: () => Promise.resolve(new Blob(['%PDF-fake'], { type: 'application/pdf' })),
+        });
 
-        expect(html).not.toContain('8. CONDUITES À TENIR GÉNÉRALES');
-    });
+        modal.dispatchEvent(new Event('close'));
 
-    it("sans aucun adversaire, la section CIBLES(S) affiche le repli et aucune fiche 2.x n'apparaît", () => {
-        const data: OiPdfCollectedData = { formData: {}, photosBase64: {}, isDark: false };
-
-        const html = PDFEngineV2.generateHTML(data, false, {});
-
-        expect(html).toContain('Aucune cible renseignée.');
-        expect(html).not.toContain('FICHE ADVERSAIRE');
+        expect(revokeSpy).toHaveBeenCalledWith('blob:preview-1');
     });
 });
 
 // ===========================================================================
-// _fitPageToBudget (pdf_engine_v2.js:412-460)
+// openPresentInPlace (R4-a : nouvel onglet sur le vrai PDF, remplace le
+// « deck » HTML autonome de _buildPresentationDocument)
 // ===========================================================================
-describe('_fitPageToBudget', () => {
-    function buildFittedPage(opts: { clientHeight: number; scrollHeight: number }): { pageEl: HTMLElement; inner: HTMLElement } {
-        const pageEl = document.createElement('div');
-        Object.defineProperty(pageEl, 'clientHeight', { value: opts.clientHeight, configurable: true });
-        const inner = document.createElement('div');
-        inner.className = 'pdf-page-fit';
-        Object.defineProperty(inner, 'scrollHeight', { value: opts.scrollHeight, configurable: true });
-        pageEl.appendChild(inner);
-        document.body.appendChild(pageEl);
-        return { pageEl, inner };
-    }
-
-    it('retourne false si pageEl est null (idempotent, aucun DOM à manipuler)', () => {
-        expect(PDFEngineV2._fitPageToBudget(null, 0)).toBe(false);
+describe('openPresentInPlace', () => {
+    beforeEach(() => {
+        vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:present-1');
+        vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
     });
 
-    it('crée le wrapper .pdf-page-fit et y déplace le contenu EN FLUX, en laissant les éléments position:absolute directement enfants de la page', () => {
-        const pageEl = document.createElement('div');
-        const flowChild = document.createElement('div');
-        flowChild.textContent = 'contenu';
-        const absChild = document.createElement('div');
-        absChild.style.position = 'absolute';
-        absChild.className = 'watermark';
-        pageEl.appendChild(flowChild);
-        pageEl.appendChild(absChild);
-        document.body.appendChild(pageEl);
+    it('ouvre le blob PDF dans un nouvel onglet (window.open) et révoque son URL après le délai différé', async () => {
+        vi.useFakeTimers();
+        const openSpy = vi.spyOn(window, 'open').mockReturnValue({} as Window);
 
-        PDFEngineV2._fitPageToBudget(pageEl, 0);
+        await PDFEngineV2.openPresentInPlace({
+            collect: () => Promise.resolve(makeCollectedData()),
+            buildBlob: () => Promise.resolve(new Blob(['%PDF-fake'], { type: 'application/pdf' })),
+        });
 
-        const inner = pageEl.querySelector('.pdf-page-fit');
-        expect(inner).not.toBeNull();
-        expect(inner?.contains(flowChild)).toBe(true);
-        expect(Array.from(pageEl.children)).toContain(absChild);
-        expect(inner?.contains(absChild)).toBe(false);
+        expect(openSpy).toHaveBeenCalledWith('blob:present-1', '_blank');
+        expect(URL.revokeObjectURL).not.toHaveBeenCalled();
+
+        vi.advanceTimersByTime(120000);
+        expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:present-1');
+        vi.useRealTimers();
     });
 
-    it('ne réduit rien (retourne false, aucun transform) quand le contenu tient dans la hauteur disponible', () => {
-        const { pageEl, inner } = buildFittedPage({ clientHeight: 200, scrollHeight: 150 });
+    it('popup bloquée (window.open renvoie null) : révoque IMMÉDIATEMENT et alerte', async () => {
+        vi.spyOn(window, 'open').mockReturnValue(null);
+        const alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => {});
 
-        expect(PDFEngineV2._fitPageToBudget(pageEl, 0)).toBe(false);
-        expect(inner.style.transform).toBe('');
+        await PDFEngineV2.openPresentInPlace({
+            collect: () => Promise.resolve(makeCollectedData()),
+            buildBlob: () => Promise.resolve(new Blob(['%PDF-fake'], { type: 'application/pdf' })),
+        });
+
+        expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:present-1');
+        expect(alertSpy).toHaveBeenCalledWith(expect.stringContaining('bloquée'));
     });
 
-    it('applique scale = avail/needed (au-dessus de MIN_SCALE) en cas de débordement modéré', () => {
-        const { pageEl, inner } = buildFittedPage({ clientHeight: 90, scrollHeight: 100 });
+    it("échec de collecte/build : notifie via window.toast('error', …) plutôt que de laisser planter", async () => {
+        vi.spyOn(console, 'error').mockImplementation(() => {});
 
-        expect(PDFEngineV2._fitPageToBudget(pageEl, 2)).toBe(true);
-        expect(inner.style.transform).toBe('scale(0.9)');
+        await PDFEngineV2.openPresentInPlace({
+            collect: () => Promise.reject(new Error('collecte KO')),
+        });
+
+        expect(window.toast).toHaveBeenCalledWith("Erreur lors de l'ouverture de la présentation.", 'error');
     });
 
-    it('clampe à MIN_SCALE (0.62) et journalise un avertissement en cas de débordement extrême', () => {
-        const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-        const { pageEl, inner } = buildFittedPage({ clientHeight: 50, scrollHeight: 500 });
+    it('affiche/masque le loader #pdfLoadingModal pendant la génération', async () => {
+        const { loader } = buildLoaderDom();
+        vi.spyOn(window, 'open').mockReturnValue({} as Window);
 
-        expect(PDFEngineV2._fitPageToBudget(pageEl, 4)).toBe(true);
-        expect(inner.style.transform).toBe('scale(0.62)');
-        expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('Page 5'));
-    });
+        await PDFEngineV2.openPresentInPlace({
+            collect: () => Promise.resolve(makeCollectedData()),
+            buildBlob: () => Promise.resolve(new Blob(['%PDF-fake'], { type: 'application/pdf' })),
+        });
 
-    it('est idempotent : un second appel sur la même page ne recrée pas de wrapper supplémentaire', () => {
-        const { pageEl } = buildFittedPage({ clientHeight: 90, scrollHeight: 100 });
-
-        PDFEngineV2._fitPageToBudget(pageEl, 0);
-        PDFEngineV2._fitPageToBudget(pageEl, 0);
-
-        expect(pageEl.querySelectorAll('.pdf-page-fit').length).toBe(1);
+        expect(loader.style.display).toBe('none');
     });
 });

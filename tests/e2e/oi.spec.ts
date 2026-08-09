@@ -164,6 +164,25 @@ async function withPrompt<T>(value: string, action: () => Promise<T>): Promise<T
   return action();
 }
 
+// R4-a (D2, « une seule voie d'output PDF ») : `channel: 'chromium'` FORCE le
+// binaire Chromium COMPLET (celui que Playwright installe à côté du
+// « headless shell » minimal utilisé par défaut en mode headless depuis
+// Playwright ≥1.49). Constaté : le « headless shell » par défaut n'embarque
+// AUCUN visualiseur PDF (`navigator.pdfViewerEnabled === false`), alors que
+// la quasi-totalité des navigateurs RÉELS (desktop Chrome/Firefox/Safari en
+// sont pourvus) l'ont — la divergence est un artefact de l'infra de test, pas
+// un cas réel. Conséquence observée SANS ce réglage : naviguer un `<iframe>`
+// (aperçu) OU `window.open()` (présentation) vers un blob `application/pdf`
+// déclenche en coulisses une tentative de TÉLÉCHARGEMENT fantôme (repli du
+// moteur de rendu faute de visualiseur), qui peut ENTRER EN COLLISION avec un
+// téléchargement légitime survenant peu après (`#downloadPdfBtn`) et lui faire
+// perdre son nom de fichier (`suggestedFilename()` retombe sur un UUID
+// aléatoire généré par Chromium plutôt que l'attribut `download` du lien) —
+// reproduit de façon déterministe SANS ce réglage, disparaît AVEC. Portée
+// limitée à CE fichier (pas de `channel` dans `playwright.config.ts`,
+// `pctac.spec.ts` non affecté).
+test.use({ launchOptions: { channel: 'chromium' } });
+
 test.describe('OI — Checklist fonctionnelle (docs/recon-oi.md §9)', () => {
   test.beforeEach(async ({ page }) => {
     // Handler global UNIQUE (voir justification ci-dessus) : un `prompt()`
@@ -899,11 +918,19 @@ test.describe('OI — Checklist fonctionnelle (docs/recon-oi.md §9)', () => {
   // ------------------------------------------------------------------
   // Génération du document (aperçu / téléchargement / présentation / format)
   // ------------------------------------------------------------------
-  test('Génération — aperçu HTML vivant (previewBtn → openPresentationMode → openPreview)', async ({ page }) => {
+  // R4-a (D2, « une seule voie d'output PDF ») : l'aperçu (#previewBtn →
+  // openPresentationMode → PDFEngineV2.openPreview) embarque désormais le
+  // MÊME blob PDF vectoriel que le téléchargement, dans un
+  // <iframe class="pdf-preview-frame" src="blob:...">, au lieu du gabarit
+  // HTML dupliqué de `generateHTML` (retiré).
+  test('Génération — aperçu PDF vivant (previewBtn → openPresentationMode → openPreview, iframe sur blob PDF réel)', async ({ page }) => {
     await goToFinalStepAndOpenPreview(page);
-    await step('clic sur #previewBtn ouvre #presentationModal avec du contenu', async () => {
+    await step('clic sur #previewBtn ouvre #presentationModal avec un <iframe> pointant sur le blob PDF réel', async () => {
       await expect.soft(page.locator('#presentationModal')).toBeVisible({ timeout: 5000 });
-      await expect.soft(page.locator('#presentation-content')).not.toBeEmpty({ timeout: 5000 });
+      const iframe = page.locator('#presentation-content iframe.pdf-preview-frame');
+      await expect.soft(iframe).toBeVisible({ timeout: 15000 });
+      const src = await iframe.getAttribute('src');
+      expect.soft(src).toMatch(/^blob:/);
     });
   });
 
@@ -951,47 +978,60 @@ test.describe('OI — Checklist fonctionnelle (docs/recon-oi.md §9)', () => {
     });
   });
 
-  test('Génération — mode présentation plein écran autonome (openPresentInPlace, nouvel onglet)', async ({ page, context }) => {
+  // R4-a (D2, « une seule voie d'output PDF ») : `openPresentInPlace` ouvre
+  // désormais le MÊME blob PDF vectoriel (plus le « deck » HTML autonome de
+  // `_buildPresentationDocument`, retiré) — l'URL reste un `blob:` (le
+  // visualiseur PDF natif du nouvel onglet fournit zoom/plein écran/
+  // impression).
+  // Le Chromium headless de test n'embarque PAS de visualiseur PDF
+  // (`navigator.pdfViewerEnabled === false`, constaté) : naviguer un onglet
+  // COMPLET vers un blob `application/pdf` via `window.open()` n'y aboutit
+  // JAMAIS (`popup.url()` reste vide indéfiniment, contrairement à l'ancien
+  // blob `text/html`, qui navigue immédiatement) — limitation de
+  // l'environnement de test, pas un défaut de `openPresentInPlace()`. On
+  // vérifie donc directement l'APPEL à `window.open()` (URL `blob:` + cible
+  // `_blank`), stubé pour ne jamais dépendre du rendu PDF réel du navigateur
+  // — même principe que le stub `window.print` de l'ancien test `#printHqBtn`
+  // (retiré avec la voie B) : contrat vérifié, pas rendu.
+  test('Génération — présentation plein écran (openPresentInPlace, window.open sur le blob PDF réel)', async ({ page }) => {
     await goToFinalStepAndOpenPreview(page);
     await expect.soft(page.locator('#presentationModal')).toBeVisible({ timeout: 5000 });
-    await step('#presentHereBtn ouvre un nouvel onglet avec un document Blob autonome', async () => {
-      const popupPromise = context.waitForEvent('page', { timeout: 5000 }).catch(() => null);
+
+    await page.evaluate(() => {
+      (window as unknown as { __openCalls: Array<{ url: string; target: string }> }).__openCalls = [];
+      window.open = ((url?: string | URL, target?: string): Window | null => {
+        (window as unknown as { __openCalls: Array<{ url: string; target: string }> }).__openCalls.push({
+          url: String(url ?? ''),
+          target: String(target ?? ''),
+        });
+        // Renvoie un objet tronqué mais TRUTHY : évite la branche « popup
+        // bloquée » de openPresentInPlace() (alert + revoke immédiat), on ne
+        // veut exercer QUE la branche succès ici.
+        return window;
+      }) as typeof window.open;
+    });
+
+    await step('#presentHereBtn appelle window.open(blob:…, "_blank")', async () => {
       await page.locator('#presentHereBtn').click();
-      const popup = await popupPromise;
-      expect.soft(popup).not.toBeNull();
-      if (popup) {
-        await popup.waitForLoadState('domcontentloaded').catch(() => {});
-        expect.soft(popup.url()).toMatch(/^blob:|^data:/);
-      }
+      await expect
+        .poll(() => page.evaluate(() => (window as unknown as { __openCalls: unknown[] }).__openCalls.length), {
+          timeout: 10000,
+        })
+        .toBeGreaterThan(0);
+      const calls = await page.evaluate(
+        () => (window as unknown as { __openCalls: Array<{ url: string; target: string }> }).__openCalls,
+      );
+      expect.soft(calls[0]?.url).toMatch(/^blob:/);
+      expect.soft(calls[0]?.target).toBe('_blank');
     });
   });
 
-  // PDF.INTEG (SPEC-PDF-V3.md §5.2/§5.3) : nouveau bouton `#printHqBtn`
-  // (« Imprimer — qualité maximale », voie B) → `printOiHighQuality()`
-  // (`src/apps/oi/pdf/print-view.ts`) → `<iframe>` hors écran (srcdoc) →
-  // `window.print()` DE L'IFRAME (pas de la page top-level). `window.print()`
-  // ouvrirait la boîte de dialogue native du navigateur (bloquante, jamais
-  // fermée par Playwright/Chromium headless) — stubbée via `addInitScript`,
-  // qui s'applique à TOUS les documents créés dans la page APRÈS son appel, y
-  // compris l'iframe dynamique créée par `printOiHighQuality()` (vérifié :
-  // fonctionne même si `addInitScript` est posé après la navigation initiale
-  // de la page top-level, tant qu'il précède la création de l'iframe).
-  test('Génération — impression qualité maximale (printOiHighQuality, voie B, #printHqBtn)', async ({ page }) => {
-    let printCalls = 0;
-    await page.exposeFunction('__e2ePrintCalled', () => { printCalls++; });
-    await page.addInitScript(() => {
-      window.print = (): void => {
-        (window as unknown as { __e2ePrintCalled?: () => void }).__e2ePrintCalled?.();
-      };
-    });
-
-    await goToFinalStepAndOpenPreview(page);
-    await expect.soft(page.locator('#presentationModal')).toBeVisible({ timeout: 5000 });
-    await step('#printHqBtn construit le document autonome et appelle window.print() sur l\'iframe', async () => {
-      await page.locator('#printHqBtn').click();
-      await expect.poll(() => printCalls, { timeout: 10000 }).toBeGreaterThan(0);
-    });
-  });
+  // R4-a (D2, « une seule voie d'output PDF ») : le bouton `#printHqBtn`
+  // (« Imprimer — qualité maximale », voie B, `printOiHighQuality()` →
+  // `print-view.ts`/`print-style.ts`) est RETIRÉ — on imprime désormais le
+  // PDF vectoriel via le bouton natif du visualiseur PDF du navigateur
+  // (téléchargement ou aperçu/présentation, tous les trois construits par
+  // `buildOiPdfBlob()`). Le test dédié `#printHqBtn` disparaît avec lui.
 
   // ------------------------------------------------------------------
   // Persistance / sessions

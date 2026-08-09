@@ -5,11 +5,17 @@
  * `normalizePhotos()`, §4 « devenir de l'ancien moteur » ; paquet
  * « pdf-p6-engine-v3 »).
  *
- * `PDFEngineV2.generateHTML()`/`_fitPageToBudget()` restent le moteur de
- * l'aperçu HTML in-app (`openPreview`) et du mode « Présenter ici »
- * (`openPresentInPlace`) — INCHANGÉS (SPEC §4, `pdf-engine-v2.ts` non modifié).
- * Seul `collectAllData()` (collecteur UNIQUE photos IndexedDB + fusion des
- * annotations + fond personnalisé) est RÉUTILISÉ ici, jamais dupliqué.
+ * R4-a (D2, « une seule voie d'output PDF ») : `buildOiPdfBlob()` ci-dessous
+ * est désormais la SOURCE UNIQUE DE VÉRITÉ pour les TROIS entrées — le
+ * téléchargement (`downloadOiPdfV3`, ci-dessous), l'aperçu in-app
+ * (`PDFEngineV2.openPreview()`, `<iframe>` sur le blob) et la présentation
+ * plein écran (`PDFEngineV2.openPresentInPlace()`, nouvel onglet sur le
+ * blob) — toutes les trois importent dynamiquement ce module. L'ancien
+ * gabarit HTML dupliqué (`PDFEngineV2.generateHTML()`/`_fitPageToBudget()`/
+ * `_buildPresentationDocument()`, ~740 LOC) a été retiré de
+ * `pdf-engine-v2.ts`. `collectAllData()` (collecteur UNIQUE photos IndexedDB
+ * + fusion des annotations + fond personnalisé) reste RÉUTILISÉ ici, jamais
+ * dupliqué.
  */
 
 import type { TDocumentDefinitions } from 'pdfmake/interfaces';

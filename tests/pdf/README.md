@@ -1,5 +1,16 @@
 # Protocole de non-régression structurel — PDF de l'OI (`verify-structure.mjs`)
 
+> **R4-a (D2, « une seule voie d'output PDF »)** : la voie B applicative
+> (bouton `#printHqBtn` « Imprimer — qualité maximale » → `print-view.ts` +
+> `print-style.ts` → `window.print()` sur iframe) a été **retirée** de l'app —
+> téléchargement, aperçu (`openPreview`) et présentation (`openPresentInPlace`)
+> passent désormais tous les trois par le même moteur pdfmake (voie A). Le
+> mode `--voie=b` de cet outil (calibrage des gardes B1/B2/B6/B8/B9, tableau
+> ci-dessous) reste néanmoins documenté TEL QUEL : c'est un mode de calibrage
+> du script de vérification, pas un chemin de l'application — il conserve sa
+> valeur de référence/régression si une page dédiée par section devait
+> resservir un jour, sans qu'il y ait lieu de réécrire le protocole ici.
+
 Outil : `tests/pdf/verify-structure.mjs` — script Node ESM autonome, **aucune
 dépendance npm**. Il appelle directement binaires système `poppler-utils`
 (`pdfinfo`, `pdftotext`, `pdffonts`, `pdfimages`) pour vérifier invariants

@@ -1018,21 +1018,6 @@ export interface OiDefaults {
  * 15. OI — window.PDFEngineV2  (modules/pdf_engine_v2.js:1154)
  * ========================================================================= */
 
-/** Configuration de rendu (pdf_engine_v2.js:20-32). */
-export interface OiPdfEngineOptions {
-    margin: number;
-    filename: string;
-    image: { type: string; quality: number };
-    html2canvas: {
-        scale: number;
-        useCORS: boolean;
-        letterRendering: boolean;
-        logging: boolean;
-        allowTaint: boolean;
-    };
-    jsPDF: { unit: string; format: string; orientation: string };
-}
-
 /** Données consolidées produites par `collectAllData` (pdf_engine_v2.js:396). */
 export interface OiPdfCollectedData {
     /** Copie PROFONDE (`JSON.parse(JSON.stringify(...))`) de `Store.state.formData`. */
@@ -1042,19 +1027,17 @@ export interface OiPdfCollectedData {
     isDark: boolean;
 }
 
-/** Dimensions de page passées à `generateHTML` (pdf_engine_v2.js:467-468). */
-export interface OiPdfPageOptions {
-    /** Largeur en mm. Défaut 297 (A4 paysage) ; > 300 déclenche le mode 16:9. */
-    pageW?: number | undefined;
-    /** Hauteur en mm. Défaut 210. */
-    pageH?: number | undefined;
-}
-
+// R4-a (D2, « une seule voie d'output PDF ») : `options` (config html2canvas/
+// jsPDF, morte depuis PDF.INTEG) et `generateHTML`/`OiPdfPageOptions` (gabarit
+// HTML de l'aperçu/présentation, remplacé par le blob pdfmake réel — voir
+// `openPreview`/`openPresentInPlace` ci-dessous) sont RETIRÉS du contrat.
 export interface PdfEngineV2Contract {
-    options: OiPdfEngineOptions;
-    /** Rendu HTML vivant dans `#presentation-content`. */
+    /** Construit le blob PDF vectoriel (même moteur que le téléchargement,
+     * `@oi/pdf/engine-v3.js::buildOiPdfBlob`) et l'affiche dans un `<iframe>`
+     * embarqué dans `#presentation-content`. */
     openPreview(): Promise<void>;
-    /** Ouvre un document Blob autonome dans un nouvel onglet (diaporama/liste). */
+    /** Ouvre le même blob PDF vectoriel dans un nouvel onglet (visualiseur
+     * PDF natif du navigateur : zoom, plein écran, impression). */
     openPresentInPlace(): Promise<void>;
     // downloadOiPdf() RETIRÉE (PDF.INTEG, SPEC-PDF-V3.md §4) : le téléchargement
     // rastérisait via html2canvas + jsPDF ; remplacé par `downloadOiPdfV3()`
@@ -1062,11 +1045,6 @@ export interface PdfEngineV2Contract {
     // depuis `src/apps/oi/main.ts`, hors de ce contrat.
     collectAllData(): Promise<OiPdfCollectedData>;
     blobToBase64(blob: Blob): Promise<string>;
-    generateHTML(
-        data: OiPdfCollectedData,
-        isPreview?: boolean,
-        pageOptions?: OiPdfPageOptions,
-    ): string;
 }
 
 /* =========================================================================
