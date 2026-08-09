@@ -1799,3 +1799,210 @@ body.up-kb-open .up-kb-aware {
     min-height: 1.5em;
 }
 
+/* ═══════════════════════════════════════════════════════════════════════
+ * T4 — classes extraites des styles inline
+ * ───────────────────────────────────────────────────────────────────────
+ * Purge des `style="…"` inline PRÉSENTATIONNELS STATIQUES de pctac/index.html
+ * (refactor pur, aucun changement visuel). Chaque déclaration est copiée à
+ * l'identique depuis l'inline d'origine (mêmes valeurs, même ordre).
+ * Restent inline (non touchés, cf. mission R1-T4 règle 1) : tout attribut où
+ * le JS de src/apps/pctac/ lit/écrit une propriété qui y figure (display
+ * togglé par ui.ts/draw-tools.ts/text-modal.ts/tchap-live.ts/ping-modal.ts,
+ * background/color/cursor/borderColor pilotés par draw-tools.ts/
+ * shapes-render.ts/tchap-live.ts sur les boutons .plan-draw-btn,
+ * .plan-draw-color, .plan-text-color, #plan_draw_undo/redo/lock/
+ * diameter_toggle, #tl_dot, #tl_status) — ainsi que les 3 boutons de
+ * précision de dessin (#plan_draw_precision_start/confirm/cancel) où seule
+ * la déclaration `display` reste inline, le reste étant extrait dans
+ * .pctac-precision-btn (+ #plan_draw_precision_* pour le fond, qui varie).
+ * ═══════════════════════════════════════════════════════════════════════ */
+.pctac-row-log { grid-template-columns: auto 1fr; align-items: end; gap: 15px; }
+.pctac-field-heure { width: 120px; }
+.pctac-input-heure { width: 100%; min-width: 110px; }
+.pax-select-option--add { min-width: 40px; border-style: dashed; }
+.pctac-mt-15 { margin-top: 15px; }
+.pctac-input-lieu { min-height: 45px; }
+
+.pctac-mb-15 { margin-bottom: 15px; }
+.pctac-row-entity { grid-template-columns: 100px 1fr 1fr 1fr; }
+.pctac-grid-row-2 { grid-row: span 2; }
+.pctac-grid-col-2 { grid-column: span 2; }
+.pctac-photo-preview { width: 100%; height: 100px; border: 1px solid var(--border-glass); border-radius: var(--radius-sm); margin-bottom: 5px; display: flex; align-items: center; justify-content: center; overflow: hidden; background: rgba(0,0,0,0.2); }
+/* .material-symbols-outlined.pctac-icon-* (sélecteur composé, partout ci-dessous
+   où une classe pctac- redéfinit font-size/color d'un glyphe icône) : le
+   paquet npm `material-symbols/outlined.css` (src/shared/fonts.ts) est injecté
+   par Vite via un <style> RUNTIME, positionné APRÈS le <link> statique de
+   pctac.css dans le <head> — sa propre règle `.material-symbols-outlined
+   { font-size: 24px; ... }` (même spécificité qu'une simple classe pctac-)
+   gagne donc quel que soit l'ordre dans CE fichier. L'inline d'origine ne
+   voyait jamais ce piège (spécificité inline toujours maximale) ; une classe
+   pctac- seule le perdrait sur CHAQUE icône dont la taille/couleur diffère de
+   24px/défaut. Sélecteur à 2 classes (spécificité 0,2,0) pour battre le
+   paquet npm de façon robuste, indépendamment de l'ordre d'injection Vite. */
+.material-symbols-outlined.pctac-icon-30-muted { font-size: 30px; color: var(--text-muted); }
+.pctac-upload-compact { padding: 5px; height: auto; }
+.pctac-w-80 { width: 80px; }
+.pctac-w-50 { width: 50px; }
+
+.pctac-precision-btn { align-items: center; gap: 6px; padding: 10px 16px; border-radius: 30px; font-weight: bold; border: 1px solid var(--border-glass); color: white; box-shadow: 0 4px 15px rgba(0,0,0,0.4); cursor: pointer; font-family: inherit; }
+#plan_draw_precision_start { background: var(--accent-blue); }
+#plan_draw_precision_confirm { background: #22c55e; }
+#plan_draw_precision_cancel { background: var(--danger-red); }
+.material-symbols-outlined.pctac-icon-18 { font-size: 18px; }
+.material-symbols-outlined.pctac-icon-20 { font-size: 20px; }
+.material-symbols-outlined.pctac-icon-24 { font-size: 24px; }
+.pctac-w-10p { width: 10%; }
+.pctac-w-15p { width: 15%; }
+.pctac-w-35p { width: 35%; }
+
+.pctac-row-friend { grid-template-columns: 1fr 1fr 1fr 1fr 1fr auto; align-items: end; margin-top: 15px; }
+.pctac-btn-auto-md { width: auto; padding: 10px 20px; }
+.pctac-row-photo { grid-template-columns: 1fr 1fr 60px auto; align-items: end; }
+.pctac-upload-flush { padding: 0; border-width: 2px; }
+.pctac-photo-filter { margin-top: 20px; display: flex; gap: 8px; flex-wrap: wrap; }
+
+.pctac-plan-wrap { position: relative; height: 78vh; min-height: 500px; border-radius: var(--radius-md); overflow: hidden; border: 1px solid var(--border-glass); }
+/* #plan_map (id, pas .pctac-plan-map) : `maplibre-gl/dist/maplibre-gl.css`
+   (importé dans main.ts, injecté par Vite APRÈS le <link> statique de
+   pctac.css) pose sa propre classe `.maplibregl-map { position: relative; }`
+   sur CE MÊME élément à l'init de la carte — même piège de spécificité que le
+   bloc `.material-symbols-outlined.pctac-icon-*` plus haut (classe seule
+   perdante face à une feuille injectée plus tard). L'id bat la classe
+   inconditionnellement, sans dépendre de l'ordre d'injection Vite. */
+#plan_map { position: absolute; inset: 0; }
+.pctac-search-row { display: flex; gap: 6px; }
+.pctac-flex-1 { flex: 1; }
+.pctac-btn-auto-sm { width: auto; padding: 8px 12px; }
+.pctac-btn-search-close { width: auto; padding: 8px 10px; background: var(--bg-input); border: 1px solid var(--border-glass); color: var(--text-main); }
+.pctac-search-results { margin-top: 6px; max-height: 200px; overflow-y: auto; font-size: 0.85em; }
+.pctac-color-picker-row { display: flex; gap: 4px; align-items: center; padding: 0 5px; }
+.pctac-draw-btn-clear { background: transparent; border: 1px solid transparent; color: var(--danger-red); padding: 7px 10px; border-radius: 4px; cursor: pointer; }
+.pctac-plan-legend { position: absolute; bottom: 10px; right: 10px; z-index: 10; background: var(--bg-glass-heavy); backdrop-filter: blur(10px); border: 1px solid var(--border-glass); border-radius: var(--radius-sm); font-size: 0.85em; max-width: 70%; }
+.pctac-plan-legend-summary { cursor: pointer; padding: 8px 12px; display: flex; align-items: center; gap: 6px; font-weight: 600; color: var(--text-main); list-style: none; }
+.pctac-legend-items { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; padding: 2px 12px 10px; }
+.pctac-legend-item { display: inline-flex; align-items: center; gap: 5px; }
+.pctac-legend-dot { width: 12px; height: 12px; border-radius: 50%; display: inline-block; }
+.pctac-legend-dot--new { background: var(--inter-blue); }
+.pctac-legend-dot--moving { background: var(--ao-green); }
+.pctac-legend-dot--idle { background: var(--text-muted); }
+.pctac-legend-dot--critical { background: var(--danger-red); }
+
+.pctac-mt-14 { margin-top: 14px; }
+.pctac-toggle-btn { width: auto; display: inline-flex; align-items: center; gap: 8px; padding: 8px 14px; }
+.pctac-col-gap-10 { display: flex; flex-direction: column; gap: 10px; }
+.pctac-muted-08 { font-size: 0.8em; color: var(--text-muted); }
+.pctac-w-100 { width: 100%; }
+.pctac-cursor-pointer { cursor: pointer; }
+.pctac-advanced-fields { margin-top: 8px; display: flex; flex-direction: column; gap: 8px; }
+.pctac-muted-09 { font-size: 0.9em; color: var(--text-muted); }
+.pctac-tl-actions-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 12px; }
+.pctac-btn-oidc { width: auto; padding: 8px 16px; }
+.pctac-btn-outline-md { width: auto; padding: 8px 16px; background: var(--bg-input); border: 1px solid var(--border-glass); color: var(--text-main); }
+.pctac-muted-sm { font-size: 0.85em; color: var(--text-muted); }
+.pctac-section-label { margin-top: 10px; font-size: 0.75em; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); }
+.pctac-tl-ops { margin-top: 4px; max-height: 220px; overflow-y: auto; }
+.pctac-tl-log { margin-top: 8px; max-height: 120px; overflow-y: auto; font-family: ui-monospace, monospace; font-size: 0.72em; line-height: 1.5; color: var(--text-muted); background: var(--bg-input); border: 1px solid var(--border-glass); border-radius: var(--radius-sm); padding: 8px; }
+.pctac-tl-note { margin-top: 8px; font-size: 0.75em; color: var(--text-muted); line-height: 1.5; }
+.pctac-tl-color-tag { font-weight: 600; }
+.pctac-tl-color-tag--blue { color: var(--inter-blue, #4f8dff); }
+.pctac-tl-color-tag--green { color: var(--ao-green, #2ecf91); }
+.pctac-tl-color-tag--gray { color: var(--text-muted); }
+.pctac-tl-color-tag--red { color: var(--danger-red, #f0556a); }
+
+.pctac-modal-scroll { max-height: 92vh; overflow-y: auto; }
+.pctac-modal-close-btn { position: absolute; top: 15px; right: 15px; background: none; border: none; color: var(--text-muted); cursor: pointer; display: flex; align-items: center; justify-content: center; width: 30px; height: 30px; z-index: 10; }
+.material-symbols-outlined.pctac-icon-accent-mid { vertical-align: middle; color: var(--accent-blue); }
+.pctac-m-18-0 { margin: 18px 0; }
+/* #pingModal #ping_entities_list (au lieu d'une classe) : styles/pctac.css:1193
+   fixe déjà `#pingModal #ping_entities_list { max-height: 30vh; }` sans media
+   query, spécificité 2 id — une classe seule perdrait tout le temps (l'inline
+   d'origine gagnait toujours). On égale la spécificité pour préserver 220px. */
+.pctac-ping-entities-list,
+#pingModal #ping_entities_list { display: flex; flex-direction: column; gap: 6px; max-height: 220px; overflow-y: auto; margin-top: 6px; }
+.pctac-hr-divider { border-top: 1px solid var(--border-glass); margin: 18px 0; }
+.pctac-mt-6 { margin-top: 6px; }
+.pctac-m-12-0 { margin: 12px 0; }
+.pctac-color-select-row { display: flex; gap: 8px; flex-wrap: wrap; }
+/* #pingModal #pin_icon_suggestions : styles/pctac.css:1214 (media max-width:640px)
+   fixe `gap: var(--tac-space-2)` en spécificité 2 id — égalée ici pour garder 6px. */
+.pctac-icon-suggestions-row,
+#pingModal #pin_icon_suggestions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+.pctac-space-between-row { display: flex; align-items: center; gap: 10px; justify-content: space-between; }
+.pctac-m-0 { margin: 0; }
+/* Spécificité #pingModal #pin_icon_picker_toggle (au lieu d'une simple classe) :
+   #pingModal .add-btn (styles/pctac.css, media max-width:640px) a pour spécificité
+   1 id + 1 classe ; l'ancien style inline (spécificité maximale) gagnait toujours.
+   Une classe seule (0 id + 1 classe) perdrait sur mobile — on égale donc la
+   spécificité de la règle existante pour préserver le rendu original. */
+#pingModal #pin_icon_picker_toggle { width: auto; padding: 6px 12px; background: var(--bg-input); font-size: 0.85em; }
+.material-symbols-outlined.pctac-icon-18-mid { font-size: 18px; vertical-align: middle; }
+/* #pingModal #pin_icon_current_preview : styles/pctac.css:1246 (media max-width:640px)
+   fixe `padding: 10px` en spécificité 2 id — égalée ici pour garder 8px. */
+.pctac-icon-current-preview,
+#pingModal #pin_icon_current_preview { display: flex; align-items: center; gap: 10px; margin-top: 8px; padding: 8px; background: rgba(255,255,255,0.04); border-radius: 6px; }
+.material-symbols-outlined.pctac-icon-current-glyph { font-size: 32px; color: #3b82f6; }
+.pctac-mb-10 { margin-bottom: 10px; }
+.pctac-ping-footer-note { color: var(--text-muted); font-size: 0.85em; margin-top: 12px; }
+
+.pctac-liens-layout { display: flex; gap: 20px; min-height: 500px; }
+.pctac-liens-carto-col { flex: 1; display: flex; flex-direction: column; gap: 15px; }
+.pctac-liens-carto-panel { background: var(--bg-glass); padding: 30px; border-radius: var(--radius-md); border: 1px solid var(--border-glass); flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
+.pctac-liens-carto-header { margin-bottom: 30px; }
+.material-symbols-outlined.pctac-icon-64-accent { font-size: 64px; color: var(--accent-blue); opacity: 0.8; }
+.pctac-liens-h2 { margin-top: 15px; font-family: var(--font-title); letter-spacing: 2px; }
+.pctac-liens-desc { color: var(--text-muted); max-width: 400px; margin: 10px auto; }
+.pctac-liens-btn-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; width: 100%; max-width: 600px; }
+.pctac-liens-btn-tile { text-decoration: none; display: flex; align-items: center; justify-content: center; height: 120px; flex-direction: column; gap: 10px; font-size: 1.1em; }
+.pctac-liens-btn-tile--earth { background: #25D366; border-color: #128C7E; }
+.material-symbols-outlined.pctac-icon-32 { font-size: 32px; }
+.pctac-liens-note-box { margin-top: 40px; padding: 15px; background: rgba(0,0,0,0.2); border-radius: var(--radius-sm); border-left: 4px solid var(--civil-yellow); text-align: left; max-width: 600px; }
+.pctac-liens-note-text { color: var(--text-muted); }
+.material-symbols-outlined.pctac-icon-14-mid { font-size: 14px; vertical-align: middle; }
+.pctac-liens-sidebar { width: 250px; display: flex; flex-direction: column; gap: 15px; }
+.pctac-liens-sidebar-panel { background: var(--bg-glass); padding: 25px; border-radius: var(--radius-md); border: 1px solid var(--border-glass); height: 100%; display: flex; flex-direction: column; }
+.pctac-liens-sidebar-header { display: flex; align-items: center; gap: 8px; margin-bottom: 25px; border-bottom: 1px solid var(--border-glass); padding-bottom: 15px; }
+.material-symbols-outlined.pctac-icon-green { color: var(--ao-green); }
+.pctac-liens-h4 { margin: 0; font-family: var(--font-ui); letter-spacing: 1px; }
+.pctac-liens-links-col { display: flex; flex-direction: column; gap: 15px; }
+.pctac-liens-btn-row { text-decoration: none; display: flex; align-items: center; justify-content: center; gap: 12px; font-size: 1em; height: 60px; }
+.pctac-liens-btn-row--wa { background: #25D366; border-color: #128C7E; }
+.pctac-liens-footer-note { margin-top: auto; padding-top: 30px; font-size: 0.85em; color: var(--text-muted); text-align: center; font-family: var(--font-data); line-height: 1.4; }
+.pctac-app-footer { text-align: center; color: var(--text-muted); font-size: 0.8em; margin-top: 40px; }
+
+.pctac-modal-scroll-90 { max-height: 90vh; overflow-y: auto; }
+.pctac-create-pax-header { display: flex; align-items: center; gap: 10px; margin-bottom: 15px; border-bottom: 1px solid var(--border-glass); padding-bottom: 10px; }
+.material-symbols-outlined.pctac-text-accent { color: var(--accent-blue); }
+.pctac-mb-20 { margin-bottom: 20px; }
+.pctac-mb-8 { margin-bottom: 8px; }
+.pctac-input-1em { font-size: 1em; }
+.pctac-color-palette-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(32px, 1fr)); gap: 10px; padding: 5px; }
+.pctac-create-pax-actions { display: flex; gap: 12px; margin-top: 10px; }
+.pctac-btn-flex-2-45 { flex: 2; height: 45px; }
+.material-symbols-outlined.pctac-icon-20-mid-mr5 { font-size: 20px; vertical-align: middle; margin-right: 5px; }
+.pctac-btn-flex-1-input-45 { flex: 1; background: var(--bg-input); height: 45px; }
+.material-symbols-outlined.pctac-icon-danger-mid { vertical-align: middle; color: var(--danger-red); }
+.pctac-reset-warning-text { margin: 15px 0; font-size: 0.9em; color: var(--text-muted); }
+.pctac-actions-row-gap10 { display: flex; gap: 10px; }
+.pctac-btn-danger-bg { background: var(--danger-red); }
+.pctac-btn-bg-input { background: var(--bg-input); }
+
+.pctac-row-edit { grid-template-columns: 1fr 3fr; margin-top: 15px; }
+.pctac-mt-12 { margin-top: 12px; }
+.pctac-actions-row { display: flex; gap: 10px; margin-top: 20px; }
+.pctac-edit-preview { width: 100%; aspect-ratio: 1; max-width: 160px; border: 2px dashed var(--border-glass); border-radius: 8px; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+.material-symbols-outlined.pctac-icon-48-muted { font-size: 48px; color: var(--text-muted); }
+.pctac-upload-edit { margin-top: 10px; padding: 8px; height: auto; }
+
+.pctac-plan-text-modal { max-width: 520px; }
+.pctac-text-modal-row { margin-top: 12px; display: flex; gap: 18px; flex-wrap: wrap; align-items: flex-end; }
+.pctac-text-color-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px; }
+.pctac-size-controls-row { display: flex; gap: 6px; align-items: center; margin-top: 6px; }
+.pctac-icon-btn-sq { width: 36px; height: 36px; border-radius: 6px; background: var(--bg-input); border: 1px solid var(--border-glass); color: var(--text-main); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
+.pctac-text-size-val { min-width: 38px; text-align: center; font-family: var(--font-data, monospace); font-weight: 600; }
+
+.pctac-lightbox-close-btn { position: absolute; top: 20px; right: 20px; background: none; border: none; color: white; cursor: pointer; }
+.material-symbols-outlined.pctac-icon-40 { font-size: 40px; }
+.pctac-link-plain { text-decoration: none; }
+.material-symbols-outlined.pctac-icon-accent-fallback { color: var(--accent-blue, #3b82f6); }
+.material-symbols-outlined.pctac-icon-danger { color: var(--danger-red); }
+
