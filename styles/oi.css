@@ -970,11 +970,20 @@ body.up-kb-open .up-kb-aware {
             border-color: var(--danger-hover);
             color: var(--tac-paper-50);
         }
+        /* Thème clair : rouge plein + texte noir = agressif (Nico, 2026-08-09).
+           Rouge desature/pastel (meme hue que --danger-red) + texte gris clair.
+           Ratio verifie (WCAG) : #c96b6b/#f5f6f8 = 3.35:1 (>=3:1 vise pour ce
+           texte de bouton) ; hover #b85f5f/#f5f6f8 = 4.01:1 (contraste renforce
+           au survol, coherent). */
         body.light-mode #createAdversaryBtn {
-            color: #000000;
+            background-color: #c96b6b;
+            border-color: #c96b6b;
+            color: #f5f6f8;
         }
         body.light-mode #createAdversaryBtn:hover {
-            color: #000000;
+            background-color: #b85f5f;
+            border-color: #b85f5f;
+            color: #f5f6f8;
         }
 
         /* ==========================================================================
@@ -2055,7 +2064,7 @@ body.up-kb-open .up-kb-aware {
             flex-shrink: 0;
             padding: 20px var(--space-5);
             border-bottom: 1px solid var(--border-light);
-            background: rgba(20, 24, 32, 0.85);
+            background: color-mix(in srgb, var(--bg-container) 85%, transparent);
             backdrop-filter: blur(12px);
             -webkit-backdrop-filter: blur(12px);
             position: sticky;
@@ -2084,7 +2093,7 @@ body.up-kb-open .up-kb-aware {
             flex-shrink: 0;
             padding: 20px var(--space-5);
             border-top: 1px solid var(--border-light);
-            background: rgba(10, 12, 16, 0.95);
+            background: color-mix(in srgb, var(--bg-body) 95%, transparent);
             backdrop-filter: blur(10px);
             -webkit-backdrop-filter: blur(10px);
             position: sticky;
@@ -3469,13 +3478,17 @@ body.up-kb-open .up-kb-aware {
         }
 
 
-        /* Thème spécifique pour la modale d'annotation (Immersion Photo) */
+        /* Thème spécifique pour la modale d'annotation (Immersion Photo) —
+           le canvas/toolbar restent volontairement noirs (surface photo,
+           cf. .annotation-wrapper) mais l'en-tête (chrome de la modale,
+           hors canvas) doit rester sur les tokens sémantiques pour basculer
+           avec le thème, comme le reste des modales. */
         #annotationModal .modal-form {
             background: #000;
         }
         #annotationModal .modal-header {
-            background: rgba(20, 24, 32, 0.95);
-            border-bottom-color: rgba(255, 255, 255, 0.1);
+            background: color-mix(in srgb, var(--bg-container) 95%, transparent);
+            border-bottom-color: var(--border-light);
         }
         @media (max-width: 600px) {
             .dock-menu {
@@ -3967,6 +3980,57 @@ body.up-kb-open .up-kb-aware {
 .section-heading-blue.section-heading-blue { margin-top: 25px; color: var(--accent-blue); border-bottom: 2px solid var(--accent-blue); padding-bottom: 8px; }
 .section-heading-purple.section-heading-purple { margin-top: 25px; color: var(--moicp-zmspcp-purple, #8e44ad); border-bottom: 2px solid var(--moicp-zmspcp-purple, #8e44ad); padding-bottom: 8px; }
 .section-heading-gold.section-heading-gold { margin-top: 25px; color: var(--effraction-gold); border-bottom: 2px solid var(--effraction-gold); padding-bottom: 8px; }
+
+/* Thème clair — étape 6 (Articulation) : mêmes hues bleu/violet/or, mais en
+   pastel (Nico, 2026-08-09) : fond très légèrement teinté (5% de l'accent),
+   bordure désaturée (mélangée à --border-color neutre). Texte laissé sur le
+   token existant (déjà assombri pour AA en clair, cf. body.light-mode
+   :root). Ne touche pas au thème sombre (tout guardé par body.light-mode). */
+body.light-mode .section-heading-blue.section-heading-blue {
+    background-color: color-mix(in srgb, var(--accent-blue) 5%, transparent);
+    border-bottom-color: color-mix(in srgb, var(--accent-blue) 40%, var(--border-color));
+}
+body.light-mode .section-heading-purple.section-heading-purple {
+    background-color: color-mix(in srgb, var(--moicp-zmspcp-purple) 5%, transparent);
+    border-bottom-color: color-mix(in srgb, var(--moicp-zmspcp-purple) 40%, var(--border-color));
+}
+body.light-mode .section-heading-gold.section-heading-gold {
+    background-color: color-mix(in srgb, var(--effraction-gold) 5%, transparent);
+    border-bottom-color: color-mix(in srgb, var(--effraction-gold) 40%, var(--border-color));
+}
+
+/* Boutons "Créer MOICP/ZMSPCP/Ajouter Cellule Effraction" — fonds associés
+   aux accents ci-dessus (style inline sur les <button>, oi/index.html) :
+   même traitement pastel qu'au-dessus plutôt qu'un aplat plein + texte
+   blanc qui dénote sur fond blanc. !important requis : la couleur inline
+   (style="background: var(--accent-blue)...") a une spécificité que seul
+   !important surpasse depuis cette feuille externe. */
+body.light-mode #addMoicpBtn {
+    background: color-mix(in srgb, var(--accent-blue) 20%, white) !important;
+    color: var(--accent-blue) !important;
+    border: 1px solid color-mix(in srgb, var(--accent-blue) 45%, transparent) !important;
+}
+body.light-mode #addZmspcpBtn {
+    background: color-mix(in srgb, var(--moicp-zmspcp-purple) 20%, white) !important;
+    color: var(--moicp-zmspcp-purple) !important;
+    border: 1px solid color-mix(in srgb, var(--moicp-zmspcp-purple) 45%, transparent) !important;
+}
+body.light-mode #addEffractionBtn {
+    background: color-mix(in srgb, var(--effraction-gold) 20%, white) !important;
+    color: var(--effraction-gold) !important;
+    border: 1px solid color-mix(in srgb, var(--effraction-gold) 45%, transparent) !important;
+}
+
+/* Bouton d'annotation de photo (section Photos, style inline sur le
+   <button onclick="openAnnotationModal(...)"> genere par medias.ts) — bleu
+   plein qui denote en clair (Nico, 2026-08-09) : meme traitement pastel que
+   les boutons Creer MOICP/ZMSPCP ci-dessus. Cible par attribut (onclick)
+   plutot qu'un id/classe dediee : bouton genere dynamiquement, pas de hook
+   CSS existant, et oi/index.html est hors perimetre autorise ici. */
+body.light-mode .image-preview-item button[onclick^="openAnnotationModal"] {
+    background-color: color-mix(in srgb, var(--accent-blue) 20%, white) !important;
+    color: var(--accent-blue) !important;
+}
 .btn-batch-clear.btn-batch-clear { background: var(--bg-interactive); }
 .qe-member-label.qe-member-label { margin: 0; }
 .qe-member-trigramme.qe-member-trigramme { font-size: 1.1em; font-weight: bold; }
