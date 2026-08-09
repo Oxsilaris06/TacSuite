@@ -13,3 +13,7 @@ tests/visual/diffs/
 # et sans valeur pour les utilisateurs finaux de TacSuite (outillage IA de
 # dev, pas un livrable applicatif). Decision arbitree en P4.FIX (reprise 2).
 graphify-out/
+
+# MemPalace per-project files (issue #185)
+mempalace.yaml
+entities.json

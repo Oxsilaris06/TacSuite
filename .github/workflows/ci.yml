@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install poppler-utils (required by tests/pdf/verify-structure.mjs)
+        run: sudo apt-get update && sudo apt-get install -y poppler-utils
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Unit tests
+        run: npm run test
+
+      - name: Generate PDF from reference fixture
+        run: node tests/pdf/generate-from-fixture.mjs tests/pdf/fixtures/long-case.json --out=/tmp/ci-long-case.pdf
+
+      - name: PDF structural non-regression (verify-structure)
+        run: node tests/pdf/verify-structure.mjs /tmp/ci-long-case.pdf --lenient
