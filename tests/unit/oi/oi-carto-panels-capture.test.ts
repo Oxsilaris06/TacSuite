@@ -82,6 +82,17 @@ interface FakeMap {
     getCanvas: ReturnType<typeof vi.fn>;
 }
 
+/** Conteneur `#oi_carto_map_wrap` factice : `offsetWidth` figé (jsdom ne fait
+ *  pas de layout) — requis par le DURCISSEMENT 1 de `_captureCanvas`
+ *  (`@pctac/planmap/capture.ts:41`, cf. en-tête de `capture.ts`). */
+function makeMapWrap(offsetWidth = 800): HTMLDivElement {
+    const el = document.createElement('div');
+    el.id = 'oi_carto_map_wrap';
+    Object.defineProperty(el, 'offsetWidth', { value: offsetWidth, configurable: true });
+    document.body.appendChild(el);
+    return el;
+}
+
 function makeGlCanvas(clientWidth = 800, clientHeight = 600): HTMLCanvasElement {
     const c = document.createElement('canvas');
     c.width = clientWidth;
@@ -181,7 +192,7 @@ describe('_closeWheel (oi_cartographie.js:997-999)', () => {
     it('détruit la roue active et la remet à null', () => {
         const state = makePanelsState();
         const destroy = vi.fn();
-        state._activeWheel = { open: vi.fn(), destroy };
+        state._activeWheel = { open: vi.fn(), destroy, element: null };
 
         state._closeWheel();
 
@@ -191,7 +202,7 @@ describe('_closeWheel (oi_cartographie.js:997-999)', () => {
 
     it('avale une exception de destroy() (try/catch verbatim)', () => {
         const state = makePanelsState();
-        state._activeWheel = { open: vi.fn(), destroy: () => { throw new Error('boom'); } };
+        state._activeWheel = { open: vi.fn(), destroy: () => { throw new Error('boom'); }, element: null };
 
         expect(() => state._closeWheel()).not.toThrow();
         expect(state._activeWheel).toBeNull();
@@ -658,7 +669,7 @@ describe('_captureCanvas (oi_cartographie.js:1215-1260)', () => {
 
     it('renvoie null si this.map est absent (même avec #oi_carto_map_wrap présent)', async () => {
         const CaptureMethods = await loadCaptureMethods(vi.fn());
-        document.body.innerHTML = '<div id="oi_carto_map_wrap"></div>';
+        makeMapWrap();
         const state = makeCaptureState(CaptureMethods, null);
 
         const result = await state._captureCanvas();
@@ -666,8 +677,24 @@ describe('_captureCanvas (oi_cartographie.js:1215-1260)', () => {
         expect(result).toBeNull();
     });
 
+    // DURCISSEMENT 1 (porté de `@pctac/planmap/capture.ts:41`) : vue OI cachée
+    // (display:none / autre onglet) — `offsetWidth` nul, capture impossible.
+    it('renvoie null SANS toucher au DOM si #oi_carto_map_wrap.offsetWidth est nul (vue cachée)', async () => {
+        const CaptureMethods = await loadCaptureMethods(vi.fn());
+        const wrap = makeMapWrap(0);
+        const map = makeFakeMap(makeGlCanvas());
+        const state = makeCaptureState(CaptureMethods, map);
+
+        const result = await state._captureCanvas();
+
+        expect(result).toBeNull();
+        expect(toastSpy).not.toHaveBeenCalled();
+        expect(map.triggerRepaint).not.toHaveBeenCalled();
+        expect(wrap.style.display).toBe(''); // jamais masqué (retour avant le masquage)
+    });
+
     it('compose canvas WebGL + overlay html2canvas ; masque puis restaure toolbar/hint (finally)', async () => {
-        document.body.innerHTML = '<div id="oi_carto_map_wrap"></div>';
+        makeMapWrap();
         const hint = document.createElement('div');
         hint.id = 'oi_carto_hint';
         hint.style.display = 'block';
@@ -691,10 +718,63 @@ describe('_captureCanvas (oi_cartographie.js:1215-1260)', () => {
             expect.objectContaining({ scale: 1, width: 800, height: 600 }),
         );
         expect(hint.style.display).toBe('block'); // restauré après capture
+        // DURCISSEMENT 5 bis : l'attribut d'épinglage px ne doit pas fuiter
+        // après une capture réussie (planmap/capture.ts:188-199, :258-259).
+        expect(document.getElementById('oi_carto_map_wrap')?.hasAttribute('data-h2c-pin')).toBe(false);
+        // DURCISSEMENT 3 : le verrou est relâché en sortie normale.
+        expect(state._captureBusy).toBe(false);
+    });
+
+    // DURCISSEMENT 3 (porté de `@pctac/planmap/capture.ts:55-56`) : verrou
+    // anti-concurrence — une 2e capture pendant la 1re ne doit rien tenter.
+    it('renvoie null si this._captureBusy (capture déjà en cours), sans toucher au DOM', async () => {
+        const CaptureMethods = await loadCaptureMethods(vi.fn());
+        makeMapWrap();
+        const map = makeFakeMap(makeGlCanvas());
+        const state = makeCaptureState(CaptureMethods, map);
+        state._captureBusy = true;
+
+        const result = await state._captureCanvas();
+
+        expect(result).toBeNull();
+        expect(map.triggerRepaint).not.toHaveBeenCalled();
+        expect(state._captureBusy).toBe(true); // le verrou n'est PAS touché par cette garde
+    });
+
+    // DURCISSEMENT 4 (porté de `:78-79`) : la roue active et le panneau inline
+    // (UI flottante transitoire OI) sont masqués pendant la capture, restaurés après.
+    it('masque la roue active et le panneau inline pendant la capture, les restaure après', async () => {
+        makeMapWrap();
+        const wheelEl = document.createElement('div');
+        wheelEl.style.display = 'flex';
+        document.body.appendChild(wheelEl);
+        const panelEl = document.createElement('div');
+        panelEl.className = 'oi-carto-inline-panel';
+        panelEl.style.display = 'block';
+        document.body.appendChild(panelEl);
+
+        const html2canvasMock = vi.fn().mockResolvedValue(document.createElement('canvas'));
+        const CaptureMethods = await loadCaptureMethods(html2canvasMock);
+        const map = makeFakeMap(makeGlCanvas());
+        const state = makeCaptureState(CaptureMethods, map);
+        state._activeWheel = { open: vi.fn(), destroy: vi.fn(), element: wheelEl };
+        state._inlinePanel = panelEl as unknown as OICartoInternal['_inlinePanel'];
+
+        let displayDuringCapture: { wheel: string; panel: string } | null = null;
+        html2canvasMock.mockImplementationOnce(async () => {
+            displayDuringCapture = { wheel: wheelEl.style.display, panel: panelEl.style.display };
+            return document.createElement('canvas');
+        });
+
+        await state._captureCanvas();
+
+        expect(displayDuringCapture).toEqual({ wheel: 'none', panel: 'none' });
+        expect(wheelEl.style.display).toBe('flex');
+        expect(panelEl.style.display).toBe('block');
     });
 
     it('alerte, renvoie null et restaure `toHide` si html2canvas jette (finally sur exception)', async () => {
-        document.body.innerHTML = '<div id="oi_carto_map_wrap"></div>';
+        makeMapWrap();
         const hint = document.createElement('div');
         hint.id = 'oi_carto_hint';
         hint.style.display = 'block';
@@ -710,6 +790,8 @@ describe('_captureCanvas (oi_cartographie.js:1215-1260)', () => {
         expect(toastSpy).toHaveBeenCalledWith('Erreur lors de la capture : html2canvas a explosé', { kind: 'error' });
         expect(hint.style.display).toBe('block');
         expect(errSpy).toHaveBeenCalled();
+        // DURCISSEMENT 3 : le verrou est relâché même sur exception (finally).
+        expect(state._captureBusy).toBe(false);
     });
 });
 

@@ -574,3 +574,88 @@ describe('_renderPins — CŒUR du module (oi_cartographie.js:904-985)', () => {
         expect(updated).toMatchObject({ lng: 9, lat: 8 });
     });
 });
+
+// Mission R3-e — réconciliation par signature (cf. en-tête de `pins.ts`) :
+// un marker inchangé n'est JAMAIS recréé (même référence, gestes NON
+// ré-attachés) ; un marker modifié est mis à jour EN PLACE ; un pin disparu
+// détruit son marker ET détache la machine `pin-gestures` (`gestures.detach()`).
+describe('_renderPins — réconciliation par signature (mission R3-e)', () => {
+    it('signature identique entre deux rendus : conserve la MÊME référence de marker (pas de recréation)', () => {
+        const fake = makeFakeThis({
+            map: {} as unknown as OICartoInternal['map'],
+            _loadPins: () => [makePin({ id: 'p1', label: 'RDV' })],
+        });
+
+        PinsMethods._renderPins.call(fake);
+        const entry1 = fake.markers.get('p1');
+
+        // 2e rendu, pins ÉQUIVALENTS (mêmes valeurs, nouvel objet — comme un
+        // reload depuis le stockage) : la signature ne change pas.
+        fake._loadPins = () => [makePin({ id: 'p1', label: 'RDV' })];
+        PinsMethods._renderPins.call(fake);
+        const entry2 = fake.markers.get('p1');
+
+        expect(entry2).toBe(entry1); // même entrée, même couple de markers
+    });
+
+    it('label modifié : met à jour le contenu du libellé EN PLACE, garde la même référence de marker', () => {
+        const fake = makeFakeThis({
+            map: {} as unknown as OICartoInternal['map'],
+            _loadPins: () => [makePin({ id: 'p1', label: 'Ancien nom' })],
+        });
+
+        PinsMethods._renderPins.call(fake);
+        const entry1 = fake.markers.get('p1') as { pin: { getElement(): HTMLElement }; label: { getElement(): HTMLElement } };
+        expect(entry1.label.getElement().textContent).toBe('Ancien nom');
+
+        fake._loadPins = () => [makePin({ id: 'p1', label: 'Nouveau nom' })];
+        PinsMethods._renderPins.call(fake);
+        const entry2 = fake.markers.get('p1') as { pin: { getElement(): HTMLElement }; label: { getElement(): HTMLElement } };
+
+        expect(entry2).toBe(fake.markers.get('p1')); // toujours la même entrée
+        expect(entry2.pin).toBe(entry1.pin); // marker pin NON recréé
+        expect(entry2.label).toBe(entry1.label); // marker label NON recréé
+        expect(entry2.label.getElement().textContent).toBe('Nouveau nom'); // contenu actualisé
+    });
+
+    it('pin supprimé : détruit le marker ET détache les gestes (plus de tap → roue après suppression)', () => {
+        const openPinWheel = vi.fn();
+        const fake = makeFakeThis({
+            map: {} as unknown as OICartoInternal['map'],
+            _loadPins: () => [makePin({ id: 'p1' })],
+            _openPinWheel: openPinWheel,
+        });
+
+        PinsMethods._renderPins.call(fake);
+        const entry = fake.markers.get('p1') as { pin: { getElement(): HTMLElement } };
+        const el = entry.pin.getElement();
+
+        fake._loadPins = () => [];
+        PinsMethods._renderPins.call(fake);
+
+        expect(fake.markers.has('p1')).toBe(false);
+        // Les gestes doivent être détachés (`gestures.detach()`) : un tap sur
+        // l'élément retiré ne doit plus déclencher `_openPinWheel`.
+        el.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, clientX: 10, clientY: 10, pointerType: 'mouse' }));
+        el.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, cancelable: true, clientX: 10, clientY: 10, pointerType: 'mouse' }));
+        expect(openPinWheel).not.toHaveBeenCalled();
+    });
+
+    it('un pin conservé et un pin supprimé dans le même rendu : le conservé garde sa référence, le supprimé disparaît', () => {
+        const fake = makeFakeThis({
+            map: {} as unknown as OICartoInternal['map'],
+            _loadPins: () => [makePin({ id: 'p1' }), makePin({ id: 'p2' })],
+        });
+
+        PinsMethods._renderPins.call(fake);
+        const entryP1 = fake.markers.get('p1');
+        expect(fake.markers.size).toBe(2);
+
+        fake._loadPins = () => [makePin({ id: 'p1' })];
+        PinsMethods._renderPins.call(fake);
+
+        expect(fake.markers.size).toBe(1);
+        expect(fake.markers.get('p1')).toBe(entryP1);
+        expect(fake.markers.has('p2')).toBe(false);
+    });
+});

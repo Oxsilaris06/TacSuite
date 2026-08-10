@@ -38,14 +38,17 @@ export interface LngLatObj {
 /**
  * Surface de `OIWheel` (oi_cartographie.js:117-249, portée dans `carto/wheel.ts`
  * par le paquet `oi-carto-wheel`) RÉELLEMENT utilisée par les méthodes de
- * `OICarto` (`_closeWheel` :997-999, `_openPinWheel` :1022-1028). Déclarée
- * structurellement ICI, et NON importée de `./wheel.js`, pour que `types.ts`
- * reste une feuille sans dépendance de fichier `carto/` — précédent maison :
- * `PlanWheel` dans `@pctac/planmap/types.ts`.
+ * `OICarto` (`_closeWheel` :997-999, `_openPinWheel` :1022-1028, + `element`
+ * lu par `_captureCanvas` depuis la mission R3-e — masquage de la roue active
+ * pendant une capture, durcissement porté de `@pctac/planmap/capture.ts:79`).
+ * Déclarée structurellement ICI, et NON importée de `./wheel.js`, pour que
+ * `types.ts` reste une feuille sans dépendance de fichier `carto/` —
+ * précédent maison : `PlanWheel` dans `@pctac/planmap/types.ts`.
  */
 export interface OiCartoWheelHandle {
     open(): void;
     destroy(): void;
+    element: HTMLElement | null;
 }
 
 /**
@@ -159,6 +162,23 @@ export interface OICartoInternal extends OICartoContract {
 
     // --- champ ad hoc (jamais dans le littéral, cf. commentaire ci-dessus) ---
     _inlinePanelMove: (() => void) | null;
+
+    /**
+     * Verrou anti-concurrence de capture (mission R3-e, hors littéral
+     * `oi_cartographie.js` — introduit par le port, aucune contrepartie
+     * source directe). Porté de `PlanMapInternal._captureBusy`
+     * (`@pctac/planmap/types.ts`, origine `planMap.js:55-56` : « une 2e
+     * capture pendant la 1re snapshoterait les styles déjà aplatis/masqués
+     * comme "originaux" et gèlerait l'UI au restore »). Consommé par
+     * `_captureCanvas` (capture.ts). Optionnel (`?`) et non `false` par
+     * défaut : `index.ts`/`state.ts` (hors périmètre de ce paquet, mission
+     * R3-e limitée à `{pins,capture,types}.ts`) n'ont pas été touchés pour
+     * l'initialiser dans `createOICartoState()` — `undefined` se comporte
+     * comme `false` (garde `if (this._captureBusy) …`), même filet de
+     * sécurité d'exhaustivité que `_inlinePanelMove` (cf. commentaire
+     * `index.ts` sur ce même angle mort).
+     */
+    _captureBusy?: boolean | undefined;
 
     /** Enveloppe un handler : capture toute exception (log) — oi_cartographie.js:284-291. */
     _safe<A extends unknown[], R>(fn: (...args: A) => R, label?: string): (...args: A) => R | undefined;

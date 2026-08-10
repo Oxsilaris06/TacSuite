@@ -27,6 +27,36 @@
  * l'élément d'un `maplibregl.Marker` — la création des markers est portée
  * EXACTEMENT comme l'original (halo icône + label séparé, drag groupé).
  *
+ * RÉCONCILIATION PAR SIGNATURE (mission R3-e, dernière tranche carto D1) :
+ * `_renderPins` d'origine (oi_cartographie.js:904-985) recrée TOUS les
+ * markers à chaque appel (`this.markers.clear()` + boucle de création) — jank
+ * visuel + ré-attache de la machine `pin-gestures` (R3-d) sur CHAQUE pin à
+ * CHAQUE rendu. Aligné sur le patron PC-Tac (`@pctac/planmap/pins.ts`,
+ * `_pinSignature` :157-169, `_renderPins` :444-526, réconciliation par ID) :
+ * signature légère par pin (position, kind, label, memberTri, fonction, icon,
+ * color, text) comparée entre deux rendus ; marker inchangé → AUCUNE écriture
+ * DOM ni ré-attache de gestes (même référence `Marker`/élément conservée) ;
+ * marker modifié → position + contenu visuel mis à jour EN PLACE
+ * (`applyPinVisual`, extraction verbatim de la construction DOM d'origine,
+ * appelable à la création ET à la mise à jour — même principe que
+ * `_buildPinVisual`, `planmap/pins.ts` :232-317) ; pin disparu → marker détruit
+ * ET `gestures.detach()` (poignée renvoyée par `attachPinGestures`,
+ * `@shared/pin-gestures.ts`, JAMAIS appelée côté PC-Tac — planmap/pins.ts:398-400
+ * documente pourquoi, mais OI n'a pas cette garantie de GC : `pinWrap` est
+ * retiré du DOM par `Marker.remove()` mais les listeners `attachPinGestures`
+ * sont posés directement sur l'élément, donc `detach()` explicite avant
+ * `remove()` reste la voie sûre pour ce port).
+ * `_pinSignature`/`applyPinVisual` sont des fonctions locales au module (pas
+ * des méthodes `OICartoInternal`) : usage interne exclusif à `_renderPins`,
+ * aucune autre méthode carto n'en a besoin (contrairement à PC-Tac où
+ * `_pinSignature`/`_buildPinVisual` sont des méthodes du contrat car
+ * `planmap/pins.ts` suit le patron `this`-typé uniforme sur tout le fichier).
+ * L'ordre d'affichage `labelsVisible` reste HORS signature : géré exclusivement
+ * par `_toggleLabels` (panels.ts, hors périmètre de ce paquet), qui bascule
+ * `display` directement sur les markers existants — l'inclure forcerait une
+ * mise à jour DOM de tous les pins à chaque bascule, contre l'objectif
+ * anti-jank de cette mission.
+ *
  * Les `innerHTML` (:648, 670, 682, 694, 738, 740, 757, 798, 803, 921, 943)
  * sont portés VERBATIM avec leur échappement d'origine (`_esc` d'origine,
  * remplacé par `esc` de `@shared/ui-platform.js` — doublon, même
@@ -62,6 +92,7 @@ import type { MapMouseEvent, Marker } from 'maplibre-gl';
 
 import { confirmDialog, toast } from '@shared/feedback.js';
 import { attachPinGestures, createDblZoomSuppressor } from '@shared/pin-gestures.js';
+import type { PinGestureHandle } from '@shared/pin-gestures.js';
 import { esc } from '@shared/ui-platform.js';
 
 import { OI_PIN_DEFS, OI_PIN_FALLBACK, oiIconForMember } from './constants.js';
@@ -73,14 +104,80 @@ import type { OICartoInternal, OiCartoPendingPin, OiCartoPin, OiCartoPinKind } f
  * Marker } »). `OICartoContract.markers` (contracts.ts, contrat figé) est
  * typé `Map<string, unknown>` : ce garde de type reconstitue la forme réelle
  * à la lecture, sans `any` ni assertion non vérifiée.
+ *
+ * `pinWrap`/`labelEl`/`gestures`/`sig` sont AJOUTÉS par la mission R3-e
+ * (réconciliation par signature, cf. en-tête de fichier) — absents du
+ * commentaire d'origine `{ pin, label }`, nécessaires pour mettre à jour un
+ * marker EN PLACE (élément DOM direct, sans repasser par `Marker.getElement()`)
+ * et pour détacher proprement la machine `pin-gestures` à la suppression.
  */
 interface OiCartoMarkerEntry {
     pin: Marker;
     label: Marker;
+    pinWrap: HTMLDivElement;
+    labelEl: HTMLDivElement;
+    gestures: PinGestureHandle;
+    sig: string;
 }
 
 function isOiCartoMarkerEntry(x: unknown): x is OiCartoMarkerEntry {
     return typeof x === 'object' && x !== null && 'pin' in x && 'label' in x;
+}
+
+/**
+ * Signature légère d'un pin : tout ce qui change son rendu visuel (icône,
+ * couleur, libellé) ou sa position. Si elle est identique entre deux rendus,
+ * `_renderPins` ne touche PAS au DOM du marker correspondant (zéro jank, zéro
+ * ré-attache de gestes) — même principe que `_pinSignature` (PC-Tac,
+ * `planmap/pins.ts` :157-169), cf. en-tête de fichier pour le détail du
+ * périmètre porté. `labelsVisible` est délibérément HORS signature (idem).
+ */
+function pinSignature(pin: OiCartoPin): string {
+    return [
+        pin.lng, pin.lat, pin.kind, pin.label,
+        pin.memberTri || '', pin.fonction || '', pin.icon || '', pin.color || '',
+        pin.text || '',
+    ].join('|');
+}
+
+/**
+ * Construit/actualise le contenu visuel (icône colorée + libellé) d'un pin
+ * SUR SES ÉLÉMENTS DOM DÉJÀ POSÉS — jamais de recréation. Extraction VERBATIM
+ * des écritures DOM de la boucle de rendu d'origine (oi_cartographie.js:919-946)
+ * pour être appelable à la fois à la CRÉATION et à la MISE À JOUR EN PLACE
+ * (mission R3-e) — même principe que `_buildPinVisual` (PC-Tac,
+ * `planmap/pins.ts` :232-317). Ne touche PAS `labelEl.style.display`
+ * (`labelsVisible`, géré exclusivement par `_toggleLabels`, panels.ts, hors
+ * signature — cf. en-tête de fichier).
+ */
+function applyPinVisual(pinWrap: HTMLDivElement, labelEl: HTMLDivElement, pin: OiCartoPin): void {
+    const def = OI_PIN_DEFS[pin.kind] || OI_PIN_FALLBACK;
+    const color = pin.color || def.color;   // couleur personnalisée prioritaire
+    const icon = pin.icon || def.icon;       // icône auto/personnalisée prioritaire
+
+    // --- 1) Marqueur = icône Material colorée, halo blanc, ancrée au centre --- (oi_cartographie.js:919-925)
+    pinWrap.innerHTML = `
+        <span class="material-symbols-outlined" style="
+            font-size: 38px; color: ${color}; line-height: 1;
+            text-shadow: 0 0 2px #fff, 0 0 2px #fff, 0 0 2px #fff, 0 0 2px #fff, 0 2px 4px rgba(0,0,0,0.6);
+            font-variation-settings: 'FILL' 1;">${icon}</span>`;
+
+    // --- 2) Marqueur libellé : trigramme + intitulé SOUS l'icône --- (oi_cartographie.js:934-946)
+    // Pour un membre : trigramme (gras) sur la 1re ligne, intitulé (fonction
+    // ou texte personnalisé) sur la 2e. Sinon, libellé simple.
+    labelEl.style.cssText = `
+        padding: 3px 8px; background: rgba(0,0,0,0.82); color: #fff;
+        font-size: 13px; font-weight: 500; line-height: 1.2; border-left: 4px solid ${color};
+        border-radius: 3px; white-space: nowrap; text-align: center;
+        box-shadow: 0 0 0 1px rgba(255,255,255,0.35), 0 1px 4px rgba(0,0,0,0.75);
+        pointer-events: none; text-shadow: 0 1px 2px rgba(0,0,0,0.9); letter-spacing: 0.3px;`;
+    if (pin.memberTri) {
+        const sub = pin.text || (pin.fonction && pin.fonction !== 'Sans' ? pin.fonction : '');
+        labelEl.innerHTML = `<div style="font-weight:700; font-size:13px;">${esc(pin.memberTri)}</div>` +
+            (sub ? `<div style="font-size:11px; opacity:0.85;">${esc(sub)}</div>` : '');
+    } else {
+        labelEl.textContent = pin.text || pin.label;
+    }
 }
 
 export const PinsMethods = {
@@ -425,6 +522,11 @@ export const PinsMethods = {
     },
 
     // oi_cartographie.js:904-985 — CŒUR du module.
+    // RÉCONCILIATION PAR SIGNATURE (mission R3-e) : cf. en-tête de fichier pour
+    // le détail — patron porté de `_renderPins` (PC-Tac, `planmap/pins.ts`
+    // :444-526). Le corps de création reste VERBATIM (mêmes écritures DOM,
+    // même construction de marker) ; seule l'orchestration change (par-id,
+    // pas de `clear()` global).
     _renderPins(this: OICartoInternal): void {
         // Capture locale de `this.map` après sa garde de non-nullité : le
         // narrowing TS sur une propriété de `this` ne survit pas aux appels de
@@ -432,105 +534,108 @@ export const PinsMethods = {
         // en-tête).
         const map = this.map;
         if (!map) return;
-        for (const raw of this.markers.values()) {
-            if (!isOiCartoMarkerEntry(raw)) continue;
-            if (raw.pin) raw.pin.remove();
-            if (raw.label) raw.label.remove();
-        }
-        this.markers.clear();
 
         // Suppression du zoom double-clic natif partagée par tous les pins de
         // cette passe de rendu (timer annulable, cf. `createDblZoomSuppressor`
         // — remplace l'ancien `setTimeout(450)` inline sans annulation).
         const dblZoomSuppressor = createDblZoomSuppressor(() => map.doubleClickZoom);
 
-        for (const pin of this._loadPins()) {
-            const def = OI_PIN_DEFS[pin.kind] || OI_PIN_FALLBACK;
-            const color = pin.color || def.color;          // couleur personnalisée prioritaire
-            const icon = pin.icon || def.icon;              // icône auto/personnalisée prioritaire
-            const labelOffset: [number, number] = [0, 22];
+        const pins = this._loadPins();
+        const seen = new Set<string>();
 
-            // --- 1) Marqueur = icône Material colorée, halo blanc, ancrée au centre ---
-            const pinWrap = document.createElement('div');
-            pinWrap.style.cssText = 'min-width:44px; min-height:44px; width:44px; height:44px; cursor:grab; display:flex; align-items:center; justify-content:center; touch-action:none;';
-            pinWrap.innerHTML = `
-                <span class="material-symbols-outlined" style="
-                    font-size: 38px; color: ${color}; line-height: 1;
-                    text-shadow: 0 0 2px #fff, 0 0 2px #fff, 0 0 2px #fff, 0 0 2px #fff, 0 2px 4px rgba(0,0,0,0.6);
-                    font-variation-settings: 'FILL' 1;">${icon}</span>`;
+        for (const pin of pins) {
+            seen.add(pin.id);
+            const sig = pinSignature(pin);
+            const raw = this.markers.get(pin.id);
+            const entry = isOiCartoMarkerEntry(raw) ? raw : undefined;
 
-            const pinMarker = new maplibregl.Marker({ element: pinWrap, anchor: 'center', draggable: true })
-                .setLngLat([pin.lng, pin.lat])
-                .addTo(map);
+            if (!entry) {
+                // --- CRÉATION (une seule fois par id) ---
+                const labelOffset: [number, number] = [0, 22];
 
-            // --- 2) Marqueur libellé : trigramme + intitulé SOUS l'icône ---
-            // Pour un membre : trigramme (gras) sur la 1re ligne, intitulé (fonction
-            // ou texte personnalisé) sur la 2e. Sinon, libellé simple.
-            const labelEl = document.createElement('div');
-            labelEl.style.cssText = `
-                padding: 3px 8px; background: rgba(0,0,0,0.82); color: #fff;
-                font-size: 13px; font-weight: 500; line-height: 1.2; border-left: 4px solid ${color};
-                border-radius: 3px; white-space: nowrap; text-align: center;
-                box-shadow: 0 0 0 1px rgba(255,255,255,0.35), 0 1px 4px rgba(0,0,0,0.75);
-                pointer-events: none; text-shadow: 0 1px 2px rgba(0,0,0,0.9); letter-spacing: 0.3px;`;
-            if (pin.memberTri) {
-                const sub = pin.text || (pin.fonction && pin.fonction !== 'Sans' ? pin.fonction : '');
-                labelEl.innerHTML = `<div style="font-weight:700; font-size:13px;">${esc(pin.memberTri)}</div>` +
-                    (sub ? `<div style="font-size:11px; opacity:0.85;">${esc(sub)}</div>` : '');
-            } else {
-                labelEl.textContent = pin.text || pin.label;
+                const pinWrap = document.createElement('div');
+                pinWrap.style.cssText = 'min-width:44px; min-height:44px; width:44px; height:44px; cursor:grab; display:flex; align-items:center; justify-content:center; touch-action:none;';
+                const labelEl = document.createElement('div');
+                applyPinVisual(pinWrap, labelEl, pin);
+                if (!this.labelsVisible) labelEl.style.display = 'none';
+
+                const pinMarker = new maplibregl.Marker({ element: pinWrap, anchor: 'center', draggable: true })
+                    .setLngLat([pin.lng, pin.lat])
+                    .addTo(map);
+                const labelMarker = new maplibregl.Marker({ element: labelEl, anchor: 'top', offset: labelOffset })
+                    .setLngLat([pin.lng, pin.lat])
+                    .addTo(map);
+
+                pinWrap.addEventListener('mouseenter', () => { pinWrap.style.zIndex = '1000'; labelEl.style.zIndex = '1000'; });
+                pinWrap.addEventListener('mouseleave', () => { pinWrap.style.zIndex = ''; labelEl.style.zIndex = ''; });
+
+                // --- Drag : pin + libellé se déplacent ensemble ---
+                // Listeners attachés UNE SEULE FOIS (mission R3-e) — plus
+                // jamais ré-attachés tant que ce pin n'est pas supprimé.
+                const gestures = attachPinGestures(pinWrap, {
+                    suppressDblZoom: () => dblZoomSuppressor.suppress(),
+                    onGestureStart: () => {
+                        pinWrap.style.zIndex = '1000';
+                        labelEl.style.zIndex = '1000';
+                    },
+                    onGestureEnd: () => {
+                        pinWrap.style.zIndex = '';
+                        labelEl.style.zIndex = '';
+                    },
+                    // OI : le tap SIMPLE ouvre la roue (comportement UX conservé,
+                    // cf. mission R3-d) — pas de fenêtre de double-tap (`onDoubleTap`
+                    // omis) : machine robuste pointer/touch au lieu du `click` DOM
+                    // (chemin abandonné côté PC-Tac, cf. en-tête de `pin-gestures.ts`).
+                    onSingleTap: () => {
+                        this._openPinWheel(pin.id);
+                    },
+                }, {
+                    safe: (fn, label) => this._safe(fn, label),
+                    dragAntiBounceMs: 300,
+                });
+
+                pinMarker.on('dragstart', this._safe(() => {
+                    gestures.notifyDragStart();
+                    pinWrap.style.cursor = 'grabbing';
+                    pinWrap.style.opacity = '0.85';
+                    labelEl.style.opacity = '0.5';
+                }, 'pin:dragstart'));
+                pinMarker.on('drag', this._safe(() => labelMarker.setLngLat(pinMarker.getLngLat()), 'pin:drag'));
+                pinMarker.on('dragend', this._safe(() => {
+                    gestures.notifyDragEnd();
+                    pinWrap.style.cursor = 'grab';
+                    pinWrap.style.opacity = '1';
+                    labelEl.style.opacity = '1';
+                    const ll = pinMarker.getLngLat();
+                    labelMarker.setLngLat(ll);
+                    const allPins = this._loadPins().slice();
+                    const target = allPins.find(p => p.id === pin.id);
+                    if (target) { target.lng = ll.lng; target.lat = ll.lat; this._savePins(allPins); }
+                }, 'pin:dragend'));
+
+                this.markers.set(pin.id, { pin: pinMarker, label: labelMarker, pinWrap, labelEl, gestures, sig });
+            } else if (entry.sig !== sig) {
+                // --- MISE À JOUR EN PLACE (position + contenu visuel) ---
+                entry.pin.setLngLat([pin.lng, pin.lat]);
+                entry.label.setLngLat([pin.lng, pin.lat]);
+                applyPinVisual(entry.pinWrap, entry.labelEl, pin);
+                entry.sig = sig;
             }
-            if (!this.labelsVisible) labelEl.style.display = 'none';
-            const labelMarker = new maplibregl.Marker({ element: labelEl, anchor: 'top', offset: labelOffset })
-                .setLngLat([pin.lng, pin.lat])
-                .addTo(map);
+            // else : signature identique → AUCUNE écriture DOM (zéro jank).
+        }
 
-            pinWrap.addEventListener('mouseenter', () => { pinWrap.style.zIndex = '1000'; labelEl.style.zIndex = '1000'; });
-            pinWrap.addEventListener('mouseleave', () => { pinWrap.style.zIndex = ''; labelEl.style.zIndex = ''; });
-
-            // --- Drag : pin + libellé se déplacent ensemble ---
-            const gestures = attachPinGestures(pinWrap, {
-                suppressDblZoom: () => dblZoomSuppressor.suppress(),
-                onGestureStart: () => {
-                    pinWrap.style.zIndex = '1000';
-                    labelEl.style.zIndex = '1000';
-                },
-                onGestureEnd: () => {
-                    pinWrap.style.zIndex = '';
-                    labelEl.style.zIndex = '';
-                },
-                // OI : le tap SIMPLE ouvre la roue (comportement UX conservé,
-                // cf. mission R3-d) — pas de fenêtre de double-tap (`onDoubleTap`
-                // omis) : machine robuste pointer/touch au lieu du `click` DOM
-                // (chemin abandonné côté PC-Tac, cf. en-tête de `pin-gestures.ts`).
-                onSingleTap: () => {
-                    this._openPinWheel(pin.id);
-                },
-            }, {
-                safe: (fn, label) => this._safe(fn, label),
-                dragAntiBounceMs: 300,
-            });
-
-            pinMarker.on('dragstart', this._safe(() => {
-                gestures.notifyDragStart();
-                pinWrap.style.cursor = 'grabbing';
-                pinWrap.style.opacity = '0.85';
-                labelEl.style.opacity = '0.5';
-            }, 'pin:dragstart'));
-            pinMarker.on('drag', this._safe(() => labelMarker.setLngLat(pinMarker.getLngLat()), 'pin:drag'));
-            pinMarker.on('dragend', this._safe(() => {
-                gestures.notifyDragEnd();
-                pinWrap.style.cursor = 'grab';
-                pinWrap.style.opacity = '1';
-                labelEl.style.opacity = '1';
-                const ll = pinMarker.getLngLat();
-                labelMarker.setLngLat(ll);
-                const allPins = this._loadPins().slice();
-                const target = allPins.find(p => p.id === pin.id);
-                if (target) { target.lng = ll.lng; target.lat = ll.lat; this._savePins(allPins); }
-            }, 'pin:dragend'));
-
-            this.markers.set(pin.id, { pin: pinMarker, label: labelMarker });
+        // --- SUPPRESSION des ids disparus uniquement ---
+        for (const [id, raw] of this.markers) {
+            if (seen.has(id)) continue;
+            if (isOiCartoMarkerEntry(raw)) {
+                // Détache la machine `pin-gestures` AVANT de retirer les
+                // markers du DOM (mission R3-e — cf. en-tête de fichier pour
+                // le raisonnement anti-fuite mémoire).
+                try { raw.gestures.detach(); } catch { /* écouteurs déjà retirés — sans effet */ }
+                try { raw.pin.remove(); } catch { /* déjà retiré du DOM — sans effet */ }
+                try { raw.label.remove(); } catch { /* déjà retiré du DOM — sans effet */ }
+            }
+            this.markers.delete(id);
         }
     },
 };
