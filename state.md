@@ -16,6 +16,8 @@ Spec détaillée : `docs/superpowers/specs/2026-08-09-tacsuite-roadmap-design.md
 
 | Phase | Contenu | Statut |
 |---|---|---|
+> **ROADMAP R0→R5 + R6 : INTÉGRALEMENT LIVRÉE (2026-08-10).** Rien poussé sur GitHub — validation Nico requise pour tout push.
+
 | QW | Quick wins : contraste dark, `esc` partagé côté OI carto, indicateurs de chargement PC-Tac | ✅ fait (e669585, a3f700a) |
 | R0 | Filet CI local+workflow (typecheck, lint, vitest, test:pdf) + fixture volumétrique 50 photos | ✅ fait (a968dd9) |
 | R1 | Design system unifié : `styles/tacsuite-tokens.css`, migration oi/pctac, purge styles inline, z-index/breakpoints/durées tokenisés | ✅ noyau fait : T1 socle (e269c99), T2 (d19568b), T3 (04dde70), T4 (voir log), T5 (f0fc194), gate portail (c574e4f). Reste (tranches optionnelles à arbitrer) : normalisation des valeurs hors échelle (re-baseline volontaire), `--inter-blue` (attente décision AA), harmonisation breakpoints |
@@ -42,7 +44,9 @@ Spec détaillée : `docs/superpowers/specs/2026-08-09-tacsuite-roadmap-design.md
 Constat : tableaux coupés entre pages, fiches éclatées en « (SUITE) », pages à moitié vides, photos encadrées, puces outils jaunes datées.
 Directives : **une page = un usage** (1 page/fiche adversaire, 1 page/bloc ZMSPCP ou MOICP, 1 page/cellule effraction, sections courtes regroupées) ; **interdiction absolue des « Titre (SUITE) »** (le mécanisme R4-b est remplacé) ; photos pleine largeur SANS encadré, 1/page ; outils d'effraction directement sous la photo, badges modernes (fini les cases jaunes) ; tout parfaitement lisible.
 Arbitrages validés : réduction typographique adaptative avec plancher 7pt puis **refus de génération explicite** (liste des sections en dépassement) + compteurs de caractères UI calibrés ; découpage Standard ; photos qualité 0.92/2560px, budget PDF ~50 Mo à compression dégressive.
-Tranches : P1 moteur une-page-par-usage + solveur fit/refus (en vol) ; P2 photos + badges (en vol) ; P3 compteurs UI ; P4 réécriture des gardes verify-structure (B7/B10 attendent « (suite) » — deviennent l'inverse : zéro continuation, 1 page par usage).
+**✅ R6 LIVRÉ (2026-08-10)** : P1 moteur une-page-par-usage + solveur fit/refus, 3 itérations (a57b128) ; P2 photos pleine largeur + badges flow premium (a57b128) ; P3 compteurs calibrés PAGE_CAPACITY (d2b7cbb) ; P4 gardes C1-C5 + fixtures recalibrées (728ae59) ; titres galerie « — PHOTO i/N », zéro (suite) absolu (dernier commit).
+Effraction : escalade de dispositions (colonnes adaptatives → densité → paliers police → asymétrie → pages autonomes nommées) avant tout refus, conformément à la directive.
+Vérification finale : typecheck 0, lint 0, vitest 1857/1857, visuel 60 états 0 FAIL (5 modes), e2e 130/130, 3 fixtures PDF 18/18 strict.
 
 ## Dérogations actées
 
