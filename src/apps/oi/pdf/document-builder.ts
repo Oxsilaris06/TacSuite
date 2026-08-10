@@ -536,6 +536,42 @@ function splitRoundRobin<T>(items: T[], cols: number): T[][] {
 const ADV_TITLE_BAR_PT = 34;
 
 /**
+ * Borne plancher (pt) de la photo d'identité de la fiche adversaire — mission
+ * P1 bis (correctif Nico 2026-08-10, « la fiche adversaire déborde encore
+ * malgré `photoPt` compté ») : le solveur peut réduire la photo jusqu'à cette
+ * hauteur (au lieu de la hauteur nominale `maxPortraitHMm`) pour faire tenir
+ * la fiche sur UNE page avant/en plus de réduire la police — jamais en-deçà
+ * (photo illisible).
+ */
+const ADV_PHOTO_H_FLOOR_PT = 120;
+
+/**
+ * Coût (pt) d'UNE rangée de `kvTable` (label/valeur, blocks.ts) — mesure
+ * ligne-par-ligne réelle du LIBELLÉ et de la VALEUR (les deux colonnes
+ * peuvent s'enrouler : un libellé à 2 mots comme « Situation familiale »/
+ * « Signes particuliers » s'enroule dans la colonne étroite `30%`, tout
+ * comme une valeur longue dans la colonne `70%`) dans leur largeur RÉELLE de
+ * rendu (`blocks.ts::kvTable` `widths:['30%','*']`, moins le padding de
+ * cellule `LAYOUT_BORDERED` 4+4 pt), la hauteur de rangée suivant la colonne
+ * la plus haute (jamais leur somme) ; plus le padding/bordure d'UNE ligne de
+ * table déjà mesurés ailleurs (`EFFRAC_ROW_VPAD_PT`) — remplace l'ancien
+ * repli `line + 6` (constante magique divergente de la mesure réelle, et qui
+ * supposait le libellé toujours sur 1 ligne) qui sous-évaluait chaque
+ * rangée, cause du débordement de la fiche adversaire (DANGEROSITÉ éjectée
+ * seule en page orpheline) malgré la photo déjà comptée dans `leftPt`.
+ */
+export function identityRowPt(label: string, value: string, fontPx: number, columnWidthPt: number): number {
+    const labelColWidthPt = columnWidthPt * 0.3 - 8;
+    const valueColWidthPt = columnWidthPt * 0.7 - 8;
+    // Le LIBELLÉ (`kvTable`, colonne `30%`) n'est PAS toujours court : « Situation
+    // familiale »/« Signes particuliers » (2 mots) s'enroulent eux-mêmes sur 2
+    // lignes dans cette colonne étroite au palier 11 px — sous-estimé par le
+    // modèle précédent (label supposé toujours 1 ligne), cause résiduelle du
+    // débordement de la fiche adversaire même une fois la photo comptée.
+    return Math.max(textLinePt(label, fontPx, labelColWidthPt), textLinePt(value, fontPx, valueColWidthPt)) + EFFRAC_ROW_VPAD_PT;
+}
+
+/**
  * Hauteur (pt) de la liste ATCD dense (mission P1, directive Nico
  * 2026-08-10 : « ATCD en liste dense multi-colonnes si volumineuse ») au
  * palier `fontPx` — au-delà de `ADV_ATCD_DENSE_COLS_THRESHOLD` items, la
@@ -642,13 +678,20 @@ function buildAdversaryFiche(ctx: BuildCtx, adv: OiAdversary, index: number): Co
     const columnGapMm = 6;
     const columnWidthPt = (geo.contentWidthPt - mm(columnGapMm)) / 2;
 
-    // Modèle de coût (pt) — solveur fit-to-page (theme.ts::fitUsageToPage) :
-    // colonnes GAUCHE/DROITE en PARALLÈLE (`columns` pdfmake), le coût total
-    // suit la plus haute des deux, jamais leur somme.
-    const computeCostPt = (fontPx: number): number => {
-        const line = effracLinePt(fontPx);
-        const photoPt = mainPhotoSrc !== undefined ? mm(maxPortraitHMm) + 6 : 0;
-        const identityRowsPt = identityRows.length * (line + 6);
+    // Modèle de coût (pt) — solveur fit-to-page à DEUX degrés de liberté
+    // (correctif Nico 2026-08-10, « la photo n'est pas comptée par le modèle
+    // de coût ») : `fitUsageToPage` (theme.ts) ne fait varier QUE `fontPx` —
+    // insuffisant ici, la photo d'identité est un élément NON TEXTUEL dont la
+    // hauteur ne rétrécit pas avec la police. `computeCostPt` prend donc aussi
+    // `portraitHPt` (hauteur RÉELLE du cadre photo passé à `figure()`, même
+    // valeur au coût et au rendu — jamais deux modèles divergents) ; le
+    // solveur ci-dessous essaie chaque palier de police PUIS, à défaut, réduit
+    // la photo jusqu'à `ADV_PHOTO_H_FLOOR_PT` avant de redescendre encore la
+    // police — colonnes GAUCHE/DROITE en PARALLÈLE (`columns` pdfmake), le
+    // coût total suit la plus haute des deux, jamais leur somme.
+    const computeCostPt = (fontPx: number, portraitHPt: number): number => {
+        const photoPt = mainPhotoSrc !== undefined ? portraitHPt + 6 : 0;
+        const identityRowsPt = identityRows.reduce((sum, [label, value]) => sum + identityRowPt(label, value, fontPx, columnWidthPt), 0);
         const identityCardPt = cardWithTitlePt(identityRowsPt);
         const dangerCardPt = cardWithTitlePt(textLinePt(`Armes Connues : ${armesConnues}`, fontPx, columnWidthPt));
         const leftPt = photoPt + identityCardPt + 6 + dangerCardPt;
@@ -661,15 +704,36 @@ function buildAdversaryFiche(ctx: BuildCtx, adv: OiAdversary, index: number): Co
         return ADV_TITLE_BAR_PT + Math.max(leftPt, rightPt);
     };
 
-    const fit = fitUsageToPage(computeCostPt, geo.contentHeightPt - EFFRAC_FITS_SAFETY_PT);
-    if ('error' in fit) {
+    const maxPortraitHPt = mm(maxPortraitHMm);
+    // Paliers de hauteur photo essayés à CHAQUE palier de police, du plus
+    // large (nominal) au plancher de lisibilité — dédoublonnés si le plancher
+    // dépasse déjà le nominal (formats très compacts).
+    const portraitHStepsPt = mainPhotoSrc !== undefined ? [...new Set([maxPortraitHPt, ADV_PHOTO_H_FLOOR_PT])] : [maxPortraitHPt];
+    const availablePt = geo.contentHeightPt - EFFRAC_FITS_SAFETY_PT;
+    let resolvedFontPx: number | undefined;
+    let resolvedPortraitHPt = portraitHStepsPt[portraitHStepsPt.length - 1] as number;
+    let worstCost = 0;
+    outer: for (const fontPx of FIT_FONT_STEPS) {
+        for (const portraitHPt of portraitHStepsPt) {
+            const cost = computeCostPt(fontPx, portraitHPt);
+            worstCost = cost;
+            if (cost <= availablePt) {
+                resolvedFontPx = fontPx;
+                resolvedPortraitHPt = portraitHPt;
+                break outer;
+            }
+        }
+    }
+    if (resolvedFontPx === undefined) {
+        const excessRatio = availablePt > 0 ? worstCost / availablePt - 1 : Number.POSITIVE_INFINITY;
         ctx.fitErrors.push({
             section: `Fiche Adversaire ${index} : ${nom}`,
             details: 'contenu (identité/dangerosité/localisation/mobilité/ATCD) trop volumineux — réduisez les ATCD ou les textes libres',
-            excessRatio: fit.error.excessRatio,
+            excessRatio,
         });
     }
-    const fontPx = 'fontPx' in fit ? fit.fontPx : FIT_FONT_FLOOR;
+    const fontPx = resolvedFontPx ?? FIT_FONT_FLOOR;
+    const portraitHPt = resolvedPortraitHPt;
 
     // Rendu de la liste ATCD dense (1 ou 2 sous-colonnes selon le volume,
     // MÊME répartition `splitRoundRobin` que le coût ci-dessus).
@@ -681,7 +745,7 @@ function buildAdversaryFiche(ctx: BuildCtx, adv: OiAdversary, index: number): Co
     const atcdCard = card([h3('ATCD', p, { color: p.danger }), ...atcdBody], p, { unbreakable: false });
 
     const leftColumn: Content[] = [
-        ...(mainPhotoSrc !== undefined ? [figure(mainPhotoSrc, [columnWidthPt, mm(maxPortraitHMm)], p), { text: '', margin: [0, 6, 0, 0] } as Content] : []),
+        ...(mainPhotoSrc !== undefined ? [figure(mainPhotoSrc, [columnWidthPt, portraitHPt], p), { text: '', margin: [0, 6, 0, 0] } as Content] : []),
         identityCard,
         { text: '', margin: [0, 6, 0, 0] },
         dangerHeaderCard,

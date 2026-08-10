@@ -50,3 +50,16 @@ jobs:
 
       - name: PDF structural non-regression — volumetric gate (verify-structure, 18/18 requis)
         run: node tests/pdf/verify-structure.mjs /tmp/ci-volumetric-stress.pdf --photos=58 --fixture=tests/pdf/fixtures/volumetric-stress.json
+
+      # real-shape.json (correctif Nico 2026-08-10) : mêmes STRUCTURES que
+      # l'archive OI réelle ayant révélé le bug « fiche adversaire avec photo
+      # déborde sur une page orpheline » (photo non comptée dans le solveur
+      # fit-to-page) et le bug « carte hypothèse : texte hors du fond » —
+      # données 100 % synthétiques anonymes (photo de portrait synthétique,
+      # ATCD multi-lignes, hypothèses à description longue + champs mixtes
+      # courts/longs). Non-régression permanente de ces deux correctifs.
+      - name: Generate PDF from real-shape fixture (fiche adversaire photo + carte hypothèse gate)
+        run: node tests/pdf/generate-from-fixture.mjs tests/pdf/fixtures/real-shape.json --out=/tmp/ci-real-shape.pdf
+
+      - name: PDF structural non-regression — real-shape gate (verify-structure, 18/18 requis)
+        run: node tests/pdf/verify-structure.mjs /tmp/ci-real-shape.pdf --lenient --photos=2 --fixture=tests/pdf/fixtures/real-shape.json

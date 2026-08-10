@@ -27,6 +27,7 @@ import {
     buildOiDocDefinition,
     effractionFirstOverheadPt,
     hypothesisRowHeightPt,
+    identityRowPt,
     internPhotoImages,
     oiPdfFileName,
     OiPdfFitRefusalError,
@@ -1055,6 +1056,136 @@ describe('buildOiDocDefinition — page unique fiche adversaire, ATCD dense, fit
         expect(refusal.fitErrors.length).toBeGreaterThan(0);
         expect(refusal.fitErrors[0]?.section).toContain('Fiche Adversaire');
         expect(refusal.fitErrors[0]?.excessRatio).toBeGreaterThan(0);
+    });
+});
+
+// ===========================================================================
+// Correctif Nico 2026-08-10 — fiche adversaire : la photo d'identité et les
+// libellés `kvTable` à 2 mots (« Situation familiale », « Signes
+// particuliers ») n'étaient pas (ou mal) comptés par le modèle de coût du
+// solveur fit-to-page, ce qui laissait passer un palier de police trop grand
+// : la fiche débordait alors RÉELLEMENT (au rendu pdfmake, invisible à ce
+// niveau JSON pur) sur une page orpheline portant la seule boîte DANGEROSITÉ
+// — reproduit sur une archive OI réelle, cf. tests/pdf/fixtures/real-shape.json
+// + verify-structure.mjs::assertC2_adversaryFicheSinglePage pour la preuve
+// bout-en-bout (rendu réel). Les tests ci-dessous couvrent le MODÈLE DE COÛT
+// lui-même (`identityRowPt`) et son effet sur le palier choisi par le
+// solveur (`buildOiDocDefinition`), au niveau unitaire pur.
+// ===========================================================================
+describe('identityRowPt — coût (pt) d’UNE rangée kvTable de la fiche adversaire (correctif photo + libellé long)', () => {
+    const fontPx = 11;
+    const columnWidthPt = 380; // ordre de grandeur réel (A4 paysage, cf. document-builder.ts::buildAdversaryFiche)
+
+    it('libellé et valeur courts : coût ≈ 1 ligne + le padding/bordure mesuré (EFFRAC_ROW_VPAD_PT)', () => {
+        const short = identityRowPt('Naissance', '2004-04-07 @ MONACO', fontPx, columnWidthPt);
+        // 1 ligne à 11px (PDF_LINE_ADVANCE_EM=1.914) + EFFRAC_ROW_VPAD_PT=9, ordre de grandeur ~30pt.
+        expect(short).toBeGreaterThan(20);
+        expect(short).toBeLessThan(40);
+    });
+
+    it('libellé à 2 mots qui s’enroule dans la colonne 30 % (« Situation familiale ») coûte STRICTEMENT plus qu’un libellé court à valeur identique — le libellé n’est plus supposé tenir sur 1 ligne', () => {
+        const shortLabel = identityRowPt('Naissance', '/', fontPx, columnWidthPt);
+        const longLabel = identityRowPt('Situation familiale', '/', fontPx, columnWidthPt);
+        expect(longLabel).toBeGreaterThan(shortLabel);
+    });
+
+    it('valeur qui s’enroule sur plusieurs lignes dans la colonne 70 % coûte plus qu’une valeur tenant sur 1 ligne', () => {
+        const oneLine = identityRowPt('Substances', 'THC', fontPx, columnWidthPt);
+        const wrapped = identityRowPt(
+            'Substances',
+            "Consommateur régulier de plusieurs substances différentes selon les témoignages recueillis lors de l'enquête préliminaire",
+            fontPx,
+            columnWidthPt,
+        );
+        expect(wrapped).toBeGreaterThan(oneLine);
+    });
+});
+
+describe('buildOiDocDefinition — fiche adversaire avec photo d’identité : la photo (élément NON TEXTUEL) doit peser sur le palier de police choisi (correctif Nico 2026-08-10)', () => {
+    /** Même volumétrie que le cas réel ayant révélé le bug (archive OI, cf. tests/pdf/fixtures/real-shape.json) : ATCD 8 lignes + libellés 2 mots. */
+    function richAdversary(): OiFormData {
+        return {
+            adversaries: [
+                {
+                    id: 'advPhoto',
+                    nom_adversaire: 'DUPONT Jean',
+                    domicile_adversaire: '12 Rue de Test, 99999 TESTVILLE',
+                    date_naissance: '1995-06-12',
+                    lieu_naissance: 'TESTVILLE',
+                    stature_adversaire: '1m80 corpulent',
+                    ethnie_adversaire: 'Caucasien',
+                    signes_particuliers: 'Tatouage avant-bras droit',
+                    situation_familiale: 'Célibataire, un enfant à charge',
+                    profession_adversaire: 'Sans emploi déclaré',
+                    antecedents_adversaire: [
+                        '2024 : USAGE ILLICITE DE STUPEFIANTS',
+                        'DETENTION NON AUTORISEE DE STUPEFIANTS',
+                        "CESSION OU OFFRE DE STUPEFIANTS A UNE PERSONNE EN VUE DE SA CONSOMMATION PERSONNELLE",
+                        "VIOLENCE AGGRAVEE PAR DEUX CIRCONSTANCES SUIVIE D'INCAPACITE N'EXCEDANT PAS 8 JOURS",
+                        "2022 : DEGRADATION OU DETERIORATION VOLONTAIRE DU BIEN D'AUTRUI CAUSANT UN DOMMAGE LEGER",
+                        'USAGE ILLICITE DE STUPEFIANTS',
+                        "2021 : TROUBLE A LA TRANQUILLITE D'AUTRUI PAR AGRESSIONS SONORES",
+                        '2020 : DETENTION NON AUTORISEE DE STUPEFIANTS',
+                    ].join('\n'),
+                    attitude_adversaire: 'Hostile, refus probable',
+                    substances_adversaire: 'Consommateur régulier de stupéfiants',
+                    armes_connues: 'Arme blanche, possible arme à feu non déclarée',
+                    me_list: ['Fuite', 'Retranchement'],
+                    etat_esprit_list: ['Déterminé', 'Imprévisible'],
+                    volume_list: ['Salon', 'Chambre', 'Cave'],
+                    vehicules_list: ['Peugeot 208 blanche imm. TEST-99-XY'],
+                },
+            ],
+        };
+    }
+
+    /** Cherche, dans l'arbre `Content`, le premier nœud portant `fontSize` (nombre) dont le sérialisé contient `marker` — c'est le `stack` posé par `buildAdversaryFiche`. */
+    function findFontSizeNear(node: unknown, marker: string): number | undefined {
+        if (node === null || typeof node !== 'object') return undefined;
+        const obj = node as Record<string, unknown>;
+        if (typeof obj.fontSize === 'number' && JSON.stringify(obj).includes(marker)) {
+            return obj.fontSize;
+        }
+        for (const value of Object.values(obj)) {
+            if (Array.isArray(value)) {
+                for (const item of value) {
+                    const found = findFontSizeNear(item, marker);
+                    if (found !== undefined) return found;
+                }
+            } else if (typeof value === 'object') {
+                const found = findFontSizeNear(value, marker);
+                if (found !== undefined) return found;
+            }
+        }
+        return undefined;
+    }
+
+    it('avec une photo d’identité, le solveur choisit un palier de police au moins aussi réduit que sans photo (la photo occupe de la place, jamais ignorée)', () => {
+        const withoutPhoto = buildOiDocDefinition(collect(richAdversary()), { format: 'a4' });
+
+        const withPhotoFormData: OiFormData = {
+            ...richAdversary(),
+            dynamic_photos: {
+                photo_main_advPhoto: [{ id: 'photoAdv', annotations: '[]', tools: '[]', other_tools: '', customTitle: '' }],
+            },
+        };
+        const withPhoto = buildOiDocDefinition(
+            collect(withPhotoFormData, {
+                photoAdv: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+            }),
+            { format: 'a4' },
+        );
+
+        const fontWithout = findFontSizeNear(withoutPhoto.content, 'DANGEROSITÉ');
+        const fontWith = findFontSizeNear(withPhoto.content, 'DANGEROSITÉ');
+        expect(fontWithout).toBeDefined();
+        expect(fontWith).toBeDefined();
+        expect(fontWith as number).toBeLessThanOrEqual(fontWithout as number);
+
+        // Les deux variantes tiennent sur UNE page (jamais de « (SUITE) », jamais de refus) — la police plancher 7px suffit toujours à ce volume.
+        expect(JSON.stringify(withPhoto)).not.toContain('(SUITE)');
+        expect(JSON.stringify(withPhoto)).toContain('DANGEROSITÉ');
+        expect((JSON.stringify(withPhoto).match(/FICHE ADVERSAIRE : DUPONT Jean/g) ?? []).length).toBe(1);
     });
 });
 

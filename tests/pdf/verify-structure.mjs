@@ -978,8 +978,24 @@ export function assertC1_zeroSuiteFragment(text) {
   return { ok: true, detail: `0 fragment « (SUITE) » dans tout le document` };
 }
 
-/** Signatures de contenu propres à la fiche adversaire (`buildAdversaryFiche`, document-builder.ts) — jamais utilisées ailleurs dans le document. */
-const FICHE_CONTENT_RES = [/\bIDENTIT[ÉE]\b/, /\bDANGEROSIT[ÉE]\b/, /\bLOCALISATION\b/, /\bMOBILIT[ÉE]\b/, /\bATCD\b/];
+/**
+ * Signatures de contenu propres à la fiche adversaire (`buildAdversaryFiche`,
+ * document-builder.ts) — jamais utilisées ailleurs dans le document.
+ *
+ * CORRECTIF (audit Nico 2026-08-10, vérification C2 avant/après le correctif
+ * du modèle de coût photo) : `\b` (limite de mot) en JS ne reconnaît QUE
+ * `[A-Za-z0-9_]` comme caractère de mot — un `É` accentué n'en fait PAS
+ * partie, donc `\bDANGEROSIT[ÉE]\b` ne matche JAMAIS « DANGEROSITÉ » (la
+ * transition É→fin-de-ligne n'est pas une frontière de mot puisque É est déjà
+ * traité comme non-mot). Constaté en reproduisant le bug 1 (photo non comptée
+ * dans le solveur fit) : la page orpheline ne portant QUE « DANGEROSITÉ /
+ * ARMES CONNUES : Néant » n'était PAS détectée par C2 (faux négatif silencieux
+ * — seul B1, l'anti-orpheline générique, l'attrapait). `(?=\s|$)` remplace le
+ * `\b` de FIN pour les 3 signatures qui se terminent par un É/E accentué
+ * (IDENTITÉ/DANGEROSITÉ/MOBILITÉ) — LOCALISATION et ATCD n'ont pas ce défaut
+ * (terminaison non accentuée) et restent en `\b`.
+ */
+const FICHE_CONTENT_RES = [/\bIDENTIT[ÉE](?=\s|$)/, /\bDANGEROSIT[ÉE](?=\s|$)/, /\bLOCALISATION\b/, /\bMOBILIT[ÉE](?=\s|$)/, /\bATCD\b/];
 
 /**
  * C2 — fiche adversaire : EXACTEMENT une page (mission P1, refonte totale de

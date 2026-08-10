@@ -1,0 +1,215 @@
+{
+  "isDark": true,
+  "photosBase64": {
+    "img_synth_portrait_0001": "data:image/png;base64,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"
+  },
+  "formData": {
+    "date_op": "2026-01-15",
+    "situation_generale": "Dans le cadre d'un dossier pour trafic de stupéfiants sur la commune de TESTVILLE, le PSIG EXEMPLE requiert un prêt de main forte pour l'interpellation d'un individu auteur.",
+    "situation_particuliere": "L'interpellation est programmée le 15/01/2026 à TESTVILLE à 06h00.",
+    "amies": "PSIG EXEMPLE / BTA",
+    "terrain_info": "Plat, Montagne, Ville de montagne",
+    "eclairage": "-",
+    "lever_soleil": "07:12",
+    "population": "Neutre",
+    "faune_animaux": "RAS",
+    "acces_principal": "-",
+    "cheminement_initial": "-",
+    "cadre_juridique": "Préliminaire",
+    "missions_psig": "",
+    "date_execution": "2026-01-15",
+    "heure_execution": "06:00",
+    "action_body_text": "En vue d'appréhender le mis en cause et empêcher la déperdition des preuves,\nJe veux, le 15/01/2026 à partir de 06:00, pour une action EN FORCE investir le domicile présumé du mis en cause après avoir bouclé celui-ci.",
+    "place_chef": "En India",
+    "quick_edit_trigramme_input": "",
+    "quick_edit_dir_input": "",
+    "trigramme_redacteur": "TST",
+    "unite_redacteur": "PSIG EXEMPLE",
+    "cat_generales": "- Si rébellion, user du strict niveau de force nécessaire\n- Si retranché, alerter en mesure de se réarticuler\n- Si tente de fuir, alerter en mesure de jalonner/interpeller\n- UDA : Article L435-1 du CSI + légitime défense",
+    "no_go": "Armes a feu",
+    "cat_liaison": "TOM: -\nDIR: 0000\nGestuelle et visuelle entre les éléments INDIA",
+    "dynamic_photos": {
+      "photo_main_adv_synth_0001": [
+        {
+          "id": "img_synth_portrait_0001",
+          "annotations": "[]",
+          "tools": "[]",
+          "other_tools": "",
+          "customTitle": ""
+        }
+      ],
+      "photo_container_transport_pr_preview_container": [
+        {
+          "id": "img_synth_portrait_0001",
+          "annotations": "[]",
+          "tools": "[]",
+          "other_tools": "",
+          "customTitle": "PSIG -> PR"
+        }
+      ]
+    },
+    "adversaries": [
+      {
+        "id": "adv_synth_0001",
+        "nom_adversaire": "DUPONT Jean",
+        "domicile_adversaire": "12 Rue de Test, 99999 TESTVILLE",
+        "date_naissance": "1995-06-12",
+        "lieu_naissance": "TESTVILLE",
+        "stature_adversaire": "1m80 corpulent",
+        "ethnie_adversaire": "Caucasien",
+        "signes_particuliers": "Tatouage avant-bras droit",
+        "situation_familiale": "Célibataire, un enfant à charge",
+        "profession_adversaire": "Sans emploi déclaré",
+        "antecedents_adversaire": "2024 : USAGE ILLICITE DE STUPEFIANTS\nDETENTION NON AUTORISEE DE STUPEFIANTS\nCESSION OU OFFRE DE STUPEFIANTS A UNE PERSONNE EN VUE DE SA CONSOMMATION PERSONNELLE\nVIOLENCE AGGRAVEE PAR DEUX CIRCONSTANCES SUIVIE D'INCAPACITE N'EXCEDANT PAS 8 JOURS\n2022 : DEGRADATION OU DETERIORATION VOLONTAIRE DU BIEN D'AUTRUI CAUSANT UN DOMMAGE LEGER\nUSAGE ILLICITE DE STUPEFIANTS\n2021 : TROUBLE A LA TRANQUILLITE D'AUTRUI PAR AGRESSIONS SONORES\n2020 : DETENTION NON AUTORISEE DE STUPEFIANTS",
+        "attitude_adversaire": "Hostile, refus probable",
+        "substances_adversaire": "Consommateur régulier de stupéfiants",
+        "armes_connues": "Arme blanche, possible arme à feu non déclarée",
+        "me_list": [
+          "Fuite",
+          "Retranchement"
+        ],
+        "etat_esprit_list": [
+          "Déterminé",
+          "Imprévisible"
+        ],
+        "volume_list": [
+          "Salon",
+          "Chambre",
+          "Cave"
+        ],
+        "vehicules_list": [
+          "Peugeot 208 blanche imm. TEST-99-XY"
+        ]
+      }
+    ],
+    "patracdvr_unassigned": [],
+    "patracdvr_rows": [
+      {
+        "vehicle": "VL1",
+        "members": [
+          {
+            "trigramme": "TST",
+            "fonction": "Chef de bord",
+            "cellule": "India 1",
+            "principales": "UBAS, GPBL, Casque lourd",
+            "secondaires": "Sans",
+            "afis": "Sans",
+            "grenades": "Sans",
+            "equipement": "Sans",
+            "equipement2": "Sans",
+            "tenue": "Sans",
+            "gpb": "Sans",
+            "dir": "PSIG EXEMPLE"
+          }
+        ]
+      }
+    ],
+    "time_events": [
+      {
+        "type": "T0",
+        "hour": "04:00",
+        "description": "Rasso PSIG"
+      },
+      {
+        "type": "T1",
+        "hour": "04:20",
+        "description": "Depart TESTVILLE"
+      },
+      {
+        "type": "T2",
+        "hour": "05:20",
+        "description": "ASL"
+      },
+      {
+        "type": "T3",
+        "hour": "05:45",
+        "description": "Depart LE"
+      },
+      {
+        "type": "T4",
+        "hour": "05:55",
+        "description": "MEP TERMINE"
+      }
+    ],
+    "hypotheses": [
+      "Fuite du mis en cause",
+      "Destruction de stupéfiants",
+      "Présence de tiers armés"
+    ],
+    "moicp_blocks": [
+      {
+        "id": "moicp_synth_1",
+        "title": "INTER 1",
+        "mission": "RECONNAÎTRE LE DOMICILE EN VUE D'APPRÉHENDER L'OBJECTIF",
+        "objectif": "DUPONT Jean",
+        "itineraire": "Route d'accès / RD / Rue principale / Chemin de test",
+        "points_particuliers": "Démotorisation rue Test",
+        "cat": "- Si décelé, dynamiser jusqu'au domicile.\n- Si retranchement, cellule effrac traite la porte",
+        "place_chef": "-",
+        "members": [
+          "PRC",
+          "RTI"
+        ]
+      }
+    ],
+    "zmspcp_blocks": [
+      {
+        "id": "zmspcp_synth_1",
+        "title": "APPUI OBSERVATION 1",
+        "zone": "A01 : Façade A\nA02 : Façade C",
+        "mission": "BOUCLER - SURVEILLER - INTERDIRE TOUTE FUITE",
+        "secteur": "A01 : Façade A\nA02 : Façade A",
+        "points_particuliers": "A01 : Fenêtre",
+        "cat": "- Compte rendu de mise en place.\n- Si décelé, CR.",
+        "place_chef": "India 4",
+        "members": [
+          "MLR",
+          "CRMD"
+        ]
+      }
+    ],
+    "effraction_blocks": [
+      {
+        "id": "effrac_synth_1",
+        "title": "Effraction 1",
+        "mission": "SOUTENIR L'ÉLÉMENT D'INTERVENTION",
+        "porte": "Porte PVC",
+        "structure": "",
+        "serrurerie": "",
+        "environnement": "",
+        "bati_a_bati": "",
+        "dormant_a_dormant": "",
+        "prof_linteaux": "",
+        "prof_bati": "",
+        "h_porte": "",
+        "h_marche": "",
+        "prof_marche": "",
+        "prof_moulure": "",
+        "members": [],
+        "hypotheses": [
+          {
+            "id": "hyp_synth_1",
+            "title": "Hypothèse 1",
+            "effrac": "MHX : MultiPry\nBSN : Multisledge",
+            "degag": "Dégagement en arrière de la cellule par la façade ALPHA, repli vers le point de regroupement secondaire",
+            "assaut": "Entrée India puis Effrac",
+            "desc": "Nettoyage du palier si besoin, test de la porte India 1 puis, si fermé, effraction manuelle aux outils (MultiPry / Multisledge) en frappe coordonnée avec le binôme de sécurité, repli immédiat en cas de résistance imprévue ou de tiers non identifié sur zone."
+          },
+          {
+            "id": "hyp_synth_2",
+            "title": "Hypothèse 2",
+            "effrac": "Si échec effrac manuelle : MHX MultiPry / BSN Bélier lourd",
+            "degag": "Dégagement en arrière de la cellule",
+            "assaut": "Entrée India puis effrac",
+            "desc": "Echec de l'effraction manuelle : rearticulation immédiate sur le bélier lourd, sécurisation du palier, information du chef de dispositif avant toute nouvelle tentative de franchissement."
+          }
+        ]
+      }
+    ],
+    "rame_vl_order": [],
+    "colonne_progression_order": [],
+    "ordre_penetration_order": [],
+    "options": {},
+    "cartography": {}
+  }
+}
