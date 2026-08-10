@@ -37,6 +37,13 @@ Spec détaillée : `docs/superpowers/specs/2026-08-09-tacsuite-roadmap-design.md
 - **Remarques thème clair Nico livrées** : PC-Tac Liens pastel + copy « Liens Externes » + footer (c549cfe) ; OI modales (racine : rgba sombres en dur dans .modal-header → color-mix sur tokens), Créer Adversaire pastel, accents étape 6, bouton annotation photo (25913ad). Sombre bit-exact, baselines clairs re-promues.
 - Rien poussé sur GitHub.
 
+## R6 — Refonte mise en page PDF (directives Nico 2026-08-10)
+
+Constat : tableaux coupés entre pages, fiches éclatées en « (SUITE) », pages à moitié vides, photos encadrées, puces outils jaunes datées.
+Directives : **une page = un usage** (1 page/fiche adversaire, 1 page/bloc ZMSPCP ou MOICP, 1 page/cellule effraction, sections courtes regroupées) ; **interdiction absolue des « Titre (SUITE) »** (le mécanisme R4-b est remplacé) ; photos pleine largeur SANS encadré, 1/page ; outils d'effraction directement sous la photo, badges modernes (fini les cases jaunes) ; tout parfaitement lisible.
+Arbitrages validés : réduction typographique adaptative avec plancher 7pt puis **refus de génération explicite** (liste des sections en dépassement) + compteurs de caractères UI calibrés ; découpage Standard ; photos qualité 0.92/2560px, budget PDF ~50 Mo à compression dégressive.
+Tranches : P1 moteur une-page-par-usage + solveur fit/refus (en vol) ; P2 photos + badges (en vol) ; P3 compteurs UI ; P4 réécriture des gardes verify-structure (B7/B10 attendent « (suite) » — deviennent l'inverse : zéro continuation, 1 page par usage).
+
 ## Dérogations actées
 
 - **AA boutons remplis, thème sombre** (2026-08-09, décision Nico) : `--accent-fill` sombre rétabli à `#4f8dff` (`--tac-blue-500`) — le correctif #2563eb changeait le bleu de l'interface. Ratio blanc/#4f8dff = 3.19:1, sous le seuil AA 4.5:1. Alternative conforme proposée (texte encre sombre sur #4f8dff, 6.6:1) — en attente de décision, non appliquée.
