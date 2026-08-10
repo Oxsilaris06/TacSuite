@@ -37,6 +37,62 @@ const MAX_PHOTO_PX = 2000;
 let fontsRegistered = false;
 
 /**
+ * Callback de progression de `normalizePhotos()`/`buildOiPdfBlob()` — appelé
+ * après CHAQUE photo traitée (succès ou échec), jamais en amont (R4-c) :
+ * `done` inclut les photos ignorées (repli `null`), `total` est figé au
+ * nombre d'entrées de départ.
+ */
+export type PhotoNormalizeProgress = (done: number, total: number) => void;
+
+/** Bornage de la concurrence des décodages/ré-encodages (R4-c) — 50 photos
+ * simultanées en `Promise.all` illimité = pic mémoire inutile (N décodages +
+ * N canvases vivants en même temps). 4 à 6 en vol, cf. audit. */
+const PHOTO_CONCURRENCY = 5;
+
+/**
+ * Calcule les dimensions cible (ratio préservé, plus grand côté ramené à
+ * `MAX_PHOTO_PX`) — logique de décision PARTAGÉE entre la voie moderne
+ * (`createImageBitmap`/`OffscreenCanvas`) et la voie de repli (`<canvas>`),
+ * SPEC §3.5.
+ */
+function computeTargetSize(width: number, height: number): { width: number; height: number } {
+    const maxSide = Math.max(width, height);
+    const scale = maxSide > MAX_PHOTO_PX ? MAX_PHOTO_PX / maxSide : 1;
+    return {
+        width: Math.max(1, Math.round(width * scale)),
+        height: Math.max(1, Math.round(height * scale)),
+    };
+}
+
+/**
+ * Une entrée JPEG/PNG déjà dans le gabarit ET sous `MAX_PHOTO_PX` traverse
+ * SANS ré-encodage (pass-through inchangé, SPEC §3.5) — décision PARTAGÉE
+ * entre les deux voies.
+ */
+function isPassthroughEligible(dataUrl: string, maxSide: number): boolean {
+    const isDirectlySupported = dataUrl.startsWith('data:image/jpeg') || dataUrl.startsWith('data:image/png');
+    return isDirectlySupported && maxSide <= MAX_PHOTO_PX;
+}
+
+/**
+ * Détection de capacité (PAS d'UA sniffing, R4-c) — vrai sur tout navigateur
+ * récent (Chromium/Firefox/Safari 17+), faux sur le vieux WebKit qui n'a ni
+ * `createImageBitmap` avec options de redimensionnement ni `OffscreenCanvas`.
+ */
+function supportsModernPhotoPipeline(): boolean {
+    return (
+        typeof createImageBitmap === 'function' &&
+        typeof OffscreenCanvas === 'function'
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Voie de repli — ancien pipeline `<img>`/`<canvas>` SYNCHRONE sur le thread
+// principal (SPEC §3.5), conservé pour les navigateurs sans
+// `createImageBitmap`/`OffscreenCanvas` (vieux WebKit).
+// ---------------------------------------------------------------------------
+
+/**
  * Décode une image en mémoire (jamais insérée dans le DOM) et renvoie
  * l'élément décodé — seule façon fiable de connaître ses dimensions réelles
  * avant de décider si elle doit être ré-encodée (SPEC §3.5).
@@ -53,10 +109,7 @@ async function decodeImage(dataUrl: string): Promise<HTMLImageElement> {
  * ramené à `MAX_PHOTO_PX` — SPEC §3.5.
  */
 function reencodeViaCanvas(img: HTMLImageElement): string {
-    const maxSide = Math.max(img.naturalWidth, img.naturalHeight);
-    const scale = maxSide > MAX_PHOTO_PX ? MAX_PHOTO_PX / maxSide : 1;
-    const targetW = Math.max(1, Math.round(img.naturalWidth * scale));
-    const targetH = Math.max(1, Math.round(img.naturalHeight * scale));
+    const { width: targetW, height: targetH } = computeTargetSize(img.naturalWidth, img.naturalHeight);
 
     const canvas = document.createElement('canvas');
     canvas.width = targetW;
@@ -69,17 +122,13 @@ function reencodeViaCanvas(img: HTMLImageElement): string {
     return canvas.toDataURL('image/jpeg', 0.85);
 }
 
-/**
- * Normalise UNE photo — SPEC §3.5 : JPEG/PNG déjà dans le gabarit ⇒ conservée
- * telle quelle ; sinon ré-encodage JPEG via canvas. Repli `null` (entrée
- * OMISE par l'appelant) en cas d'échec de décodage/ré-encodage.
- */
-async function normalizeOnePhoto(id: string, dataUrl: string): Promise<string | null> {
+/** Voie de repli complète pour UNE photo — mêmes règles de décision que la
+ * voie moderne, décodage/ré-encodage SYNCHRONES sur le thread principal. */
+async function normalizeOnePhotoLegacy(id: string, dataUrl: string): Promise<string | null> {
     try {
         const img = await decodeImage(dataUrl);
         const maxSide = Math.max(img.naturalWidth, img.naturalHeight);
-        const isDirectlySupported = dataUrl.startsWith('data:image/jpeg') || dataUrl.startsWith('data:image/png');
-        if (isDirectlySupported && maxSide <= MAX_PHOTO_PX) {
+        if (isPassthroughEligible(dataUrl, maxSide)) {
             return dataUrl;
         }
         return reencodeViaCanvas(img);
@@ -89,22 +138,150 @@ async function normalizeOnePhoto(id: string, dataUrl: string): Promise<string | 
     }
 }
 
+// ---------------------------------------------------------------------------
+// Voie moderne (R4-c) — décodage ET ré-encodage HORS thread principal autant
+// que l'API le permet : `createImageBitmap` (décodage/redimensionnement
+// natif) + `OffscreenCanvas.convertToBlob` (encodage JPEG). Élimine le gel
+// UI perceptible à 50 photos pendant « Préparation des images… ».
+// ---------------------------------------------------------------------------
+
+/** Convertit un `Blob` en data URL — seule sortie acceptée en aval
+ * (`document-builder.ts` référence les photos par data URL, SPEC §3.4). */
+async function blobToDataUrl(blob: Blob): Promise<string> {
+    return new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = (): void => resolve(reader.result as string);
+        reader.onerror = (): void => reject(reader.error ?? new Error('FileReader a échoué.'));
+        reader.readAsDataURL(blob);
+    });
+}
+
+/**
+ * Ré-encode un `ImageBitmap` déjà décodé/redimensionné (via les options de
+ * `createImageBitmap`) en JPEG via `OffscreenCanvas.convertToBlob` — même
+ * qualité (0.85) que la voie de repli.
+ */
+async function reencodeViaOffscreenCanvas(bitmap: ImageBitmap): Promise<string> {
+    const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
+    const ctx = canvas.getContext('2d');
+    if (!ctx) {
+        throw new Error('Contexte OffscreenCanvas 2D indisponible.');
+    }
+    ctx.drawImage(bitmap, 0, 0);
+    const blob = await canvas.convertToBlob({ type: 'image/jpeg', quality: 0.85 });
+    return blobToDataUrl(blob);
+}
+
+/** Voie moderne complète pour UNE photo — mêmes règles de décision que la
+ * voie de repli, décodage/redimensionnement/encodage délégués au navigateur
+ * (hors thread principal autant que l'API le permet). */
+async function normalizeOnePhotoModern(id: string, dataUrl: string): Promise<string | null> {
+    let probeBitmap: ImageBitmap | null = null;
+    try {
+        const sourceBlob = await (await fetch(dataUrl)).blob();
+
+        // 1er décodage — sonde les dimensions réelles (nécessaire pour décider
+        // pass-through vs ré-encodage, SPEC §3.5) ; décodage natif, hors thread
+        // principal côté navigateur.
+        probeBitmap = await createImageBitmap(sourceBlob);
+        const maxSide = Math.max(probeBitmap.width, probeBitmap.height);
+        if (isPassthroughEligible(dataUrl, maxSide)) {
+            return dataUrl;
+        }
+
+        const { width: targetW, height: targetH } = computeTargetSize(probeBitmap.width, probeBitmap.height);
+        probeBitmap.close();
+        probeBitmap = null;
+
+        // 2e décodage AVEC redimensionnement natif (`resizeWidth`/`resizeHeight`/
+        // `resizeQuality:'high'`) — le navigateur effectue le redimensionnement
+        // pendant le décodage, hors thread principal, plutôt qu'un
+        // `drawImage` manuel sur canvas plein format.
+        const resizedBitmap = await createImageBitmap(sourceBlob, {
+            resizeWidth: targetW,
+            resizeHeight: targetH,
+            resizeQuality: 'high',
+        });
+        try {
+            return await reencodeViaOffscreenCanvas(resizedBitmap);
+        } finally {
+            resizedBitmap.close();
+        }
+    } catch (e) {
+        console.warn(`[PDF v3] photo ${id} ignorée (format non supporté ou illisible)`, e);
+        return null;
+    } finally {
+        probeBitmap?.close();
+    }
+}
+
+/**
+ * Normalise UNE photo — SPEC §3.5 : JPEG/PNG déjà dans le gabarit ⇒ conservée
+ * telle quelle ; sinon ré-encodage JPEG. Repli `null` (entrée OMISE par
+ * l'appelant) en cas d'échec de décodage/ré-encodage. Choisit la voie moderne
+ * (`createImageBitmap`/`OffscreenCanvas`, hors thread principal) si
+ * disponible, sinon la voie de repli `<canvas>` (R4-c).
+ */
+async function normalizeOnePhoto(id: string, dataUrl: string): Promise<string | null> {
+    if (supportsModernPhotoPipeline()) {
+        return normalizeOnePhotoModern(id, dataUrl);
+    }
+    return normalizeOnePhotoLegacy(id, dataUrl);
+}
+
+/**
+ * Exécute `worker` sur `items` avec AU PLUS `limit` exécutions concurrentes —
+ * pool de tâches simple (file d'attente partagée entre `limit` « runners »),
+ * préserve l'INDEX de sortie (résultats dans l'ordre d'entrée, quel que soit
+ * l'ordre de complétion réel) — R4-c, remplace le `Promise.all` illimité.
+ */
+async function runWithConcurrency<T, R>(
+    items: readonly T[],
+    limit: number,
+    worker: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
+    const results: R[] = new Array(items.length);
+    let nextIndex = 0;
+
+    async function runner(): Promise<void> {
+        for (;;) {
+            const i = nextIndex++;
+            if (i >= items.length) return;
+            results[i] = await worker(items[i] as T, i);
+        }
+    }
+
+    const runnerCount = Math.max(1, Math.min(limit, items.length));
+    await Promise.all(Array.from({ length: runnerCount }, () => runner()));
+    return results;
+}
+
 /**
  * Normalise l'ensemble des photos collectées AVANT construction du document —
  * garde OBLIGATOIRE (SPEC §1.5) : pdfkit (moteur sous-jacent de pdfmake)
  * n'accepte que JPEG/PNG ; une image WebP/AVIF non normalisée ferait échouer
- * TOUT le document. Traitement en parallèle (`Promise.all`), même précédent
- * que `collectAllData()` (`pdf-engine-v2.ts:514`).
+ * TOUT le document. Concurrence BORNÉE (`PHOTO_CONCURRENCY`, R4-c) — remplace
+ * l'ancien `Promise.all` illimité (pic mémoire à N décodages/canvases vivants
+ * simultanément). `onProgress`, si fourni, est appelé après CHAQUE photo
+ * traitée (i/N, succès ou échec).
  */
 export async function normalizePhotos(
     photosBase64: Record<string, string>,
+    onProgress?: PhotoNormalizeProgress,
 ): Promise<Record<string, string>> {
     const entries = Object.entries(photosBase64);
-    const normalized = await Promise.all(
-        entries.map(async ([id, dataUrl]): Promise<readonly [string, string] | null> => {
+    const total = entries.length;
+    let done = 0;
+
+    const normalized = await runWithConcurrency(
+        entries,
+        PHOTO_CONCURRENCY,
+        async ([id, dataUrl]): Promise<readonly [string, string] | null> => {
             const result = await normalizeOnePhoto(id, dataUrl);
+            done += 1;
+            onProgress?.(done, total);
             return result !== null ? ([id, result] as const) : null;
-        }),
+        },
     );
 
     const out: Record<string, string> = {};
@@ -131,9 +308,9 @@ export async function normalizePhotos(
  */
 export async function buildOiPdfBlob(
     data: OiPdfCollectedData,
-    opts: { format: OiPdfFormat },
+    opts: { format: OiPdfFormat; onProgress?: PhotoNormalizeProgress },
 ): Promise<Blob> {
-    const photosBase64 = await normalizePhotos(data.photosBase64);
+    const photosBase64 = await normalizePhotos(data.photosBase64, opts.onProgress);
     const docDefinition: TDocumentDefinitions = buildOiDocDefinition({ ...data, photosBase64 }, opts);
 
     const pdfMake = (await import('pdfmake')).default;
@@ -187,8 +364,13 @@ export async function downloadOiPdfV3(deps?: {
         const format: OiPdfFormat = window.pdfOutputFormat === '16:9' ? '16:9' : 'a4';
 
         updateStatus('Préparation des images…');
+        const blob = await buildOiPdfBlob(data, {
+            format,
+            onProgress: (done, total) => {
+                if (total > 0) updateStatus(`Préparation des images… (${done}/${total})`);
+            },
+        });
         updateStatus('Composition du document…');
-        const blob = await buildOiPdfBlob(data, { format });
         const fileName = oiPdfFileName(data.formData);
 
         updateStatus('Assemblage final…');
