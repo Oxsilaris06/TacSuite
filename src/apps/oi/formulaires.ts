@@ -192,6 +192,8 @@ import { createAnnotatedImageBlob } from '@oi/dessin.js';
 import { setupQuickEditPanel } from '@oi/patrac.js';
 // R2-T4 — validation inline (nouveau module, cf. son en-tête).
 import { attachValidation, required } from '@oi/validation.js';
+// P3 — compteur de caractères calibré PDF (nouveau module, cf. son en-tête).
+import { ADVERSAIRE_ATCD_SOFT_MAX, charCounter } from '@oi/validation.js';
 import { confirmDialog, toast } from '@shared/feedback.js';
 import type {
     OiAdversary,
@@ -564,6 +566,14 @@ function addAdversary(data: OiAdversary | null = null): void {
     const domicileAdvInput = document.getElementById(`domicile_adv_${id}`) as HTMLTextAreaElement | null;
     if (domicileAdvInput) {
         attachValidation(domicileAdvInput, [required("Le domicile de l'adversaire est requis.")]);
+    }
+
+    // P3 — compteur de caractères : champ ATCD/dangerosité, seul champ de la
+    // fiche adversaire alimentant une section PDF à refus possible (fiche
+    // adversaire, colonne droite — cf. `PAGE_CAPACITY.adversaireAtcdMaxChars`).
+    const antecedentsAdvInput = document.getElementById(`antecedents_adv_${id}`) as HTMLTextAreaElement | null;
+    if (antecedentsAdvInput) {
+        charCounter(antecedentsAdvInput, { softMax: ADVERSAIRE_ATCD_SOFT_MAX });
     }
 
     // Initialisation des composants

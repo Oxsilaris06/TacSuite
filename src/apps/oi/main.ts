@@ -199,6 +199,8 @@ import { oiState } from '@oi/state.js';
 // R2-T4 — infrastructure de validation inline (nouveau module, pas un port
 // verbatim ; import nommé au même titre que `oiState` ci-dessus).
 import { attachValidation, required, lengthRange } from '@oi/validation.js';
+// P3 — compteurs de caractères calibrés PDF (nouveau module, cf. son en-tête).
+import { ARTICULATION_CAT_SOFT_MAX, EFFRACTION_HYP_FIELD_SOFT_MAX, charCounter } from '@oi/validation.js';
 
 // ── §12.2 — Imports applicatifs, ordre de 4.html:4517-4534 à la ligne près.
 // Tous en side-effect only : chaque module pose ses globales `window.*` à
@@ -627,6 +629,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         // Hors des 18 étapes §12.3 (ajout de la tranche, pas du portage verbatim).
         initOiStaticFieldValidation();
 
+        // P3 — compteurs de caractères calibrés PDF sur les champs ZMSPCP/
+        // MOICP (CAT) et effraction, créés dynamiquement par `articulation.ts`.
+        initOiDynamicCharCounters();
+
     } catch (err) {
         console.error("Erreur d'initialisation OI:", err);
     }
@@ -657,6 +663,63 @@ function initOiStaticFieldValidation(): void {
         attachValidation(quickEditTrigramme, [
             lengthRange(2, 4, 'Le trigramme doit contenir entre 2 et 4 caractères.'),
         ]);
+    }
+}
+
+/**
+ * P3 — sélecteurs (classes CSS, sans id) des champs ZMSPCP/MOICP (CAT) et
+ * effraction (technique/dégagement/assaut par hypothèse) alimentant des
+ * sections PDF à refus possible, avec le seuil `charCounter` associé.
+ * `articulation.ts` (création de ces blocs) est HORS PÉRIMÈTRE de cette
+ * tranche (fichiers autorisés P3 : `validation.ts`/`formulaires.ts`/
+ * `main.ts`) : le branchement se fait donc ICI, par observation des 3
+ * conteneurs statiques (`oi/index.html`) où ces champs sont insérés, plutôt
+ * qu'à la création dans `articulation.ts` — même résultat fonctionnel
+ * (« compteur branché à la création »), sans toucher un fichier hors
+ * périmètre.
+ */
+const CHAR_COUNTER_DYNAMIC_FIELDS: ReadonlyArray<{ selector: string; softMax: number }> = [
+    { selector: '.moicp-cat', softMax: ARTICULATION_CAT_SOFT_MAX },
+    { selector: '.zmspcp-cat', softMax: ARTICULATION_CAT_SOFT_MAX },
+    { selector: '.effrac-hyp-effrac', softMax: EFFRACTION_HYP_FIELD_SOFT_MAX },
+    { selector: '.effrac-hyp-degag', softMax: EFFRACTION_HYP_FIELD_SOFT_MAX },
+    { selector: '.effrac-hyp-assaut', softMax: EFFRACTION_HYP_FIELD_SOFT_MAX },
+];
+
+/** Branche `charCounter` sur `el` s'il correspond à l'un des sélecteurs ci-dessus (l'élément lui-même OU un de ses descendants — un bloc MOICP/ZMSPCP/hypothèse entier est inséré d'un coup). */
+function attachDynamicCharCounters(root: ParentNode): void {
+    for (const { selector, softMax } of CHAR_COUNTER_DYNAMIC_FIELDS) {
+        const targets: Element[] = [];
+        if (root instanceof Element && root.matches(selector)) targets.push(root);
+        targets.push(...Array.from(root.querySelectorAll(selector)));
+        for (const target of targets) {
+            if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) {
+                charCounter(target, { softMax });
+            }
+        }
+    }
+}
+
+/**
+ * P3 — observe les 3 conteneurs où `articulation.ts` insère ses blocs
+ * (MOICP/ZMSPCP/effraction) et branche `charCounter` sur les champs cibles
+ * dès leur insertion dans le DOM (`childList`+`subtree` : un bloc, ou une
+ * carte hypothèse ajoutée à l'intérieur d'un bloc effraction déjà présent,
+ * déclenchent la même détection).
+ */
+function initOiDynamicCharCounters(): void {
+    const containerIds = ['moicp_container', 'zmspcp_container', 'effraction_container'];
+    for (const containerId of containerIds) {
+        const container = document.getElementById(containerId);
+        if (!container) continue;
+        const observer = new MutationObserver((mutations) => {
+            for (const mutation of mutations) {
+                mutation.addedNodes.forEach((node) => {
+                    if (node instanceof Element) attachDynamicCharCounters(node);
+                });
+            }
+        });
+        observer.observe(container, { childList: true, subtree: true });
     }
 }
 
