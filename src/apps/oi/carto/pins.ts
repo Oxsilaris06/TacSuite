@@ -61,6 +61,7 @@ import maplibregl from 'maplibre-gl';
 import type { MapMouseEvent, Marker } from 'maplibre-gl';
 
 import { confirmDialog, toast } from '@shared/feedback.js';
+import { attachPinGestures, createDblZoomSuppressor } from '@shared/pin-gestures.js';
 import { esc } from '@shared/ui-platform.js';
 
 import { OI_PIN_DEFS, OI_PIN_FALLBACK, oiIconForMember } from './constants.js';
@@ -438,6 +439,11 @@ export const PinsMethods = {
         }
         this.markers.clear();
 
+        // Suppression du zoom double-clic natif partagée par tous les pins de
+        // cette passe de rendu (timer annulable, cf. `createDblZoomSuppressor`
+        // — remplace l'ancien `setTimeout(450)` inline sans annulation).
+        const dblZoomSuppressor = createDblZoomSuppressor(() => map.doubleClickZoom);
+
         for (const pin of this._loadPins()) {
             const def = OI_PIN_DEFS[pin.kind] || OI_PIN_FALLBACK;
             const color = pin.color || def.color;          // couleur personnalisée prioritaire
@@ -479,46 +485,50 @@ export const PinsMethods = {
                 .setLngLat([pin.lng, pin.lat])
                 .addTo(map);
 
-            pinWrap.addEventListener('pointerdown', this._safe(() => {
-                pinWrap.style.zIndex = '1000';
-                labelEl.style.zIndex = '1000';
-                if (map && map.doubleClickZoom) {
-                    try { map.doubleClickZoom.disable(); } catch { /* API MapLibre selon état */ }
-                    setTimeout(() => {
-                        try { map.doubleClickZoom.enable(); } catch { /* idem */ }
-                    }, 450);
-                }
-            }, 'pin:pointerdown'));
             pinWrap.addEventListener('mouseenter', () => { pinWrap.style.zIndex = '1000'; labelEl.style.zIndex = '1000'; });
             pinWrap.addEventListener('mouseleave', () => { pinWrap.style.zIndex = ''; labelEl.style.zIndex = ''; });
-            pinWrap.addEventListener('pointerleave', () => { pinWrap.style.zIndex = ''; labelEl.style.zIndex = ''; });
 
             // --- Drag : pin + libellé se déplacent ensemble ---
-            let lastDragEnd = 0;
+            const gestures = attachPinGestures(pinWrap, {
+                suppressDblZoom: () => dblZoomSuppressor.suppress(),
+                onGestureStart: () => {
+                    pinWrap.style.zIndex = '1000';
+                    labelEl.style.zIndex = '1000';
+                },
+                onGestureEnd: () => {
+                    pinWrap.style.zIndex = '';
+                    labelEl.style.zIndex = '';
+                },
+                // OI : le tap SIMPLE ouvre la roue (comportement UX conservé,
+                // cf. mission R3-d) — pas de fenêtre de double-tap (`onDoubleTap`
+                // omis) : machine robuste pointer/touch au lieu du `click` DOM
+                // (chemin abandonné côté PC-Tac, cf. en-tête de `pin-gestures.ts`).
+                onSingleTap: () => {
+                    this._openPinWheel(pin.id);
+                },
+            }, {
+                safe: (fn, label) => this._safe(fn, label),
+                dragAntiBounceMs: 300,
+            });
+
             pinMarker.on('dragstart', this._safe(() => {
+                gestures.notifyDragStart();
                 pinWrap.style.cursor = 'grabbing';
                 pinWrap.style.opacity = '0.85';
                 labelEl.style.opacity = '0.5';
             }, 'pin:dragstart'));
             pinMarker.on('drag', this._safe(() => labelMarker.setLngLat(pinMarker.getLngLat()), 'pin:drag'));
             pinMarker.on('dragend', this._safe(() => {
+                gestures.notifyDragEnd();
                 pinWrap.style.cursor = 'grab';
                 pinWrap.style.opacity = '1';
                 labelEl.style.opacity = '1';
-                lastDragEnd = Date.now();
                 const ll = pinMarker.getLngLat();
                 labelMarker.setLngLat(ll);
                 const allPins = this._loadPins().slice();
                 const target = allPins.find(p => p.id === pin.id);
                 if (target) { target.lng = ll.lng; target.lat = ll.lat; this._savePins(allPins); }
             }, 'pin:dragend'));
-
-            // --- Tap (sans drag) → roue d'options portée (Icône / Couleur / Renommer / Aller à / Supprimer) ---
-            pinWrap.addEventListener('click', this._safe((ev: MouseEvent) => {
-                if (Date.now() - lastDragEnd < 300) return; // clic qui suit un drag : ignoré
-                ev.stopPropagation();
-                this._openPinWheel(pin.id);
-            }, 'pin:click'));
 
             this.markers.set(pin.id, { pin: pinMarker, label: labelMarker });
         }

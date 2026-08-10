@@ -475,7 +475,13 @@ describe('_renderPins — CŒUR du module (oi_cartographie.js:904-985)', () => {
         expect(fake.markers.has('p2')).toBe(true);
     });
 
-    it('tap sur le pin (sans drag récent) ouvre la roue via _openPinWheel(pin.id)', () => {
+    // R3-d : le `click` DOM (chemin abandonné côté PC-Tac, cf. `pin-gestures.ts`
+    // en-tête — annulé par MapLibre lors du `preventDefault` touchstart sur un
+    // marker `draggable: true`) est remplacé par la machine partagée
+    // `attachPinGestures` (pointer desktop + touch mobile). OI conserve un
+    // "tap simple" (pas de double-tap) : desktop = pointerdown+pointerup,
+    // mobile = touchstart+touchend.
+    it('tap desktop (pointerdown+pointerup) sur le pin ouvre la roue via _openPinWheel(pin.id)', () => {
         const openPinWheel = vi.fn();
         const fake = makeFakeThis({
             map: {} as unknown as OICartoInternal['map'],
@@ -485,9 +491,70 @@ describe('_renderPins — CŒUR du module (oi_cartographie.js:904-985)', () => {
 
         PinsMethods._renderPins.call(fake);
         const entry = fake.markers.get('p1') as { pin: { getElement(): HTMLElement } };
-        entry.pin.getElement().dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        const el = entry.pin.getElement();
+        el.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, clientX: 10, clientY: 10, pointerType: 'mouse' }));
+        el.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, cancelable: true, clientX: 10, clientY: 10, pointerType: 'mouse' }));
 
         expect(openPinWheel).toHaveBeenCalledWith('p1');
+    });
+
+    it('tap mobile (touchstart+touchend) sur le pin ouvre la roue via _openPinWheel(pin.id)', () => {
+        const openPinWheel = vi.fn();
+        const fake = makeFakeThis({
+            map: {} as unknown as OICartoInternal['map'],
+            _loadPins: () => [makePin({ id: 'p1' })],
+            _openPinWheel: openPinWheel,
+        });
+
+        PinsMethods._renderPins.call(fake);
+        const entry = fake.markers.get('p1') as { pin: { getElement(): HTMLElement } };
+        const el = entry.pin.getElement();
+        const touch = typeof Touch !== 'undefined'
+            ? new Touch({ identifier: 1, target: el, clientX: 10, clientY: 10 })
+            : { clientX: 10, clientY: 10, identifier: 1 } as Touch;
+        el.dispatchEvent(new TouchEvent('touchstart', { touches: [touch], changedTouches: [touch] }));
+        el.dispatchEvent(new TouchEvent('touchend', { touches: [], changedTouches: [touch] }));
+
+        expect(openPinWheel).toHaveBeenCalledWith('p1');
+    });
+
+    it('tap mobile : un drag MapLibre récent empêche l\'ouverture de la roue au touchend', () => {
+        const openPinWheel = vi.fn();
+        const fake = makeFakeThis({
+            map: {} as unknown as OICartoInternal['map'],
+            _loadPins: () => [makePin({ id: 'p1' })],
+            _openPinWheel: openPinWheel,
+        });
+
+        PinsMethods._renderPins.call(fake);
+        const entry = fake.markers.get('p1') as { pin: { getElement(): HTMLElement; _fire(type: string): void } };
+        const el = entry.pin.getElement();
+        const touch = typeof Touch !== 'undefined'
+            ? new Touch({ identifier: 1, target: el, clientX: 10, clientY: 10 })
+            : { clientX: 10, clientY: 10, identifier: 1 } as Touch;
+
+        el.dispatchEvent(new TouchEvent('touchstart', { touches: [touch], changedTouches: [touch] }));
+        entry.pin._fire('dragstart');
+        entry.pin._fire('dragend');
+        el.dispatchEvent(new TouchEvent('touchend', { touches: [], changedTouches: [touch] }));
+
+        expect(openPinWheel).not.toHaveBeenCalled();
+    });
+
+    it('pointerdown déclenche la suppression du zoom double-clic natif (doubleClickZoom.disable)', () => {
+        const disable = vi.fn();
+        const enable = vi.fn();
+        const fake = makeFakeThis({
+            map: { doubleClickZoom: { disable, enable } } as unknown as OICartoInternal['map'],
+            _loadPins: () => [makePin({ id: 'p1' })],
+        });
+
+        PinsMethods._renderPins.call(fake);
+        const entry = fake.markers.get('p1') as { pin: { getElement(): HTMLElement } };
+        const el = entry.pin.getElement();
+        el.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, clientX: 10, clientY: 10, pointerType: 'mouse' }));
+
+        expect(disable).toHaveBeenCalledTimes(1);
     });
 
     it('dragend : recalcule lng/lat depuis le marker et persiste (_savePins)', () => {
