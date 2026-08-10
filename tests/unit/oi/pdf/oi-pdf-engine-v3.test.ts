@@ -132,7 +132,7 @@ describe('normalizePhotos — voie de repli (jsdom, sans createImageBitmap/Offsc
         expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('photoX'), expect.anything());
     });
 
-    it('ré-encode une entrée dépassant MAX_PHOTO_PX (2000px) via le pipeline canvas de repli (ratio préservé, plus grand côté = 2000, qualité JPEG 0.85)', async () => {
+    it('ré-encode une entrée dépassant le palier de base (2560px/0.92, directive Nico 2026-08-10) via le pipeline canvas de repli (ratio préservé, plus grand côté = 2560, qualité JPEG 0.92)', async () => {
         // jsdom n'a pas de rastérisation canvas réelle (paquet npm `canvas`
         // absent) : `getContext('2d')` est doublé pour vérifier les PARAMÈTRES
         // de la décision (dimensions cible, qualité d'encodage) sans dépendre
@@ -151,8 +151,8 @@ describe('normalizePhotos — voie de repli (jsdom, sans createImageBitmap/Offsc
         const result = await normalizePhotos({ big: 'data:image/jpeg;base64,YmlnLWpwZWc=' });
 
         expect(result.big).toBe('data:image/jpeg;base64,cmVlbmNvZGVk');
-        expect(drawImageSpy).toHaveBeenCalledWith(expect.anything(), 0, 0, 2000, 1000);
-        expect(toDataURLSpy).toHaveBeenCalledWith('image/jpeg', 0.85);
+        expect(drawImageSpy).toHaveBeenCalledWith(expect.anything(), 0, 0, 2560, 1280);
+        expect(toDataURLSpy).toHaveBeenCalledWith('image/jpeg', 0.92);
         getContextSpy.mockRestore();
     });
 });
@@ -234,7 +234,7 @@ describe('normalizePhotos — voie moderne (createImageBitmap/OffscreenCanvas, d
         expect(drawImageSpy).not.toHaveBeenCalled();
     });
 
-    it("image surdimensionnée : 2e createImageBitmap appelé avec resizeWidth/resizeHeight (ratio préservé, plus grand côté = 2000) et resizeQuality:'high', convertToBlob en JPEG qualité 0.85", async () => {
+    it("image surdimensionnée : 2e createImageBitmap appelé avec resizeWidth/resizeHeight (ratio préservé, plus grand côté = 2560, palier de base directive Nico 2026-08-10) et resizeQuality:'high', convertToBlob en JPEG qualité 0.92", async () => {
         const { createImageBitmapMock, convertToBlobSpy } = stubModernPipeline({
             naturalWidth: 4000,
             naturalHeight: 2000,
@@ -245,11 +245,11 @@ describe('normalizePhotos — voie moderne (createImageBitmap/OffscreenCanvas, d
 
         expect(createImageBitmapMock).toHaveBeenCalledTimes(2);
         expect(createImageBitmapMock).toHaveBeenNthCalledWith(2, expect.anything(), {
-            resizeWidth: 2000,
-            resizeHeight: 1000,
+            resizeWidth: 2560,
+            resizeHeight: 1280,
             resizeQuality: 'high',
         });
-        expect(convertToBlobSpy).toHaveBeenCalledWith({ type: 'image/jpeg', quality: 0.85 });
+        expect(convertToBlobSpy).toHaveBeenCalledWith({ type: 'image/jpeg', quality: 0.92 });
         expect(result.big).toMatch(/^data:image\/jpeg;base64,/);
     });
 
@@ -384,6 +384,85 @@ describe('normalizePhotos — onProgress', () => {
 
         expect(result).toEqual({});
         expect(onProgress).not.toHaveBeenCalled();
+    });
+});
+
+// ===========================================================================
+// planPhotoBudget — fonction PURE (directive Nico 2026-08-10, mission P2
+// « photos et badges outils ») : décide du palier qualité/résolution à
+// appliquer étant donné les tailles (octets) des photos normalisées au
+// palier de base et le budget total toléré.
+// ===========================================================================
+describe('planPhotoBudget (pipeline qualité/budget, directive Nico 2026-08-10)', () => {
+    it('sous le budget -> palier de base inchangé (0.92/2560px)', async () => {
+        const { planPhotoBudget, PHOTO_BUDGET_STEPS } = await loadEngineV3();
+        const sizes = [1_000_000, 2_000_000, 1_500_000]; // 4,5 Mo bien sous 50 Mo
+        const plan = planPhotoBudget(sizes, 50 * 1024 * 1024);
+        expect(plan).toEqual(PHOTO_BUDGET_STEPS[0]);
+    });
+
+    it('aucune photo -> palier de base (rien à dégrader)', async () => {
+        const { planPhotoBudget, PHOTO_BUDGET_STEPS } = await loadEngineV3();
+        expect(planPhotoBudget([], 50 * 1024 * 1024)).toEqual(PHOTO_BUDGET_STEPS[0]);
+    });
+
+    it('dépassement léger -> repli qualité 0.85 (2560px conservé)', async () => {
+        const { planPhotoBudget, PHOTO_BUDGET_STEPS } = await loadEngineV3();
+        // 60 Mo au palier de base -> ratio qualité 0.85/0.92 ≈ 0,924 suffit
+        // (60 * 0,924 ≈ 55,4 Mo, encore > 50 -> palier suivant nécessaire ;
+        // ajusté pour retomber pile dans la fenêtre du 2e palier).
+        const budget = 50 * 1024 * 1024;
+        const baseTotal = 54 * 1024 * 1024; // *0.85/0.92 ≈ 49.9 Mo <= 50 Mo
+        const plan = planPhotoBudget([baseTotal], budget);
+        expect(plan).toEqual(PHOTO_BUDGET_STEPS[1]);
+    });
+
+    it('dépassement sévère -> repli en cascade jusqu\'au dernier palier (2000px/0.78)', async () => {
+        const { planPhotoBudget, PHOTO_BUDGET_STEPS } = await loadEngineV3();
+        const plan = planPhotoBudget([500 * 1024 * 1024], 50 * 1024 * 1024);
+        expect(plan).toEqual(PHOTO_BUDGET_STEPS[3]);
+    });
+
+    it('dépassement même au plancher -> dernier palier retenu (meilleur effort, jamais d\'échec)', async () => {
+        const { planPhotoBudget, PHOTO_BUDGET_STEPS } = await loadEngineV3();
+        const plan = planPhotoBudget([5_000 * 1024 * 1024], 50 * 1024 * 1024);
+        expect(plan).toEqual(PHOTO_BUDGET_STEPS[PHOTO_BUDGET_STEPS.length - 1]);
+    });
+
+    it('paliers dégressifs dans le bon ordre : qualité (0.92→0.85→0.78) avant résolution (2560→2000px)', async () => {
+        const { PHOTO_BUDGET_STEPS } = await loadEngineV3();
+        expect(PHOTO_BUDGET_STEPS.map((s) => [s.quality, s.maxPx])).toEqual([
+            [0.92, 2560],
+            [0.85, 2560],
+            [0.78, 2560],
+            [0.78, 2000],
+        ]);
+    });
+});
+
+// ===========================================================================
+// normalizePhotos — respecte le budget total (2e passe de ré-encodage si le
+// palier de base dépasse PHOTO_BUDGET_BYTES) — directive Nico 2026-08-10.
+// ===========================================================================
+describe('normalizePhotos — budget total 50 Mo (repli qualité en cascade)', () => {
+    it('sous le budget (petites photos) : une seule passe, qualité 0.92 conservée', async () => {
+        const drawImageSpy = vi.fn();
+        const toDataURLSpy = vi.fn(() => 'data:image/jpeg;base64,cmVlbmNvZGVk');
+        vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({
+            drawImage: drawImageSpy,
+        } as unknown as CanvasRenderingContext2D);
+        vi.spyOn(HTMLCanvasElement.prototype, 'toDataURL').mockImplementation(toDataURLSpy);
+        const infoSpy = vi.spyOn(console, 'info').mockImplementation(() => {});
+
+        const { normalizePhotos } = await loadEngineV3();
+        fakeImageState.naturalWidth = 4000;
+        fakeImageState.naturalHeight = 2000;
+
+        await normalizePhotos({ big: 'data:image/jpeg;base64,YmlnLWpwZWc=' });
+
+        expect(toDataURLSpy).toHaveBeenCalledTimes(1);
+        expect(toDataURLSpy).toHaveBeenCalledWith('image/jpeg', 0.92);
+        expect(infoSpy).toHaveBeenCalledWith(expect.stringContaining('budget respecté'));
     });
 });
 

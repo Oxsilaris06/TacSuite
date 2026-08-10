@@ -26,16 +26,18 @@ import type { Content, ContextPageSize, DynamicBackground, DynamicContent } from
 import {
     buildOiDocDefinition,
     effractionFirstOverheadPt,
-    expandOversizedHypothesis,
     hypothesisRowHeightPt,
     internPhotoImages,
     oiPdfFileName,
+    OiPdfFitRefusalError,
+    PAGE_CAPACITY,
     splitAtcdBoundaries,
 } from '@oi/pdf/document-builder.js';
 import { SOFT_HYPHEN } from '@oi/pdf/text-utils.js';
 import { PDF_DARK, PDF_LIGHT } from '@oi/pdf/theme.js';
 import type {
     OiEffractionBlock,
+    OiEffractionHypothesis,
     OiFormData,
     OiMoicpBlock,
     OiPatracRow,
@@ -413,16 +415,24 @@ describe('buildOiDocDefinition — tableaux de données : grille p.border, jamai
         ['clair', false, PDF_LIGHT],
         ['sombre', true, PDF_DARK],
     ] as const)("Hypothèses d'Effraction (thème %s) : en-tête bordée p.border", (_label, isDark, pal) => {
+        // Mission P1 : au-delà de `EFFRAC_HYP_CARDS_MAX` (4) hypothèses, le
+        // rendu repose sur la table dense historique (son en-tête, seul objet
+        // testé ici) plutôt que sur des cartes — 6 hypothèses COURTES pour
+        // déclencher ce mode sans risquer un refus fit-to-page.
         const effractionBlocks: OiEffractionBlock[] = [
             {
-                // `structure` non vide (BLIND.REFIX round 2 : `isEffractionBlockEmpty`
-                // ignore désormais le repli `'-'`, cf. sa JSDoc) — bloc VOLONTAIREMENT
-                // non vide pour que le tableau (et son en-tête, seul objet testé ici)
-                // soit bien rendu malgré `hypotheses: []`.
                 id: 'e1', title: 'PORTE', mission: '-', porte: '-', structure: 'Porte blindee', serrurerie: '-',
                 environnement: '-', bati_a_bati: '-', dormant_a_dormant: '-', prof_linteaux: '-',
                 prof_bati: '-', h_porte: '-', h_marche: '-', prof_marche: '-', prof_moulure: '-',
-                members: [], hypotheses: [],
+                members: [],
+                hypotheses: Array.from({ length: 6 }, (_, i) => ({
+                    id: `h${i}`,
+                    title: `H${i + 1}`,
+                    desc: '',
+                    effrac: 'Pied de biche',
+                    degag: 'Evacuation',
+                    assaut: 'Direct',
+                })),
             },
         ];
         const json = JSON.stringify(buildOiDocDefinition(collect({ effraction_blocks: effractionBlocks }, {}, isDark), { format: 'a4' }));
@@ -623,18 +633,23 @@ describe('buildOiDocDefinition — cartes/encadrés simples : transparentes par 
 });
 
 // ===========================================================================
-// Modèle de PAGINATION v2 (correctif PG.IMPL, docs/SPEC-PDF-V3.md § Pagination
-// v2) — blocs ZMSPCP/MOICP « C conduite à tenir » : police adaptative PUIS
-// scission aux frontières légitimes (tirets) en dernier recours. Contre-épreuve
-// terrain équivalente (guardrail structurel réel) : `tests/pdf/fixtures/long-case.json`
-// + `tests/pdf/verify-structure.mjs` (assertions B1/B2/B3, cf. `tests/pdf/README.md`).
+// MISSION P1 (refonte mise en page PDF OI, directive Nico 2026-08-10) —
+// blocs ZMSPCP/MOICP : UNE SEULE page par bloc, solveur fit-to-page PUR
+// (`fitUsageToPage`, theme.ts) réduisant la police par paliers (11→7) puis
+// REFUS DE GÉNÉRATION explicite (`OiPdfFitRefusalError`) si même 7 px ne
+// suffit pas — INTERDICTION ABSOLUE de continuation « (SUITE) »/« (suite) »
+// (l'ancien `chunkItemsByCost`/pages « (SUITE) » ont été retirés).
 // ===========================================================================
-describe('buildOiDocDefinition — modèle de pagination v2 (ZMSPCP/MOICP, correctif PG.IMPL)', () => {
-    function dashItems(count: number): string {
-        return Array.from({ length: count }, (_, i) => `- Item numero ${i + 1} du champ conduite a tenir.`).join('\n');
+describe('buildOiDocDefinition — page unique ZMSPCP/MOICP, fit-to-page (mission P1)', () => {
+    function dashItems(count: number, wordy = false): string {
+        return Array.from({ length: count }, (_, i) =>
+            wordy
+                ? `- Item numero ${i + 1} tres long qui occupe plusieurs lignes une fois rendu, avec beaucoup de details operationnels supplementaires ajoutes ici pour alourdir le champ.`
+                : `- Item numero ${i + 1} du champ conduite a tenir.`,
+        ).join('\n');
     }
 
-    it('champ « C conduite à tenir » COURT (sans tiret) : rendu inchangé, un seul labelValue, une seule page', () => {
+    it('champ « C conduite à tenir » COURT (sans tiret) : rendu inchangé, un seul labelValue, une seule page, jamais de continuation', () => {
         const zmspcpBlocks: OiZmspcpBlock[] = [
             { id: 'z1', title: 'ALPHA', zone: '-', mission: '-', secteur: '-', points_particuliers: '-', cat: 'RAS', place_chef: '-', members: [] },
         ];
@@ -642,9 +657,10 @@ describe('buildOiDocDefinition — modèle de pagination v2 (ZMSPCP/MOICP, corre
 
         expect(json).toContain('"text":[{"text":"C CONDUITE À TENIR : ","bold":true,"color":"#0033a0"},{"text":"RAS"');
         expect(json).not.toContain('(suite)');
+        expect(json).not.toContain('(SUITE)');
     });
 
-    it('champ « C conduite à tenir » à tirets tenant sur UNE page : liste d\'items insécables, AUCUNE scission', () => {
+    it('champ « C conduite à tenir » à tirets tenant sur UNE page : liste d\'items insécables, jamais de continuation « (SUITE) »', () => {
         const zmspcpBlocks: OiZmspcpBlock[] = [
             { id: 'z1', title: 'ALPHA', zone: '-', mission: '-', secteur: '-', points_particuliers: '-', cat: dashItems(5), place_chef: '-', members: [] },
         ];
@@ -654,61 +670,49 @@ describe('buildOiDocDefinition — modèle de pagination v2 (ZMSPCP/MOICP, corre
         expect(json).toContain('{"text":"- Item numero 1 du champ conduite a tenir.","color":"#111111","margin":[0,0,0,0],"unbreakable":true,"preserveLeadingSpaces":true}');
         expect(json).toContain('{"text":"- Item numero 5 du champ conduite a tenir.","color":"#111111","margin":[0,2,0,0],"unbreakable":true,"preserveLeadingSpaces":true}');
         expect(json).not.toContain('(suite)');
+        expect(json).not.toContain('(SUITE)');
         expect((json.match(/ARTICULATION : ZMSPCP - ALPHA/g) ?? []).length).toBe(1);
     });
 
-    it("champ « C conduite à tenir » DÉPASSANT le budget d'une page : scission aux frontières légitimes, fragment « (suite) », jamais de coupure en milieu de phrase", () => {
+    it("un champ « C conduite à tenir » volumineux (30 items) ne produit JAMAIS de continuation « (SUITE) » : soit il tient (police réduite, les 30 items présents sur l'unique page), soit la génération est explicitement REFUSÉE (OiPdfFitRefusalError) — jamais de troncature silencieuse ni de coupure en milieu de phrase", () => {
         const zmspcpBlocks: OiZmspcpBlock[] = [
             { id: 'z1', title: 'ALPHA', zone: '-', mission: '-', secteur: '-', points_particuliers: '-', cat: dashItems(30), place_chef: '-', members: [] },
         ];
-        const json = JSON.stringify(buildOiDocDefinition(collect({ zmspcp_blocks: zmspcpBlocks }), { format: 'a4' }));
+        const data = collect({ zmspcp_blocks: zmspcpBlocks });
 
-        // Fragment « (suite) » présent, EXACTEMENT une fois (une seule scission pour 30 items au budget calibré).
-        expect(json).toContain('ARTICULATION : ZMSPCP - ALPHA (SUITE)');
-        expect((json.match(/\(SUITE\)/g) ?? []).length).toBeGreaterThanOrEqual(1);
-
-        // Les 30 items apparaissent chacun EXACTEMENT une fois (aucune perte, aucune duplication),
-        // chacun comme bloc `unbreakable` INTACT — jamais une coupure en milieu de phrase.
-        for (let i = 1; i <= 30; i++) {
-            const marker = `Item numero ${i} du champ conduite a tenir.`;
-            const occurrences = json.split(marker).length - 1;
-            expect(occurrences, `item ${i} doit apparaître exactement 1 fois`).toBe(1);
-            expect(json).toContain(`"text":"- ${marker}","color":"#111111"`);
+        try {
+            const json = JSON.stringify(buildOiDocDefinition(data, { format: 'a4' }));
+            expect(json).not.toContain('(SUITE)');
+            expect(json).not.toContain('(suite)');
+            expect((json.match(/ARTICULATION : ZMSPCP - ALPHA/g) ?? []).length).toBe(1);
+            for (let i = 1; i <= 30; i++) {
+                expect(json, `item ${i} doit apparaître`).toContain(`Item numero ${i} du champ conduite a tenir.`);
+            }
+        } catch (err) {
+            expect(err).toBeInstanceOf(OiPdfFitRefusalError);
+            const refusal = err as OiPdfFitRefusalError;
+            expect(refusal.fitErrors.some((e) => /ZMSPCP/.test(e.section))).toBe(true);
         }
-
-        // Le fragment « (suite) » porte bien un saut de page explicite (convention `galleryPages()`).
-        const suiteIdx = json.indexOf('ARTICULATION : ZMSPCP - ALPHA (SUITE)');
-        const finalPageIdx = json.indexOf('AVEZ-VOUS DES QUESTIONS');
-        const secondPageJson = json.slice(suiteIdx, finalPageIdx);
-        expect(secondPageJson).toContain('"pageBreak":"before"');
-
-        // La composition par cellule ne réapparaît pas sur le fragment « (suite) ».
-        const firstPageEnd = suiteIdx;
-        expect(secondPageJson).not.toContain('Composition par Cellule');
-        expect(json.slice(0, firstPageEnd)).toContain('Composition par Cellule');
     });
 
-    it("champ « C conduite à tenir » à ITEMS LONGS (plusieurs lignes chacun une fois enroulés) : la scission se déclenche même SOUS le budget d'items « 1 ligne » (correctif PG.REFIX round 1)", () => {
-        // 20 items d'~80 caractères — même profil que `tests/pdf/fixtures/long-case.json`
-        // (constat terrain : items enroulés sur 2 lignes réelles dans la colonne
-        // `grid2` à demi-largeur, jamais comptabilisés par l'ancien budget « 1 item
-        // = 1 unité », d'où la queue orpheline sans titre du défaut PG.REFIX round 1).
-        function longDashItems(count: number): string {
-            return Array.from(
-                { length: count },
-                (_, i) => `- Item numero ${i + 1} tres long qui occupe deux lignes une fois rendu dans la colonne etroite.`,
-            ).join('\n');
-        }
+    it('un champ « C conduite à tenir » DÉLIBÉRÉMENT surdimensionné (40 items longs) REFUSE la génération — jamais de troncature ni de continuation', () => {
         const zmspcpBlocks: OiZmspcpBlock[] = [
-            { id: 'z1', title: 'ALPHA', zone: '-', mission: '-', secteur: '-', points_particuliers: '-', cat: longDashItems(20), place_chef: '-', members: [] },
+            { id: 'z1', title: 'ALPHA', zone: '-', mission: '-', secteur: '-', points_particuliers: '-', cat: dashItems(40, true), place_chef: '-', members: [] },
         ];
-        const json = JSON.stringify(buildOiDocDefinition(collect({ zmspcp_blocks: zmspcpBlocks }), { format: 'a4' }));
+        const data = collect({ zmspcp_blocks: zmspcpBlocks });
 
-        expect(json).toContain('ARTICULATION : ZMSPCP - ALPHA (SUITE)');
-        for (let i = 1; i <= 20; i++) {
-            const marker = `Item numero ${i} tres long`;
-            expect(json.split(marker).length - 1, `item ${i} doit apparaître exactement 1 fois`).toBe(1);
+        let caught: unknown;
+        try {
+            buildOiDocDefinition(data, { format: 'a4' });
+        } catch (err) {
+            caught = err;
         }
+        expect(caught).toBeInstanceOf(OiPdfFitRefusalError);
+        const refusal = caught as OiPdfFitRefusalError;
+        expect(refusal.fitErrors.length).toBeGreaterThan(0);
+        expect(refusal.fitErrors[0]?.section).toContain('ZMSPCP');
+        expect(refusal.fitErrors[0]?.excessRatio).toBeGreaterThan(0);
+        expect(refusal.message).toContain('dépassement');
     });
 });
 
@@ -817,13 +821,16 @@ describe('buildOiDocDefinition — blindage BLIND.A #2 : coupure des tokens sans
 });
 
 // ===========================================================================
-// Blindage PDF OI — mission BLIND.A. Arbitrage #1 : scission pilotée
-// universelle — table Hypothèses d'Effraction (police adaptative `effracFontPx`
-// PUIS scission entre lignes d'hypothèses, en-tête répété, aucune perte
-// silencieuse au-delà de 8 hypothèses, cf. matrice-rupture.md §2).
+// MISSION P1 (refonte mise en page PDF OI, directive Nico 2026-08-10) —
+// « 1 page par cellule effraction (mission + caractéristiques + hypothèses) »
+// : UNE SEULE page toujours, hypothèses en CARTES (≤ `EFFRAC_HYP_CARDS_MAX`,
+// empilées ou 2 colonnes) ou table dense au-delà, solveur fit-to-page PUR
+// (`fitUsageToPage`) puis REFUS DE GÉNÉRATION explicite si même 7 px ne
+// suffit pas. L'ancien mécanisme `chunkItemsByCost`/`expandOversizedHypothesis`
+// (fragmentation de rangée + continuation « (SUITE) ») a été RETIRÉ.
 // ===========================================================================
-describe('buildOiDocDefinition — blindage BLIND.A #1 : scission Hypothèses d’Effraction', () => {
-    function effractionWithHypotheses(count: number): OiEffractionBlock {
+describe('buildOiDocDefinition — page unique EFFRACTION, hypothèses en cartes/table, fit-to-page (mission P1)', () => {
+    function effractionWithHypotheses(count: number, wordy = false): OiEffractionBlock {
         return {
             id: 'e1', title: 'PORTE ALPHA', mission: '-', porte: '-', structure: '-', serrurerie: '-',
             environnement: '-', bati_a_bati: '-', dormant_a_dormant: '-', prof_linteaux: '-', prof_bati: '-',
@@ -832,197 +839,170 @@ describe('buildOiDocDefinition — blindage BLIND.A #1 : scission Hypothèses d�
                 id: `he${i}`,
                 title: `Hypothese ${i + 1}`,
                 desc: '',
-                effrac: `Technique effraction ${i + 1} : pied de biche + verin hydraulique, description detaillee de la manoeuvre a executer.`,
-                degag: `Degagement ${i + 1} : evacuation par le couloir principal vers le point de regroupement Alpha.`,
-                assaut: `Assaut ${i + 1} : penetration en Y inverse, binome de tete puis binome de couverture.`,
+                effrac: wordy
+                    ? `Technique effraction ${i + 1} : `.repeat(1) + 'A'.repeat(400)
+                    : `Technique ${i + 1}`,
+                degag: wordy ? `Degagement ${i + 1} : `.repeat(1) + 'B'.repeat(400) : `Degagement ${i + 1}`,
+                assaut: wordy ? `Assaut ${i + 1} : `.repeat(1) + 'C'.repeat(400) : `Assaut ${i + 1}`,
             })),
         };
     }
 
-    it("12 hypothèses d'effraction (défaut confirmé : table ENTIÈREMENT disparue à 8+, matrice-rupture.md §2) — les 12 apparaissent TOUTES, aucune perte silencieuse", () => {
-        const json = JSON.stringify(
-            buildOiDocDefinition(collect({ effraction_blocks: [effractionWithHypotheses(12)] }), { format: 'a4' }),
-        );
-
-        for (let i = 1; i <= 12; i++) {
-            expect(json, `Hypothese ${i} doit apparaître`).toContain(`Hypothese ${i}`);
-            expect(json, `Technique effraction ${i} doit apparaître`).toContain(`Technique effraction ${i} `);
-        }
-    });
-
-    it('4 hypothèses (sous le seuil de scission) : une seule page, aucun « (SUITE) »', () => {
+    it('4 hypothèses COURTES (rendues en cartes) : une seule page, aucune continuation « (SUITE) », aucune perte', () => {
         const json = JSON.stringify(
             buildOiDocDefinition(collect({ effraction_blocks: [effractionWithHypotheses(4)] }), { format: 'a4' }),
         );
         for (let i = 1; i <= 4; i++) {
             expect(json).toContain(`Hypothese ${i}`);
         }
+        expect(json).not.toContain('(SUITE)');
+        expect(json).not.toContain('(suite)');
+        expect((json.match(/ARTICULATION : EFFRACTION - PORTE ALPHA/g) ?? []).length).toBe(1);
+    });
+
+    it('6 hypothèses COURTES (au-delà du seuil cartes, repli sur la table dense) : toutes présentes sur l’unique page, jamais de continuation', () => {
+        const json = JSON.stringify(
+            buildOiDocDefinition(collect({ effraction_blocks: [effractionWithHypotheses(6)] }), { format: 'a4' }),
+        );
+        for (let i = 1; i <= 6; i++) {
+            expect(json, `Hypothese ${i} doit apparaître`).toContain(`Hypothese ${i}`);
+        }
+        expect(json).not.toContain('(SUITE)');
+        expect((json.match(/ARTICULATION : EFFRACTION - PORTE ALPHA/g) ?? []).length).toBe(1);
+    });
+
+    it("12 hypothèses VOLUMINEUSES (défaut historique : table entièrement disparue à 8+) — RENDUES intégralement (jamais de perte), le refus n'est plus déclenché pour ce seul volume : escalade vers des pages autonomes si nécessaire (dernière passe, « le refus devient l'ultime recours »)", () => {
+        const json = JSON.stringify(
+            buildOiDocDefinition(collect({ effraction_blocks: [effractionWithHypotheses(12, true)] }), { format: 'a4' }),
+        );
+        for (let i = 1; i <= 12; i++) {
+            expect(json, `Hypothese ${i} doit apparaître`).toContain(`Hypothese ${i}`);
+        }
+        // Jamais de continuation « (SUITE) » — si une scission a été nécessaire,
+        // chaque page porte un titre DISTINCT et autonome (cf. describe ci-dessous).
+        expect(json).not.toContain('(SUITE)');
+        expect(json).not.toContain('(suite)');
     });
 });
 
 // ===========================================================================
-// R4-b — GUARDRAIL PAGINATION round 6 : une hypothèse dont la RANGÉE seule
-// dépasse une page de continuation (`restAvailPt`) — cause racine mesurée sur
-// `tests/pdf/fixtures/volumetric-stress.json` (colonne « Technique / Moyen » à
-// 2296 caractères, fontPx 9 : ~72 lignes estimées, ~2,5× la place utile d'une
-// page). `dontBreakRows: true` (BLIND.REFIX round 1) interdisait à pdfmake de
-// scinder la ligne EN INTERNE — SANS fragmentation explicite, la ligne est
-// SILENCIEUSEMENT PERDUE (constat mesuré : 0/2296 caractères survivants dans
-// le PDF fautif) tandis que l'en-tête de table se répète, orpheline, sur
-// chaque page suivante (guardrail B1/B9/B11), sans jamais reposer le titre
-// « (SUITE) » (guardrail B7/B10). Cf. JSDoc `expandOversizedHypothesis`,
-// `document-builder.ts`.
+// DERNIÈRE PASSE EFFRACTION (directive Nico 2026-08-10) — « le refus doit
+// devenir l'ultime recours pour l'effraction » : escalade de dispositions
+// (colonnes internes adaptatives + densité, police, asymétrie, PAGES
+// AUTONOMES) avant tout refus. Refus SEULEMENT si une hypothèse UNIQUE ne
+// tient pas, seule, sur une page entière même au palier plancher 7 px.
 // ===========================================================================
-
-/**
- * Regroupe les entrées TOP-LEVEL de `TDocumentDefinitions.content` en
- * « pages logiques » d'après le marqueur `pageBreak: 'before'` posé
- * explicitement par `buildEffractionPages`/`buildArticulationCorePages` (une
- * entrée SANS ce marqueur commence un nouveau groupe uniquement si le groupe
- * courant est vide). Approximation suffisante pour un test au niveau JS (pas
- * de rendu PDF réel) : elle tient tant que chaque entrée top-level rend sur
- * UNE SEULE page physique — exactement l'invariant que R4-b restaure pour la
- * table Hypothèses d'Effraction (avant le correctif, une rangée surdimensionnée
- * débordait SILENCIEUSEMENT plusieurs pages physiques depuis une seule entrée
- * top-level, désynchronisant cette approximation — c'est précisément le
- * défaut que ce test protège).
- */
-function extractLogicalPages(content: Content[]): Content[][] {
-    const pages: Content[][] = [];
-    let current: Content[] = [];
-    for (const item of content) {
-        const pageBreak = (item as { pageBreak?: string }).pageBreak;
-        if (pageBreak === 'before' && current.length > 0) {
-            pages.push(current);
-            current = [];
-        }
-        current.push(item);
+describe('buildOiDocDefinition — dernière passe EFFRACTION : pages autonomes avant refus (directive Nico 2026-08-10)', () => {
+    function heavyHypothesis(i: number): OiEffractionHypothesis {
+        return {
+            id: `he${i}`,
+            title: `Hypothese ${i + 1}`,
+            desc: `Description operationnelle detaillee du scenario numero ${i + 1}, avec de nombreux details tactiques complementaires ajoutes pour alourdir sensiblement le texte saisi ici et forcer un enroulement sur plusieurs lignes.`,
+            effrac: `Technique effraction ${i + 1} : `.repeat(1) + 'A'.repeat(350),
+            degag: `Degagement ${i + 1} : `.repeat(1) + 'B'.repeat(350),
+            assaut: `Assaut ${i + 1} : `.repeat(1) + 'C'.repeat(350),
+        };
     }
-    if (current.length > 0) {
-        pages.push(current);
-    }
-    return pages;
-}
-
-describe('expandOversizedHypothesis — R4-b : fragmentation d’une rangée plus grande qu’une page de continuation', () => {
-    it('une hypothèse dont la rangée tient dans restAvailPt est retournée INCHANGÉE (aucune fragmentation superflue)', () => {
-        const h = { id: 'h1', title: 'Hypothese 1', desc: '', effrac: 'Pied de biche', degag: 'Evacuation', assaut: 'Assaut direct' };
-        const fragments = expandOversizedHypothesis(h, 9, 780, 500);
-        expect(fragments).toEqual([h]);
-    });
-
-    it('une hypothèse dont la colonne « Technique / Moyen » dépasse restAvailPt est fragmentée en PLUSIEURS pseudo-hypothèses', () => {
-        const effrac = 'A'.repeat(2296);
-        const h = { id: 'h1', title: 'Hypothese 1', desc: 'Description longue.', effrac, degag: '-', assaut: '-' };
-        const fragments = expandOversizedHypothesis(h, 9, 780, 500);
-
-        expect(fragments.length).toBeGreaterThan(1);
-        // AUCUNE PERTE : la concaténation des fragments de la colonne « effrac »
-        // reconstitue EXACTEMENT le texte source (constat cause racine :
-        // avant ce correctif, ce texte disparaissait ENTIÈREMENT du PDF rendu).
-        expect(fragments.map((f) => f.effrac).join('')).toBe(effrac);
-        // Chaque fragment individuel tient RÉELLEMENT dans son budget de page.
-        for (const f of fragments) {
-            expect(hypothesisRowHeightPt(f, 9, 780)).toBeLessThanOrEqual(500);
-        }
-    });
-
-    it('le TITRE n’est jamais vide sur un fragment de continuation (garde B5 anti-libellés-vides) — suffixé « (suite) »', () => {
-        const effrac = 'B'.repeat(3000);
-        const h = { id: 'h1', title: 'Hypothese 1', desc: '', effrac, degag: '-', assaut: '-' };
-        const fragments = expandOversizedHypothesis(h, 9, 780, 500);
-
-        expect(fragments[0]?.title).toBe('Hypothese 1');
-        for (const f of fragments.slice(1)) {
-            expect(f.title).toBe('Hypothese 1 (suite)');
-            expect(f.title.length).toBeGreaterThan(0);
-        }
-    });
-
-    it('desc n’est porté QUE par le premier fragment (jamais dupliqué dans hypothesesDescBlock)', () => {
-        const effrac = 'C'.repeat(3000);
-        const h = { id: 'h1', title: 'Hypothese 1', desc: 'Description unique.', effrac, degag: '-', assaut: '-' };
-        const fragments = expandOversizedHypothesis(h, 9, 780, 500);
-
-        expect(fragments[0]?.desc).toBe('Description unique.');
-        for (const f of fragments.slice(1)) {
-            expect(f.desc).toBe('');
-        }
-    });
-
-    it('un budget de continuation PLUS GÉNÉREUX produit MOINS de fragments (remplissage — R4-b point 3)', () => {
-        const effrac = 'D'.repeat(3000);
-        const h = { id: 'h1', title: 'Hypothese 1', desc: '', effrac, degag: '-', assaut: '-' };
-        const petitBudget = expandOversizedHypothesis(h, 9, 780, 200);
-        const grandBudget = expandOversizedHypothesis(h, 9, 780, 700);
-        expect(grandBudget.length).toBeLessThan(petitBudget.length);
-    });
-});
-
-describe('buildOiDocDefinition — R4-b : pagination du tableau Hypothèses d’Effraction retitrée, en-tête jamais orphelin', () => {
-    /** Hypothèse dont la seule rangée dépasse une page de continuation (même ordre de grandeur que `volumetric-stress.json`, cf. JSDoc `expandOversizedHypothesis`). */
-    function oversizedEffractionBlock(): OiEffractionBlock {
+    function effractionBlockWithHyps(hypotheses: OiEffractionHypothesis[]): OiEffractionBlock {
         return {
             id: 'e1', title: 'PORTE ALPHA', mission: '-', porte: '-', structure: '-', serrurerie: '-',
             environnement: '-', bati_a_bati: '-', dormant_a_dormant: '-', prof_linteaux: '-', prof_bati: '-',
-            h_porte: '-', h_marche: '-', prof_marche: '-', prof_moulure: '-', members: [],
-            hypotheses: [
-                {
-                    id: 'he0',
-                    title: 'Hypothese 1',
-                    desc: '',
-                    effrac: Array.from({ length: 2296 }, (_, i) => 'ABCDEFGHIJ'[i % 10]).join(''),
-                    degag: 'Degagement 1 : evacuation par le couloir principal vers le point de regroupement Alpha.',
-                    assaut: 'Assaut 1 : penetration en Y inverse, binome de tete puis binome de couverture.',
-                },
-            ],
+            h_porte: '-', h_marche: '-', prof_marche: '-', prof_moulure: '-', members: [], hypotheses,
         };
     }
 
-    it('les pages de continuation portent TOUTES le titre « ARTICULATION : EFFRACTION … (SUITE) » — jamais d’en-tête de table orphelin', () => {
-        const doc = buildOiDocDefinition(collect({ effraction_blocks: [oversizedEffractionBlock()] }), { format: 'a4' });
-        const json = JSON.stringify(doc);
+    it('4 hypothèses VOLUMINEUSES (trop grosses pour 1 page) : rendues sur 2 PAGES AUTONOMES, titres distincts, jamais de « (SUITE) », aucune hypothèse coupée en son milieu', () => {
+        const hypotheses = Array.from({ length: 4 }, (_, i) => heavyHypothesis(i));
+        const dd = buildOiDocDefinition(collect({ effraction_blocks: [effractionBlockWithHyps(hypotheses)] }), { format: 'a4' });
+        const json = JSON.stringify(dd);
 
-        // Au moins une continuation a été nécessaire (rangée surdimensionnée).
-        const suiteCount = (json.match(/\(SUITE\)/g) ?? []).length;
-        expect(suiteCount).toBeGreaterThan(0);
-        expect(json).toContain('ARTICULATION : EFFRACTION - PORTE ALPHA (SUITE)');
-
-        // Chaque page top-level (`content` du doc pdfmake) qui contient l'en-tête
-        // de table « Technique / Moyen » doit AUSSI porter, sur cette même page
-        // (le même bloc `stack`), le titre EFFRACTION ou un fragment « (SUITE) »
-        // — même garde que `verify-structure.mjs` B7, appliquée directement à
-        // l'arbre pdfmake plutôt qu'au texte extrait du PDF rendu.
-        const pages = extractLogicalPages(doc.content as Content[]);
-        for (const page of pages) {
-            const pageJson = JSON.stringify(page);
-            if (pageJson.includes('Technique / Moyen')) {
-                const hasTitle = pageJson.includes('ARTICULATION : EFFRACTION') || /\(SUITE\)/i.test(pageJson);
-                expect(hasTitle, `page sans titre EFFRACTION/(SUITE) alors qu'elle porte l'en-tête de table : ${pageJson.slice(0, 200)}`).toBe(true);
-            }
+        // Aucune perte, aucune duplication : chaque hypothèse apparaît exactement 1 fois.
+        for (let i = 1; i <= 4; i++) {
+            expect(json.split(`Hypothese ${i}`).length - 1, `Hypothese ${i} doit apparaître exactement 1 fois`).toBeGreaterThanOrEqual(1);
         }
+        expect(json).not.toContain('(SUITE)');
+        expect(json).not.toContain('(suite)');
+
+        // Titres distincts et autonomes : « MISSION & CARACTÉRISTIQUES » puis « HYPOTHÈSES <plage> ».
+        expect(json).toContain('ARTICULATION : EFFRACTION - PORTE ALPHA — MISSION & CARACTÉRISTIQUES');
+        expect(json).toContain('ARTICULATION : EFFRACTION - PORTE ALPHA — HYPOTHÈSES');
+
+        // Effectivement plusieurs pages top-level (pageBreak explicite entre elles).
+        const content = dd.content as Content[];
+        const effracPages = content.filter((node) => JSON.stringify(node).includes('ARTICULATION : EFFRACTION - PORTE ALPHA'));
+        expect(effracPages.length).toBeGreaterThanOrEqual(2);
     });
 
-    it('aucune perte de données : la totalité du texte saisi (2296 caractères) survit, répartie sur les fragments', () => {
-        const block = oversizedEffractionBlock();
-        const json = JSON.stringify(buildOiDocDefinition(collect({ effraction_blocks: [block] }), { format: 'a4' }));
-        // Le motif cyclique ABCDEFGHIJ répété 2296/10 fois : un extrait pris en
-        // fin de texte (jamais couvert par un budget de première page) doit
-        // survivre quelque part dans le document.
-        const tail = block.hypotheses[0]?.effrac.slice(-40) ?? '';
-        expect(json).toContain(tail);
+    it('1 hypothèse MONSTRUEUSE (ne tient seule sur aucune page, même à 7px) : REFUS explicite, message mentionnant l’hypothèse unique en cause', () => {
+        const monster: OiEffractionHypothesis = {
+            id: 'he0',
+            title: 'Hypothese Monstre',
+            desc: 'D'.repeat(6000),
+            effrac: 'A'.repeat(6000),
+            degag: 'B'.repeat(6000),
+            assaut: 'C'.repeat(6000),
+        };
+        const data = collect({ effraction_blocks: [effractionBlockWithHyps([monster])] });
+
+        let caught: unknown;
+        try {
+            buildOiDocDefinition(data, { format: 'a4' });
+        } catch (err) {
+            caught = err;
+        }
+        expect(caught).toBeInstanceOf(OiPdfFitRefusalError);
+        const refusal = caught as OiPdfFitRefusalError;
+        expect(refusal.fitErrors.some((e) => /EFFRACTION/.test(e.section))).toBe(true);
+        const effracError = refusal.fitErrors.find((e) => /EFFRACTION/.test(e.section));
+        expect(effracError?.details).toContain('Hypothese Monstre');
+        expect(effracError?.details).toMatch(/hypothèse.*seule.*page/i);
+        expect(effracError?.excessRatio).toBeGreaterThan(0);
+        expect(refusal.message).toContain('Hypothese Monstre');
+    });
+});
+
+describe('hypothesisRowHeightPt — coût (pt) d’UNE rangée de la table dense Hypothèses d’Effraction (modèle physique D2, réutilisé par le solveur fit-to-page P1)', () => {
+    it('une hypothèse plus longue coûte STRICTEMENT plus de points qu’une hypothèse courte, à police/largeur égales', () => {
+        const short = { id: 'h1', title: 'H1', desc: '', effrac: 'Pied de biche', degag: '-', assaut: '-' };
+        const long = { id: 'h1', title: 'H1', desc: '', effrac: 'A'.repeat(500), degag: '-', assaut: '-' };
+        expect(hypothesisRowHeightPt(long, 9, 780)).toBeGreaterThan(hypothesisRowHeightPt(short, 9, 780));
+    });
+
+    it('une police plus petite réduit le coût (plus de caractères par ligne, avance de ligne plus courte)', () => {
+        const h = { id: 'h1', title: 'H1', desc: '', effrac: 'Description operationnelle detaillee de la technique employee.', degag: '-', assaut: '-' };
+        expect(hypothesisRowHeightPt(h, 7, 780)).toBeLessThan(hypothesisRowHeightPt(h, 11, 780));
+    });
+});
+
+describe("PAGE_CAPACITY — capacités calibrées par champ/section (mission P1, consommées par P3)", () => {
+    it('effractionHypothesesCardsMax() === 4 (seuil cartes/table dense, même valeur que le rendu réel)', () => {
+        expect(PAGE_CAPACITY.effractionHypothesesCardsMax()).toBe(4);
+    });
+
+    it('adversaireAtcdMaxChars/articulationCatMaxChars décroissent quand la police grandit (moins de caractères tiennent par ligne à police plus grande, mais moins de lignes aussi — capacité positive et finie)', () => {
+        for (const fontPx of [7, 9, 11]) {
+            expect(PAGE_CAPACITY.adversaireAtcdMaxChars(fontPx)).toBeGreaterThan(0);
+            expect(PAGE_CAPACITY.articulationCatMaxChars(fontPx)).toBeGreaterThan(0);
+        }
     });
 });
 
 // ===========================================================================
-// Blindage PDF OI — mission BLIND.A. Arbitrage #1 : scission pilotée
-// universelle — carte DANGEROSITÉ/ATCD (police adaptative PUIS scission entre
-// items « - ATCD n » d'une fiche adversaire, aucune perte silencieuse au-delà
-// de ~30 lignes, cf. matrice-rupture.md §3).
+// MISSION P1 (refonte mise en page PDF OI, directive Nico 2026-08-10) — fiche
+// adversaire : carte ATCD en liste DENSE (1 ou 2 sous-colonnes selon le
+// volume, `PAGE_CAPACITY`/`splitRoundRobin`), UNE SEULE page toujours,
+// solveur fit-to-page puis REFUS explicite si même 7 px ne suffit pas —
+// AUCUNE continuation « (SUITE) », AUCUNE troncature silencieuse.
 // ===========================================================================
-describe('buildOiDocDefinition — blindage BLIND.A #1 : scission carte DANGEROSITÉ/ATCD', () => {
-    function advWithAtcd(lines: number): OiFormData {
-        const atcd = Array.from({ length: lines }, (_, i) => `- ATCD ${i + 1} : mesure operationnelle detaillee decrivant une consigne precise a appliquer sur zone.`).join('\n');
+describe('buildOiDocDefinition — page unique fiche adversaire, ATCD dense, fit-to-page (mission P1)', () => {
+    function advWithAtcd(lines: number, longEntries = false): OiFormData {
+        const atcd = Array.from(
+            { length: lines },
+            (_, i) =>
+                longEntries
+                    ? `- ATCD ${i + 1} : mesure operationnelle detaillee decrivant une consigne precise a appliquer sur zone, avec de nombreux details supplementaires ajoutes pour alourdir considerablement le texte saisi ici.`
+                    : `- ATCD ${i + 1} : vol.`,
+        ).join('\n');
         return {
             adversaries: [
                 {
@@ -1033,21 +1013,48 @@ describe('buildOiDocDefinition — blindage BLIND.A #1 : scission carte DANGEROS
         };
     }
 
-    it("un champ ATCD de 40 lignes (défaut confirmé : carte DANGEROSITÉ ENTIÈREMENT disparue à 30+ lignes, matrice-rupture.md §3) — les 40 lignes ET « Arme de poing » apparaissent, aucune perte silencieuse", () => {
-        const json = JSON.stringify(buildOiDocDefinition(collect(advWithAtcd(40)), { format: 'a4' }));
-
+    it('un champ ATCD court (5 lignes) : rendu sur UNE page, aucun « (SUITE) », aucune perte', () => {
+        const json = JSON.stringify(buildOiDocDefinition(collect(advWithAtcd(5)), { format: 'a4' }));
         expect(json).toContain('DANGEROSITÉ');
         expect(json).toContain('Arme de poing');
-        for (let i = 1; i <= 40; i++) {
-            expect(json, `ATCD ${i} doit apparaître`).toContain(`ATCD ${i} :`);
-        }
-    });
-
-    it('un champ ATCD court (5 lignes) : rendu inchangé, aucun « (SUITE) »', () => {
-        const json = JSON.stringify(buildOiDocDefinition(collect(advWithAtcd(5)), { format: 'a4' }));
         for (let i = 1; i <= 5; i++) {
             expect(json).toContain(`ATCD ${i} :`);
         }
+        expect(json).not.toContain('(SUITE)');
+        expect(json).not.toContain('(suite)');
+        expect((json.match(/FICHE ADVERSAIRE : DUPONT/g) ?? []).length).toBe(1);
+    });
+
+    it('un champ ATCD de 25 lignes COURTES (liste dense multi-colonnes) : soit tout tient sur l’unique page (police réduite), soit la génération est explicitement REFUSÉE — jamais de continuation ni de troncature', () => {
+        const data = collect(advWithAtcd(25));
+        try {
+            const json = JSON.stringify(buildOiDocDefinition(data, { format: 'a4' }));
+            expect(json).not.toContain('(SUITE)');
+            expect(json).not.toContain('(suite)');
+            for (let i = 1; i <= 25; i++) {
+                expect(json, `ATCD ${i} doit apparaître`).toContain(`ATCD ${i} :`);
+            }
+        } catch (err) {
+            expect(err).toBeInstanceOf(OiPdfFitRefusalError);
+            const refusal = err as OiPdfFitRefusalError;
+            expect(refusal.fitErrors.some((e) => /Fiche Adversaire/.test(e.section))).toBe(true);
+        }
+    });
+
+    it('un champ ATCD DÉLIBÉRÉMENT surdimensionné (40 entrées longues) REFUSE la génération — jamais de perte silencieuse, jamais de continuation', () => {
+        const data = collect(advWithAtcd(40, true));
+
+        let caught: unknown;
+        try {
+            buildOiDocDefinition(data, { format: 'a4' });
+        } catch (err) {
+            caught = err;
+        }
+        expect(caught).toBeInstanceOf(OiPdfFitRefusalError);
+        const refusal = caught as OiPdfFitRefusalError;
+        expect(refusal.fitErrors.length).toBeGreaterThan(0);
+        expect(refusal.fitErrors[0]?.section).toContain('Fiche Adversaire');
+        expect(refusal.fitErrors[0]?.excessRatio).toBeGreaterThan(0);
     });
 });
 

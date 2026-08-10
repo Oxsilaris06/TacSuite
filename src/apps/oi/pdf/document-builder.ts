@@ -45,6 +45,7 @@ import {
     card,
     figure,
     galleryPages,
+    galleryToolsReservePt,
     grid2,
     h1,
     h2,
@@ -61,11 +62,13 @@ import {
     pageGeometry,
     palette,
     patracFontPx,
-    adaptivePagePx,
-    catItemsPerPageBudget,
-    effracFontPx,
     estimateCharsPerLine,
     estimateWrappedLines,
+    fitUsageToPage,
+    FIT_FONT_FLOOR,
+    FIT_FONT_STEPS,
+    OiPdfFitRefusalError,
+    type OiPdfFitError,
     type OiPdfFormat,
     type OiPdfPalette,
 } from './theme.js';
@@ -86,14 +89,6 @@ import type {
 /* ==========================================================================
  * Helpers génériques (fidélité, saut de page, valeurs Store).
  * ======================================================================== */
-
-/**
- * Hauteur utile de page `a4` — référence de calibration du budget
- * `catItemsPerPageBudget` (theme.ts, table d'origine mission PG.IMPL) : voir
- * son usage dans `buildArticulationCorePages` (correctif PG.REFIX round 1,
- * mise à l'échelle pour `16:9`).
- */
-const A4_CONTENT_HEIGHT_PT = pageGeometry('a4').contentHeightPt;
 
 /**
  * Conversion sûre d'un champ `unknown` du Store (mission #4) — jamais de
@@ -173,6 +168,73 @@ interface BuildCtx {
     geo: ReturnType<typeof pageGeometry>;
     is169: boolean;
     baseFontSize: number;
+    /**
+     * Collecteur mutable des dépassements fit-to-page (mission P1, directive
+     * Nico 2026-08-10) — chaque constructeur d'usage (fiche adversaire, page
+     * ZMSPCP/MOICP, cellule effraction) y pousse une entrée quand
+     * `fitUsageToPage` refuse même au palier plancher 7 px (`FIT_FONT_FLOOR`).
+     * `buildOiDocDefinition` lève `OiPdfFitRefusalError(ctx.fitErrors)` en fin
+     * de construction si non vide — REFUS DE GÉNÉRATION explicite, jamais de
+     * document partiel/tronqué renvoyé à l'appelant.
+     */
+    fitErrors: OiPdfFitError[];
+}
+
+/* --------------------------------------------------------------------------
+ * MODÈLE PHYSIQUE (POINTS) partagé par TOUS les solveurs fit-to-page de ce
+ * module (mission P1, directive Nico 2026-08-10 : « une page = un usage »,
+ * réutilisation du modèle physique existant `PDF_LINE_ADVANCE_EM`/budgets pt
+ * hérité du correctif D2 EFFRACTION, désormais généralisé à la fiche
+ * adversaire et aux blocs ZMSPCP/MOICP). Toutes les grandeurs ci-dessous sont
+ * des POINTS, MESURÉS sur rendu réel (pdftotext -bbox, JetBrainsMono) :
+ *   - avance de ligne réelle = fontPx × 1,914 (lineHeight 1,45 ×
+ *     (ascender − descender)/1000 ≈ 1,32 em) ;
+ *   - ligne de table = lignes de texte × avance + 9 pt (paddings verticaux +
+ *     bordure) ; h2 de page 47,5 pt ; h3 + marges 27,9 pt.
+ * ------------------------------------------------------------------------ */
+
+/** Avance de ligne réelle pdfmake pour JetBrainsMono (voir bloc ci-dessus). */
+const PDF_LINE_ADVANCE_EM = 1.914;
+/** Paddings verticaux + bordure d'UNE ligne de table (mesuré). */
+const EFFRAC_ROW_VPAD_PT = 9;
+/** Bloc titre `h2` de page (texte + filet souligné + marges — mesuré 47,5). */
+const EFFRAC_H2_PT = 48;
+/** Titre `h3` + ses marges (mesuré 27,9). */
+const EFFRAC_H3_PT = 28;
+/** Paddings verticaux d'une carte (`card()`, haut + bas). */
+const EFFRAC_CARD_VPAD_PT = 16;
+/**
+ * Marge de sécurité globale soustraite de la hauteur utile de page avant
+ * toute décision fit-to-page (imprécision résiduelle du repli des mots,
+ * marges inter-blocs non modélisées) — direction SÛRE : trop grande déclenche
+ * un palier plus petit (ou un refus) un peu tôt, jamais un débordement
+ * silencieux non détecté par le solveur.
+ */
+const EFFRAC_FITS_SAFETY_PT = 40;
+
+/**
+ * Lignes rendues d'un texte pouvant contenir des RETOURS À LA LIGNE saisis —
+ * `estimateWrappedLines` seul les ignore : chaque segment replie
+ * indépendamment, la somme fait la hauteur réelle.
+ */
+function wrappedLinesWithNewlines(text: string, charsPerLine: number): number {
+    return text.split('\n').reduce((sum, seg) => sum + estimateWrappedLines(seg, charsPerLine), 0);
+}
+
+/** Avance de ligne réelle (pt) au palier `fontPx`. */
+function effracLinePt(fontPx: number): number {
+    return fontPx * PDF_LINE_ADVANCE_EM;
+}
+
+/** Coût (pt) d'un texte replié dans une colonne de `columnWidthPt` au palier `fontPx` — une seule mesure incluant les retours à la ligne saisis. */
+function textLinePt(text: string, fontPx: number, columnWidthPt: number): number {
+    const cpl = estimateCharsPerLine(fontPx, columnWidthPt);
+    return wrappedLinesWithNewlines(text, cpl) * effracLinePt(fontPx);
+}
+
+/** Hauteur (pt) d'une carte (`card()`, blocks.ts) dont le CORPS (hors h3) coûte `bodyPt` — h3 + corps + paddings verticaux. */
+function cardWithTitlePt(bodyPt: number): number {
+    return EFFRAC_H3_PT + bodyPt + EFFRAC_CARD_VPAD_PT;
 }
 
 /** Fond/filigrane — port de `pdf-engine-v2.ts:772-776`. */
@@ -457,176 +519,84 @@ function buildCover(ctx: BuildCtx): Content {
  * estimer le nombre de lignes réellement occupées par chaque entrée ATCD
  * (`estimateWrappedLines`, même méthode que ZMSPCP/MOICP).
  */
-function buildDangerPages(opts: {
-    advTitle: string;
-    armesConnues: string;
-    atcd: string;
-    fontPx: number;
-    columnWidthPt: number;
-    p: OiPdfPalette;
-    geo: ReturnType<typeof pageGeometry>;
-    /**
-     * Coût EN LIGNES du contenu qui partage la MÊME colonne que `dangerCard`
-     * SUR LA PREMIÈRE PAGE — `identityCard` (h3 + `identityRows`) est
-     * empilée AU-DESSUS dans `rightColumn` (`buildAdversaryFiche`) — jamais
-     * comptabilisé avant ce correctif (défaut constaté : `firstPageBudget`
-     * trop généreux, le débordement pdfmake NATUREL survenait alors AVANT le
-     * point de scission prévu, désynchronisant le titre « (SUITE) » de la
-     * coupure réelle — guardrail B4, fixture `adv-5-atcd40.json`).
-     */
-    siblingColumnOverheadLines: number;
-}): { card: Content; extraPages: Content[] } {
-    const { advTitle, armesConnues, atcd, fontPx, columnWidthPt, p, geo, siblingColumnOverheadLines } = opts;
-    const items = splitAtcdBoundaries(atcd);
-    const hasBoundary = items.length > 1;
+/**
+ * Répartit `items` en `cols` colonnes round-robin (item `i` → colonne `i %
+ * cols`) — PARTAGÉ entre le coût (`adversaryAtcdListPt`) et le rendu
+ * (`buildAdversaryFiche`) de la liste ATCD dense multi-colonnes : les deux
+ * DOIVENT compter/rendre exactement la même répartition, jamais deux
+ * logiques dupliquées qui divergeraient.
+ */
+function splitRoundRobin<T>(items: T[], cols: number): T[][] {
+    const buckets: T[][] = Array.from({ length: cols }, () => []);
+    items.forEach((item, i) => buckets[i % cols]?.push(item));
+    return buckets;
+}
 
+/** Bandeau de titre « 2.<i> FICHE ADVERSAIRE » — hauteur physique (pt), texte + marge basse. */
+const ADV_TITLE_BAR_PT = 34;
+
+/**
+ * Hauteur (pt) de la liste ATCD dense (mission P1, directive Nico
+ * 2026-08-10 : « ATCD en liste dense multi-colonnes si volumineuse ») au
+ * palier `fontPx` — au-delà de `ADV_ATCD_DENSE_COLS_THRESHOLD` items, la
+ * liste passe de 1 à 2 colonnes (même répartition que le rendu,
+ * `splitRoundRobin`) : chaque colonne porte alors la MOITIÉ des items, la
+ * hauteur totale suit la colonne la plus chargée (jamais leur somme).
+ */
+const ADV_ATCD_DENSE_COLS_THRESHOLD = 8;
+
+function adversaryAtcdColumnCount(itemCount: number): 1 | 2 {
+    return itemCount > ADV_ATCD_DENSE_COLS_THRESHOLD ? 2 : 1;
+}
+
+function adversaryAtcdListPt(items: string[], hasBoundary: boolean, atcdText: string, fontPx: number, columnWidthPt: number): number {
+    const line = effracLinePt(fontPx);
     if (!hasBoundary) {
-        // Filet minimal (R11/R16, mission BLIND.A « audit toi-même tout
-        // unbreakable restant ») : aucune frontière légitime pour scinder
-        // proprement — carte SÉCABLE (comme `situationCard` de la couverture,
-        // `document-builder.ts::buildCover`) plutôt qu'insécable : jamais de
-        // perte silencieuse, quel que soit le volume.
-        return {
-            card: card(
-                [
-                    h3('DANGEROSITÉ', p, { color: p.danger }),
-                    labelValue('Armes Connues', armesConnues, p, { valueColor: p.danger, valueBold: true }),
-                    labelValue('Dangerosité / ATCD', atcd, p),
-                ],
-                p,
-                { unbreakable: false },
-            ),
-            extraPages: [],
-        };
+        return line + textLinePt(atcdText, fontPx, columnWidthPt);
     }
-
-    const charsPerLine = estimateCharsPerLine(fontPx, columnWidthPt);
-    const overheadLines =
-        1 /* h3 */ +
-        estimateWrappedLines(`ARMES CONNUES : ${armesConnues}`, charsPerLine) +
-        1 /* fieldLabel ATCD */ +
-        siblingColumnOverheadLines;
-    // Marge de sécurité 0,75 (calibrée empiriquement contre `adv-5-atcd40.json`,
-    // guardrail B1/B4) : `catItemsPerPageBudget`/`estimateCharsPerLine`
-    // (theme.ts) sont calibrés sur la colonne `grid2` à demi-largeur de
-    // `buildArticulationCorePages` — la carte DANGEROSITÉ, elle, partage sa
-    // page avec BEAUCOUP plus de contenu voisin (identité, localisation,
-    // mobilité) dont le coût réel en hauteur reste, comme documenté partout
-    // ailleurs dans ce fichier, une approximation grossière (aucune mesure de
-    // rendu réelle possible dans ce module PUR) — une marge conservatrice
-    // évite un débordement pdfmake NATUREL qui désynchroniserait le titre
-    // « (SUITE) » de la coupure réelle (préférable à une scission au plus
-    // juste qui échoue silencieusement à protéger le titre).
-    const DANGER_BUDGET_SAFETY_FACTOR = 0.75;
-    const budget = Math.max(
-        1,
-        Math.round(catItemsPerPageBudget(fontPx) * (geo.contentHeightPt / A4_CONTENT_HEIGHT_PT) * DANGER_BUDGET_SAFETY_FACTOR),
-    );
-    // BLIND.REFIX round 1 — SCISSION TROP AGRESSIVE À FAIBLE VOLUME (régression
-    // vs baseline 4f630a6) : soustraire `overheadLines`/`DANGER_BUDGET_SAFETY_FACTOR`
-    // du budget de la PREMIÈRE page, INCONDITIONNELLEMENT, ramenait `first` à 1
-    // seul item dès que l'overhead (bandeau identité/localisation voisin,
-    // marge conservatrice) dépassait le budget — y compris pour un volume
-    // ATCD ORDINAIRE qui tenait entièrement sur une page au baseline (5 ATCD
-    // d'une ligne chacun, `adv-atcd5.json` : `budget=12`, `overheadLines=18`,
-    // `totalCost=5` → scission dès le 1er item alors que les 5 tiennent
-    // largement). Correctif : ne consulter `overheadLines`/le facteur de
-    // sécurité QUE si le coût TOTAL de la liste dépasse déjà le budget de
-    // page NORMAL (sans marge conservatrice) — la marge conservatrice est un
-    // filet contre le désébordement pdfmake NATUREL lors d'une VRAIE
-    // scission, pas une pénalité à payer par les fiches qui n'ont jamais
-    // besoin de scinder.
-    const itemCosts = items.map((item) => estimateWrappedLines(item, charsPerLine));
-    const totalCost = itemCosts.reduce((a, b) => a + b, 0);
-    const normalBudget = Math.max(1, Math.round(catItemsPerPageBudget(fontPx) * (geo.contentHeightPt / A4_CONTENT_HEIGHT_PT)));
-    // FB.FIX (point 4) — `rest: budget` (ci-dessous, AVANT ce correctif)
-    // appliquait `DANGER_BUDGET_SAFETY_FACTOR` (0,75) aux pages « (SUITE) »
-    // ÉGALEMENT, alors que cette marge de 25 % compense UNIQUEMENT le
-    // surcoût de la 1re page (bandeau IDENTITÉ/LOCALISATION/MOBILITÉ voisin,
-    // cf. JSDoc `DANGER_BUDGET_SAFETY_FACTOR` ci-dessus) — une page « (SUITE) »
-    // ne porte, elle, que `h2(advTitle SUITE)` + `fieldLabel('… (suite)')`,
-    // un surcoût déjà négligeable face à `catItemsPerPageBudget`. Sous-estimer
-    // sa capacité RÉELLE d'environ 4-5 lignes désynchronisait le découpage :
-    // `adv-atcd30.json` (30 ATCD) produisait 3 tranches `[8, 20, 2]` — une
-    // « page-queue » de 2 lignes alors qu'une seule page « (SUITE) » de 22
-    // lignes suffit RÉELLEMENT (`normalBudget` sans facteur, calibré sur cette
-    // MÊME page dédiée par `catItemsPerPageBudget`/`estimateCharsPerLine`,
-    // cf. leur JSDoc). Correctif : les pages « (SUITE) » visent `normalBudget`
-    // (pas `budget`), avec la même petite marge de sécurité que le reste du
-    // fichier (2 lignes, cf. `EFFRAC_CHUNK_SAFETY_MARGIN`, transposition du
-    // même principe) plutôt que le facteur 0,75 propre à la 1re page.
-    const DANGER_REST_SAFETY_MARGIN = 2;
-    const restBudget = Math.max(1, normalBudget - DANGER_REST_SAFETY_MARGIN);
-    // BLIND.FIX (point 1) — `fitsWithoutSplit` ignorait `overheadLines`
-    // (bandeau IDENTITÉ/localisation/mobilité voisin sur la MÊME page 1,
-    // cf. JSDoc `siblingColumnOverheadLines` ci-dessus) : un volume ATCD
-    // « moyen » (15-25 entrées) dont `totalCost` seul tient sous
-    // `normalBudget` débordait quand même NATURELLEMENT sous pdfmake une fois
-    // l'overhead réel pris en compte — sans jamais passer par
-    // `chunkItemsByCost`, donc sans jamais hériter du titre « (SUITE) »
-    // (page 2 orpheline, aucun titre — vérifié : `adv-atcd20.json` déborde
-    // sur une page 3 qui commence directement par « - ATCD 14 : … », sans
-    // aucun en-tête). Réintègre `overheadLines` à la condition.
-    const fitsWithoutSplit = totalCost + overheadLines <= normalBudget;
-    const chunks = fitsWithoutSplit
-        ? [items]
-        : chunkItemsByCost(items, (item) => estimateWrappedLines(item, charsPerLine), {
-              first: Math.max(1, budget - overheadLines),
-              rest: restBudget,
-          });
-
-    const firstCard = card(
-        [
-            h3('DANGEROSITÉ', p, { color: p.danger }),
-            labelValue('Armes Connues', armesConnues, p, { valueColor: p.danger, valueBold: true }),
-            fieldLabel('Dangerosité / ATCD', p),
-            ...dashItemList(chunks[0] ?? [], p),
-        ],
-        p,
-        { unbreakable: false },
-    );
-    const extraPages: Content[] = chunks.slice(1).map(
-        (chunk): Content => ({
-            stack: [
-                h2(`${advTitle} (SUITE)`, p, geo.contentWidthPt),
-                card([fieldLabel('Dangerosité / ATCD (suite)', p), ...dashItemList(chunk, p)], p, { unbreakable: false }),
-            ],
-            fontSize: fontPx,
-            pageBreak: 'before',
-        }),
-    );
-    return { card: firstCard, extraPages };
+    const cols = adversaryAtcdColumnCount(items.length);
+    const perColWidthPt = cols === 1 ? columnWidthPt : (columnWidthPt - mm(4)) / 2;
+    const cpl = estimateCharsPerLine(fontPx, perColWidthPt);
+    const colTotalsLines = splitRoundRobin(items, cols).map((bucket) => bucket.reduce((sum, item) => sum + estimateWrappedLines(item, cpl), 0));
+    const maxColLines = Math.max(...colTotalsLines, 0);
+    return line /* fieldLabel */ + maxColLines * line;
 }
 
 /* ==========================================================================
  * Section 2 — Fiche adversaire dédiée (pdf-engine-v2.ts:894-958, §3.2 ligne 2).
+ *
+ * MISSION P1 (directive Nico 2026-08-10, « une page = un usage ») — refonte
+ * totale : UNE SEULE page par fiche adversaire, INTERDICTION ABSOLUE de
+ * continuation « (SUITE) » (l'ancien `buildDangerPages`/`splitAtcdBoundaries`-
+ * en-tant-que-scission-de-pages a été retiré). Structure « 2 colonnes pleine
+ * hauteur » (design strategica) : colonne GAUCHE = photo (si présente) +
+ * IDENTITÉ + DANGEROSITÉ (armes connues) ; colonne DROITE = LOCALISATION +
+ * MOBILITÉ + ATCD en liste dense (1 ou 2 sous-colonnes selon le volume,
+ * `adversaryAtcdListPt`/`splitRoundRobin`). Le palier de police est choisi
+ * par le solveur fit-to-page PUR `fitUsageToPage` (theme.ts) : coût réel (pt)
+ * recalculé à CHAQUE palier 11→7, jamais une simple estimation figée. Si
+ * MÊME le palier plancher 7 px ne suffit pas, l'erreur est collectée dans
+ * `ctx.fitErrors` (REFUS DE GÉNÉRATION global, cf. `buildOiDocDefinition`) —
+ * la fiche est alors quand même rendue au palier plancher (le document entier
+ * ne sera jamais renvoyé à l'appelant si `fitErrors` n'est pas vide).
  * ======================================================================== */
-function buildAdversaryFiche(ctx: BuildCtx, adv: OiAdversary, index: number): Content[] {
+function buildAdversaryFiche(ctx: BuildCtx, adv: OiAdversary, index: number): Content {
     const { photosBase64, dynamicPhotos, p, geo, is169 } = ctx;
     const nom = strOr(adv.nom_adversaire, 'Inconnu');
     const mainPhotoId = dynamicPhotos[`photo_main_${adv.id}`]?.[0]?.id;
     const mainPhotoSrc = mainPhotoId ? photosBase64[mainPhotoId] : undefined;
-    const maxPortraitHMm = is169 ? 75 : 90;
+    const maxPortraitHMm = is169 ? 55 : 65;
 
     const meList = adv.me_list.filter((m) => m.trim() !== '');
     const volumeList = adv.volume_list.filter((v) => v.trim() !== '');
     const etatEspritList = adv.etat_esprit_list.filter((v) => v.trim() !== '');
     const vehiculesList = adv.vehicules_list.filter((v) => v.trim() !== '');
 
-    // Barème adaptatif — même liste de champs que `print-view.ts::adversaryFiche`
-    // (port de `OrderHtmlAdversaires.ficheVolume`, référence commune aux 2 voies).
-    const textFields = [
-        adv.antecedents_adversaire,
-        adv.armes_connues,
-        adv.domicile_adversaire,
-        adv.signes_particuliers,
-        adv.substances_adversaire,
-        adv.profession_adversaire,
-        adv.situation_familiale,
-        adv.attitude_adversaire,
-        adv.stature_adversaire,
-    ].map(str);
-    const fontPx = adaptivePagePx(textFields, vehiculesList.length);
+    const advTitle = `2.${index} FICHE ADVERSAIRE : ${nom}`;
+    const armesConnues = strOr(adv.armes_connues);
+    const atcdText = strOr(adv.antecedents_adversaire);
+    const atcdItems = splitAtcdBoundaries(atcdText);
+    const hasAtcdBoundary = atcdItems.length > 1;
 
     // Tableau bordé (référence B : `kvRow()`, print-view.ts:89-90/303-310, la
     // MÊME classe `.k` que toute la fiche), pas des lignes de texte nues (D4,
@@ -640,36 +610,17 @@ function buildAdversaryFiche(ctx: BuildCtx, adv: OiAdversary, index: number): Co
         ['Substances', strOr(adv.substances_adversaire)],
         ...(meList.length > 0 ? ([['Moyens Employés', meList.join(' / ')]] as Array<[string, string]>) : []),
     ];
-    // Blindage BLIND.A (audit « tout unbreakable a un filet ») : `identityCard`
-    // reste `unbreakable:true` (JUSTIFICATION) — nombre de lignes BORNÉ (6-7
-    // `identityRows` fixes), ne peut réalistement pas dépasser une page ; son
-    // coût EN LIGNES est en revanche réservé dans le budget de `dangerCard`
-    // (`siblingColumnOverheadLines` ci-dessous, même colonne).
-    const identityCard = card([h3('IDENTITÉ', p), kvTable(identityRows, p)], p);
+    const identityCard = card([h3('IDENTITÉ', p), kvTable(identityRows, p)], p, { unbreakable: false });
+    const dangerHeaderCard = card(
+        [h3('DANGEROSITÉ', p, { color: p.danger }), labelValue('Armes Connues', armesConnues, p, { valueColor: p.danger, valueBold: true })],
+        p,
+        { unbreakable: false },
+    );
 
-    const advTitle = `2.${index} FICHE ADVERSAIRE : ${nom}`;
-
-    // Blindage BLIND.A : `domicile_adversaire`/`attitude_adversaire`/listes
-    // véhicules sont non bornés — filet `unbreakable:false`.
-    //
-    // CORRECTIF BLIND.REFIX round 2 — RÉGRESSION B1/B5 SUR UNE PETITE FICHE
-    // (`adv-atcd5.json`) : `localisationCard`/`mobiliteCard` étaient
-    // TOUJOURS rendues, chacune de ses 2 lignes systématiquement repliée sur
-    // `'-'` (`strOr`) même quand `domicile_adversaire`/`volumeList`/
-    // `etatEspritList`/`vehiculesList`/`attitude_adversaire` sont TOUS vides
-    // — jamais omises comme `isEffractionBlockEmpty`/`effractionMeasuresBody`
-    // le font déjà pour EFFRACTION (port strategica `localisationRows()`,
-    // `OrderHtmlAdversaires.kt:172-174` : `.filter { it.second.isNotBlank()
-    // }`). Sur une fiche adversaire COURTE (identité/dangerosité minimales),
-    // ce contenu 100 % « LABEL : - » suffisait à lui seul à faire déborder
-    // `firstPage` sur une page 3 SUPPLÉMENTAIRE ne portant QUE ces libellés
-    // vides (guardrail B1 orpheline + B5 section vide non omise, preuve
-    // `A-advsmall-03.png`) — chaque LIGNE (pas la carte entière) est
-    // maintenant filtrée indépendamment, la carte disparaît si les DEUX
-    // lignes sont vides, et le `grid2`/marge qui la précède disparaît à son
-    // tour si LES DEUX cartes sont vides. Calculé AVANT `buildDangerPages`
-    // (BLIND.FIX point 1) : `siblingColumnOverheadLines` a besoin de savoir
-    // si ces cartes existeront RÉELLEMENT sur la page 1.
+    // Blindage BLIND.A (préservé) : `localisationCard`/`mobiliteCard` sont
+    // OMISES si tous leurs champs sont vides — jamais de page saturée de
+    // libellés « LABEL : - » (cf. BLIND.REFIX round 2, préservé par ce
+    // correctif P1, seul le DÉCOUPAGE EN PAGES change).
     const domicileValue = str(adv.domicile_adversaire).trim();
     const volumeEspritValue = [volumeList.join(', '), etatEspritList.join(', ')].filter((s) => s !== '').join(' | ');
     const localisationRows: Content[] = [
@@ -688,93 +639,67 @@ function buildAdversaryFiche(ctx: BuildCtx, adv: OiAdversary, index: number): Co
     const mobiliteCard: Content | null =
         mobiliteRows.length > 0 ? card([h3('MOBILITÉ', p), ...mobiliteRows], p, { unbreakable: false }) : null;
 
-    // Largeur réelle de la colonne DANGEROSITÉ (demi-page avec photo, pleine
-    // largeur sans — mission BLIND.A, cf. JSDoc `buildDangerPages`).
-    const dangerColumnWidthPt = mainPhotoSrc !== undefined ? ctx.geo.contentWidthPt - mm(70) - mm(6) : ctx.geo.contentWidthPt;
-    // BLIND.FIX (point 1) — `siblingColumnOverheadLines` ajoutait une
-    // constante `+8` (`localisationCard`/`mobiliteCard`, `grid2` 2×(h3 + 2
-    // lignes)) INCONDITIONNELLEMENT, même quand ces 2 cartes sont ABSENTES
-    // (BLIND.REFIX round 2 ci-dessus : omises quand tous leurs champs sont
-    // vides — le cas de la majorité des fiches ATCD de test, `adv-atcd*.json`
-    // sauf `adv-5-atcd40.json` où elles sont bien présentes, fixture où la
-    // constante `+8` a été calibrée). Ce surcoût fantôme gonflait l'overhead
-    // réservé au budget de `dangerCard` sur des fiches qui n'en avaient pas
-    // besoin. Désormais conditionné à leur présence RÉELLE.
-    //
-    // `identityCard`/`localisationCard`+`mobiliteCard` ont une hauteur
-    // PHYSIQUE (points) quasi indépendante de `fontPx` (tableau `kvTable` à
-    // police fixe, `IDENTITÉ`/`LOCALISATION`/`MOBILITÉ` bornés à 2-7 lignes
-    // COURTES) — contrairement au coût en LIGNES d'`estimateWrappedLines`
-    // (déjà exprimé dans l'unité `catItemsPerPageBudget(fontPx)`, qui
-    // elle-même représente une hauteur physique DÉCROISSANTE par unité à
-    // mesure que `fontPx` grandit). Convertir cette hauteur physique fixe en
-    // unités `catItemsPerPageBudget` SANS tenir compte de cette échelle
-    // sous-estimait l'overhead réel au palier `fontPx=9` (`budget=26`, où
-    // chaque unité représente une hauteur MOINDRE) autant qu'au palier
-    // `fontPx=10` (`budget=20`) — c'est ce qui empêchait `adv-atcd15.json`
-    // (15 ATCD, guardrail point 1) de scinder alors qu'`adv-atcd10.json` (10
-    // ATCD) ne devait PAS scinder : avec un compte de lignes FIXE, aucune
-    // constante ne sépare ces deux cas (marge nulle sur le 2e, marge de 1
-    // sur le 1er alors qu'il a MOINS de contenu à scinder). Correctif :
-    // convertir la hauteur physique (pt) en unités `catItemsPerPageBudget`
-    // du palier COURANT (`Math.round(hauteurPt * budget(fontPx) /
-    // geo.contentHeightPt)`) — l'overhead grandit alors correctement en
-    // unités à mesure que `fontPx` rétrécit (chaque unité pèse moins de pt).
-    // Constantes calibrées empiriquement (même esprit que
-    // `DANGER_BUDGET_SAFETY_FACTOR`) : `IDENTITY_CARD_HEIGHT_PT` contre le
-    // couple `adv-atcd10.json` (ne doit PAS scinder) / `adv-atcd15.json`
-    // (DOIT scinder, balayage `atcd=5,10,15,20,25,28,30,35`, guardrail point
-    // 1) ; `LOCAL_MOBILE_CARDS_HEIGHT_PT` reprend la valeur physique
-    // équivalente à l'ancienne constante `+8` (unités) au palier où elle
-    // avait été calibrée (`fontPx=9`, `adv-5-atcd40.json`, guardrail B1/B4).
-    const IDENTITY_CARD_HEIGHT_PT = 165;
-    const LOCAL_MOBILE_CARDS_HEIGHT_PT = 164;
-    const identityOverheadUnits = Math.round((IDENTITY_CARD_HEIGHT_PT * catItemsPerPageBudget(fontPx)) / geo.contentHeightPt);
-    const localMobileOverhead =
-        localisationCard !== null || mobiliteCard !== null
-            ? Math.round((LOCAL_MOBILE_CARDS_HEIGHT_PT * catItemsPerPageBudget(fontPx)) / geo.contentHeightPt)
-            : 0;
-    const { card: dangerCard, extraPages: dangerExtraPages } = buildDangerPages({
-        advTitle,
-        armesConnues: strOr(adv.armes_connues),
-        atcd: strOr(adv.antecedents_adversaire),
-        fontPx,
-        columnWidthPt: dangerColumnWidthPt,
-        p,
-        geo,
-        // `identityCard` (h3 + une ligne par `identityRows`) est empilée
-        // AU-DESSUS de `dangerCard` dans `rightColumn` — `localisationCard`/
-        // `mobiliteCard` (`grid2`, 2×(h3 + 2 lignes), si présentes) ainsi que
-        // le bandeau de titre partagent la MÊME page 1 — cf. JSDoc
-        // `buildDangerPages::siblingColumnOverheadLines`. Constante `+8`
-        // calibrée empiriquement (même méthode que `catItemsPerPageBudget`,
-        // theme.ts) contre `adv-5-atcd40.json` (guardrail B1/B4), appliquée
-        // seulement si `localMobileOverhead` la confirme nécessaire.
-        siblingColumnOverheadLines: 1 + identityOverheadUnits + localMobileOverhead,
-    });
+    const columnGapMm = 6;
+    const columnWidthPt = (geo.contentWidthPt - mm(columnGapMm)) / 2;
 
-    const rightColumn: Content[] = [identityCard, dangerCard];
-    const head: Content =
-        mainPhotoSrc !== undefined
-            ? {
-                  columns: [
-                      { width: mm(70), stack: [figure(mainPhotoSrc, [mm(70), mm(maxPortraitHMm)], p)] },
-                      { width: '*', stack: rightColumn },
-                  ],
-                  columnGap: mm(6),
-              }
-            : { stack: rightColumn };
+    // Modèle de coût (pt) — solveur fit-to-page (theme.ts::fitUsageToPage) :
+    // colonnes GAUCHE/DROITE en PARALLÈLE (`columns` pdfmake), le coût total
+    // suit la plus haute des deux, jamais leur somme.
+    const computeCostPt = (fontPx: number): number => {
+        const line = effracLinePt(fontPx);
+        const photoPt = mainPhotoSrc !== undefined ? mm(maxPortraitHMm) + 6 : 0;
+        const identityRowsPt = identityRows.length * (line + 6);
+        const identityCardPt = cardWithTitlePt(identityRowsPt);
+        const dangerCardPt = cardWithTitlePt(textLinePt(`Armes Connues : ${armesConnues}`, fontPx, columnWidthPt));
+        const leftPt = photoPt + identityCardPt + 6 + dangerCardPt;
 
-    const localMobileBlock: Content[] =
-        localisationCard !== null || mobiliteCard !== null
-            ? [{ text: '', margin: [0, 6, 0, 0] }, grid2(localisationCard !== null ? [localisationCard] : [], mobiliteCard !== null ? [mobiliteCard] : [])]
-            : [];
+        const localPt = localisationCard !== null ? cardWithTitlePt(textLinePt(`Domicile : ${domicileValue} Volume/Esprit : ${volumeEspritValue}`, fontPx, columnWidthPt)) : 0;
+        const mobilePt = mobiliteCard !== null ? cardWithTitlePt(textLinePt(`Véhicules : ${vehiculesValue} Attitude : ${attitudeValue}`, fontPx, columnWidthPt)) : 0;
+        const atcdCardPt = cardWithTitlePt(adversaryAtcdListPt(atcdItems, hasAtcdBoundary, atcdText, fontPx, columnWidthPt));
+        const rightPt = (localPt > 0 ? localPt + 6 : 0) + (mobilePt > 0 ? mobilePt + 6 : 0) + atcdCardPt;
 
-    const firstPage: Content = {
-        stack: [ficheAdversaireTitleBar(advTitle, p), head, ...localMobileBlock],
+        return ADV_TITLE_BAR_PT + Math.max(leftPt, rightPt);
+    };
+
+    const fit = fitUsageToPage(computeCostPt, geo.contentHeightPt - EFFRAC_FITS_SAFETY_PT);
+    if ('error' in fit) {
+        ctx.fitErrors.push({
+            section: `Fiche Adversaire ${index} : ${nom}`,
+            details: 'contenu (identité/dangerosité/localisation/mobilité/ATCD) trop volumineux — réduisez les ATCD ou les textes libres',
+            excessRatio: fit.error.excessRatio,
+        });
+    }
+    const fontPx = 'fontPx' in fit ? fit.fontPx : FIT_FONT_FLOOR;
+
+    // Rendu de la liste ATCD dense (1 ou 2 sous-colonnes selon le volume,
+    // MÊME répartition `splitRoundRobin` que le coût ci-dessus).
+    const atcdBody: Content[] = hasAtcdBoundary
+        ? adversaryAtcdColumnCount(atcdItems.length) === 2
+            ? [grid2(dashItemList(splitRoundRobin(atcdItems, 2)[0] ?? [], p), dashItemList(splitRoundRobin(atcdItems, 2)[1] ?? [], p), mm(4))]
+            : dashItemList(atcdItems, p)
+        : [labelValue('Dangerosité / ATCD', atcdText, p)];
+    const atcdCard = card([h3('ATCD', p, { color: p.danger }), ...atcdBody], p, { unbreakable: false });
+
+    const leftColumn: Content[] = [
+        ...(mainPhotoSrc !== undefined ? [figure(mainPhotoSrc, [columnWidthPt, mm(maxPortraitHMm)], p), { text: '', margin: [0, 6, 0, 0] } as Content] : []),
+        identityCard,
+        { text: '', margin: [0, 6, 0, 0] },
+        dangerHeaderCard,
+    ];
+    const rightColumn: Content[] = [
+        ...(localisationCard !== null ? [localisationCard, { text: '', margin: [0, 6, 0, 0] } as Content] : []),
+        ...(mobiliteCard !== null ? [mobiliteCard, { text: '', margin: [0, 6, 0, 0] } as Content] : []),
+        atcdCard,
+    ];
+
+    // Correctif revue (2026-08-10, point 2) : le titre reste COLLÉ à sa règle
+    // (jamais de marge de tête artificielle) — le contenu démarre juste
+    // dessous, l'espace résiduel éventuel (fiche peu renseignée) reste
+    // naturellement en PIED de page, jamais un vide béant sous le titre.
+    return {
+        stack: [ficheAdversaireTitleBar(advTitle, p), grid2(leftColumn, rightColumn, mm(columnGapMm))],
         fontSize: fontPx,
     };
-    return [firstPage, ...dangerExtraPages];
 }
 
 /** Fiche adversaire + ses galeries « Photos annexes »/« Renfort possible » (pdf-engine-v2.ts:959-969). */
@@ -783,7 +708,7 @@ function buildAdversaryPages(ctx: BuildCtx): Content[] {
     const adversaries = formData.adversaries ?? [];
     const acc: Content[] = [];
     adversaries.forEach((adv, idx) => {
-        pushPages(acc, buildAdversaryFiche(ctx, adv, idx + 1));
+        pushPage(acc, buildAdversaryFiche(ctx, adv, idx + 1));
         const nom = strOr(adv.nom_adversaire, 'Inconnu');
         const extra = dynamicPhotos[`photo_extra_${adv.id}`] ?? [];
         const renfort = dynamicPhotos[`photo_renforts_${adv.id}`] ?? [];
@@ -827,31 +752,39 @@ function buildEnvironnement(ctx: BuildCtx): Content {
 }
 
 /* ==========================================================================
- * Section 4 — « 4. MISSION DE L'UNITÉ » (pdf-engine-v2.ts:998-1003).
+ * Sections 4+5 — « 4. MISSION DE L'UNITÉ » + « 5. EXÉCUTION »
+ * (pdf-engine-v2.ts:998-1030).
+ *
+ * CORRECTIF REVUE (2026-08-10, point 1) — découpage Standard validé par
+ * Nico : « 4. MISSION DE L'UNITÉ » (souvent 2-3 lignes) ne doit jamais rester
+ * seule sur une page (constaté : page quasi vide) — REGROUPÉE densément avec
+ * « 5. EXÉCUTION » sur UNE SEULE page (deux titres, séparateur clair) quand
+ * le couple tient à la police nominale du document (`baseFontSize`). Si le
+ * couple dépasse la page à ce palier, le solveur fit-to-page (`fitUsageToPage`,
+ * même mécanique que les usages P1) tente les paliers 11→7 ; si MÊME le
+ * palier plancher ne suffit pas, repli NATUREL sur les 2 pages historiques
+ * séparées (`buildMission`/`buildExecution`, rendu INCHANGÉ) — jamais un
+ * refus, cette paire n'est pas un « usage » à contrat dur comme la fiche
+ * adversaire/ZMSPCP/MOICP/effraction.
  * ======================================================================== */
-function buildMission(ctx: BuildCtx): Content {
-    const { formData, p, geo, baseFontSize } = ctx;
-    return {
-        stack: [
-            h2("4. MISSION DE L'UNITÉ", p, geo.contentWidthPt),
-            // Blindage BLIND.A : `missions_psig` est un champ texte libre non
-            // borné — filet `unbreakable:false` (audit « tout unbreakable a un filet »).
-            accentCard(
-                null,
-                [{ text: strOr(formData.missions_psig), bold: true, fontSize: Math.round(baseFontSize * 1.6), preserveLeadingSpaces: true }],
-                p,
-                'accent',
-                { unbreakable: false },
-            ),
-        ],
-    };
+
+/** Corps de « 4. MISSION DE L'UNITÉ » (sans le `h2`) — `fontPx` paramétrable pour le rendu fusionné (`buildMissionExecutionPages`) comme pour le repli standalone (`buildMission`, `baseFontSize`). */
+function missionBodyContent(ctx: BuildCtx, fontPx: number): Content {
+    const { formData, p } = ctx;
+    // Blindage BLIND.A : `missions_psig` est un champ texte libre non
+    // borné — filet `unbreakable:false` (audit « tout unbreakable a un filet »).
+    return accentCard(
+        null,
+        [{ text: strOr(formData.missions_psig), bold: true, fontSize: Math.round(fontPx * 1.6), preserveLeadingSpaces: true }],
+        p,
+        'accent',
+        { unbreakable: false },
+    );
 }
 
-/* ==========================================================================
- * Section 5 — « 5. EXÉCUTION » (pdf-engine-v2.ts:1007-1030).
- * ======================================================================== */
-function buildExecution(ctx: BuildCtx): Content {
-    const { formData, p, geo, baseFontSize } = ctx;
+/** Corps de « 5. EXÉCUTION » (sans le `h2`) — `fontPx` paramétrable, cf. JSDoc `missionBodyContent`. */
+function executionBodyContent(ctx: BuildCtx, fontPx: number): Content[] {
+    const { formData, p } = ctx;
     const events = formData.time_events ?? [];
     const chronoRows: TableCell[][] =
         events.length > 0
@@ -891,25 +824,125 @@ function buildExecution(ctx: BuildCtx): Content {
     // — filet `unbreakable:false`.
     const hypCard = card([h3("Hypothèses d'ensemble", p), ...hypBody], p, { unbreakable: false });
 
-    return {
+    return [
+        grid2(
+            [labelValue("Date d'exécution", strOr(formData.date_execution), p)],
+            [
+                labelValue('Heure H', strOr(formData.heure_execution), p, {
+                    fontSize: Math.round(fontPx * 1.2),
+                    valueColor: p.accent,
+                    valueBold: true,
+                }),
+            ],
+        ),
+        { text: '', margin: [0, 4, 0, 0] },
+        labelValue('Idée de Manœuvre / Action', strOr(formData.action_body_text), p),
+        { text: '', margin: [0, 4, 0, 0] },
+        grid2([chronoCard], [hypCard]),
+    ];
+}
+
+/** Page standalone « 4. MISSION DE L'UNITÉ » — repli historique (rendu INCHANGÉ) si la fusion avec « 5. EXÉCUTION » ne tient sur aucun palier. */
+function buildMission(ctx: BuildCtx): Content {
+    const { p, geo, baseFontSize } = ctx;
+    return { stack: [h2("4. MISSION DE L'UNITÉ", p, geo.contentWidthPt), missionBodyContent(ctx, baseFontSize)] };
+}
+
+/** Page standalone « 5. EXÉCUTION » — repli historique, cf. JSDoc `buildMission`. */
+function buildExecution(ctx: BuildCtx): Content {
+    const { p, geo, baseFontSize } = ctx;
+    return { stack: [h2('5. EXÉCUTION', p, geo.contentWidthPt), ...executionBodyContent(ctx, baseFontSize)] };
+}
+
+/**
+ * Coût (pt) du couple MISSION+EXÉCUTION fusionné au palier `fontPx» —
+ * modèle physique partagé (mêmes primitives que les solveurs fit-to-page P1 :
+ * `effracLinePt`/`textLinePt`/`cardWithTitlePt`). Chaque ENTRÉE de la
+ * Chronologie/des Hypothèses est mesurée INDIVIDUELLEMENT (lignes réellement
+ * enroulées dans sa colonne, `textLinePt` — jamais une estimation moyenne à 1
+ * ligne/entrée) : correctif revue (2026-08-10) — une estimation grossière
+ * « 1 ligne par entrée » sous-évaluait la table Chronologie/Hypothèses dès
+ * que leurs textes s'enroulent sur 2+ lignes, ce qui laissait `long-case.json`
+ * fusionner PUIS déborder silencieusement sur une page 2 non voulue (titre
+ * « 5. EXÉCUTION » en bas de page 1, table Chronologie tronquée en plein
+ * milieu SANS marqueur — exactement le défaut que la mission P1 combat).
+ */
+function missionExecutionCostPt(ctx: BuildCtx, fontPx: number): number {
+    const { formData, geo } = ctx;
+    const line = effracLinePt(fontPx);
+    const halfColumnWidthPt = (geo.contentWidthPt - mm(6)) / 2;
+
+    const missionFontPx = Math.round(fontPx * 1.6);
+    const missionCpl = estimateCharsPerLine(missionFontPx, geo.contentWidthPt - 16);
+    const missionPt = wrappedLinesWithNewlines(strOr(formData.missions_psig), missionCpl) * effracLinePt(missionFontPx) + 12;
+    const mission4Pt = EFFRAC_H2_PT + missionPt;
+
+    const actionPt = textLinePt(`Idée de Manœuvre / Action : ${strOr(formData.action_body_text)}`, fontPx, geo.contentWidthPt);
+
+    // Chronologie : colonne « Événement » ≈ 78 % de la demi-largeur de carte (widths ['22%','*']).
+    const events = formData.time_events ?? [];
+    const chronoEventColWidthPt = halfColumnWidthPt * 0.78;
+    const chronoRowsPt =
+        events.length > 0
+            ? events.reduce((sum, e) => sum + textLinePt(`${e.type} : ${e.description}`, fontPx, chronoEventColWidthPt) + EFFRAC_ROW_VPAD_PT, 0)
+            : line + EFFRAC_ROW_VPAD_PT;
+    const chronoPt = cardWithTitlePt(line /* thead */ + chronoRowsPt);
+
+    // Hypothèses d'ensemble : chaque entrée peut s'enrouler sur plusieurs lignes (`H<i> : <texte>`).
+    const hypotheses = formData.hypotheses ?? [];
+    const hypRowsPt =
+        hypotheses.length > 0
+            ? hypotheses.reduce((sum, h, i) => sum + textLinePt(`H${i + 1} : ${h}`, fontPx, halfColumnWidthPt) + 4, 0)
+            : line;
+    const hypPt = cardWithTitlePt(hypRowsPt);
+
+    const exec5Pt = EFFRAC_H2_PT + line + 4 + actionPt + 4 + Math.max(chronoPt, hypPt);
+
+    return mission4Pt + 20 /* séparateur */ + exec5Pt;
+}
+
+/**
+ * Fusionne « 4. MISSION DE L'UNITÉ » + « 5. EXÉCUTION » sur UNE SEULE page
+ * (deux titres, séparateur visuel net) quand le couple tient, en essayant
+ * D'ABORD le palier NOMINAL du document (`baseFontSize`) puis, s'il déborde,
+ * les paliers fit-to-page 11→7 (mêmes paliers que `FIT_FONT_STEPS`, filtrés
+ * à `<= baseFontSize` pour ne jamais AGRANDIR la police du document) — même
+ * marge de sécurité (`EFFRAC_FITS_SAFETY_PT`) que les solveurs P1, appliquée
+ * ICI AUSSI au palier nominal (jamais un « ça passe tout juste » qui déborde
+ * réellement sous pdfmake). En dernier recours (même le palier plancher
+ * déborde), repli NATUREL sur les 2 pages historiques SÉPARÉES, rendues à
+ * leur police normale — jamais de refus pour ce couple (à la différence des
+ * usages P1 stricts fiche adversaire/ZMSPCP/MOICP/effraction).
+ */
+function buildMissionExecutionPages(ctx: BuildCtx): Content[] {
+    const { p, geo, baseFontSize } = ctx;
+    const availablePt = geo.contentHeightPt - EFFRAC_FITS_SAFETY_PT;
+    const steps = Array.from(new Set<number>([baseFontSize, ...FIT_FONT_STEPS]))
+        .filter((f) => f <= baseFontSize)
+        .sort((a, b) => b - a);
+
+    const mergedPage = (fontPx: number): Content => ({
         stack: [
+            h2("4. MISSION DE L'UNITÉ", p, geo.contentWidthPt),
+            missionBodyContent(ctx, fontPx),
+            {
+                canvas: [{ type: 'line', x1: 0, y1: 0, x2: geo.contentWidthPt, y2: 0, lineWidth: 1, lineColor: p.border }],
+                margin: [0, 14, 0, 14],
+            },
             h2('5. EXÉCUTION', p, geo.contentWidthPt),
-            grid2(
-                [labelValue("Date d'exécution", strOr(formData.date_execution), p)],
-                [
-                    labelValue('Heure H', strOr(formData.heure_execution), p, {
-                        fontSize: Math.round(baseFontSize * 1.2),
-                        valueColor: p.accent,
-                        valueBold: true,
-                    }),
-                ],
-            ),
-            { text: '', margin: [0, 4, 0, 0] },
-            labelValue('Idée de Manœuvre / Action', strOr(formData.action_body_text), p),
-            { text: '', margin: [0, 4, 0, 0] },
-            grid2([chronoCard], [hypCard]),
+            ...executionBodyContent(ctx, fontPx),
         ],
-    };
+        fontSize: fontPx,
+    });
+
+    for (const fontPx of steps) {
+        if (missionExecutionCostPt(ctx, fontPx) <= availablePt) {
+            return [mergedPage(fontPx)];
+        }
+    }
+
+    // Repli naturel (jamais un refus) : les 2 pages historiques séparées.
+    return [buildMission(ctx), buildExecution(ctx)];
 }
 
 /** Section 6 — Galerie « 6. LOGISTIQUE & TRANSPORTS (Cheminement) » (pdf-engine-v2.ts:1032-1039) : PR avant domicile, ordre conservé (§3.4 règle 3). */
@@ -1054,31 +1087,6 @@ export function splitAtcdBoundaries(text: string): string[] {
  * d'UNE ligne) : pour un jeu d'items COURTS (1 ligne chacun), le comportement
  * est inchangé — coût 1 par item, comme avant.
  */
-function chunkItemsByCost<T>(items: T[], cost: (item: T) => number, budgets: { first: number; rest: number }): T[][] {
-    if (budgets.first <= 0 && budgets.rest <= 0) {
-        return [items];
-    }
-    const chunks: T[][] = [];
-    let current: T[] = [];
-    let currentCost = 0;
-    let budget = budgets.first > 0 ? budgets.first : Infinity;
-    for (const item of items) {
-        const c = cost(item);
-        if (current.length > 0 && currentCost + c > budget) {
-            chunks.push(current);
-            current = [];
-            currentCost = 0;
-            budget = budgets.rest > 0 ? budgets.rest : Infinity;
-        }
-        current.push(item);
-        currentCost += c;
-    }
-    if (current.length > 0) {
-        chunks.push(current);
-    }
-    return chunks.length > 0 ? chunks : [items];
-}
-
 /**
  * Rend une liste d'items à tiret comme une pile d'éléments INDIVIDUELLEMENT
  * insécables — pdfmake ne rompt donc jamais un item en milieu de phrase.
@@ -1112,113 +1120,106 @@ function fieldLabel(label: string, p: OiPdfPalette): Content {
     return { text: `${label.toUpperCase()} :`, bold: true, color: p.accent, margin: [0, 0, 0, 2] };
 }
 
-/** Champs texte communs ZMSPCP/MOICP mesurés pour le palier de police adaptatif (même méthode que `buildAdversaryFiche::fontPx`, `adaptivePagePx`). */
-function articulationBlockFontPx(fields: Array<string | undefined>, memberGroupCount: number): number {
-    return adaptivePagePx(fields.map(str), memberGroupCount);
+/**
+ * Hauteur (pt) d'UNE boîte « cellule » (`cellGroupBox`, composition par
+ * cellule ZMSPCP/MOICP) au palier `fontPx` — libellé de cellule (1 ligne) +
+ * pastilles `pillRow` (6 par rangée, cf. `cellGroupBox`) + paddings/marge.
+ * Approximation volontaire (même philosophie que le reste du modèle
+ * physique de ce module : aucune mesure de rendu réelle possible).
+ */
+function cellGroupPt(memberCount: number, fontPx: number): number {
+    const line = effracLinePt(fontPx);
+    const rows = Math.max(1, Math.ceil(memberCount / 6));
+    return line + 4 + rows * (line + 4) + 8 + 8;
 }
 
 /**
- * Rendu commun ZMSPCP/MOICP (mutualisé, mission PG.IMPL — les deux blocs
- * partagent exactement la même mécanique de pagination, seuls les champs
- * « cœur » [Z/M/S/P ou M/O/I/P] et le libellé de la 1re colonne diffèrent).
- * `catText` est TOUJOURS rendu en liste d'items INDIVIDUELLEMENT insécables
- * dès qu'une frontière légitime (tiret) existe — même sur une seule page,
- * pas seulement en cas de scission — pour que pdfmake ne puisse JAMAIS
- * couper en milieu de phrase (rule cible mission), y compris quand un item
- * wrappé sur 2 lignes tombe near d'une frontière de page : seul un
- * débordement pdfmake NON contrôlé (au niveau d'un item unique, jamais du
- * bloc entier — finding #1 du banc, cf. JSDoc `dashItemList`) reste possible.
- * Sans frontière légitime (`catText` sans tiret), repli sur un simple
- * `labelValue` (comportement identique à avant ce correctif).
+ * Hauteur totale (pt) de « Composition par Cellule » (h3 + une boîte par
+ * cellule + libellé Place du Chef) au palier `fontPx`.
  */
-function buildArticulationCorePages(opts: {
-    title: string;
-    sectionLabel: string;
-    coreFields: Array<[string, string]>;
-    catLabel: string;
-    catText: string;
-    cellsContent: Content[];
-    placeChef: string;
-    fontPx: number;
-    p: OiPdfPalette;
-    geo: ReturnType<typeof pageGeometry>;
-}): Content[] {
-    const { title, sectionLabel, coreFields, catLabel, catText, cellsContent, placeChef, fontPx, p, geo } = opts;
-    const catItems = splitAtDashBoundaries(catText || '-');
-    const hasBoundary = catItems.length > 1;
-    // Garde-fou de dernier recours (JSDoc `catItemsPerPageBudget`/
-    // `estimateWrappedLines`, theme.ts) : scission uniquement si le COÛT EN
-    // LIGNES cumulé des items dépasse le budget d'UNE page au palier choisi
-    // — sinon (immense majorité des cas réels) tout tient sur la page unique
-    // du bloc, `chunkItemsByCost` renvoie alors `[catItems]`. Le coût d'un
-    // item est son nombre de lignes RÉELLEMENT rendues (`estimateWrappedLines`,
-    // colonne `grid2` à demi-largeur de page) — pas 1 unité fixe par item
-    // (correctif PG.REFIX round 1, cf. JSDoc `chunkItemsByCost`).
-    const catColumnWidthPt = (geo.contentWidthPt - mm(6)) / 2;
-    const catCharsPerLine = estimateCharsPerLine(fontPx, catColumnWidthPt);
-    // La PREMIÈRE page du bloc partage sa colonne gauche avec `h3(sectionLabel)`
-    // + les champs cœur (Z/M/S/P ou M/O/I/P, avec leur libellé — même texte
-    // que le rendu réel `labelValue`) AVANT les items : leur place, mesurée
-    // en lignes via `estimateWrappedLines`, n'était PAS déduite du budget
-    // (correctif PG.REFIX round 1 — cause du défaut « queue orpheline sans
-    // titre » constaté sur `long-case.json` : le premier chunk débordait
-    // quand même de la page 1, faute d'avoir réservé la place de ce
-    // gabarit). Les pages « (suite) » n'ont, elles, que `h2`+`fieldLabel` —
-    // déjà couverts par le budget `catItemsPerPageBudget` d'origine, inchangé.
-    const catFirstPageOverheadLines =
-        1 /* h3(sectionLabel) */ +
-        coreFields.reduce((sum, [label, value]) => sum + estimateWrappedLines(`${label.toUpperCase()} : ${value}`, catCharsPerLine), 0);
-    // `catItemsPerPageBudget(fontPx)` (theme.ts) est calibré pour la hauteur
-    // utile de page `a4` (montage d'origine, mission PG.IMPL) — le format
-    // `16:9` a une page plus BASSE (539,01 pt vs 595,28 pt de hauteur totale,
-    // cf. `pageGeometry`) : appliqué tel quel, le budget de la page « (suite) »
-    // reste surdimensionné pour `16:9` et débordait encore (correctif
-    // PG.REFIX round 1 — 2e occurrence du défaut « queue orpheline sans
-    // titre », cette fois en format `16:9`). Mis à l'échelle de la hauteur
-    // utile RÉELLE de `geo` relative à celle d'`a4` — 1 en `a4` (aucun
-    // changement, budget table d'origine préservé à l'identique).
-    const catBudget = Math.max(1, Math.round(catItemsPerPageBudget(fontPx) * (geo.contentHeightPt / A4_CONTENT_HEIGHT_PT)));
-    const catChunks = hasBoundary
-        ? chunkItemsByCost(catItems, (item) => estimateWrappedLines(item, catCharsPerLine), {
-              first: Math.max(1, catBudget - catFirstPageOverheadLines),
-              rest: catBudget,
-          })
-        : [catItems];
-
-    return catChunks.map((chunk, idx): Content => {
-        const catNode: Content[] = hasBoundary
-            ? [fieldLabel(idx === 0 ? catLabel : `${catLabel} (suite)`, p), ...dashItemList(chunk, p)]
-            : [labelValue(catLabel, chunk[0] ?? '-', p)];
-        const left: Content[] =
-            idx === 0
-                ? [h3(sectionLabel, p), ...coreFields.map(([label, value]) => labelValue(label, value, p)), ...catNode]
-                : catNode;
-        const right: Content[] =
-            idx === 0
-                ? [h3('Composition par Cellule', p), ...cellsContent, labelValue('Place du Chef', placeChef, p)]
-                : [{ text: '' }];
-        return {
-            stack: [h2(idx === 0 ? title : `${title} (suite)`, p, geo.contentWidthPt), grid2(left, right)],
-            fontSize: fontPx,
-            // Convention `galleryPages()` (cf. en-tête de fichier) : bloc
-            // multi-pages auto-cohérent, seule la 1re page reste nue, les
-            // suivantes portent déjà leur propre saut — `pushPages` ne
-            // rajoute rien après la première.
-            pageBreak: idx === 0 ? undefined : 'before',
-        };
-    });
+function cellsContentPt(groups: Array<[string, string[]]>, placeChef: string, fontPx: number, columnWidthPt: number): number {
+    const boxesPt =
+        groups.length > 0 ? groups.reduce((sum, [, members]) => sum + cellGroupPt(members.length, fontPx) + 8, 0) : effracLinePt(fontPx);
+    return EFFRAC_H3_PT + boxesPt + textLinePt(`Place du Chef : ${placeChef}`, fontPx, columnWidthPt);
 }
 
-function buildZmspcpPage(ctx: BuildCtx, block: OiZmspcpBlock, memberToCell: Map<string, string>): Content[] {
+/**
+ * Page unique ZMSPCP/MOICP (mutualisé, les deux blocs partagent exactement
+ * la même mécanique — seuls les champs « cœur » [Z/M/S/P ou M/O/I/P] et le
+ * libellé de la 1re colonne diffèrent).
+ *
+ * MISSION P1 (directive Nico 2026-08-10, « une page = un usage », «
+ * interdiction absolue des continuations (SUITE) ») — refonte totale :
+ * `chunkItemsByCost`/pages « (SUITE) » ont été RETIRÉES ; le bloc est
+ * TOUJOURS rendu sur une seule page, au palier de police choisi par le
+ * solveur `fitUsageToPage` (theme.ts, coût réel pt recalculé à chaque
+ * palier 11→7). `catText` reste rendu en liste d'items INDIVIDUELLEMENT
+ * insécables dès qu'une frontière légitime (tiret) existe (pdfmake ne
+ * coupe alors jamais en milieu de phrase) ; sans frontière, repli sur un
+ * simple `labelValue`. Si même le palier plancher 7 px ne suffit pas,
+ * l'erreur est collectée dans `ctx.fitErrors` (REFUS DE GÉNÉRATION global) —
+ * le bloc est quand même rendu au palier plancher (le document entier ne
+ * sera jamais renvoyé si `fitErrors` n'est pas vide).
+ */
+function buildArticulationPage(
+    ctx: BuildCtx,
+    opts: {
+        title: string;
+        sectionLabel: string;
+        coreFields: Array<[string, string]>;
+        catLabel: string;
+        catText: string;
+        groups: Array<[string, string[]]>;
+        cellsContent: Content[];
+        placeChef: string;
+    },
+): Content {
     const { p, geo } = ctx;
+    const { title, sectionLabel, coreFields, catLabel, catText, groups, cellsContent, placeChef } = opts;
+    const catItems = splitAtDashBoundaries(catText || '-');
+    const hasBoundary = catItems.length > 1;
+    const columnWidthPt = (geo.contentWidthPt - mm(6)) / 2;
+
+    const computeCostPt = (fontPx: number): number => {
+        const line = effracLinePt(fontPx);
+        const coreFieldsPt = coreFields.reduce((sum, [label, value]) => sum + textLinePt(`${label} : ${value}`, fontPx, columnWidthPt), 0);
+        const catPt = hasBoundary
+            ? line /* fieldLabel */ + catItems.reduce((sum, item) => sum + textLinePt(item, fontPx, columnWidthPt), 0)
+            : textLinePt(`${catLabel} : ${catText}`, fontPx, columnWidthPt);
+        const leftPt = EFFRAC_H3_PT + coreFieldsPt + catPt;
+        const rightPt = cellsContentPt(groups, placeChef, fontPx, columnWidthPt);
+        return EFFRAC_H2_PT + Math.max(leftPt, rightPt);
+    };
+
+    const fit = fitUsageToPage(computeCostPt, geo.contentHeightPt - EFFRAC_FITS_SAFETY_PT);
+    if ('error' in fit) {
+        ctx.fitErrors.push({
+            section: title,
+            details: `${catLabel} et/ou composition par cellule trop volumineux — allégez le texte ou le nombre de cellules`,
+            excessRatio: fit.error.excessRatio,
+        });
+    }
+    const fontPx = 'fontPx' in fit ? fit.fontPx : FIT_FONT_FLOOR;
+
+    const catNode: Content[] = hasBoundary ? [fieldLabel(catLabel, p), ...dashItemList(catItems, p)] : [labelValue(catLabel, catText, p)];
+    const left: Content[] = [h3(sectionLabel, p), ...coreFields.map(([label, value]) => labelValue(label, value, p)), ...catNode];
+    const right: Content[] = [h3('Composition par Cellule', p), ...cellsContent, labelValue('Place du Chef', placeChef, p)];
+
+    // Correctif revue (2026-08-10, point 2) : le titre reste COLLÉ à sa règle
+    // — le contenu démarre juste dessous, l'espace résiduel (bloc peu
+    // volumineux) reste naturellement en PIED de page.
+    return {
+        stack: [h2(title, p, geo.contentWidthPt), grid2(left, right)],
+        fontSize: fontPx,
+    };
+}
+
+function buildZmspcpPage(ctx: BuildCtx, block: OiZmspcpBlock, memberToCell: Map<string, string>): Content {
+    const { p } = ctx;
     const groups = regroupByCellOrdered(block.members, memberToCell);
     const cellsContent: Content[] =
         groups.length > 0 ? groups.map(([cell, members]) => cellGroupBox(cell, members, p)) : [{ text: '-', color: p.muted }];
-    const fontPx = articulationBlockFontPx(
-        [block.zone, block.mission, block.secteur, block.points_particuliers, block.cat, block.place_chef],
-        groups.length,
-    );
-    return buildArticulationCorePages({
+    return buildArticulationPage(ctx, {
         title: `Articulation : ZMSPCP - ${block.title || '-'}`,
         sectionLabel: 'ZMSPCP',
         coreFields: [
@@ -1229,24 +1230,18 @@ function buildZmspcpPage(ctx: BuildCtx, block: OiZmspcpBlock, memberToCell: Map<
         ],
         catLabel: 'C conduite à tenir',
         catText: block.cat || '-',
+        groups,
         cellsContent,
         placeChef: block.place_chef || '-',
-        fontPx,
-        p,
-        geo,
     });
 }
 
-function buildMoicpPage(ctx: BuildCtx, block: OiMoicpBlock, memberToCell: Map<string, string>): Content[] {
-    const { p, geo } = ctx;
+function buildMoicpPage(ctx: BuildCtx, block: OiMoicpBlock, memberToCell: Map<string, string>): Content {
+    const { p } = ctx;
     const groups = regroupByCellOrdered(block.members, memberToCell);
     const cellsContent: Content[] =
         groups.length > 0 ? groups.map(([cell, members]) => cellGroupBox(cell, members, p)) : [{ text: '-', color: p.muted }];
-    const fontPx = articulationBlockFontPx(
-        [block.mission, block.objectif, block.itineraire, block.points_particuliers, block.cat, block.place_chef],
-        groups.length,
-    );
-    return buildArticulationCorePages({
+    return buildArticulationPage(ctx, {
         title: `Articulation : MOICP - ${block.title || '-'}`,
         sectionLabel: 'MOICP',
         coreFields: [
@@ -1257,11 +1252,9 @@ function buildMoicpPage(ctx: BuildCtx, block: OiMoicpBlock, memberToCell: Map<st
         ],
         catLabel: 'C conduite à tenir',
         catText: block.cat || '-',
+        groups,
         cellsContent,
         placeChef: block.place_chef || '-',
-        fontPx,
-        p,
-        geo,
     });
 }
 
@@ -1303,72 +1296,6 @@ const HYP_TABLE_COLUMN_FRACTIONS = [0.2, 0.3, 0.25, 0.25];
  */
 const HYP_ROW_COST_SAFETY_FACTOR = 0.8;
 
-/* --------------------------------------------------------------------------
- * MODÈLE PHYSIQUE (POINTS) de la page Hypothèses d'Effraction — correctif D2
- * (gate ROUND0). L'ancien modèle en « unités » `catItemsPerPageBudget`
- * mélangeait deux échelles incompatibles : une unité de budget vaut
- * `contentHeightPt / budget(fontPx)` points (20,8 pt à `fontPx = 9`, 45 pt à
- * `fontPx = 14`) alors que les coûts étaient comptés en LIGNES DE TEXTE
- * (17,2 pt à 9, 26,8 pt à 14) — sous-évaluation systématique à petite police
- * (`effrac-n6` : thead + « Hypothese 6 » débordant p11 SANS « (SUITE) »),
- * surévaluation à grande police (le correctif BLIND.FIX « sentinel-champs »
- * n'était qu'un contournement de cette distorsion). Surtout, la hauteur
- * PHYSIQUE du bandeau photo de porte (`mm(75)` + badges ≈ 242 pt, ~45 % de la
- * page) n'entrait NULLE PART dans `headCost` (cause D2 du PDF réel
- * `cas-reel-01` : titre + thead seuls en bas de p11). Toutes les grandeurs
- * ci-dessous sont désormais des POINTS, MESURÉS sur rendu réel
- * (pdftotext -bbox sur `effrac-n6`, fontPx 9) :
- *   - avance de ligne réelle = fontPx × 1,914 (lineHeight 1,45 ×
- *     (ascender − descender)/1000 ≈ 1,32 em de JetBrainsMono ; mesuré
- *     17,2 pt à fontPx 9) ;
- *   - ligne de table = lignes de texte × avance + 9 pt (paddings verticaux +
- *     bordure ; mesuré : pas de 60,7 pt pour 3 lignes de 17,2) ;
- *   - h2 de page 47,5 pt ; h3 + marges 27,9 pt ; thead = 1 avance + 9 pt.
- * ------------------------------------------------------------------------ */
-
-/** Avance de ligne réelle pdfmake pour JetBrainsMono (voir bloc ci-dessus). */
-const PDF_LINE_ADVANCE_EM = 1.914;
-/** Paddings verticaux + bordure d'UNE ligne de la table d'hypothèses (mesuré). */
-const EFFRAC_ROW_VPAD_PT = 9;
-/** Bloc titre `h2` de page (texte + filet souligné + marges — mesuré 47,5). */
-const EFFRAC_H2_PT = 48;
-/** Titre `h3` + ses marges (mesuré 27,9). */
-const EFFRAC_H3_PT = 28;
-/** Paddings verticaux d'une carte (`card()`, haut + bas). */
-const EFFRAC_CARD_VPAD_PT = 16;
-/**
- * Rangée de badges d'outils (`pillRow`) sous la photo de porte + sa marge —
- * la colonne photo ne fait que `mm(70)` : des libellés d'outils ordinaires
- * (« Bélier lourd ») y REPLIENT déjà les pilules sur 2 lignes (mesuré 46 pt
- * sur `cas-reel-01` p11) — réserve à 2 lignes, direction sûre (photo bande
- * légèrement surestimée = report/scission AVEC titre, jamais l'inverse).
- */
-const EFFRAC_BADGES_PT = 50;
-/**
- * Marge de sécurité globale soustraite de la hauteur utile de page avant
- * toute décision (imprécision résiduelle du repli des mots, marges
- * inter-blocs non modélisées — mesuré jusqu'à ~34 pt d'écart cumulé sur
- * `cas-reel-01` p11, bandeau photo + carte hypothèses) — direction SÛRE :
- * trop grande = une scission déclenchée un peu tôt AVEC titre « (SUITE) »,
- * jamais un débordement naturel sans titre.
- */
-const EFFRAC_FITS_SAFETY_PT = 40;
-
-/**
- * Lignes rendues d'un texte pouvant contenir des RETOURS À LA LIGNE saisis —
- * `estimateWrappedLines` seul les ignorait (un `effrac` de 58 caractères sur
- * 3 lignes saisies était compté 2 lignes, `cas-reel-01` hyp. 2) : chaque
- * segment replie indépendamment, la somme fait la hauteur réelle.
- */
-function wrappedLinesWithNewlines(text: string, charsPerLine: number): number {
-    return text.split('\n').reduce((sum, seg) => sum + estimateWrappedLines(seg, charsPerLine), 0);
-}
-
-/** Avance de ligne réelle (pt) au palier `fontPx`. */
-function effracLinePt(fontPx: number): number {
-    return fontPx * PDF_LINE_ADVANCE_EM;
-}
-
 /**
  * Hauteur RÉELLE (pt) d'une ligne de la table d'hypothèses — le MAX des 4
  * colonnes (celle qui replie le plus dicte la hauteur), jamais leur somme ;
@@ -1384,86 +1311,6 @@ export function hypothesisRowHeightPt(h: OiEffractionHypothesis, fontPx: number,
     const cols = [h.title || h.id, h.effrac || '-', h.degag || '-', h.assaut || '-'];
     const lines = Math.max(...cols.map((text, i) => wrappedLinesWithNewlines(text, charsPerLineCols[i] as number)));
     return lines * effracLinePt(fontPx) + EFFRAC_ROW_VPAD_PT;
-}
-
-/**
- * Fragmente une hypothèse dont la RANGÉE de table dépasserait, À ELLE SEULE
- * (`dontBreakRows: true`), la place utile d'une page de continuation dédiée
- * (`restAvailPt`) — mission R4-b, cause racine mesurée de B1/B7/B9/B10/B11 sur
- * `volumetric-stress.json` : une hypothèse dont la colonne « Technique / Moyen »
- * fait 2296 caractères (fontPx 9, cpl 0,8-margé ≈ 32) coûte ≈ 72 lignes
- * (≈ 1249 pt), ~2,5× `restAvailPt` (≈ 500 pt) — AUCUNE page ne peut jamais
- * l'accueillir. `dontBreakRows: true` (BLIND.REFIX round 1) interdit à
- * pdfmake de scinder la ligne EN INTERNE : sans ce correctif, la ligne est
- * SILENCIEUSEMENT PERDUE (jamais rendue sur AUCUNE page — constat mesuré :
- * `pdftotext` sur le PDF fautif ne contenait plus AUCUNE occurrence du texte
- * saisi, 0/2296 caractères survivants), tandis que `headerRows: 1` continue
- * de répéter l'en-tête de table SEUL sur chaque page suivante (pages
- * orphelines à 80 car., guardrail B1/B9/B11), sans jamais reposer le titre
- * `(SUITE)` que seule la scission pilotée (`chunkItemsByCost` ci-dessous)
- * sait poser (guardrail B7/B10).
- *
- * Plutôt que de dupliquer le pipeline de scission/titrage pour ce cas
- * pathologique, cette fonction re-brise l'hypothèse en N « pseudo-hypothèses »
- * de taille NORMALE (chacune ≤ `restAvailPt`), réinjectées comme items
- * ordinaires dans `chunkItemsByCost` : chaque fragment redevient une rangée
- * que le pipeline EXISTANT pagine/retitre sans aucune logique dupliquée — y
- * compris le partage d'une page de continuation avec d'AUTRES hypothèses plus
- * courtes (remplissage naturel, objectif B1/B11 de la mission). Découpe par
- * TRANCHES de `charsPerLineCols[i] × linesPerFragment` caractères (même cpl
- * 0,8-margé qu'`hypothesisRowHeightPt`, cohérence du modèle — direction sûre :
- * une tranche légèrement sous-estimée en caractères occupe légèrement MOINS
- * de lignes que prévu, jamais plus). Le TITRE (`title`/`id`) n'est jamais
- * tronqué ni vidé — répété avec un suffixe « (suite) » sur les fragments ≥ 1
- * (jamais de cellule vide, cf. garde B5 anti-libellés-vides). `desc` (rendu à
- * part par `hypothesesDescBlock`, jamais dans la cellule table) n'est porté
- * QUE par le premier fragment — jamais dupliqué.
- *
- * Exportée à seule fin de test unitaire direct (même convention que
- * `effractionFirstOverheadPt` ci-dessous — aucun autre appelant hors module).
- */
-export function expandOversizedHypothesis(
-    h: OiEffractionHypothesis,
-    fontPx: number,
-    contentWidthPt: number,
-    restAvailPt: number,
-): OiEffractionHypothesis[] {
-    if (hypothesisRowHeightPt(h, fontPx, contentWidthPt) <= restAvailPt) {
-        return [h];
-    }
-    const linePt = effracLinePt(fontPx);
-    const linesPerFragment = Math.max(1, Math.floor((restAvailPt - EFFRAC_ROW_VPAD_PT) / linePt));
-    const charsPerLineCols = HYP_TABLE_COLUMN_FRACTIONS.map((f) =>
-        Math.max(1, Math.floor(estimateCharsPerLine(fontPx, contentWidthPt * f) * HYP_ROW_COST_SAFETY_FACTOR)),
-    );
-    const effracSliceLen = (charsPerLineCols[1] as number) * linesPerFragment;
-    const degagSliceLen = (charsPerLineCols[2] as number) * linesPerFragment;
-    const assautSliceLen = (charsPerLineCols[3] as number) * linesPerFragment;
-    const effracText = h.effrac || '-';
-    const degagText = h.degag || '-';
-    const assautText = h.assaut || '-';
-    const fragmentCount = Math.max(
-        1,
-        Math.ceil(effracText.length / effracSliceLen),
-        Math.ceil(degagText.length / degagSliceLen),
-        Math.ceil(assautText.length / assautSliceLen),
-    );
-    const title = h.title || h.id;
-    const sliceOrDash = (text: string, sliceLen: number, idx: number): string => {
-        const start = idx * sliceLen;
-        if (start >= text.length) {
-            return idx === 0 ? text : '';
-        }
-        return text.slice(start, start + sliceLen);
-    };
-    return Array.from({ length: fragmentCount }, (_, idx) => ({
-        ...h,
-        title: idx === 0 ? title : `${title} (suite)`,
-        effrac: sliceOrDash(effracText, effracSliceLen, idx),
-        degag: sliceOrDash(degagText, degagSliceLen, idx),
-        assaut: sliceOrDash(assautText, assautSliceLen, idx),
-        desc: idx === 0 ? h.desc : '',
-    }));
 }
 
 /**
@@ -1577,23 +1424,18 @@ function effractionMeasuresBody(block: OiEffractionBlock, p: OiPdfPalette, right
  *      alors qu'avec photo elles vivent dans la colonne réduite
  *      (`specsColWidthPt` = `contentWidthPt - mm(70) - mm(6)`).
  */
-export function effractionFirstOverheadPt(
-    block: OiEffractionBlock,
-    fontPx: number,
-    contentWidthPt: number,
-    specsColWidthPt: number,
-    photoBandPt: number,
-): number {
+/**
+ * Hauteur (pt) de la carte « Caractéristiques Techniques » (mesures
+ * filtrées, mêmes seuils/filtrage que le rendu réel `effractionMeasuresBody`
+ * — une mesure blanche/`-` ne coûte aucune ligne fantôme) — factorisée hors
+ * d'`effractionFirstOverheadPt` (D2) pour être réutilisée telle quelle par le
+ * solveur fit-to-page de la page unique EFFRACTION (mission P1).
+ */
+function effractionSpecsCardPt(block: OiEffractionBlock, fontPx: number, specsColWidthPt: number): number {
     const line = effracLinePt(fontPx);
-    const fullCpl = estimateCharsPerLine(fontPx, contentWidthPt);
     const specsCpl = estimateCharsPerLine(fontPx, specsColWidthPt);
     const specsHalfCpl = estimateCharsPerLine(fontPx, specsColWidthPt / 2);
 
-    const missionPt = wrappedLinesWithNewlines(`Mission : ${block.mission || '-'}`, fullCpl) * line + 10;
-
-    // BLINDAGE round 2 (conservé) : le coût des mesures suit EXACTEMENT le
-    // même filtrage que le rendu réel (`effractionMeasuresBody`) — une mesure
-    // blanche/`-` ne coûte plus une ligne fantôme.
     const rowLines = (label: string, value: string | undefined, cpl: number): number =>
         isEffractionMeasureBlank(value) ? 0 : estimateWrappedLines(`${label} : ${value}`, cpl);
 
@@ -1612,19 +1454,30 @@ export function effractionFirstOverheadPt(
     const profMoulureRows = rowLines('Prof. Moulure', block.prof_moulure, specsCpl);
 
     const specsRows = typePorteRows + grid2TopRows + hRows + profRows + profMoulureRows;
-    const specsCardPt = EFFRAC_H3_PT + specsRows * line + EFFRAC_CARD_VPAD_PT;
-    const headPt = Math.max(specsCardPt, photoBandPt);
-
-    const theadPt = line + EFFRAC_ROW_VPAD_PT;
-    return EFFRAC_H2_PT + missionPt + 6 + headPt + 6 + EFFRAC_H3_PT + theadPt + EFFRAC_CARD_VPAD_PT;
+    return EFFRAC_H3_PT + specsRows * line + EFFRAC_CARD_VPAD_PT;
 }
 
 /**
- * Hauteur RÉELLE (pt) du bandeau fixe d'une page « (SUITE) » de la scission
- * (titre `h2`, `h3` « … (suite) », thead répété, paddings de carte).
+ * Hauteur RÉELLE (pt) de tout ce qui précède la PREMIÈRE ligne de données de
+ * la table d'hypothèses (mission, bandeau photo/mesures, titre + en-tête de
+ * table) — modèle physique D2, préservé pour ses propres tests unitaires
+ * (`effractionFirstOverheadPt`) ; réutilisé en interne par
+ * `effractionSpecsCardPt` (factorisée, cf. JSDoc ci-dessus).
  */
-function effractionRestOverheadPt(fontPx: number): number {
-    return EFFRAC_H2_PT + EFFRAC_H3_PT + (effracLinePt(fontPx) + EFFRAC_ROW_VPAD_PT) + EFFRAC_CARD_VPAD_PT;
+export function effractionFirstOverheadPt(
+    block: OiEffractionBlock,
+    fontPx: number,
+    contentWidthPt: number,
+    specsColWidthPt: number,
+    photoBandPt: number,
+): number {
+    const line = effracLinePt(fontPx);
+    const fullCpl = estimateCharsPerLine(fontPx, contentWidthPt);
+    const missionPt = wrappedLinesWithNewlines(`Mission : ${block.mission || '-'}`, fullCpl) * line + 10;
+    const specsCardPt = effractionSpecsCardPt(block, fontPx, specsColWidthPt);
+    const headPt = Math.max(specsCardPt, photoBandPt);
+    const theadPt = line + EFFRAC_ROW_VPAD_PT;
+    return EFFRAC_H2_PT + missionPt + 6 + headPt + 6 + EFFRAC_H3_PT + theadPt + EFFRAC_CARD_VPAD_PT;
 }
 
 /**
@@ -1750,21 +1603,342 @@ function isEffractionBlockEmpty(block: OiEffractionBlock, doorSrc: string | unde
     return !hasMeasure && block.hypotheses.length === 0 && doorSrc === undefined;
 }
 
+/** Nombre max d'hypothèses rendues en CARTES (directive Nico 2026-08-10 : « cartes empilées ou 2 colonnes selon le nombre ») — au-delà, repli sur la table dense historique (plus compacte à volume élevé). */
+const EFFRAC_HYP_CARDS_MAX = 4;
+
+/**
+ * Ratio d'interlignage RESSERRÉ (« densité tight ») vs NOMINAL (1,45, cf.
+ * `PDF_LINE_ADVANCE_EM`) des cartes hypothèses — directive Nico 2026-08-10,
+ * dernière passe effraction, point 1a : « interlignage 1.45→1.25, paddings
+ * resserrés AVANT de toucher la police ». Escalade DENSITÉ PUIS police à
+ * chaque palier (`EFFRAC_HYP_LEVELS` ci-dessous) : jamais l'inverse.
+ */
+const EFFRAC_HYP_TIGHT_RATIO = 1.25 / 1.45;
+
+/** Avance de ligne (pt) d'une carte hypothèse au palier `fontPx`, densité `tight` ou nominale. */
+function hypLinePt(fontPx: number, tight: boolean): number {
+    return tight ? effracLinePt(fontPx) * EFFRAC_HYP_TIGHT_RATIO : effracLinePt(fontPx);
+}
+
+/** Coût (pt) d'un texte replié à densité `tight`/nominale — même modèle que `textLinePt`, avance de ligne resserrée. */
+function textLinePtDensity(text: string, fontPx: number, columnWidthPt: number, tight: boolean): number {
+    const cpl = estimateCharsPerLine(fontPx, columnWidthPt);
+    return wrappedLinesWithNewlines(text, cpl) * hypLinePt(fontPx, tight);
+}
+
+/** Padding interne (pt) d'une carte hypothèse — resserré en densité `tight`. */
+function hypCardPadPt(tight: boolean): number {
+    return tight ? 6 : 12;
+}
+
+/** Marge (pt) entre deux cartes hypothèses empilées/côte à côte — resserrée en densité `tight`. */
+function hypCardGapPt(tight: boolean): number {
+    return tight ? 4 : 8;
+}
+
+/**
+ * Paliers d'escalade DENSITÉ×POLICE des cartes hypothèses — DENSITÉ testée
+ * AVANT police à chaque palier (`[11,normal]`, `[11,tight]`, `[10,normal]`,
+ * `[10,tight]`, …, `[7,normal]`, `[7,tight]`), conformément à la directive
+ * « densité réduite d'abord AVANT de toucher la police ».
+ */
+const EFFRAC_HYP_LEVELS: ReadonlyArray<{ fontPx: number; tight: boolean }> = FIT_FONT_STEPS.flatMap((fontPx) => [
+    { fontPx, tight: false },
+    { fontPx, tight: true },
+]);
+
+/**
+ * Champs non vides d'une hypothèse (Technique/Moyen, Dégagement, Assaut) —
+ * `desc` est traité À PART (ligne dédiée, jamais mélangée au tri par
+ * longueur des 3 champs « techniques »).
+ */
+function hypothesisFields(h: OiEffractionHypothesis): Array<{ label: string; value: string }> {
+    return (
+        [
+            { label: 'Technique / Moyen', value: h.effrac },
+            { label: 'Dégagement', value: h.degag },
+            { label: 'Assaut', value: h.assaut },
+        ] as Array<{ label: string; value: string | undefined }>
+    ).filter((f): f is { label: string; value: string } => !isBlankOrDash(f.value));
+}
+
+/**
+ * Colonnes internes ADAPTATIVES d'une carte hypothèse (directive Nico
+ * 2026-08-10, point 1a) : les DEUX champs les plus COURTS côte à côte (2
+ * colonnes), le(s) champ(s) restant(s) — le(s) plus LONG(s) — pleine largeur
+ * de carte en dessous. Purement DATA-DRIVEN (jamais une affectation fixe
+ * « Technique/Moyen = court » : dépend du texte réellement saisi) — PARTAGÉ
+ * entre coût (`hypothesisAdaptiveCardPt`) et rendu (`renderHypothesisCard`).
+ */
+function hypothesisAdaptiveRows(h: OiEffractionHypothesis): Array<Array<{ label: string; value: string }>> {
+    const fields = hypothesisFields(h);
+    if (fields.length === 0) {
+        return [];
+    }
+    if (fields.length === 1) {
+        return [[fields[0] as { label: string; value: string }]];
+    }
+    const sorted = [...fields].sort((a, b) => a.value.length - b.value.length);
+    const rows: Array<Array<{ label: string; value: string }>> = [[sorted[0] as { label: string; value: string }, sorted[1] as { label: string; value: string }]];
+    for (let i = 2; i < sorted.length; i++) {
+        rows.push([sorted[i] as { label: string; value: string }]);
+    }
+    return rows;
+}
+
+/** Hauteur (pt) d'UNE carte hypothèse (colonnes internes adaptatives + densité) au palier `fontPx`/`tight`, dans une colonne de `cardWidthPt`. */
+function hypothesisAdaptiveCardPt(h: OiEffractionHypothesis, fontPx: number, tight: boolean, cardWidthPt: number): number {
+    const rows = hypothesisAdaptiveRows(h);
+    const rowsPt = rows.reduce((sum, row) => {
+        if (row.length === 2) {
+            const halfWidthPt = (cardWidthPt - mm(4)) / 2;
+            const c0 = textLinePtDensity(`${row[0]!.label} : ${row[0]!.value}`, fontPx, halfWidthPt, tight);
+            const c1 = textLinePtDensity(`${row[1]!.label} : ${row[1]!.value}`, fontPx, halfWidthPt, tight);
+            return sum + Math.max(c0, c1);
+        }
+        return sum + textLinePtDensity(`${row[0]!.label} : ${row[0]!.value}`, fontPx, cardWidthPt, tight);
+    }, 0);
+    const descPt = !isBlankOrDash(h.desc) ? textLinePtDensity(`Description : ${h.desc}`, fontPx, cardWidthPt, tight) : 0;
+    // RECALIBRAGE (revue 2026-08-10, mesure au rendu réel plutôt qu'un facteur
+    // de sécurité empilé) : une carte hypothèse isolée (`effraction-heavy.json`,
+    // H1, police 11 normale, pleine largeur) mesurée par pixels sur le PDF
+    // rendu (`pdftoppm -r 60`, bornes de la table bordée détectées par
+    // couleur) fait 150 px de haut, soit 150 × 72/60 = 180 pt de CORPS (hors
+    // h3 « Hypothèses d'Effraction » de la carte englobante, compté à part par
+    // l'appelant). Le modèle SANS aucun facteur (titre + lignes + paddings
+    // ci-dessous) donne ~192 pt pour ce même cas — à ~7 % de la mesure réelle,
+    // dans le sens SÛR (légèrement au-dessus). Aucun facteur multiplicatif
+    // supplémentaire n'est donc nécessaire ; le bug qui faisait déborder les
+    // pages « (SUITE) » n'était PAS un sous-dimensionnement du modèle mais
+    // l'absence de `pageBreak:'before'` sur les pages 2+ (corrigé à part), et
+    // le vide résiduel constaté ensuite venait du solveur qui retenait le
+    // PREMIER palier « qui rentre » plutôt que celui qui REMPLIT le mieux
+    // (corrigé ci-dessous, sélection au nombre de pages minimal).
+    return hypLinePt(fontPx, tight) /* titre */ + rowsPt + descPt + hypCardPadPt(tight) * 2;
+}
+
+/** Rend UNE carte hypothèse (colonnes internes adaptatives + densité) — même contenu que `hypothesisAdaptiveCardPt`. */
+function renderHypothesisCard(h: OiEffractionHypothesis, p: OiPdfPalette, tight: boolean): Content {
+    const rows = hypothesisAdaptiveRows(h);
+    const rowNodes: Content[] = rows.map((row) =>
+        row.length === 2
+            ? {
+                  columns: [
+                      { width: '*', text: breakLongTokens(`${row[0]!.label} : ${row[0]!.value}`) },
+                      { width: '*', text: breakLongTokens(`${row[1]!.label} : ${row[1]!.value}`) },
+                  ],
+                  columnGap: mm(4),
+              }
+            : { text: breakLongTokens(`${row[0]!.label} : ${row[0]!.value}`) },
+    );
+    // `italics:true` PROSCRIT ici : la police `JetBrainsMono` n'a pas de variante
+    // italique enregistrée côté pdfmake (`PDF_FONTS`) — testé au rendu réel
+    // (crash `PDFDocument.provideFont`), jamais détecté par les tests JSON purs
+    // de ce module (aucune assertion de rendu pdfmake réel). `color: p.muted`
+    // porte la même distinction visuelle sans dépendre d'une variante absente.
+    const descNode: Content[] = !isBlankOrDash(h.desc) ? [{ text: breakLongTokens(`Description : ${h.desc}`), color: p.muted }] : [];
+    return {
+        table: {
+            widths: ['*'],
+            body: [
+                [
+                    {
+                        stack: [
+                            { text: breakLongTokens(h.title || h.id), bold: true, color: p.accent, margin: [0, 0, 0, 4] },
+                            ...rowNodes,
+                            ...descNode,
+                        ],
+                        fillColor: p.cardAlt,
+                        lineHeight: tight ? EFFRAC_HYP_TIGHT_RATIO : undefined,
+                    },
+                ],
+            ],
+        },
+        layout: LAYOUT_BORDERED,
+        margin: [0, 0, 0, hypCardGapPt(tight)],
+    };
+}
+
+/** Nombre de colonnes de la grille de cartes hypothèses (directive Nico : « cartes empilées ou 2 colonnes selon le nombre »). */
+function hypCardsColumnCount(count: number): 1 | 2 {
+    // Correctif revue (2026-08-10, « le refus doit devenir l'ultime recours ») :
+    // dès 2 hypothèses, les poser CÔTE À CÔTE (1 rangée) coûte TOUJOURS moins
+    // cher en hauteur que les empiler (2 rangées), quelle que soit la longueur
+    // du texte — direction sûre pour la DENSITÉ de page (« remplis chaque page
+    // avec autant d'hypothèses complètes que possible »). Seul un groupe d'UNE
+    // hypothèse reste en 1 colonne (rien à côté d'elle).
+    return count >= 2 ? 2 : 1;
+}
+
+/** Hauteur (pt) de la région « Hypothèses d'Effraction » rendue en CARTES uniformes (grille régulière) à densité/police donnée — utilisée pour le test « tient sur 1 page » ET pour l'empaquetage multi-pages (`packHypotheses`, sous-ensembles quelconques). */
+function hypothesesCardsUniformRegionPt(hypotheses: OiEffractionHypothesis[], fontPx: number, tight: boolean, fullWidthPt: number): number {
+    if (hypotheses.length === 0) {
+        return hypLinePt(fontPx, tight);
+    }
+    const cols = hypCardsColumnCount(hypotheses.length);
+    const cardWidthPt = cols === 1 ? fullWidthPt : (fullWidthPt - mm(6)) / 2;
+    const cardPts = hypotheses.map((h) => hypothesisAdaptiveCardPt(h, fontPx, tight, cardWidthPt));
+    const maxCardPt = Math.max(...cardPts, 0);
+    const rows = Math.ceil(hypotheses.length / cols);
+    return rows * (maxCardPt + hypCardGapPt(tight));
+}
+
+/** Rend la grille UNIFORME de cartes hypothèses (1 ou 2 colonnes régulières). */
+function renderHypCardsUniform(hypotheses: OiEffractionHypothesis[], p: OiPdfPalette, tight: boolean): Content[] {
+    if (hypotheses.length === 0) {
+        return [{ text: 'Aucune hypothèse saisie.', color: p.muted }];
+    }
+    const cols = hypCardsColumnCount(hypotheses.length);
+    if (cols === 1) {
+        return hypotheses.map((h) => renderHypothesisCard(h, p, tight));
+    }
+    const rows: Content[] = [];
+    for (let i = 0; i < hypotheses.length; i += 2) {
+        const left = [renderHypothesisCard(hypotheses[i] as OiEffractionHypothesis, p, tight)];
+        const rightItem = hypotheses[i + 1];
+        const right = rightItem !== undefined ? [renderHypothesisCard(rightItem, p, tight)] : [{ text: '' } as Content];
+        rows.push(grid2(left, right));
+    }
+    return rows;
+}
+
+/** Longueur totale saisie d'une hypothèse (3 champs + description) — sert à détecter une CONCENTRATION du volume sur 1-2 hypothèses (directive point 1c). */
+function hypothesisTotalLen(h: OiEffractionHypothesis): number {
+    return (h.effrac?.length ?? 0) + (h.degag?.length ?? 0) + (h.assaut?.length ?? 0) + (h.desc?.length ?? 0);
+}
+
+/**
+ * Détecte une CONCENTRATION du volume sur 1-2 hypothèses « longues » parmi
+ * un ensemble par ailleurs « court » (directive Nico 2026-08-10, point 1c) —
+ * `null` si le profil n'est pas concentré (aucune longue, ou trop de longues,
+ * ou toutes longues) : dans ce cas la disposition ASYMÉTRIQUE n'apporte rien
+ * de plus que la grille uniforme, inutile de l'essayer.
+ */
+function detectHypConcentration(
+    hypotheses: OiEffractionHypothesis[],
+): { longs: OiEffractionHypothesis[]; shorts: OiEffractionHypothesis[] } | null {
+    if (hypotheses.length < 2) {
+        return null;
+    }
+    const lens = hypotheses.map(hypothesisTotalLen);
+    const avg = lens.reduce((a, b) => a + b, 0) / lens.length;
+    const longs = hypotheses.filter((_, i) => (lens[i] as number) > avg * 1.4 && (lens[i] as number) > 150);
+    if (longs.length === 0 || longs.length > 2 || longs.length === hypotheses.length) {
+        return null;
+    }
+    const shorts = hypotheses.filter((h) => !longs.includes(h));
+    return { longs, shorts };
+}
+
+/** Hauteur (pt) de la disposition ASYMÉTRIQUE (shorts en grille 2 colonnes compacte au-dessus, longs pleine largeur empilés dessous). */
+function hypothesesCardsAsymmetricRegionPt(
+    longs: OiEffractionHypothesis[],
+    shorts: OiEffractionHypothesis[],
+    fontPx: number,
+    tight: boolean,
+    fullWidthPt: number,
+): number {
+    const shortsPt = shorts.length === 0 ? 0 : hypothesesCardsUniformRegionPt(shorts, fontPx, tight, fullWidthPt);
+    const longsPt = longs.reduce((sum, h) => sum + hypothesisAdaptiveCardPt(h, fontPx, tight, fullWidthPt) + hypCardGapPt(tight), 0);
+    return shortsPt + longsPt;
+}
+
+/** Rend la disposition ASYMÉTRIQUE — shorts en grille compacte, longs pleine largeur dessous. */
+function renderHypCardsAsymmetric(longs: OiEffractionHypothesis[], shorts: OiEffractionHypothesis[], p: OiPdfPalette, tight: boolean): Content[] {
+    return [...(shorts.length > 0 ? renderHypCardsUniform(shorts, p, tight) : []), ...longs.map((h) => renderHypothesisCard(h, p, tight))];
+}
+
+/** Hauteur (pt) de la région « Hypothèses d'Effraction » rendue en TABLE dense (> `EFFRAC_HYP_CARDS_MAX`) — thead + une rangée par hypothèse du sous-ensemble + description sous le tableau (utilisée aussi pour l'empaquetage multi-pages, sous-ensembles quelconques). */
+function hypothesesTableRegionPt(hypotheses: OiEffractionHypothesis[], fontPx: number, contentWidthPt: number): number {
+    const theadPt = effracLinePt(fontPx) + EFFRAC_ROW_VPAD_PT;
+    const rowsPt = hypotheses.reduce((sum, h) => sum + hypothesisRowHeightPt(h, fontPx, contentWidthPt), 0);
+    const descPt = descBlockHeightPt(hypotheses, fontPx, contentWidthPt);
+    return theadPt + rowsPt + descPt;
+}
+
+/** Rend la table dense d'un sous-ensemble d'hypothèses (en-tête + rangées + description). */
+function renderHypTable(hypotheses: OiEffractionHypothesis[], p: OiPdfPalette): Content[] {
+    const rows: TableCell[][] =
+        hypotheses.length > 0
+            ? hypotheses.map((h) => hypothesisTableRow(h, p))
+            : [[{ text: 'Aucune hypothèse saisie', colSpan: 4, alignment: 'center', borderColor: cellBorder(p) }, {}, {}, {}]];
+    const hypTable: Content = {
+        table: { widths: ['20%', '30%', '25%', '25%'], headerRows: 1, body: [hypothesesTableHeader(p), ...rows] },
+        layout: LAYOUT_BORDERED,
+    };
+    const descBlock = hypothesesDescBlock(hypotheses, p);
+    return [hypTable, ...(descBlock !== null ? [descBlock] : [])];
+}
+
+/**
+ * Empaquette `hyps` en 1+ PAGES AUTONOMES (directive Nico 2026-08-10, point
+ * 1d — « ultime astuce avant refus ») : chaque hypothèse est une frontière
+ * légitime, JAMAIS coupée en son milieu. La 1re page partage son budget avec
+ * MISSION+CARACTÉRISTIQUES (`firstBudgetPt`, peut rester VIDE — 0 hypothèse
+ * — si même la 1re n'y tient pas) ; chaque page SUIVANTE dispose d'un budget
+ * de PAGE DÉDIÉE PLEINE (`restBudgetPt`) et DOIT accueillir AU MOINS 1
+ * hypothèse — sinon `null` (aucun empaquetage possible à ce palier : au
+ * moins une hypothèse, prise seule, ne tient même pas sur une page dédiée
+ * complète — cf. `buildEffractionPages`, condition de REFUS point 1e).
+ */
+function packHypotheses<T>(hyps: T[], regionCostPt: (subset: T[]) => number, firstBudgetPt: number, restBudgetPt: number): T[][] | null {
+    const groups: T[][] = [];
+    let end = 0;
+    while (end < hyps.length && regionCostPt(hyps.slice(0, end + 1)) <= firstBudgetPt) {
+        end++;
+    }
+    groups.push(hyps.slice(0, end));
+    let idx = end;
+    while (idx < hyps.length) {
+        let e = idx;
+        while (e < hyps.length && regionCostPt(hyps.slice(idx, e + 1)) <= restBudgetPt) {
+            e++;
+        }
+        if (e === idx) {
+            return null;
+        }
+        groups.push(hyps.slice(idx, e));
+        idx = e;
+    }
+    return groups;
+}
+
+/** Étiquette de plage « 3-4 »/« 3 » d'un sous-groupe d'hypothèses CONTIGU au sein de l'ensemble complet — pour le titre autonome des pages de continuation (jamais « (SUITE) »). */
+function hypRangeLabel(group: OiEffractionHypothesis[], all: OiEffractionHypothesis[]): string {
+    const first = all.indexOf(group[0] as OiEffractionHypothesis) + 1;
+    const last = all.indexOf(group[group.length - 1] as OiEffractionHypothesis) + 1;
+    return first === last ? `${first}` : `${first}-${last}`;
+}
+
 /**
  * Bloc « Articulation : EFFRACTION - <titre> » (pdf-engine-v2.ts:1132-1187,
  * §3.2 ligne 8f, POINT DE VIGILANCE §1). `[]` si `isEffractionBlockEmpty`
- * (§3.4 règle 1, correctif PG.REFIX round 1) — section omise, jamais de page
- * à titre seul pour un bloc créé mais non renseigné.
+ * (§3.4 règle 1) — section omise, jamais de page à titre seul pour un bloc
+ * créé mais non renseigné.
  *
- * Blindage PDF OI, mission BLIND.A : (1) champs fantômes #3 — `mission`
- * rendue en tête (port `OrderHtmlArticulation.kt:245`), `porte` en 1re ligne
- * des mesures (`:279`), `prof_marche`/`prof_moulure` en fin de mesures
- * (`:289-290`), `hypotheses[].desc` en bloc texte SOUS le tableau (dérogation
- * anti-débordement, cf. `hypothesesDescBlock`) ; (2) `effracFontPx` (R7,
- * jusqu'ici non portée) réduit le palier de police AVANT toute scission ;
- * (3) scission pilotée de la table (aucune perte silencieuse au-delà de 8
- * hypothèses, matrice-rupture.md §2 : `card()` par défaut `unbreakable:true`
- * était SILENCIEUSEMENT SUPPRIMÉE par pdfmake au-delà d'une page).
+ * DERNIÈRE PASSE (directive Nico 2026-08-10, « le refus doit devenir
+ * l'ultime recours pour l'effraction ») — ESCALADE DE DISPOSITIONS, dans
+ * l'ordre, avant tout refus :
+ *   a. Cartes à colonnes internes ADAPTATIVES (`hypothesisAdaptiveRows` — 2
+ *      champs courts côte à côte, le(s) long(s) pleine largeur) + DENSITÉ
+ *      resserrée (interlignage 1,45→1,25, paddings resserrés) testée AVANT
+ *      chaque palier de police (`EFFRAC_HYP_LEVELS`, 11→7 × densité) ;
+ *   b. paliers de police 11→7 (inclus dans la même boucle) ;
+ *   c. si le volume se CONCENTRE sur 1-2 hypothèses (`detectHypConcentration`) :
+ *      disposition ASYMÉTRIQUE (courtes en grille compacte, longue(s) pleine
+ *      largeur dessous) — mêmes paliers densité×police ;
+ *   d. ultime recours avant refus : la cellule s'étend sur PLUSIEURS PAGES
+ *      AUTONOMES (`packHypotheses`) — jamais de coupure en milieu
+ *      d'hypothèse, jamais de titre « (SUITE) » (chaque page porte un titre
+ *      DISTINCT et se suffit : « … — MISSION & CARACTÉRISTIQUES » pour la
+ *      1re, « … — HYPOTHÈSES <plage> » pour les suivantes) ;
+ *   e. REFUS seulement si UNE hypothèse, prise SEULE, ne tient pas sur une
+ *      page entière dédiée même au palier plancher 7 px/densité resserrée
+ *      (`ctx.fitErrors`, message explicite « hypothèse unique »).
+ * Les hypothèses sont rendues en CARTES (`EFFRAC_HYP_CARDS_MAX` = 4 max au
+ * total) ou, au-delà, en TABLE dense (plus compacte à volume élevé) — les
+ * étapes b/d/e s'appliquent aux DEUX modes, a/c sont spécifiques aux cartes
+ * (densité/asymétrie, directive P1c).
  */
 function buildEffractionPages(ctx: BuildCtx, block: OiEffractionBlock): Content[] {
     const { photosBase64, dynamicPhotos, p, geo, is169 } = ctx;
@@ -1774,34 +1948,29 @@ function buildEffractionPages(ctx: BuildCtx, block: OiEffractionBlock): Content[
         return [];
     }
     const tools = doorMeta ? parseTools(doorMeta.tools) : [];
-    const topHMm = is169 ? 65 : 75;
+    const topHMm = is169 ? 45 : 55;
     const title = `Articulation : EFFRACTION - ${block.title || '-'}`;
+    // Titre systématiquement présent (jamais de carte « Hypothèse N » vide) — même filet que `hypNumberFallback` ailleurs dans ce module.
+    const hypotheses = block.hypotheses.map((h, i) => ({ ...h, title: h.title || h.id || `Hypothèse ${i + 1}` }));
+    const useCards = hypotheses.length <= EFFRAC_HYP_CARDS_MAX;
 
-    const hypotheses = block.hypotheses;
-    const fontPx = effracFontPx(
-        [block.mission, ...hypotheses.flatMap((h) => [h.title, h.desc, h.effrac, h.degag, h.assaut])].map(str),
-        hypotheses.length,
-    );
-
-    // Bandeau d'outils : port simplifié en empilement SOUS la photo plutôt
-    // qu'en `absolutePosition` exact (aucune assertion de coordonnées côté
-    // test ; le contenu/ordre visuel — repli 'PORTE' si aucun outil — est
-    // préservé, seule la mécanique de positionnement est simplifiée).
     const toolsBadges: Content =
         tools.length > 0
             ? pillRow(tools, p, { fillColor: p.warning, textColor: '#000000' })
             : pillRow(['PORTE'], p, { fillColor: p.warning, textColor: '#000000' });
 
     const rightColWidthPt = doorSrc !== undefined ? geo.contentWidthPt - mm(70) - mm(6) : geo.contentWidthPt;
+    // Correctif revue (2026-08-10, point 2) : `EFFRAC_BADGES_PT` (constante
+    // figée, périmée par la nouvelle géométrie de badges livrée par P2,
+    // `blocks.ts::packToolBadgeRows`/`galleryToolsReservePt`) est remplacée
+    // par un calcul RÉEL sur le même modèle flow que le rendu (`pillRow`
+    // reste le rendu effectif ici, distinct du badge premium de galerie —
+    // seule la RÉSERVE de hauteur est recalibrée sur le modèle P2, direction
+    // sûre : jamais sous-évaluée).
+    const photoBandPt = doorSrc !== undefined ? mm(topHMm) + galleryToolsReservePt(tools.length > 0 ? tools : ['PORTE'], mm(70)) : 0;
 
-    const specs = card(
-        effractionMeasuresBody(block, p, rightColWidthPt),
-        p,
-        // Blindage BLIND.A : champs texte libres non bornés (`structure`,
-        // `serrurerie`, `environnement`…) — filet `unbreakable:false`.
-        { unbreakable: false },
-    );
-
+    const missionLine = labelValue('Mission', block.mission || '-', p);
+    const specs = card(effractionMeasuresBody(block, p, rightColWidthPt), p, { unbreakable: false });
     const head: Content =
         doorSrc !== undefined
             ? {
@@ -1813,166 +1982,138 @@ function buildEffractionPages(ctx: BuildCtx, block: OiEffractionBlock): Content[
               }
             : { stack: [specs] };
 
-    // Champ fantôme #3 (`mission`, `OrderHtmlArticulation.kt:245`) : sa propre
-    // ligne EN TÊTE de page, AVANT le bloc photo/mesures — même ordre que
-    // strategica (les fiches MOICP/ZMSPCP montrent déjà « Mission » en tête).
-    const missionLine = labelValue('Mission', block.mission || '-', p);
+    const missionOverheadPt = (fontPx: number): number => {
+        const missionPt = textLinePt(`Mission : ${block.mission || '-'}`, fontPx, geo.contentWidthPt) + 10;
+        const specsCardPt = effractionSpecsCardPt(block, fontPx, rightColWidthPt);
+        const headPt = Math.max(specsCardPt, photoBandPt);
+        return EFFRAC_H2_PT + missionPt + 6 + headPt + 6;
+    };
+    const availablePt = geo.contentHeightPt - EFFRAC_FITS_SAFETY_PT;
 
-    const descBlock = hypothesesDescBlock(hypotheses, p);
+    const regionCostPt = (subset: OiEffractionHypothesis[], fontPx: number, tight: boolean): number =>
+        useCards ? hypothesesCardsUniformRegionPt(subset, fontPx, tight, geo.contentWidthPt) : hypothesesTableRegionPt(subset, fontPx, geo.contentWidthPt);
+    const renderRegion = (subset: OiEffractionHypothesis[], tight: boolean): Content[] =>
+        useCards ? renderHypCardsUniform(subset, p, tight) : renderHypTable(subset, p);
 
-    // Scission pilotée (mission BLIND.A, généralisation R10 à la table
-    // Hypothèses d'Effraction) : chaque hypothèse est une frontière légitime
-    // (jamais de coupure en milieu de ligne), le budget est le MÊME barème
-    // `catItemsPerPageBudget`/mise à l'échelle `geo` que ZMSPCP/MOICP
-    // (`buildArticulationCorePages`).
+    const page1Head: Content[] = [missionLine, { text: '', margin: [0, 4, 0, 0] }, head, { text: '', margin: [0, 6, 0, 0] }];
+    const hypSectionCard = (body: Content[]): Content => card([h3("Hypothèses d'Effraction", p), ...body], p, { unbreakable: false });
+
+    // ── a/b : grille UNIFORME, densité × police (cartes) ou police seule (table) ──
+    const levels = useCards ? EFFRAC_HYP_LEVELS : FIT_FONT_STEPS.map((fontPx) => ({ fontPx, tight: false }));
+    for (const { fontPx, tight } of levels) {
+        const total = missionOverheadPt(fontPx) + EFFRAC_H3_PT + regionCostPt(hypotheses, fontPx, tight) + EFFRAC_CARD_VPAD_PT;
+        if (total <= availablePt) {
+            return [
+                {
+                    stack: [h2(title, p, geo.contentWidthPt), ...page1Head, hypSectionCard(renderRegion(hypotheses, tight))],
+                    fontSize: fontPx,
+                },
+            ];
+        }
+    }
+
+    // ── c : disposition ASYMÉTRIQUE (cartes uniquement, volume concentré) ──
+    if (useCards) {
+        const concentration = detectHypConcentration(hypotheses);
+        if (concentration) {
+            for (const { fontPx, tight } of EFFRAC_HYP_LEVELS) {
+                const regionPt = hypothesesCardsAsymmetricRegionPt(concentration.longs, concentration.shorts, fontPx, tight, geo.contentWidthPt);
+                const total = missionOverheadPt(fontPx) + EFFRAC_H3_PT + regionPt + EFFRAC_CARD_VPAD_PT;
+                if (total <= availablePt) {
+                    return [
+                        {
+                            stack: [
+                                h2(title, p, geo.contentWidthPt),
+                                ...page1Head,
+                                hypSectionCard(renderHypCardsAsymmetric(concentration.longs, concentration.shorts, p, tight)),
+                            ],
+                            fontSize: fontPx,
+                        },
+                    ];
+                }
+            }
+        }
+    }
+
+    // ── d : PAGES AUTONOMES (ultime recours avant refus) ──
     //
-    // CORRECTIF BLIND.REFIX round 2 — QUEUE ORPHELINE SANS « (SUITE) » : la
-    // page 1 (bandeau MISSION + carte « Caractéristiques Techniques » avant
-    // la table) ET chaque page « (suite) » (titre `h2`/`h3` + en-tête de
-    // tableau répétée) portent un overhead RÉEL avant la première ligne
-    // d'hypothèse, jusqu'ici jamais déduit du budget (`firstPageBudget =
-    // budget / 2` grossièrement approximé). `chunkItemsByCost` assignait
-    // donc PLUS d'hypothèses qu'il n'en tenait réellement à une page/section
-    // pilotée ; pdfmake débordait alors NATURELLEMENT la table sur la page
-    // suivante (en-tête répétée par `headerRows`, MAIS sans le titre
-    // `(SUITE)` que seule notre scission explicite pose) AVANT que la
-    // scission n'ait l'occasion de se déclencher — reproduit sur
-    // `effrac-n4`/`n6`/`n8`/`12-hypotheses` (preuve `A-effrac12L-11.png` /
-    // `A-effrac12L-13.png`). `effractionHeadRowCost`/`EFFRAC_CHUNK_HEADER_ROWS`
-    // déduisent maintenant cet overhead RÉEL du budget de chaque fragment.
-    // Correctif D2 (gate ROUND0) — MODÈLE PHYSIQUE EN POINTS (cf. bloc de
-    // constantes `EFFRAC_*_PT`) : la hauteur utile de page, l'overhead réel
-    // de la page 1 (bandeau photo `mm(topHMm)` + badges INCLUS, mesures dans
-    // leur colonne RÉDUITE réelle) et chaque ligne de table sont désormais
-    // tous exprimés en POINTS mesurés sur rendu réel — plus aucune conversion
-    // « unités de budget » vs « lignes de texte » (cause des deux
-    // sous/surévaluations historiques, cf. JSDoc `effractionFirstOverheadPt`).
-    const availPt = geo.contentHeightPt - EFFRAC_FITS_SAFETY_PT;
-    const photoBandPt = doorSrc !== undefined ? mm(topHMm) + EFFRAC_BADGES_PT : 0;
-    const firstOverheadPt = effractionFirstOverheadPt(block, fontPx, geo.contentWidthPt, rightColWidthPt, photoBandPt);
-    const restOverheadPt = effractionRestOverheadPt(fontPx);
-    const firstAvailPt = availPt - firstOverheadPt;
-    const restAvailPt = Math.max(1, availPt - restOverheadPt);
-    // R4-b : fragmente toute hypothèse dont la rangée seule dépasserait
-    // `restAvailPt` (cf. JSDoc `expandOversizedHypothesis`) — la table est
-    // toujours chunkée/rendue à partir de `tableHypotheses` (jamais
-    // `hypotheses` directement), le bloc « Description des Hypothèses »
-    // (`descBlock`/`descPt` ci-dessous) reste lui basé sur `hypotheses`
-    // (une entrée par hypothèse SAISIE, jamais par fragment de rangée).
-    const tableHypotheses = hypotheses.flatMap((h) => expandOversizedHypothesis(h, fontPx, geo.contentWidthPt, restAvailPt));
-    const rowHeightsPt = tableHypotheses.map((h) => hypothesisRowHeightPt(h, fontPx, geo.contentWidthPt));
-    const totalRowsPt = rowHeightsPt.reduce((a, b) => a + b, 0);
-    const descPt = descBlock !== null ? descBlockHeightPt(hypotheses, fontPx, geo.contentWidthPt) : 0;
-    const fitsWithoutSplit = totalRowsPt + descPt <= firstAvailPt;
-    // Correctif D2 (report de table) : quand la page 1 n'a même plus la place
-    // de la PREMIÈRE ligne de données sous le bandeau photo/mesures (cas
-    // `cas-reel-01` : photo `mm(75)` + specs → titre + thead SEULS en bas de
-    // p11, données p12 via `headerRows` SANS « (SUITE) »), forcer une seule
-    // ligne n'y changerait rien (`dontBreakRows` la reporterait NATURELLEMENT,
-    // sans titre). La table entière est alors REPORTÉE sur sa propre page
-    // « (SUITE) » — même geste que la scission pilotée voie B (`print-view`),
-    // qui n'a jamais présenté D2.
-    const deferTable = !fitsWithoutSplit && firstAvailPt < (rowHeightsPt[0] ?? effracLinePt(fontPx) + EFFRAC_ROW_VPAD_PT);
-    const hypChunks: OiEffractionHypothesis[][] =
-        !fitsWithoutSplit && tableHypotheses.length > 0
-            ? chunkItemsByCost(tableHypotheses, (h) => hypothesisRowHeightPt(h, fontPx, geo.contentWidthPt), {
-                  first: deferTable ? restAvailPt : firstAvailPt,
-                  rest: restAvailPt,
-              })
-            : [tableHypotheses];
-
-    // BF.REFIX (round 1, point 3) — le bloc « Description des Hypothèses »
-    // (cf. JSDoc `descBlockHeightPt`) n'est ajouté INLINE à la dernière tranche
-    // que s'il y tient RÉELLEMENT (même barème que la table qui précède,
-    // pas de nouvelle garde ad hoc) : sinon il devient sa PROPRE page
-    // titrée « (SUITE) », jamais une page nue en continuation naturelle
-    // pdfmake (même défaut que celui déjà corrigé pour la table, point 2).
-    const lastChunkIdx = hypChunks.length - 1;
-    const lastChunkIsFirst = lastChunkIdx === 0;
-    const lastChunkBudget = lastChunkIsFirst && !deferTable ? firstAvailPt : restAvailPt;
-    const lastChunkCost = hypChunks[lastChunkIdx]?.reduce((sum, h) => sum + hypothesisRowHeightPt(h, fontPx, geo.contentWidthPt), 0) ?? 0;
-    const descFitsOnLastChunkPage = descBlock === null || lastChunkCost + descPt <= lastChunkBudget;
-
-    // Page 1 « bandeau seul » quand la table est reportée (`deferTable`) :
-    // titre + MISSION + photo/mesures, la table commence page suivante.
-    const headOnlyPage: Content[] = deferTable
-        ? [
-              {
-                  stack: [h2(title, p, geo.contentWidthPt), missionLine, { text: '', margin: [0, 4, 0, 0] } as Content, head],
-                  fontSize: fontPx,
-              },
-          ]
-        : [];
-
-    const chunkPages = hypChunks.map((chunk, idx): Content => {
-        // Avec report, la 1re page de table est déjà une continuation (page 2
-        // du bloc) : titre de page « (SUITE) », `head` jamais répété.
-        const isFirstDocPage = idx === 0 && !deferTable;
-        const rows: TableCell[][] =
-            chunk.length > 0
-                ? chunk.map((h) => hypothesisTableRow(h, p))
-                : [[{ text: 'Aucune hypothèse saisie', colSpan: 4, alignment: 'center', borderColor: cellBorder(p) }, {}, {}, {}]];
-        const hypTable: Content = {
-            table: {
-                widths: ['20%', '30%', '25%', '25%'],
-                headerRows: 1,
-                // BLIND.REFIX round 1 — QUEUE ORPHELINE : `hypothesisRowCost`/
-                // `chunkItemsByCost` ci-dessus n'assignent les hypothèses aux
-                // pages qu'à partir d'une ESTIMATION heuristique de la place
-                // encore disponible (`firstPageBudget` ne connaît pas la
-                // hauteur RÉELLE du bandeau photo/specs qui précède la table
-                // en page 1) — reproduit sur `effrac-n4.json` : l'estimation
-                // plaçait 3 hypothèses en page 1 alors que seules 2,x
-                // tenaient réellement, et SANS ce filet pdfmake scindait la
-                // 3e ligne PAR LE MILIEU entre page 1 et sa continuation
-                // automatique (page portant SEULEMENT l'en-tête répétée + les
-                // queues de cellules, sans libellé « Hypothese 3 » ni titre
-                // « (SUITE) », guardrail B1 FAIL). `dontBreakRows` interdit à
-                // pdfmake de couper une ligne de table en deux, quelle que
-                // soit la précision de l'estimation en amont : si une ligne
-                // ne tient plus, elle bascule ENTIÈRE sur la continuation
-                // automatique (en-tête répétée + libellé intact) plutôt que
-                // tronquée — filet robuste indépendant du budget heuristique.
-                dontBreakRows: true,
-                body: [hypothesesTableHeader(p), ...rows],
-            },
-            layout: LAYOUT_BORDERED,
-        };
-        const isLastChunk = idx === hypChunks.length - 1;
-        const hypCardBody: Content[] = [
-            h3(idx === 0 ? "Hypothèses d'Effraction" : "Hypothèses d'Effraction (suite)", p),
-            hypTable,
-            ...(isLastChunk && descBlock !== null && descFitsOnLastChunkPage ? [descBlock] : []),
-        ];
-        const pageBody: Content[] =
-            isFirstDocPage
-                ? [head, { text: '', margin: [0, 6, 0, 0] }, card(hypCardBody, p, { unbreakable: false })]
-                : [card(hypCardBody, p, { unbreakable: false })];
-        return {
-            stack: [
-                h2(isFirstDocPage ? title : `${title} (SUITE)`, p, geo.contentWidthPt),
-                ...(isFirstDocPage ? [missionLine, { text: '', margin: [0, 4, 0, 0] } as Content] : []),
-                ...pageBody,
-            ],
-            fontSize: fontPx,
-            pageBreak: isFirstDocPage ? undefined : 'before',
-        };
-    });
-
-    const pages: Content[] = [...headOnlyPage, ...chunkPages];
-
-    // BF.REFIX (round 1, point 3) — description trop volumineuse pour tenir
-    // sur la page de la dernière tranche : page « (SUITE) » dédiée, même
-    // gabarit de titre que les continuations de table ci-dessus.
-    if (descBlock !== null && !descFitsOnLastChunkPage) {
-        pages.push({
-            stack: [h2(`${title} (SUITE)`, p, geo.contentWidthPt), card([descBlock], p, { unbreakable: false })],
-            fontSize: fontPx,
-            pageBreak: 'before',
+    // Correctif revue (2026-08-10, « symptôme inverse : pages aux 3/4 vides ») :
+    // le PREMIER niveau qui produit un empaquetage VALIDE n'est pas forcément
+    // le plus DENSE — au palier nominal (11 px, normal), 1 seule hypothèse
+    // suffit déjà à remplir le budget d'une page dédiée (empaquetage « valide »
+    // dès le 1er niveau essayé), alors qu'un palier plus petit/plus resserré
+    // en ferait tenir 3-4 sur la MÊME page. Le seuil de bascule vers une page
+    // supplémentaire doit être « ça ne tient réellement pas », jamais « le
+    // premier palier qui marche, même très en-deçà de la capacité réelle » —
+    // on essaie donc TOUS les niveaux et on retient celui qui produit le
+    // MOINS de pages (à égalité, le niveau le plus lisible = le premier
+    // rencontré, `levels` étant trié police/densité décroissantes).
+    let bestPacking: { groups: OiEffractionHypothesis[][]; fontPx: number; tight: boolean } | null = null;
+    for (const { fontPx, tight } of levels) {
+        const firstBudgetPt = Math.max(0, availablePt - missionOverheadPt(fontPx) - EFFRAC_H3_PT - EFFRAC_CARD_VPAD_PT);
+        const restBudgetPt = Math.max(0, availablePt - EFFRAC_H2_PT - EFFRAC_H3_PT - EFFRAC_CARD_VPAD_PT);
+        const groups = packHypotheses(hypotheses, (subset) => regionCostPt(subset, fontPx, tight), firstBudgetPt, restBudgetPt);
+        if (groups !== null && (bestPacking === null || groups.length < bestPacking.groups.length)) {
+            bestPacking = { groups, fontPx, tight };
+        }
+    }
+    if (bestPacking !== null) {
+        const { groups, fontPx, tight } = bestPacking;
+        return groups.map((group, idx): Content => {
+            // Correctif (dernière passe effraction, 2026-08-10) : `pushPages`
+            // (document-builder.ts, convention `galleryPages()`) ne pose
+            // `pageBreak:'before'` QUE sur le tout premier élément qu'on lui
+            // passe — les pages SUIVANTES d'un bloc auto-cohérent doivent le
+            // porter ELLES-MÊMES, sinon elles s'enchaînent SANS saut de page
+            // (défaut constaté : « HYPOTHÈSES 1 » collée à la suite de
+            // « MISSION & CARACTÉRISTIQUES » sur la MÊME page physique).
+            if (idx === 0) {
+                const body: Content[] = group.length > 0 ? [hypSectionCard(renderRegion(group, tight))] : [];
+                return {
+                    stack: [h2(`${title} — MISSION & CARACTÉRISTIQUES`, p, geo.contentWidthPt), ...page1Head, ...body],
+                    fontSize: fontPx,
+                };
+            }
+            return {
+                stack: [
+                    h2(`${title} — HYPOTHÈSES ${hypRangeLabel(group, hypotheses)}`, p, geo.contentWidthPt),
+                    hypSectionCard(renderRegion(group, tight)),
+                ],
+                fontSize: fontPx,
+                pageBreak: 'before',
+            };
         });
     }
 
-    return pages;
+    // ── e : REFUS — même en pages autonomes, AU MOINS une hypothèse (seule
+    // sur sa propre page dédiée) ne tient pas au palier plancher 7 px / densité
+    // resserrée. Identifie la/les hypothèse(s) fautive(s) pour un message
+    // explicite (directive : « le message de refus explique qu'une hypothèse
+    // unique dépasse une page »).
+    const floorLevel = useCards ? { fontPx: FIT_FONT_FLOOR, tight: true } : { fontPx: FIT_FONT_FLOOR, tight: false };
+    const dedicatedPageBudgetPt = Math.max(1, availablePt - EFFRAC_H2_PT - EFFRAC_H3_PT - EFFRAC_CARD_VPAD_PT);
+    const worstHyp = hypotheses.reduce((worst, h) => {
+        const cost = regionCostPt([h], floorLevel.fontPx, floorLevel.tight);
+        const worstCost = regionCostPt([worst], floorLevel.fontPx, floorLevel.tight);
+        return cost > worstCost ? h : worst;
+    }, hypotheses[0] as OiEffractionHypothesis);
+    const worstCostPt = regionCostPt([worstHyp], floorLevel.fontPx, floorLevel.tight);
+    ctx.fitErrors.push({
+        section: title,
+        details: `l'hypothèse « ${worstHyp.title} » dépasse à elle seule une page complète, même au palier plancher 7 px — réduisez son texte (technique/dégagement/assaut/description)`,
+        excessRatio: worstCostPt / dedicatedPageBudgetPt - 1,
+    });
+    // Rendu de repli (jamais renvoyé à l'appelant : `ctx.fitErrors` non vide déclenche `OiPdfFitRefusalError` en fin de `buildOiDocDefinition`) au palier plancher, disposition uniforme.
+    return [
+        {
+            stack: [
+                h2(title, p, geo.contentWidthPt),
+                ...page1Head,
+                hypSectionCard(renderRegion(hypotheses, floorLevel.tight)),
+            ],
+            fontSize: FIT_FONT_FLOOR,
+        },
+    ];
 }
 
 /**
@@ -1995,14 +2136,14 @@ function buildArticulationBlocksLoop(ctx: BuildCtx): Content[] {
         if (zmspcp) {
             const bapteme = dynamicPhotos[`photo_bapteme_${zmspcp.id}`] ?? [];
             pushPages(acc, galleryPages(`Baptême Terrain — ${zmspcp.title || '-'}`, bapteme, photosBase64, p, geo));
-            pushPages(acc, buildZmspcpPage(ctx, zmspcp, memberToCell));
+            pushPage(acc, buildZmspcpPage(ctx, zmspcp, memberToCell));
             const emplAo = dynamicPhotos[`photo_empl_ao_${zmspcp.id}`] ?? [];
             pushPages(acc, galleryPages(`ZMSPCP : ${zmspcp.title || '-'} (Emplacement AO)`, emplAo, photosBase64, p, geo));
         }
 
         const moicp = moicpBlocks[i];
         if (moicp) {
-            pushPages(acc, buildMoicpPage(ctx, moicp, memberToCell));
+            pushPage(acc, buildMoicpPage(ctx, moicp, memberToCell));
             const ext = dynamicPhotos[`photo_itin_ext_${moicp.id}`] ?? [];
             const int_ = dynamicPhotos[`photo_itin_int_${moicp.id}`] ?? [];
             pushPages(acc, galleryPages(`MOICP : ${moicp.title || '-'}`, [...ext, ...int_], photosBase64, p, geo));
@@ -2210,6 +2351,50 @@ function documentVolume(formData: OiFormData): number {
  * API publique.
  * ======================================================================== */
 
+/** Réexports du modèle de refus fit-to-page (theme.ts) — commodité d'import côté `engine-v3.ts`/tests, une seule vérité (mission P1). */
+export type { OiPdfFitError };
+export { OiPdfFitRefusalError };
+
+/**
+ * Capacités calibrées par champ/section (mission P1, directive Nico
+ * 2026-08-10 : « exporte les CAPACITÉS calibrées par champ/section… la
+ * tranche P3 (compteurs UI) les consommera. Calcule-les depuis le même
+ * modèle de coût (une seule vérité) »). Dérivées du MÊME modèle physique (pt,
+ * `PDF_LINE_ADVANCE_EM`/`estimateCharsPerLine`) que les solveurs
+ * `fitUsageToPage` ci-dessus — approximations (même philosophie que le reste
+ * de ce module PUR : aucune mesure de rendu réelle possible ici), au palier
+ * de police demandé par l'appelant (P3 pourra ainsi afficher « il vous reste
+ * N caractères au palier actuel » pendant la saisie).
+ */
+export const PAGE_CAPACITY = {
+    /**
+     * Nombre max de caractères ATCD tenant sur la fiche adversaire au palier
+     * `fontPx`, colonne droite, APRÈS réservation de LOCALISATION/MOBILITÉ
+     * (approximées à leur coût maximal — capacité MINORÉE, jamais surestimée :
+     * direction sûre pour un compteur UI, mieux vaut prévenir tôt qu'annoncer
+     * une marge qui n'existe pas réellement).
+     */
+    adversaireAtcdMaxChars(fontPx: number, geo: ReturnType<typeof pageGeometry> = pageGeometry('a4')): number {
+        const columnWidthPt = (geo.contentWidthPt - mm(6)) / 2;
+        const cpl = estimateCharsPerLine(fontPx, columnWidthPt);
+        const reservedPt = ADV_TITLE_BAR_PT + 3 * cardWithTitlePt(2 * effracLinePt(fontPx));
+        const availableLines = Math.max(0, Math.floor((geo.contentHeightPt - reservedPt) / effracLinePt(fontPx)));
+        return availableLines * cpl;
+    },
+    /** Nombre max de caractères du champ « C conduite à tenir » tenant sur une page ZMSPCP/MOICP au palier `fontPx` (colonne gauche, après réservation des 4 champs cœur + h3). */
+    articulationCatMaxChars(fontPx: number, geo: ReturnType<typeof pageGeometry> = pageGeometry('a4')): number {
+        const columnWidthPt = (geo.contentWidthPt - mm(6)) / 2;
+        const cpl = estimateCharsPerLine(fontPx, columnWidthPt);
+        const reservedPt = EFFRAC_H2_PT + EFFRAC_H3_PT + 4 * effracLinePt(fontPx);
+        const availableLines = Math.max(0, Math.floor((geo.contentHeightPt - reservedPt) / effracLinePt(fontPx)));
+        return availableLines * cpl;
+    },
+    /** Nombre max d'hypothèses d'effraction rendues en CARTES (au-delà, repli automatique sur la table dense — jamais de refus pour ce seul motif). */
+    effractionHypothesesCardsMax(): number {
+        return EFFRAC_HYP_CARDS_MAX;
+    },
+};
+
 /**
  * Nom de fichier — port EXACT de `pdf-engine-v2.ts:442-444` (contrat E2E,
  * `tests/e2e/oi.spec.ts:968` attend `/^OI_.*\.pdf$/`). Replis `SANS_DATE`/`RED`.
@@ -2278,6 +2463,7 @@ export function buildOiDocDefinition(data: OiPdfCollectedData, opts: { format: O
     // clé et pdfmake n'embarque chaque image qu'UNE seule fois.
     const { photoRefs: photosBase64, images } = internPhotoImages(data.photosBase64);
 
+    const fitErrors: OiPdfFitError[] = [];
     const ctx: BuildCtx = {
         formData,
         photosBase64,
@@ -2286,14 +2472,14 @@ export function buildOiDocDefinition(data: OiPdfCollectedData, opts: { format: O
         geo,
         is169: opts.format === '16:9',
         baseFontSize,
+        fitErrors,
     };
 
     const pages: Content[] = [];
     pushPage(pages, buildCover(ctx));
     pushPages(pages, buildAdversaryPages(ctx));
     pushPage(pages, buildEnvironnement(ctx));
-    pushPage(pages, buildMission(ctx));
-    pushPage(pages, buildExecution(ctx));
+    pushPages(pages, buildMissionExecutionPages(ctx));
     pushPages(pages, galleryPages('6. LOGISTIQUE & TRANSPORTS (Cheminement)', logisticsPhotos(dynamicPhotos), photosBase64, p, geo));
     pushPage(pages, buildArticulationOverview(ctx));
     pushPages(pages, buildArticulationBlocksLoop(ctx));
@@ -2306,6 +2492,16 @@ export function buildOiDocDefinition(data: OiPdfCollectedData, opts: { format: O
         pushPage(pages, patracPage);
     }
     pushPage(pages, buildFinalPage(ctx));
+
+    // MISSION P1 (directive Nico 2026-08-10) — REFUS DE GÉNÉRATION explicite :
+    // si AU MOINS un usage (fiche adversaire, bloc ZMSPCP/MOICP, cellule
+    // effraction) ne tient pas sur sa page unique même au palier plancher
+    // 7 px, le document COMPLET est refusé (jamais de PDF partiel/tronqué
+    // renvoyé à l'appelant) — `fitErrors` liste TOUTES les sections en
+    // dépassement, remontée par `engine-v3.ts`/affichée par `main.ts`.
+    if (fitErrors.length > 0) {
+        throw new OiPdfFitRefusalError(fitErrors);
+    }
 
     return {
         content: pages,

@@ -227,6 +227,87 @@ export function effracFontPx(fields: string[], hypothesesCount: number): number 
 }
 
 /**
+ * Paliers de police du solveur fit-to-page (mission P1, refonte mise en page
+ * PDF OI, directive Nico 2026-08-10 : « une page = un usage », interdiction
+ * absolue des continuations « (SUITE) »). Chaque page-usage (fiche adversaire,
+ * bloc ZMSPCP/MOICP, cellule effraction) est calculée à sa police NOMINALE
+ * (premier palier, 11 px) puis réduite par PALIERS successifs tant que son
+ * coût mesuré (en points, modèle physique `PDF_LINE_ADVANCE_EM` du même
+ * fichier) dépasse la hauteur utile de page — jamais de scission multi-pages.
+ * PLANCHER DE LISIBILITÉ : 7 px — sous ce palier, `fitUsageToPage` refuse
+ * (aucune réduction supplémentaire, aucune troncature silencieuse).
+ */
+export const FIT_FONT_STEPS: readonly number[] = [11, 10, 9, 8, 7];
+
+/** Plancher de lisibilité absolu (px) du solveur fit-to-page — dernier palier de `FIT_FONT_STEPS`. */
+export const FIT_FONT_FLOOR = FIT_FONT_STEPS[FIT_FONT_STEPS.length - 1] as number;
+
+/**
+ * Une section d'un usage qui dépasse la place utile d'une page MÊME au
+ * palier de police plancher (`FIT_FONT_FLOOR`) — collectée par
+ * `document-builder.ts` (une entrée par section en dépassement, jamais
+ * seulement la première) puis remontée par `engine-v3.ts` comme refus de
+ * génération explicite (jamais de troncature/continuation silencieuse).
+ */
+export interface OiPdfFitError {
+    /** Usage/section en dépassement (ex. « Fiche Adversaire Cible 1 : DUPONT »). */
+    section: string;
+    /** Explication humaine du dépassement (ex. « ATCD trop longs »). */
+    details: string;
+    /** Fraction de dépassement au palier plancher (ex. 0.4 = ~40 % de trop). */
+    excessRatio: number;
+}
+
+/**
+ * Erreur agrégée levée par `buildOiDocDefinition` quand AU MOINS une section
+ * d'un usage ne tient pas sur une page, même au palier plancher 7 px — REFUS
+ * DE GÉNÉRATION explicite (directive Nico 2026-08-10), jamais de document
+ * partiel/tronqué renvoyé. `fitErrors` liste TOUTES les sections en
+ * dépassement (pas seulement la première rencontrée).
+ */
+export class OiPdfFitRefusalError extends Error {
+    readonly fitErrors: OiPdfFitError[];
+
+    constructor(fitErrors: OiPdfFitError[]) {
+        super(
+            fitErrors
+                .map((e) => `${e.section} : contenu trop long pour une page (dépassement ~${Math.round(e.excessRatio * 100)} %) — ${e.details}`)
+                .join(' | '),
+        );
+        this.name = 'OiPdfFitRefusalError';
+        this.fitErrors = fitErrors;
+    }
+}
+
+/**
+ * Solveur fit-to-page PUR (mission P1) : essaie chaque palier de
+ * `FIT_FONT_STEPS` dans l'ordre (11 → 7), recalculant le coût RÉEL (points)
+ * du contenu à CE palier via `computeCostPt` (le coût varie avec `fontPx` —
+ * plus de caractères par ligne, moins de lignes, à chaque palier plus grand)
+ * — jamais une simple mise à l'échelle linéaire d'un coût calculé une seule
+ * fois. Le premier palier dont le coût tient dans `availablePt` est retenu.
+ * Si AUCUN palier ne tient (même 7 px) : `{ error }` avec `excessRatio` =
+ * fraction de dépassement au palier plancher — jamais de palier sous 7 px,
+ * jamais de troncature silencieuse (l'appelant doit alors REFUSER la
+ * génération, cf. `OiPdfFitRefusalError`).
+ */
+export function fitUsageToPage(
+    computeCostPt: (fontPx: number) => number,
+    availablePt: number,
+): { fontPx: number } | { error: { excessRatio: number } } {
+    let lastCost = 0;
+    for (const fontPx of FIT_FONT_STEPS) {
+        const cost = computeCostPt(fontPx);
+        lastCost = cost;
+        if (cost <= availablePt) {
+            return { fontPx };
+        }
+    }
+    const excessRatio = availablePt > 0 ? lastCost / availablePt - 1 : Number.POSITIVE_INFINITY;
+    return { error: { excessRatio } };
+}
+
+/**
  * Hauteur utile (mm) d'une page pleine (garde/finale) selon l'orientation,
  * marges verticales `@page` déduites (8 + 11 mm) — port verbatim de
  * `fullPageHeightMm()` (OrderPdfStyle.kt:60-62).

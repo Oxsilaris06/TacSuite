@@ -272,22 +272,37 @@ describe('pillRow (T7, T11)', () => {
     });
 });
 
-describe('badgeRow (pdf-engine-v2.ts:757, T11)', () => {
-    it('fillColor accent, texte blanc, perRow par défaut = 6', () => {
+describe('badgeRow (pdf-engine-v2.ts:757, T11 — redesign flow premium, revue design 2026-08-10)', () => {
+    it('badge premium (canvas arrondi + texte accent superposé), items courts -> une seule rangée', () => {
         const items = ['A', 'B', 'C', 'D', 'E', 'F', 'G'];
-        const result = badgeRow(items, p) as ContentTable;
-        expect(result.table.body[0]).toHaveLength(6);
-        expect(result.table.body).toHaveLength(2);
-        const firstCell = result.table.body[0]?.[0] as ContentTable;
-        const inner = firstCell.table.body[0]?.[0] as { fillColor?: string; color?: string };
-        expect(inner.fillColor).toBe(p.accent);
-        expect(inner.color).toBe('#ffffff');
+        const result = badgeRow(items, p) as ContentStack;
+        expect(result.stack).toHaveLength(1); // tous les items tiennent sur une seule rangée (flow)
+        const row = result.stack[0] as ContentColumns;
+        expect(row.columns).toHaveLength(7);
+        const firstCol = row.columns[0] as { stack: Content[] };
+        const chip = (firstCol.stack[0] as ContentStack).stack;
+        const canvasNode = chip[0] as ContentCanvas;
+        const textNode = chip[1] as ContentText;
+        expect(canvasNode.canvas[0]).toMatchObject({ type: 'rect', r: expect.any(Number) });
+        expect(textNode.text).toBe('A');
+        expect(textNode.color).toBe(p.accent);
     });
 
-    it('opts.perRow override le regroupement', () => {
-        const result = badgeRow(['A', 'B', 'C'], p, { perRow: 2 }) as ContentTable;
-        expect(result.table.body[0]).toHaveLength(2);
-        expect(result.table.body).toHaveLength(2);
+    it('empaquetage en flow : passe à la rangée suivante quand la largeur cumulée dépasse le conteneur (jamais de grille perRow figée)', () => {
+        // 3 items larges (10 caractères) dans le conteneur de repli mm(70) —
+        // 2 tiennent sur la 1re rangée, le 3e est reporté sur la 2e.
+        const items = ['AAAAAAAAAA', 'BBBBBBBBBB', 'CCCCCCCCCC'];
+        const result = badgeRow(items, p) as ContentStack;
+        expect(result.stack.length).toBeGreaterThanOrEqual(2);
+        const row1 = result.stack[0] as ContentColumns;
+        expect(row1.columns.length).toBeLessThan(3);
+    });
+
+    it('opts.perRow est ignoré (flow automatique, plus de grille figée) — n’empêche pas le rendu', () => {
+        const result = badgeRow(['A', 'B', 'C'], p, { perRow: 2 }) as ContentStack;
+        expect(result.stack).toHaveLength(1);
+        const row = result.stack[0] as ContentColumns;
+        expect(row.columns).toHaveLength(3);
     });
 });
 
@@ -309,13 +324,12 @@ describe('kvTable (.k strategica, OrderPdfStyle.kt:114)', () => {
     });
 });
 
-describe('figure (fit préserve le ratio, T15/§3.3)', () => {
-    it('dataUrl valide -> table 1x1 bordée 2pt accent contenant { image, fit }', () => {
-        const result = figure('data:image/jpeg;base64,AAA', [100, 80], p) as ContentTable;
-        expect(result.table.body).toHaveLength(1);
-        const cell = result.table.body[0]?.[0] as ContentImage;
-        expect(cell.image).toBe('data:image/jpeg;base64,AAA');
-        expect(cell.fit).toEqual([100, 80]);
+describe('figure (fit préserve le ratio, T15/§3.3 — SANS encadré, directive Nico 2026-08-10)', () => {
+    it('dataUrl valide -> { image, fit } DIRECT, aucun cadre/table autour', () => {
+        const result = figure('data:image/jpeg;base64,AAA', [100, 80], p) as ContentImage;
+        expect('table' in (result as object)).toBe(false);
+        expect(result.image).toBe('data:image/jpeg;base64,AAA');
+        expect(result.fit).toEqual([100, 80]);
     });
 
     it('dataUrl null -> AUCUNE clé image (jamais de <img> vide qui ferait échouer pdfkit)', () => {
@@ -330,14 +344,15 @@ describe('figure (fit préserve le ratio, T15/§3.3)', () => {
         expect(result).toEqual({ text: '' });
     });
 
-    it('caption ajoute une légende centrée grasse accent sous le cadre', () => {
+    it('caption ajoute une légende discrète (fine, non grasse, p.muted) sous la photo', () => {
         const result = figure('data:image/jpeg;base64,AAA', [100, 80], p, 'Détail') as ContentStack;
         expect(result.stack).toHaveLength(2);
         const captionNode = result.stack[1] as ContentText;
         expect(captionNode.text).toBe('Détail');
-        expect(captionNode.bold).toBe(true);
-        expect(captionNode.color).toBe(p.accent);
+        expect(captionNode.bold).toBeUndefined();
+        expect(captionNode.color).toBe(p.muted);
         expect(captionNode.alignment).toBe('center');
+        expect(captionNode.fontSize).toBeLessThan(12);
     });
 });
 
@@ -352,25 +367,28 @@ describe('galleryPages (OrderHtmlPhotos.kt:69-92, SPEC-PDF-V3.md §3.3)', () => 
         expect(galleryPages('Titre', [], {}, p, geo)).toEqual([]);
     });
 
-    it('3 photos -> 2 pages (2 puis 1), la 2e titrée "(suite)"', () => {
+    it('3 photos -> 3 pages (1 photo pleine largeur par page, directive Nico 2026-08-10), la 2e/3e titrées "(suite)"', () => {
         const photos = [makePhoto({ id: 'photo-1' }), makePhoto({ id: 'photo-2' }), makePhoto({ id: 'photo-3' })];
         const pages = galleryPages('Galerie test', photos, photosBase64, p, geo);
-        expect(pages).toHaveLength(2);
+        expect(pages).toHaveLength(3);
 
         const page1 = pages[0] as ContentStack;
         const page2 = pages[1] as ContentStack;
+        const page3 = pages[2] as ContentStack;
         const h2Page1 = page1.stack[0] as ContentStack;
         const h2Page2 = page2.stack[0] as ContentStack;
-        const titleText1 = (h2Page1.stack[0] as ContentText).text;
-        const titleText2 = (h2Page2.stack[0] as ContentText).text;
-        expect(titleText1).toBe('GALERIE TEST');
-        expect(titleText2).toBe('GALERIE TEST (SUITE)');
+        const h2Page3 = page3.stack[0] as ContentStack;
+        expect((h2Page1.stack[0] as ContentText).text).toBe('GALERIE TEST');
+        expect((h2Page2.stack[0] as ContentText).text).toBe('GALERIE TEST (SUITE)');
+        expect((h2Page3.stack[0] as ContentText).text).toBe('GALERIE TEST (SUITE)');
 
-        // Page 1 = 2 photos côte à côte (columns), page 2 = 1 photo pleine largeur (stack).
-        const body1 = page1.stack[1] as ContentColumns;
-        expect(body1.columns).toHaveLength(2);
-        const body2 = page2.stack[1] as ContentStack;
-        expect(Array.isArray(body2.stack)).toBe(true);
+        // Chaque page = 1 photo pleine largeur (stack), jamais de columns.
+        [page1, page2, page3].forEach((page) => {
+            const body = page.stack[1] as ContentStack;
+            expect(Array.isArray(body.stack)).toBe(true);
+            const fig = (body.stack[0] as ContentStack).stack[0] as ContentImage;
+            expect(fig.fit?.[0]).toBe(geo.contentWidthPt);
+        });
     });
 
     it('convention de saut de page : pageBreak "before" sur toutes sauf la première', () => {
@@ -400,18 +418,25 @@ describe('galleryPages (OrderHtmlPhotos.kt:69-92, SPEC-PDF-V3.md §3.3)', () => 
         expect(body.stack).toHaveLength(1);
     });
 
-    it('tools valides + other_tools ajoutent une ligne de badges (pillRow fillColor warning)', () => {
+    it('tools valides + other_tools ajoutent une grille de badges premium en flow (fond or translucide, texte p.warning)', () => {
         const photos = [makePhoto({ id: 'photo-1', tools: '["Pied de biche"]', other_tools: 'Bélier' })];
         const pages = galleryPages('Galerie', photos, photosBase64, p, geo);
         const page1 = pages[0] as ContentStack;
         const body = page1.stack[1] as ContentStack;
         expect(body.stack).toHaveLength(2);
-        const badgesRow = body.stack[1] as ContentTable;
-        expect(badgesRow.table.body[0]).toHaveLength(4); // perRow par défaut de pillRow = 4, 2 items -> 1 ligne complétée
-        const firstBadgeCell = badgesRow.table.body[0]?.[0] as ContentTable;
-        const inner = firstBadgeCell.table.body[0]?.[0] as { fillColor?: string; color?: string };
-        expect(inner.fillColor).toBe(p.warning);
-        expect(inner.color).toBe('#000000');
+        const badgesFlow = body.stack[1] as ContentStack;
+        const row = badgesFlow.stack[0] as ContentColumns;
+        expect(row.columns).toHaveLength(2); // 2 items courts -> 1 seule rangée, largeur pleine page
+        const firstBadgeCol = row.columns[0] as { stack: Content[] };
+        const chip = (firstBadgeCol.stack[0] as ContentStack).stack;
+        const canvasNode = chip[0] as ContentCanvas;
+        const textNode = chip[1] as ContentText;
+        expect(canvasNode.canvas[0]).toMatchObject({ type: 'rect', r: expect.any(Number) });
+        // Retour à la ligne AUX ESPACES uniquement (jamais mi-mot, revue design
+        // 2026-08-10) : "PIED DE BICHE" tient sur une seule ligne à pleine
+        // largeur de page, sa largeur naturelle laissant assez de place.
+        expect(textNode.text).toBe('PIED DE BICHE');
+        expect(textNode.color).toBe(p.warning);
     });
 
     it('customTitle utilisé comme légende si renseigné, sinon repli "<titre> - Détail"', () => {
@@ -433,34 +458,33 @@ describe('galleryPages (OrderHtmlPhotos.kt:69-92, SPEC-PDF-V3.md §3.3)', () => 
     });
 });
 
-describe('galleryToolsReservePt (SPEC-PDF-DEFINITIF §5, axe A3 — correctif D3)', () => {
+describe('galleryToolsReservePt (SPEC-PDF-DEFINITIF §5, axe A3 — correctif D3 ; empaquetage en flow, revue design 2026-08-10)', () => {
     const boxWidthPt = 400;
-    const fontPt = 14;
+    const letters = (n: number): string[] => Array.from({ length: n }, () => 'A');
 
     it('réserve NULLE sans outil (non-régression stricte des galeries sans outil)', () => {
-        expect(galleryToolsReservePt([], boxWidthPt, fontPt)).toBe(0);
+        expect(galleryToolsReservePt([], boxWidthPt)).toBe(0);
     });
 
-    it('réserve croissante avec le nombre de rangées', () => {
-        const one = galleryToolsReservePt(['A'], boxWidthPt, fontPt);
-        const four = galleryToolsReservePt(['A', 'B', 'C', 'D'], boxWidthPt, fontPt);
-        const five = galleryToolsReservePt(['A', 'B', 'C', 'D', 'E'], boxWidthPt, fontPt);
+    it('réserve croissante avec le nombre de rangées (empaquetage en flow : 15 items courts tiennent sur 1 rangée dans 400pt, le 16e force une 2e rangée)', () => {
+        const one = galleryToolsReservePt(letters(1), boxWidthPt);
+        const fifteen = galleryToolsReservePt(letters(15), boxWidthPt);
+        const sixteen = galleryToolsReservePt(letters(16), boxWidthPt);
         expect(one).toBeGreaterThan(0);
-        // 4 outils tiennent sur la même rangée (perRow=4) que 1 seul.
-        expect(four).toBe(one);
-        expect(five).toBeGreaterThan(four);
+        expect(fifteen).toBe(one);
+        expect(sixteen).toBeGreaterThan(fifteen);
     });
 
-    it('5 outils => 2 rangées exactement (grille perRow=4)', () => {
-        const one = galleryToolsReservePt(['A'], boxWidthPt, fontPt);
-        const five = galleryToolsReservePt(['A', 'B', 'C', 'D', 'E'], boxWidthPt, fontPt);
+    it('16 outils courts => 2 rangées exactement (plus de grille à perRow figé, empaquetage en flow)', () => {
+        const one = galleryToolsReservePt(letters(1), boxWidthPt);
+        const sixteen = galleryToolsReservePt(letters(16), boxWidthPt);
         const oneRowHeight = one - mm(2);
-        expect(five - mm(2)).toBeCloseTo(2 * oneRowHeight, 6);
+        expect(sixteen - mm(2)).toBeCloseTo(2 * oneRowHeight, 6);
     });
 
-    it('un libellé très long (repli intra-cellule) réserve plus qu\'un libellé court', () => {
-        const short = galleryToolsReservePt(['HDR50'], boxWidthPt, fontPt);
-        const long = galleryToolsReservePt(['Bélier hydraulique lourd de dernière génération à double poignée'], boxWidthPt, fontPt);
+    it('un libellé très long (repli aux espaces uniquement, cap de largeur de chip) réserve plus qu\'un libellé court', () => {
+        const short = galleryToolsReservePt(['HDR50'], boxWidthPt);
+        const long = galleryToolsReservePt(['Bélier hydraulique lourd de dernière génération à double poignée'], boxWidthPt);
         expect(long).toBeGreaterThan(short);
     });
 
@@ -475,20 +499,20 @@ describe('galleryToolsReservePt (SPEC-PDF-DEFINITIF §5, axe A3 — correctif D3
             const pages = galleryPages('Galerie', photos, photosBase64, p, geo);
             const page1 = pages[0] as ContentStack;
             const body = page1.stack[1] as ContentStack;
-            const fig = body.stack[0] as ContentStack; // figure avec légende = stack [frame, caption]
-            const frame = fig.stack[0] as ContentTable;
-            return (frame.table.heights as number[])[0] as number;
+            const fig = body.stack[0] as ContentStack; // figure avec légende = stack [image, caption]
+            const image = fig.stack[0] as ContentImage;
+            return (image.fit as number[])[1] as number;
         };
 
         const without = frameHeightOf([makePhoto({ id: 'photo-1' })]);
         const withTools = frameHeightOf([makePhoto({ id: 'photo-1', tools: '["HDR50","Bélier lourd","VIGIK"]', other_tools: 'Bfldkngnfl' })]);
         // Sans outil : hauteur historique inchangée (base - réserve légende).
-        expect(without).toBeCloseTo(mm(photoPageGalleryHeightMm(true)) - mm(12), 6);
+        expect(without).toBeCloseTo(mm(photoPageGalleryHeightMm(true)) - mm(10), 6);
         expect(withTools).toBeLessThan(without);
         expect(withTools).toBeGreaterThanOrEqual(mm(40));
 
         // Plancher jamais franchi, même avec un déluge d'outils.
-        const many = Array.from({ length: 40 }, (_, i) => `Outil numéro ${i} très long pour replier`);
+        const many = Array.from({ length: 200 }, (_, i) => `Outil numéro ${i} très long pour replier`);
         const flooded = frameHeightOf([makePhoto({ id: 'photo-1', tools: JSON.stringify(many) })]);
         expect(flooded).toBe(mm(40));
     });

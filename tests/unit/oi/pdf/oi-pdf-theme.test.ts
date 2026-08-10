@@ -15,8 +15,12 @@ import {
     adaptivePagePx,
     documentFontPx,
     effracFontPx,
+    FIT_FONT_FLOOR,
+    FIT_FONT_STEPS,
+    fitUsageToPage,
     fullPageHeightMm,
     mm,
+    OiPdfFitRefusalError,
     palette,
     patracFontPx,
     pageGeometry,
@@ -287,5 +291,75 @@ describe('effracFontPx (OrderHtmlArticulation.kt:261-274)', () => {
     it('lines = extraLines (hypothesesCount*2) pèsent comme adaptivePagePx(fields, hypothesesCount*2) — délégation directe', () => {
         const fields = ['a', 'b', 'c'];
         expect(effracFontPx(fields, 5)).toBe(adaptivePagePx(fields, 10));
+    });
+});
+
+// ===========================================================================
+// fitUsageToPage / OiPdfFitRefusalError — mission P1 (refonte mise en page
+// PDF OI, directive Nico 2026-08-10 : « une page = un usage », interdiction
+// absolue des continuations « (SUITE) »). Solveur PUR fit-to-page :
+// paliers 11→7, recalcul du coût réel (pt) à CHAQUE palier, refus explicite
+// (jamais de troncature) si même 7 px ne suffit pas.
+// ===========================================================================
+describe('fitUsageToPage — solveur fit-to-page (mission P1)', () => {
+    it('FIT_FONT_STEPS === [11, 10, 9, 8, 7], FIT_FONT_FLOOR === 7 (plancher de lisibilité)', () => {
+        expect(FIT_FONT_STEPS).toEqual([11, 10, 9, 8, 7]);
+        expect(FIT_FONT_FLOOR).toBe(7);
+    });
+
+    it('un coût constant qui tient déjà au palier nominal (11) retient 11 sans descendre plus bas', () => {
+        const result = fitUsageToPage(() => 100, 500);
+        expect(result).toEqual({ fontPx: 11 });
+    });
+
+    it('recalcule le coût à CHAQUE palier (jamais une simple mise à l’échelle figée) : un coût qui décroît avec fontPx retient le premier palier qui tient', () => {
+        // Coût proportionnel à fontPx (plus petite police = moins de place prise) :
+        // 11 -> 550 (trop grand pour 500), 10 -> 500 (tient tout juste).
+        const calls: number[] = [];
+        const result = fitUsageToPage((fontPx) => {
+            calls.push(fontPx);
+            return fontPx * 50;
+        }, 500);
+        expect(result).toEqual({ fontPx: 10 });
+        // Le solveur a bien RECALCULÉ (appelé la fonction de coût) à 11 PUIS 10 — jamais une seule évaluation extrapolée.
+        expect(calls).toEqual([11, 10]);
+    });
+
+    it('un coût qui ne tient à AUCUN palier (même 7) renvoie une erreur avec excessRatio > 0, jamais un palier sous 7', () => {
+        const result = fitUsageToPage(() => 1000, 500);
+        expect('error' in result).toBe(true);
+        if ('error' in result) {
+            expect(result.error.excessRatio).toBeCloseTo(1, 5); // 1000/500 - 1 = 1
+        }
+    });
+
+    it('essaie bien TOUS les paliers dans l’ordre avant de refuser (jamais un refus prématuré)', () => {
+        const calls: number[] = [];
+        const result = fitUsageToPage((fontPx) => {
+            calls.push(fontPx);
+            return 10000;
+        }, 500);
+        expect(calls).toEqual([11, 10, 9, 8, 7]);
+        expect('error' in result).toBe(true);
+    });
+});
+
+describe('OiPdfFitRefusalError — REFUS DE GÉNÉRATION explicite (mission P1)', () => {
+    it('agrège TOUTES les sections en dépassement (pas seulement la première), message humain formaté', () => {
+        const err = new OiPdfFitRefusalError([
+            { section: 'Fiche Adversaire 1 : DUPONT', details: 'ATCD trop longs', excessRatio: 0.4 },
+            { section: 'Articulation : ZMSPCP - ALPHA', details: 'conduite à tenir trop longue', excessRatio: 0.12 },
+        ]);
+        expect(err.fitErrors).toHaveLength(2);
+        expect(err.message).toContain('Fiche Adversaire 1 : DUPONT');
+        expect(err.message).toContain('~40 %');
+        expect(err.message).toContain('Articulation : ZMSPCP - ALPHA');
+        expect(err.message).toContain('~12 %');
+        expect(err.name).toBe('OiPdfFitRefusalError');
+    });
+
+    it('est une instance d’Error (capturable par un catch générique côté engine-v3/main.ts)', () => {
+        const err = new OiPdfFitRefusalError([{ section: 'X', details: 'Y', excessRatio: 0.1 }]);
+        expect(err).toBeInstanceOf(Error);
     });
 });

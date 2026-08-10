@@ -22,14 +22,7 @@
  */
 import type { Content, CustomTableLayout, TableCell } from 'pdfmake/interfaces';
 
-import {
-    estimateCharsPerLine,
-    estimateWrappedLines,
-    mm,
-    pageGeometry,
-    photoPageGalleryHeightMm,
-    type OiPdfPalette,
-} from './theme.js';
+import { mm, pageGeometry, photoPageGalleryHeightMm, type OiPdfPalette } from './theme.js';
 import { breakLongTokens } from './text-utils.js';
 import type { OiPhotoMeta } from '@shared/types/contracts.js';
 
@@ -301,8 +294,11 @@ export function grid2(left: Content[], right: Content[], gapPt?: number): Conten
  * `LAYOUT_PILL`, bordure `p.accent` posée par cellule. `opts.index` produit
  * le préfixe numéroté `"N "` en gras accent (port verbatim de la pastille
  * `pdf-engine-v2.ts:1047`, ex. Ordre Rame VL/Colonne Progression).
- * `opts.fillColor`/`opts.textColor` permettent le badge plein
- * (`badgeRow`/galeries : `.badge`/`.tool-badge`).
+ * `opts.fillColor`/`opts.textColor` restent utilisables directement par un
+ * appelant qui veut une pilule pleine à CADRE NET (bordure/fond de cellule
+ * classique) — `pillRow`/`badgeRow` ne passent plus par ce chemin pour le
+ * badge outil premium (fond translucide + coins arrondis), cf.
+ * `layoutToolBadges` ci-dessous.
  */
 export function pill(
     text: string,
@@ -336,7 +332,8 @@ export function pill(
 }
 
 /**
- * Grille commune à `pillRow`/`badgeRow` : pdfmake ne sait pas faire
+ * Grille commune à `pillRow`/`badgeRow` pour les pilules GÉNÉRIQUES (cadre
+ * net `LAYOUT_PILL`, jamais de fond translucide) : pdfmake ne sait pas faire
  * retourner une ligne de `columns` — les éléments sont donc DÉCOUPÉS en
  * lignes de `perRow` cellules d'une table `LAYOUT_NONE`, la dernière ligne
  * étant complétée par des cellules vides `{ text: '' }` (pdfmake exige un
@@ -346,7 +343,7 @@ function pillGrid(
     items: string[],
     p: OiPdfPalette,
     perRow: number,
-    opts: { numbered: boolean; fillColor?: string | undefined; textColor?: string | undefined },
+    opts: { numbered: boolean },
 ): Content {
     if (items.length === 0) {
         return { text: '' };
@@ -356,8 +353,6 @@ function pillGrid(
         const rowItems = items.slice(i, i + perRow);
         const row: TableCell[] = rowItems.map((item, j) =>
             pill(item, p, {
-                ...(opts.fillColor !== undefined ? { fillColor: opts.fillColor } : {}),
-                ...(opts.textColor !== undefined ? { textColor: opts.textColor } : {}),
                 ...(opts.numbered ? { index: i + j } : {}),
             }),
         );
@@ -372,32 +367,320 @@ function pillGrid(
     };
 }
 
+// --- Badges outils (redesign premium, directive Nico 2026-08-10) -----------
+
+/**
+ * Petite conversion hexadécimale (`#rrggbb` -> `[r,g,b]`) — support pur du
+ * mélange de couleur ci-dessous, zéro DOM/canvas (module PUR, cf. en-tête).
+ */
+function hexToRgb(hex: string): [number, number, number] {
+    const clean = hex.replace('#', '');
+    const value = parseInt(clean, 16);
+    return [(value >> 16) & 255, (value >> 8) & 255, value & 255];
+}
+
+function rgbToHex(r: number, g: number, b: number): string {
+    const toHex = (v: number): string => Math.round(Math.min(255, Math.max(0, v))).toString(16).padStart(2, '0');
+    return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
+}
+
+/**
+ * Mélange `fg` sur `bg` à l'opacité `alpha` (0-1) — pdfmake/pdfkit ne
+ * composite pas de couleur translucide fiable sur un remplissage de
+ * cellule/canvas ; on précalcule donc le résultat en un hex OPAQUE
+ * équivalent (« fond or translucide ~12-16 % » = ce mélange contre le fond
+ * de PAGE réel, `p.bg`).
+ */
+function blendHex(fg: string, bg: string, alpha: number): string {
+    const [fr, fgg, fb] = hexToRgb(fg);
+    const [br, bgg, bb] = hexToRgb(bg);
+    return rgbToHex(fr * alpha + br * (1 - alpha), fgg * alpha + bgg * (1 - alpha), fb * alpha + bb * (1 - alpha));
+}
+
+/**
+ * Badge « outil d'effraction » — redesign premium (directive Nico
+ * 2026-08-10) : remplace l'ancien `.tool-badge` plein-jaune. pdfmake n'a NI
+ * `border-radius` NI opacité de remplissage fiable sur cellule de table (cf.
+ * en-tête de fichier) : le fond or translucide est donc PRÉCALCULÉ
+ * (`blendHex`, ~14 % de `baseColor` sur `p.bg`) et les coins arrondis
+ * réellement dessinés en `canvas` (`CanvasRect.r`, seul primitif pdfmake qui
+ * les supporte) — un rectangle arrondi dimensionné exactement au texte, la
+ * légende étant SUPERPOSÉE dessus via une marge négative (`stack` : chaque
+ * élément peut remonter sur le précédent avec un `margin` top négatif,
+ * technique standard pdfmake pour émuler un fond derrière du texte).
+ * `baseColor` sert à la fois de teinte de fond (mélangée) ET de couleur de
+ * texte : `p.warning` est DÉJÀ calibré par palette (ambre foncé lisible sur
+ * fond clair PDF_LIGHT, jaune clair lisible sur fond noir PDF_DARK,
+ * `theme.ts`), donc le contraste sur les DEUX palettes est déjà résolu sans
+ * introduire de nouveau token.
+ */
+const TOOL_BADGE_FONT_PT = 8;
+/** Plancher de police (pt) — dernier recours quand un MOT SEUL (aucun
+ *  espace pour couper) excède la largeur disponible : réduit la police du
+ *  badge concerné plutôt que de jamais couper le mot (revue design
+ *  2026-08-10, défaut #1 « coupure de mots interdite »). */
+const TOOL_BADGE_MIN_FONT_PT = 7;
+const TOOL_BADGE_TRACKING_PT = 0.6;
+const TOOL_BADGE_PAD_X_PT = 8;
+const TOOL_BADGE_PAD_Y_PT = 4;
+const TOOL_BADGE_RADIUS_PT = 3.5;
+const TOOL_BADGE_BORDER_PT = 0.5;
+const TOOL_BADGE_LINE_HEIGHT_FACTOR = 1.35;
+/** Gouttière (pt) entre badges — appliquée horizontalement (`columnGap`
+ *  d'une rangée `layoutToolBadges`) ET verticalement (marge basse de chaque
+ *  rangée) pour une grille régulière. */
+const TOOL_BADGE_GUTTER_PT = mm(2);
+/** Cap de design (pt) — une puce reste un « chip » compact : même dans un
+ *  conteneur très large (galerie pleine page), un libellé multi-mots ne
+ *  s'étire pas sur toute la largeur disponible, il s'enveloppe à ce budget
+ *  (mesure/ligne). N'entre en jeu que pour les libellés vraiment longs — la
+ *  plupart des noms d'outils du catalogue (HDR50, VIGIK, Pied de biche…)
+ *  tiennent largement en dessous sur une seule ligne. */
+const TOOL_BADGE_MAX_WIDTH_PT = 140;
+
+/** Largeur (pt) d'une chaîne à `fontSizePt` — police JetBrainsMono (chasse
+ *  fixe, `defaultStyle.font` de `document-builder.ts`), même facteur 0,62
+ *  que `estimateCharsPerLine` (theme.ts), directement applicable ici (pas
+ *  une approximation supplémentaire). */
+function measureTextWidthPt(text: string, fontSizePt: number): number {
+    const chars = Math.max(1, text.length);
+    return chars * fontSizePt * 0.62 + Math.max(0, chars - 1) * TOOL_BADGE_TRACKING_PT;
+}
+
+/**
+ * Choisit la plus grande police entre `TOOL_BADGE_FONT_PT` et
+ * `TOOL_BADGE_MIN_FONT_PT` (pas de 0,5 pt) à laquelle `longestWord` tient
+ * dans `maxTextWidthPt` — revue design 2026-08-10, défaut #1 : la coupure de
+ * mots (mi-mot) est INTERDITE, le seul levier pour un mot unique trop large
+ * est de réduire SA police jusqu'au plancher. Aucun palier ne suffit (mot
+ * pathologiquement long, hors tout catalogue d'outils réel) -> le plancher
+ * est retenu quand même (dépassement résiduel accepté plutôt qu'une
+ * coupure).
+ */
+function pickFontSizeForLongestWord(longestWord: string, maxTextWidthPt: number): number {
+    for (let fontSizePt = TOOL_BADGE_FONT_PT; fontSizePt >= TOOL_BADGE_MIN_FONT_PT; fontSizePt -= 0.5) {
+        if (measureTextWidthPt(longestWord, fontSizePt) <= maxTextWidthPt) {
+            return fontSizePt;
+        }
+    }
+    return TOOL_BADGE_MIN_FONT_PT;
+}
+
+/** Dimensions + contenu d'UN badge (fonction PURE, testée isolément). */
+interface ToolBadgeDims {
+    /** Lignes déjà réparties AUX ESPACES (jamais de coupure mi-mot). */
+    lines: string[];
+    fontSizePt: number;
+    /** Largeur du badge = largeur de sa ligne la plus large (+ padding) —
+     *  « la largeur de puce s'adapte au mot le plus long de son libellé ». */
+    widthPt: number;
+    /** Hauteur NATURELLE de ce badge SEUL (avant mise à niveau de rangée,
+     *  cf. `layoutToolBadges`/défaut #2 « hauteur uniforme par rangée »). */
+    contentHeightPt: number;
+}
+
+/**
+ * Dimensions d'UN badge une fois son texte mis en petites capitales —
+ * fonction PURE, réutilisée par `toolBadgeChip` (rendu) ET
+ * `galleryToolsReservePt` (réserve verticale). `maxWidthPt` est la largeur
+ * TOTALE disponible pour la rangée courante (largeur de page/colonne) : un
+ * libellé multi-mots s'enveloppe à la largeur de son PROPRE mot le plus
+ * long (jamais plus étroit — aucun mot n'a donc jamais besoin d'être coupé),
+ * sauf si CE mot dépasse déjà `maxWidthPt` à lui seul, auquel cas la police
+ * du badge est réduite (`pickFontSizeForLongestWord`) — jamais de coupure de
+ * mot (revue design 2026-08-10).
+ */
+function toolBadgeDims(rawText: string, maxWidthPt: number): ToolBadgeDims {
+    const label = rawText.toUpperCase().trim();
+    const words = label.split(/\s+/).filter((w) => w.length > 0);
+    if (words.length === 0) {
+        words.push('');
+    }
+    const usableContainerWidthPt = Math.max(TOOL_BADGE_FONT_PT, maxWidthPt - TOOL_BADGE_PAD_X_PT * 2);
+    const longestWord = words.reduce((a, b) => (b.length > a.length ? b : a), words[0] as string);
+    // Budget de repli d'UNE ligne : le plus PETIT entre le cap de design
+    // `TOOL_BADGE_MAX_WIDTH_PT` (une puce reste un « chip » compact, jamais
+    // une phrase qui s'étire sur toute la largeur dispo) et la largeur RÉELLE
+    // du conteneur — jamais plus étroit que le mot le plus long (sinon
+    // coupure mi-mot), quitte à réduire la police (`pickFontSizeForLongestWord`).
+    const capPt = Math.min(TOOL_BADGE_MAX_WIDTH_PT, usableContainerWidthPt);
+    const fontSizePt = pickFontSizeForLongestWord(longestWord, capPt);
+    const wrapWidthPt = Math.max(capPt, measureTextWidthPt(longestWord, fontSizePt));
+
+    const lines: string[] = [];
+    let current = '';
+    for (const word of words) {
+        if (current === '') {
+            current = word;
+            continue;
+        }
+        const candidate = `${current} ${word}`;
+        if (measureTextWidthPt(candidate, fontSizePt) <= wrapWidthPt) {
+            current = candidate;
+        } else {
+            lines.push(current);
+            current = word;
+        }
+    }
+    lines.push(current);
+
+    const widestLinePt = Math.max(...lines.map((l) => measureTextWidthPt(l, fontSizePt)));
+    const lineHeightPt = fontSizePt * TOOL_BADGE_LINE_HEIGHT_FACTOR;
+    return {
+        lines,
+        fontSizePt,
+        widthPt: widestLinePt + TOOL_BADGE_PAD_X_PT * 2,
+        contentHeightPt: lines.length * lineHeightPt + TOOL_BADGE_PAD_Y_PT * 2,
+    };
+}
+
+/**
+ * Rendu d'UN badge — fond arrondi (`canvas`) + légende superposée (marge
+ * négative, cf. JSDoc `TOOL_BADGE_*` plus haut). `rowHeightPt` (défaut #2,
+ * revue design 2026-08-10) est la hauteur RETENUE POUR TOUTE LA RANGÉE (le
+ * badge le plus haut fait foi, cf. `layoutToolBadges`) : le rectangle de
+ * fond est dessiné à CETTE hauteur (jamais `dims.contentHeightPt` seul), le
+ * texte étant centré verticalement dans cet espace — plus de rangée aux
+ * hauteurs chaotiques. Le rectangle épouse EXACTEMENT `dims.widthPt`
+ * (mesurée du texte réel + padding, jamais une largeur de colonne théorique
+ * plus étroite) — défaut #3 (filet qui débordait) : plus aucun écart entre
+ * la boîte dessinée et le texte qu'elle encadre.
+ */
+function toolBadgeChip(dims: ToolBadgeDims, rowHeightPt: number, p: OiPdfPalette, baseColor: string): Content {
+    const bg = blendHex(baseColor, p.bg, 0.14);
+    const border = blendHex(baseColor, p.border, 0.5);
+    const textBlockHeightPt = dims.lines.length * dims.fontSizePt * TOOL_BADGE_LINE_HEIGHT_FACTOR;
+    const verticalPadPt = Math.max(TOOL_BADGE_PAD_Y_PT, (rowHeightPt - textBlockHeightPt) / 2);
+    return {
+        stack: [
+            {
+                canvas: [
+                    {
+                        type: 'rect',
+                        x: 0,
+                        y: 0,
+                        w: dims.widthPt,
+                        h: rowHeightPt,
+                        r: TOOL_BADGE_RADIUS_PT,
+                        color: bg,
+                        lineColor: border,
+                        lineWidth: TOOL_BADGE_BORDER_PT,
+                    },
+                ],
+            },
+            {
+                // `\n` EST honoré par pdfmake comme saut de ligne FORCÉ mais
+                // invisible au rendu (`TextBreaker.js::splitWords`, cf.
+                // `text-utils.ts` en-tête) — les lignes ont déjà été réparties
+                // AUX ESPACES par `toolBadgeDims`, jamais mi-mot.
+                text: dims.lines.join('\n'),
+                fontSize: dims.fontSizePt,
+                characterSpacing: TOOL_BADGE_TRACKING_PT,
+                color: baseColor,
+                alignment: 'center',
+                lineHeight: TOOL_BADGE_LINE_HEIGHT_FACTOR,
+                // Marge haut négative = remonte ce texte SUR le canvas dessiné
+                // juste avant (technique standard pdfmake de superposition en
+                // `stack`) ; centrage vertical via `verticalPadPt`.
+                margin: [TOOL_BADGE_PAD_X_PT, verticalPadPt - rowHeightPt, TOOL_BADGE_PAD_X_PT, 0],
+            },
+        ],
+    };
+}
+
+/**
+ * Empaquetage en rangées (flow-wrap classique, revue design 2026-08-10) :
+ * chaque badge garde SA largeur propre (`toolBadgeDims`, jamais de grille à
+ * colonnes fixes), une rangée se referme dès que le badge suivant ne
+ * tiendrait plus dans `containerWidthPt`. Fonction PURE partagée entre
+ * `layoutToolBadges` (rendu) ET `galleryToolsReservePt` (réserve verticale)
+ * pour que les deux ne divergent JAMAIS sur le nombre de rangées produites.
+ */
+function packToolBadgeRows(items: readonly string[], containerWidthPt: number): ToolBadgeDims[][] {
+    const dimsList = items.map((item) => toolBadgeDims(item, containerWidthPt));
+    const rows: ToolBadgeDims[][] = [];
+    let currentRow: ToolBadgeDims[] = [];
+    let currentRowWidthPt = 0;
+    for (const dims of dimsList) {
+        const addedWidthPt = dims.widthPt + (currentRow.length > 0 ? TOOL_BADGE_GUTTER_PT : 0);
+        if (currentRow.length > 0 && currentRowWidthPt + addedWidthPt > containerWidthPt) {
+            rows.push(currentRow);
+            currentRow = [];
+            currentRowWidthPt = 0;
+        }
+        currentRow.push(dims);
+        currentRowWidthPt += dims.widthPt + (currentRow.length > 1 ? TOOL_BADGE_GUTTER_PT : 0);
+    }
+    if (currentRow.length > 0) {
+        rows.push(currentRow);
+    }
+    return rows;
+}
+
+/**
+ * Empile les badges d'outils en FLOW (revue design 2026-08-10) : gouttières
+ * régulières (`TOOL_BADGE_GUTTER_PT`) horizontalement ET verticalement,
+ * hauteur d'une rangée = celle de son badge le plus haut (défaut #2 —
+ * hauteur uniforme). `containerWidthPt` doit être la largeur RÉELLE
+ * disponible (connue de l'appelant) — cf. `galleryPhotoStack` (largeur de la
+ * photo) ; à défaut (appelant hors blocks.ts sans le contexte de largeur,
+ * ex. `document-builder.ts` colonne photo de porte d'effraction, `mm(70)`
+ * fixe), `pillRow`/`badgeRow` retiennent `TOOL_BADGE_DEFAULT_WIDTH_PT` en
+ * repli — SEUL call-site externe concerné à ce jour
+ * (`document-builder.ts::buildEffractionPages`, bandeau photo `mm(70)`).
+ */
+function layoutToolBadges(items: string[], p: OiPdfPalette, baseColor: string, containerWidthPt: number): Content {
+    if (items.length === 0) {
+        return { text: '' };
+    }
+    const rows = packToolBadgeRows(items, containerWidthPt);
+    const rowNodes: Content[] = rows.map((row, rowIndex) => {
+        const rowHeightPt = Math.max(...row.map((d) => d.contentHeightPt));
+        return {
+            columns: row.map((dims) => ({ width: dims.widthPt, stack: [toolBadgeChip(dims, rowHeightPt, p, baseColor)] })),
+            columnGap: TOOL_BADGE_GUTTER_PT,
+            margin: [0, 0, 0, rowIndex === rows.length - 1 ? 0 : TOOL_BADGE_GUTTER_PT],
+        };
+    });
+    return { stack: rowNodes };
+}
+
+/** Largeur (pt) de repli pour un `pillRow`/`badgeRow` en mode badge appelé
+ *  SANS connaître la largeur réelle du conteneur — calée sur l'unique
+ *  call-site externe actuel (`document-builder.ts::buildEffractionPages`,
+ *  bandeau photo de porte `width: mm(70)`, cf. JSDoc `layoutToolBadges`). */
+const TOOL_BADGE_DEFAULT_WIDTH_PT = mm(70);
+
 /**
  * `pillRow` — rangée de pilules génériques (Ordre Rame VL, Colonne
- * Progression, §3.2 ligne 7). `perRow` par défaut 4.
+ * Progression, §3.2 ligne 7) SANS `opts.fillColor` -> cadre net `LAYOUT_PILL`
+ * inchangé. AVEC `opts.fillColor` -> badge outil premium (`layoutToolBadges`,
+ * fond or translucide + coins arrondis, largeur variable en flow) — c'est le
+ * cas des badges d'outils d'effraction (`document-builder.ts`, sous la photo
+ * de porte, MÊME page). `opts.perRow` n'a plus d'effet en mode badge (flow
+ * automatique, cf. `layoutToolBadges`) — conservé dans la signature pour
+ * compatibilité, ignoré silencieusement dans ce cas.
  */
 export function pillRow(
     items: string[],
     p: OiPdfPalette,
     opts?: { perRow?: number; numbered?: boolean; fillColor?: string; textColor?: string },
 ): Content {
-    return pillGrid(items, p, opts?.perRow ?? 4, {
-        numbered: opts?.numbered ?? false,
-        fillColor: opts?.fillColor,
-        textColor: opts?.textColor,
-    });
+    if (opts?.fillColor !== undefined) {
+        return layoutToolBadges(items, p, opts.fillColor, TOOL_BADGE_DEFAULT_WIDTH_PT);
+    }
+    return pillGrid(items, p, opts?.perRow ?? 4, { numbered: opts?.numbered ?? false });
 }
 
 /**
- * `badgeRow` — port de `.badge` (pdf-engine-v2.ts:757) : fond `p.accent`,
- * texte blanc, jamais numéroté. `perRow` par défaut 6.
+ * `badgeRow` — port de `.badge` (pdf-engine-v2.ts:757), même redesign badge
+ * premium que `pillRow({fillColor})` (`layoutToolBadges`) : fond `p.accent`
+ * translucide, jamais numéroté. `opts.perRow` n'a plus d'effet (flow
+ * automatique) — conservé pour compatibilité.
  */
 export function badgeRow(items: string[], p: OiPdfPalette, opts?: { perRow?: number }): Content {
-    return pillGrid(items, p, opts?.perRow ?? 6, {
-        numbered: false,
-        fillColor: p.accent,
-        textColor: '#ffffff',
-    });
+    void opts?.perRow;
+    return layoutToolBadges(items, p, p.accent, TOOL_BADGE_DEFAULT_WIDTH_PT);
 }
 
 // --- Tableau clé/valeur ------------------------------------------------------
@@ -432,35 +715,41 @@ export function kvTable(rows: Array<[string, string]>, p: OiPdfPalette): Content
 // --- Figures / galeries ------------------------------------------------------
 
 /**
- * `figure` — port de `.fig`/`.page-fig` (OrderPdfStyle.kt:143-163) : cadre
- * bordé 2 pt `p.accent`, fond `p.cardAlt`, image en `fit` (ratio préservé,
- * équivalent `object-fit:contain`). `dataUrl` null/vide -> `{ text: '' }`
- * (JAMAIS d'image vide, qui ferait échouer pdfkit — SPEC-PDF-V3.md §1.5).
- * `caption` optionnel ajoute une légende centrée grasse accent dessous
- * (port de la légende de galerie, pdf-engine-v2.ts:877-879).
+ * `figure` — port de `.fig`/`.page-fig` (OrderPdfStyle.kt:143-163), DÉCADRÉ
+ * (directive Nico 2026-08-10, mission P2 « photos et badges outils ») :
+ * l'ancien encadré 2 pt `p.accent`/fond `p.cardAlt` (`frameLayout`) est
+ * retiré du chemin photo — l'image occupe SEULE l'espace, ratio préservé
+ * (`fit`, équivalent `object-fit:contain`), sans cadre ni fond plaqué
+ * derrière (la « boîte » disparaît, décision D8-like pour les photos : le
+ * fond de PAGE transparaît). `dataUrl` null/vide -> `{ text: '' }` (JAMAIS
+ * d'image vide, qui ferait échouer pdfkit — SPEC-PDF-V3.md §1.5).
+ *
+ * `caption` optionnel ajoute une légende SOUS la photo, typographie fine et
+ * discrète (petite taille, non grasse, `p.muted`, tracking léger) — plus la
+ * légende grasse couleur accent d'avant (trop lourde pour un rendu « pleine
+ * page, une photo » premium).
  */
 export function figure(dataUrl: string | null, boxPt: [number, number], p: OiPdfPalette, caption?: string): Content {
     if (dataUrl === null || dataUrl === '') {
         return { text: '' };
     }
-    const [boxWidthPt, boxHeightPt] = boxPt;
-    const frame: Content = {
-        table: {
-            widths: [boxWidthPt],
-            heights: [boxHeightPt],
-            body: [[{ image: dataUrl, fit: boxPt, alignment: 'center' }]],
-        },
-        layout: frameLayout(2, p.accent, { fillColor: p.cardAlt }),
-    };
+    const image: Content = { image: dataUrl, fit: boxPt, alignment: 'center' };
     if (caption === undefined || caption === '') {
-        return frame;
+        return image;
     }
     return {
         stack: [
-            frame,
+            image,
             // `breakLongTokens()` (BLIND.A #2) : `caption` peut porter un `customTitle`
             // de photo saisi librement, sans espace, au-delà du seuil de coupure.
-            { text: breakLongTokens(caption), bold: true, color: p.accent, alignment: 'center', margin: [0, 4, 0, 0] },
+            {
+                text: breakLongTokens(caption),
+                fontSize: 9,
+                color: p.muted,
+                characterSpacing: 0.3,
+                alignment: 'center',
+                margin: [0, 5, 0, 0],
+            },
         ],
         // BF.REFIX (round 1, point 6) — sans ce filet, pdfmake peut scinder ce
         // `stack` entre la photo (qui tient dans la page) et la légende
@@ -498,57 +787,48 @@ export function galleryAllTools(meta: OiPhotoMeta): string[] {
 }
 
 /**
- * Taille de police MAXIMALE possible des pilules d'outils d'une galerie : les
- * pages de galerie n'imposent aucun `fontSize` propre, les pilules héritent
- * donc de `defaultStyle.fontSize` (`documentFontPx`, theme.ts — au plus 14).
- * La réserve est calculée à ce maximum (direction SÛRE, cf. SPEC-PDF-DEFINITIF
- * §3.4 : trop grand = une page un peu moins remplie, jamais un débordement).
- */
-const GALLERY_TOOLS_FONT_PT = 14;
-
-/**
- * Hauteur (pt) à RÉSERVER sous le cadre photo d'une galerie pour le `pillRow`
- * d'outils empilé par `galleryPhotoStack` (SPEC-PDF-DEFINITIF §5, axe A3,
- * correctif D3) : `GALLERY_CAPTION_RESERVE_PT` réservait la légende mais RIEN
- * pour les badges — le cadre photo étant dimensionné à la hauteur utile quasi
- * entière de la page, les badges débordaient SYSTÉMATIQUEMENT sur une page
- * orpheline dès qu'un outil existait (défaut D3, p14 du PDF réel : page ne
- * portant QUE « HDR50 / Bélier lourd / VIGIK / … »).
+ * Hauteur (pt) à RÉSERVER sous le cadre photo d'une galerie pour la grille de
+ * badges d'outils empilée par `galleryPhotoStack` (SPEC-PDF-DEFINITIF §5,
+ * axe A3, correctif D3 — modèle physique repris pour le badge premium,
+ * directive Nico 2026-08-10) : `GALLERY_CAPTION_RESERVE_PT` réservait la
+ * légende mais RIEN pour les badges — le cadre photo étant dimensionné à la
+ * hauteur utile quasi entière de la page, les badges débordaient
+ * SYSTÉMATIQUEMENT sur une page orpheline dès qu'un outil existait (défaut
+ * D3, p14 du PDF réel : page ne portant QUE « HDR50 / Bélier lourd / VIGIK /
+ * … »).
  *
- * Le nombre de RANGÉES est EXACT (grille `pillGrid` à `perRow` colonnes
- * fixes) ; seul le repli intra-cellule est estimé, via `estimateCharsPerLine`/
- * `estimateWrappedLines` (theme.ts, déjà utilisés partout) sur la largeur de
- * cellule `boxWidthPt / perRow`. Hauteur d'une rangée = lignes × fontSize ×
- * 1.45 (lineHeight du document) + 2×2 (padding vertical `LAYOUT_PILL`) + 2
- * (bordures 1 pt) ; plus `mm(2)` de gouttière globale. `0` si `tools` est
- * vide (non-régression stricte des galeries sans outil).
- *
- * Précédent direct : la voie B fait déjà exactement cela
- * (`img{max-height:80%}` + caption + badges dans le même conteneur à hauteur
- * fixe, `print-view.ts:176-180`) et n'a jamais présenté D3.
+ * Le nombre de RANGÉES est celui produit par le MÊME empaquetage en flow que
+ * le rendu réel (`packToolBadgeRows`, partagée, aucune divergence de modèle
+ * possible entre réserve et rendu) ; la hauteur de chaque rangée = son badge
+ * le plus haut ; plus `mm(2)` de gouttière globale. `0` si `tools` est vide
+ * (non-régression stricte des galeries sans outil). `fontSizePt`/`perRow` ont
+ * disparu de la signature (le badge outil a désormais sa PROPRE taille fixe
+ * `TOOL_BADGE_FONT_PT`/repli `TOOL_BADGE_MIN_FONT_PT`, indépendante de la
+ * police adaptative du document, et l'empaquetage est un FLOW automatique —
+ * plus de grille à colonnes fixes, revue design 2026-08-10) : fonction non
+ * consommée par `document-builder.ts` (seulement `galleryPages` en interne +
+ * tests), donc libre de signature.
  */
-export function galleryToolsReservePt(
-    tools: readonly string[],
-    boxWidthPt: number,
-    fontSizePt: number,
-    perRow = 4,
-): number {
+export function galleryToolsReservePt(tools: readonly string[], boxWidthPt: number): number {
     if (tools.length === 0) {
         return 0;
     }
-    const charsPerLine = estimateCharsPerLine(fontSizePt, boxWidthPt / perRow);
+    const rows = packToolBadgeRows(tools, boxWidthPt);
     let total = 0;
-    for (let i = 0; i < tools.length; i += perRow) {
-        const row = tools.slice(i, i + perRow);
-        const rowLines = Math.max(...row.map((t) => estimateWrappedLines(t, charsPerLine)));
-        total += rowLines * fontSizePt * 1.45 + 2 * 2 + 2;
+    for (const row of rows) {
+        const rowHeightPt = Math.max(...row.map((d) => d.contentHeightPt));
+        total += rowHeightPt + TOOL_BADGE_GUTTER_PT;
     }
     return total + mm(2);
 }
 
-/** Contenu empilé d'UNE photo de galerie : cadre+légende (`figure`) puis,
- *  si présents, les badges d'outils (`pillRow`, fond `p.warning`, texte
- *  noir — port de `.tool-badge`, OrderPdfStyle.kt:727-733 côté v2). */
+/** Contenu empilé d'UNE photo de galerie : photo+légende (`figure`, sans
+ *  cadre) puis, si présents, les badges d'outils premium (`layoutToolBadges`,
+ *  fond or translucide, largeur variable en flow — port modernisé de
+ *  `.tool-badge`, OrderPdfStyle.kt:727-733 côté v2). `boxPt[0]` est la
+ *  largeur RÉELLE de la photo : les badges utilisent cette même largeur comme
+ *  conteneur (jamais de repli approximatif ici, contrairement à
+ *  `pillRow`/`document-builder.ts`, cf. JSDoc `layoutToolBadges`). */
 function galleryPhotoStack(
     meta: OiPhotoMeta,
     dataUrl: string,
@@ -560,21 +840,21 @@ function galleryPhotoStack(
     const allTools = galleryAllTools(meta);
     const items: Content[] = [figure(dataUrl, boxPt, p, captionText)];
     if (allTools.length > 0) {
-        items.push(pillRow(allTools, p, { fillColor: p.warning, textColor: '#000000' }));
+        items.push(layoutToolBadges(allTools, p, p.warning, boxPt[0]));
     }
     return items;
 }
 
 /**
  * `galleryPages` — port de `OrderHtmlGallery.photoPages`
- * (OrderHtmlPhotos.kt:69-92) : DEUX photos maximum par page (écart assumé
- * E4, SPEC-PDF-V3.md §3.3/§7 — langage strategica, « les images doubles
- * prennent trop peu d'espace »). `photos` vide, ou dont AUCUN `id` n'a
- * d'entrée dans `photosBase64`, -> `[]` (section omise, §3.4.1 règle 1).
- * Une photo dont l'`id` est absent de `photosBase64` est ignorée
- * silencieusement (jamais de figure vide) : le filtrage a lieu AVANT le
- * découpage en pages de 2, une photo manquante ne « décale » donc jamais
- * le pairage des suivantes.
+ * (OrderHtmlPhotos.kt:69-92), REDESIGN « une photo par page » (directive
+ * Nico 2026-08-10, mission P2 : écart assumé E4 précédent — « les images
+ * doubles prennent trop peu d'espace » — inversé : chaque photo occupe
+ * DÉSORMAIS la pleine largeur utile de sa propre page, ratio préservé,
+ * jamais déformée ni rognée, légende + badges dessous). `photos` vide, ou
+ * dont AUCUN `id` n'a d'entrée dans `photosBase64`, -> `[]` (section omise,
+ * §3.4.1 règle 1). Une photo dont l'`id` est absent de `photosBase64` est
+ * ignorée silencieusement (jamais de figure vide).
  *
  * CONVENTION DE SAUT DE PAGE (au choix du contrat, documentée ici et
  * assertée par le test dédié) : chaque page retournée porte
@@ -611,66 +891,31 @@ export function galleryPages(
     // débordement de la légende sur CHAQUE page de galerie (reproduit sur
     // `recipe-data.json`, légende « Transport PSIG -> PR » orpheline seule
     // en page suivante). Réserve conservative pour 2 lignes de légende
-    // (police par défaut du document, `bold`, jusqu'à `documentFontPx()`
-    // max = 14) + sa marge `[0,4,0,0]` — le filet `unbreakable` de `figure()`
-    // ci-dessus couvre le cas résiduel d'une légende encore plus longue.
-    const GALLERY_CAPTION_RESERVE_PT = mm(12);
+    // (typographie fine, `fontSize:9`) + sa marge `[0,5,0,0]` — le filet
+    // `unbreakable` de `figure()` ci-dessus couvre le cas résiduel d'une
+    // légende encore plus longue.
+    const GALLERY_CAPTION_RESERVE_PT = mm(10);
     const baseGalleryHeightPt = mm(photoPageGalleryHeightMm(true)) - GALLERY_CAPTION_RESERVE_PT;
-    const pairGapPt = mm(4);
-    const pairBoxWidthPt = (geo.contentWidthPt - pairGapPt) / 2;
 
-    const pages: Content[] = [];
-    for (let i = 0; i < resolved.length; i += 2) {
-        const chunk = resolved.slice(i, i + 2);
-        const first = chunk[0];
-        if (first === undefined) {
-            continue;
-        }
-        const second = chunk[1];
-        const pageIndex = pages.length;
+    const pages: Content[] = resolved.map(({ meta, dataUrl }, pageIndex) => {
         const pageTitle = pageIndex === 0 ? title : `${title} (suite)`;
 
         // Axe A3 (SPEC-PDF-DEFINITIF §5, correctif D3) : la hauteur du cadre
-        // photo DÉDUIT la place des badges d'outils. Réserve calculée PAR PAGE
-        // (une page sans outil garde sa pleine hauteur) sur le MAXIMUM des
-        // deux photos (les deux cadres partagent la même hauteur), à la
-        // largeur de cadre réelle de la page (pleine ou demi). Plancher de
-        // sécurité `mm(40)` : le cadre reste toujours exploitable.
-        const boxWidthPt = second === undefined ? geo.contentWidthPt : pairBoxWidthPt;
-        const toolsReservePt = Math.max(
-            ...chunk.map((r) => galleryToolsReservePt(galleryAllTools(r.meta), boxWidthPt, GALLERY_TOOLS_FONT_PT, 4)),
-        );
+        // photo DÉDUIT la place des badges d'outils, à la largeur de cadre
+        // réelle (pleine largeur, 1 photo/page). Plancher de sécurité
+        // `mm(40)` : le cadre reste toujours exploitable — « la photo cède de
+        // la hauteur, les badges restent entiers et lisibles » (directive).
+        const toolsReservePt = galleryToolsReservePt(galleryAllTools(meta), geo.contentWidthPt);
         const galleryHeightPt = Math.max(mm(40), baseGalleryHeightPt - toolsReservePt);
 
-        const body: Content =
-            second === undefined
-                ? {
-                      stack: galleryPhotoStack(first.meta, first.dataUrl, [geo.contentWidthPt, galleryHeightPt], p, title),
-                  }
-                : {
-                      columns: [
-                          {
-                              width: pairBoxWidthPt,
-                              stack: galleryPhotoStack(first.meta, first.dataUrl, [pairBoxWidthPt, galleryHeightPt], p, title),
-                          },
-                          {
-                              width: pairBoxWidthPt,
-                              stack: galleryPhotoStack(
-                                  second.meta,
-                                  second.dataUrl,
-                                  [pairBoxWidthPt, galleryHeightPt],
-                                  p,
-                                  title,
-                              ),
-                          },
-                      ],
-                      columnGap: pairGapPt,
-                  };
+        const body: Content = {
+            stack: galleryPhotoStack(meta, dataUrl, [geo.contentWidthPt, galleryHeightPt], p, title),
+        };
 
-        pages.push({
+        return {
             stack: [h2(pageTitle, p, geo.contentWidthPt), body],
             pageBreak: pageIndex === 0 ? undefined : 'before',
-        });
-    }
+        };
+    });
     return pages;
 }
