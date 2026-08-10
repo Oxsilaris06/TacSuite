@@ -22,28 +22,43 @@
  *
  * Usage :
  *   node tests/pdf/verify-structure.mjs <fichier.pdf> [--format=a4|16:9]
- *       [--photos=N] [--sample=<fichier.json>] [--json] [--lenient]
+ *       [--photos=N] [--sample=<fichier.json>] [--fixture=<fichier.json>]
+ *       [--json] [--lenient]
  *
  * Défauts : --format=a4, --photos=0, mode strict (pas de --lenient).
  * Sortie : une ligne `PASS <code> — <libellé>` ou `FAIL <code> — <constat
- * mesuré>` par assertion (A1..A8 historiques + B1..B11 guardrail pagination,
- * missions PG.GUARD, PG.REFIX, BLIND.REFIX, FB.FIX puis GD.GUARDS), puis un
- * résumé `N/19 assertions`. Avec `--json`, émet EN PLUS (pas à la place —
- * les lignes lisibles restent imprimées) un objet `{ ok, file, assertions:
- * [{ code, ok, detail }] }` sur stdout, en dernière ligne.
- * Code de sortie : 0 si les 19 assertions passent, 1 sinon, 2 en cas de garde
- * d'exécution (binaire poppler absent, fichier PDF introuvable, arguments
- * invalides — l'outil n'a alors PU faire tourner aucune assertion).
+ * mesuré>` par assertion (A1..A8 historiques + guardrail pagination B1/B2/B5/
+ * B6/B9 + guardrail de contrat C1..C5, mission P4 « une page = un usage »),
+ * puis un résumé `N/M assertions`. Avec `--json`, émet EN PLUS (pas à la
+ * place — les lignes lisibles restent imprimées) un objet `{ ok, file,
+ * assertions: [{ code, ok, detail }] }` sur stdout, en dernière ligne.
+ * Code de sortie : 0 si toutes les assertions passent, 1 sinon, 2 en cas de
+ * garde d'exécution (binaire poppler absent, fichier PDF introuvable,
+ * arguments invalides — l'outil n'a alors PU faire tourner aucune assertion).
+ *
+ * MISSION P4 (contrat « une page = un usage », commit a57b128) — réécriture
+ * des gardes structurelles pour le nouveau moteur (voie A pdfmake
+ * exclusivement, la voie B `print-view.ts`/navigateur ayant été retirée de
+ * l'app en R4-a) : chaque fiche adversaire, chaque bloc ZMSPCP/MOICP tient
+ * désormais EXACTEMENT sur une page (refonte totale, plus de continuation
+ * « (SUITE) ») ; une cellule effraction s'étend sur 1..K pages AUTONOMES aux
+ * titres distincts (jamais « (SUITE) ») ; si même le palier de police
+ * plancher ne suffit pas, `buildOiDocDefinition` REFUSE explicitement la
+ * génération (`OiPdfFitRefusalError`) plutôt que de produire un document
+ * tronqué. L'option `--voie=a|b` de calibrage historique (B1/B2/B6/B8/B9
+ * doublées d'un seuil « voie B ») a été RETIRÉE avec elle : la voie B
+ * n'existe plus dans l'app, ce calibrage n'a donc plus de raison d'être
+ * maintenu ici (git history en garde la trace si un jour une page dédiée par
+ * section resservait).
  *
  * Détail des 8 assertions A1-A8 et de leurs seuils : voir
  * `tests/pdf/README.md` et `docs/SPEC-PDF-V3.md` §7 (tableau « Assertions
- * exactes »). B1..B11 (guardrail pagination, non couvertes par la SPEC
- * d'origine — B1-B3 mission PG.GUARD, B4-B6 mission PG.REFIX round 1, B7
- * mission BLIND.REFIX round 2 puis CORRIGÉE mission GD.GUARDS, B8 mission
- * FB.FIX, B9-B11 mission GD.GUARDS d'après SPEC-PDF-DEFINITIF.md §7 —
- * chaque round motivé par des défauts réels que les gardes précédentes
- * laissaient passer) sont documentées en JSDoc à leur point de définition
- * ci-dessous et TOUJOURS évaluées, indépendamment de `--lenient` (qui ne
+ * exactes »). B1/B2/B5/B6/B9 (guardrail pagination CONSERVÉ/ADAPTÉ des
+ * rounds PG.GUARD/PG.REFIX/GD.GUARDS — B3/B4/B7/B8/B10/B11 ont été RETIRÉES,
+ * leur motif étant désormais couvert par les gardes de CONTRAT C1..C4 ci-
+ * dessous, plus directement adaptées au nouveau layout) et C1..C5 (nouvelles
+ * gardes de CONTRAT mission P4) sont documentées en JSDoc à leur point de
+ * définition et TOUJOURS évaluées, indépendamment de `--lenient` (qui ne
  * régit que les marqueurs conditionnels de A3).
  */
 
@@ -108,7 +123,19 @@ export const PAGE_DIMENSIONS_PT = {
   '16:9': { w: 958.11, h: 539.01 },
 };
 const PAGE_SIZE_TOLERANCE_PT = 0.5;
-const MIN_PAGES = 12;
+// RECALIBRAGE MISSION P4 (nouveau layout « une page = un usage ») : le
+// plancher historique de 12 pages datait d'un layout où les continuations
+// « (SUITE) » et les pages à titre seul gonflaient artificiellement le
+// compte de pages pour un même volume de données — l'objectif même de la
+// refonte P1 est de rendre le document PLUS COMPACT (fiche adversaire/
+// ZMSPCP/MOICP sur une page dense au lieu de plusieurs pages aérées).
+// `tests/pdf/fixtures/long-case.json` (dossier réaliste, sans adversaire ni
+// photo) mesure désormais 10 pages sur un PDF frais généré par
+// `generate-from-fixture.mjs` — un plancher à 12 ferait donc FAIL à tort un
+// dossier légitime. Nouveau plancher choisi sous ce plancher mesuré tout en
+// restant un filet utile contre une régression grossière (ex. document
+// réduit à sa seule garde + page finale).
+const MIN_PAGES = 8;
 const MIN_NON_BLANK_CHARS = 1500;
 const MAX_BYTES_WHEN_NO_PHOTOS = 1_048_576; // 1 Mio
 const FULL_PAGE_COVERAGE_RATIO = 0.8;
@@ -143,29 +170,6 @@ export function normalize(text) {
     .replace(/[’]/g, "'")
     .replace(/\s+/g, ' ')
     .trim();
-}
-
-// ===========================================================================
-// BF.REFIX (round 1, point 5) — normalisation SUPPLÉMENTAIRE, mode `--voie=b`
-// UNIQUEMENT (jamais appliquée en voie A, INCHANGÉE) : `letter-spacing:2px`
-// sur les titres `h1`/`h2` (`print-style.ts:63`/`:67`) fait insérer par
-// `pdftotext` des ESPACES À L'INTÉRIEUR DES MOTS eux-mêmes — constaté sur
-// « ORDRE INITIAL » -> « O RDRE I NITIA L » et « AVEZ-VOUS DES QUESTIONS ? »
-// -> « AVEZ-VO U S DES Q U ESTIO NS ? » (positions de coupure irrégulières,
-// dépendantes du moteur de justification de `pdftotext -layout`, PAS une
-// coupure lettre par lettre uniforme) — la normalisation `normalize()`
-// ci-dessus (collapse d'espaces MULTIPLES) ne les absorbe pas puisque ce
-// sont des espaces UNIQUES entre fragments. Seule une comparaison entièrement
-// DÉ-ESPACÉE (tous les espaces retirés, des DEUX côtés : texte extrait ET
-// marqueur recherché) absorbe ce défaut sans dépendre de la position exacte
-// des coupures. Appliquée en PLUS de `normalize()` (jamais à sa place) et
-// UNIQUEMENT quand `voie === 'b'` — la voie A n'a pas de calque `letter-
-// spacing` sur ses titres (pdfmake, pas de CSS) et n'a donc jamais ce défaut ;
-// lui appliquer ce dé-espacement inutilement risquerait de fusionner à tort
-// des marqueurs adjacents sur une voie où le bug n'existe pas.
-// ===========================================================================
-export function despace(text) {
-  return normalize(text).replace(/\s+/g, '');
 }
 
 // ===========================================================================
@@ -364,13 +368,10 @@ export function assertA2_realText(text) {
   };
 }
 
-export function assertA3_sectionOrder(text, { lenient, voie = 'a' }) {
-  // Mode voie B : dé-espacement intra-mot supplémentaire (cf. JSDoc
-  // `despace`) — voie A INCHANGÉE (comportement historique `normalize` seul).
-  const norm = voie === 'b' ? despace(text) : normalize(text);
-  const markerNorm = (m) => (voie === 'b' ? despace(m) : normalize(m));
+export function assertA3_sectionOrder(text, { lenient }) {
+  const norm = normalize(text);
   const results = MARKERS.map((m) => {
-    const idx = norm.indexOf(markerNorm(m.text));
+    const idx = norm.indexOf(normalize(m.text));
     return { ...m, idx, found: idx !== -1 };
   });
 
@@ -542,17 +543,20 @@ export function assertA8_sampleData(text, samplePath) {
 }
 
 // ===========================================================================
-// B1..B3 — GUARDRAIL PAGINATION (mission PG.GUARD, correctif pagination PDF v3
-// « mode rapide sans Playwright ») : 3 assertions STRUCTURELLES supplémentaires,
-// indépendantes de A1-A8, détectant les 3 défauts prouvés sur un vrai PDF de
-// 21 pages généré par la voie A (pdfmake) : queues orphelines (débordement
-// d'une conduite à tenir ZMSPCP/MOICP sur une page quasi vide), pages à titre
-// seul pour une section quasi vide, et mots du Store cassés verticalement
-// dans les colonnes étroites du tableau PATRACDVR. Toujours évaluées
-// (INDÉPENDANTES de `--lenient`, qui ne régit que les marqueurs conditionnels
-// de A3) — un défaut de pagination n'est jamais « acceptable » selon le jeu
-// de données saisi. Contre-épreuve : `tests/pdf/fixtures/long-case.json` +
-// `tests/pdf/generate-from-fixture.mjs` (cf. `tests/pdf/README.md`).
+// B1/B2/B5/B6/B9 — GUARDRAIL PAGINATION CONSERVÉ/ADAPTÉ (missions PG.GUARD/
+// PG.REFIX/GD.GUARDS) pour le nouveau contrat « une page = un usage »
+// (mission P4, commit a57b128). B3/B4/B7/B8/B10/B11 ont été RETIRÉES : leur
+// motif (continuation « (SUITE) » sans titre) ne peut plus se produire de la
+// même façon depuis que fiche adversaire/ZMSPCP/MOICP/cellule effraction
+// n'utilisent plus JAMAIS de continuation « (SUITE) » (garde inverse C1
+// ci-dessous) — le motif qu'elles couvraient est désormais directement
+// vérifié par les gardes de CONTRAT C2..C4 (spécifiques à chaque usage,
+// plus précises que l'ancienne détection générique par signature de texte).
+// L'option historique `--voie=a|b` a été RETIRÉE avec son propre calibrage
+// (la voie B n'existe plus dans l'app, cf. en-tête de fichier) : B1/B2/B6/B9
+// n'ont donc plus qu'un seul comportement (l'ancien « voie A », INCHANGÉ).
+// Toujours évaluées, INDÉPENDANTES de `--lenient` (qui ne régit que les
+// marqueurs conditionnels de A3).
 // ===========================================================================
 
 /**
@@ -560,9 +564,9 @@ export function assertA8_sampleData(text, samplePath) {
  * (form feed) — même découpage que `collectText`. `pdftotext` termine TOUJOURS
  * sa sortie par un `\f` final (y compris après la dernière page) : un
  * `split('\f')` naïf produit donc un dernier élément fantôme `''` qui
- * décalerait de 1 la détection « dernière page » (garde/finale de B1/B3) —
- * retiré ici, PAS dans `collectText` (A2/A3/A4/A8 travaillent sur le texte
- * entier, insensibles à ce `\f` de fin).
+ * décalerait de 1 la détection « dernière page » — retiré ici, PAS dans
+ * `collectText` (A2/A3/A4/A8 travaillent sur le texte entier, insensibles à
+ * ce `\f` de fin).
  */
 function splitPages(text) {
   const pages = text.split('\f');
@@ -578,38 +582,24 @@ function nonBlankLength(pageText) {
 }
 
 const ORPHAN_MIN_NON_BLANK_CHARS = 120;
-// BLIND.FIX (point 5) — mode voie B : `ORPHAN_MIN_NON_BLANK_CHARS` (120) est
-// calibré sur la voie A (pdfmake), où PLUSIEURS sections partagent
-// normalement une page — une page sous ce seuil y signale un vrai
-// débordement. La voie B (print-view.ts) est structurée en pages DÉDIÉES
-// « une section = un `.adv-page` » (cf. son propre en-tête de fichier) : une
-// page « 4. MISSION DE L'UNITÉ » à 2 lignes de mission, ou une galerie à 1
-// photo, y est courte PAR CONCEPTION, pas par débordement — constat mesuré
-// sur la recette complétée (`recipe-data.json`, bloc logistique BLIND.FIX
-// point 6) : cette conception légitime déclenchait déjà des faux positifs
-// avant même d'ajouter la moindre donnée volumineuse. Seuil VOIE B
-// nettement plus bas (20, pas 0 : une page RÉELLEMENT vide resterait
-// suspecte) plutôt qu'un skip total — la voie B garde un filet contre une
-// vraie page blanche/quasi blanche.
-const ORPHAN_MIN_NON_BLANK_CHARS_VOIE_B = 20;
 
 /**
  * B1 — anti-orpheline : aucune page (hors GARDE = page 1, FINALE = dernière
  * page, et pages PHOTO = au moins une image `pdfimages` dessus, cf. `images`
  * de A6) ne doit tomber sous `ORPHAN_MIN_NON_BLANK_CHARS` (120) caractères non
- * blancs — signature d'une queue orpheline : un bloc non-`unbreakable`
- * (ex. `labelValue('C conduite à tenir', …)` dans `buildZmspcpPage`/
- * `buildMoicpPage`, `document-builder.ts`) déborde de sa page et n'y laisse
- * qu'un fragment de fin de phrase (constat terrain : « fixer l'adversaire. »
- * seule sur une page, « porte » sur une autre).
+ * blancs — signature d'une queue orpheline. Sous le nouveau contrat (mission
+ * P4), ce motif précis ne devrait plus se produire pour fiche adversaire/
+ * ZMSPCP/MOICP/cellule effraction (solveur fit-to-page + refus explicite),
+ * mais reste un filet générique utile pour toute AUTRE page du document
+ * (couverture, environnement, mission+exécution, CAT, PATRACDVR) où un bloc
+ * `unbreakable:false` pourrait encore déborder marginalement.
  */
-export function assertB1_noOrphanPage(text, images, { voie = 'a' } = {}) {
+export function assertB1_noOrphanPage(text, images) {
   const pages = splitPages(text);
   const pageCount = pages.length;
   if (pageCount === 0) {
     return { ok: true, detail: 'document vide — aucune page à examiner' };
   }
-  const threshold = voie === 'b' ? ORPHAN_MIN_NON_BLANK_CHARS_VOIE_B : ORPHAN_MIN_NON_BLANK_CHARS;
   const pagesWithImage = new Set(images.map((img) => img.page));
   const orphans = [];
   for (let i = 0; i < pageCount; i++) {
@@ -617,7 +607,7 @@ export function assertB1_noOrphanPage(text, images, { voie = 'a' } = {}) {
     if (pageNum === 1 || pageNum === pageCount) continue; // garde / finale
     if (pagesWithImage.has(pageNum)) continue; // page photo pleine page
     const len = nonBlankLength(pages[i]);
-    if (len < threshold) {
+    if (len < ORPHAN_MIN_NON_BLANK_CHARS) {
       orphans.push({ page: pageNum, len });
     }
   }
@@ -625,12 +615,12 @@ export function assertB1_noOrphanPage(text, images, { voie = 'a' } = {}) {
     const list = orphans.map((o) => `page ${o.page} (${o.len} car.)`).join(', ');
     return {
       ok: false,
-      detail: `${orphans.length} page(s) orpheline(s) — < ${threshold} caractères non blancs (hors garde/finale/photo) : ${list}`,
+      detail: `${orphans.length} page(s) orpheline(s) — < ${ORPHAN_MIN_NON_BLANK_CHARS} caractères non blancs (hors garde/finale/photo) : ${list}`,
     };
   }
   return {
     ok: true,
-    detail: `0 page orpheline sur ${pageCount} page(s) (hors garde/finale/photo, seuil ${threshold} car.${voie === 'b' ? ', mode voie B' : ''})`,
+    detail: `0 page orpheline sur ${pageCount} page(s) (hors garde/finale/photo, seuil ${ORPHAN_MIN_NON_BLANK_CHARS} car.)`,
   };
 }
 
@@ -673,43 +663,15 @@ function lineTokens(line) {
  * `SHARAN`/`GILETTE`/`KODIAQ`, pas de césure au tiret). Portée volontairement
  * restreinte à la section PATRACDVR (entre le marqueur `MARKERS[13]` et la
  * page finale `MARKERS[14]`, ou la fin du document si celle-ci est absente) :
- * hors de cette section, les libellés STATIQUES du gabarit (`Z ZONE :`,
- * `PROF. BÂTI`, titres `h2`…) produisent de FAUX positifs géométriques
- * (lettre de libellé directement au-dessus d'un titre, texte justifié qui
- * s'aligne par hasard) qui n'ont RIEN à voir avec une valeur du Store —
- * vérifié en confrontant ce détecteur au PDF de la recette normale (0 faux
- * positif) avant de le restreindre à cette portée. Détection : pour chaque
- * paire de lignes adjacentes, un token tout-capitales de fin de ligne
- * (2+ lettres) suivi, à la MÊME colonne (± `WORD_SPLIT_COLUMN_TOLERANCE`),
- * d'un token tout-capitales de 1 à 4 lettres en tête de ligne suivante —
- * combinaison ≥ 4 lettres, ni l'un ni l'autre n'étant un en-tête littéral du
- * tableau. Une ligne se terminant par un TIRET n'entre jamais dans ce motif
- * (le tiret n'est pas une lettre capitale) — la césure légitime au tiret
- * n'est donc jamais signalée, conformément à la règle cible.
+ * hors de cette section, les libellés STATIQUES du gabarit produisent de
+ * FAUX positifs géométriques qui n'ont RIEN à voir avec une valeur du Store.
+ * Détection : pour chaque paire de lignes adjacentes, un token tout-capitales
+ * de fin de ligne (2+ lettres) suivi, à la MÊME colonne
+ * (± `WORD_SPLIT_COLUMN_TOLERANCE`), d'un token tout-capitales de 1 à 4
+ * lettres en tête de ligne suivante — combinaison ≥ 4 lettres, ni l'un ni
+ * l'autre n'étant un en-tête littéral du tableau.
  */
-// BLIND.FIX (point 5) — mode voie B : constat terrain « KODIAQ BANA » — DEUX
-// mots COMPLETS et légitimes (ex. modèle de véhicule + fragment de couleur/
-// immatriculation) qui se replient l'un sous l'autre, DANS LA MÊME COLONNE,
-// sur deux lignes `pdftotext` adjacentes SANS être une césure — la voie B
-// (tableau HTML natif, cf. `print-style.ts::.patrac`) n'a pas la même grille
-// de colonnes fixes que le tableau pdfmake de la voie A, deux valeurs
-// INDÉPENDANTES (pas une seule cellule enroulée) peuvent donc s'aligner par
-// coïncidence. Distinction retenue, SANS dictionnaire : une césure RÉELLE
-// (cellule d'UNE ligne de tableau qui s'enroule) laisse alors la ligne
-// suivante quasi vide de tout AUTRE contenu (seule la suite du mot y
-// figure) ; deux valeurs INDÉPENDANTES empilées appartiennent, elles, à des
-// LIGNES DE TABLEAU DIFFÉRENTES et la ligne du « head » porte typiquement
-// d'AUTRES tokens (les autres colonnes de cette ligne, ex. `PPR`, `India 4`).
-// En mode voie B, on exige donc en plus que la ligne du « head » ne
-// contienne PAS d'autre token que le fragment candidat (hors en-têtes
-// littéraux) — une vraie césure passe ce filtre (rien d'autre sur cette
-// ligne), deux mots complets de lignes différentes ne le passent
-// généralement pas.
-function otherTokensOnLine(line, head) {
-  return lineTokens(line).filter((t) => t.text !== head.text && !PATRAC_HEADER_TOKENS.has(t.text));
-}
-
-export function assertB2_noVerticalWordSplit(text, { voie = 'a' } = {}) {
+export function assertB2_noVerticalWordSplit(text) {
   const pages = splitPages(text);
   const patracMarker = MARKERS[13]; // '7. RÉCAPITULATIF PATRACDVR'
   const finalMarker = MARKERS[14]; // 'AVEZ-VOUS DES QUESTIONS ?'
@@ -736,7 +698,6 @@ export function assertB2_noVerticalWordSplit(text, { voie = 'a' } = {}) {
       for (const tail of tails) {
         for (const head of heads) {
           if (Math.abs(tail.col - head.col) > WORD_SPLIT_COLUMN_TOLERANCE) continue;
-          if (voie === 'b' && otherTokensOnLine(lines[i + 1], head).length > 0) continue;
           const combined = tail.text + head.text;
           if (combined.length < 4) continue;
           hits.push({ page: pi + 1, fragment1: tail.text, fragment2: head.text, combined });
@@ -751,145 +712,13 @@ export function assertB2_noVerticalWordSplit(text, { voie = 'a' } = {}) {
   }
   return {
     ok: true,
-    detail: `0 mot cassé verticalement dans le PATRACDVR (pages ${startIdx + 1}-${endIdx}${voie === 'b' ? ', mode voie B' : ''})`,
+    detail: `0 mot cassé verticalement dans le PATRACDVR (pages ${startIdx + 1}-${endIdx})`,
   };
 }
 
-const TITLE_ONLY_MAX_CONTENT_CHARS = 40;
-
-/**
- * B3 — anti-page-titre-seul : aucune page ne doit porter un titre de section
- * (un des 15 `MARKERS`, cf. A3) avec MOINS de `TITLE_ONLY_MAX_CONTENT_CHARS`
- * (40) caractères non blancs de CONTENU (le texte de la page une fois le
- * titre matché lui-même déduit) — constat terrain : une page « LOGISTIQUE -
- * Détail » quasi noire, une page « Effraction - Détail » réduite à 4 badges,
- * pour une section dont les données saisies sont vides.
- *
- * Exclusion volontaire du marqueur FINALE (`MARKERS[14]`, « AVEZ-VOUS DES
- * QUESTIONS ? ») : cette page de clôture est un titre seul PAR CONCEPTION
- * (langage strategica, écart E2/E5 du README) — vérifié en confrontant ce
- * détecteur au PDF de la recette normale (`recipe-data.json`, qui remplit
- * TOUTES les sections) avant d'ajouter cette exclusion : sans elle, B3 FAIL
- * systématiquement sur cette page de clôture légitime, quel que soit le jeu
- * de données (faux positif garanti, pas un défaut de pagination).
- */
-// BF.REFIX (round 2, point 2) — faux positif en mode `--voie=b` : une page de
-// galerie photo (ex. « 6. LOGISTIQUE & TRANSPORTS (CHEMINEMENT) ») ne porte
-// souvent QU'une légende courte sous l'image (« Transport PSIG -> PR », < 40
-// caractères) — B3 ne comptait alors QUE les caractères de texte extraits par
-// `pdftotext`, aveugle à l'image elle-même (`pdfimages` n'était consulté que
-// pour A6). Constat terrain : `B-recipe-light.pdf`/`B-recipe-dark.pdf`
-// (fixture `recipe-data.json`) échouaient en STRICT sur la page 7, qui porte
-// pourtant bien 1 image embarquée (`pdfimages -list`) — pas un titre nu.
-// Correctif : en mode `--voie=b` uniquement, une page qui porte au moins une
-// image (`images`, même détection que A6/B1/B4) est exemptée du seuil de
-// contenu texte — la photo EST le contenu de cette page, pas un titre seul.
-// Mode `--voie=a` (pdfmake) inchangé : ce moteur n'a jamais ce motif de page
-// dédiée à une seule image de galerie (E4 du README — 2 photos/page).
-export function assertB3_noTitleOnlyPage(text, images = [], { voie = 'a' } = {}) {
-  const pages = splitPages(text);
-  const finalMarkerNorm = normalize(MARKERS[14].text);
-  const pagesWithImage = voie === 'b' ? new Set(images.map((img) => img.page)) : new Set();
-  const hits = [];
-  pages.forEach((pageText, idx) => {
-    const pageNum = idx + 1;
-    const norm = normalize(pageText);
-    const matched = MARKERS.filter((m) => norm.includes(normalize(m.text)));
-    if (matched.length === 0) return;
-    if (matched.length === 1 && normalize(matched[0].text) === finalMarkerNorm) return;
-    if (pagesWithImage.has(pageNum)) return; // page-galerie : la photo EST le contenu
-    const titleLen = Math.max(...matched.map((m) => normalize(m.text).replace(/\s/g, '').length));
-    const total = nonBlankLength(pageText);
-    const contentLen = Math.max(0, total - titleLen);
-    if (contentLen < TITLE_ONLY_MAX_CONTENT_CHARS) {
-      hits.push({ page: pageNum, contentLen, titles: matched.map((m) => m.text) });
-    }
-  });
-  if (hits.length > 0) {
-    const list = hits
-      .map((h) => `page ${h.page} « ${h.titles.join(' / ')} » (${h.contentLen} car. de contenu)`)
-      .join(', ');
-    return {
-      ok: false,
-      detail: `${hits.length} page(s) à titre seul — < ${TITLE_ONLY_MAX_CONTENT_CHARS} caractères de contenu hors titre : ${list}`,
-    };
-  }
-  return {
-    ok: true,
-    detail: `0 page à titre seul (seuil ${TITLE_ONLY_MAX_CONTENT_CHARS} car. de contenu hors titre${voie === 'b' ? ', pages-galerie exemptées' : ''})`,
-  };
-}
-
-// ===========================================================================
-// B4..B6 — GUARDRAIL PAGINATION round 2 (mission PG.REFIX) : les 3 défauts
-// SUPPLÉMENTAIRES prouvés sur un PDF réel (`long-case.json`) que B1-B3
-// laissaient passer — le rapport précédent avait déclaré vert un PDF qui en
-// portait encore 3 : (a) queues NUES sans titre/« (suite) » pour les blocs
-// ZMSPCP/MOICP (B1 ne voit qu'un déficit de CARACTÈRES, pas l'absence d'un
-// EN-TÊTE) ; (b) une page à titre seul dont le contenu n'est fait que de
-// libellés vides `LABEL : -` (B3 compte ces tirets comme du contenu) ; (c)
-// la couverture scindée en 2 pages aux 2/3 vides (B1/B3 EXCLUENT
-// délibérément la page de garde comme légitimement courte — ce défaut
-// précis en fait une exception). Toujours évaluées, INDÉPENDANTES de
-// `--lenient` (même principe que B1-B3).
-// ===========================================================================
-
-/** Un fragment « (suite) »/« (SUITE) » (port `h2()`, `blocks.ts` — MAJUSCULE le texte). */
+/** Fragment « (suite) »/« (SUITE) » — cf. garde inverse C1 ci-dessous : n'existe plus QUE pour les pages de galerie photo multi-clichés (`galleryPages`, `blocks.ts`), jamais pour fiche adversaire/ZMSPCP/MOICP/cellule effraction (mission P4). */
 const SUITE_RE = /\(suite\)/i;
 
-/**
- * B4 — anti-queue-nue : aucune page (hors garde/finale/photo, même exclusion
- * que B1) ne doit commencer par un item à tiret (`- ...`) SANS le fragment
- * de titre `(suite)` qui doit obligatoirement le précéder — constat terrain
- * PG.REFIX round 1 : `catItemsPerPageBudget` (theme.ts) sous-estimait le
- * volume RÉEL d'un item qui s'enroule sur 2+ lignes (colonne `grid2` à
- * demi-largeur), la scission ne se déclenchait donc jamais et pdfmake
- * débordait la page SANS jamais poser le `h2(... (suite))`/`fieldLabel(...
- * (suite))` que `buildArticulationCorePages` (document-builder.ts) prévoit
- * pourtant pour ce cas — page 8/page 10 du PDF réel commençant brut par
- * « - Rendre compte de toute anomalie sonore… »/« - Rendre compte au chef de
- * dispositif… ». Portée délibérément restreinte au motif EXACT du défaut
- * (1re ligne non-blanche commençant par un tiret de liste) plutôt qu'à
- * « toute page sans marqueur » : la pagination automatique d'un TABLEAU
- * (`headerRows:1`, PATRACDVR notamment) est un écart ASSUMÉ (E3, README) —
- * une continuation de tableau ne commence jamais par un tiret, donc jamais
- * signalée ici à tort.
- */
-export function assertB4_noHeaderlessDashContinuation(text, images) {
-  const pages = splitPages(text);
-  const pageCount = pages.length;
-  if (pageCount === 0) {
-    return { ok: true, detail: 'document vide — aucune page à examiner' };
-  }
-  const pagesWithImage = new Set(images.map((img) => img.page));
-  const hits = [];
-  for (let i = 0; i < pageCount; i++) {
-    const pageNum = i + 1;
-    if (pageNum === 1 || pageNum === pageCount) continue; // garde / finale
-    if (pagesWithImage.has(pageNum)) continue; // page photo pleine page
-    const firstLine = pages[i].split('\n').map((l) => l.trim()).find((l) => l !== '');
-    if (firstLine === undefined) continue;
-    if (firstLine.startsWith('-') && !SUITE_RE.test(pages[i].split('\n').slice(0, 3).join(' '))) {
-      hits.push({ page: pageNum, firstLine });
-    }
-  }
-  if (hits.length > 0) {
-    const list = hits.map((h) => `page ${h.page} (« ${h.firstLine.slice(0, 60)} »)`).join(', ');
-    return {
-      ok: false,
-      detail: `${hits.length} page(s) de continuation SANS titre/« (suite) » — 1re ligne non blanche est un item à tiret brut : ${list}`,
-    };
-  }
-  return { ok: true, detail: `0 queue nue sur ${pageCount} page(s) (1re ligne à tiret sans titre « (suite) » précédent)` };
-}
-
-// Libellé `LABEL : -` COMPLET (`labelValue()`, blocks.ts — port MAJUSCULE
-// `${label.toUpperCase()} : ${value}`) dont la valeur est le repli littéral
-// `-` (`strOr`, document-builder.ts) — unité de mesure `mm` optionnelle
-// (ex. `BÂTI À BÂTI : - mm`, `buildEffractionPage`). Capture le LIBELLÉ
-// entier (pas seulement `: -`) pour pouvoir le déduire du contenu utile
-// restant (cf. `assertB5_noEmptyFieldDominatedPage`) — un champ vide n'est
-// jamais du contenu SAISI, qu'il s'agisse du libellé ou de la valeur.
 const EMPTY_FIELD_RE = /[A-ZÀ-ÖØ-Þ0-9./' ]{2,40}:\s*-(?:\s*mm)?(?=\s|$)/g;
 const EMPTY_FIELD_MIN_COUNT = 4;
 const B5_CONTENT_MAX_CHARS = 250;
@@ -908,18 +737,10 @@ const PAGE_COUNTER_LINE_RE = /^\s*\d+\s*\/\s*\d+\s*$/gm;
  * B5 — anti-section-vide-non-omise : aucune page ne doit être DOMINÉE par
  * des libellés de valeur vide (`LABEL : -`, ≥ `EMPTY_FIELD_MIN_COUNT` sur la
  * page) tout en ayant, une fois le pied de page document-wide déduit, moins
- * de `B5_CONTENT_MAX_CHARS` caractères non blancs de contenu — constat
- * terrain PG.REFIX round 1 : la page « ARTICULATION : EFFRACTION » d'un
- * bloc créé mais jamais renseigné (STRUCTURE/SERRURERIE/ENVIRONNEMENT/
- * H. PORTE/PROF. BÂTI/BÂTI À BÂTI/DORMANT/PROF. LINTEAUX tous à `-`, «
- * Aucune hypothèse saisie ») passait B3 (qui compte les tirets ET les
- * libellés comme du « contenu ») alors que `document-builder.ts` prévoit
- * pourtant la règle « section vide = OMISE » ailleurs (`buildCatPage`/
- * `buildPatracPage`) — jamais portée aux blocs effraction avant ce
- * correctif. Double condition volontaire (nombre de champs vides ET volume
- * total modeste) : une page RICHE peut légitimement contenir quelques
- * `LABEL : -` isolés (champ optionnel non saisi) sans être pour autant une
- * « section vide » — seule la COMBINAISON des deux signaux est probante.
+ * de `B5_CONTENT_MAX_CHARS` caractères non blancs de contenu — signale une
+ * section créée mais jamais renseignée qui aurait dû être OMISE plutôt que
+ * rendue avec ses replis `-`. Inchangée par la mission P4 (comportement
+ * indépendant du découpage en pages).
  */
 export function assertB5_noEmptyFieldDominatedPage(text) {
   const pages = splitPages(text);
@@ -951,62 +772,76 @@ export function assertB5_noEmptyFieldDominatedPage(text) {
 
 const FILL_RATIO_MIN = 0.35;
 
+// Titres de page reconnus comme des pages d'USAGE À CONTRAT DUR (mission P1 :
+// fiche adversaire/ZMSPCP/MOICP tiennent TOUJOURS sur une page unique, une
+// cellule effraction sur 1..K pages autonomes) — sert au recalibrage B6
+// ci-dessous : un petit dossier peu renseigné peut légitimement laisser une
+// telle page assez peu remplie (aération PAR CONCEPTION, pas un bug de
+// pagination), à la différence d'une page COMPOSITE historique (couverture,
+// environnement, mission+exécution, CAT, PATRACDVR) qui accumule plusieurs
+// blocs et où un remplissage bas signale plus probablement un déficit réel
+// (ex. carte esseulée, colonne reportée en bloc).
+const ADV_FICHE_TITLE_RE = /\d+\.\d+\s+FICHE ADVERSAIRE\s*:/;
+const ZM_TITLE_RE = /ARTICULATION\s*:\s*ZMSPCP\s*-/;
+const MO_TITLE_RE = /ARTICULATION\s*:\s*MOICP\s*-/;
+/** Titre effraction, base OU une de ses 2 variantes de page autonome (cf. C4) — capture le suffixe (`undefined` si page 1/unique). */
+const EFFRAC_TITLE_RE = /ARTICULATION\s*:\s*EFFRACTION\s*-\s*(.*?)(?:\s+—\s+(MISSION\s*&\s*CARACT[ÉE]RISTIQUES|HYPOTH[ÈE]SES\s+[\d]+(?:-[\d]+)?))?\s*$/m;
+
+/**
+ * Une page « d'usage à contrat dur » (mission P1) — porte le titre d'une
+ * fiche adversaire, d'un bloc ZMSPCP/MOICP, ou d'une page effraction (base,
+ * « — MISSION & CARACTÉRISTIQUES » ou « — HYPOTHÈSES <plage> »). Pour
+ * l'effraction, renvoie en plus le TITRE DE BASE (sans suffixe) — sert à B6
+ * pour repérer si CE groupe se poursuit sur la page suivante (cf. JSDoc B6).
+ */
+function usagePageInfo(pageText) {
+  if (ADV_FICHE_TITLE_RE.test(pageText)) return { kind: 'adversary' };
+  if (ZM_TITLE_RE.test(pageText)) return { kind: 'zmspcp' };
+  if (MO_TITLE_RE.test(pageText)) return { kind: 'moicp' };
+  const m = pageText.match(EFFRAC_TITLE_RE);
+  if (m) return { kind: 'effraction', base: m[1].trim(), suffix: m[2] };
+  return null;
+}
+
 /**
  * B6 — anti-page-clairsemée : ratio de remplissage vertical (Y du mot le
  * plus bas d'une page ÷ hauteur de page, `pdftotext -bbox`) ≥
- * `FILL_RATIO_MIN` sur TOUTE page sauf la FINALE (`MARKERS[14]`, « AVEZ-VOUS
- * DES QUESTIONS ? » — page de clôture courte PAR CONCEPTION, écart assumé
- * E2/E5, même exclusion que B3). Délibérément PAS d'exclusion de la page de
- * GARDE (à la différence de B1/B3) : c'est précisément CETTE page qui
- * portait le défaut « carte esseulée » constaté PG.REFIX round 1
- * (couverture scindée en 2 pages aux 2/3 vides — `situationCard` reportée
- * en bloc sur la page 2 par `grid2`, colonnes non synchronisées pour la
- * pagination pdfmake).
+ * `FILL_RATIO_MIN` sur TOUTE page sauf la FINALE (`MARKERS[14]`).
  *
- * SEUIL CALIBRÉ VOLONTAIREMENT BAS (35 %, pas 50 %) — écart mesuré,
- * documenté ici plutôt que deviné : le PDF fautif (avant correctif) mesurait
- * 0,54 sur sa garde scindée, MAIS une garde LÉGITIMEMENT minimale (`RAS.`/
- * `RAS.`, aucune cible) mesure 0,59 — MOINS remplie encore, par construction
- * (peu de données saisies ⇒ peu de contenu, sans aucun bug). Un simple ratio
- * ne peut donc PAS discriminer de façon fiable « couverture scindée » de
- * « couverture légitimement courte » dans cette bande 0,5-0,6 : cette
- * assertion reste un FILET GÉNÉRIQUE contre les cas plus sévères (page quasi
- * vide, < 35 %), le défaut PRÉCIS « carte esseulée » de la couverture est
- * couvert de façon fiable par A3 (ordre des marqueurs #2/#3) et B4/B5
- * ci-dessus, pas par ce seuil. Le pied de page document-wide (présent sur
- * toutes les pages SAUF la garde) pousse par ailleurs mécaniquement le ratio
- * de toute autre page vers ~0,97 — cette assertion est donc, par
- * construction du document, surtout un filet pour la garde ; conservée
- * générique (pas de branche spéciale « page 1 ») pour rester valide si
- * `buildFooter`/la géométrie de couverture évoluent.
+ * RECALIBRAGE MISSION P4 (nouveau layout « une page = un usage ») : une page
+ * d'usage à contrat dur (`usagePageInfo`, ci-dessus) est EXEMPTÉE de ce
+ * seuil SAUF si elle appartient à un groupe effraction dont une AUTRE page
+ * du MÊME titre de base la suit immédiatement — c'est-à-dire quand du
+ * contenu du même usage suit (directive P4) : une cellule effraction scindée
+ * en pages « MISSION & CARACTÉRISTIQUES » / « HYPOTHÈSES … » dont l'une des
+ * pages intermédiaires serait anormalement clairsemée alors que la suivante
+ * appartient encore au même bloc reste un signal de mauvaise répartition
+ * (`packHypotheses` aurait dû regrouper davantage) — un petit dossier peu
+ * renseigné, lui, ne produit jamais plus d'une page effraction par cellule,
+ * donc jamais ce motif. Les pages COMPOSITES (couverture, environnement,
+ * mission+exécution, articulation vue d'ensemble, CAT, PATRACDVR) restent
+ * couvertes SANS exemption (comportement historique inchangé) : un déficit
+ * de remplissage y reste le signal fiable d'origine (carte esseulée, etc.).
  */
-// BLIND.FIX (point 5) — mode voie B : `FILL_RATIO_MIN` (35 %) suppose une
-// page qui accumule PLUSIEURS sections (voie A) — un ratio bas y signale un
-// vrai gâchis de place (carte esseulée, cf. JSDoc ci-dessus). La voie B
-// (une section = un `.adv-page`, cf. en-tête `print-view.ts`) produit des
-// pages COURTES PAR CONCEPTION dès qu'une section a peu de contenu (ex.
-// « 4. MISSION DE L'UNITÉ » à 2 lignes, une galerie à 1 photo) — constat
-// mesuré (`recipe-data.json` complétée, BLIND.FIX point 6) : 20 % de
-// remplissage sur une page MISSION parfaitement légitime. Cette assertion
-// est SKIP (pas silencieusement PASS) en mode voie B — le filet reste actif
-// en voie A par défaut, inchangé.
-export function assertB6_verticalFillRatio(bboxPages, { voie = 'a' } = {}) {
-  if (voie === 'b') {
-    return {
-      ok: true,
-      skip: true,
-      detail: 'SKIP (mode voie B) — pages dédiées « une section = une page » légitimement peu remplies par conception, non applicable',
-    };
-  }
+export function assertB6_verticalFillRatio(bboxPages, text) {
   const pageCount = bboxPages.length;
   if (pageCount === 0) {
     return { ok: true, detail: 'document vide — aucune page à examiner' };
   }
+  const pages = splitPages(text);
+  const infos = pages.map((p) => usagePageInfo(p));
   const hits = [];
   bboxPages.forEach((page, idx) => {
     const pageNum = idx + 1;
     if (pageNum === pageCount) return; // finale, courte par conception
     if (page.height <= 0) return;
+    const info = infos[idx];
+    if (info) {
+      if (info.kind !== 'effraction') return; // fiche adversaire/ZMSPCP/MOICP : toujours exemptée (1 page, aération légitime)
+      const next = infos[idx + 1];
+      const continues = next && next.kind === 'effraction' && next.base === info.base;
+      if (!continues) return; // dernière page du groupe (ou groupe à 1 page) : aération légitime
+    }
     const ratio = page.maxYMax / page.height;
     if (ratio < FILL_RATIO_MIN) {
       hits.push({ page: pageNum, ratio });
@@ -1016,164 +851,19 @@ export function assertB6_verticalFillRatio(bboxPages, { voie = 'a' } = {}) {
     const list = hits.map((h) => `page ${h.page} (${(h.ratio * 100).toFixed(0)} %)`).join(', ');
     return {
       ok: false,
-      detail: `${hits.length} page(s) sous ${(FILL_RATIO_MIN * 100).toFixed(0)} % de remplissage vertical (hors finale) : ${list}`,
+      detail: `${hits.length} page(s) sous ${(FILL_RATIO_MIN * 100).toFixed(0)} % de remplissage vertical (hors finale/usages aérés légitimes) : ${list}`,
     };
   }
-  return { ok: true, detail: `0 page sous ${(FILL_RATIO_MIN * 100).toFixed(0)} % de remplissage vertical (hors finale)` };
+  return { ok: true, detail: `0 page sous ${(FILL_RATIO_MIN * 100).toFixed(0)} % de remplissage vertical (hors finale, pages-usage à contrat dur exemptées sauf continuation effraction)` };
 }
 
-// ===========================================================================
-// B7 — GUARDRAIL PAGINATION round 3 (mission BLIND.REFIX round 2), CORRIGÉ
-// mission GD.GUARDS (SPEC-PDF-DEFINITIF.md §7.1) : la table Hypothèses
-// d'Effraction (voie A, `buildEffractionPages`) débordait NATURELLEMENT sa
-// page (en-tête de tableau répétée par `headerRows:1`, MAIS SANS aucun titre
-// « ARTICULATION : EFFRACTION »/« (SUITE) ») avant que la scission pilotée
-// n'ait l'occasion de se déclencher. La version d'origine cherchait une
-// LIGNE de tableau via `/^\s*Hypothese\s+\d+\b/m` — un libellé de repli qui
-// n'existe que si l'utilisateur n'a PAS nommé ses hypothèses : sur le PDF
-// réel fautif (`cas-reel-01-repro`, D2 du diagnostic), les hypothèses sont
-// nommées (« Porte d'entrée », …), la regex ne matchait RIEN et la garde
-// était AVEUGLE (PASS sur un défaut avéré p12). Correctif : chercher
-// l'EN-TÊTE de la table, qui est un libellé STATIQUE du gabarit
-// (`hypothesesTableHeader`, document-builder.ts — colonne 2 « Technique /
-// Moyen », littérale, non traduisible, jamais du texte utilisateur) —
-// répété sur CHAQUE fragment par `headerRows:1`, donc présent sur toute
-// page de continuation, nommée ou pas. Contre-épreuve mesurée : FAIL p12
-// sur `cas-reel-01-repro.pdf` (ancienne version : PASS, aveugle).
-// ===========================================================================
-
-/** En-tête LITTÉRAL de la table Hypothèses d'Effraction (`hypothesesTableHeader`, document-builder.ts — colonne 2 « Technique / Moyen », texte du GABARIT, jamais saisi par l'utilisateur). */
+/** En-tête à 4 colonnes du tableau Hypothèses d'Effraction (répétée sur chaque page effraction dense, cf. `hypothesesTableHeader`, document-builder.ts). */
 const HYP_TABLE_HEAD_RE = /Technique\s*\/\s*Moyen/;
-
-/** Titre de section EFFRACTION, avec ou sans son suffixe `(SUITE)` (`buildEffractionPages`, document-builder.ts). */
-const EFFRACTION_TITLE_RE = /ARTICULATION\s*:\s*EFFRACTION/;
-
-/**
- * B7 — anti-queue-de-tableau-sans-titre : toute page portant l'EN-TÊTE du
- * tableau Hypothèses d'Effraction (« Technique / Moyen », statique) doit
- * également porter, sur cette MÊME page, le titre de section
- * « ARTICULATION : EFFRACTION » (page 1 du bloc) OU un fragment
- * « (SUITE) » (scission pilotée) — jamais une page de continuation
- * NATURELLE de pdfmake (en-tête de tableau seule via `headerRows:1`, aucun
- * titre) qui désynchroniserait la coupure réelle du repère visuel destiné à
- * l'utilisateur. Toujours évaluée, INDÉPENDANTE de `--lenient` (même
- * principe que B1/B4).
- */
-export function assertB7_effractionSuiteTitlePresent(text) {
-  const pages = splitPages(text);
-  const pageCount = pages.length;
-  if (pageCount === 0) {
-    return { ok: true, detail: 'document vide — aucune page à examiner' };
-  }
-  const hits = [];
-  pages.forEach((pageText, idx) => {
-    if (HYP_TABLE_HEAD_RE.test(pageText) && !EFFRACTION_TITLE_RE.test(pageText) && !SUITE_RE.test(pageText)) {
-      hits.push(idx + 1);
-    }
-  });
-  if (hits.length > 0) {
-    return {
-      ok: false,
-      detail: `${hits.length} page(s) portant l'en-tête de table « Technique / Moyen » SANS titre « ARTICULATION : EFFRACTION »/« (SUITE) » sur la même page : ${hits.join(', ')}`,
-    };
-  }
-  return { ok: true, detail: `0 page de continuation de tableau Hypothèses d'Effraction sans titre (sur ${pageCount} page(s))` };
-}
-
-// ===========================================================================
-// B8 — GUARDRAIL PAGINATION round 4 (mission FB.FIX, point 3) : mode
-// `--voie=b` UNIQUEMENT. Motif constaté sur `adv-atcd32`/`adv-atcd35` clair
-// AVANT le correctif `print-view.ts::adversaryFiche` (mission FB.FIX point
-// 1/2) — les cartes LOCALISATION/MOBILITÉ (courtes, purement `LABEL :
-// valeur`) débordaient de la fiche adversaire SANS jamais réinjecter le
-// titre de fiche, atterrissant seules sur une page à 84-105 caractères non
-// blancs : B1 (seuil voie B = 20 caractères) les laisse passer (84 > 20) et
-// B4 (motif « 1re ligne à tiret ») ne les voit pas non plus (ces cartes
-// n'ont jamais de tiret de liste, seulement des lignes `LABEL : valeur`).
-// Ni B1 ni B4 ne couvraient donc ce motif précis avant ce correctif — d'où
-// ce guardrail dédié plutôt qu'un ajustement de seuil (un seuil B1 plus bas
-// resterait aveugle par construction : le défaut n'est pas le VOLUME de
-// caractères mais l'ABSENCE de titre reconnu sur une page de continuation).
-// ===========================================================================
-
-/** Ligne `LABEL : valeur` générique (`kvRow()`/`fieldOr()`, `print-view.ts`) — portée volontairement large (pas de vocabulaire LOCALISATION/MOBILITÉ figé) : le motif ciblé est « page de continuation dominée par des cartes kv courtes », quelle que soit la section d'origine. */
-const KV_LINE_RE = /^[^\n:]{1,40}:\s*\S/;
-const B8_MIN_KV_LINES = 2;
-const B8_MAX_CONTENT_CHARS = 200;
-
-/**
- * B8 — anti-carte-kv-orpheline : en mode `--voie=b`, aucune page (hors
- * garde/finale/photo, même exclusion que B1/B4) ne doit porter ≥
- * `B8_MIN_KV_LINES` lignes `LABEL : valeur` tout en NE portant AUCUN titre
- * reconnu (un des 15 `MARKERS` de la SPEC OU le fragment `(suite)`/`(SUITE)`
- * d'une scission pilotée) ET en restant sous `B8_MAX_CONTENT_CHARS`
- * caractères non blancs de contenu total — signature d'une carte kv COURTE
- * (LOCALISATION/MOBILITÉ, IDENTITÉ…) qui a débordé de sa page dédiée sans
- * qu'aucune scission pilotée ne lui ait réinjecté de titre de continuation.
- * SKIP en mode `--voie=a` (pdfmake) : ce moteur ne produit jamais de page
- * dédiée « une section = une page » par construction (cf. JSDoc `ORPHAN_MIN_
- * NON_BLANK_CHARS_VOIE_B`), le motif ne s'y manifeste pas de la même façon.
- */
-export function assertB8_noHeaderlessKvOrphanPage(text, images, { voie = 'a' } = {}) {
-  if (voie !== 'b') {
-    return { ok: true, skip: true, detail: 'SKIP (mode voie A) — motif propre aux pages dédiées de la voie B' };
-  }
-  const pages = splitPages(text);
-  const pageCount = pages.length;
-  if (pageCount === 0) {
-    return { ok: true, detail: 'document vide — aucune page à examiner' };
-  }
-  const pagesWithImage = new Set(images.map((img) => img.page));
-  const hits = [];
-  for (let i = 0; i < pageCount; i++) {
-    const pageNum = i + 1;
-    if (pageNum === 1 || pageNum === pageCount) continue; // garde / finale
-    if (pagesWithImage.has(pageNum)) continue; // page photo pleine page
-    const pageText = pages[i];
-    const norm = normalize(pageText);
-    const hasRecognizedTitle = MARKERS.some((m) => norm.includes(normalize(m.text))) || SUITE_RE.test(pageText);
-    if (hasRecognizedTitle) continue;
-    const kvLineCount = pageText
-      .split('\n')
-      .map((l) => l.trim())
-      .filter((l) => l !== '' && KV_LINE_RE.test(l)).length;
-    const contentLen = nonBlankLength(pageText);
-    if (kvLineCount >= B8_MIN_KV_LINES && contentLen <= B8_MAX_CONTENT_CHARS) {
-      hits.push({ page: pageNum, kvLineCount, contentLen });
-    }
-  }
-  if (hits.length > 0) {
-    const list = hits.map((h) => `page ${h.page} (${h.kvLineCount} ligne(s) kv, ${h.contentLen} car.)`).join(', ');
-    return {
-      ok: false,
-      detail: `${hits.length} page(s) de carte(s) kv orpheline(s) sans titre reconnu ni « (suite) » : ${list}`,
-    };
-  }
-  return {
-    ok: true,
-    detail: `0 page de carte kv orpheline sans titre (seuils ${B8_MIN_KV_LINES} lignes kv / ${B8_MAX_CONTENT_CHARS} car., mode voie B)`,
-  };
-}
-
-// ===========================================================================
-// B9..B11 — GUARDRAIL PAGINATION round 5 (mission GD.GUARDS,
-// SPEC-PDF-DEFINITIF.md §7.2-§7.4) : gardes écrites AVANT les correctifs
-// D1/D2 (protocole de contre-épreuve : chaque garde FAIL sur le PDF fautif
-// `cas-reel-01-repro.pdf` conservé hors repo, puis PASS après correctifs — une
-// garde qui ne FAIL pas sur le PDF fautif ne prouve rien). Les défauts D1
-// (fiche adversaire : bloc DANGEROSITÉ scindé naturellement par pdfmake,
-// queue d'ATCD + LOCALISATION orphelines p3 sans « (SUITE) ») et D2 (table
-// effraction : titre + thead seuls en bas de p11, lignes p12 via
-// `headerRows` sans titre) passaient TOUTES les gardes A1-B8 existantes.
-// Toujours évaluées, INDÉPENDANTES de `--lenient` (même principe que B1-B8).
-// ===========================================================================
 
 /**
  * Retire d'un texte de page le pied de page document-wide (`buildFooter`,
  * document-builder.ts — bande « OI - … CONFIDENTIEL » + compteur « n / N »)
- * avant toute mesure de contenu — même paire de regex que B5, factorisée ici
- * pour B9/B11 : le pied de page est présent sur TOUTES les pages sauf la
- * garde, jamais du contenu de section.
+ * avant toute mesure de contenu.
  */
 function stripFooter(pageText) {
   return pageText.replace(FOOTER_LINE_RE, '').replace(PAGE_COUNTER_LINE_RE, '');
@@ -1182,12 +872,12 @@ function stripFooter(pageText) {
 // Signatures STATIQUES du gabarit (jamais du texte utilisateur) : titres de
 // bloc et en-têtes de tableau susceptibles de rester orphelins en BAS de
 // page quand pdfmake coupe naturellement juste après eux. Sources :
-// `buildDangerPages`/`buildAdversairePages` (DANGEROSITÉ, LOCALISATION,
-// MOBILITÉ, IDENTITÉ), `buildEffractionPages` (Hypothèses d'Effraction,
-// Caractéristiques Techniques, Description des Hypothèses),
-// `buildArticulationCorePages` (Composition par Cellule) — document-builder.ts.
-// Apostrophe tolérante `['’]` : même précaution que `normalize()` (le moteur
-// de rendu peut substituer l'apostrophe courbe).
+// `buildAdversaryFiche` (IDENTITÉ, DANGEROSITÉ, LOCALISATION, MOBILITÉ, ATCD),
+// `buildEffractionPages` (Hypothèses d'Effraction, Caractéristiques
+// Techniques, Description des Hypothèses), `buildArticulationPage`
+// (Composition par Cellule) — document-builder.ts. Apostrophe tolérante
+// `['’]` : même précaution que `normalize()` (le moteur de rendu peut
+// substituer l'apostrophe courbe).
 const B9_TRAILING_TITLE_RES = [
   /Hypothèses d['’]Effraction/,
   /Caractéristiques Techniques/,
@@ -1196,6 +886,7 @@ const B9_TRAILING_TITLE_RES = [
   /LOCALISATION/,
   /MOBILITÉ/,
   /IDENTITÉ/,
+  /\bATCD\b/,
   /Composition par Cellule/,
   HYP_TABLE_HEAD_RE,
 ];
@@ -1205,37 +896,15 @@ const B9_TRAILING_TITLE_RES = [
  * doit se TERMINER par un titre de bloc ou un en-tête de tableau non suivi
  * de données sur la même page — les 2 dernières lignes non blanches de la
  * page (pied de page et compteur retirés) matchent une des signatures
- * `B9_TRAILING_TITLE_RES`. Constat D2 (`cas-reel-01-repro` p11) : queue de page
- * = « Hypothèses d'Effraction » + en-tête « Hypothèse | Technique / Moyen »,
- * les données étant reléguées p12.
+ * `B9_TRAILING_TITLE_RES`.
  *
- * RESSERRAGE issu du balayage anti-faux-positifs §7.5 (résultat MESURÉ, pas
- * une précaution) : la formulation initiale de la SPEC (« les 2 DERNIÈRES
- * lignes matchent une signature ») remontait 26 faux positifs sur les 34
- * fixtures d'audit — toute table d'hypothèses VIDE se termine par
- * `thead` + « Aucune hypothèse saisie » : le thead entre alors dans la
- * fenêtre de 2 lignes ALORS QU'IL EST SUIVI de sa ligne de repli sur la
- * même page (fin de section légitime, pas un orphelin). Le critère retenu
- * est donc : la DERNIÈRE ligne non blanche matche une signature — ce qui
- * couvre les deux motifs réels sans la fenêtre (titre seul en dernière
- * ligne : matché directement ; titre + son thead : le thead EST la dernière
- * ligne et matche `HYP_TABLE_HEAD_RE`, cas D2 p11 vérifié), tandis qu'un
- * titre/thead SUIVI de données ne peut jamais être en dernière ligne.
- * Contre-épreuve après resserrage : FAIL p11 de `cas-reel-01-repro`, 0 hit sur
- * les 68 rendus des 34 fixtures.
- * Mode `--voie=b` : SKIP (SPEC §8.3) — une page dédiée voie B (« une
- * section = une page ») peut légitimement se terminer par un `h3` si la
- * section est courte ; le motif « titre en bas, données page suivante » n'y
- * existe pas puisque chaque section repart sur sa propre page.
+ * RESSERRAGE issu du balayage anti-faux-positifs (round GD.GUARDS, préservé
+ * tel quel par la mission P4) : le critère retenu est que la DERNIÈRE ligne
+ * non blanche matche une signature — couvre le titre seul en dernière ligne
+ * ET le titre + son thead (le thead EST alors la dernière ligne), sans faux
+ * positif sur un titre/thead SUIVI de données (jamais en dernière ligne).
  */
-export function assertB9_noTrailingTitle(text, { voie = 'a' } = {}) {
-  if (voie === 'b') {
-    return {
-      ok: true,
-      skip: true,
-      detail: 'SKIP (mode voie B) — pages dédiées pouvant légitimement se clore sur un titre court, non applicable (SPEC-PDF-DEFINITIF §8)',
-    };
-  }
+export function assertB9_noTrailingTitle(text) {
   const pages = splitPages(text);
   const pageCount = pages.length;
   if (pageCount === 0) {
@@ -1266,107 +935,377 @@ export function assertB9_noTrailingTitle(text, { voie = 'a' } = {}) {
   return { ok: true, detail: `0 titre/en-tête orphelin en bas de page sur ${pageCount} page(s) (hors finale)` };
 }
 
-// Signatures de CONTENU appartenant à un bloc titré — statiques, non
-// dépendantes des données saisies (seule la FORME du gabarit est matchée,
-// jamais son vocabulaire utilisateur) :
-/** Ligne d'antécédent judiciaire « 2021 : TROUBLE… » (`buildDangerPages`, document-builder.ts — l'année 4 chiffres + deux-points est un FORMAT du gabarit). */
-const ATCD_LINE_RE = /^\s*\d{4}\s*:/m;
-/** Ligne de description d'hypothèse « HE1 — … » (`hypothesesDescBlock`, document-builder.ts — préfixe `HEn —` généré par le gabarit). */
-const HE_DESC_RE = /^\s*HE\d+\s*—/m;
+// ===========================================================================
+// C1..C5 — GARDES DE CONTRAT (mission P4, « une page = un usage »,
+// commit a57b128) : vérifient DIRECTEMENT le nouveau contrat livré par le
+// paquet P1/P2 sur `document-builder.ts` — fiche adversaire/ZMSPCP/MOICP
+// TIENNENT sur une page UNIQUE, une cellule effraction s'étend sur 1..K
+// pages AUTONOMES aux titres distincts, et plus AUCUNE continuation
+// « (SUITE) » n'existe pour ces 4 usages (seules les galeries photo
+// conservent leur propre « (suite) » de page-à-page, mécanisme distinct et
+// inchangé — « 1 photo = 1 page », jamais concerné par la refonte P1).
+// Toujours évaluées, INDÉPENDANTES de `--lenient`.
+// ===========================================================================
 
 /**
- * B10 — anti-continuation-sans-titre (généralise B7 au-delà de la seule
- * table effraction) : toute page portant du CONTENU appartenant à un bloc
- * titré (ligne ATCD `AAAA :`, description `HEn —`, ou en-tête de table
- * répété par `headerRows`) doit porter, sur la même page, soit un des 15
- * `MARKERS` (le bloc commence ici), soit un fragment « (suite) » (scission
- * pilotée) — sinon c'est une continuation NATURELLE de pdfmake, sans repère
- * visuel pour le lecteur. C'est la garde qui manquait pour D1 : B4 ne voyait
- * rien (la 1re ligne de la p3 fautive est « USAGE ILLICITE DE STUPEFIANTS »,
- * une continuation de REPLI de ligne longue, pas un tiret de liste) et B1
- * était sous son seuil. Contre-épreuve §7.3 : FAIL p3 (D1) ET p12 (D2) sur
- * `cas-reel-01-repro.pdf`, aucune autre page. Active dans les DEUX voies
- * (SPEC §8.3 : conserver B7'/B10/B11 en `--voie=b`).
+ * C1 — zéro continuation « (SUITE) » pour les usages à contrat dur (mission
+ * P1) : garde INVERSE des anciennes B7/B10 (qui EXIGEAIENT un « (SUITE) » en
+ * cas de débordement) — désormais AUCUNE occurrence n'est tolérée en dehors
+ * des pages de galerie photo. Exclusion des pages portant AU MOINS une image
+ * (`pdfimages`, même détection que A6/B1) : `galleryPages()` (blocks.ts)
+ * conserve un suffixe « (suite) » LÉGITIME et volontairement INCHANGÉ pour
+ * étiqueter la Nième page d'une même galerie multi-photos (chaque page =
+ * 1 photo = son propre usage, un mécanisme totalement distinct de l'ancienne
+ * scission « (SUITE) » de fiche adversaire/ZMSPCP/MOICP/effraction que la
+ * mission P1 a supprimée) — vérifié sur un PDF réel généré depuis
+ * `tests/pdf/fixtures/volumetric-stress.json` (56 photos, plusieurs galeries
+ * à 3-4 clichés) : chaque occurrence de « (SUITE) » y tombe exclusivement
+ * sur une page portant une image.
  */
-export function assertB10_titledBlockContinuationHasSuite(text) {
+export function assertC1_zeroSuiteFragment(text, images) {
   const pages = splitPages(text);
-  const pageCount = pages.length;
-  if (pageCount === 0) {
-    return { ok: true, detail: 'document vide — aucune page à examiner' };
-  }
+  const pagesWithImage = new Set(images.map((img) => img.page));
   const hits = [];
   pages.forEach((pageText, idx) => {
-    const stripped = stripFooter(pageText.normalize('NFC'));
-    const isBlockContent = ATCD_LINE_RE.test(stripped) || HE_DESC_RE.test(stripped) || HYP_TABLE_HEAD_RE.test(stripped);
-    if (!isBlockContent) return;
-    const norm = normalize(stripped);
-    const hasMarker = MARKERS.some((m) => norm.includes(normalize(m.text)));
-    if (hasMarker || SUITE_RE.test(pageText)) return;
-    hits.push(idx + 1);
+    const pageNum = idx + 1;
+    if (pagesWithImage.has(pageNum)) return; // page de galerie photo : « (suite) » y est légitime (cf. JSDoc)
+    if (SUITE_RE.test(pageText)) {
+      hits.push(pageNum);
+    }
   });
   if (hits.length > 0) {
     return {
       ok: false,
-      detail: `${hits.length} page(s) portant du contenu de bloc titré (ligne ATCD « AAAA : », « HEn — » ou en-tête de table) SANS marqueur de section ni « (suite) » : ${hits.join(', ')}`,
+      detail: `${hits.length} page(s) hors galerie photo portant encore un fragment « (SUITE) » — interdit pour fiche adversaire/ZMSPCP/MOICP/effraction (mission P1) : ${hits.join(', ')}`,
     };
   }
-  return { ok: true, detail: `0 continuation de bloc titré sans titre/« (suite) » sur ${pageCount} page(s)` };
+  return { ok: true, detail: `0 fragment « (SUITE) » hors page de galerie photo` };
 }
 
-const B11_MIN_CONTINUATION_CHARS = 300;
+/** Signatures de contenu propres à la fiche adversaire (`buildAdversaryFiche`, document-builder.ts) — jamais utilisées ailleurs dans le document. */
+const FICHE_CONTENT_RES = [/\bIDENTIT[ÉE]\b/, /\bDANGEROSIT[ÉE]\b/, /\bLOCALISATION\b/, /\bMOBILIT[ÉE]\b/, /\bATCD\b/];
 
 /**
- * B11 — anti-page-de-continuation-sous-remplie (renforce B1/B6, SPEC §7.4) :
- * aucune page (hors GARDE, FINALE, et page portant AU MOINS UNE image —
- * même exclusion photo que B1) ne doit, À LA FOIS, ne porter AUCUN des 15
- * `MARKERS`, ne porter AUCUN « (suite) », et compter moins de
- * `B11_MIN_CONTINUATION_CHARS` (300) caractères non blancs hors pied de
- * page. Pourquoi B1 et B6 rataient D1 (p3 de `cas-reel-01-repro`) : B1 compte
- * 225 caractères > son seuil de 120, et B6 voit son ratio de remplissage
- * poussé par la carte LOCALISATION reléguée en BAS de page (le `maxYMax`
- * est haut alors que la page est aux 3/4 vide). La double condition
- * « aucun titre reconnu ET volume maigre » est volontairement ÉTROITE pour
- * ne pas créer de faux positifs : une page courte mais TITRÉE (section
- * légitimement brève, fixtures `iso-*`/`empty-partial`) porte son marqueur
- * et n'est jamais signalée. L'exclusion des pages à image est OBLIGATOIRE
- * (résultat de contre-épreuve §7.4, pas une précaution) : sans elle, la
- * page de galerie photo de `cas-reel-01-repro` (51 car. + 1 photo) remonterait
- * en faux positif. Contre-épreuve : FAIL p3 (194 car., D1) et p14 (31 car.,
- * D3) sur `cas-reel-01-repro.pdf`. Active dans les DEUX voies (SPEC §8.3).
+ * C2 — fiche adversaire : EXACTEMENT une page (mission P1, refonte totale de
+ * `buildAdversaryFiche`). Détection par SPILLOVER (même principe que
+ * l'ancien B10, restreint à ce seul usage) : toute page qui porte une
+ * signature de contenu propre à la fiche (IDENTITÉ/DANGEROSITÉ/LOCALISATION/
+ * MOBILITÉ/ATCD) SANS porter elle-même le titre « N.M FICHE ADVERSAIRE : »
+ * est une preuve directe de débordement — la fiche a dépassé sa page unique,
+ * qu'un « (SUITE) » l'accompagne ou non (C1 l'interdit de toute façon).
  */
-export function assertB11_noUnderfilledContinuationPage(text, images) {
+export function assertC2_adversaryFicheSinglePage(text) {
   const pages = splitPages(text);
-  const pageCount = pages.length;
-  if (pageCount === 0) {
-    return { ok: true, detail: 'document vide — aucune page à examiner' };
-  }
-  const pagesWithImage = new Set(images.map((img) => img.page));
   const hits = [];
-  for (let i = 0; i < pageCount; i++) {
-    const pageNum = i + 1;
-    if (pageNum === 1 || pageNum === pageCount) continue; // garde / finale
-    if (pagesWithImage.has(pageNum)) continue; // la photo EST le contenu (même exclusion que B1)
-    const pageText = pages[i];
-    const norm = normalize(pageText);
-    const hasMarker = MARKERS.some((m) => norm.includes(normalize(m.text)));
-    if (hasMarker || SUITE_RE.test(pageText)) continue;
-    const len = nonBlankLength(stripFooter(pageText));
-    if (len < B11_MIN_CONTINUATION_CHARS) {
-      hits.push({ page: pageNum, len });
+  pages.forEach((pageText, idx) => {
+    const pageNum = idx + 1;
+    if (ADV_FICHE_TITLE_RE.test(pageText)) return; // page portant son propre titre : légitime
+    const matched = FICHE_CONTENT_RES.filter((re) => re.test(pageText));
+    if (matched.length > 0) {
+      hits.push({ page: pageNum, count: matched.length });
     }
-  }
+  });
   if (hits.length > 0) {
-    const list = hits.map((h) => `page ${h.page} (${h.len} car.)`).join(', ');
+    const list = hits.map((h) => `page ${h.page} (${h.count} signature(s) de contenu fiche sans titre)`).join(', ');
     return {
       ok: false,
-      detail: `${hits.length} page(s) de continuation sous-remplie(s) — sans marqueur ni « (suite) », < ${B11_MIN_CONTINUATION_CHARS} caractères non blancs hors pied de page : ${list}`,
+      detail: `${hits.length} page(s) portant du contenu de fiche adversaire SANS son titre « N.M FICHE ADVERSAIRE : » — débordement au-delà de la page unique attendue : ${list}`,
     };
   }
-  return {
-    ok: true,
-    detail: `0 page de continuation sous-remplie sur ${pageCount} page(s) (hors garde/finale/photo, seuil ${B11_MIN_CONTINUATION_CHARS} car.)`,
-  };
+  return { ok: true, detail: `0 débordement de fiche adversaire détecté (chaque fiche tient sur sa page titrée)` };
 }
+
+/** Signature de contenu propre aux pages ZMSPCP/MOICP (`buildArticulationPage`, document-builder.ts) — jamais utilisée ailleurs. */
+const ARTICULATION_BLOCK_CONTENT_RE = /Composition par Cellule/;
+
+/**
+ * C3 — bloc ZMSPCP/MOICP : EXACTEMENT une page (mission P1, refonte totale de
+ * `buildArticulationPage`, mutualisée par les deux blocs). Même principe de
+ * détection par SPILLOVER que C2 : toute page portant « Composition par
+ * Cellule » (signature unique à ce gabarit) sans porter elle-même un titre
+ * « ARTICULATION : ZMSPCP - » ou « ARTICULATION : MOICP - » est la preuve
+ * d'un débordement au-delà de la page unique attendue.
+ */
+export function assertC3_articulationBlockSinglePage(text) {
+  const pages = splitPages(text);
+  const hits = [];
+  pages.forEach((pageText, idx) => {
+    const pageNum = idx + 1;
+    if (ZM_TITLE_RE.test(pageText) || MO_TITLE_RE.test(pageText)) return;
+    if (ARTICULATION_BLOCK_CONTENT_RE.test(pageText)) {
+      hits.push(pageNum);
+    }
+  });
+  if (hits.length > 0) {
+    return {
+      ok: false,
+      detail: `${hits.length} page(s) portant « Composition par Cellule » (contenu ZMSPCP/MOICP) SANS titre « ARTICULATION : ZMSPCP/MOICP - » — débordement au-delà de la page unique attendue : ${hits.join(', ')}`,
+    };
+  }
+  return { ok: true, detail: `0 débordement de bloc ZMSPCP/MOICP détecté (chaque bloc tient sur sa page titrée)` };
+}
+
+/** Signatures de contenu propres à la région Hypothèses d'Effraction (`buildEffractionPages`, document-builder.ts) — jamais utilisées ailleurs. */
+const EFFRAC_CONTENT_RES = [/Hypothèses d['’]Effraction/, HYP_TABLE_HEAD_RE, /Caractéristiques Techniques/];
+
+/**
+ * C4 — cellule effraction : 1..K pages AUTONOMES aux titres DISTINCTS,
+ * jamais de coupure d'hypothèse en son milieu (mission P1, directive Nico
+ * 2026-08-10, escalade a→e de `buildEffractionPages` jusqu'au refus explicite
+ * au palier plancher). Deux vérifications structurelles complémentaires,
+ * toutes deux tirées du texte `pdftotext` :
+ *
+ *  1. SPILLOVER (même principe que C2/C3) : toute page portant une signature
+ *     de contenu Hypothèses d'Effraction SANS porter elle-même un titre
+ *     « ARTICULATION : EFFRACTION - » (base, « — MISSION & CARACTÉRISTIQUES »
+ *     ou « — HYPOTHÈSES <plage> ») est la preuve qu'une page a débordé sans
+ *     que `packHypotheses` (document-builder.ts) ne lui ait attribué son
+ *     propre titre autonome — exactement le motif qu'interdit la directive
+ *     « jamais de coupure en milieu d'hypothèse, chaque page se suffit ».
+ *  2. CONTIGUÏTÉ DES PLAGES : pour chaque titre de base effraction, les
+ *     plages « HYPOTHÈSES a-b » qui le suivent doivent être STRICTEMENT
+ *     croissantes et NON chevauchantes (`prevEnd < nextStart`) — le proxy
+ *     texte le plus direct disponible pour « aucune hypothèse (H1..Hn)
+ *     n'apparaît scindée entre 2 pages, ni dupliquée, ni omise » sans
+ *     dépendre du vocabulaire libre saisi par l'utilisateur pour chaque
+ *     hypothèse (identifiants non fiables pour une regex générique).
+ */
+export function assertC4_effractionAutonomousPages(text) {
+  const pages = splitPages(text);
+  const hits = [];
+
+  // 1. Spillover.
+  pages.forEach((pageText, idx) => {
+    const pageNum = idx + 1;
+    if (EFFRAC_TITLE_RE.test(pageText)) return;
+    const matched = EFFRAC_CONTENT_RES.filter((re) => re.test(pageText));
+    if (matched.length > 0) {
+      hits.push(`page ${pageNum} : contenu Hypothèses d'Effraction sans titre « ARTICULATION : EFFRACTION - » (débordement)`);
+    }
+  });
+
+  // 2. Contiguïté des plages « HYPOTHÈSES a-b » par titre de base, dans
+  //    l'ordre de rencontre du document.
+  const lastRangeEndByBase = new Map();
+  pages.forEach((pageText, idx) => {
+    const pageNum = idx + 1;
+    const m = pageText.match(EFFRAC_TITLE_RE);
+    if (!m || !m[2] || !/^HYPOTH/i.test(m[2])) return;
+    const base = m[1].trim();
+    const rangeMatch = m[2].match(/(\d+)(?:-(\d+))?\s*$/);
+    if (!rangeMatch) return;
+    const start = Number(rangeMatch[1]);
+    const end = rangeMatch[2] ? Number(rangeMatch[2]) : start;
+    const prevEnd = lastRangeEndByBase.get(base);
+    if (prevEnd !== undefined && start <= prevEnd) {
+      hits.push(`page ${pageNum} : plage « HYPOTHÈSES ${rangeMatch[0]} » chevauche ou répète la précédente (fin ${prevEnd}) pour « ${base} »`);
+    }
+    lastRangeEndByBase.set(base, end);
+  });
+
+  if (hits.length > 0) {
+    return {
+      ok: false,
+      detail: `${hits.length} anomalie(s) de pagination effraction : ${hits.join(' ; ')}`,
+    };
+  }
+  return { ok: true, detail: `0 anomalie de pagination sur les cellules effraction (spillover et contiguïté des plages d'hypothèses)` };
+}
+
+const FIXTURE_INTEGRITY_MIN_LEN = 12;
+// Clés JAMAIS exploitables telles quelles : `id`/`annotations`/`tools` sont
+// des identifiants ou du JSON sérialisé jamais rendus verbatim dans le texte
+// (`tools`/`annotations`, `OiPhotoMeta`) ; `title` est exclu car TOUS les
+// titres « title » du contrat (`zmspcp_blocks[].title`, `moicp_blocks[].title`,
+// `effraction_blocks[].title`) transitent par `blocks.h2()` qui les
+// MAJUSCULE (`document-builder.ts`, aucune CSS possible sous pdfmake,
+// contrairement à l'ancienne voie B) — leur casse SAISIE originale
+// n'apparaît donc JAMAIS verbatim dans le texte extrait, un test
+// sensible à la casse (cf. `normalize()`, volontairement inchangé) y
+// échouerait à tort. Coût accepté : les titres d'hypothèse effraction
+// (`OiEffractionHypothesis.title`, rendu SANS majuscule forcée) échappent
+// aussi à ce filtre par clé plutôt que par usage — préférence pour un filtre
+// simple et sûr (aucun faux FAIL) à une couverture exhaustive.
+// `options` exclue en plus (mission P4, balayage réel) : `formData.options`
+// porte les CATALOGUES de valeurs des listes déroulantes de l'UI
+// (`fonctions`/`gpbs`/… — cf. `formulaires.ts`), jamais une valeur SAISIE —
+// seule la valeur CHOISIE (dans les champs `fonction`/`gpb`… des membres
+// PATRACDVR) est rendue dans le PDF ; le catalogue complet ne l'est jamais.
+const FIXTURE_INTEGRITY_SKIP_KEYS = new Set(['id', 'annotations', 'tools', 'title', 'options']);
+
+/**
+ * Parcourt récursivement `formData` (fixture `{ formData, photosBase64?,
+ * isDark? }`, même forme que `generate-from-fixture.mjs`) et collecte
+ * l'ensemble des chaînes de texte libre plausiblement rendues verbatim dans
+ * le PDF (longueur ≥ `FIXTURE_INTEGRITY_MIN_LEN`, hors replis `-`, hors clés
+ * `FIXTURE_INTEGRITY_SKIP_KEYS`).
+ */
+function collectFixtureIntegrityStrings(formData) {
+  const found = new Set();
+  function walk(value, key) {
+    if (key !== undefined && FIXTURE_INTEGRITY_SKIP_KEYS.has(key)) return;
+    if (typeof value === 'string') {
+      const t = value.trim();
+      if (t.length >= FIXTURE_INTEGRITY_MIN_LEN && t !== '-') {
+        found.add(t);
+      }
+    } else if (Array.isArray(value)) {
+      value.forEach((v) => walk(v, key));
+    } else if (value !== null && typeof value === 'object') {
+      Object.entries(value).forEach(([k, v]) => walk(v, k));
+    }
+  }
+  walk(formData, undefined);
+  return Array.from(found);
+}
+
+/** Découpe normalisée en mots (espaces déjà collapsés par `normalize()`). */
+function wordsOf(s) {
+  const n = normalize(s);
+  return n === '' ? [] : n.split(' ');
+}
+
+/**
+ * Découpe LÂCHE — en plus des espaces, sur les TIRETS `-` (`breakLongTokens`,
+ * `text-utils.ts` : les champs de test « cesurage » de ce dépôt sont des
+ * TOKENS ininterrompus de centaines de caractères ponctués de vrais tirets,
+ * ex. `identifiant-1-longue-suite-de-caracteres` — `estimateWrappedLines`/
+ * pdfmake les replie à l'un de ces tirets RÉELS quand ils dépassent la
+ * largeur de colonne, et `pdftotext -layout` restitue alors le saut de ligne
+ * comme un ESPACE juste après ce tiret (`normalize()` le collapse mais ne
+ * peut pas savoir qu'aucun espace n'existait à cet endroit dans le texte
+ * SAISI) — un simple découpage sur espaces verrait alors « suite-de-
+ * caracteres » scindé différemment côté texte saisi (1 mot) et côté texte
+ * rendu (2 mots, à cause de l'espace inséré). Découper aussi sur `-` DES
+ * DEUX CÔTÉS élimine cette ambiguïté de position de rupture sans jamais
+ * masquer une vraie perte de mot.
+ */
+function looseWordsOf(s) {
+  const n = normalize(s);
+  return n === '' ? [] : n.split(/[\s-]+/).filter((w) => w !== '');
+}
+
+/** Multiset (mot -> occurrences) — cf. `wordCoverageRatio` ci-dessous. */
+function wordMultiset(words) {
+  const m = new Map();
+  for (const w of words) m.set(w, (m.get(w) ?? 0) + 1);
+  return m;
+}
+
+/**
+ * Ratio de couverture PAR SAC DE MOTS (ordre ignoré, multiplicité respectée)
+ * de `needleWords` dans `haystackMultiset` — cf. JSDoc `assertC5_fixtureIntegrity`
+ * (repli anti-intercalation de colonnes `grid2`) : un layout `grid2()` répartit
+ * le texte d'un champ sur des lignes physiques NON CONTIGUËS de `pdftotext
+ * -layout` (la colonne voisine s'intercale entre deux fragments), ce qui peut
+ * aussi FAIRE REMONTER l'ordre relatif de fragments lointains (deux
+ * fragments d'un même champ long peuvent apparaître sur des lignes émises
+ * dans un ordre différent de leur ordre de lecture naturel selon la hauteur
+ * relative des colonnes voisines à cet endroit précis de la page) — une
+ * sous-séquence STRICTEMENT ordonnée s'est révélée trop fragile en pratique
+ * (faux FAIL mesuré sur `volumetric-stress.json`, ATCD d'adversaire coupé
+ * par un titre `DANGEROSITÉ` intercalé). Le SAC DE MOTS reste un test fort :
+ * une VRAIE troncature (perte du dernier tiers d'un champ) fait chuter le
+ * ratio de couverture largement sous le seuil, alors qu'une INTERCALATION/
+ * un RÉORDONNANCEMENT de colonnes ne PERD aucun mot, seulement leur position
+ * relative.
+ */
+function wordCoverageRatio(needleWords, haystackMultiset) {
+  if (needleWords.length === 0) return 1;
+  let hits = 0;
+  const consumed = new Map();
+  for (const w of needleWords) {
+    const avail = (haystackMultiset.get(w) ?? 0) - (consumed.get(w) ?? 0);
+    if (avail > 0) {
+      hits++;
+      consumed.set(w, (consumed.get(w) ?? 0) + 1);
+    }
+  }
+  return hits / needleWords.length;
+}
+
+const FIXTURE_INTEGRITY_COVERAGE_MIN = 0.9;
+
+/**
+ * C5 — anti-troncature ÉTENDUE : extension de A8 (`assertA8_sampleData`),
+ * demandée par la mission P4 « le texte saisi doit être INTÉGRALEMENT
+ * présent ». A8 exige un fichier `--sample` distinct, curaté à la main
+ * (`expect: []`) — utile pour un étalon externe (`oi-reference/recipe-
+ * data.json`) mais jamais activé en CI sur les fixtures de ce dépôt (cf.
+ * README, désaccord de données). C5 dérive au contraire ses chaînes
+ * attendues DIRECTEMENT de la fixture `--fixture` utilisée pour générer le
+ * PDF (`tests/pdf/generate-from-fixture.mjs <fixture> --out=...` puis
+ * `verify-structure.mjs <pdf> --fixture=<même fixture>`) — zéro désaccord de
+ * données possible (même source), donc activable en CI SANS curation
+ * manuelle. Couvre tout champ texte libre ≥ 12 caractères de `formData`
+ * (situation, missions, ATCD, hypothèses, mesures effraction…) — précisément
+ * les champs volumineux que le solveur fit-to-page (mission P1) doit faire
+ * TENIR intégralement ou REFUSER, jamais tronquer silencieusement.
+ *
+ * REPLI ANTI-INTERCALATION DE COLONNES : un champ long posé en `grid2()`
+ * (`situation_generale`/`situation_particuliere` à côté de `ciblesCard`,
+ * `amies`/`terrain_info` à côté de `population`/`cadre_juridique`…) s'enroule
+ * sur PLUSIEURS lignes physiques dans sa colonne ; `pdftotext -layout`
+ * restitue le document ligne-de-page-physique par ligne-de-page-physique, et
+ * intercale donc le DÉBUT de la colonne voisine ENTRE deux fragments
+ * consécutifs de notre champ (ex. « …un jeu de » <contenu de la colonne
+ * voisine> « données volontairement… ») — un simple `includes()` de la
+ * chaîne intégrale y échoue à tort alors que le texte est INTÉGRALEMENT
+ * présent, seulement réparti sur des lignes non contiguës — voire, dans
+ * certains cas, sur des lignes émises dans un ordre relatif différent selon
+ * la hauteur des colonnes voisines à cet endroit (une sous-séquence
+ * STRICTEMENT ordonnée s'est révélée trop fragile, faux FAIL mesuré). Repli :
+ * si le `includes()` direct échoue pour une chaîne d'au moins 4 mots, on
+ * vérifie une couverture PAR SAC DE MOTS (`wordCoverageRatio`, ordre ignoré,
+ * multiplicité respectée) ≥ `FIXTURE_INTEGRITY_COVERAGE_MIN` (90 %) dans le
+ * texte complet — un VRAI tronquage (perte du dernier tiers d'un ATCD,
+ * coupure en milieu de phrase) fait chuter ce ratio largement sous le seuil,
+ * alors qu'une intercalation/un réordonnancement de colonnes ne fait
+ * qu'ESPACER/DÉPLACER les mots, jamais en perdre.
+ */
+export function assertC5_fixtureIntegrity(text, fixturePath) {
+  if (!fixturePath) {
+    return { ok: true, skip: true, detail: 'SKIP — --fixture non fourni, assertion non applicable' };
+  }
+  if (!existsSync(fixturePath)) {
+    return { ok: false, detail: `fixture introuvable : ${fixturePath}` };
+  }
+  let fixture;
+  try {
+    fixture = JSON.parse(readFileSync(fixturePath, 'utf8'));
+  } catch (err) {
+    return { ok: false, detail: `JSON invalide dans ${fixturePath} : ${err instanceof Error ? err.message : String(err)}` };
+  }
+  const formData = fixture && typeof fixture === 'object' ? fixture.formData : undefined;
+  if (!formData || typeof formData !== 'object') {
+    return { ok: false, detail: `${fixturePath} ne contient pas de clé "formData" exploitable` };
+  }
+  const expected = collectFixtureIntegrityStrings(formData);
+  if (expected.length === 0) {
+    return { ok: false, detail: `${fixturePath} ne fournit aucune chaîne exploitable (≥ ${FIXTURE_INTEGRITY_MIN_LEN} car.) pour l'intégrité` };
+  }
+  const norm = normalize(text);
+  const haystackMultiset = wordMultiset(wordsOf(text));
+  const looseHaystackMultiset = wordMultiset(looseWordsOf(text));
+  const missing = expected.filter((s) => {
+    if (norm.includes(normalize(s))) return false;
+    const needleWords = wordsOf(s);
+    if (needleWords.length >= 4 && wordCoverageRatio(needleWords, haystackMultiset) >= FIXTURE_INTEGRITY_COVERAGE_MIN) return false;
+    // Repli supplémentaire (découpage sur tirets EN PLUS des espaces, cf.
+    // JSDoc `looseWordsOf`) pour les tokens ininterrompus « cesurage » —
+    // n'accepte que si la découpe lâche produit au moins 4 fragments (même
+    // garde-fou anti-faux-PASS que le repli mots).
+    const looseNeedleWords = looseWordsOf(s);
+    if (looseNeedleWords.length >= 4 && wordCoverageRatio(looseNeedleWords, looseHaystackMultiset) >= FIXTURE_INTEGRITY_COVERAGE_MIN) return false;
+    return true;
+  });
+  const ok = missing.length === 0;
+  const detail = ok
+    ? `${expected.length}/${expected.length} chaîne(s) saisie(s) (≥ ${FIXTURE_INTEGRITY_MIN_LEN} car., dérivées de ${fixturePath}) intégralement présente(s) dans pdftotext`
+    : `${expected.length - missing.length}/${expected.length} présente(s) — manquante(s) ou TRONQUÉE(S) (${missing.length}) : ${missing.slice(0, 5).map((s) => JSON.stringify(s.length > 60 ? `${s.slice(0, 60)}…` : s)).join(', ')}${missing.length > 5 ? `, … (+${missing.length - 5})` : ''}`;
+  return { ok, detail };
+}
+
 
 // ===========================================================================
 // CLI
@@ -1374,7 +1313,7 @@ export function assertB11_noUnderfilledContinuationPage(text, images) {
 
 function printUsage() {
   console.error(
-    'Usage : node tests/pdf/verify-structure.mjs <fichier.pdf> [--format=a4|16:9] [--photos=N] [--sample=<fichier.json>] [--json] [--lenient] [--voie=a|b]'
+    'Usage : node tests/pdf/verify-structure.mjs <fichier.pdf> [--format=a4|16:9] [--photos=N] [--sample=<fichier.json>] [--fixture=<fichier.json>] [--json] [--lenient]'
   );
 }
 
@@ -1413,22 +1352,11 @@ function parseArgs(argv) {
   }
 
   const sample = getValue('sample') || undefined;
+  const fixture = getValue('fixture') || undefined;
   const json = flags.some((f) => f === '--json');
   const lenient = flags.some((f) => f === '--lenient');
 
-  // BLIND.FIX (point 5) — `--voie=a|b` : voie A (pdfmake, défaut — comportement
-  // INCHANGÉ) ou voie B (print-view.ts/navigateur) pour les gardes B1/B2/B6
-  // (cf. leur JSDoc respective) dont le calibrage suppose par défaut la
-  // pagination dense multi-sections de la voie A — inapplicable à la voie B
-  // qui a une page dédiée par section PAR CONCEPTION.
-  const voieRaw = (getValue('voie') ?? 'a').toLowerCase();
-  if (voieRaw !== 'a' && voieRaw !== 'b') {
-    console.error(`--voie invalide : "${voieRaw}" (attendu : a ou b)`);
-    printUsage();
-    process.exit(2);
-  }
-
-  return { file, format, photos, sample, json, lenient, voie: voieRaw };
+  return { file, format, photos, sample, fixture, json, lenient };
 }
 
 function main() {
@@ -1467,34 +1395,26 @@ function main() {
   const assertions = [
     { code: 'A1', ...assertA1_geometry(pdfInfo, opts.format) },
     { code: 'A2', ...assertA2_realText(text) },
-    { code: 'A3', ...assertA3_sectionOrder(text, { lenient: opts.lenient, voie: opts.voie }) },
+    { code: 'A3', ...assertA3_sectionOrder(text, { lenient: opts.lenient }) },
     { code: 'A4', ...assertA4_duplicateSevenPreserved(text) },
     { code: 'A5', ...assertA5_embeddedFonts(fonts) },
     { code: 'A6', ...assertA6_noRasterization(images, pdfInfo, opts.photos) },
     { code: 'A7', ...assertA7_weight(fileSizeBytes) },
     { code: 'A8', ...assertA8_sampleData(text, opts.sample) },
-    // Guardrail pagination (mission PG.GUARD) — toujours évaluées, INDÉPENDANTES
-    // de --lenient (cf. en-tête de ces 3 fonctions).
-    { code: 'B1', ...assertB1_noOrphanPage(text, images, { voie: opts.voie }) },
-    { code: 'B2', ...assertB2_noVerticalWordSplit(text, { voie: opts.voie }) },
-    { code: 'B3', ...assertB3_noTitleOnlyPage(text, images, { voie: opts.voie }) },
-    // Guardrail pagination round 2 (mission PG.REFIX) — mêmes garanties que
-    // B1-B3 (toujours évaluées, indépendantes de --lenient).
-    { code: 'B4', ...assertB4_noHeaderlessDashContinuation(text, images) },
+    // Guardrail pagination CONSERVÉ/ADAPTÉ (missions PG.GUARD/PG.REFIX/
+    // GD.GUARDS) — toujours évaluées, INDÉPENDANTES de --lenient.
+    { code: 'B1', ...assertB1_noOrphanPage(text, images) },
+    { code: 'B2', ...assertB2_noVerticalWordSplit(text) },
     { code: 'B5', ...assertB5_noEmptyFieldDominatedPage(text) },
-    { code: 'B6', ...assertB6_verticalFillRatio(bboxPages, { voie: opts.voie }) },
-    // Guardrail pagination round 3 (mission BLIND.REFIX round 2) — même
-    // garantie que B1/B4 (toujours évaluée, indépendante de --lenient).
-    { code: 'B7', ...assertB7_effractionSuiteTitlePresent(text) },
-    // Guardrail pagination round 4 (mission FB.FIX, point 3) — toujours
-    // évaluée (indépendante de --lenient), SKIP en mode --voie=a (cf. sa JSDoc).
-    { code: 'B8', ...assertB8_noHeaderlessKvOrphanPage(text, images, { voie: opts.voie }) },
-    // Guardrail pagination round 5 (mission GD.GUARDS, SPEC-PDF-DEFINITIF §7)
-    // — toujours évaluées, indépendantes de --lenient ; B9 SKIP en --voie=b
-    // (cf. leur JSDoc respective).
-    { code: 'B9', ...assertB9_noTrailingTitle(text, { voie: opts.voie }) },
-    { code: 'B10', ...assertB10_titledBlockContinuationHasSuite(text) },
-    { code: 'B11', ...assertB11_noUnderfilledContinuationPage(text, images) },
+    { code: 'B6', ...assertB6_verticalFillRatio(bboxPages, text) },
+    { code: 'B9', ...assertB9_noTrailingTitle(text) },
+    // Gardes de CONTRAT (mission P4, « une page = un usage », commit a57b128)
+    // — toujours évaluées, INDÉPENDANTES de --lenient.
+    { code: 'C1', ...assertC1_zeroSuiteFragment(text, images) },
+    { code: 'C2', ...assertC2_adversaryFicheSinglePage(text) },
+    { code: 'C3', ...assertC3_articulationBlockSinglePage(text) },
+    { code: 'C4', ...assertC4_effractionAutonomousPages(text) },
+    { code: 'C5', ...assertC5_fixtureIntegrity(text, opts.fixture) },
   ];
 
   for (const a of assertions) {

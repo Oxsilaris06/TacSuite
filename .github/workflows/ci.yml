@@ -38,11 +38,15 @@ jobs:
       - name: Generate PDF from reference fixture
         run: node tests/pdf/generate-from-fixture.mjs tests/pdf/fixtures/long-case.json --out=/tmp/ci-long-case.pdf
 
+      # 18/18 requis (A1-A8 + B1/B2/B5/B6/B9 + C1-C5, mission P4 « une page =
+      # un usage », commit a57b128). --fixture active C5 (anti-troncature
+      # étendue) contre la MÊME fixture que la génération — zéro désaccord de
+      # données possible (cf. tests/pdf/README.md).
       - name: PDF structural non-regression (verify-structure)
-        run: node tests/pdf/verify-structure.mjs /tmp/ci-long-case.pdf --lenient
+        run: node tests/pdf/verify-structure.mjs /tmp/ci-long-case.pdf --lenient --fixture=tests/pdf/fixtures/long-case.json
 
-      - name: Generate PDF from volumetric-stress fixture (R4-b gate)
+      - name: Generate PDF from volumetric-stress fixture (R4-b/P4 gate)
         run: node tests/pdf/generate-from-fixture.mjs tests/pdf/fixtures/volumetric-stress.json --out=/tmp/ci-volumetric-stress.pdf
 
-      - name: PDF structural non-regression — volumetric gate (verify-structure, 19/19 requis)
-        run: node tests/pdf/verify-structure.mjs /tmp/ci-volumetric-stress.pdf --photos=58
+      - name: PDF structural non-regression — volumetric gate (verify-structure, 18/18 requis)
+        run: node tests/pdf/verify-structure.mjs /tmp/ci-volumetric-stress.pdf --photos=58 --fixture=tests/pdf/fixtures/volumetric-stress.json

@@ -15,7 +15,11 @@
  * import de test sans déclencher `process.exit()` (cf. commentaire au point
  * d'usage dans `verify-structure.mjs`).
  */
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 import {
     assertA1_geometry,
@@ -26,6 +30,16 @@ import {
     assertA6_noRasterization,
     assertA7_weight,
     assertA8_sampleData,
+    assertB1_noOrphanPage,
+    assertB2_noVerticalWordSplit,
+    assertB5_noEmptyFieldDominatedPage,
+    assertB6_verticalFillRatio,
+    assertB9_noTrailingTitle,
+    assertC1_zeroSuiteFragment,
+    assertC2_adversaryFicheSinglePage,
+    assertC3_articulationBlockSinglePage,
+    assertC4_effractionAutonomousPages,
+    assertC5_fixtureIntegrity,
     MARKERS,
     normalize,
     PAGE_DIMENSIONS_PT,
@@ -34,6 +48,9 @@ import {
     // @ts-expect-error — module .mjs sans déclaration de types ; les fonctions
     // exportées sont exercées via leur comportement runtime, pas leur typage.
 } from '../../pdf/verify-structure.mjs';
+
+/** Assemble des pages `pdftotext -layout` séparées par form feed `\f` (même convention que `splitPages`, verify-structure.mjs). */
+const joinPages = (pages: string[]) => pages.join('\f') + '\f';
 
 // ===========================================================================
 // MARKERS / PAGE_DIMENSIONS_PT — sanity sur les constantes verbatim SPEC §7
@@ -200,10 +217,14 @@ describe('assertA1_geometry()', () => {
         expect(r.ok).toBe(true);
     });
 
-    it('FAIL : moins de 12 pages', () => {
-        const r = assertA1_geometry(homogeneousA4(11), 'a4');
+    it('FAIL : moins de 8 pages (plancher recalibré mission P4, layout « une page = un usage »)', () => {
+        const r = assertA1_geometry(homogeneousA4(7), 'a4');
         expect(r.ok).toBe(false);
-        expect(r.detail).toMatch(/11/);
+        expect(r.detail).toMatch(/7/);
+    });
+
+    it('PASS : exactement 8 pages (plancher recalibré)', () => {
+        expect(assertA1_geometry(homogeneousA4(8), 'a4').ok).toBe(true);
     });
 
     it('FAIL : une page hors tolérance ±0.5pt', () => {
@@ -459,5 +480,242 @@ describe('assertA8_sampleData()', () => {
         const r = assertA8_sampleData('texte', '/chemin/inexistant.json');
         expect(r.ok).toBe(false);
         expect(r.detail).toMatch(/introuvable/);
+    });
+});
+
+// ===========================================================================
+// B1/B2/B5/B6/B9 — guardrail pagination CONSERVÉ/ADAPTÉ (mission P4)
+// ===========================================================================
+describe('assertB1_noOrphanPage()', () => {
+    it('PASS : aucune page orpheline (garde/finale/photo exclues, contenu suffisant ailleurs)', () => {
+        const text = joinPages(['GARDE', 'a'.repeat(200), 'FINALE']);
+        expect(assertB1_noOrphanPage(text, []).ok).toBe(true);
+    });
+
+    it('FAIL : une page intermédiaire sous 120 caractères non blancs', () => {
+        const text = joinPages(['GARDE', 'trop court', 'FINALE']);
+        const r = assertB1_noOrphanPage(text, []);
+        expect(r.ok).toBe(false);
+        expect(r.detail).toMatch(/page 2/);
+    });
+
+    it('PASS : une page orpheline exemptée car elle porte une image (page photo)', () => {
+        const text = joinPages(['GARDE', 'légende courte', 'FINALE']);
+        const images = [{ page: 2, type: 'image', width: 100, height: 100, xppi: 150, yppi: 150 }];
+        expect(assertB1_noOrphanPage(text, images).ok).toBe(true);
+    });
+});
+
+describe('assertB2_noVerticalWordSplit()', () => {
+    it('SKIP si aucun tableau PATRACDVR dans le document', () => {
+        const r = assertB2_noVerticalWordSplit('texte sans marqueur PATRACDVR');
+        expect(r.ok).toBe(true);
+        expect(r.skip).toBe(true);
+    });
+
+    it('FAIL : mot capitalisé scindé sur 2 lignes adjacentes à la même colonne', () => {
+        const text = `7. RÉCAPITULATIF PATRACDVR\nSHARA\nN reste\nAVEZ-VOUS DES QUESTIONS ?`;
+        const r = assertB2_noVerticalWordSplit(text);
+        expect(r.ok).toBe(false);
+        expect(r.detail).toMatch(/SHARAN/);
+    });
+
+    it('PASS : aucun mot cassé dans la section PATRACDVR', () => {
+        const text = `7. RÉCAPITULATIF PATRACDVR\nSHARAN complet\nAVEZ-VOUS DES QUESTIONS ?`;
+        expect(assertB2_noVerticalWordSplit(text).ok).toBe(true);
+    });
+});
+
+describe('assertB5_noEmptyFieldDominatedPage()', () => {
+    it('FAIL : page dominée par ≥4 libellés vides "LABEL : -" et peu de contenu', () => {
+        const page = ['STRUCTURE : -', 'SERRURERIE : -', 'ENVIRONNEMENT : -', 'H. PORTE : -'].join('\n');
+        const r = assertB5_noEmptyFieldDominatedPage(page);
+        expect(r.ok).toBe(false);
+    });
+
+    it('PASS : moins de 4 libellés vides sur la page', () => {
+        const page = ['STRUCTURE : -', 'SERRURERIE : -'].join('\n');
+        expect(assertB5_noEmptyFieldDominatedPage(page).ok).toBe(true);
+    });
+});
+
+describe('assertB6_verticalFillRatio()', () => {
+    const bboxPages = (ratios: number[], height = 100) =>
+        ratios.map((r) => ({ width: 200, height, maxYMax: r * height }));
+
+    it('FAIL : page composite (hors usage à contrat dur) sous 35% de remplissage', () => {
+        const text = joinPages(['3. ENVIRONNEMENT ET AMIS', 'AVEZ-VOUS DES QUESTIONS ?']);
+        const r = assertB6_verticalFillRatio(bboxPages([0.1, 0.5]), text);
+        expect(r.ok).toBe(false);
+        expect(r.detail).toMatch(/page 1/);
+    });
+
+    it('PASS : fiche adversaire (usage à contrat dur) exemptée même peu remplie', () => {
+        const text = joinPages(['2.1 FICHE ADVERSAIRE : X', 'AVEZ-VOUS DES QUESTIONS ?']);
+        expect(assertB6_verticalFillRatio(bboxPages([0.1, 0.5]), text).ok).toBe(true);
+    });
+
+    it('FAIL : page effraction "MISSION & CARACTÉRISTIQUES" clairsemée SUIVIE d\'une page "HYPOTHÈSES" du même bloc (continuation suspecte)', () => {
+        const text = joinPages([
+            'ARTICULATION : EFFRACTION - X — MISSION & CARACTÉRISTIQUES',
+            'ARTICULATION : EFFRACTION - X — HYPOTHÈSES 1-2',
+            'AVEZ-VOUS DES QUESTIONS ?',
+        ]);
+        const r = assertB6_verticalFillRatio(bboxPages([0.1, 0.9, 0.5]), text);
+        expect(r.ok).toBe(false);
+        expect(r.detail).toMatch(/page 1/);
+    });
+
+    it('PASS : dernière page effraction du groupe exemptée (rien ne suit)', () => {
+        const text = joinPages(['ARTICULATION : EFFRACTION - X — HYPOTHÈSES 3-4', 'AVEZ-VOUS DES QUESTIONS ?']);
+        expect(assertB6_verticalFillRatio(bboxPages([0.1, 0.5]), text).ok).toBe(true);
+    });
+});
+
+describe('assertB9_noTrailingTitle()', () => {
+    it('FAIL : page se terminant par un titre/en-tête orphelin', () => {
+        const text = joinPages(['contenu\nDANGEROSITÉ', 'FINALE']);
+        const r = assertB9_noTrailingTitle(text);
+        expect(r.ok).toBe(false);
+        expect(r.detail).toMatch(/page 1/);
+    });
+
+    it('PASS : titre suivi de contenu sur la même page', () => {
+        const text = joinPages(['DANGEROSITÉ\ndonnées ici', 'FINALE']);
+        expect(assertB9_noTrailingTitle(text).ok).toBe(true);
+    });
+});
+
+// ===========================================================================
+// C1..C5 — gardes de CONTRAT mission P4 (« une page = un usage »)
+// ===========================================================================
+describe('assertC1_zeroSuiteFragment()', () => {
+    it('FAIL : "(SUITE)" sur une page SANS image (usage à contrat dur)', () => {
+        const text = joinPages(['ARTICULATION : ZMSPCP - X (SUITE)']);
+        const r = assertC1_zeroSuiteFragment(text, []);
+        expect(r.ok).toBe(false);
+        expect(r.detail).toMatch(/: 1$/);
+    });
+
+    it('PASS : "(SUITE)" toléré sur une page de galerie photo (au moins une image)', () => {
+        const text = joinPages(['ADVERSAIRE : X (PHOTOS ANNEXES) (SUITE)']);
+        const images = [{ page: 1, type: 'image', width: 100, height: 100, xppi: 150, yppi: 150 }];
+        expect(assertC1_zeroSuiteFragment(text, images).ok).toBe(true);
+    });
+
+    it('PASS : aucune occurrence de "(SUITE)"', () => {
+        expect(assertC1_zeroSuiteFragment(joinPages(['rien à signaler']), []).ok).toBe(true);
+    });
+});
+
+describe('assertC2_adversaryFicheSinglePage()', () => {
+    it('PASS : contenu de fiche uniquement sur des pages portant son titre', () => {
+        const text = joinPages(['2.1 FICHE ADVERSAIRE : X\nIDENTITÉ\nDANGEROSITÉ', 'autre page']);
+        expect(assertC2_adversaryFicheSinglePage(text).ok).toBe(true);
+    });
+
+    it('FAIL : signature de contenu fiche (ex. ATCD) sur une page SANS titre "N.M FICHE ADVERSAIRE"', () => {
+        const text = joinPages(['2.1 FICHE ADVERSAIRE : X\nIDENTITÉ', 'ATCD débordant ici sans titre']);
+        const r = assertC2_adversaryFicheSinglePage(text);
+        expect(r.ok).toBe(false);
+        expect(r.detail).toMatch(/page 2/);
+    });
+});
+
+describe('assertC3_articulationBlockSinglePage()', () => {
+    it('PASS : "Composition par Cellule" uniquement sur la page titrée', () => {
+        const text = joinPages(['ARTICULATION : ZMSPCP - X\nComposition par Cellule', 'autre page']);
+        expect(assertC3_articulationBlockSinglePage(text).ok).toBe(true);
+    });
+
+    it('FAIL : "Composition par Cellule" sur une page sans titre ZMSPCP/MOICP', () => {
+        const text = joinPages(['ARTICULATION : MOICP - X', 'Composition par Cellule débordante']);
+        const r = assertC3_articulationBlockSinglePage(text);
+        expect(r.ok).toBe(false);
+        expect(r.detail).toMatch(/: 2$/);
+    });
+});
+
+describe('assertC4_effractionAutonomousPages()', () => {
+    it('PASS : pages autonomes à plages non chevauchantes', () => {
+        const text = joinPages([
+            'ARTICULATION : EFFRACTION - X — MISSION & CARACTÉRISTIQUES\nHypothèses d\'Effraction',
+            'ARTICULATION : EFFRACTION - X — HYPOTHÈSES 3-4\nHypothèses d\'Effraction',
+        ]);
+        expect(assertC4_effractionAutonomousPages(text).ok).toBe(true);
+    });
+
+    it('FAIL : contenu Hypothèses d\'Effraction sur une page sans titre effraction (spillover)', () => {
+        const text = joinPages(['ARTICULATION : EFFRACTION - X\nHypothèses d\'Effraction', 'Technique / Moyen débordant']);
+        const r = assertC4_effractionAutonomousPages(text);
+        expect(r.ok).toBe(false);
+        expect(r.detail).toMatch(/spillover|débordement/);
+    });
+
+    it('FAIL : plages "HYPOTHÈSES" chevauchantes pour le même titre de base', () => {
+        const text = joinPages([
+            'ARTICULATION : EFFRACTION - X — MISSION & CARACTÉRISTIQUES',
+            'ARTICULATION : EFFRACTION - X — HYPOTHÈSES 1-2',
+            'ARTICULATION : EFFRACTION - X — HYPOTHÈSES 2-3',
+        ]);
+        const r = assertC4_effractionAutonomousPages(text);
+        expect(r.ok).toBe(false);
+        expect(r.detail).toMatch(/chevauche/);
+    });
+});
+
+describe('assertC5_fixtureIntegrity()', () => {
+    let dir: string;
+
+    beforeEach(() => {
+        dir = mkdtempSync(join(tmpdir(), 'pdf-p8-c5-'));
+    });
+
+    afterEach(() => {
+        rmSync(dir, { recursive: true, force: true });
+    });
+
+    it('SKIP si --fixture non fourni', () => {
+        const r = assertC5_fixtureIntegrity('texte', undefined);
+        expect(r.ok).toBe(true);
+        expect(r.skip).toBe(true);
+    });
+
+    it('FAIL si le fichier fixture est introuvable', () => {
+        const r = assertC5_fixtureIntegrity('texte', '/chemin/inexistant.json');
+        expect(r.ok).toBe(false);
+        expect(r.detail).toMatch(/introuvable/);
+    });
+
+    it('PASS : chaîne saisie (≥ 12 car.) intégralement présente dans le texte extrait', () => {
+        const fixturePath = join(dir, 'fixture.json');
+        writeFileSync(fixturePath, JSON.stringify({ formData: { situation_generale: 'Une situation suffisamment longue pour compter.' } }));
+        const r = assertC5_fixtureIntegrity('SITUATION GÉNÉRALE : Une situation suffisamment longue pour compter.', fixturePath);
+        expect(r.ok).toBe(true);
+    });
+
+    it('FAIL : chaîne saisie absente du texte extrait (troncature)', () => {
+        const fixturePath = join(dir, 'fixture.json');
+        writeFileSync(fixturePath, JSON.stringify({ formData: { situation_generale: 'Ce texte ne sera jamais présent dans le rendu final.' } }));
+        const r = assertC5_fixtureIntegrity('texte totalement différent, sans rapport', fixturePath);
+        expect(r.ok).toBe(false);
+        expect(r.detail).toMatch(/manquante/);
+    });
+
+    it('ignore les clés id/annotations/tools/title/options (jamais rendues verbatim) — seul le champ non filtré compte', () => {
+        const fixturePath = join(dir, 'fixture.json');
+        writeFileSync(
+            fixturePath,
+            JSON.stringify({
+                formData: {
+                    id: 'identifiant-jamais-rendu-1234567890',
+                    tools: '["PORTE","BELIER-DE-DEMOLITION"]',
+                    options: { fonctions: ['Une fonction jamais choisie mais listée'] },
+                    missions_psig: 'Mission réellement rendue dans le document final.',
+                },
+            }),
+        );
+        const r = assertC5_fixtureIntegrity('MISSION : Mission réellement rendue dans le document final.', fixturePath);
+        expect(r.ok).toBe(true);
     });
 });

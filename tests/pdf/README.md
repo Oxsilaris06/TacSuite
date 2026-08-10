@@ -4,12 +4,21 @@
 > (bouton `#printHqBtn` « Imprimer — qualité maximale » → `print-view.ts` +
 > `print-style.ts` → `window.print()` sur iframe) a été **retirée** de l'app —
 > téléchargement, aperçu (`openPreview`) et présentation (`openPresentInPlace`)
-> passent désormais tous les trois par le même moteur pdfmake (voie A). Le
-> mode `--voie=b` de cet outil (calibrage des gardes B1/B2/B6/B8/B9, tableau
-> ci-dessous) reste néanmoins documenté TEL QUEL : c'est un mode de calibrage
-> du script de vérification, pas un chemin de l'application — il conserve sa
-> valeur de référence/régression si une page dédiée par section devait
-> resservir un jour, sans qu'il y ait lieu de réécrire le protocole ici.
+> passent désormais tous les trois par le même moteur pdfmake (voie A).
+>
+> **P4 (contrat « une page = un usage », commit `a57b128`)** : l'ancienne
+> option de calibrage `--voie=a|b` a été **retirée** (la voie B n'existe plus
+> dans l'app depuis R4-a, plus de raison de la calibrer ici — git history en
+> garde la trace). Le moteur pdfmake produit désormais **exactement une
+> page** par fiche adversaire et par bloc ZMSPCP/MOICP (refonte totale,
+> AUCUNE continuation « (SUITE) »), et une cellule effraction s'étend sur
+> **1..K pages AUTONOMES** aux titres distincts (jamais de coupure en milieu
+> d'hypothèse) — si même le palier de police plancher ne suffit pas,
+> `buildOiDocDefinition` **refuse explicitement** la génération
+> (`OiPdfFitRefusalError`) plutôt que de produire un document tronqué. Les
+> anciennes gardes B3/B4/B7/B8/B10/B11 (motif « continuation sans titre »)
+> ont été retirées avec ce mécanisme ; leur rôle est repris par les nouvelles
+> gardes de CONTRAT **C1..C5** (tableau ci-dessous).
 
 Outil : `tests/pdf/verify-structure.mjs` — script Node ESM autonome, **aucune
 dépendance npm**. Il appelle directement binaires système `poppler-utils`
@@ -46,7 +55,7 @@ vérifie à place **invariants indépendants rendu pixel**.
 
 ```bash
 node tests/pdf/verify-structure.mjs <fichier.pdf> \
-    [--format=a4|16:9] [--photos=N] [--sample=<fichier.json>] [--json] [--lenient] [--voie=a|b]
+    [--format=a4|16:9] [--photos=N] [--sample=<fichier.json>] [--fixture=<fichier.json>] [--json] [--lenient]
 ```
 
 | Option | Défaut | Effet |
@@ -54,9 +63,9 @@ node tests/pdf/verify-structure.mjs <fichier.pdf> \
 | `--format=a4\|16:9` | `a4` | Dimensions de page attendues pour A1 (voir tableau ci-dessous). |
 | `--photos=N` | `0` | Limite haute nombre d'images embarquées pour A6. |
 | `--sample=<fichier.json>` | (aucun) | Active A8 : vérifie que chaque chaîne de `expect[]` apparaît dans texte extrait. Sans cette option, A8 est SKIP (non applicable). |
+| `--fixture=<fichier.json>` | (aucun) | Active C5 (anti-troncature ÉTENDUE) : dérive automatiquement les chaînes attendues de `formData` (même fixture que celle passée à `generate-from-fixture.mjs`) — zéro curation manuelle, zéro désaccord de données possible. Sans cette option, C5 est SKIP. |
 | `--json` | — | Émet **en plus** lignes lisibles (pas à place) objet `{ ok, file, assertions: [{ code, ok, detail }] }` sur stdout, en dernière ligne. |
 | `--lenient` | mode strict | marqueur **conditionnel** (A3, indices 4/8/10/11/12/13) absent devient `SKIP` au lieu de faire échouer A3 — l'ordre marqueurs **présents** reste asserté. |
-| `--voie=a\|b` | `a` | Calibrage gardes pagination **B1/B2/B6/B8/B9** (cf. tableau B ci-dessous) : `a` (pdfmake, INCHANGÉ) suppose page dense multi-sections — déficit de contenu y signale vrai débordement. `b` (`print-view.ts`/navigateur) suppose page DÉDIÉE par section (conception assumée, pas bug) — seuils B1 nettement abaissés, B2 exige en plus l'absence d'autre token sur ligne « head » (distingue vraie césure d' empilement fortuit de 2 mots complets), B6 et B9 deviennent SKIP, B8 s'active (SKIP en voie A). B7/B10/B11 restent actives dans DEUX voies (SPEC-PDF-DEFINITIF §8). |
 
 **Prérequis** : paquet système `poppler-utils` (fournit `pdfinfo`,
 `pdftotext`, `pdffonts`, `pdfimages`). Si binaire est absent `PATH`,
@@ -65,9 +74,29 @@ paquet à installer, plutôt qu' trace d'erreur obscure. Même code de
 sortie si fichier PDF passé en argument n'existe pas, ou si 
 arguments CLI sont invalides.
 
-**Codes de sortie** : `0` si 19 assertions (A1-A8 + B1-B11, cf. tableau B
-ci-dessous) passent, `1` si au moins échoue, `2` en cas de garde
-d'exécution (aucune assertion n'a pu tourner).
+**Codes de sortie** : `0` si les 18 assertions (A1-A8 + B1/B2/B5/B6/B9 +
+C1-C5, cf. tableaux ci-dessous) passent, `1` si au moins une échoue, `2` en
+cas de garde d'exécution (aucune assertion n'a pu tourner).
+
+**Voir aussi** : `node tests/pdf/generate-from-fixture.mjs <fixture.json>
+[--out=...]` sort en code **3** (dédié) si `buildOiDocDefinition` **refuse**
+explicitement la génération (`OiPdfFitRefusalError`, mission P1 : contenu
+trop volumineux même au palier de police plancher) — distinct du code `1`
+générique (bundle/JSON/pdfmake cassé). La couverture principale de ce
+comportement reste **unitaire** (`tests/unit/oi/pdf/oi-pdf-document-builder.test.ts`,
+`oi-pdf-theme.test.ts`) ; ce code de sortie sert de filet d'intégration côté
+harnais Node réel. Exemple reproductible (contenu sur-dimensionné, avant
+recalibrage de `blind-a-combined-stress.json` — 40 ATCD identiques au lieu
+de 12) :
+
+```bash
+$ node tests/pdf/generate-from-fixture.mjs /tmp/blind-a-oversized.json --out=/tmp/x.pdf
+REFUS DE GÉNÉRATION (OiPdfFitRefusalError, attendu si le contenu dépasse la capacité d'une page même au palier plancher) :
+  - Fiche Adversaire 1 : Cible 1 NOM PRENOM : contenu (identité/dangerosité/localisation/mobilité/ATCD) trop volumineux — réduisez les ATCD ou les textes libres (dépassement ~107 %)
+  [... 4 autres fiches ...]
+$ echo $?
+3
+```
 
 ## 8 assertions
 
@@ -76,7 +105,7 @@ exactes ».
 
 | Code | Assertion | Seuil |
 |---|---|---|
-| **A1** | Géométrie | `pdfinfo` : Pages ≥ **12** ; dimensions identiques sur toutes pages, égales à **841,89 × 595,28 pts** (`a4`) ou **958,11 × 539,01 pts** (`16:9`), tolérance **±0,5 pt**. |
+| **A1** | Géométrie | `pdfinfo` : Pages ≥ **8** (recalibré mission P4 — le layout « une page = un usage » est plus COMPACT que l'ancien, `long-case.json` mesure désormais 10 pages ; l'ancien plancher de 12 ferait FAIL à tort un dossier légitime) ; dimensions identiques sur toutes pages, égales à **841,89 × 595,28 pts** (`a4`) ou **958,11 × 539,01 pts** (`16:9`), tolérance **±0,5 pt**. |
 | **A2** | Texte réel | `pdftotext -layout` : ≥ **1 500** caractères non blancs. |
 | **A3** | Ordre sections | **15 marqueurs** (liste ci-dessous) présents, index de leur **première** occurrence strictement croissant. Normalisation avant recherche : NFC, espaces consécutifs réduits à , apostrophes `’`→`'` (tirets `–`/`—` conservés tels quels). |
 | **A4** | Défaut hérité préservé | Exactement **2** occurrences distinctes d' titre commençant par `7. ` (`7. ARTICULATION…` et `7. RÉCAPITULATIF…`). |
@@ -94,27 +123,42 @@ retour à html2canvas) : run avec photos doit interpréter `FAIL A7`
 isolé (A2/A5/A6 restant verts) comme dépassement de poids assumé, pas 
 régression.
 
-## 11 gardes pagination (B1-B11)
+## 5 gardes pagination conservées (B1/B2/B5/B6/B9)
 
 Guardrails additionnels (hors SPEC-PDF-V3.md §7 d'origine), toujours
-évaluées indépendamment de `--lenient` — seul `--voie` change calibrage
-de B1/B2/B6/B8/B9 (cf. tableau options ci-dessus).
+évaluées indépendamment de `--lenient`. **B3/B4/B7/B8/B10/B11 ont été
+RETIRÉES par la mission P4** : leur motif (« continuation sans titre »)
+ne peut plus se produire de la même façon depuis que fiche adversaire/
+ZMSPCP/MOICP/cellule effraction n'utilisent plus JAMAIS de continuation
+« (SUITE) » — leur rôle est repris, plus précisément, par les gardes de
+CONTRAT **C1..C5** (tableau suivant). L'ancien calibrage `--voie=a|b` a
+disparu avec elles (un seul comportement désormais, l'ancien « voie A »).
 
-| Code | Garde | Seuil (voie A, défaut) | Mode `--voie=b` |
-|---|---|---|---|
-| **B1** | Anti-page-orpheline | ≥ 120 caractères non blancs par page (hors garde/finale/photo) | Seuil abaissé à 20 (pages dédiées courtes par conception). |
-| **B2** | Anti-césure verticale (PATRACDVR) | Aucun mot capitalisé scindé sur 2 lignes adjacentes même colonne | + exige l'absence d'autre token sur ligne « head » (élimine faux positif « deux mots complets empilés », ex. « KODIAQ »/« BANA »). |
-| **B3** | Anti-page-titre-seul | ≥ 40 caractères de contenu hors titre | Pages-galerie (≥ 1 image) exemptées. |
-| **B4** | Anti-queue-nue (ZMSPCP/MOICP) | 1re ligne à tiret d' page jamais sans titre « (suite) » précédent | Inchangé. |
-| **B5** | Anti-page-libellés-vides | < 4 champs `LABEL : -` ou < 250 car. de tels libellés par page | Inchangé. |
-| **B6** | Anti-page-clairsemée | Ratio remplissage vertical ≥ 35 % (hors finale) | SKIP (pages dédiées légitimement peu remplies par conception). |
-| **B7** | Anti-table-hypothèses-orpheline | Toute page portant l'en-tête LITTÉRAL table Hypothèses d'Effraction (« Technique / Moyen », répété par `headerRows:1`) porte aussi « ARTICULATION : EFFRACTION » ou « (SUITE) » | Inchangé (active). |
-| **B8** | Anti-carte-kv-orpheline | SKIP (motif propre aux pages dédiées voie B) | ≥ 2 lignes `LABEL : valeur` sans aucun marqueur ni « (suite) » et ≤ 200 car. ⇒ FAIL. |
-| **B9** | Anti-titre-orphelin-en-bas-de-page | DERNIÈRE ligne non blanche d' page (hors finale, pied de page retiré) ne matche jamais signature statique de titre/en-tête (« Hypothèses d'Effraction », « DANGEROSITÉ », « LOCALISATION », en-tête de table…) | SKIP ( page dédiée peut légitimement se clore sur titre court). |
-| **B10** | Anti-continuation-de-bloc-titré-sans-« (suite) » (généralise B7) | Toute page portant contenu de bloc titré (ligne ATCD `AAAA :`, description `HEn —`, en-tête de table répété) porte aussi 15 marqueurs ou « (suite) » | Inchangé (active). |
-| **B11** | Anti-page-de-continuation-sous-remplie (renforce B1/B6) | Aucune page (hors garde/finale/photo) ne cumule : aucun marqueur, aucun « (suite) », < 300 car. non blancs hors pied de page | Inchangé (active). |
+| Code | Garde | Seuil |
+|---|---|---|
+| **B1** | Anti-page-orpheline | ≥ 120 caractères non blancs par page (hors garde/finale/photo). |
+| **B2** | Anti-césure verticale (PATRACDVR) | Aucun mot capitalisé scindé sur 2 lignes adjacentes même colonne. |
+| **B5** | Anti-page-libellés-vides | < 4 champs `LABEL : -` ou < 250 car. de tels libellés par page. |
+| **B6** | Anti-page-clairsemée | Ratio remplissage vertical ≥ 35 % (hors finale). **Recalibré P4** : les pages-usage à contrat dur (fiche adversaire, ZMSPCP, MOICP — toujours 1 page) sont exemptées (aération légitime d'un petit dossier) ; une page effraction (« MISSION & CARACTÉRISTIQUES »/« HYPOTHÈSES … ») reste couverte SEULEMENT si une AUTRE page du MÊME bloc la suit immédiatement (continuation suspecte) — sa dernière page est, elle aussi, exemptée. Les pages composites historiques (couverture, environnement, mission+exécution, articulation vue d'ensemble, CAT, PATRACDVR) restent couvertes sans exemption. |
+| **B9** | Anti-titre-orphelin-en-bas-de-page | DERNIÈRE ligne non blanche d'une page (hors finale, pied de page retiré) ne matche jamais une signature statique de titre/en-tête (« Hypothèses d'Effraction », « DANGEROSITÉ », « LOCALISATION », « MOBILITÉ », « IDENTITÉ », « ATCD », « Composition par Cellule », en-tête de table…). |
 
-### B7 (corrigée) et B9-B11 — mission GD.GUARDS, protocole de contre-épreuve
+## 5 gardes de CONTRAT « une page = un usage » (C1-C5, mission P4)
+
+Vérifient DIRECTEMENT le contrat livré par le paquet P1/P2 sur
+`document-builder.ts` (commit `a57b128`) — fiche adversaire/ZMSPCP/MOICP
+tiennent sur une page UNIQUE, une cellule effraction s'étend sur 1..K pages
+AUTONOMES, plus aucune continuation « (SUITE) » pour ces 4 usages. Toujours
+évaluées, indépendantes de `--lenient`.
+
+| Code | Garde | Détection |
+|---|---|---|
+| **C1** | Zéro « (SUITE) » | Garde INVERSE des anciennes B7/B10 : AUCUNE occurrence de « (SUITE) » tolérée en dehors des pages de galerie photo (≥ 1 image, `pdfimages`) — `galleryPages()` (blocks.ts) conserve son propre suffixe « (suite) » légitime et inchangé (« 1 photo = 1 page », mécanisme distinct de la refonte P1). |
+| **C2** | Fiche adversaire = 1 page | Spillover : toute page portant une signature de contenu fiche (IDENTITÉ/DANGEROSITÉ/LOCALISATION/MOBILITÉ/ATCD) SANS porter son propre titre « N.M FICHE ADVERSAIRE : » ⇒ FAIL. |
+| **C3** | Bloc ZMSPCP/MOICP = 1 page | Spillover : toute page portant « Composition par Cellule » SANS titre « ARTICULATION : ZMSPCP/MOICP - » ⇒ FAIL. |
+| **C4** | Cellule effraction = pages autonomes | (a) Spillover : contenu Hypothèses d'Effraction sans titre effraction sur la même page ⇒ FAIL. (b) Contiguïté : les plages « HYPOTHÈSES a-b » d'un même titre de base doivent être strictement croissantes et non chevauchantes (proxy texte de « aucune hypothèse scindée/dupliquée/omise »). |
+| **C5** | Anti-troncature ÉTENDUE | Si `--fixture=<json>` fourni : chaque chaîne texte libre ≥ 12 car. de `formData` (hors clés `id`/`annotations`/`tools`/`title`/`options`, jamais rendues verbatim) doit être retrouvée dans `pdftotext` — substring exact, ou à défaut couverture par SAC DE MOTS ≥ 90 % (repli anti-intercalation de colonnes `grid2()`, cf. JSDoc `assertC5_fixtureIntegrity`). Sans `--fixture`, SKIP. |
+
+### B7 (corrigée) et B9-B11 — mission GD.GUARDS, protocole de contre-épreuve (historique, gardes retirées depuis par P4)
 
 Source : `../../.tacsuite-prep/pdf-goal-final/SPEC-PDF-DEFINITIF.md` §7
 (gardes écrites et contre-éprouvées AVANT correctifs D1-D4 — garde
@@ -210,7 +254,7 @@ dans `verify-structure.mjs`).
 
 - **Pas de comparaison pixel pages** : rendu vectoriel est  changement **voulu** (voir « Rôle » ci-dessus) — l'étalon raster
  `oi-reference/reference.pdf` est **caduc pour voie A**.
-- **Pas d'égalité stricte à 14 pages** : pagination devient automatique (dépendante volume de données). Seuls **plancher de 12 pages** (A1)
+- **Pas d'égalité stricte à 14 pages** : pagination devient automatique (dépendante volume de données). Seuls **plancher de 8 pages** (A1, recalibré P4)
  et l'**ordre sections** (A3) font foi — pas compte exact.
 - diff pixel reste pertinent **uniquement sur images extraites** (`pdfimages`) — photos et cartographie restant raster par nature — mais
  n'est **pas automatisé** par cet outil (constat manuel si besoin).
@@ -286,39 +330,70 @@ image plein cadre par page, poids conséquent — que moteur v3 (pdfmake,
 `docs/SPEC-PDF-V3.md` §1-§3) supprime ; PDF v3 conforme doit au contraire
 faire passer A1 à A6 (et A7 en l'absence de photos embarquées).
 
-## Gate volumétrique CI (`volumetric-stress.json`, mission R4-b)
+## Gate volumétrique CI (`volumetric-stress.json`, missions R4-b puis P4)
 
 `.github/workflows/ci.yml` génère et vérifie, en plus de `long-case.json`
 (`--lenient`), la fixture `tests/pdf/fixtures/volumetric-stress.json` —
-2 blocs Effraction, 4 hypothèses chacun, dont la colonne « Technique / Moyen »
-atteint 2296 caractères par hypothèse (fontPx 9, ~72 lignes estimées, ~2,5×
-la place utile d'une page de continuation). Commande CI (mode strict, sans
-`--lenient` : cette fixture porte tous les marqueurs conditionnels) :
+2 blocs Effraction (4 hypothèses chacun), 2 fiches adversaire, 2 blocs
+ZMSPCP/MOICP, 56 photos. Commande CI (mode strict, sans `--lenient` : cette
+fixture porte tous les marqueurs conditionnels), `--fixture` active C5 :
 
 ```bash
 node tests/pdf/generate-from-fixture.mjs tests/pdf/fixtures/volumetric-stress.json --out=/tmp/ci-volumetric-stress.pdf
-node tests/pdf/verify-structure.mjs /tmp/ci-volumetric-stress.pdf --photos=58
+node tests/pdf/verify-structure.mjs /tmp/ci-volumetric-stress.pdf --photos=58 --fixture=tests/pdf/fixtures/volumetric-stress.json
 ```
 
-**19/19 requis** (code de sortie `0`). Avant le correctif R4-b
-(`expandOversizedHypothesis`, `src/apps/oi/pdf/document-builder.ts`), une
-rangée de table plus grande qu'une page entière était SILENCIEUSEMENT
-PERDUE par `dontBreakRows: true` (0/2296 caractères survivants dans le PDF
-rendu) : **B1, B7, B9, B10, B11 échouaient** (8 à 16 pages orphelines,
-en-tête de table « Technique / Moyen » répété sans titre
-« ARTICULATION : EFFRACTION (SUITE) »). Non-régression : `long-case.json`
-et `blind-a-combined-stress.json` restent 19/19 (`--lenient` — le marqueur
-conditionnel #8 « 6. LOGISTIQUE & TRANSPORTS » est absent de leurs deux
-jeux de données, sans rapport avec ce correctif).
+**18/18 requis** (code de sortie `0`).
 
-`--sample` n'est volontairement PAS activé sur ce step (ni sur celui de
-`long-case.json`) : `tests/pdf/sample-reference.json` cible un jeu de
-données `oi-reference/recipe-data.json` externe au dépôt (cadre juridique,
-date, trigramme rédacteur propres à cet étalon) — appliqué tel quel à
-`long-case.json` ou `volumetric-stress.json`, il échoue par **désaccord de
-données** (`cadre_juridique` diffère y compris en casse : « Commission
-Rogatoire » attendu vs « Commission rogatoire » saisi — la faute constatée
-lors de l'audit R0 de cette tranche, cf. `normalize()` qui ne fait PAS de
-`toLowerCase()`), pas par régression de pagination — corriger l'ASSERTION en
-supprimant l'appel `--sample` plutôt que le moteur (`normalize()` reste
-volontairement sensible à la casse, cf. A3/A8).
+**RECALIBRAGE MISSION P4** (contrat « une page = un usage », commit
+`a57b128`) : le solveur fit-to-page (mission P1) REFUSE désormais
+explicitement (`OiPdfFitRefusalError`, exit code `3` de
+`generate-from-fixture.mjs`, cf. « Voir aussi » ci-dessus) tout contenu
+dépassant la capacité d'une page dédiée même au palier de police plancher —
+comportement VOULU (jamais de document tronqué/scindé silencieusement), mais
+qui rendait `volumetric-stress.json` NON GÉNÉRABLE tel quel (ATCD adversaire
+2419 car. → dépassement ~21 %, `cat` ZMSPCP/MOICP 2443 car. → ~3 %). Fixture
+recalibrée SOUS ces capacités (ATCD ramené à 1700 car., `cat` à 2200 car. —
+au plus près du seuil qui passe encore, cf. `git log -p` de cette fixture
+pour le détail de la recherche par dichotomie) tout en conservant sa
+vocation de stress : 56 photos, texte proche du plancher 7-8 px sur les
+usages à contrat dur, cellules effraction scindées en pages
+« MISSION & CARACTÉRISTIQUES » / « HYPOTHÈSES 1-2 » / « HYPOTHÈSES 3-4 »
+(preuve que l'escalade a→d de `buildEffractionPages` fonctionne). Un champ
+`signes_particuliers` portant un TOKEN ininterrompu de 90+ caractères a par
+ailleurs été remplacé par un texte équivalent AVEC espaces : ce token
+extrême, positionné dans une cellule `kvTable()` étroite d'une fiche
+adversaire à 2 colonnes, se retrouvait partiellement absent du flux
+`pdftotext` (collision de colonnes, pas une perte pdfmake réelle — non
+reproduit visuellement, hors du périmètre pagination de cette mission) ;
+sans rapport avec le contrat « une page = un usage » lui-même.
+
+Historique R4-b (pré-P1) : avant le correctif `expandOversizedHypothesis`,
+une rangée de table plus grande qu'une page entière était SILENCIEUSEMENT
+PERDUE par `dontBreakRows: true` — décrit ici pour mémoire, le mécanisme de
+scission a depuis été totalement remplacé par l'escalade a→e de
+`buildEffractionPages` (mission P1).
+
+**Non-régression `blind-a-combined-stress.json`** (hors CI, vérifié
+manuellement — 25 ATCD identiques par adversaire refusaient la génération,
+dépassement ~107 % à 40 items ; ramené à 12 items/adversaire, le maximum
+mesuré qui passe encore par dichotomie) :
+
+```bash
+node tests/pdf/generate-from-fixture.mjs tests/pdf/fixtures/blind-a-combined-stress.json --out=/tmp/ba.pdf
+node tests/pdf/verify-structure.mjs /tmp/ba.pdf --lenient --fixture=tests/pdf/fixtures/blind-a-combined-stress.json
+```
+
+**18/18 requis** (`--lenient` : le marqueur conditionnel #8
+« 6. LOGISTIQUE & TRANSPORTS » est absent de son jeu de données, sans
+rapport avec ce recalibrage — `long-case.json` est dans le même cas).
+
+`--sample` n'est volontairement PAS activé sur ces steps :
+`tests/pdf/sample-reference.json` cible un jeu de données
+`oi-reference/recipe-data.json` externe au dépôt (cadre juridique, date,
+trigramme rédacteur propres à cet étalon) — appliqué tel quel à
+`long-case.json`/`volumetric-stress.json`/`blind-a-combined-stress.json`, il
+échoue par **désaccord de données**, pas par régression de pagination.
+`--fixture` (C5, mission P4) est la réponse RETENUE à ce besoin
+d'anti-troncature en CI : dérivée automatiquement de la MÊME fixture que la
+génération, donc sans ce risque de désaccord.

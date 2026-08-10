@@ -47,7 +47,20 @@
  * d'après la fixture, sous le répertoire temporaire du système — JAMAIS dans
  * le repo sans `--out` explicite), imprime `PDF_PATH=<chemin>` en dernière
  * ligne de stdout (couture simple pour un script appelant), code de sortie 0
- * en succès, 1 en échec (message d'erreur sur stderr).
+ * en succès, 1 en échec générique, 2 en garde d'exécution (usage/fixture
+ * invalide), **3** en REFUS DE GÉNÉRATION explicite (`OiPdfFitRefusalError`,
+ * mission P1 « une page = un usage » directive Nico 2026-08-10 : un contenu
+ * trop volumineux pour tenir, même au palier de police plancher, sur une
+ * page d'usage à contrat dur — fiche adversaire/ZMSPCP/MOICP/cellule
+ * effraction — refuse EXPLICITEMENT plutôt que de produire un document
+ * tronqué/scindé silencieusement). Code dédié demandé par la mission P4
+ * (garde structurelle) pour distinguer ce refus ATTENDU d'un échec
+ * générique (bundle Vite cassé, JSON invalide, crash pdfmake) — la
+ * couverture PRINCIPALE de ce comportement reste unitaire
+ * (`tests/unit/oi/pdf/oi-pdf-document-builder.test.ts`, `oi-pdf-theme.test.ts` :
+ * assertions directes sur `OiPdfFitRefusalError`/`fitUsageToPage`) ; ce code
+ * de sortie sert de filet d'intégration côté harnais Node (bundle réel, pas
+ * seulement les fonctions pures).
  */
 
 import { existsSync, mkdtempSync, readFileSync, statSync } from 'node:fs';
@@ -185,7 +198,7 @@ async function main() {
     process.exit(1);
   }
 
-  const { buildOiDocDefinition } = await import(pathToFileURL(bundlePath).href);
+  const { buildOiDocDefinition, OiPdfFitRefusalError } = await import(pathToFileURL(bundlePath).href);
 
   let docDefinition;
   try {
@@ -194,6 +207,16 @@ async function main() {
       { format: opts.format }
     );
   } catch (err) {
+    // Code 3 dédié (cf. en-tête) : REFUS DE GÉNÉRATION explicite du solveur
+    // fit-to-page (mission P1), jamais un document tronqué renvoyé — distinct
+    // de tout autre échec (bundle/JSON/pdfmake), qui reste code 1.
+    if (err instanceof OiPdfFitRefusalError) {
+      console.error(`REFUS DE GÉNÉRATION (OiPdfFitRefusalError, attendu si le contenu dépasse la capacité d'une page même au palier plancher) :`);
+      for (const fe of err.fitErrors) {
+        console.error(`  - ${fe.section} : ${fe.details} (dépassement ~${Math.round(fe.excessRatio * 100)} %)`);
+      }
+      process.exit(3);
+    }
     console.error(`Échec de buildOiDocDefinition() : ${err instanceof Error ? err.stack ?? err.message : String(err)}`);
     process.exit(1);
   }
