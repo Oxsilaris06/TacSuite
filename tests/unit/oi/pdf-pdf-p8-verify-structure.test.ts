@@ -592,19 +592,25 @@ describe('assertB9_noTrailingTitle()', () => {
 describe('assertC1_zeroSuiteFragment()', () => {
     it('FAIL : "(SUITE)" sur une page SANS image (usage à contrat dur)', () => {
         const text = joinPages(['ARTICULATION : ZMSPCP - X (SUITE)']);
-        const r = assertC1_zeroSuiteFragment(text, []);
+        const r = assertC1_zeroSuiteFragment(text);
         expect(r.ok).toBe(false);
         expect(r.detail).toMatch(/: 1$/);
     });
 
-    it('PASS : "(SUITE)" toléré sur une page de galerie photo (au moins une image)', () => {
+    it('FAIL : "(SUITE)" interdit même sur une page de galerie photo (mission R6, plus aucune exemption)', () => {
         const text = joinPages(['ADVERSAIRE : X (PHOTOS ANNEXES) (SUITE)']);
-        const images = [{ page: 1, type: 'image', width: 100, height: 100, xppi: 150, yppi: 150 }];
-        expect(assertC1_zeroSuiteFragment(text, images).ok).toBe(true);
+        const r = assertC1_zeroSuiteFragment(text);
+        expect(r.ok).toBe(false);
+        expect(r.detail).toMatch(/: 1$/);
     });
 
     it('PASS : aucune occurrence de "(SUITE)"', () => {
-        expect(assertC1_zeroSuiteFragment(joinPages(['rien à signaler']), []).ok).toBe(true);
+        expect(assertC1_zeroSuiteFragment(joinPages(['rien à signaler'])).ok).toBe(true);
+    });
+
+    it('PASS : compteur de galerie "PHOTO i/N" ne matche pas SUITE_RE', () => {
+        const text = joinPages(['TITRE GALERIE — PHOTO 2/5']);
+        expect(assertC1_zeroSuiteFragment(text).ok).toBe(true);
     });
 });
 

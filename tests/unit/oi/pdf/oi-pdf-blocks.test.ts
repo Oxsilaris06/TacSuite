@@ -367,7 +367,7 @@ describe('galleryPages (OrderHtmlPhotos.kt:69-92, SPEC-PDF-V3.md §3.3)', () => 
         expect(galleryPages('Titre', [], {}, p, geo)).toEqual([]);
     });
 
-    it('3 photos -> 3 pages (1 photo pleine largeur par page, directive Nico 2026-08-10), la 2e/3e titrées "(suite)"', () => {
+    it('3 photos -> 3 pages (1 photo pleine largeur par page, directive Nico 2026-08-10), titrées "TITRE — PHOTO i/N" (jamais "(suite)", mission R6)', () => {
         const photos = [makePhoto({ id: 'photo-1' }), makePhoto({ id: 'photo-2' }), makePhoto({ id: 'photo-3' })];
         const pages = galleryPages('Galerie test', photos, photosBase64, p, geo);
         expect(pages).toHaveLength(3);
@@ -378,9 +378,20 @@ describe('galleryPages (OrderHtmlPhotos.kt:69-92, SPEC-PDF-V3.md §3.3)', () => 
         const h2Page1 = page1.stack[0] as ContentStack;
         const h2Page2 = page2.stack[0] as ContentStack;
         const h2Page3 = page3.stack[0] as ContentStack;
-        expect((h2Page1.stack[0] as ContentText).text).toBe('GALERIE TEST');
-        expect((h2Page2.stack[0] as ContentText).text).toBe('GALERIE TEST (SUITE)');
-        expect((h2Page3.stack[0] as ContentText).text).toBe('GALERIE TEST (SUITE)');
+        const titleLine1 = h2Page1.stack[0] as { text: [ContentText, ContentText] };
+        const titleLine2 = h2Page2.stack[0] as { text: [ContentText, ContentText] };
+        const titleLine3 = h2Page3.stack[0] as { text: [ContentText, ContentText] };
+        expect(titleLine1.text[0].text).toBe('GALERIE TEST');
+        expect(titleLine1.text[1].text).toBe(' — PHOTO 1/3');
+        expect(titleLine2.text[0].text).toBe('GALERIE TEST');
+        expect(titleLine2.text[1].text).toBe(' — PHOTO 2/3');
+        expect(titleLine3.text[0].text).toBe('GALERIE TEST');
+        expect(titleLine3.text[1].text).toBe(' — PHOTO 3/3');
+        // Aucune trace de "(SUITE)"/"(suite)" nulle part (interdiction absolue).
+        [titleLine1, titleLine2, titleLine3].forEach((line) => {
+            expect(line.text[0].text).not.toMatch(/\(suite\)/i);
+            expect(line.text[1].text).not.toMatch(/\(suite\)/i);
+        });
 
         // Chaque page = 1 photo pleine largeur (stack), jamais de columns.
         [page1, page2, page3].forEach((page) => {

@@ -131,17 +131,32 @@ export function h1(text: string, p: OiPdfPalette, opts?: { fontSize?: number; bo
  * <titre>`, etc.) peuvent embarquer un titre saisi arbitrairement long/sans
  * espace ; le SOFT HYPHEN de coupure inséré (round 1 BLIND.REFIX, cf.
  * `text-utils.ts`) n'est pas une lettre, `.toUpperCase()` le laisse intact.
+ *
+ * `opts.suffix` (mission R6, titrage galeries photo) — fragment discret
+ * accolé au titre (ex. « PHOTO 2/5 ») : rendu dans le MÊME run Oswald 17 pt
+ * mais en `p.muted` (au lieu de `p.accent`), jamais en gras — signale
+ * visuellement un COMPTEUR de page, pas une continuation de titre (bannie,
+ * cf. interdiction absolue « (SUITE) », `verify-structure.mjs` garde C1).
+ * `text` seul traverse `.toUpperCase()` ; `suffix` est fourni DÉJÀ dans la
+ * casse voulue par l'appelant (`galleryPages` le fournit majuscule).
  */
-export function h2(text: string, p: OiPdfPalette, contentWidthPt: number): Content {
+export function h2(text: string, p: OiPdfPalette, contentWidthPt: number, opts?: { suffix?: string }): Content {
+    const titleRun: Content = {
+        text: breakLongTokens(text).toUpperCase(),
+        font: 'Oswald',
+        fontSize: 17,
+        color: p.accent,
+    };
+    const titleLine: Content =
+        opts?.suffix !== undefined && opts.suffix !== ''
+            ? {
+                  text: [titleRun, { text: ` ${opts.suffix}`, font: 'Oswald', fontSize: 17, color: p.muted }],
+                  margin: [0, 0, 0, 3],
+              }
+            : { ...titleRun, margin: [0, 0, 0, 3] };
     return {
         stack: [
-            {
-                text: breakLongTokens(text).toUpperCase(),
-                font: 'Oswald',
-                fontSize: 17,
-                color: p.accent,
-                margin: [0, 0, 0, 3],
-            },
+            titleLine,
             {
                 canvas: [{ type: 'line', x1: 0, y1: 0, x2: contentWidthPt, y2: 0, lineWidth: 2, lineColor: p.accent }],
                 margin: [0, 0, 0, 8],
@@ -898,7 +913,11 @@ export function galleryPages(
     const baseGalleryHeightPt = mm(photoPageGalleryHeightMm(true)) - GALLERY_CAPTION_RESERVE_PT;
 
     const pages: Content[] = resolved.map(({ meta, dataUrl }, pageIndex) => {
-        const pageTitle = pageIndex === 0 ? title : `${title} (suite)`;
+        // Mission R6 : interdiction ABSOLUE de « (SUITE) » (garde inverse C1,
+        // `verify-structure.mjs`) désormais SANS exception galerie — chaque
+        // page de galerie affiche un COMPTEUR « PHOTO i/N » (i = 1-based),
+        // jamais une continuation de titre.
+        const pageSuffix = `— PHOTO ${pageIndex + 1}/${resolved.length}`;
 
         // Axe A3 (SPEC-PDF-DEFINITIF §5, correctif D3) : la hauteur du cadre
         // photo DÉDUIT la place des badges d'outils, à la largeur de cadre
@@ -913,7 +932,7 @@ export function galleryPages(
         };
 
         return {
-            stack: [h2(pageTitle, p, geo.contentWidthPt), body],
+            stack: [h2(title, p, geo.contentWidthPt, { suffix: pageSuffix }), body],
             pageBreak: pageIndex === 0 ? undefined : 'before',
         };
     });

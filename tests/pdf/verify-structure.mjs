@@ -716,7 +716,7 @@ export function assertB2_noVerticalWordSplit(text) {
   };
 }
 
-/** Fragment « (suite) »/« (SUITE) » — cf. garde inverse C1 ci-dessous : n'existe plus QUE pour les pages de galerie photo multi-clichés (`galleryPages`, `blocks.ts`), jamais pour fiche adversaire/ZMSPCP/MOICP/cellule effraction (mission P4). */
+/** Fragment « (suite) »/« (SUITE) » — cf. garde inverse C1 ci-dessous : interdiction ABSOLUE, sans exception (mission R6), y compris sur les pages de galerie photo multi-clichés (`galleryPages`, `blocks.ts`, qui utilise désormais un compteur « — PHOTO i/N » et ne pose plus jamais ce fragment). */
 const SUITE_RE = /\(suite\)/i;
 
 const EMPTY_FIELD_RE = /[A-ZÀ-ÖØ-Þ0-9./' ]{2,40}:\s*-(?:\s*mm)?(?=\s|$)/g;
@@ -941,34 +941,30 @@ export function assertB9_noTrailingTitle(text) {
 // paquet P1/P2 sur `document-builder.ts` — fiche adversaire/ZMSPCP/MOICP
 // TIENNENT sur une page UNIQUE, une cellule effraction s'étend sur 1..K
 // pages AUTONOMES aux titres distincts, et plus AUCUNE continuation
-// « (SUITE) » n'existe pour ces 4 usages (seules les galeries photo
-// conservent leur propre « (suite) » de page-à-page, mécanisme distinct et
-// inchangé — « 1 photo = 1 page », jamais concerné par la refonte P1).
+// « (SUITE) » n'existe pour ces 4 usages. Mission R6 (dernière retouche) :
+// les galeries photo n'en sont désormais plus exemptées non plus — la garde
+// C1 est devenue une interdiction ABSOLUE sur tout le document.
 // Toujours évaluées, INDÉPENDANTES de `--lenient`.
 // ===========================================================================
 
 /**
- * C1 — zéro continuation « (SUITE) » pour les usages à contrat dur (mission
- * P1) : garde INVERSE des anciennes B7/B10 (qui EXIGEAIENT un « (SUITE) » en
- * cas de débordement) — désormais AUCUNE occurrence n'est tolérée en dehors
- * des pages de galerie photo. Exclusion des pages portant AU MOINS une image
- * (`pdfimages`, même détection que A6/B1) : `galleryPages()` (blocks.ts)
- * conserve un suffixe « (suite) » LÉGITIME et volontairement INCHANGÉ pour
- * étiqueter la Nième page d'une même galerie multi-photos (chaque page =
- * 1 photo = son propre usage, un mécanisme totalement distinct de l'ancienne
- * scission « (SUITE) » de fiche adversaire/ZMSPCP/MOICP/effraction que la
- * mission P1 a supprimée) — vérifié sur un PDF réel généré depuis
- * `tests/pdf/fixtures/volumetric-stress.json` (56 photos, plusieurs galeries
- * à 3-4 clichés) : chaque occurrence de « (SUITE) » y tombe exclusivement
- * sur une page portant une image.
+ * C1 — zéro continuation « (SUITE) » dans TOUT le document, SANS EXCEPTION
+ * (mission R6, dernière retouche) : garde INVERSE des anciennes B7/B10 (qui
+ * EXIGEAIENT un « (SUITE) » en cas de débordement) — l'interdiction Nico est
+ * ABSOLUE. L'ancienne exemption des pages de galerie photo (mission P1/P4)
+ * est SUPPRIMÉE : `galleryPages()` (blocks.ts) ne pose plus jamais de
+ * suffixe « (suite) », remplacé par un COMPTEUR discret « — PHOTO i/N »
+ * accolé au titre via `h2(title, p, w, { suffix })` — un décompte n'est pas
+ * une continuation de titre, il ne matche donc plus `SUITE_RE`. Vérifié sur
+ * un PDF réel généré depuis `tests/pdf/fixtures/volumetric-stress.json`
+ * (56 photos, plusieurs galeries à 3-4 clichés) : zéro occurrence de
+ * « (SUITE) »/« (suite) » nulle part, y compris sur les pages de galerie.
  */
-export function assertC1_zeroSuiteFragment(text, images) {
+export function assertC1_zeroSuiteFragment(text) {
   const pages = splitPages(text);
-  const pagesWithImage = new Set(images.map((img) => img.page));
   const hits = [];
   pages.forEach((pageText, idx) => {
     const pageNum = idx + 1;
-    if (pagesWithImage.has(pageNum)) return; // page de galerie photo : « (suite) » y est légitime (cf. JSDoc)
     if (SUITE_RE.test(pageText)) {
       hits.push(pageNum);
     }
@@ -976,10 +972,10 @@ export function assertC1_zeroSuiteFragment(text, images) {
   if (hits.length > 0) {
     return {
       ok: false,
-      detail: `${hits.length} page(s) hors galerie photo portant encore un fragment « (SUITE) » — interdit pour fiche adversaire/ZMSPCP/MOICP/effraction (mission P1) : ${hits.join(', ')}`,
+      detail: `${hits.length} page(s) portant encore un fragment « (SUITE) » — interdiction absolue (mission R6) : ${hits.join(', ')}`,
     };
   }
-  return { ok: true, detail: `0 fragment « (SUITE) » hors page de galerie photo` };
+  return { ok: true, detail: `0 fragment « (SUITE) » dans tout le document` };
 }
 
 /** Signatures de contenu propres à la fiche adversaire (`buildAdversaryFiche`, document-builder.ts) — jamais utilisées ailleurs dans le document. */
@@ -1410,7 +1406,7 @@ function main() {
     { code: 'B9', ...assertB9_noTrailingTitle(text) },
     // Gardes de CONTRAT (mission P4, « une page = un usage », commit a57b128)
     // — toujours évaluées, INDÉPENDANTES de --lenient.
-    { code: 'C1', ...assertC1_zeroSuiteFragment(text, images) },
+    { code: 'C1', ...assertC1_zeroSuiteFragment(text) },
     { code: 'C2', ...assertC2_adversaryFicheSinglePage(text) },
     { code: 'C3', ...assertC3_articulationBlockSinglePage(text) },
     { code: 'C4', ...assertC4_effractionAutonomousPages(text) },
