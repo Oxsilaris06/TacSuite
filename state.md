@@ -16,7 +16,7 @@ Spec détaillée : `docs/superpowers/specs/2026-08-09-tacsuite-roadmap-design.md
 
 | Phase | Contenu | Statut |
 |---|---|---|
-> **ROADMAP R0→R5 + R6 : INTÉGRALEMENT LIVRÉE (2026-08-10).** Rien poussé sur GitHub — validation Nico requise pour tout push.
+> **ROADMAP R0→R5 + R6 : INTÉGRALEMENT LIVRÉE (2026-08-10).** Poussée sur GitHub le 2026-08-10 (c9c2cb0..b30da1f, 39 commits + suivants) après validation Nico.
 
 | QW | Quick wins : contraste dark, `esc` partagé côté OI carto, indicateurs de chargement PC-Tac | ✅ fait (e669585, a3f700a) |
 | R0 | Filet CI local+workflow (typecheck, lint, vitest, test:pdf) + fixture volumétrique 50 photos | ✅ fait (a968dd9) |
