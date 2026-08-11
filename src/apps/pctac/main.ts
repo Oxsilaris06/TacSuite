@@ -93,6 +93,7 @@ import {
     FRIENDS_KEY,
     PHOTOS_KEY,
     DASHBOARD_KEY,
+    hostageStatusFromBlessures,
 } from '@pctac/config.js';
 
 /**
@@ -272,6 +273,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                 if (values.some((v) => v && (typeof v !== 'string' || v.trim() !== ''))) {
                     const itemId = Date.now().toString();
                     const mapped = cfg.map(values);
+                    // U16 — statut porté par la FICHE dès la création.
+                    if (cfg.view === 'view-adversaires') mapped.status = 'active';
+                    if (cfg.view === 'view-otages') mapped.status = hostageStatusFromBlessures(mapped.blessures);
                     // mapped.photo est une dataURL (string) quand présente, comme dans l'original.
                     const photoData = mapped.photo as string | undefined;
 
@@ -320,17 +324,10 @@ document.addEventListener('DOMContentLoaded', async () => {
                     }
                     if (cfg.view === 'view-otages') {
                         await UI.renderHostages();
-                        // Copie automatique vers Photos pour les otages avec statut intelligent
+                        // Copie automatique vers Photos pour les otages ; la photo
+                        // _sync reprend le statut de la FICHE (source de vérité, U16).
                         if (photoData) {
-                            const b = ((mapped.blessures as string | undefined) || '').toLowerCase().trim();
-                            const rasTerms = ['ras', '-', '/', 'rien', 'neant', 'néant', 'idemne', 'indemne', 'aucune', '0', 'ok'];
-                            const isRas = rasTerms.some((term) => b === term || b === term + '.');
-
-                            let status = 'ok';
-                            if ((b !== '' && !isRas) || b.includes('inconnu') || b === '?') status = 'preoccupant';
-                            if (b.includes('blesse') || b.includes('blessé') || b.includes('grave')) status = 'blesse';
-                            if (b.includes('mort') || b.includes('dcd') || b.includes('decede') || b.includes('décédé')) status = 'dcd';
-
+                            const status = String(mapped.status || 'ok');
                             const syncId = itemId + '_sync';
                             try { await ImageStore.put(syncId, photoData); } catch (e) { console.error('[PC TAC] put sync image échec:', e); }
                             const photoList = Storage.loadCollection(PHOTOS_KEY);
@@ -705,6 +702,42 @@ document.addEventListener('DOMContentLoaded', async () => {
         x.onclick = () => b.remove();
         b.appendChild(x);
         document.body.appendChild(b);
+    });
+
+    // U22 — raccourcis clavier globaux : 1..7 = onglets, Ctrl+Entrée = soumettre
+    // le log, / = recherche journal. Hors modale ouverte ; 1..7 et / sont
+    // ignorés dans un champ de saisie actif (Ctrl+Entrée y reste actif : c'est
+    // le geste « valider depuis le formulaire »). Échap : déjà géré ailleurs.
+    document.addEventListener('keydown', (e) => {
+        if (document.querySelector('dialog[open]')) return;
+
+        // Ctrl+Entrée — soumettre le formulaire de log (partout dans la vue
+        // main courante, y compris depuis un champ).
+        if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+            const mainView = document.getElementById('view-main-courante');
+            if (mainView && mainView.classList.contains('active') && UI.elements.logForm) {
+                e.preventDefault();
+                UI.elements.logForm.requestSubmit();
+            }
+            return;
+        }
+
+        const t = e.target as HTMLElement | null;
+        if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return;
+        if (e.ctrlKey || e.metaKey || e.altKey) return;
+
+        if (e.key >= '1' && e.key <= '7') {
+            // Même chemin que le clic : les .tab-btn sont câblés sur switchMainView.
+            const tabs = document.querySelectorAll<HTMLElement>('.main-tab-bar .tab-btn');
+            const tab = tabs[Number(e.key) - 1];
+            if (tab) { e.preventDefault(); tab.click(); }
+            return;
+        }
+        if (e.key === '/') {
+            e.preventDefault();
+            UI.switchMainView('view-main-courante');
+            UI.toggleSearchMode(); // focus l'input de recherche
+        }
     });
 
     const dockToggleBtn = document.getElementById('dockToggleBtn');

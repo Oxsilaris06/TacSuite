@@ -1270,12 +1270,10 @@ body.up-kb-open .up-kb-aware {
             transition: width var(--tac-duration-normal), padding var(--tac-duration-normal);
             max-width: 90vw;
             width: auto;
-            overflow-x: auto;
-            scrollbar-width: none;
-        }
-
-        .dock-menu::-webkit-scrollbar {
-            display: none;
+            /* U24 — plus de scroll horizontal invisible : les items passent à
+               la ligne, tout reste découvrable. */
+            flex-wrap: wrap;
+            justify-content: center;
         }
 
         .dock-menu-item {
@@ -1340,6 +1338,14 @@ body.up-kb-open .up-kb-aware {
             flex-direction: column;
             gap: var(--tac-space-2);
         }
+
+        /* U24 — tiroir « Plus » : mêmes FABs, empilés sous le bouton. */
+        #plan_more_tools {
+            display: flex;
+            flex-direction: column;
+            gap: var(--tac-space-2);
+        }
+        #plan_more_tools[hidden] { display: none; }
 
         .plan-tool-fab {
             width: 50px;
@@ -1964,4 +1970,41 @@ body.light-mode .pctac-liens-btn-row--wa:hover { background: #bee9ce; box-shadow
     color: var(--text-muted);
     font-style: italic;
     padding: 18px 10px;
+}
+
+/* U23 — en-tête de mission (bandeau discret au-dessus des onglets) */
+.mission-header {
+    font-size: 0.82em;
+    color: var(--text-muted);
+    padding: 4px 10px;
+    margin-bottom: 6px;
+    border: 1px solid var(--border-glass);
+    border-radius: var(--radius-sm, 6px);
+    background: var(--bg-glass, transparent);
+    white-space: nowrap;
+    overflow-x: auto;
+}
+.mission-header:empty { display: none; }
+.mission-header strong { color: var(--text-main); }
+
+/* U16 — badge de statut symbole+couleur (jamais couleur seule — daltonisme) */
+.status-badge {
+    display: inline-block;
+    font-size: 0.78em;
+    font-weight: 700;
+    padding: 1px 6px;
+    border: 1px solid currentColor;
+    border-radius: 10px;
+    white-space: nowrap;
+}
+
+/* U15 — séparateur de jour discret dans le journal */
+.log-day-sep td {
+    text-align: center;
+    font-size: 0.78em;
+    font-weight: 700;
+    color: var(--text-muted);
+    letter-spacing: 0.08em;
+    padding: 4px 0;
+    border-bottom: 1px solid var(--border-glass);
 }

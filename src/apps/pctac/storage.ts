@@ -39,8 +39,13 @@ export const Storage: PctacStorageContract = {
    * (storage.js:24-31)
    */
   saveLogData(logData: PctacLogEntry[]): void {
-    // Tri par heure avant de sauvegarder (mutation en place)
+    // U15 — tri par (date, heure) avant de sauvegarder (mutation en place).
+    // Les entrées legacy sans date (date ?? '') passent AVANT toute entrée
+    // datée, dans un ordre stable entre elles (heure ASC comme avant).
     logData.sort((a, b) => {
+      const da = a.date ?? '';
+      const db = b.date ?? '';
+      if (da !== db) return da < db ? -1 : 1;
       if (a.heure === b.heure) return 0;
       return a.heure < b.heure ? -1 : 1;
     });

@@ -26,7 +26,22 @@ import {
     matchPhotosByLabel,
     normalizeForMatch,
     suggestPinIcons,
+    hostageStatusFromBlessures,
 } from '../../../src/apps/pctac/config.js';
+
+describe('hostageStatusFromBlessures (U16, heuristique extraite de main.ts:312-319)', () => {
+    it('classe les blessures par gravité (ok / preoccupant / blesse / dcd)', () => {
+        expect(hostageStatusFromBlessures('')).toBe('ok');
+        expect(hostageStatusFromBlessures('RAS')).toBe('ok');
+        expect(hostageStatusFromBlessures('indemne.')).toBe('ok');
+        expect(hostageStatusFromBlessures('inconnu')).toBe('preoccupant');
+        expect(hostageStatusFromBlessures('coupures légères')).toBe('preoccupant');
+        expect(hostageStatusFromBlessures('blessé au bras')).toBe('blesse');
+        expect(hostageStatusFromBlessures('état grave')).toBe('blesse');
+        expect(hostageStatusFromBlessures('décédé')).toBe('dcd');
+        expect(hostageStatusFromBlessures('DCD')).toBe('dcd');
+    });
+});
 
 describe('config.ts — clés localStorage littérales (config.js:6-15)', () => {
     it('expose les 8 clés attendues, valeurs exactes', () => {

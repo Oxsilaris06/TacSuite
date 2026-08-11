@@ -98,6 +98,17 @@ describe('LogManager.addEntry — validation et rejet avec toast (R2-T2a, ex-ale
     expect(result?.lieu).toBe('Paris');
   });
 
+  it('U15 — pose la date du jour (ISO YYYY-MM-DD) à la création', () => {
+    const result = LogManager.addEntry({
+      mode: 'standard',
+      pax: 'Adversaire',
+      heure: '14:30',
+    });
+
+    expect(result?.date).toBe(new Date().toLocaleDateString('sv-SE'));
+    expect(result?.date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  });
+
   it('accepte et crée une entrée valide en mode libre', () => {
     const input: PctacLogEntryInput = {
       mode: 'free',

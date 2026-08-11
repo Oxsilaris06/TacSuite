@@ -32,7 +32,7 @@
 import * as PDFLib from 'pdf-lib';
 import { Storage } from '@pctac/storage.js';
 import { ImageStore } from '@pctac/image-store.js';
-import { PDF_PAX_COLORS, PHOTO_CATEGORIES, FREE_MODE_COLORS } from '@pctac/config.js';
+import { PDF_PAX_COLORS, PHOTO_CATEGORIES, FREE_MODE_COLORS, ADV_STATUS, HOST_STATUS } from '@pctac/config.js';
 import { showBusy, hideBusy } from '@pctac/busy.js';
 import { toast } from '@shared/feedback.js';
 import type { PdfExportContract, PlanMapPinSummary } from '@shared/types/contracts.js';
@@ -318,13 +318,33 @@ export const PdfExport: PdfExportContract = {
 
             drawTableHeader();
 
+            // U15 — `YYYY-MM-DD` → `JJ/MM/AAAA` (séparateur de jour du journal).
+            const fmtDay = (iso: string): string => {
+                const [y, m, d] = iso.split('-');
+                return (d && m && y) ? `${d}/${m}/${y}` : iso;
+            };
+
+            let prevDate: string | undefined;
             for (const entry of logData) {
                 const remarksLines = wrapText(entry.remarques, colWidths[3] - 10, font, 9);
                 const rowHeight = Math.max(1, remarksLines.length) * context.lineHeight + 10;
 
-                if (context.y - rowHeight < context.margin) {
+                // U15 — en-tête de jour quand la date change : lève l'ambiguïté
+                // minuit sans colonne supplémentaire (les entrées legacy sans
+                // date restent telles quelles, avant les entrées datées).
+                const daySep = entry.date && entry.date !== prevDate;
+                prevDate = entry.date;
+
+                if (context.y - rowHeight - (daySep ? 18 : 0) < context.margin) {
                     addNewPage("MAIN COURANTE (SUITE)");
                     drawTableHeader();
+                }
+
+                if (daySep && entry.date) {
+                    pdfPage().drawText(sanitizeWinAnsi(`— ${fmtDay(entry.date)} —`), {
+                        x: context.margin + 5, y: context.y, size: 9, font: fontBold, color: themeColors.text
+                    });
+                    context.y -= 18;
                 }
 
                 let currentX = context.margin + 5;
@@ -386,6 +406,7 @@ export const PdfExport: PdfExportContract = {
 
                     let infoY = context.y;
                     const labels = [
+                        `Statut: ${ADV_STATUS[String(adv.status || 'active')]?.label ?? 'Actif'}`, // U16
                         `Né le: ${adv.dob || 'N/C'}`,
                         `Lien ravisseurs: ${adv.lien || 'N/C'}`,
                         `Antécédents: ${adv.antecedents || 'N/C'}`,
@@ -416,9 +437,13 @@ export const PdfExport: PdfExportContract = {
                     }
 
                     let infoY = context.y;
+                    // C8 — lien résolu vers le nom vivant de la fiche adversaire.
+                    const lienAdv = adversaries.find(a => a.id === host.lien);
+                    const lienLabel = lienAdv ? `${lienAdv.nom || ''} ${lienAdv.prenom || ''}`.trim() : (host.lien || 'N/C');
                     const labels = [
+                        `Statut: ${HOST_STATUS[String(host.status || 'ok')]?.label ?? 'OK'}`, // U16
                         `Né le: ${host.dob || 'N/C'}`,
-                        `Lien ravisseurs: ${host.lien || 'N/C'}`,
+                        `Lien ravisseurs: ${lienLabel}`,
                         `État: ${host.etat || 'N/C'}`,
                         `Blessures: ${host.blessures || 'N/C'}`
                     ];

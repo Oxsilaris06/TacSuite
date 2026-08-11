@@ -18,38 +18,45 @@
 </head>
 
 <body class="dark-mode">
+    <!-- U20 — anti-flash : applique le thème clair avant le premier rendu
+         (même rôle que le script inline du portail ; la clé `theme` reste
+         posée/complétée par ui.ts). -->
+    <script>if (localStorage.getItem('theme') === 'light') document.body.classList.add('light-mode');</script>
 
 
     <div class="container">
         <h1>PC TAC</h1>
 
-        <!-- NAVIGATION PRINCIPALE -->
+        <!-- U23 — En-tête de mission (rempli par UI.renderMissionHeader) -->
+        <div id="missionHeader" class="mission-header"></div>
+
+        <!-- NAVIGATION PRINCIPALE (U22 : raccourcis clavier 1..7) -->
         <nav class="main-tab-bar">
-            <button type="button" class="tab-btn active" data-view="view-main-courante">
+            <button type="button" class="tab-btn active" data-view="view-main-courante" title="Main Courante (raccourci : 1)">
                 <span class="material-symbols-outlined" aria-hidden="true">description</span>
                 <span>Main Courante</span>
             </button>
-            <button type="button" class="tab-btn" data-view="view-adversaires">
+            <button type="button" class="tab-btn" data-view="view-adversaires" title="Adversaires (raccourci : 2)">
                 <span class="material-symbols-outlined" aria-hidden="true">groups</span>
                 <span>Adversaires</span>
             </button>
-            <button type="button" class="tab-btn" data-view="view-otages">
+            <button type="button" class="tab-btn" data-view="view-otages" title="Otages (raccourci : 3)">
                 <span class="material-symbols-outlined" aria-hidden="true">person_off</span>
                 <span>Otages</span>
             </button>
-            <button type="button" class="tab-btn" data-view="view-amis">
+            <button type="button" class="tab-btn" data-view="view-amis" title="Amis (raccourci : 4)">
                 <span class="material-symbols-outlined" aria-hidden="true">shield_person</span>
                 <span>Amis</span>
             </button>
-            <button type="button" class="tab-btn" data-view="view-photos">
+            <button type="button" class="tab-btn" data-view="view-photos" title="Photos (raccourci : 5)">
                 <span class="material-symbols-outlined" aria-hidden="true">photo_library</span>
                 <span>Photos</span>
             </button>
-            <button type="button" class="tab-btn" data-view="view-plan">
+            <button type="button" class="tab-btn" data-view="view-plan" title="Plan (raccourci : 6)">
                 <span class="material-symbols-outlined" aria-hidden="true">map</span>
                 <span>Plan</span>
             </button>
-            <button type="button" class="tab-btn" data-view="view-liens">
+            <button type="button" class="tab-btn" data-view="view-liens" title="Liens (raccourci : 7)">
                 <span class="material-symbols-outlined" aria-hidden="true">link</span>
                 <span>Liens</span>
             </button>
@@ -90,7 +97,7 @@
                         <label for="remarques_input">Remarques</label>
                         <textarea id="remarques_input" rows="2" placeholder="Saisir un compte-rendu..."></textarea>
                     </div>
-                    <button type="submit" id="addLogBtn" class="add-log-btn pctac-mt-15">
+                    <button type="submit" id="addLogBtn" class="add-log-btn pctac-mt-15" title="Ajouter au Log (raccourci : Ctrl+Entrée)">
                         <span class="material-symbols-outlined" aria-hidden="true">add_task</span> Ajouter au Log
                     </button>
                 </form>
@@ -114,7 +121,7 @@
                             <th>
                                 <span class="pctac-th-actions-row">Remarques
                                     <span class="pctac-th-actions">
-                                        <button type="button" id="openSearchBtn" class="th-action-btn" title="Rechercher dans le journal" aria-label="Rechercher dans le journal">
+                                        <button type="button" id="openSearchBtn" class="th-action-btn" title="Rechercher dans le journal (raccourci : /)" aria-label="Rechercher dans le journal">
                                             <span class="material-symbols-outlined" aria-hidden="true">search</span>
                                         </button>
                                         <button type="button" id="sortLogBtn" class="th-action-btn" title="Inverser l'ordre (par heure)" aria-label="Inverser l'ordre de tri par heure">
@@ -198,8 +205,10 @@
                         <div><label for="hostage_nom">Nom</label><input type="text" id="hostage_nom" placeholder="Nom"></div>
                         <div><label for="hostage_prenom">Prénom</label><input type="text" id="hostage_prenom" placeholder="Prénom"></div>
                         <div><label for="hostage_dob">D.N.</label><input type="text" id="hostage_dob" placeholder="JJ/MM/AAAA"></div>
-                        <div><label for="hostage_lien">Lien Adversaire</label><input type="text" id="hostage_lien"
-                                placeholder="Lien avec ravisseur"></div>
+                        <!-- C8 — lien vers une fiche adversaire (options peuplées par UI.renderHostages) -->
+                        <div><label for="hostage_lien">Lien Adversaire</label><select id="hostage_lien">
+                                <option value="">— Aucun —</option>
+                            </select></div>
                         <div><label for="hostage_etat">État</label><input type="text" id="hostage_etat" placeholder="Conscient, choc...">
                         </div>
                         <div class="pctac-grid-col-2"><label for="hostage_blessure">Blessures</label><input type="text"
@@ -310,27 +319,33 @@
                     <button type="button" id="plan_btn_search" class="plan-tool-fab" title="Recherche adresse / coordonnées GPS" aria-label="Rechercher une adresse ou des coordonnées GPS">
                         <span class="material-symbols-outlined">search</span>
                     </button>
-                    <button type="button" id="plan_btn_fullscreen" class="plan-tool-fab" title="Plein écran" aria-label="Basculer le plein écran">
-                        <span class="material-symbols-outlined">fullscreen</span>
-                    </button>
-                    <button type="button" id="plan_btn_3d" class="plan-tool-fab" title="Basculer vue 2D / 3D relief" aria-label="Basculer entre vue 2D et 3D">
-                        <span class="material-symbols-outlined">deployed_code</span>
-                    </button>
-                    <button type="button" id="plan_btn_capture" class="plan-tool-fab" title="Capture haute qualité du plan" aria-label="Capturer le plan">
-                        <span class="material-symbols-outlined">photo_camera</span>
-                    </button>
                     <button type="button" id="plan_btn_ping" class="plan-tool-fab" title="Ajouter un ping" aria-label="Ajouter un ping">
                         <span class="material-symbols-outlined">add_location</span>
                     </button>
                     <button type="button" id="plan_btn_draw" class="plan-tool-fab" title="Outils de dessin" aria-label="Ouvrir les outils de dessin">
                         <span class="material-symbols-outlined">draw</span>
                     </button>
-                    <button type="button" id="plan_btn_labels" class="plan-tool-fab" title="Afficher les noms de rues" aria-label="Afficher ou masquer les noms de rues">
-                        <span class="material-symbols-outlined">signpost</span>
+                    <button type="button" id="plan_btn_fullscreen" class="plan-tool-fab" title="Plein écran" aria-label="Basculer le plein écran">
+                        <span class="material-symbols-outlined">fullscreen</span>
                     </button>
-                    <button type="button" id="plan_btn_aoi" class="plan-tool-fab" title="Télécharger la carte d'une zone (hors-ligne)" aria-label="Télécharger la carte d'une zone hors ligne">
-                        <span class="material-symbols-outlined">sim_card_download</span>
+                    <!-- U24 — outils secondaires repliés derrière « Plus » (hiérarchie + fin du débordement mobile) -->
+                    <button type="button" id="plan_btn_more" class="plan-tool-fab" title="Plus d'outils (3D, capture, rues, zone hors-ligne)" aria-label="Afficher plus d'outils" aria-expanded="false" aria-controls="plan_more_tools">
+                        <span class="material-symbols-outlined">more_horiz</span>
                     </button>
+                    <div id="plan_more_tools" hidden>
+                        <button type="button" id="plan_btn_3d" class="plan-tool-fab" title="Basculer vue 2D / 3D relief" aria-label="Basculer entre vue 2D et 3D">
+                            <span class="material-symbols-outlined">deployed_code</span>
+                        </button>
+                        <button type="button" id="plan_btn_capture" class="plan-tool-fab" title="Capture haute qualité du plan" aria-label="Capturer le plan">
+                            <span class="material-symbols-outlined">photo_camera</span>
+                        </button>
+                        <button type="button" id="plan_btn_labels" class="plan-tool-fab" title="Afficher les noms de rues" aria-label="Afficher ou masquer les noms de rues">
+                            <span class="material-symbols-outlined">signpost</span>
+                        </button>
+                        <button type="button" id="plan_btn_aoi" class="plan-tool-fab" title="Télécharger la carte d'une zone (hors-ligne)" aria-label="Télécharger la carte d'une zone hors ligne">
+                            <span class="material-symbols-outlined">sim_card_download</span>
+                        </button>
+                    </div>
                 </div>
 
                 <!-- Dock dessin réductible (ouvert via le FAB Dessin) -->
@@ -606,6 +621,11 @@
                 <div class="row-2"><div><label for="edit_adv_attitude">Attitude</label><input type="text" id="edit_adv_attitude" class="pctac-input-lg"></div>
                 <div><label for="edit_adv_substance">Substance</label><input type="text" id="edit_adv_substance" class="pctac-input-lg"></div></div>
                 <div><label for="edit_adv_armes">Armes</label><textarea id="edit_adv_armes" rows="2" class="pctac-textarea-lg"></textarea></div>
+                <!-- U16 — statut de la fiche -->
+                <div><label for="edit_adv_status">Statut</label><select id="edit_adv_status" class="pctac-input-lg">
+                    <option value="active">▲ Actif</option>
+                    <option value="neutralized">✔ Neutralisé</option>
+                </select></div>
             </div>
         </div>
         <div class="pctac-actions-row">
@@ -632,9 +652,19 @@
                 <div class="row-2"><div><label for="edit_host_nom">Nom</label><input type="text" id="edit_host_nom" class="pctac-input-lg"></div>
                 <div><label for="edit_host_prenom">Prénom</label><input type="text" id="edit_host_prenom" class="pctac-input-lg"></div></div>
                 <div class="row-2"><div><label for="edit_host_dob">D.N.</label><input type="text" id="edit_host_dob" class="pctac-input-lg"></div>
-                <div><label for="edit_host_lien">Lien Adversaire</label><input type="text" id="edit_host_lien" class="pctac-input-lg"></div></div>
+                <!-- C8 — select alimenté par les fiches adversaires (UI.showEditHostageModal) -->
+                <div><label for="edit_host_lien">Lien Adversaire</label><select id="edit_host_lien" class="pctac-input-lg">
+                    <option value="">— Aucun —</option>
+                </select></div></div>
                 <div><label for="edit_host_etat">État</label><textarea id="edit_host_etat" rows="2" class="pctac-textarea-lg"></textarea></div>
                 <div><label for="edit_host_blessures">Blessures</label><textarea id="edit_host_blessures" rows="3" class="pctac-textarea-lg"></textarea></div>
+                <!-- U16 — statut de la fiche (recalculé si les blessures changent) -->
+                <div><label for="edit_host_status">Statut</label><select id="edit_host_status" class="pctac-input-lg">
+                    <option value="ok">✔ OK</option>
+                    <option value="preoccupant">! Préoccupant</option>
+                    <option value="blesse">✚ Blessé</option>
+                    <option value="dcd">✝ DCD</option>
+                </select></div>
             </div>
         </div>
         <div class="pctac-actions-row">

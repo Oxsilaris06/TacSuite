@@ -73,6 +73,8 @@ export const LogManager: LogManagerContract = {
     // logManager.js:42-50 — construction de l'entrée
     const newEntry: PctacLogEntry = {
       id: Date.now().toString(36) + Math.random().toString(36).substr(2, 5),
+      // U15 — date d'opération auto (jour de saisie, local, ISO YYYY-MM-DD).
+      date: new Date().toLocaleDateString('sv-SE'),
       heure: heure,
       pax: paxName,
       paxMode: mode,

@@ -67,6 +67,37 @@ export const PDF_PAX_COLORS: Record<string, PctacPaxColorEntry> = {
 };
 
 // Paramètres QR Code
+/* U16/C1 — Statuts des fiches adversaire/otage (source de vérité : la FICHE).
+ * Badge symbole+couleur (pas couleur seule — daltonisme). */
+export interface PctacStatusMeta { label: string; symbol: string; color: string }
+
+export const ADV_STATUS: Record<string, PctacStatusMeta> = {
+    active: { label: 'Actif', symbol: '▲', color: '#ef4444' },
+    neutralized: { label: 'Neutralisé', symbol: '✔', color: '#22c55e' },
+};
+
+export const HOST_STATUS: Record<string, PctacStatusMeta> = {
+    ok: { label: 'OK', symbol: '✔', color: '#22c55e' },
+    preoccupant: { label: 'Préoccupant', symbol: '!', color: '#eab308' },
+    blesse: { label: 'Blessé', symbol: '✚', color: '#ef4444' },
+    dcd: { label: 'DCD', symbol: '✝', color: '#94a3b8' },
+};
+
+/**
+ * Heuristique blessures → statut otage (U16, extraite de main.ts:312-319 :
+ * partagée entre création de fiche et recalcul à l'édition).
+ */
+export function hostageStatusFromBlessures(blessures: unknown): string {
+    const b = String(blessures ?? '').toLowerCase().trim();
+    const rasTerms = ['ras', '-', '/', 'rien', 'neant', 'néant', 'idemne', 'indemne', 'aucune', '0', 'ok'];
+    const isRas = b === '' || rasTerms.some((term) => b === term || b === term + '.');
+    let status = 'ok';
+    if ((b !== '' && !isRas) || b.includes('inconnu') || b === '?') status = 'preoccupant';
+    if (b.includes('blesse') || b.includes('blessé') || b.includes('grave')) status = 'blesse';
+    if (b.includes('mort') || b.includes('dcd') || b.includes('decede') || b.includes('décédé')) status = 'dcd';
+    return status;
+}
+
 export const QR_BATCH_SIZE = 5;
 export const LONG_PRESS_DELAY = 700;
 

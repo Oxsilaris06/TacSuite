@@ -63,12 +63,115 @@
  */
 
 import type { PctacLogEntry, UIContract } from '@shared/types/contracts.js';
-import { PDF_PAX_COLORS, FREE_MODE_COLORS, LONG_PRESS_DELAY, PHOTO_CATEGORIES } from '@pctac/config.js';
+import { PDF_PAX_COLORS, FREE_MODE_COLORS, LONG_PRESS_DELAY, PHOTO_CATEGORIES, ADV_STATUS, HOST_STATUS, hostageStatusFromBlessures } from '@pctac/config.js';
+import type { PctacStatusMeta } from '@pctac/config.js';
 import { Storage } from '@pctac/storage.js';
 import { ImageStore } from '@pctac/image-store.js';
 import { LogManager } from '@pctac/log-manager.js';
 import { esc } from '@shared/ui-platform.js';
-import { confirmDialog } from '@shared/feedback.js';
+import { confirmDialog, promptDialog } from '@shared/feedback.js';
+
+/* ------------------------------------------------------------------------
+ * U16/C1 — Statuts sur les FICHES (source de vérité ; la photo _sync suit).
+ * Métadonnées + heuristique : voir @pctac/config.js (partagées avec
+ * pdf-export.ts et main.ts).
+ * ---------------------------------------------------------------------- */
+
+/** Badge de statut (symbole + libellé colorés — jamais la couleur seule). */
+function statusBadge(meta: PctacStatusMeta | undefined): string {
+  if (!meta) return '';
+  return `<span class="status-badge" style="color: ${meta.color}; border-color: ${meta.color};">${meta.symbol} ${esc(meta.label)}</span>`;
+}
+
+/** Options `<select>` de statut pour une fiche. */
+function statusOptions(metas: Record<string, PctacStatusMeta>, current: string): string {
+  return Object.entries(metas).map(([k, m]) =>
+    `<option value="${k}" ${current === k ? 'selected' : ''}>${m.symbol} ${esc(m.label)}</option>`).join('');
+}
+
+/**
+ * Migration douce U16 : si une fiche n'a pas de `status` mais que sa photo
+ * `_sync` en porte un, on le reprend (sinon défaut). Persiste si modifié.
+ */
+function migrateStatuses(key: string, list: readonly { id: string; status?: unknown }[], fallback: string): void {
+  const missing = list.filter((it) => !it.status);
+  if (missing.length === 0) return;
+  const photos = Storage.loadCollection('pcTacPhotos');
+  missing.forEach((it) => {
+    const photo = photos.find((p) => p.id === it.id + '_sync');
+    (it as { status?: unknown }).status = (photo && photo.status) || fallback;
+  });
+  Storage.saveCollection(key, list as never);
+}
+
+/**
+ * C5-statut — écrit le statut sur la FICHE, propage vers la photo `_sync` et
+ * journalise le changement en main courante. Retourne true si changement.
+ */
+function setStatusOnFiche(key: string, id: string, status: string): boolean {
+  const list = Storage.loadCollection(key);
+  const item = list.find((i) => i.id === id);
+  if (!item || item.status === status) return false;
+  item.status = status;
+  Storage.saveCollection(key, list);
+
+  // La fiche est la source : la photo _sync suit (inverse du flux historique).
+  const photos = Storage.loadCollection('pcTacPhotos');
+  const photo = photos.find((p) => p.id === id + '_sync');
+  if (photo && photo.status !== status) {
+    photo.status = status;
+    Storage.saveCollection('pcTacPhotos', photos);
+  }
+
+  // Entrée automatique en main courante, horodatée.
+  const isAdv = key === 'pcTacAdversaries';
+  const meta = (isAdv ? ADV_STATUS : HOST_STATUS)[status];
+  const now = new Date();
+  const heure = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0');
+  const nom = `${(item.nom as string | undefined) || ''} ${(item.prenom as string | undefined) || ''}`.trim() || '(sans nom)';
+  LogManager.addEntry({
+    mode: 'standard',
+    pax: isAdv ? 'Adversaire' : 'Otage',
+    heure,
+    remarques: `${isAdv ? 'ADV' : 'OTG'} ${nom} : ${meta ? meta.label.toLowerCase() : status}`,
+  });
+  return true;
+}
+
+/* ------------------------------------------------------------------------
+ * C8 — Lien adversaire ↔ otage (le champ lien otage stocke un id de fiche
+ * adversaire, ou un texte libre legacy si non résolu).
+ * ---------------------------------------------------------------------- */
+
+/** Résout un lien otage : nom vivant de la fiche adv si l'id existe, sinon texte legacy. */
+function resolveLien(lien: unknown, advs: readonly PctacCollectionItemLike[]): string {
+  const v = String(lien ?? '');
+  if (!v) return '';
+  const adv = advs.find((a) => a.id === v);
+  return adv ? `${(adv.nom as string | undefined) || ''} ${(adv.prenom as string | undefined) || ''}`.trim() : v;
+}
+
+interface PctacCollectionItemLike { id: string; [key: string]: unknown }
+
+/** Peuple un `<select>` de lien avec les fiches adversaires (+ option legacy). */
+function populateLienSelect(sel: HTMLSelectElement | null, current: string): void {
+  if (!sel) return;
+  const advs = Storage.loadCollection('pcTacAdversaries');
+  let html = '<option value="">— Aucun —</option>' + advs.map((a) =>
+    `<option value="${a.id}">${esc(`${(a.nom as string | undefined) || ''} ${(a.prenom as string | undefined) || ''}`.trim() || '(sans nom)')}</option>`).join('');
+  // Valeur legacy texte libre non résolue : conservée telle quelle.
+  if (current && !advs.some((a) => a.id === current)) {
+    html += `<option value="${esc(current)}">${esc(current)} (texte libre existant)</option>`;
+  }
+  sel.innerHTML = html;
+  sel.value = current;
+}
+
+/** U15 — `YYYY-MM-DD` → `JJ/MM/AAAA` (affichage sobre des séparateurs de jour). */
+function formatDateFr(iso: string): string {
+  const [y, m, d] = iso.split('-');
+  return (d && m && y) ? `${d}/${m}/${y}` : iso;
+}
 
 /**
  * Gestionnaire de l'interface utilisateur PC TAC
@@ -260,6 +363,7 @@ export const UI: UIContract = {
   logSortDesc: false,
 
   renderLogTable(logData: readonly PctacLogEntry[]): void {
+    this.renderMissionHeader(); // U23 — même rythme que les rendus de listes
     const tbody = this.elements.logTableBody;
     if (!tbody) return;
     if (this.logSortDesc) logData = [...logData].reverse();
@@ -269,7 +373,15 @@ export const UI: UIContract = {
       tbody.innerHTML = '<tr><td colspan="4" class="empty-state">Aucun événement enregistré</td></tr>';
       return;
     }
+    // U15 — séparateur de jour discret quand la date change (pas de colonne).
+    let prevDate: string | undefined;
     logData.forEach((entry) => {
+      if (entry.date && entry.date !== prevDate) {
+        const sep = tbody.insertRow();
+        sep.className = 'log-day-sep';
+        sep.innerHTML = `<td colspan="4">${esc(formatDateFr(entry.date))}</td>`;
+      }
+      prevDate = entry.date;
       let paxColor: string;
       let paxText: string;
       let paxFontColor: string;
@@ -476,14 +588,19 @@ export const UI: UIContract = {
 
   // ui.js:436-466
   async renderAdversaries(): Promise<void> {
+    this.renderMissionHeader(); // U23
     const raw = Storage.loadCollection('pcTacAdversaries') || [];
-    const list = await ImageStore.hydrate(raw, 'photo');
+    migrateStatuses('pcTacAdversaries', raw, 'active'); // U16 — migration douce
     const tbody = document.getElementById('adversary-table-body');
     if (!tbody) return;
-    if (list.length === 0) {
+    if (raw.length === 0) {
       tbody.innerHTML = '<tr><td colspan="3" class="empty-state">Aucun adversaire — utilisez le formulaire ci-dessus</td></tr>';
       return;
     }
+    // U26 — squelette pendant l'hydratation IndexedDB des photos.
+    tbody.innerHTML = '<tr><td colspan="3" class="empty-state">Chargement des photos…</td></tr>';
+    const list = await ImageStore.hydrate(raw, 'photo');
+    const hostages = Storage.loadCollection('pcTacHostages');
     tbody.innerHTML = list.map((item) => `
             <tr>
                 <td style="width: 80px;">
@@ -499,6 +616,19 @@ export const UI: UIContract = {
                         <div><strong style="color: var(--accent-blue);">SUBSTANCE:</strong> ${esc(item.substance) || 'N/C'}</div>
                         <div style="grid-column: span 3;"><strong style="color: var(--accent-blue);">ANTÉCÉDENTS:</strong> ${esc(item.antecedents) || 'N/C'}</div>
                         <div style="grid-column: span 3;"><strong style="color: var(--accent-blue);">ARMES:</strong> ${esc(item.armes) || 'N/C'}</div>
+                        <div style="grid-column: span 3; display: flex; align-items: center; gap: 8px;">
+                            <strong style="color: var(--accent-blue);">STATUT:</strong>
+                            ${statusBadge(ADV_STATUS[String(item.status || 'active')])}
+                            <select onchange="UI.setItemStatus('pcTacAdversaries', '${item.id}', this.value)" aria-label="Statut de l'adversaire" style="font-size: 0.85em; padding: 2px 20px 2px 5px; height: auto; min-height: unset; width: auto;">
+                                ${statusOptions(ADV_STATUS, String(item.status || 'active'))}
+                            </select>
+                        </div>
+                        ${(() => {
+                          // C8 — otages liés à cette fiche (calcul au rendu, pas de nav)
+                          const linked = hostages.filter((h) => h.lien === item.id)
+                            .map((h) => `${(h.nom as string | undefined) || ''} ${(h.prenom as string | undefined) || ''}`.trim()).filter(Boolean);
+                          return linked.length ? `<div style="grid-column: span 3;"><strong style="color: var(--accent-blue);">OTAGES LIÉS:</strong> ${esc(linked.join(', '))}</div>` : '';
+                        })()}
                     </div>
                 </td>
                 <td style="width: 50px;">
@@ -513,14 +643,30 @@ export const UI: UIContract = {
 
   // ui.js:468-496
   async renderHostages(): Promise<void> {
+    this.renderMissionHeader(); // U23
     const raw = Storage.loadCollection('pcTacHostages') || [];
-    const list = await ImageStore.hydrate(raw, 'photo');
+    // U16 — migration douce : photo _sync d'abord, sinon heuristique blessures.
+    const noStatus = raw.filter((it) => !it.status);
+    if (noStatus.length > 0) {
+      const photos = Storage.loadCollection('pcTacPhotos');
+      noStatus.forEach((it) => {
+        const photo = photos.find((p) => p.id === it.id + '_sync');
+        it.status = (photo && photo.status) || hostageStatusFromBlessures(it.blessures);
+      });
+      Storage.saveCollection('pcTacHostages', raw);
+    }
+    // C8 — alimente le select « Lien Adversaire » du formulaire de création.
+    populateLienSelect(document.getElementById('hostage_lien') as HTMLSelectElement | null, '');
     const tbody = document.getElementById('hostage-table-body');
     if (!tbody) return;
-    if (list.length === 0) {
+    if (raw.length === 0) {
       tbody.innerHTML = '<tr><td colspan="3" class="empty-state">Aucun otage — utilisez le formulaire ci-dessus</td></tr>';
       return;
     }
+    // U26 — squelette pendant l'hydratation IndexedDB des photos.
+    tbody.innerHTML = '<tr><td colspan="3" class="empty-state">Chargement des photos…</td></tr>';
+    const list = await ImageStore.hydrate(raw, 'photo');
+    const advs = Storage.loadCollection('pcTacAdversaries');
     tbody.innerHTML = list.map((item) => `
             <tr>
                 <td style="width: 80px;">
@@ -531,9 +677,16 @@ export const UI: UIContract = {
                         <div><strong style="color: var(--civil-yellow);">NOM:</strong> ${esc(item.nom)}</div>
                         <div><strong style="color: var(--civil-yellow);">PRÉNOM:</strong> ${esc(item.prenom)}</div>
                         <div><strong style="color: var(--civil-yellow);"><span class="material-symbols-outlined" style="font-size: 14px; vertical-align: middle;">cake</span>:</strong> ${esc(item.dob) || 'N/C'}</div>
-                        <div><strong style="color: var(--civil-yellow);">LIEN ADV:</strong> ${esc(item.lien) || 'N/C'}</div>
+                        <div><strong style="color: var(--civil-yellow);">LIEN ADV:</strong> ${esc(resolveLien(item.lien, advs)) || 'N/C'}</div>
                         <div><strong style="color: var(--civil-yellow);">ÉTAT:</strong> ${esc(item.etat) || 'N/C'}</div>
                         <div><strong style="color: var(--civil-yellow);">BLESSURES:</strong> ${esc(item.blessures) || 'N/C'}</div>
+                        <div style="grid-column: span 3; display: flex; align-items: center; gap: 8px;">
+                            <strong style="color: var(--civil-yellow);">STATUT:</strong>
+                            ${statusBadge(HOST_STATUS[String(item.status || 'ok')])}
+                            <select onchange="UI.setItemStatus('pcTacHostages', '${item.id}', this.value)" aria-label="Statut de l'otage" style="font-size: 0.85em; padding: 2px 20px 2px 5px; height: auto; min-height: unset; width: auto;">
+                                ${statusOptions(HOST_STATUS, String(item.status || 'ok'))}
+                            </select>
+                        </div>
                     </div>
                 </td>
                 <td style="width: 50px;">
@@ -619,6 +772,8 @@ export const UI: UIContract = {
     if (!board) return;
     const emptyMsg = '<div class="empty-state">Aucune photo — utilisez le formulaire ci-dessus</div>';
     const preFiltered = filterCategory === 'all' ? raw : raw.filter((item) => item.category === filterCategory);
+    // U26 — squelette pendant l'hydratation IndexedDB.
+    if (preFiltered.length > 0) board.innerHTML = '<div class="empty-state">Chargement des photos…</div>';
     const filteredList = await ImageStore.hydrate(preFiltered, 'data');
 
     // Mise à jour des boutons de filtre pour respecter l'ordre et le style
@@ -719,25 +874,54 @@ export const UI: UIContract = {
     document.querySelectorAll('.dragging-photo').forEach((el) => el.classList.remove('dragging-photo'));
   },
 
-  // ui.js:612-621
+  /**
+   * ui.js:612-621 — RÉÉCRIT (U16/C1) : la FICHE est désormais la source de
+   * vérité. Depuis une carte photo `_sync`, on écrit la fiche (qui propage
+   * vers la photo + journalise) ; photo orpheline : comportement historique.
+   */
   updateAdversaryStatus(id: string, status: string): void {
-    const list = Storage.loadCollection('pcTacPhotos');
-    const photo = list.find((p) => p.id === id);
-    if (photo) {
+    const ficheId = id.endsWith('_sync') ? id.slice(0, -'_sync'.length) : id;
+    const routed =
+      setStatusOnFiche('pcTacAdversaries', ficheId, status) ||
+      setStatusOnFiche('pcTacHostages', ficheId, status) ||
+      // Fiche introuvable mais statut déjà à jour ? Vérifie l'existence.
+      Storage.loadCollection('pcTacAdversaries').some((a) => a.id === ficheId) ||
+      Storage.loadCollection('pcTacHostages').some((h) => h.id === ficheId);
+    if (!routed) {
+      // Photo sans fiche : écrit sur la photo seule (comportement historique).
+      const list = Storage.loadCollection('pcTacPhotos');
+      const photo = list.find((p) => p.id === id);
+      if (!photo) return;
       photo.status = status;
       Storage.saveCollection('pcTacPhotos', list);
-      const currentFilter = localStorage.getItem('lastPhotoFilter') || 'all';
-      this.renderPhotos(currentFilter); // Re-render avec le filtre actuel
     }
+    this.renderLogTable(Storage.loadLogData()); // C5 — l'entrée auto est visible
+    const currentFilter = localStorage.getItem('lastPhotoFilter') || 'all';
+    this.renderPhotos(currentFilter); // Re-render avec le filtre actuel
   },
 
-  // ui.js:623-629
-  editPhotoTitle(id: string): void {
+  /**
+   * U16/C1 — changement de statut depuis une LISTE (adversaires/otages) :
+   * fiche → photo _sync → journal auto, puis re-rendus.
+   */
+  setItemStatus(key: string, id: string, status: string): void {
+    if (!setStatusOnFiche(key, id, status)) return;
+    this.renderLogTable(Storage.loadLogData()); // inclut renderMissionHeader
+    if (key === 'pcTacAdversaries') void this.renderAdversaries();
+    else void this.renderHostages();
+  },
+
+  // ui.js:623-629 — U25 : promptDialog async au lieu du prompt() natif.
+  async editPhotoTitle(id: string): Promise<void> {
     const list = Storage.loadCollection('pcTacPhotos');
     const photo = list.find((p) => p.id === id);
     if (!photo) return;
-    const newTitle = prompt('Nouveau titre :', photo.title as string | undefined);
-    if (newTitle) { photo.title = newTitle.trim(); Storage.saveCollection('pcTacPhotos', list); this.renderPhotos(); }
+    const newTitle = await promptDialog({
+      title: 'Renommer la photo',
+      message: 'Nouveau titre :',
+      initial: (photo.title as string | undefined) || '',
+    });
+    if (newTitle) { photo.title = newTitle.trim(); Storage.saveCollection('pcTacPhotos', list); void this.renderPhotos(); }
   },
 
   // ui.js:631-643
@@ -820,6 +1004,8 @@ export const UI: UIContract = {
     document.body.classList.toggle('dark-mode');
     const isDarkMode = document.body.classList.contains('dark-mode');
     localStorage.setItem('theme', isDarkMode ? 'dark' : 'light');
+    // U20 — pont de continuité : le portail lit sa propre clé.
+    localStorage.setItem('tacsuite.portal.theme', isDarkMode ? 'dark' : 'light');
     if (this.elements.darkModeIcon) this.elements.darkModeIcon.textContent = isDarkMode ? 'nightlight' : 'clear_day';
   },
 
@@ -880,6 +1066,9 @@ export const UI: UIContract = {
       const el = document.getElementById('edit_adv_' + f) as HTMLInputElement | HTMLTextAreaElement | null;
       if (el) el.value = (item[f] as string | undefined) || '';
     });
+    // U16 — statut de la fiche dans la modale d'édition.
+    const statusSel = document.getElementById('edit_adv_status') as HTMLSelectElement | null;
+    if (statusSel) statusSel.value = String(item.status || 'active');
     const preview = document.getElementById('edit_adv_preview') as HTMLElement;
     const existingPhoto = await ImageStore.get(id);
     preview.innerHTML = existingPhoto
@@ -941,7 +1130,11 @@ export const UI: UIContract = {
     }
 
     Storage.saveCollection('pcTacAdversaries', advList);
+    // U16 — statut choisi dans la modale : propagation + journal si changé.
+    const statusSel = document.getElementById('edit_adv_status') as HTMLSelectElement | null;
+    if (statusSel && statusSel.value) setStatusOnFiche('pcTacAdversaries', id, statusSel.value);
     this.hideEditAdversaryModal();
+    this.renderLogTable(Storage.loadLogData());
     await this.renderAdversaries();
     if (fileInput) { fileInput.value = ''; delete fileInput.dataset.compressedBase64; }
   },
@@ -953,11 +1146,19 @@ export const UI: UIContract = {
     if (!item) return;
 
     (document.getElementById('edit_host_id') as HTMLInputElement).value = id;
-    const fields = ['nom', 'prenom', 'dob', 'lien', 'etat', 'blessures'];
+    const fields = ['nom', 'prenom', 'dob', 'etat', 'blessures'];
     fields.forEach((f) => {
       const el = document.getElementById('edit_host_' + f) as HTMLInputElement | HTMLTextAreaElement | null;
       if (el) el.value = (item[f] as string | undefined) || '';
     });
+    // C8 — le lien adversaire est un <select> alimenté par les fiches adv.
+    populateLienSelect(
+      document.getElementById('edit_host_lien') as HTMLSelectElement | null,
+      (item.lien as string | undefined) || '',
+    );
+    // U16 — statut de la fiche dans la modale d'édition.
+    const statusSel = document.getElementById('edit_host_status') as HTMLSelectElement | null;
+    if (statusSel) statusSel.value = String(item.status || 'ok');
     const preview = document.getElementById('edit_host_preview') as HTMLElement;
     const existingPhoto = await ImageStore.get(id);
     preview.innerHTML = existingPhoto
@@ -983,9 +1184,11 @@ export const UI: UIContract = {
     const host = list.find((h) => h.id === id);
     if (!host) { this.hideEditHostageModal(); return; }
 
+    const oldBlessures = (host.blessures as string | undefined) || '';
+    // C8 — 'lien' inclus : le <select> expose .value comme un input.
     const fields = ['nom', 'prenom', 'dob', 'lien', 'etat', 'blessures'];
     fields.forEach((f) => {
-      const el = document.getElementById('edit_host_' + f) as HTMLInputElement | HTMLTextAreaElement | null;
+      const el = document.getElementById('edit_host_' + f) as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement | null;
       if (el) host[f] = el.value.trim();
     });
 
@@ -1019,9 +1222,48 @@ export const UI: UIContract = {
     }
 
     Storage.saveCollection('pcTacHostages', list);
+    // U16 — statut : valeur du select, mais si les blessures ont changé,
+    // l'heuristique reprend la main (recalcul simple, pas de dialogue).
+    const statusSel = document.getElementById('edit_host_status') as HTMLSelectElement | null;
+    let newStatus = (statusSel && statusSel.value) || String(host.status || 'ok');
+    if (((host.blessures as string | undefined) || '') !== oldBlessures) {
+      newStatus = hostageStatusFromBlessures(host.blessures);
+    }
+    setStatusOnFiche('pcTacHostages', id, newStatus);
     this.hideEditHostageModal();
+    this.renderLogTable(Storage.loadLogData());
     await this.renderHostages();
     if (fileInput) { fileInput.value = ''; delete fileInput.dataset.compressedBase64; }
+  },
+
+  /**
+   * U23 — bandeau discret permanent : « X ADV (n neutralisés) · Y OTG (badges)
+   * · N entrées · dernier évt HH:MM ». Appelé par les render* concernés.
+   * aria-live volontairement absent (trop bavard).
+   */
+  renderMissionHeader(): void {
+    const el = document.getElementById('missionHeader');
+    if (!el) return;
+    const advs = Storage.loadCollection('pcTacAdversaries');
+    const hosts = Storage.loadCollection('pcTacHostages');
+    const logs = Storage.loadLogData();
+    const neut = advs.filter((a) => a.status === 'neutralized').length;
+    // Comptage otages par état (badge symbole+couleur par état présent).
+    const counts: Record<string, number> = {};
+    hosts.forEach((h) => {
+      const s = String(h.status || 'ok');
+      counts[s] = (counts[s] ?? 0) + 1;
+    });
+    const hostBadges = Object.entries(HOST_STATUS)
+      .filter(([k]) => counts[k])
+      .map(([k, m]) => `<span class="status-badge" style="color: ${m.color}; border-color: ${m.color};" title="${esc(m.label)}">${m.symbol} ${counts[k]}</span>`)
+      .join(' ');
+    const last = logs[logs.length - 1];
+    el.innerHTML =
+      `<strong>${advs.length}</strong> ADV (${neut} neutralisé${neut > 1 ? 's' : ''})`
+      + ` · <strong>${hosts.length}</strong> OTG${hostBadges ? ' ' + hostBadges : ''}`
+      + ` · <strong>${logs.length}</strong> entrée${logs.length > 1 ? 's' : ''}`
+      + ` · dernier évt ${last ? esc(last.heure) : '—'}`;
   },
 };
 

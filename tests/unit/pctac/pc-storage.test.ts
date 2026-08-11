@@ -109,6 +109,20 @@ describe('Storage — saveLogData trie EN PLACE (storage.js:26-29)', () => {
     expect(loaded.map((e) => e.heure)).toEqual(['12:00', '13:00', '14:00']);
   });
 
+  it('U15 — trie par (date, heure) ; les entrées legacy sans date passent avant', () => {
+    const entries: PctacLogEntry[] = [
+      { id: 'd2', heure: '01:00', pax: 'A', paxMode: 'standard', lieu: '', remarques: '', date: '2026-08-11' },
+      { id: 'legacy', heure: '23:00', pax: 'B', paxMode: 'standard', lieu: '', remarques: '' },
+      { id: 'd1', heure: '22:00', pax: 'C', paxMode: 'standard', lieu: '', remarques: '', date: '2026-08-10' },
+    ];
+
+    Storage.saveLogData(entries);
+
+    // Legacy (sans date) d'abord, puis 10/08 22:00, puis 11/08 01:00 :
+    // l'ambiguïté minuit est levée par la date, pas par l'heure seule.
+    expect(entries.map((e) => e.id)).toEqual(['legacy', 'd1', 'd2']);
+  });
+
   it('deux entrées avec la même heure conservent un ordre stable', () => {
     const entries: PctacLogEntry[] = [
       {

@@ -236,7 +236,9 @@ test.describe('PC-Tac — Checklist fonctionnelle (docs/recon-pctac.md §6)', ()
       await page.locator('#lieu_input').fill('Entrée B — E2E (plus tôt)');
       await page.locator('#remarques_input').fill('Remarque E2E 2');
       await page.locator('#log-form button[type="submit"]').click();
-      const rows = page.locator('#logTable tbody tr');
+      // U15 — la première ligne peut être un séparateur de jour : on ne
+      // compare que les lignes d'entrée.
+      const rows = page.locator('#logTable tbody tr:not(.log-day-sep)');
       await expect.soft(rows.first()).toContainText('Entrée B — E2E', { timeout: 1500 });
     });
 
@@ -317,10 +319,11 @@ test.describe('PC-Tac — Checklist fonctionnelle (docs/recon-pctac.md §6)', ()
       await page.locator('#openSearchBtn').click();
       await expect.soft(page.locator('#search_container')).toBeVisible();
       await page.locator('#searchInput').fill('recherche-b');
-      await expect.soft(page.locator('#logTable tbody tr:visible')).toHaveCount(1);
+      // U15 — les séparateurs de jour sont exclus du comptage.
+      await expect.soft(page.locator('#logTable tbody tr:not(.log-day-sep):visible')).toHaveCount(1);
       await page.locator('#closeSearchBtn').click();
       await expect.soft(page.locator('#search_container')).toBeHidden();
-      await expect.soft(page.locator('#logTable tbody tr:visible')).toHaveCount(2);
+      await expect.soft(page.locator('#logTable tbody tr:not(.log-day-sep):visible')).toHaveCount(2);
     });
   });
 

@@ -175,6 +175,85 @@ describe('handlePhotoDrop — garde contre splice(-1,1) (ui.js:598, PIÈGE VITAL
   });
 });
 
+describe('U15 — séparateurs de jour dans le tableau du journal', () => {
+  it('insère une ligne .log-day-sep quand la date change, aucune pour les legacy sans date', () => {
+    document.body.innerHTML = '<table id="logTable"><tbody></tbody></table>';
+    UI.initElements();
+    UI.logSortDesc = false;
+    UI.renderLogTable([
+      { id: 'l', heure: '09:00', pax: 'Adversaire', paxMode: 'standard', lieu: '', remarques: '' },
+      { id: 'a', heure: '23:50', pax: 'Adversaire', paxMode: 'standard', lieu: '', remarques: '', date: '2026-08-10' },
+      { id: 'b', heure: '00:10', pax: 'Adversaire', paxMode: 'standard', lieu: '', remarques: '', date: '2026-08-11' },
+    ]);
+
+    const seps = document.querySelectorAll('#logTable tbody tr.log-day-sep');
+    expect(seps).toHaveLength(2); // un par changement de jour, rien avant l'entrée legacy
+    expect(seps[0]?.textContent).toContain('10/08/2026');
+    expect(seps[1]?.textContent).toContain('11/08/2026');
+    // Les lignes d'entrée restent au nombre de 3.
+    expect(document.querySelectorAll('#logTable tbody tr:not(.log-day-sep)')).toHaveLength(3);
+  });
+});
+
+describe('U16/C1 — setItemStatus : fiche source de vérité, photo _sync suit, journal auto', () => {
+  it('écrit la fiche, propage vers la photo _sync et ajoute une entrée de main courante', () => {
+    Storage.saveCollection('pcTacAdversaries', [{ id: 'adv1', nom: 'MARTIN', prenom: 'Paul', status: 'active' }]);
+    Storage.saveCollection('pcTacPhotos', [{ id: 'adv1_sync', title: 'MARTIN Paul', category: 'neutralized', status: 'active' }]);
+
+    UI.setItemStatus('pcTacAdversaries', 'adv1', 'neutralized');
+
+    expect(Storage.loadCollection('pcTacAdversaries')[0]?.status).toBe('neutralized');
+    expect(Storage.loadCollection('pcTacPhotos')[0]?.status).toBe('neutralized');
+    const logs = Storage.loadLogData();
+    expect(logs).toHaveLength(1);
+    expect(logs[0]?.remarques).toBe('ADV MARTIN Paul : neutralisé');
+    expect(logs[0]?.pax).toBe('Adversaire');
+  });
+
+  it('statut inchangé : aucune entrée de journal ajoutée', () => {
+    Storage.saveCollection('pcTacAdversaries', [{ id: 'adv1', nom: 'MARTIN', status: 'active' }]);
+    UI.setItemStatus('pcTacAdversaries', 'adv1', 'active');
+    expect(Storage.loadLogData()).toHaveLength(0);
+  });
+
+  it('updateAdversaryStatus depuis une carte photo _sync remonte à la fiche', () => {
+    Storage.saveCollection('pcTacHostages', [{ id: 'h1', nom: 'DURAND', prenom: 'Zoé', status: 'ok' }]);
+    Storage.saveCollection('pcTacPhotos', [{ id: 'h1_sync', title: 'DURAND Zoé', category: 'hostage', status: 'ok' }]);
+
+    UI.updateAdversaryStatus('h1_sync', 'blesse');
+
+    expect(Storage.loadCollection('pcTacHostages')[0]?.status).toBe('blesse');
+    expect(Storage.loadCollection('pcTacPhotos')[0]?.status).toBe('blesse');
+    expect(Storage.loadLogData()[0]?.remarques).toBe('OTG DURAND Zoé : blessé');
+  });
+});
+
+describe('U23 — renderMissionHeader', () => {
+  it('affiche compteurs ADV/OTG/entrées et heure du dernier évènement', () => {
+    document.body.innerHTML = '<div id="missionHeader"></div>';
+    Storage.saveCollection('pcTacAdversaries', [
+      { id: 'a1', status: 'active' }, { id: 'a2', status: 'neutralized' },
+    ]);
+    Storage.saveCollection('pcTacHostages', [{ id: 'h1', status: 'ok' }]);
+    Storage.saveLogData([
+      { id: 'l1', heure: '10:00', pax: 'Adversaire', paxMode: 'standard', lieu: '', remarques: '' },
+    ]);
+
+    UI.renderMissionHeader();
+
+    const txt = document.getElementById('missionHeader')?.textContent || '';
+    expect(txt).toContain('2');
+    expect(txt).toContain('1 neutralisé');
+    expect(txt).toContain('OTG');
+    expect(txt).toContain('1 entrée');
+    expect(txt).toContain('10:00');
+  });
+
+  it('ne jette pas si #missionHeader est absent', () => {
+    expect(() => UI.renderMissionHeader()).not.toThrow();
+  });
+});
+
 describe('UI — les méthodes de rendu ne jettent pas quand leur conteneur DOM est absent', () => {
   it('renderAdversaries résout sans jeter si #adversary-table-body est absent', async () => {
     await expect(UI.renderAdversaries()).resolves.toBeUndefined();
