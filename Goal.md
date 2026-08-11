@@ -229,8 +229,9 @@ Fiches actuelles — Adversaire : photo + 8 champs (`index.html:118-145`, nom, p
 ### ROI fort / effort S — 14 quick wins — ✅ TOUS LIVRÉS (2026-08-11)
 U1 pin d'entité via roue · U2 recherche journal (+ tri par heure, en-tête tableau) · U3 confirm suppression log · U4 conflit tri/drag (drag supprimé, tri = vérité) · U5 tokens OI cassés · U6 alert() presentation (bug corrigé : refus = pas de PDF) · U7 aria-labelledby OI · U8 dock clavier · U9 confirm photo OI · U10 aria onglets/stepper · U11 états vides · U12 toasts erreurs/succès · U13 fiche Ami éditable · U14 libellés exacts
 
-### ROI fort / effort M
-**Photo↔ping (§4)** · U15 date d'opération · U16/C1 statut sur fiche + PDF + pin · U17 stepper honnête · U18 validation généralisée · U19 toast unique · U20 thème unifié + anti-flash · U21 indicateur autosave · U22 raccourcis · U23 en-tête de mission · U24 toolbar/dock réorganisés · U25 promptDialog · U26 états de chargement · C5 journalisation auto · C8 lien adv↔otage
+### ROI fort / effort M — ✅ TOUS LIVRÉS (2026-08-11, commits 79e9f39→19ceb19)
+**Photo↔ping (§4)** ✅ (badge + panneau + PhotoSwipe dynamique, 4 pièges traités) · U15 date ✅ · U16/C1 statut sur fiche + PDF ✅ (pin : propagation couleur restante, cf. restes) · U17 stepper honnête ✅ · U18 validation ✅ · U19 toast unique ✅ · U20 thème unifié + anti-flash ✅ · U21 autosave ✅ · U22 raccourcis ✅ · U23 en-tête mission ✅ · U24 toolbar 4+tiroir & dock wrap ✅ · U25 promptDialog (8 prompt) ✅ · U26 chargements ✅ · C5 journal auto (statuts + pins) ✅ · C8 lien adv↔otage ✅
+Restes mineurs actés : statut non propagé à la couleur du pin carte ; pas de purge `pcTacPlanPins` à la suppression d'une photo (orphelin toléré au rendu) ; select lien otage rafraîchi à l'affichage de l'onglet.
 
 ### ROI fort / effort L
 **Carte onglet séparé (§5)** — **REPOUSSÉ (décision Nico 2026-08-11)** ; seuls ses pré-requis dette (adapter view, undo/redo, verrou) restent éligibles en R5 transversal

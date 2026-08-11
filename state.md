@@ -53,6 +53,15 @@ Vérification finale : typecheck 0, lint 0, vitest 1857/1857, visuel 60 états 0
 - **Quick wins Goal.md livrés** (5 commits d440d07→4bb0e95) : deps mortes purgées (qrcodejs, html5-qrcode) ; placement d'entités via la roue (U1, lien fiche↔carte restauré) + purge ping-modal/legacy/tuto-dashboard ; pctac U2-U14 (recherche journal, confirmations, dock clavier, aria, états vides, fiche Ami éditable, drag journal supprimé) ; oi U5-U10 (tokens --bg-card/--text-main/--font-ui réparés, alert→confirmDialog annulable avant PDF, aria dialogs/stepper, confirm photo).
 - Gate : typecheck 0, lint 0, vitest 1835/1835 verts. `test:pdf` local sans arg = usage (comportement script, CI passe l'arg). Rien poussé sur GitHub.
 
+### 2026-08-11 (suite — tranches M)
+- Push GitHub validé et effectué (0268d27..3cb4931). Puis tranches M Goal.md livrées en 3 agents parallèles + passe transverse (commits 79e9f39→19ceb19, locaux, NON poussés) :
+  - shared : promptDialog (socle confirmDialog), PhotoSwipe v5 installé, contrat OiNotificationGlobals purgé.
+  - OI : U17 stepper honnête (coherence.ts, byStep), U18 validation par étape + points rouges stepper, U19 toast unique (notifications.ts supprimé, ~20 sites), U21 indicateur autosave, U25 (7 prompt), U26 upload avec progression.
+  - PC-Tac : U15 date par entrée + séparateurs jour + PDF, U16/C1 statut sur fiche (source de vérité, badges, PDF, journal auto C5), C8 lien otage→adv en select, U22 raccourcis (1..7, Ctrl+Entrée, /), U23 en-tête mission, U25, U26.
+  - Carto : photo↔ping complet (photoId, badge, panneau, viewer inline, PhotoSwipe import dynamique, capture toHide, orphelins tolérés), C5 journal pins d'entité.
+  - Transverse : U20 anti-flash + pont clés thème portail↔apps ; U24 toolbar 4 FABs + tiroir « Plus », dock en wrap.
+- Gate : typecheck 0, lint 0, vitest 1831/1831 verts. Restes actés dans Goal.md §7.
+
 ## Dérogations actées
 
 - **AA boutons remplis, thème sombre** (2026-08-09, décision Nico) : `--accent-fill` sombre rétabli à `#4f8dff` (`--tac-blue-500`) — le correctif #2563eb changeait le bleu de l'interface. Ratio blanc/#4f8dff = 3.19:1, sous le seuil AA 4.5:1. Alternative conforme proposée (texte encre sombre sur #4f8dff, 6.6:1) — en attente de décision, non appliquée.
