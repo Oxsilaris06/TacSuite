@@ -1902,8 +1902,8 @@ body.up-kb-open .up-kb-aware {
 .pctac-liens-desc { color: var(--text-muted); max-width: 400px; margin: 10px auto; }
 .pctac-liens-btn-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; width: 100%; max-width: 600px; }
 .pctac-liens-btn-tile { text-decoration: none; display: flex; align-items: center; justify-content: center; height: 120px; flex-direction: column; gap: 10px; font-size: 1.1em; }
-.pctac-liens-btn-tile--earth { background: #ddf4e5; border-color: #4ab5a9; color: #176334; }
-.pctac-liens-btn-tile--earth:hover { background: #bee9ce; box-shadow: none; }
+.pctac-liens-btn-tile--earth { background: #123824; border-color: #4ab5a9; color: #2ecf91; }
+.pctac-liens-btn-tile--earth:hover { background: #1b4d32; box-shadow: none; }
 .material-symbols-outlined.pctac-icon-32 { font-size: 32px; }
 .pctac-liens-note-box { margin-top: 40px; padding: 15px; background: rgba(0,0,0,0.2); border-radius: var(--radius-sm); border-left: 4px solid var(--civil-yellow); text-align: left; max-width: 600px; }
 .pctac-liens-note-text { color: var(--text-muted); }
@@ -1915,9 +1915,14 @@ body.up-kb-open .up-kb-aware {
 .pctac-liens-h4 { margin: 0; font-family: var(--font-ui); letter-spacing: 1px; }
 .pctac-liens-links-col { display: flex; flex-direction: column; gap: 15px; }
 .pctac-liens-btn-row { text-decoration: none; display: flex; align-items: center; justify-content: center; gap: 12px; font-size: 1em; height: 60px; }
-.pctac-liens-btn-row--wa { background: #ddf4e5; border-color: #4ab5a9; color: #176334; }
-.pctac-liens-btn-row--wa:hover { background: #bee9ce; box-shadow: none; }
+.pctac-liens-btn-row--wa { background: #123824; border-color: #4ab5a9; color: #2ecf91; }
+.pctac-liens-btn-row--wa:hover { background: #1b4d32; box-shadow: none; }
 .pctac-liens-footer-note { margin-top: auto; padding-top: 30px; font-size: 0.85em; color: var(--text-muted); text-align: center; font-family: var(--font-data); line-height: 1.4; }
+
+body.light-mode .pctac-liens-btn-tile--earth,
+body.light-mode .pctac-liens-btn-row--wa { background: #ddf4e5; border-color: #4ab5a9; color: #176334; }
+body.light-mode .pctac-liens-btn-tile--earth:hover,
+body.light-mode .pctac-liens-btn-row--wa:hover { background: #bee9ce; box-shadow: none; }
 .pctac-app-footer { text-align: center; color: var(--text-muted); font-size: 0.8em; margin-top: 40px; }
 
 .pctac-modal-scroll-90 { max-height: 90vh; overflow-y: auto; }
