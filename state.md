@@ -48,6 +48,11 @@ Arbitrages validés : réduction typographique adaptative avec plancher 7pt puis
 Effraction : escalade de dispositions (colonnes adaptatives → densité → paliers police → asymétrie → pages autonomes nommées) avant tout refus, conformément à la directive.
 Vérification finale : typecheck 0, lint 0, vitest 1857/1857, visuel 60 états 0 FAIL (5 modes), e2e 130/130, 3 fixtures PDF 18/18 strict.
 
+### 2026-08-11
+- **Goal.md rév. 2** : audit UI/UX complet post-R6 (3 ré-audits délégués + recherche web), arbitrages Nico actés : legacy.ts supprimé, recherche journal rebranchée, lightbox photo↔ping = PhotoSwipe v5 (desktop+mobile), carte onglet séparé REPOUSSÉE.
+- **Quick wins Goal.md livrés** (5 commits d440d07→4bb0e95) : deps mortes purgées (qrcodejs, html5-qrcode) ; placement d'entités via la roue (U1, lien fiche↔carte restauré) + purge ping-modal/legacy/tuto-dashboard ; pctac U2-U14 (recherche journal, confirmations, dock clavier, aria, états vides, fiche Ami éditable, drag journal supprimé) ; oi U5-U10 (tokens --bg-card/--text-main/--font-ui réparés, alert→confirmDialog annulable avant PDF, aria dialogs/stepper, confirm photo).
+- Gate : typecheck 0, lint 0, vitest 1835/1835 verts. `test:pdf` local sans arg = usage (comportement script, CI passe l'arg). Rien poussé sur GitHub.
+
 ## Dérogations actées
 
 - **AA boutons remplis, thème sombre** (2026-08-09, décision Nico) : `--accent-fill` sombre rétabli à `#4f8dff` (`--tac-blue-500`) — le correctif #2563eb changeait le bleu de l'interface. Ratio blanc/#4f8dff = 3.19:1, sous le seuil AA 4.5:1. Alternative conforme proposée (texte encre sombre sur #4f8dff, 6.6:1) — en attente de décision, non appliquée.
