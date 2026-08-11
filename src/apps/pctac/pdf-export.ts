@@ -192,10 +192,19 @@ export const PdfExport: PdfExportContract = {
             // Charger les données (les photos sont stockées en IndexedDB, on les hydrate)
             const allLogs = Storage.loadLogData();
             // Les entrées automatiques (pings posés/retirés, changements de
-            // statut — flag `auto`, + pax 'Carte' legacy) sortent de la main
-            // courante et vont sur leur propre page, en fin de document
-            // (après « PLAN TACTIQUE - LISTE DES POINTS »).
-            const isAuto = (e: { auto?: boolean | undefined; pax: string }): boolean => Boolean(e.auto) || e.pax === 'Carte';
+            // statut — flag `auto`, pax 'Carte' legacy, ou remarques de statut)
+            // sortent de la main courante et vont sur leur propre page, en fin
+            // de document (après « PLAN TACTIQUE - LISTE DES POINTS »).
+            const isAuto = (e: { auto?: boolean | undefined; pax: string; remarques?: string | undefined }): boolean => {
+                if (e.auto) return true;
+                if (e.pax === 'Carte') return true;
+                if (typeof e.remarques === 'string') {
+                    const r = e.remarques.trim();
+                    if (/^(ADV|OTG)\b.*:\s*(actif|neutralisé|ok|préoccupant|blessé|dcd)/i.test(r)) return true;
+                    if (/^\[PIN\]/i.test(r)) return true;
+                }
+                return false;
+            };
             const logData = allLogs.filter((e) => !isAuto(e));
             const carteLogs = allLogs.filter(isAuto);
             const adversaries = await ImageStore.hydrate(Storage.loadCollection('pcTacAdversaries'), 'photo');
@@ -639,13 +648,31 @@ export const PdfExport: PdfExportContract = {
                     context.y -= 25;
                 };
                 drawCarteHeader();
+
+                let prevCarteDate: string | undefined;
                 for (const entry of carteLogs) {
-                    const lines = wrapText(entry.remarques, cCols[1] - 10, font, 9);
+                    let actionText = (entry.remarques || '').trim();
+                    if (entry.pax && entry.pax !== 'Carte' && !actionText.toLowerCase().startsWith(entry.pax.toLowerCase())) {
+                        actionText = `${entry.pax} ${actionText}`;
+                    }
+
+                    const lines = wrapText(actionText, cCols[1] - 10, font, 9);
+                    const daySep = entry.date && entry.date !== prevCarteDate;
+                    prevCarteDate = entry.date;
                     const rowHeight = Math.max(1, lines.length) * context.lineHeight + 10;
-                    if (context.y - rowHeight < context.margin) {
+
+                    if (context.y - rowHeight - (daySep ? 18 : 0) < context.margin) {
                         addNewPage('JOURNAL DES ACTIONS PC-TAC (SUITE)');
                         drawCarteHeader();
                     }
+
+                    if (daySep && entry.date) {
+                        pdfPage().drawText(sanitizeWinAnsi(`— ${fmtDay(entry.date)} —`), {
+                            x: context.margin + 5, y: context.y, size: 9, font: fontBold, color: themeColors.text
+                        });
+                        context.y -= 18;
+                    }
+
                     pdfPage().drawText(sanitizeWinAnsi(entry.heure), { x: context.margin + 5, y: context.y, size: 9, font, color: themeColors.text });
                     let ly = context.y;
                     for (const line of lines) {
