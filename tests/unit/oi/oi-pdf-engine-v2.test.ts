@@ -120,7 +120,6 @@ function buildLoaderDom(): { loader: HTMLDivElement; statusText: HTMLDivElement 
 // ---------------------------------------------------------------------------
 
 beforeEach(() => {
-    window.toast = vi.fn();
 });
 
 afterEach(() => {
@@ -375,14 +374,14 @@ describe('openPresentInPlace', () => {
         expect(toastSpy).toHaveBeenCalledWith(expect.stringContaining('bloquée'), { kind: 'error' });
     });
 
-    it("échec de collecte/build : notifie via window.toast('error', …) plutôt que de laisser planter", async () => {
+    it("échec de collecte/build : notifie via toast(kind 'error') plutôt que de laisser planter", async () => {
         vi.spyOn(console, 'error').mockImplementation(() => {});
 
         await PDFEngineV2.openPresentInPlace({
             collect: () => Promise.reject(new Error('collecte KO')),
         });
 
-        expect(window.toast).toHaveBeenCalledWith("Erreur lors de l'ouverture de la présentation.", 'error');
+        expect(toastSpy).toHaveBeenCalledWith("Erreur lors de l'ouverture de la présentation.", { kind: 'error' });
     });
 
     it('affiche/masque le loader #pdfLoadingModal pendant la génération', async () => {

@@ -299,6 +299,12 @@ export interface PersistContract {
 /** Mode de saisie d'un intervenant dans la main courante. */
 export type PctacPaxMode = 'standard' | 'free';
 
+/** U16 — statut d'une fiche adversaire (défaut `'active'`). */
+export type PctacAdversaryStatus = 'active' | 'neutralized';
+
+/** U16 — statut d'une fiche otage (défaut dérivé de l'heuristique blessures). */
+export type PctacHostageStatus = 'ok' | 'preoccupant' | 'blesse' | 'dcd';
+
 /** Une entrée du journal (main courante). Forme produite par `LogManager.addEntry`. */
 export interface PctacLogEntry {
     /** `Date.now().toString(36) + Math.random().toString(36).substr(2,5)`. */
@@ -312,6 +318,12 @@ export interface PctacLogEntry {
     paxColor?: string | undefined;
     lieu: string;
     remarques: string;
+    /**
+     * U15 — date d'opération ISO `YYYY-MM-DD`, posée à la création par
+     * `LogManager.addEntry`. Absente des entrées legacy (qui trient AVANT
+     * toute entrée datée : clé de tri `(date ?? '', heure)`).
+     */
+    date?: string | undefined;
     /** Champ legacy transporté par le flux QR (`QrSync`), absent des entrées créées aujourd'hui. */
     fenetrePorte?: string | undefined;
 }
@@ -650,9 +662,21 @@ export interface UIContract {
     handlePhotoDragOver(e: DragEvent): void;
     handlePhotoDrop(e: DragEvent): void;
     handlePhotoDragEnd(): void;
-    /** Met à jour le `status` d'une PHOTO (nom historique trompeur). */
+    /**
+     * U16/C1 — depuis une carte PHOTO : remonte au besoin vers la FICHE
+     * (id sans le suffixe `_sync`) qui devient la source de vérité, puis
+     * propage vers la photo. Photo orpheline : comportement historique.
+     */
     updateAdversaryStatus(id: string, status: string): void;
-    editPhotoTitle(id: string): void;
+    /**
+     * U16/C1 — change le statut d'une FICHE (adversaire ou otage), propage
+     * vers la photo `_sync`, journalise (C5-statut) et re-rend.
+     */
+    setItemStatus(key: string, id: string, status: string): void;
+    /** U25 — `promptDialog` async (ex-`prompt()` natif). */
+    editPhotoTitle(id: string): Promise<void>;
+    /** U23 — bandeau récapitulatif de mission (#missionHeader), une ligne. */
+    renderMissionHeader(): void;
     openLightbox(src: string, title?: string): void;
     closeLightbox(): void;
 
@@ -1073,22 +1097,6 @@ export interface OICartoContract {
  * PAS des propriétés de `window` — elles ne figurent donc pas ici (sauf quand
  * le code les re-pose explicitement, ex. `window.memberConfig`).
  */
-
-/** `modules/notifications.js:88-89`. */
-export interface OiNotificationGlobals {
-    /** Toast non bloquant. `type` défaut `'info'`, `duration` défaut 4000 ms. */
-    showNotification(
-        msg: string,
-        type?: 'info' | 'success' | 'error' | 'warning',
-        dur?: number,
-    ): void;
-    /** Alias court de `showNotification` (même référence). */
-    toast(
-        msg: string,
-        type?: 'info' | 'success' | 'error' | 'warning',
-        dur?: number,
-    ): void;
-}
 
 /** `modules/navigation.js` — wizard 8 étapes (globaux implicites). */
 export interface OiWizardGlobals {

@@ -93,7 +93,6 @@ function stubCrossModuleWindow(): void {
     window.refreshOrdrePenetration = vi.fn();
     window.syncAllThumbnails = vi.fn();
     window.updateCustomBgPreview = vi.fn(async () => { /* stub */ });
-    window.toast = vi.fn();
     window.removeImage = vi.fn(async () => { /* stub */ });
 }
 

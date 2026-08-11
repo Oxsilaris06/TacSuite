@@ -27,7 +27,8 @@
     "maplibre-gl": "4.7.1",
     "material-symbols": "0.45.10",
     "pdf-lib": "1.17.1",
-    "pdfmake": "0.3.11"
+    "pdfmake": "0.3.11",
+    "photoswipe": "^5.4.4"
   },
   "devDependencies": {
     "@playwright/test": "^1.62.1",

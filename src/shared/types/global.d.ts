@@ -43,7 +43,6 @@ import type {
     OiInlineGlobals,
     OiMediaGlobals,
     OiMemberConfig,
-    OiNotificationGlobals,
     OiPatracGlobals,
     OiPresentationGlobals,
     OiStoreContract,
@@ -65,8 +64,7 @@ declare global {
     interface Window
         extends
             /* --- OI : globaux fonctionnels des 16 modules classiques --- */
-            OiNotificationGlobals,
-            OiWizardGlobals,
+                    OiWizardGlobals,
             OiToolsGlobals,
             OiFormGlobals,
             OiPatracGlobals,

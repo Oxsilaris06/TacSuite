@@ -170,6 +170,18 @@ function injectStyles(): void {
   border-color: var(--danger-red);
 }
 
+.tac-confirm-input {
+  width: 100%;
+  margin-top: var(--tac-space-2, 8px);
+  padding: 8px 10px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--tac-radius-sm, 8px);
+  background: transparent;
+  color: var(--text-main);
+  font-family: var(--font-ui, system-ui);
+  font-size: 0.95em;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .tac-toast { transition: none; }
 }
@@ -357,5 +369,135 @@ export function confirmDialog(options: ConfirmDialogOptions): Promise<boolean> {
     }
 
     (danger ? cancelBtn : okBtn).focus();
+  });
+}
+
+/* =========================================================================
+ * promptDialog — remplaçant des `prompt()` natifs (U25, Goal.md)
+ * ========================================================================= */
+
+export interface PromptDialogOptions {
+  /** Titre optionnel. */
+  title?: string;
+  /** Libellé au-dessus du champ (équivalent du message de `prompt()`). */
+  message: string;
+  /** Valeur pré-remplie. @default '' */
+  initial?: string;
+  placeholder?: string;
+  /** @default 'Valider' */
+  confirmLabel?: string;
+  /** @default 'Annuler' */
+  cancelLabel?: string;
+}
+
+/**
+ * Saisie texte modale sur le même socle que `confirmDialog` (mêmes styles,
+ * même repli jsdom). Résout la valeur saisie, ou `null` si annulation
+ * (Échap, clic fond, bouton Annuler) — même contrat que `window.prompt`.
+ * Entrée = validation.
+ */
+export function promptDialog(options: PromptDialogOptions): Promise<string | null> {
+  const {
+    title,
+    message,
+    initial = '',
+    placeholder = '',
+    confirmLabel = 'Valider',
+    cancelLabel = 'Annuler',
+  } = options;
+  injectStyles();
+
+  return new Promise<string | null>((resolve) => {
+    const dialog = document.createElement('dialog');
+    dialog.className = 'tac-confirm-dialog';
+
+    if (title) {
+      const h = document.createElement('h2');
+      h.className = 'tac-confirm-title';
+      h.textContent = title;
+      dialog.appendChild(h);
+    }
+
+    const p = document.createElement('p');
+    p.className = 'tac-confirm-message';
+    p.textContent = message;
+    dialog.appendChild(p);
+
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'tac-confirm-input';
+    input.value = initial;
+    input.placeholder = placeholder;
+    input.setAttribute('aria-label', message);
+    dialog.appendChild(input);
+
+    const actions = document.createElement('div');
+    actions.className = 'tac-confirm-actions';
+
+    const cancelBtn = document.createElement('button');
+    cancelBtn.type = 'button';
+    cancelBtn.className = 'tac-confirm-btn tac-confirm-btn--cancel';
+    cancelBtn.textContent = cancelLabel;
+
+    const okBtn = document.createElement('button');
+    okBtn.type = 'button';
+    okBtn.className = 'tac-confirm-btn tac-confirm-btn--ok';
+    okBtn.textContent = confirmLabel;
+
+    actions.appendChild(cancelBtn);
+    actions.appendChild(okBtn);
+    dialog.appendChild(actions);
+    document.body.appendChild(dialog);
+
+    let settled = false;
+    let pendingResult: string | null = null;
+
+    function settle(result: string | null): void {
+      if (settled) return;
+      settled = true;
+      dialog.remove();
+      resolve(result);
+    }
+
+    function requestClose(result: string | null): void {
+      pendingResult = result;
+      if (typeof dialog.close === 'function') {
+        try {
+          dialog.close();
+          return;
+        } catch {
+          /* repli ci-dessous */
+        }
+      }
+      settle(result);
+    }
+
+    okBtn.addEventListener('click', () => requestClose(input.value));
+    cancelBtn.addEventListener('click', () => requestClose(null));
+    dialog.addEventListener('click', (e) => {
+      if (e.target === dialog) requestClose(null);
+    });
+    dialog.addEventListener('cancel', (e) => {
+      e.preventDefault();
+      requestClose(null);
+    });
+    dialog.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') requestClose(null);
+      else if (e.key === 'Enter' && e.target === input) requestClose(input.value);
+    });
+    dialog.addEventListener('close', () => settle(pendingResult));
+
+    if (typeof dialog.showModal === 'function') {
+      try {
+        dialog.showModal();
+      } catch {
+        dialog.setAttribute('open', '');
+      }
+    } else {
+      dialog.setAttribute('open', '');
+    }
+
+    input.focus();
+    input.select();
   });
 }
