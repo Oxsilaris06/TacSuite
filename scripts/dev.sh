@@ -35,7 +35,7 @@ sleep 1
 
 # Launch dev server from TacSuite root
 cd "$TACSUITE_DIR"
-nohup npm run dev -- --host 127.0.0.1 > "$LOG_FILE" 2>&1 &
+nohup npm run dev -- --host 0.0.0.0 > "$LOG_FILE" 2>&1 &
 PID=$!
 sleep 3
 
