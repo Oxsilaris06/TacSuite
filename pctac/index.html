@@ -95,9 +95,6 @@
                     </button>
                 </form>
                 <!-- U2 — Recherche dans le journal (UI.toggleSearchMode / closeSearchMode / filterLogs) -->
-                <button type="button" id="openSearchBtn" class="add-btn pctac-btn-auto-md pctac-mt-15" title="Rechercher dans le journal" aria-label="Rechercher dans le journal">
-                    <span class="material-symbols-outlined" aria-hidden="true">search</span>
-                </button>
                 <div id="search_container" class="pctac-mt-15" style="display: none;">
                     <div class="pctac-search-row">
                         <input type="text" id="searchInput" placeholder="Rechercher (heure, pax, lieu, remarques)…" autocomplete="off" class="pctac-flex-1" aria-label="Rechercher dans le journal">
@@ -114,7 +111,18 @@
                             <th class="pctac-w-10p">Heure</th>
                             <th class="pctac-w-15p">Pax</th>
                             <th class="pctac-w-35p">Localisation</th>
-                            <th>Remarques</th>
+                            <th>
+                                <span class="pctac-th-actions-row">Remarques
+                                    <span class="pctac-th-actions">
+                                        <button type="button" id="openSearchBtn" class="th-action-btn" title="Rechercher dans le journal" aria-label="Rechercher dans le journal">
+                                            <span class="material-symbols-outlined" aria-hidden="true">search</span>
+                                        </button>
+                                        <button type="button" id="sortLogBtn" class="th-action-btn" title="Inverser l'ordre (par heure)" aria-label="Inverser l'ordre de tri par heure">
+                                            <span class="material-symbols-outlined" aria-hidden="true">swap_vert</span>
+                                        </button>
+                                    </span>
+                                </span>
+                            </th>
                         </tr>
                     </thead>
                     <tbody></tbody>

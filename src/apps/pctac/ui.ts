@@ -256,9 +256,13 @@ export const UI: UIContract = {
    * Affiche le tableau des logs
    * ui.js:191-251
    */
+  /** Ordre d'affichage du journal : false = chrono (heure ASC, ordre du stockage), true = inversé. */
+  logSortDesc: false,
+
   renderLogTable(logData: readonly PctacLogEntry[]): void {
     const tbody = this.elements.logTableBody;
     if (!tbody) return;
+    if (this.logSortDesc) logData = [...logData].reverse();
     tbody.innerHTML = '';
     // U11 — état vide explicite plutôt qu'un tableau muet.
     if (logData.length === 0) {

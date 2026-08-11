@@ -579,6 +579,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     // U2 — Recherche dans le journal (loupe / fermeture / filtrage à la frappe)
     const openSearchBtn = document.getElementById('openSearchBtn');
     if (openSearchBtn) openSearchBtn.onclick = () => UI.toggleSearchMode();
+    const sortLogBtn = document.getElementById('sortLogBtn');
+    if (sortLogBtn) sortLogBtn.onclick = () => {
+        UI.logSortDesc = !UI.logSortDesc;
+        UI.renderLogTable(Storage.loadLogData());
+    };
     const closeSearchBtn = document.getElementById('closeSearchBtn');
     if (closeSearchBtn) closeSearchBtn.onclick = () => UI.closeSearchMode();
     const searchInput = document.getElementById('searchInput');

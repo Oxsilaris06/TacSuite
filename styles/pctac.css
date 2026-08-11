@@ -807,6 +807,21 @@ body.up-kb-open .up-kb-aware {
             border-bottom: 1px solid var(--border-glass);
         }
 
+        /* U2 — actions d'en-tête du journal (recherche, tri) : même rendu que les th. */
+        .pctac-th-actions-row { display: flex; align-items: center; justify-content: space-between; gap: var(--tac-space-2); }
+        .pctac-th-actions { display: inline-flex; gap: var(--tac-space-1); }
+        .th-action-btn {
+            background: none;
+            border: none;
+            padding: 0;
+            cursor: pointer;
+            color: var(--text-muted);
+            display: inline-flex;
+            align-items: center;
+        }
+        .th-action-btn:hover { color: var(--text-main); }
+        .th-action-btn .material-symbols-outlined { font-size: 16px; }
+
         .log-table td {
             padding: 10px var(--tac-space-3);
             border-bottom: 1px solid var(--border-glass);

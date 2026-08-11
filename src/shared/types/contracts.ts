@@ -628,6 +628,8 @@ export interface UIContract {
     refreshLieuSuggestions(): void;
 
     /* --- tableau du journal --- */
+    /** Ordre d'affichage du journal : false = chrono ASC (stockage), true = inversé (récent en tête). */
+    logSortDesc: boolean;
     renderLogTable(logData: readonly PctacLogEntry[]): void;
     openEditModal(id: string): void;
     confirmEditLog(): void;
