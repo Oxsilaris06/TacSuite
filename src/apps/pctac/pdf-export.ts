@@ -190,7 +190,14 @@ export const PdfExport: PdfExportContract = {
             const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
 
             // Charger les données (les photos sont stockées en IndexedDB, on les hydrate)
-            const logData = Storage.loadLogData();
+            const allLogs = Storage.loadLogData();
+            // Les entrées automatiques (pings posés/retirés, changements de
+            // statut — flag `auto`, + pax 'Carte' legacy) sortent de la main
+            // courante et vont sur leur propre page, en fin de document
+            // (après « PLAN TACTIQUE - LISTE DES POINTS »).
+            const isAuto = (e: { auto?: boolean | undefined; pax: string }): boolean => Boolean(e.auto) || e.pax === 'Carte';
+            const logData = allLogs.filter((e) => !isAuto(e));
+            const carteLogs = allLogs.filter(isAuto);
             const adversaries = await ImageStore.hydrate(Storage.loadCollection('pcTacAdversaries'), 'photo');
             const hostages = await ImageStore.hydrate(Storage.loadCollection('pcTacHostages'), 'photo');
             const friends = Storage.loadCollection('pcTacFriends');
@@ -619,6 +626,39 @@ export const PdfExport: PdfExportContract = {
             } catch (planErr) {
                 // Section entièrement optionnelle : on log et on continue l'export.
                 console.warn('PDF Plan tactique ignoré :', planErr);
+            }
+
+            // --- 7. JOURNAL DES ACTIONS PC-TAC (entrées auto, en dernier) ---
+            if (carteLogs.length > 0) {
+                addNewPage('JOURNAL DES ACTIONS PC-TAC');
+                const cCols: [number, number] = [70, 445]; // Heure, Action
+                const drawCarteHeader = (): void => {
+                    pdfPage().drawRectangle({ x: context.margin, y: context.y - 5, width: context.pageWidth - 2 * context.margin, height: 20, color: themeColors.headerBg });
+                    pdfPage().drawText('Heure', { x: context.margin + 5, y: context.y + 2, size: 9, font: fontBold, color: themeColors.text });
+                    pdfPage().drawText('Action', { x: context.margin + 5 + cCols[0], y: context.y + 2, size: 9, font: fontBold, color: themeColors.text });
+                    context.y -= 25;
+                };
+                drawCarteHeader();
+                for (const entry of carteLogs) {
+                    const lines = wrapText(entry.remarques, cCols[1] - 10, font, 9);
+                    const rowHeight = Math.max(1, lines.length) * context.lineHeight + 10;
+                    if (context.y - rowHeight < context.margin) {
+                        addNewPage('JOURNAL DES ACTIONS PC-TAC (SUITE)');
+                        drawCarteHeader();
+                    }
+                    pdfPage().drawText(sanitizeWinAnsi(entry.heure), { x: context.margin + 5, y: context.y, size: 9, font, color: themeColors.text });
+                    let ly = context.y;
+                    for (const line of lines) {
+                        pdfPage().drawText(sanitizeWinAnsi(line), { x: context.margin + 5 + cCols[0], y: ly, size: 9, font, color: themeColors.text });
+                        ly -= context.lineHeight;
+                    }
+                    pdfPage().drawLine({
+                        start: { x: context.margin, y: context.y - rowHeight + 8 },
+                        end: { x: context.pageWidth - context.margin, y: context.y - rowHeight + 8 },
+                        thickness: 0.5, color: themeColors.line, opacity: 0.3
+                    });
+                    context.y -= rowHeight;
+                }
             }
 
             // --- FOOTER : pagination + DIFFUSION RESTREINTE sur toutes les pages ---

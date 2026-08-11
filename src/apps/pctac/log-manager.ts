@@ -42,7 +42,7 @@ export const LogManager: LogManagerContract = {
    * Comportement : valide mode+pax+heure, sinon toast d'erreur (R2-T2a, ex-alert()) + retour null.
    */
   addEntry(data: PctacLogEntryInput): PctacLogEntry | null {
-    const { mode, pax, freePax, paxColor, heure, lieu, remarques } = data;
+    const { mode, pax, freePax, paxColor, heure, lieu, remarques, auto } = data;
 
     let paxName: string;
     let paxColorHex: string | undefined;
@@ -81,6 +81,7 @@ export const LogManager: LogManagerContract = {
       paxColor: paxColorHex,
       lieu: (lieu || '').trim(),
       remarques: (remarques || '').trim(),
+      ...(auto ? { auto: true } : {}),
     };
 
     // logManager.js:52-54 — persistance

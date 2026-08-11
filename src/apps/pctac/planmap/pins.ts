@@ -68,7 +68,7 @@ function logMapAction(remarques: string): void {
         if (typeof lm?.addEntry !== 'function') return;
         const d = new Date();
         const heure = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-        lm.addEntry({ mode: 'free', pax: 'Carte', heure, remarques });
+        lm.addEntry({ mode: 'free', pax: 'Carte', heure, remarques, auto: true });
     } catch { /* silencieux — cf. ci-dessus */ }
 }
 

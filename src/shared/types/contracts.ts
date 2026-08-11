@@ -324,6 +324,12 @@ export interface PctacLogEntry {
      * toute entrée datée : clé de tri `(date ?? '', heure)`).
      */
     date?: string | undefined;
+    /**
+     * Entrée générée automatiquement par l'app (pose/retrait de ping,
+     * changement de statut) : au PDF, ces entrées sortent de la main courante
+     * vers la page « JOURNAL DES ACTIONS PC-TAC » en fin de document.
+     */
+    auto?: boolean | undefined;
     /** Champ legacy transporté par le flux QR (`QrSync`), absent des entrées créées aujourd'hui. */
     fenetrePorte?: string | undefined;
 }
@@ -442,6 +448,8 @@ export interface PctacLogEntryInput {
     heure: string;
     lieu?: string | undefined;
     remarques?: string | undefined;
+    /** Entrée générée automatiquement (cf. `PctacLogEntry.auto`). */
+    auto?: boolean | undefined;
 }
 
 /** Fichier JSON legacy accepté par `LogManager.importJson` (logManager.js:106). */
@@ -675,8 +683,6 @@ export interface UIContract {
     setItemStatus(key: string, id: string, status: string): void;
     /** U25 — `promptDialog` async (ex-`prompt()` natif). */
     editPhotoTitle(id: string): Promise<void>;
-    /** U23 — bandeau récapitulatif de mission (#missionHeader), une ligne. */
-    renderMissionHeader(): void;
     openLightbox(src: string, title?: string): void;
     closeLightbox(): void;
 

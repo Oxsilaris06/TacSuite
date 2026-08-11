@@ -228,31 +228,6 @@ describe('U16/C1 — setItemStatus : fiche source de vérité, photo _sync suit,
   });
 });
 
-describe('U23 — renderMissionHeader', () => {
-  it('affiche compteurs ADV/OTG/entrées et heure du dernier évènement', () => {
-    document.body.innerHTML = '<div id="missionHeader"></div>';
-    Storage.saveCollection('pcTacAdversaries', [
-      { id: 'a1', status: 'active' }, { id: 'a2', status: 'neutralized' },
-    ]);
-    Storage.saveCollection('pcTacHostages', [{ id: 'h1', status: 'ok' }]);
-    Storage.saveLogData([
-      { id: 'l1', heure: '10:00', pax: 'Adversaire', paxMode: 'standard', lieu: '', remarques: '' },
-    ]);
-
-    UI.renderMissionHeader();
-
-    const txt = document.getElementById('missionHeader')?.textContent || '';
-    expect(txt).toContain('2');
-    expect(txt).toContain('1 neutralisé');
-    expect(txt).toContain('OTG');
-    expect(txt).toContain('1 entrée');
-    expect(txt).toContain('10:00');
-  });
-
-  it('ne jette pas si #missionHeader est absent', () => {
-    expect(() => UI.renderMissionHeader()).not.toThrow();
-  });
-});
 
 describe('UI — les méthodes de rendu ne jettent pas quand leur conteneur DOM est absent', () => {
   it('renderAdversaries résout sans jeter si #adversary-table-body est absent', async () => {

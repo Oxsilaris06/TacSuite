@@ -134,6 +134,7 @@ function setStatusOnFiche(key: string, id: string, status: string): boolean {
     pax: isAdv ? 'Adversaire' : 'Otage',
     heure,
     remarques: `${isAdv ? 'ADV' : 'OTG'} ${nom} : ${meta ? meta.label.toLowerCase() : status}`,
+    auto: true,
   });
   return true;
 }
@@ -363,7 +364,6 @@ export const UI: UIContract = {
   logSortDesc: false,
 
   renderLogTable(logData: readonly PctacLogEntry[]): void {
-    this.renderMissionHeader(); // U23 — même rythme que les rendus de listes
     const tbody = this.elements.logTableBody;
     if (!tbody) return;
     if (this.logSortDesc) logData = [...logData].reverse();
@@ -588,7 +588,6 @@ export const UI: UIContract = {
 
   // ui.js:436-466
   async renderAdversaries(): Promise<void> {
-    this.renderMissionHeader(); // U23
     const raw = Storage.loadCollection('pcTacAdversaries') || [];
     migrateStatuses('pcTacAdversaries', raw, 'active'); // U16 — migration douce
     const tbody = document.getElementById('adversary-table-body');
@@ -643,7 +642,6 @@ export const UI: UIContract = {
 
   // ui.js:468-496
   async renderHostages(): Promise<void> {
-    this.renderMissionHeader(); // U23
     const raw = Storage.loadCollection('pcTacHostages') || [];
     // U16 — migration douce : photo _sync d'abord, sinon heuristique blessures.
     const noStatus = raw.filter((it) => !it.status);
@@ -906,7 +904,7 @@ export const UI: UIContract = {
    */
   setItemStatus(key: string, id: string, status: string): void {
     if (!setStatusOnFiche(key, id, status)) return;
-    this.renderLogTable(Storage.loadLogData()); // inclut renderMissionHeader
+    this.renderLogTable(Storage.loadLogData());
     if (key === 'pcTacAdversaries') void this.renderAdversaries();
     else void this.renderHostages();
   },
@@ -1236,35 +1234,6 @@ export const UI: UIContract = {
     if (fileInput) { fileInput.value = ''; delete fileInput.dataset.compressedBase64; }
   },
 
-  /**
-   * U23 — bandeau discret permanent : « X ADV (n neutralisés) · Y OTG (badges)
-   * · N entrées · dernier évt HH:MM ». Appelé par les render* concernés.
-   * aria-live volontairement absent (trop bavard).
-   */
-  renderMissionHeader(): void {
-    const el = document.getElementById('missionHeader');
-    if (!el) return;
-    const advs = Storage.loadCollection('pcTacAdversaries');
-    const hosts = Storage.loadCollection('pcTacHostages');
-    const logs = Storage.loadLogData();
-    const neut = advs.filter((a) => a.status === 'neutralized').length;
-    // Comptage otages par état (badge symbole+couleur par état présent).
-    const counts: Record<string, number> = {};
-    hosts.forEach((h) => {
-      const s = String(h.status || 'ok');
-      counts[s] = (counts[s] ?? 0) + 1;
-    });
-    const hostBadges = Object.entries(HOST_STATUS)
-      .filter(([k]) => counts[k])
-      .map(([k, m]) => `<span class="status-badge" style="color: ${m.color}; border-color: ${m.color};" title="${esc(m.label)}">${m.symbol} ${counts[k]}</span>`)
-      .join(' ');
-    const last = logs[logs.length - 1];
-    el.innerHTML =
-      `<strong>${advs.length}</strong> ADV (${neut} neutralisé${neut > 1 ? 's' : ''})`
-      + ` · <strong>${hosts.length}</strong> OTG${hostBadges ? ' ' + hostBadges : ''}`
-      + ` · <strong>${logs.length}</strong> entrée${logs.length > 1 ? 's' : ''}`
-      + ` · dernier évt ${last ? esc(last.heure) : '—'}`;
-  },
 };
 
 // ui.js:884-890 — façades window.*, posées AU SCOPE MODULE (SPEC-PCTAC-CONVERSION.md §4)
