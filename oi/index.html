@@ -19,7 +19,7 @@
     <input type="file" id="sessionFileInput" accept=".json" style="display: none;">
     <input type="file" id="archiveFileInput" accept=".zip,.json" style="display: none;">
     <input type="file" id="jsonConfigInput" accept=".json" style="display: none;">
-    <dialog id="presentationModal">
+    <dialog id="presentationModal" aria-label="Aperçu et génération du PDF">
         <div id="presentation-content">
         </div>
         <div class="modal-actions-pdf">
@@ -45,10 +45,10 @@
         </div>
     </dialog>
 
-    <dialog id="resetOptionsModal">
+    <dialog id="resetOptionsModal" aria-labelledby="resetOptionsModalTitle">
         <div class="modal-form">
             <div class="modal-header">
-                <h3>Réinitialisation</h3>
+                <h3 id="resetOptionsModalTitle">Réinitialisation</h3>
                 <button type="button" class="close-modal-btn modal-close-btn-transparent" id="cancelResetBtn" aria-label="Fermer la fenêtre de réinitialisation">
                     <span class="material-symbols-outlined">close</span>
                 </button>
@@ -71,7 +71,7 @@
         </div>
     </dialog>
 
-    <dialog id="quickEditModal">
+    <dialog id="quickEditModal" aria-labelledby="quick_modal_title">
         <div class="modal-form">
             <div class="modal-header">
                 <h3 id="quick_modal_title">Édition rapide</h3>
@@ -95,10 +95,10 @@
         </div>
     </dialog>
 
-    <dialog id="uniteConfigModal">
+    <dialog id="uniteConfigModal" aria-labelledby="uniteConfigModalTitle">
         <div class="modal-form">
             <div class="modal-header">
-                <h3>Configuration Unité</h3>
+                <h3 id="uniteConfigModalTitle">Configuration Unité</h3>
                 <button type="button" class="close-modal-btn modal-close-btn-transparent"
                     data-action="close-unite-config-modal" aria-label="Fermer la configuration unité">
                     <span class="material-symbols-outlined">close</span>
@@ -123,10 +123,10 @@
         </div>
     </dialog>
 
-    <dialog id="importSelectModal">
+    <dialog id="importSelectModal" aria-labelledby="importSelectModalTitle">
         <div class="modal-form">
             <div class="modal-header">
-                <h3>Importer une archive</h3>
+                <h3 id="importSelectModalTitle">Importer une archive</h3>
                 <button type="button" class="close-modal-btn modal-close-btn-transparent" id="importSelectCloseBtn" aria-label="Fermer l'import d'archive">
                     <span class="material-symbols-outlined">close</span>
                 </button>
@@ -153,10 +153,10 @@
         </div>
     </dialog>
 
-    <dialog id="annotationModal">
+    <dialog id="annotationModal" aria-labelledby="annotationModalTitle">
         <div class="modal-form">
             <div class="modal-header">
-                <h3 style="color: var(--accent-blue); display: flex; align-items: center; gap: 10px;">
+                <h3 id="annotationModalTitle" style="color: var(--accent-blue); display: flex; align-items: center; gap: 10px;">
                     <span class="material-symbols-outlined">edit</span> Annotation Photo
                 </h3>
                 <div class="header-actions" style="display: flex; gap: 10px; margin-left: auto;">
@@ -670,10 +670,10 @@ Gestuelle et visuelle entre les éléments INDIA</textarea>
     <!-- Tutoriel interactif -->
 
     <!-- MODAL OUTILS EFFRACTION (MASTERCLASS) -->
-    <dialog id="effractionToolsModal">
+    <dialog id="effractionToolsModal" aria-labelledby="effractionToolsModalTitle">
         <div class="modal-form">
             <div class="modal-header">
-                <h3 class="heading-effraction-gold">
+                <h3 id="effractionToolsModalTitle" class="heading-effraction-gold">
                     <span class="material-symbols-outlined">hardware</span> Outils Effraction
                 </h3>
                 <button type="button" class="close-modal-btn" data-action="close-effraction-tools-modal" aria-label="Fermer les outils d'effraction">
@@ -728,9 +728,9 @@ Gestuelle et visuelle entre les éléments INDIA</textarea>
 
     <!-- MODAL SELECTION DE MEMBRE POUR ANNOTATION -->
     <dialog id="memberSelectionModalCanvas"
-        class="modal-transparent-2000">
+        class="modal-transparent-2000" aria-labelledby="memberSelectionModalCanvasTitle">
         <div class="modal-content modal-content-400">
-            <h2 style="color: var(--accent-blue); display: flex; align-items: center; gap: 10px;">
+            <h2 id="memberSelectionModalCanvasTitle" style="color: var(--accent-blue); display: flex; align-items: center; gap: 10px;">
                 <span class="material-symbols-outlined">badge</span> Sélectionner un Membre
             </h2>
             <div id="member_canvas_list"
@@ -752,7 +752,7 @@ Gestuelle et visuelle entre les éléments INDIA</textarea>
         </button>
     </div>
     <!-- ==================== CARTOGRAPHIE OI (MapLibre) ==================== -->
-    <dialog id="cartographyModal">
+    <dialog id="cartographyModal" aria-label="Cartographie">
         <div id="oi_carto_map_wrap">
             <div id="oi_carto_map"></div>
 
@@ -851,9 +851,9 @@ Gestuelle et visuelle entre les éléments INDIA</textarea>
 
     <!-- Modale d'ajout de point cartographie : pins membres / cyno / véhicules / rassemblement -->
     <dialog id="oi_carto_ping_modal"
-        class="modal-transparent-3000">
+        class="modal-transparent-3000" aria-labelledby="oi_carto_ping_modal_title">
         <div class="modal-content modal-content-480">
-            <h2 style="color: var(--accent-blue); display: flex; align-items: center; gap: 10px;">
+            <h2 id="oi_carto_ping_modal_title" style="color: var(--accent-blue); display: flex; align-items: center; gap: 10px;">
                 <span class="material-symbols-outlined">add_location</span> Ajouter un point
             </h2>
 
@@ -900,9 +900,9 @@ Gestuelle et visuelle entre les éléments INDIA</textarea>
 
     <!-- Modale de capture cartographie : téléchargement ou export vers un champ photo -->
     <dialog id="oi_carto_capture_modal"
-        class="modal-transparent-3000">
+        class="modal-transparent-3000" aria-labelledby="oi_carto_capture_modal_title">
         <div class="modal-content modal-content-460">
-            <h2 style="color: var(--accent-blue); display: flex; align-items: center; gap: 10px;">
+            <h2 id="oi_carto_capture_modal_title" style="color: var(--accent-blue); display: flex; align-items: center; gap: 10px;">
                 <span class="material-symbols-outlined">photo_camera</span> Capture de la carte
             </h2>
 

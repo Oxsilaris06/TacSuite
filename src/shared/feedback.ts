@@ -16,8 +16,8 @@
  * externes sont les tokens globaux `--tac-*` (`styles/tacsuite-tokens.css`,
  * toujours chargée avant la feuille d'app) et 5 variables sémantiques
  * COMMUNES aux deux apps (vérifiées dans `styles/pctac.css` ET
- * `styles/oi.css`) : `--bg-container`, `--text-main`, `--border-light`,
- * `--accent-fill`, `--danger-red`.
+ * `styles/oi.css`, thèmes sombre et clair) : `--bg-container`, `--text-main`,
+ * `--border-light`, `--accent-fill`, `--danger-red`, `--font-ui`.
  *
  * PC-Tac consomme ce module dès R2-T2a ; OI sera branché dans une tranche
  * suivante (mission R2-T2a, scope PC-Tac uniquement).

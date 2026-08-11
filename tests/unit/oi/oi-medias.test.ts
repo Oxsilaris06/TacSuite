@@ -66,9 +66,14 @@ vi.mock('@oi/outils.js', () => ({
     compressImage: compressImageMock,
 }));
 
+// `removeImage` demande désormais confirmation (quick win U9) : auto-confirmer sous jsdom.
+vi.mock('@shared/feedback.js', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('@shared/feedback.js')>()),
+    confirmDialog: vi.fn(async () => true),
+}));
+
 import { dbManager, Store } from '@oi/init.js';
 import {
-    getAdversaryImageInfo,
     handleCustomBackgroundChange,
     handleFileChange,
     removeCustomBackground,
@@ -385,38 +390,5 @@ describe('(f) syncAllThumbnails', () => {
         expect(mirrored).not.toBeNull();
         expect(mirrored?.dataset.refId).toBe(previewImg?.id);
         expect(mirrored?.src).toBe(previewImg?.src);
-    });
-});
-
-// ---------------------------------------------------------------------------
-// Code mort porté par fidélité (medias.js:235-282, cf. en-tête de medias.ts) —
-// non appelé par le graphe porté, mais exporté (noUnusedLocals) et donc
-// testable. `getAdversaryImageInfo` est pur (synchrone) : exercé ici.
-// `fetchImageAndCompress` s'appuie sur `new Image()` (repli DOM) dont le cycle
-// de charge n'est pas simulé sous jsdom par défaut (pas de `resources: "usable"`,
-// même famille de limitation que `canvas.getContext('2d')`/`maplibre-gl`,
-// règle commune §13.5) : non exercé ici pour éviter un test fragile sur du
-// code mort — signalé au gate plutôt qu'un stub `Image` improvisé.
-// ---------------------------------------------------------------------------
-
-describe('code mort porté par fidélité — getAdversaryImageInfo', () => {
-    it('null si aucune photo pour ce conteneur', () => {
-        Store.state.formData.dynamic_photos = {};
-        expect(getAdversaryImageInfo(undefined, 1)).toBeNull();
-    });
-
-    it('renvoie id + annotationsJson de la 1re photo (index 1), ignore le paramètre formData', () => {
-        Store.state.formData.dynamic_photos = {
-            adversary_photo_preview_container: [
-                { id: 'img_x', annotations: '[{"type":"text"}]', tools: '[]', other_tools: '', customTitle: '' },
-            ],
-        };
-        // medias.js:270 — le paramètre `formData` n'est jamais lu (écart signalé
-        // au gate, cf. en-tête de medias.ts) : un argument non lié n'a aucune
-        // influence sur le résultat, qui provient de `Store.state.formData`.
-        expect(getAdversaryImageInfo({ nimporte: 'quoi' }, 1)).toEqual({
-            id: 'img_x',
-            annotationsJson: '[{"type":"text"}]',
-        });
     });
 });

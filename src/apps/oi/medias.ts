@@ -7,10 +7,8 @@
  * `modules/medias.js` (GStart-main, lecture seule, 283 LOC intégral) :
  * `displayMap` (:13), `handleFileChange` (:28), `removeImage` (:107),
  * `syncAllThumbnails` (:129), `handleCustomBackgroundChange` (:159),
- * `removeCustomBackground` (:174), `updateCustomBgPreview` (:184),
- * `loadImageAsBlobViaImageElement` (:210), `fetchImageAndCompress` (:235),
- * `getAdversaryImageInfo` (:270). Cf. `docs/SPEC-OI-CONVERSION.md` §2.2/§11.8,
- * `PAQUETS-OI.json` (`oi-medias`).
+ * `removeCustomBackground` (:174), `updateCustomBgPreview` (:184).
+ * Cf. `docs/SPEC-OI-CONVERSION.md` §2.2/§11.8, `PAQUETS-OI.json` (`oi-medias`).
  *
  * Implémente `OiMediaGlobals` (`@shared/types/contracts.js`) : `handleFileChange`,
  * `removeImage`, `syncAllThumbnails`, `handleCustomBackgroundChange`,
@@ -51,12 +49,11 @@
  * Clés IndexedDB INCHANGÉES : `img_<timestamp>_<random>` (`medias.js:42`) et
  * `custom_pdf_background` (`medias.js:163,176,189`).
  *
- * Code mort confirmé, porté par fidélité (PAQUETS-OI.json `oi-medias`) :
- * `fetchImageAndCompress` (:235) et `getAdversaryImageInfo` (:270) n'ont AUCUN
- * appelant dans le graphe porté — leur seul appelant dans GStart-main est
- * `modules/presentation_legacy.js`, EXCLU du portage (SPEC §1.2 : « chargé par
- * aucun HTML »). Portées à l'identique, exportées pour satisfaire
- * `noUnusedLocals`, jamais posées sur `window` (absentes de `OiMediaGlobals`).
+ * Code mort SUPPRIMÉ (U-coupe 2026-08-11) : `fetchImageAndCompress`,
+ * `getAdversaryImageInfo` et leur unique dépendance
+ * `loadImageAsBlobViaImageElement` (aucun appelant dans le graphe porté —
+ * leur seul appelant dans GStart-main était `modules/presentation_legacy.js`,
+ * exclu du portage, SPEC §1.2).
  *
  * ÉCART DE CONTRAT SIGNALÉ AU GATE (règle commune (6), SPEC §2.2) :
  * `OiMediaGlobals.removeImage` (contracts.ts) type `itemElement: HTMLElement`
@@ -71,11 +68,6 @@
  * par sous-typage simple : `HTMLElement` est assignable à `HTMLElement | null`,
  * aucune incompatibilité de compilation) ; `contracts.ts` n'est PAS modifié
  * (hors périmètre de ce paquet, interdiction commune (2)).
- * `getAdversaryImageInfo` : le paramètre `formData` (`medias.js:270`) n'est
- * JAMAIS lu dans le corps d'origine (qui lit `Store.state.formData` à la
- * place, un doublon apparent) — porté à l'identique, renommé `_formData` et
- * typé `unknown` (paramètre mort, appelant réel absent du graphe porté cf.
- * ci-dessus ; `unknown` car aucune forme n'est exploitée).
  *
  * Adaptations de TYPAGE PUR (aucune restructuration de logique, règle commune
  * §3/§9 ; même patron que `outils.ts`, `articulation.ts`, déjà portés) :
@@ -98,11 +90,6 @@
  *     `@pctac/utils.ts:67-73`. Dupliqué deux fois (`handleFileChange`,
  *     `updateCustomBgPreview`) car l'original duplique déjà ce bloc sans le
  *     factoriser — fidélité, pas de helper introduit.
- *   - `canvas.getContext('2d')` est nullable côté TS (jamais gardé dans
- *     l'original) : garde `if (!ctx) { resolve(null); return; }` dans
- *     `loadImageAsBlobViaImageElement` — même précédent que `outils.ts`
- *     `compressImage` (:319), adapté au chemin `resolve(null)` (cette fonction
- *     ne rejette jamais, `medias.js:230`).
  *   - `querySelectorAll`/`closest` : generic explicite `<HTMLElement>` /
  *     `<HTMLImageElement>` (ce dernier pour lire `.src` dans `syncAllThumbnails`)
  *     — même précédent que `outils.ts`, `articulation.ts`, `@pctac/ui.ts`.
@@ -112,7 +99,7 @@
  */
 import { Store, dbManager } from '@oi/init.js';
 import { compressImage } from '@oi/outils.js';
-import { toast } from '@shared/feedback.js';
+import { confirmDialog, toast } from '@shared/feedback.js';
 
 // ==================== MediaManager.js ====================
 
@@ -233,6 +220,8 @@ export async function handleFileChange(
 
 // medias.js:107-127
 export async function removeImage(imgId: string, itemElement: HTMLElement | null): Promise<void> {
+    // U9 — suppression destructive : confirmation avant tout retrait.
+    if (!(await confirmDialog({ message: 'Supprimer cette photo ?', confirmLabel: 'Supprimer', danger: true }))) return;
     try {
         // medias.js:110-112 — noUncheckedIndexedAccess : capture locale avant
         // lecture (même idiome qu'`init.ts` `dbManager.deleteItem` / `outils.ts`
@@ -353,102 +342,6 @@ export async function updateCustomBgPreview(): Promise<void> {
     } catch (e) {
         console.error(e);
     }
-}
-
-// medias.js:210-233
-function loadImageAsBlobViaImageElement(resolvedUrl: string): Promise<Blob | null> {
-    return new Promise<Blob | null>((resolve) => {
-        const img = new Image();
-        img.onload = () => {
-            try {
-                const canvas = document.createElement('canvas');
-                canvas.width = img.naturalWidth || img.width;
-                canvas.height = img.naturalHeight || img.height;
-                if (!canvas.width || !canvas.height) {
-                    resolve(null);
-                    return;
-                }
-                const ctx = canvas.getContext('2d');
-                // medias.js:222 — `ctx` jamais gardé dans l'original ; nullable
-                // côté TS. Le `try/catch` englobant capturait déjà un éventuel
-                // TypeError sur `.drawImage(null)` et résolvait `null` — même
-                // résultat via une garde explicite (même précédent que
-                // `outils.ts` `compressImage` :319, adapté au chemin
-                // `resolve(null)` : cette fonction ne rejette jamais, `medias.js:230`).
-                if (!ctx) {
-                    resolve(null);
-                    return;
-                }
-                ctx.drawImage(img, 0, 0);
-                canvas.toBlob((blob) => resolve(blob || null), 'image/png');
-            } catch (err) {
-                console.warn('Repli canvas image fond:', err);
-                resolve(null);
-            }
-        };
-        img.onerror = () => resolve(null);
-        img.src = resolvedUrl;
-    });
-}
-
-// medias.js:235-268 — CODE MORT confirmé (cf. en-tête de ce fichier) : porté à
-// l'identique, exporté pour satisfaire `noUnusedLocals`, jamais posé sur `window`.
-export async function fetchImageAndCompress(imagePath: string, quality: number): Promise<ArrayBuffer | null> {
-    try {
-        const resolvedUrl = new URL(imagePath, window.location.href).href;
-        let blob: Blob | null = null;
-        try {
-            const response = await fetch(resolvedUrl);
-            if (response.ok) {
-                const contentType = response.headers.get('content-type');
-                if (contentType && contentType.startsWith('image/')) {
-                    blob = await response.blob();
-                    if (blob.size < 100) {
-                        console.warn(`Image blob trop petit (${blob.size}b) pour ${imagePath}`);
-                        blob = null;
-                    }
-                } else {
-                    console.warn(`Type de contenu invalide (${contentType}) pour ${imagePath}`);
-                }
-            }
-        } catch (fetchErr) {
-            console.warn(`fetch indisponible pour ${imagePath}, repli <img> :`, fetchErr);
-        }
-        if (!blob) {
-            blob = await loadImageAsBlobViaImageElement(resolvedUrl);
-        }
-        if (!blob) {
-            console.error(`Impossible de charger l'image: ${imagePath}`);
-            return null;
-        }
-        return await compressImage(blob, quality);
-    } catch (error) {
-        console.error(`Erreur de chargement/compression de l'image ${imagePath}:`, error);
-        return null;
-    }
-}
-
-// medias.js:270-282 — CODE MORT confirmé (cf. en-tête de ce fichier) : porté à
-// l'identique, exporté pour satisfaire `noUnusedLocals`, jamais posé sur
-// `window`. `_formData` : paramètre jamais lu dans l'original (écart de
-// contrat signalé au gate, cf. en-tête).
-export function getAdversaryImageInfo(
-    _formData: unknown,
-    adversaryIndex: number = 1,
-): { id: string; annotationsJson: string } | null {
-    const mainPhotoContainerId = adversaryIndex === 1 ? 'adversary_photo_preview_container' : 'adversary_photo_preview_container_2';
-    // medias.js:272-273 — noUncheckedIndexedAccess : capture locale avant
-    // lecture, même idiome qu'ailleurs dans ce fichier.
-    const dynamicPhotos = Store.state.formData.dynamic_photos;
-    const photos = dynamicPhotos ? dynamicPhotos[mainPhotoContainerId] : undefined;
-    const firstImage = photos ? photos[0] : undefined;
-    if (firstImage) {
-        return {
-            id: firstImage.id,
-            annotationsJson: firstImage.annotations || '[]'
-        };
-    }
-    return null;
 }
 
 // medias.js:103-105 — export des fonctions au scope global. L'original ne pose

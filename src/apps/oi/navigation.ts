@@ -17,6 +17,9 @@ function showStep(n: number): void {
 	// navigation.js:11-15
 	oiState.progressSteps.forEach((pStep, index) => {
 		pStep.classList.toggle('active', index === n);
+		// U10 (a11y) — l'étape courante est annoncée aux lecteurs d'écran.
+		if (index === n) pStep.setAttribute('aria-current', 'step');
+		else pStep.removeAttribute('aria-current');
 		if (visitedSteps.has(index) && index !== n) pStep.classList.add('completed');
 		else pStep.classList.remove('completed');
 	});

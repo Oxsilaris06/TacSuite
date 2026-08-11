@@ -227,6 +227,10 @@ body.up-kb-open .up-kb-aware {
             --text-primary: #f6f6f7;
             --text-secondary: var(--tac-text-300);
             --text-muted: var(--tac-text-500);
+            /* U5 — tokens consommés par @shared/feedback.ts et l'HTML (alignés pctac.css) */
+            --bg-card: var(--bg-container);
+            --text-main: var(--text-primary);
+            --font-ui: 'Inter', system-ui, sans-serif;
 
             --border-color: var(--tac-graphite-600);
             --border-light: rgba(255, 255, 255, 0.07);
@@ -365,6 +369,10 @@ body.up-kb-open .up-kb-aware {
             --text-primary: var(--tac-ink-app-900);
             --text-secondary: var(--tac-ink-app-700);
             --text-muted: var(--tac-ink-app-500);
+            /* U5 — mêmes tokens en thème clair (dérivés, suivent le bloc) */
+            --bg-card: var(--bg-container);
+            --text-main: var(--text-primary);
+            --font-ui: 'Inter', system-ui, sans-serif;
 
             --border-color: var(--tac-paper-warm-400);
             --border-light: rgba(22, 24, 31, 0.06);
