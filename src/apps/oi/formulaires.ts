@@ -188,6 +188,7 @@
 import JSZip from 'jszip';
 
 import { LOCAL_STORAGE_KEY, Store, dbManager, memberConfig } from '@oi/init.js';
+import { collectCoherence } from '@oi/coherence.js';
 import { createAnnotatedImageBlob } from '@oi/dessin.js';
 import { setupQuickEditPanel } from '@oi/patrac.js';
 // R2-T4 — validation inline (nouveau module, cf. son en-tête).
@@ -817,9 +818,23 @@ function syncDomToStoreCore(): void {
         // Persister dans Store (le Proxy déclenche notify() -> saveToStorage)
         Store.state.formData = data;
 
+        // U21 — indicateur autosave global (près du stepper, oi/index.html).
+        updateAppAutosave();
+
     } catch (e) {
         console.error('Erreur de sauvegarde:', e);
     }
+}
+
+/** U21 — « ✓ Enregistré HH:MM » au niveau app, rafraîchi à chaque autosave. */
+function updateAppAutosave(): void {
+    const el = document.getElementById('appAutosave');
+    if (!el) return;
+    const now = new Date();
+    const hh = String(now.getHours()).padStart(2, '0');
+    const mn = String(now.getMinutes()).padStart(2, '0');
+    el.textContent = `\u2713 Enregistré ${hh}:${mn}`;
+    el.classList.add('show');
 }
 
 // formulaires.js:551-742
@@ -1044,58 +1059,15 @@ async function loadFormData(): Promise<boolean> {
     }
 }
 
-// formulaires.js:744-828
+// formulaires.js:744-828 — U17 : la partie « règles » est extraite dans
+// `@oi/coherence.ts` (`collectCoherence`, source unique partagée avec le
+// stepper de navigation.ts) ; ce corps ne garde que le RENDU (alertes + recap).
 function checkCoherence(): boolean {
-    // Utilisation de la clé isolée
-    const key = window.LOCAL_STORAGE_KEY || 'tactical_oi_data';
-    const dataString = localStorage.getItem(key);
-    Store.state.formData = JSON.parse(dataString || '{}') as OiFormData;
+    const { alerts } = collectCoherence();
     const getVal = (id: string): string => (Store.state.formData[id] as string | undefined) || '';
-    const alerts: string[] = [];
     const members: OiPatracMember[] = (Store.state.formData.patracdvr_rows || []).flatMap((row) => row.members);
     const indiaMembers = members.filter((m) => m.cellule && m.cellule.toLowerCase().startsWith('india'));
     const aoMembers = members.filter((m) => m.cellule && m.cellule.toLowerCase().startsWith('ao'));
-    const allAssignedMembers = [...indiaMembers, ...aoMembers];
-
-    if (!getVal('date_op')) { alerts.push("La Date de l'opération est manquante. <span class='material-symbols-outlined'>event</span>"); }
-
-    if (!Store.state.formData.adversaries || Store.state.formData.adversaries.length === 0) {
-        alerts.push("Aucun adversaire n'a été créé. (Onglet 2) <span class='material-symbols-outlined'>person</span>");
-    } else {
-        Store.state.formData.adversaries.forEach((adv, index) => {
-            if (!adv.nom_adversaire) alerts.push(`Le Nom de l'adversaire n°${index + 1} est manquant. <span class='material-symbols-outlined'>person</span>`);
-            if (!adv.domicile_adversaire) alerts.push(`Le Domicile de l'adversaire "${adv.nom_adversaire || index + 1}" est manquant. <span class='material-symbols-outlined'>home</span>`);
-        });
-    }
-
-    allAssignedMembers.forEach((member) => {
-        const hasNoPrimary = member.principales === 'Sans' || !member.principales;
-        const hasNoSecondary = member.secondaires === 'Sans' || !member.secondaires;
-
-        if (hasNoPrimary && hasNoSecondary && member.fonction !== 'Sans') {
-            alerts.push(`Membre ${member.trigramme} est assigné mais n'a AUCUN armement principal/secondaire. (Cellule: ${member.cellule}) <span class='material-symbols-outlined'>local_fire_department</span>`);
-        }
-        if (member.afis !== 'Sans' && !member.afis) {
-            alerts.push(`Membre ${member.trigramme} a un AFI non spécifié. <span class='material-symbols-outlined'>handgun</span>`);
-        }
-    });
-
-    const chefInter = allAssignedMembers.find((m) => m.fonction && m.fonction.includes('Chef inter'));
-    if (chefInter && !chefInter.cellule.toLowerCase().startsWith('india')) {
-        alerts.push(`Le Chef inter (${chefInter.trigramme}) est assigné à la cellule ${chefInter.cellule} au lieu d'India. <span class='material-symbols-outlined'>group</span>`);
-    }
-
-    if (!Store.state.formData.time_events || Store.state.formData.time_events.length < 3) {
-        alerts.push("La Chronologie (T0, T1, T4...) est incomplète. Au moins 3 étapes sont recommandées. (Onglet 5) <span class='material-symbols-outlined'>timeline</span>");
-    } else {
-        const t4 = Store.state.formData.time_events.find((e) => e.type === 'T4');
-        if (!t4) alerts.push("Le TOP ACTION (T4) n'est pas défini dans la chronologie. <span class='material-symbols-outlined'>timer</span>");
-    }
-
-    const unassignedCount = (Store.state.formData.patracdvr_unassigned || []).length;
-    if (unassignedCount > 0) {
-        alerts.push(`${unassignedCount} membres ne sont PAS assignés à un véhicule/équipe. <span class='material-symbols-outlined'>groups_2</span>`);
-    }
 
     const coherenceAlertsContainer = document.getElementById('coherence_alerts_container');
     if (coherenceAlertsContainer) {
@@ -1328,7 +1300,7 @@ async function exportArchive(): Promise<void> {
         a.click();
         document.body.removeChild(a);
         setTimeout(() => URL.revokeObjectURL(a.href), 2000);
-        if (typeof window.toast === 'function') window.toast(`Archive exportée (${imgCount} photo${imgCount > 1 ? 's' : ''})`, 'success');
+        toast(`Archive exportée (${imgCount} photo${imgCount > 1 ? 's' : ''})`, { kind: 'success' });
     } catch (e) {
         console.error('[OI Archive] export échec:', e);
         toast("Erreur d'export d'archive : " + (e instanceof Error ? e.message : String(e)), { kind: 'error' });
@@ -1626,7 +1598,7 @@ async function resetActivePage(): Promise<void> {
 
     // Protection PATRACDVR
     if (activeStep.querySelector('#patracdvr_container')) {
-        window.toast('Le PATRACDVR ne peut être réinitialisé que via son bouton dédié.', 'warning');
+        toast('Le PATRACDVR ne peut être réinitialisé que via son bouton dédié.', { kind: 'error' });
         return;
     }
 
@@ -1668,7 +1640,7 @@ async function resetActivePage(): Promise<void> {
     if (_rom && _rom.open) _rom.close();
     document.body.classList.remove('modal-open');
 
-    window.toast('Page réinitialisée', 'success');
+    toast('Page réinitialisée', { kind: 'success' });
 }
 window.resetActivePage = resetActivePage;
 
@@ -1716,10 +1688,10 @@ async function resetAllData(keepPatrac: boolean = true): Promise<void> {
     if (patracBackup) {
         Store.state.formData = patracBackup;
         Store.saveToStorage();
-        window.toast('Application réinitialisée (Personnel conservé)', 'success');
+        toast('Application réinitialisée (Personnel conservé)', { kind: 'success' });
         setTimeout(() => location.reload(), 1000);
     } else {
-        window.toast('Application réinitialisée à zéro', 'success');
+        toast('Application réinitialisée à zéro', { kind: 'success' });
         setTimeout(() => location.reload(), 1000);
     }
 }

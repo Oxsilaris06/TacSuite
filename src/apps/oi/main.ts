@@ -206,7 +206,6 @@ import { ARTICULATION_CAT_SOFT_MAX, EFFRACTION_HYP_FIELD_SOFT_MAX, charCounter }
 // Tous en side-effect only : chaque module pose ses globales `window.*` à
 // l'exécution (règle d'or §2.2) ; main.ts les consomme ensuite via `window.X`
 // ci-dessous, jamais par import nommé (sauf oiState, cf. supra). ───────────
-import '@oi/notifications.js';
 import '@oi/init.js';
 import '@oi/outils.js';
 import '@oi/pdf-engine-v2.js';

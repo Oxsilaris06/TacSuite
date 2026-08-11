@@ -52,7 +52,7 @@
  * locale par un `import`.
  *
  * RÈGLE D'OR (SPEC §2.2) appliquée partout ailleurs : `window.syncDomToStore`,
- * `window.toast`, `window.flushFormData`, `window.refreshArticulationFromPatracdvr`,
+ * `window.flushFormData`, `window.refreshArticulationFromPatracdvr`,
  * `window.isFormLoading`, `window.UIPlatform` sont résolus par `window`, avec
  * EXACTEMENT la même garde `typeof …` que l'original QUAND ELLE EXISTE — y
  * compris son ABSENCE : plusieurs sites de l'original appellent `syncDomToStore()`
@@ -132,7 +132,7 @@
 import { wireDraggableMember, wireDropContainer } from '@oi/drag-drop.js';
 import { memberConfig, multiSelectAttributes, quickEditMapping } from '@oi/init.js';
 import { oiState } from '@oi/state.js';
-import { confirmDialog, toast } from '@shared/feedback.js';
+import { confirmDialog, promptDialog, toast } from '@shared/feedback.js';
 import type { OiFormData, OiMemberConfig, OiPatracMember } from '@shared/types/contracts.js';
 import * as PDFLib from 'pdf-lib';
 
@@ -155,10 +155,10 @@ function getPatracdvrContainer(): HTMLElement | null {
 // patrac.js:17 — état de module local (jamais réassigné hors de ce fichier ⇒ pas dans state.ts).
 let modalTempData: Record<string, string | undefined> = {};
 
-// patrac.js:19-31
-function renameVehicle(element: HTMLElement): void {
+// patrac.js:19-31 — U25 : `prompt()` natif → `promptDialog` (@shared/feedback.js).
+async function renameVehicle(element: HTMLElement): Promise<void> {
     const currentName = element.textContent ?? '';
-    const newName = prompt('Renommer le véhicule :', currentName);
+    const newName = await promptDialog({ message: 'Renommer le véhicule :', initial: currentName });
     if (newName && newName.trim() !== '') {
         element.textContent = newName.trim();
         const row = element.closest<HTMLElement>('.patracdvr-vehicle-row');
@@ -232,9 +232,9 @@ function addPatracdvrRow(vehicleName: string, members: readonly Partial<OiPatrac
     updateArticulationDisplay();
 }
 
-// patrac.js:86-94
-function addManualVehicle(): void {
-    let vehicleName = prompt('Veuillez saisir le nom du nouveau VL (ex: KODIAQ, SHARAN, VTC...):');
+// patrac.js:86-94 — U25 : `prompt()` natif → `promptDialog`.
+async function addManualVehicle(): Promise<void> {
+    let vehicleName = await promptDialog({ message: 'Veuillez saisir le nom du nouveau VL (ex: KODIAQ, SHARAN, VTC...):' });
     if (vehicleName) {
         vehicleName = vehicleName.trim();
         if (vehicleName.length > 0) {
@@ -243,9 +243,9 @@ function addManualVehicle(): void {
     }
 }
 
-// patrac.js:96-131
-function addManualMember(): void {
-    let trigramme = prompt('Veuillez saisir le trigramme du nouveau PAX (ex: ABC):');
+// patrac.js:96-131 — U25 : `prompt()` natif → `promptDialog`.
+async function addManualMember(): Promise<void> {
+    let trigramme = await promptDialog({ message: 'Veuillez saisir le trigramme du nouveau PAX (ex: ABC):', placeholder: 'ABC' });
     if (trigramme) {
         trigramme = trigramme.trim().toUpperCase();
         const existingMember = document.querySelector(`.patracdvr-member-btn[data-trigramme="${trigramme}"]`);
@@ -287,13 +287,13 @@ function addManualMember(): void {
  * type (India→Inter, AO→AO, Effrac→Effrac). Les PAX sont pré-affectés à la cellule,
  * donc l'articulation (MOICP←India / ZMSPCP←AO / Effraction) se peuple aussitôt.
  */
-// patrac.js:138-193
-function addCellBatch(type: string): void {
+// patrac.js:138-193 — U25 : `prompt()` natif → `promptDialog`.
+async function addCellBatch(type: string): Promise<void> {
     const labelMap: Record<string, string> = { India: 'India (Inter)', AO: 'AO', Effrac: 'Effraction' };
-    const input = prompt(
-        `Trigrammes des PAX de la cellule ${labelMap[type] || type}\n` +
-        `(séparés par espace, virgule ou retour à la ligne — 2 minimum) :`
-    );
+    const input = await promptDialog({
+        title: `Cellule ${labelMap[type] || type}`,
+        message: 'Trigrammes des PAX de la cellule (séparés par espace, virgule ou retour à la ligne — 2 minimum) :',
+    });
     if (input === null) return;
     const trigs = input.split(/[\s,;]+/).map(t => t.trim().toUpperCase()).filter(Boolean);
     if (trigs.length < 2) {
@@ -338,9 +338,7 @@ function addCellBatch(type: string): void {
     if (created > 0) {
         window.syncDomToStore();
         updateArticulationDisplay();
-        if (typeof window.toast === 'function') {
-            window.toast(`Cellule ${cellule} : ${created} PAX ajouté(s)${skipped ? ', ' + skipped + ' ignoré(s)' : ''}.`, 'success');
-        }
+        toast(`Cellule ${cellule} : ${created} PAX ajouté(s)${skipped ? ', ' + skipped + ' ignoré(s)' : ''}.`, { kind: 'success' });
     } else {
         toast('Aucun PAX valide créé (trigrammes invalides ou déjà existants).', { kind: 'error' });
     }
@@ -540,7 +538,7 @@ async function resetPatracdvrUI(): Promise<void> {
 
         window.syncDomToStore();
         updateArticulationDisplay();
-        if (typeof window.toast === 'function') window.toast('PATRACDVR réinitialisé', 'success');
+        toast('PATRACDVR réinitialisé', { kind: 'success' });
     }
 }
 
@@ -895,7 +893,7 @@ function patracBatchMoveTo(container: HTMLElement | null): void {
     if (wrap) wrap.style.display = 'none';
     persistAfterDrag();
     _patracBatchUpdateBar();
-    if (moved && typeof window.toast === 'function') window.toast(moved + ' PAX déplacé(s).', 'success');
+    if (moved) toast(moved + ' PAX déplacé(s).', { kind: 'success' });
 }
 
 /** Renvoie les PAX sélectionnés vers « Personnel à attribuer ». */
@@ -921,7 +919,7 @@ function patracBatchUnassign(): void {
     if (wrap) wrap.style.display = 'none';
     persistAfterDrag();
     _patracBatchUpdateBar();
-    if (moved && typeof window.toast === 'function') window.toast(moved + ' PAX désattribué(s).', 'success');
+    if (moved) toast(moved + ' PAX désattribué(s).', { kind: 'success' });
 }
 
 /** Vide la sélection courante (sans quitter le mode). */
@@ -1379,7 +1377,7 @@ function saveUniteConfig(): void {
     const modal = document.getElementById('uniteConfigModal') as HTMLDialogElement | null;
     if (modal && typeof modal.close === 'function') modal.close();
     document.body.classList.remove('modal-open');
-    if (typeof window.toast === 'function') window.toast("Configuration de l'unité enregistrée", 'success');
+    toast("Configuration de l'unité enregistrée", { kind: 'success' });
 }
 window.openUniteConfigModal = openUniteConfigModal;
 window.saveUniteConfig = saveUniteConfig;
@@ -1399,7 +1397,7 @@ async function generatePatracdvrPdf(): Promise<void> {
     // sur la classe réellement utilisée, message inchangé (même précédent que
     // `@pctac/pdf-export.ts:177`).
     if (typeof PDFLib?.PDFDocument !== 'function') {
-        if (typeof window.toast === 'function') window.toast('Bibliothèque PDF indisponible (réseau ?).', 'error');
+        toast('Bibliothèque PDF indisponible (réseau ?).', { kind: 'error' });
         return;
     }
     try {
@@ -1411,7 +1409,7 @@ async function generatePatracdvrPdf(): Promise<void> {
         });
         const unassigned = Array.from(document.querySelectorAll<HTMLElement>('#unassigned_members_container .patracdvr-member-btn')).map(b => ({ ...b.dataset }));
         if (unassigned.length) rowsData.push({ vehicle: 'NON ASSIGNÉS', members: unassigned });
-        if (!rowsData.length) { if (typeof window.toast === 'function') window.toast('Aucun membre dans le PATRACDVR.', 'warning'); return; }
+        if (!rowsData.length) { toast('Aucun membre dans le PATRACDVR.', { kind: 'error' }); return; }
 
         const { PDFDocument, StandardFonts, rgb } = PDFLib;
         const pdf = await PDFDocument.create();
@@ -1509,14 +1507,13 @@ async function generatePatracdvrPdf(): Promise<void> {
         a.download = `PATRACDVR_${new Date().toISOString().slice(0, 10)}.pdf`;
         document.body.appendChild(a); a.click(); document.body.removeChild(a);
         setTimeout(() => URL.revokeObjectURL(a.href), 2000);
-        if (typeof window.toast === 'function') window.toast('PDF PATRACDVR généré', 'success');
+        toast('PDF PATRACDVR généré', { kind: 'success' });
     } catch (e) {
         console.error('[PATRACDVR PDF] échec:', e);
         // patrac.js:1197 — `e` est `unknown` en TS strict (`useUnknownInCatchVariables`),
         // même précédent que `@pctac/main.ts:582,614`.
         const message = e instanceof Error ? e.message : String(e);
-        if (typeof window.toast === 'function') window.toast('Erreur de génération PDF : ' + message, 'error');
-        else toast('Erreur PDF PATRACDVR : ' + message, { kind: 'error' });
+        toast('Erreur de génération PDF : ' + message, { kind: 'error' });
     }
 }
 window.generatePatracdvrPdf = generatePatracdvrPdf;

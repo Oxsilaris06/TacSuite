@@ -77,7 +77,13 @@ describe('oi-navigation', () => {
 			expect(must(oiState.progressSteps[1], 'progressSteps[1]').classList.contains('active')).toBe(false);
 		});
 
-		it('devrait ajouter la classe "completed" aux puces visitées (sauf celle courante)', () => {
+		// U17 — `.completed` honnête : visitée ET sans incohérence réelle.
+		it('devrait ajouter "completed" aux puces visitées SANS incohérence (sauf celle courante)', () => {
+			// Données satisfaisant les règles des étapes 0 et 1 (coherence.ts).
+			localStorage.setItem('tactical_oi_data', JSON.stringify({
+				date_op: '2026-08-11',
+				adversaries: [{ nom_adversaire: 'X', domicile_adversaire: 'Y' }],
+			}));
 			visitedSteps.add(0);
 			visitedSteps.add(1);
 			window.showStep(2);
@@ -85,6 +91,24 @@ describe('oi-navigation', () => {
 			expect(must(oiState.progressSteps[0], 'progressSteps[0]').classList.contains('completed')).toBe(true);
 			expect(must(oiState.progressSteps[1], 'progressSteps[1]').classList.contains('completed')).toBe(true);
 			expect(must(oiState.progressSteps[2], 'progressSteps[2]').classList.contains('completed')).toBe(false); // pas soi-même
+		});
+
+		// U17/U18 — étape visitée mais incohérente : pas de "completed", point d'erreur.
+		it('ne marque PAS "completed" une puce visitée incohérente et pose "step-error"', () => {
+			// localStorage vide : date_op manquante (étape 0), aucun adversaire (étape 1).
+			// NB : le proxy Store re-persiste formData à chaque assignation du
+			// beforeEach — on purge explicitement l'état résiduel du test précédent.
+			Store.state.formData = {};
+			localStorage.clear();
+			visitedSteps.add(0);
+			visitedSteps.add(1);
+			window.showStep(2);
+
+			expect(must(oiState.progressSteps[0], 'progressSteps[0]').classList.contains('completed')).toBe(false);
+			expect(must(oiState.progressSteps[0], 'progressSteps[0]').classList.contains('step-error')).toBe(true);
+			expect(must(oiState.progressSteps[1], 'progressSteps[1]').classList.contains('step-error')).toBe(true);
+			// Étape sans règle de cohérence : jamais de point d'erreur.
+			expect(must(oiState.progressSteps[2], 'progressSteps[2]').classList.contains('step-error')).toBe(false);
 		});
 
 		it('devrait masquer prevBtn à l\'étape 0, afficher aux autres', () => {
@@ -135,9 +159,10 @@ describe('oi-navigation', () => {
 				callOrder.push('check');
 			});
 
-			// À une étape intermédiaire, ne pas appeler
+			// U17/U18 — flush désormais À CHAQUE étape (fraîcheur des points
+			// d'erreur du stepper) ; checkCoherence seulement à la dernière.
 			window.showStep(0);
-			expect(window.flushFormData).not.toHaveBeenCalled();
+			expect(window.flushFormData).toHaveBeenCalled();
 			expect(window.checkCoherence).not.toHaveBeenCalled();
 
 			// À la dernière étape, appeler dans l'ordre

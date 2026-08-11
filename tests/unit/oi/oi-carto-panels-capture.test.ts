@@ -910,9 +910,6 @@ describe('_exportToField (oi_cartographie.js:1281-1308)', () => {
         vi.spyOn(HTMLCanvasElement.prototype, 'toBlob').mockImplementation(function (cb: BlobCallback) { cb(blob); });
         const handleFileChangeMock = vi.fn().mockResolvedValue(undefined);
         (window as unknown as Record<string, unknown>).handleFileChange = handleFileChangeMock;
-        const toastMock = vi.fn();
-        (window as unknown as Record<string, unknown>).toast = toastMock;
-
         await state._exportToField('container_photo_x');
 
         expect(handleFileChangeMock).toHaveBeenCalledTimes(1);
@@ -922,10 +919,10 @@ describe('_exportToField (oi_cartographie.js:1281-1308)', () => {
         expect(call[1]).toBe('container_photo_x');
         expect(call[2]).toBe(false);
         expect(modal.open).toBe(false);
-        expect(toastMock).toHaveBeenCalledWith('Capture de carte ajoutée au champ photo.');
+        expect(toastSpy).toHaveBeenCalledWith('Capture de carte ajoutée au champ photo.', { kind: 'success' });
     });
 
-    it('replie sur toast() (@shared/feedback.js) si window.toast est absent', async () => {
+    it('notifie via toast() (@shared/feedback.js) — U19, toast unique', async () => {
         const CaptureMethods = await loadCaptureMethods(vi.fn());
         const state = makeCaptureState(CaptureMethods, null);
         state._closeCaptureModal = vi.fn();

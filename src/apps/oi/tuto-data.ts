@@ -117,7 +117,7 @@ export const oiTutoData: TutoData = {
         },
         {
           title: "Comprendre les notifications (toasts)",
-          body: "Les actions globales confirment leur résultat par des notifications (toasts) qui apparaissent en bas à droite de l'écran et disparaissent seules après quelques secondes. Elles se déclinent en quatre types visuels : succès (icône check_circle, bord vert), erreur (icône error, bord rouge), avertissement (icône warning, bord doré) et information (icône info, bord bleu).",
+          body: "Les actions globales confirment leur résultat par des notifications (toasts) qui apparaissent en bas de l'écran, au centre, et disparaissent seules après quelques secondes. Elles se déclinent en trois types visuels : succès (vert), erreur (rouge) et information (neutre).",
           terms: [
             "Archive exportée ({n} photos)",
             "Page réinitialisée",

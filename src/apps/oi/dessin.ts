@@ -87,7 +87,7 @@ import type {
 import { Store, dbManager } from '@oi/init.js';
 import { getAnnotationAtPosition, getEventPos, getRotatedPoint, hexToRgb } from '@oi/outils.js';
 import { oiState } from '@oi/state.js';
-import { toast } from '@shared/feedback.js';
+import { promptDialog, toast } from '@shared/feedback.js';
 
 // ---------------------------------------------------------------------------
 // Écart de contrat (cf. en-tête) — vue élargie locale, en lecture ET écriture.
@@ -1049,23 +1049,26 @@ function handleDrawStart(e: MouseEvent | TouchEvent): void {
         }
     } else if (tool === 'text') {
         e.preventDefault();
-        const text = prompt('Texte à insérer :');
-        if (text) {
-            const sizeInput = document.getElementById('text_size_tool') as HTMLInputElement | null;
-            const size = sizeInput ? parseInt(sizeInput.value, 10) : 30;
-            pushAnnotationHistory();
-            Store.state.annotations.push({
-                id: Date.now() + Math.random(),
-                type: 'text',
-                x: oiState.startX,
-                y: oiState.startY,
-                text: text,
-                color: oiState.currentAnnotationColor,
-                rotation: 0,
-                size: size,
-            });
-            redrawCanvas();
-        }
+        // U25 — `prompt()` natif → `promptDialog` ; le handler reste synchrone,
+        // l'insertion se fait à la résolution (rien après n'en dépend).
+        void promptDialog({ message: 'Texte à insérer :' }).then((text) => {
+            if (text) {
+                const sizeInput = document.getElementById('text_size_tool') as HTMLInputElement | null;
+                const size = sizeInput ? parseInt(sizeInput.value, 10) : 30;
+                pushAnnotationHistory();
+                Store.state.annotations.push({
+                    id: Date.now() + Math.random(),
+                    type: 'text',
+                    x: oiState.startX,
+                    y: oiState.startY,
+                    text: text,
+                    color: oiState.currentAnnotationColor,
+                    rotation: 0,
+                    size: size,
+                });
+                redrawCanvas();
+            }
+        });
     } else if (tool === 'member') {
         e.preventDefault();
         window.populateMemberCanvasModal(oiState.startX, oiState.startY);
@@ -1632,14 +1635,15 @@ function initAnnotationWorkspace(): void {
     drawingTools.forEach((id) => {
         const btn = document.getElementById(id);
         if (btn) {
-            btn.addEventListener('click', () => {
+            btn.addEventListener('click', async () => {
                 // dessin.js:1214 — les 6 ids de `drawingTools` sont figés ci-dessus :
                 // le résultat de `.replace` correspond toujours à un `OiAnnotationTool`.
                 const toolId = id.replace(/^tool_/, '') as OiAnnotationTool;
                 setActiveTool(toolId);
                 if (toolId === 'location') {
                     const circleTextEl = document.getElementById('circle_text') as HTMLInputElement | null;
-                    const txt = prompt('Texte personnalisé de la zone :', circleTextEl?.value || 'Z');
+                    // U25 — `prompt()` natif → `promptDialog`.
+                    const txt = await promptDialog({ message: 'Texte personnalisé de la zone :', initial: circleTextEl?.value || 'Z' });
                     if (txt !== null) {
                         if (circleTextEl) circleTextEl.value = txt;
                         if (typeof updateZoneText === 'function') updateZoneText(txt);
@@ -1730,14 +1734,15 @@ function initAnnotationWorkspace(): void {
 
     const editTextBtn = document.getElementById('edit_text_btn');
     if (editTextBtn) {
-        editTextBtn.addEventListener('click', () => {
+        editTextBtn.addEventListener('click', async () => {
             const selected = oiState.selectedAnnotation;
             if (!selected) return;
             if (selected.type !== 'location' && selected.type !== 'text' && selected.type !== 'member') {
                 return;
             }
             const cur = selected.text != null ? String(selected.text) : '';
-            const newText = prompt('Modifier texte :', cur);
+            // U25 — `prompt()` natif → `promptDialog`.
+            const newText = await promptDialog({ message: 'Modifier texte :', initial: cur });
             if (newText !== null && newText !== cur) {
                 pushAnnotationHistory();
                 selected.text = newText;

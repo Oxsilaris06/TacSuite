@@ -222,11 +222,8 @@ export const PDFEngineV2 = {
             setTimeout(() => URL.revokeObjectURL(url), 120000);
         } catch (e) {
             console.error('[Présenter ici] échec:', e);
-            // pdf_engine_v2.js:101 — résolution globale tardive (`typeof toast === 'function'`)
-            // → RÈGLE D'OR (SPEC §2.2) : appel cross-module vers un symbole exposé sur
-            // window (OiNotificationGlobals.toast) ⇒ window.toast, même garde.
-            if (typeof window.toast === 'function') window.toast("Erreur lors de l'ouverture de la présentation.", 'error');
-            else toast("Erreur lors de l'ouverture de la présentation.", { kind: 'error' });
+            // U19 — toast unique (@shared/feedback.js), plus de window.toast.
+            toast("Erreur lors de l'ouverture de la présentation.", { kind: 'error' });
         } finally {
             if (loader) loader.style.display = 'none';
         }

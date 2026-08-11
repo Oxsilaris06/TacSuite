@@ -67,9 +67,12 @@ vi.mock('@oi/outils.js', () => ({
 }));
 
 // `removeImage` demande désormais confirmation (quick win U9) : auto-confirmer sous jsdom.
+// U19 — `toast` mocké aussi (système de toast unique, `@shared/feedback.js`).
+const toastSpy = vi.hoisted(() => vi.fn());
 vi.mock('@shared/feedback.js', async (importOriginal) => ({
     ...(await importOriginal<typeof import('@shared/feedback.js')>()),
     confirmDialog: vi.fn(async () => true),
+    toast: toastSpy,
 }));
 
 import { dbManager, Store } from '@oi/init.js';
@@ -138,7 +141,7 @@ beforeEach(() => {
     });
 
     window.syncDomToStore = vi.fn();
-    window.toast = vi.fn();
+    toastSpy.mockClear();
     vi.stubGlobal('alert', vi.fn());
 });
 
@@ -205,9 +208,9 @@ describe('(a) handleFileChange — upload', () => {
 
         await expect(handleFileChange(input, 'adversary_photo_preview_container', false)).resolves.toBeUndefined();
 
-        expect(window.toast).toHaveBeenCalledWith(
+        expect(toastSpy).toHaveBeenCalledWith(
             "Échec d'enregistrement d'une photo (stockage saturé/indisponible). Exportez votre session puis réessayez.",
-            'error',
+            { kind: 'error' },
         );
         // Aucune vignette ajoutée pour ce fichier en échec.
         const container = byId('adversary_photo_preview_container');

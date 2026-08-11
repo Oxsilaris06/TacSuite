@@ -9,6 +9,8 @@
  * migré dans src/apps/oi/state.ts (paquet oi-state). Ce fichier ne porte que
  * ce qui n'est JAMAIS réassigné hors de init.js — export nommé classique.
  */
+import { toast } from '@shared/feedback.js';
+
 import type {
     OiDbManagerContract,
     OiDefaults,
@@ -175,12 +177,8 @@ const StoreBase: OiStoreContract = {
             // type avant d'accéder à `.name` ; QuotaExceededError est un
             // DOMException dans tous les moteurs — comportement identique.
             if (e instanceof DOMException && (e.name === 'QuotaExceededError' || e.name === 'NS_ERROR_DOM_QUOTA_REACHED')) {
-                // init.js:155 — résolution globale tardive (`typeof toast === 'function'`)
-                // → RÈGLE D'OR (SPEC §2.2) : appel cross-module vers un symbole exposé
-                // sur window (OiNotificationGlobals.toast) ⇒ window.toast, même garde.
-                if (typeof window.toast === 'function') {
-                    window.toast('Mémoire de sauvegarde saturée ! Exportez votre session puis réinitialisez les données.', 'error');
-                }
+                // U19 — toast unique (@shared/feedback.js).
+                toast('Mémoire de sauvegarde saturée ! Exportez votre session puis réinitialisez les données.', { kind: 'error' });
             }
         }
     },

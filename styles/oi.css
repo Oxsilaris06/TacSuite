@@ -637,6 +637,44 @@ body.up-kb-open .up-kb-aware {
             background-color: color-mix(in srgb, var(--success-green) 10%, transparent);
         }
 
+        /* U18 — point rouge discret : l'étape porte au moins une incohérence
+           (coherenceIssuesByStep, posé par navigation.ts à chaque changement). */
+        .wizard-progress-step.step-error {
+            position: relative;
+        }
+
+        .wizard-progress-step.step-error::after {
+            content: '';
+            position: absolute;
+            top: 4px;
+            right: 6px;
+            width: 6px;
+            height: 6px;
+            border-radius: var(--radius-full);
+            background-color: var(--danger-red);
+        }
+
+        /* U21 — indicateur autosave global (sous le stepper), rempli par
+           formulaires.ts (updateAppAutosave) à chaque autosave réussie. */
+        .app-autosave {
+            text-align: center;
+            font-size: 0.75em;
+            font-weight: 600;
+            color: var(--success-green);
+            margin-block: calc(-1 * var(--space-2)) var(--space-2);
+            opacity: 0;
+            transition: opacity 0.25s;
+        }
+
+        .app-autosave.show { opacity: 1; }
+
+        /* U26 — compteur minimal pendant l'import de photos (medias.ts). */
+        .upload-progress {
+            font-size: 0.8em;
+            color: var(--text-secondary);
+            margin: var(--space-1) 0;
+        }
+
         .wizard-progress-step.active {
             color: var(--tac-paper-50);
             background-color: var(--accent-fill);

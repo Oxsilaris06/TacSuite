@@ -42,9 +42,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 // statique : reste actif à travers les `vi.resetModules()` de ce fichier.
 const confirmDialogSpy = vi.hoisted(() => vi.fn(async () => true));
 const toastSpy = vi.hoisted(() => vi.fn());
+// U25 — `prompt()` natif → `promptDialog`, mocké comme `confirmDialog`.
+const promptDialogSpy = vi.hoisted(() => vi.fn(async (): Promise<string | null> => null));
 vi.mock('@shared/feedback.js', () => ({
     confirmDialog: confirmDialogSpy,
     toast: toastSpy,
+    promptDialog: promptDialogSpy,
 }));
 
 /** Remplace une assertion non-null `!` (interdite, règle commune §13.1.3) par une garde explicite. */
@@ -107,6 +110,8 @@ afterEach(() => {
     confirmDialogSpy.mockClear();
     confirmDialogSpy.mockImplementation(async () => true);
     toastSpy.mockClear();
+    promptDialogSpy.mockClear();
+    promptDialogSpy.mockImplementation(async () => null);
 });
 
 describe('Plafonds de cellule (SPEC §11.5, patrac.js:138-193)', () => {
@@ -114,17 +119,16 @@ describe('Plafonds de cellule (SPEC §11.5, patrac.js:138-193)', () => {
         setupDom();
         await import('@oi/patrac.js');
         window.syncDomToStore = vi.fn();
-        const promptMock = vi.fn()
-            .mockReturnValueOnce('A1 A2')
-            .mockReturnValueOnce('B1 B2')
-            .mockReturnValueOnce('C1 C2')
-            .mockReturnValueOnce('D1 D2')
-            .mockReturnValueOnce('E1 E2')
-            .mockReturnValueOnce('F1 F2');
-        vi.stubGlobal('prompt', promptMock);
+        promptDialogSpy
+            .mockResolvedValueOnce('A1 A2')
+            .mockResolvedValueOnce('B1 B2')
+            .mockResolvedValueOnce('C1 C2')
+            .mockResolvedValueOnce('D1 D2')
+            .mockResolvedValueOnce('E1 E2')
+            .mockResolvedValueOnce('F1 F2');
 
         for (let i = 0; i < 6; i++) {
-            window.addCellBatch('India');
+            await window.addCellBatch('India');
         }
 
         const cellules = Array.from(document.querySelectorAll<HTMLElement>('.patracdvr-member-btn')).map(b => b.dataset.cellule);
@@ -137,12 +141,10 @@ describe('Plafonds de cellule (SPEC §11.5, patrac.js:138-193)', () => {
         setupDom();
         await import('@oi/patrac.js');
         window.syncDomToStore = vi.fn();
-        const promptMock = vi.fn();
-        for (let i = 1; i <= 9; i++) promptMock.mockReturnValueOnce(`X${i}a X${i}b`);
-        vi.stubGlobal('prompt', promptMock);
+        for (let i = 1; i <= 9; i++) promptDialogSpy.mockResolvedValueOnce(`X${i}a X${i}b`);
 
         for (let i = 0; i < 9; i++) {
-            window.addCellBatch('AO');
+            await window.addCellBatch('AO');
         }
 
         const cellules = Array.from(document.querySelectorAll<HTMLElement>('.patracdvr-member-btn')).map(b => b.dataset.cellule);
@@ -156,9 +158,9 @@ describe('Auto-équipement Effraction (patrac.js:173-182)', () => {
         setupDom();
         await import('@oi/patrac.js');
         window.syncDomToStore = vi.fn();
-        vi.stubGlobal('prompt', vi.fn(() => 'AAA BBB CCC'));
+        promptDialogSpy.mockResolvedValueOnce('AAA BBB CCC');
 
-        window.addCellBatch('Effrac');
+        await window.addCellBatch('Effrac');
 
         const members = Array.from(document.querySelectorAll<HTMLElement>('.patracdvr-member-btn'));
         expect(members).toHaveLength(3);
@@ -442,11 +444,9 @@ describe('generatePatracdvrPdf — fumée (pdf-lib réel sous jsdom, même préc
     it('avertit et ne génère rien si le PATRACDVR est vide', async () => {
         setupDom();
         await import('@oi/patrac.js');
-        window.toast = vi.fn();
-
         await window.generatePatracdvrPdf();
 
-        expect(window.toast).toHaveBeenCalledWith('Aucun membre dans le PATRACDVR.', 'warning');
+        expect(toastSpy).toHaveBeenCalledWith('Aucun membre dans le PATRACDVR.', { kind: 'error' });
         expect(URL.createObjectURL).not.toHaveBeenCalled();
     });
 
@@ -454,7 +454,6 @@ describe('generatePatracdvrPdf — fumée (pdf-lib réel sous jsdom, même préc
         setupDom();
         await import('@oi/patrac.js');
         window.syncDomToStore = vi.fn();
-        window.toast = vi.fn();
 
         window.addPatracdvrRow('KODIAQ', [{ trigramme: 'AAA', cellule: 'India 1', fonction: 'Inter' }]);
         const unassigned = must(document.getElementById('unassigned_members_container'));
@@ -463,6 +462,6 @@ describe('generatePatracdvrPdf — fumée (pdf-lib réel sous jsdom, même préc
         await expect(window.generatePatracdvrPdf()).resolves.toBeUndefined();
 
         expect(URL.createObjectURL).toHaveBeenCalledTimes(1);
-        expect(window.toast).toHaveBeenCalledWith('PDF PATRACDVR généré', 'success');
+        expect(toastSpy).toHaveBeenCalledWith('PDF PATRACDVR généré', { kind: 'success' });
     });
 });

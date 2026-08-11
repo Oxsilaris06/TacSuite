@@ -32,8 +32,8 @@
  * `window` par D'AUTRES modules, jamais importés :
  *   - `window.syncDomToStore()` (formulaires.ts, version débouncée) — AUCUNE
  *     garde `typeof`, comme l'original (`medias.js:99,118,125`, appels nus).
- *   - `window.toast(...)` (notifications.ts) — garde `typeof … === 'function'`
- *     CONSERVÉE (`medias.js:91`, seul appel gardé du fichier).
+ *   - `toast(...)` : import direct de `@shared/feedback.js` (U19 — système
+ *     de toast unique, l'ancien `notifications.ts` est supprimé).
  *   - `openAnnotationModal` (dessin.ts) et `openEffractionToolsModal`
  *     (articulation.ts) n'apparaissent que dans des attributs `onclick`
  *     VERBATIM de gabarits `innerHTML` (chaînes JS jamais évaluées par TS,
@@ -146,7 +146,17 @@ export async function handleFileChange(
     // `FileList | null` côté TS, jamais gardé dans l'original.
     const files = input.files;
     if (files && files.length > 0) {
+        // U26 — état de chargement pendant l'import (compression + IndexedDB) :
+        // input désactivé, conteneur aria-busy, compteur visuel minimal.
+        input.disabled = true;
+        previewContainer.setAttribute('aria-busy', 'true');
+        const progressEl = document.createElement('p');
+        progressEl.className = 'upload-progress';
+        previewContainer.appendChild(progressEl);
+        const total = files.length;
+        let added = 0;
         for (const file of Array.from(files)) {
+            progressEl.textContent = `Import de la photo ${added + 1}/${total}…`;
             const previewImgId = `img_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
 
             try {
@@ -203,15 +213,19 @@ export async function handleFileChange(
                                 <button type="button" class="remove-btn" style="padding: 4px 8px;" onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation()" onclick="removeImage('${previewImgId}', this.closest('.image-preview-item'))" aria-label="Supprimer la photo">&times;</button>
                             </div>`;
                 previewContainer.appendChild(interactiveItem);
+                added++;
 
             } catch (error) {
                 console.error("Erreur lors du stockage de l'image (IndexedDB) - Persistance indisponible:", error);
                 // OI3 — fail-loud : ne pas perdre une photo en silence.
-                if (typeof window.toast === 'function') {
-                    window.toast("Échec d'enregistrement d'une photo (stockage saturé/indisponible). Exportez votre session puis réessayez.", "error");
-                }
+                toast("Échec d'enregistrement d'une photo (stockage saturé/indisponible). Exportez votre session puis réessayez.", { kind: 'error' });
             }
         }
+        // U26 — fin d'import : restauration + bilan unique.
+        progressEl.remove();
+        previewContainer.removeAttribute('aria-busy');
+        input.disabled = false;
+        if (added > 0) toast(`${added} photo${added > 1 ? 's' : ''} ajoutée${added > 1 ? 's' : ''}`, { kind: 'success' });
     }
     syncAllThumbnails();
     if (input) input.value = '';

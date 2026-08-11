@@ -637,6 +637,8 @@ export function handleThemeToggle(): void {
     document.body.classList.toggle('dark-mode');
     const isDarkMode = document.body.classList.contains('dark-mode');
     localStorage.setItem('theme', isDarkMode ? 'dark' : 'light');
+    // U20 — pont de continuité : le portail lit sa propre clé.
+    localStorage.setItem('tacsuite.portal.theme', isDarkMode ? 'dark' : 'light');
     const icon = document.getElementById('darkModeIcon');
     if (icon) {
         icon.textContent = isDarkMode ? 'nightlight' : 'clear_day';

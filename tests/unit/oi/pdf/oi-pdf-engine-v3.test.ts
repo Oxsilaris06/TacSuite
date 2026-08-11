@@ -25,6 +25,10 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+// U19 — toast unique (`@shared/feedback.js`) mocké.
+const toastSpy = vi.hoisted(() => vi.fn());
+vi.mock('@shared/feedback.js', () => ({ toast: toastSpy }));
+
 import type { OiFormData, OiPdfCollectedData } from '@shared/types/contracts.js';
 
 // ---------------------------------------------------------------------------
@@ -88,7 +92,7 @@ beforeEach(() => {
     fakeImageState.naturalHeight = 80;
     fakeImageState.shouldFailDecode = false;
     vi.stubGlobal('Image', FakeImage as unknown as typeof Image);
-    window.toast = vi.fn();
+    toastSpy.mockClear();
 
     addVfsMock.mockClear();
     addFontsMock.mockClear();
@@ -552,7 +556,7 @@ describe('downloadOiPdfV3', () => {
         expect(loaderKo.style.display).toBe('none');
     });
 
-    it("en cas d'échec de createPdf, window.toast est appelé avec 'error' et le message exact", async () => {
+    it("en cas d'échec de createPdf, toast est appelé avec kind 'error' et le message exact", async () => {
         const engine = await loadEngineV3();
         createPdfMock.mockImplementationOnce(() => {
             throw new Error('pdfmake createPdf a échoué');
@@ -560,7 +564,7 @@ describe('downloadOiPdfV3', () => {
 
         await engine.downloadOiPdfV3({ collect: () => Promise.resolve(makeCollectedData()) });
 
-        expect(window.toast).toHaveBeenCalledWith('Erreur de génération. Veuillez consulter les logs.', 'error');
+        expect(toastSpy).toHaveBeenCalledWith('Erreur de génération. Veuillez consulter les logs.', { kind: 'error' });
     });
 
     it("affiche la progression i/N sur #pdfLoadingStatus pendant « Préparation des images… » (R4-c, onProgress consommé par downloadOiPdfV3)", async () => {

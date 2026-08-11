@@ -8,11 +8,17 @@
 
 import { oiState } from '@oi/state.js';
 import { Store, visitedSteps } from '@oi/init.js';
+import { coherenceIssuesByStep } from '@oi/coherence.js';
 
 // navigation.js:9-32
 function showStep(n: number): void {
 	// navigation.js:10
 	oiState.steps.forEach((step, index) => step.classList.toggle('active', index === n));
+
+	// U17/U18 — flush (dernière frappe dans la fenêtre de débounce) puis
+	// incohérences réelles par étape : `.completed` honnête + point d'erreur.
+	if (typeof window.flushFormData === 'function') window.flushFormData();
+	const issues = coherenceIssuesByStep();
 
 	// navigation.js:11-15
 	oiState.progressSteps.forEach((pStep, index) => {
@@ -20,8 +26,11 @@ function showStep(n: number): void {
 		// U10 (a11y) — l'étape courante est annoncée aux lecteurs d'écran.
 		if (index === n) pStep.setAttribute('aria-current', 'step');
 		else pStep.removeAttribute('aria-current');
-		if (visitedSteps.has(index) && index !== n) pStep.classList.add('completed');
-		else pStep.classList.remove('completed');
+		// U17 — « complétée » = visitée ET sans incohérence réelle (plus
+		// seulement visitée) ; U18 — point rouge discret si incohérence.
+		const complete = visitedSteps.has(index) && !issues.has(index);
+		pStep.classList.toggle('completed', complete && index !== n);
+		pStep.classList.toggle('step-error', issues.has(index));
 	});
 
 	// navigation.js:16 — Masque prevBtn à l'étape 0
@@ -34,8 +43,8 @@ function showStep(n: number): void {
 	// navigation.js:21-28
 	if (isLastStep) {
 		if (oiState.previewBtn) oiState.previewBtn.style.display = 'inline-block';
-		// OI1 — flush immédiat pour que checkCoherence lise la dernière frappe.
-		if (typeof window.flushFormData === 'function') window.flushFormData();
+		// OI1 — le flush immédiat a déjà eu lieu en tête de showStep (U17/U18) :
+		// checkCoherence lit bien la dernière frappe.
 		if (typeof window.checkCoherence === 'function') window.checkCoherence();
 	} else {
 		if (oiState.previewBtn) oiState.previewBtn.style.display = 'none';

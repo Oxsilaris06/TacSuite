@@ -12,10 +12,9 @@
  *
  * RÈGLE D'OR (SPEC §2.2/§6.5) : `handleFileChange` et `toast` sont résolus
  * globalement dans l'original AVEC gardes (`typeof ... === 'function'` :1283,
- * :1302, repli `alert` pour `toast`) → portés en `window.handleFileChange` /
- * `window.toast`, MÊMES gardes — PAS d'import de `@oi/medias.js` ni
- * `@oi/notifications.js` (`carto/*` ne dépend d'aucun paquet
- * médias/notifications, §6.5).
+ * :1302) → portés en `window.handleFileChange`, MÊME garde — PAS d'import de
+ * `@oi/medias.js` (`carto/*` ne dépend d'aucun paquet médias, §6.5). `toast`
+ * vient de `@shared/feedback.js` (U19 — système de toast unique).
  *
  * Adaptations de TYPAGE PUR (aucune restructuration de logique, règle commune
  * §3/§9) :
@@ -349,10 +348,8 @@ export const CaptureMethods = {
             fakeInput.files = dt.files;
             await window.handleFileChange(fakeInput, containerId, false);
             this._closeCaptureModal();
-            // oi_cartographie.js:1302 — MÊME garde `typeof toast === 'function'`
-            // que l'original, repli `alert` (`toast` = OiNotificationGlobals).
-            if (typeof window.toast === 'function') window.toast('Capture de carte ajoutée au champ photo.');
-            else toast('Capture de carte ajoutée au champ photo.', { kind: 'success' });
+            // U19 — toast unique (@shared/feedback.js).
+            toast('Capture de carte ajoutée au champ photo.', { kind: 'success' });
         } catch (e) {
             console.error('[OICarto] export champ photo échec:', e);
             toast('Export impossible : ' + (e instanceof Error ? e.message : String(e)), { kind: 'error' });

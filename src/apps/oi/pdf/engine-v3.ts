@@ -23,6 +23,7 @@ import type { TDocumentDefinitions } from 'pdfmake/interfaces';
 import { buildOiDocDefinition, oiPdfFileName } from './document-builder.js';
 import { OiPdfFitRefusalError } from './theme.js';
 import { PDF_FONT_VFS, PDF_FONTS } from './fonts.js';
+import { toast } from '@shared/feedback.js';
 import type { OiPdfFormat } from './theme.js';
 import type { OiPdfCollectedData } from '@shared/types/contracts.js';
 
@@ -495,12 +496,10 @@ export async function downloadOiPdfV3(deps?: {
         setTimeout(() => URL.revokeObjectURL(objectUrl), 60000);
 
         console.log(`✅ [SUCCESS] PDF V3 généré en ${((Date.now() - startTime) / 1000).toFixed(2)}s`);
-        if (typeof window.toast === 'function') {
-            window.toast('PDF généré avec succès !', 'success');
-        }
+        toast('PDF généré avec succès !', { kind: 'success' });
     } catch (error) {
         console.error('❌ [CRITICAL V3] PDF Engine Failed:', error);
-        if (typeof window.toast === 'function') {
+        {
             // Mission P1 (directive Nico 2026-08-10) — REFUS DE GÉNÉRATION
             // explicite : `buildOiDocDefinition` lève `OiPdfFitRefusalError`
             // quand au moins un usage (fiche adversaire, bloc ZMSPCP/MOICP,
@@ -510,11 +509,10 @@ export async function downloadOiPdfV3(deps?: {
             // qui masquerait la cause et n'orienterait pas l'utilisateur vers
             // la bonne action : réduire les ATCD/textes concernés).
             if (error instanceof OiPdfFitRefusalError) {
-                window.toast(error.message, 'error');
+                toast(error.message, { kind: 'error' });
             } else {
-                // RÈGLE D'OR (SPEC-PDF-V3.md §2.1) : window.toast, message
-                // IDENTIQUE à pdf-engine-v2.ts:460.
-                window.toast('Erreur de génération. Veuillez consulter les logs.', 'error');
+                // Message IDENTIQUE à pdf-engine-v2.ts (U19 : toast unique).
+                toast('Erreur de génération. Veuillez consulter les logs.', { kind: 'error' });
             }
         }
     } finally {

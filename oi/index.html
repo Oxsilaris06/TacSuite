@@ -14,6 +14,9 @@
 </head>
 
 <body class="dark-mode">
+    <!-- U20 — anti-flash : thème clair appliqué avant le premier rendu (l'init
+         async de main.ts ne le pose qu'à l'étape 9, plusieurs centaines de ms). -->
+    <script>if (localStorage.getItem('theme') === 'light') document.body.classList.add('light-mode');</script>
 
 
     <input type="file" id="sessionFileInput" accept=".json" style="display: none;">
@@ -262,6 +265,8 @@
             <li class="wizard-progress-step" data-action="go-to-step" data-step="6"><span class="material-symbols-outlined wizard-step-icon">directions_car</span>7. PATRACDVR</li>
             <li class="wizard-progress-step" data-action="go-to-step" data-step="7"><span class="material-symbols-outlined wizard-step-icon">check_circle</span>8. Finalisation</li>
         </ul>
+        <!-- U21 — indicateur autosave global (rempli par formulaires.ts, updateAppAutosave) -->
+        <p id="appAutosave" class="app-autosave" aria-live="polite"></p>
 
         <form id="oi-form">
             <div class="wizard-content">
