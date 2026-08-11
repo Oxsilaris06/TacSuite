@@ -68,6 +68,8 @@ function applyTheme(theme: Theme, persist: boolean): void {
   if (persist) {
     try {
       localStorage.setItem(THEME_KEY, theme);
+      // U20 — pont de continuité : les apps (OI/PC-Tac) lisent la clé `theme`.
+      localStorage.setItem('theme', theme);
     } catch {
       // Stockage indisponible : la bascule reste valable pour la session.
     }
