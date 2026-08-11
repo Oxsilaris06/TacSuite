@@ -210,6 +210,8 @@ const PANELS_METHODS = [
     '_openPinColorPanel',
     '_openIconCatalogPanelForEdit',
     '_openEntityPickerPanel',
+    '_openPinPhotoPanel',
+    '_openPinPhotoViewer',
 ];
 
 /** Table §4.14 (text-modal.ts) — 7 méthodes. */
@@ -292,7 +294,7 @@ const ALL_PROPERTIES = [
 
 describe('planmap/index.ts — PlanMap (façade, SPEC-PLANMAP-SPLIT §1.4)', () => {
     it(`expose les ${ALL_METHODS.length} méthodes du littéral d'origine, chacune une fonction`, async () => {
-        expect(ALL_METHODS).toHaveLength(142);
+        expect(ALL_METHODS).toHaveLength(144);
         const { PlanMap } = await import('../../../src/apps/pctac/planmap/index.js');
         const facade = PlanMap as unknown as Record<string, unknown>;
         for (const name of ALL_METHODS) {
@@ -311,8 +313,8 @@ describe('planmap/index.ts — PlanMap (façade, SPEC-PLANMAP-SPLIT §1.4)', () 
         }
     });
 
-    it('membres réellement présents après coupe ping-modal/legacy (142 méthodes + 27 propriétés + 2 constantes)', () => {
-        expect(ALL_METHODS.length + ALL_PROPERTIES.length).toBe(171);
+    it('membres réellement présents après coupe ping-modal/legacy + photo↔ping (144 méthodes + 27 propriétés + 2 constantes)', () => {
+        expect(ALL_METHODS.length + ALL_PROPERTIES.length).toBe(173);
     });
 
     it("aucun nom de méthode n'est partagé entre deux groupes (sinon l'ordre des spreads perdrait silencieusement un membre)", () => {

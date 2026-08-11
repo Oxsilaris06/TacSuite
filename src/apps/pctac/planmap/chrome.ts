@@ -76,9 +76,17 @@ export const ChromeMethods = {
         });
         if (searchClose) searchClose.onclick = () => this._toggleSearchPanel(false);
 
-        // --- Toolbar unifiée : 8 FABs ---
+        // --- Toolbar unifiée : 4 FABs primaires + tiroir « Plus » (U24) ---
         const btnSearch = document.getElementById('plan_btn_search');
         if (btnSearch) btnSearch.onclick = () => this._toggleSearchPanel();
+
+        const btnMore = document.getElementById('plan_btn_more');
+        const moreTools = document.getElementById('plan_more_tools');
+        if (btnMore && moreTools) btnMore.onclick = () => {
+            const open = moreTools.hidden;
+            moreTools.hidden = !open;
+            btnMore.setAttribute('aria-expanded', String(open));
+        };
 
         const btnFs = document.getElementById('plan_btn_fullscreen');
         if (btnFs) btnFs.onclick = () => this._toggleFullscreen();

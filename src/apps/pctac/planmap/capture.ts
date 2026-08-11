@@ -71,9 +71,9 @@ export const CaptureMethods = {
             // `(HTMLElement|null)[]` → `HTMLElement[]` ; la forme fléchée `!!el`
             // produit le même filtrage à l'exécution et permet l'inférence.
         ].filter((el) => !!el);
-        // Les cadenas de verrouillage (pings + dessins) ne doivent pas apparaître à l'export.
+        // Les cadenas de verrouillage (pings + dessins) et badges photo ne doivent pas apparaître à l'export.
         Array.prototype.push.apply(toHide,
-            Array.prototype.slice.call(document.querySelectorAll('.plan-lock-badge')));
+            Array.prototype.slice.call(document.querySelectorAll('.plan-lock-badge, .plan-photo-badge')));
         Array.prototype.push.apply(toHide,
             Array.prototype.slice.call(document.querySelectorAll('.plan-inline-panel')));
         if (this._activeWheel && this._activeWheel.element) toHide.push(this._activeWheel.element);

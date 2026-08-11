@@ -58,6 +58,8 @@ export interface PlanPin {
     locked?: boolean | undefined;
     diameterM?: number | undefined;
     showDiameter?: boolean | undefined;
+    /** Id d'item de la collection `pcTacPhotos` (= clé IndexedDB `ImageStore`). JAMAIS de base64 ici (quota). */
+    photoId?: string | undefined;
 }
 
 export type PlanShapeType = 'line' | 'rectangle' | 'circle' | 'text' | 'measure' | 'measure-rings';
@@ -453,6 +455,8 @@ export interface PlanMapInternal extends PlanMapState, PlanMapContract {
     _openPinColorPanel(pinId: string): void;
     _openIconCatalogPanelForEdit(pinId: string): void;
     _openEntityPickerPanel(lngLat: LngLatObj): void;
+    _openPinPhotoPanel(pinId: string): void;
+    _openPinPhotoViewer(pinId: string): void;
 
     /* --- text-modal.ts (7) --- */
     _openTextModal(targetId: string): void;

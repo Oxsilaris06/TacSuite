@@ -18,9 +18,41 @@
  */
 
 import type { InlinePanelElement, InlinePanelOptions, LngLatObj, PlanEntityKind, PlanMapInternal } from './types.js';
-import { ADVERSARIES_KEY, FRIENDS_KEY, HOSTAGES_KEY, PIN_ICONS, suggestPinIcons } from '@pctac/config.js';
+import { ADVERSARIES_KEY, FRIENDS_KEY, HOSTAGES_KEY, PHOTOS_KEY, PIN_ICONS, suggestPinIcons } from '@pctac/config.js';
 import { Storage } from '@pctac/storage.js';
+import { ImageStore } from '@pctac/image-store.js';
 import { ENTITY_COLORS, escHtml } from './constants.js';
+
+/**
+ * Ouvre PhotoSwipe v5 sur UNE image pleine résolution (photo↔ping, Goal.md §4).
+ * - Sort du fullscreen navigateur d'abord (PhotoSwipe monte son root dans <body>).
+ * - PhotoSwipe exige width/height : l'Image est chargée pour les mesurer.
+ * - Import dynamique (lib + CSS) : rien n'est payé tant qu'on n'ouvre pas.
+ */
+async function openPhotoLightbox(photoId: string): Promise<void> {
+    try {
+        const src = await ImageStore.get(photoId);
+        if (!src) return;
+        if (document.fullscreenElement) {
+            try { await document.exitFullscreen(); } catch { /* best-effort */ }
+        }
+        const dims = await new Promise<{ w: number; h: number }>((resolve, reject) => {
+            const im = new Image();
+            im.onload = (): void => resolve({ w: im.naturalWidth, h: im.naturalHeight });
+            im.onerror = (): void => reject(new Error('image illisible'));
+            im.src = src;
+        });
+        await import('photoswipe/style.css');
+        const { default: PhotoSwipe } = await import('photoswipe');
+        const pswp = new PhotoSwipe({
+            dataSource: [{ src, width: dims.w, height: dims.h }],
+            index: 0,
+        });
+        pswp.init();
+    } catch (e) {
+        console.error('[PlanMap] lightbox photo échec:', e);
+    }
+}
 
 export const PanelsMethods = {
     // ============================================================
@@ -624,6 +656,153 @@ export const PanelsMethods = {
                         });
                         this._closeInlinePanel();
                     };
+                });
+            },
+        });
+    },
+
+    /**
+     * Panneau de sélection d'une photo de la galerie (`pcTacPhotos`) pour un ping.
+     * Calqué sur `_openIconCatalogPanelForEdit` (grille + centerScreen). Le panneau
+     * est synchrone ; les vignettes sont hydratées en async dans `onMount` via
+     * `ImageStore.getMany` (photo↔ping, Goal.md §4).
+     */
+    _openPinPhotoPanel(this: PlanMapInternal, pinId: string): void {
+        const p = this._loadPins().find((x) => x.id === pinId);
+        if (!p) return;
+        const ll = { lng: p.lng, lat: p.lat };
+        const photos = Storage.loadCollection(PHOTOS_KEY);
+        const current = p.photoId || '';
+
+        const tiles = photos.map((ph) => {
+            const title = typeof ph.title === 'string' && ph.title ? ph.title : 'Photo';
+            const on = String(ph.id) === current;
+            return `
+                <button type="button" class="pin-photo-tile" data-id="${escHtml(String(ph.id))}" title="${escHtml(title)}"
+                    style="display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 5px;
+                           border-radius: 8px; cursor: pointer; color: #fff;
+                           background: ${on ? 'rgba(34,197,94,0.22)' : 'rgba(255,255,255,0.06)'};
+                           border: 1px solid ${on ? '#22c55e' : 'rgba(255,255,255,0.18)'};">
+                    <img data-photo-id="${escHtml(String(ph.id))}" alt="${escHtml(title)}" loading="lazy"
+                        style="width: 100%; height: 64px; object-fit: cover; border-radius: 6px; background: rgba(255,255,255,0.06);" />
+                    <span style="font-size: 0.68em; text-align: center; line-height: 1.05; word-break: break-word;">${escHtml(title)}</span>
+                </button>
+            `;
+        }).join('');
+        const removeBtn = current ? `
+            <button type="button" data-act="remove-photo"
+                style="min-height: 38px; border-radius: 8px; cursor: pointer; padding: 0 12px;
+                       background: rgba(239,68,68,0.18); border: 1px solid #ef4444; color: #fff;">
+                Retirer la photo
+            </button>` : '';
+        const html = `
+            <div style="display: flex; flex-direction: column; gap: 8px; width: 300px; max-width: 100%; max-height: 100%; box-sizing: border-box; overflow: hidden;">
+                <strong style="font-size: 13px;">Photo du ping</strong>
+                ${photos.length
+                    ? `<div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(84px, 1fr));
+                            gap: 6px; flex: 1 1 auto; min-height: 60px; max-height: 100%; overflow-y: auto;
+                            touch-action: pan-y; -webkit-overflow-scrolling: touch; padding-right: 2px;">${tiles}</div>`
+                    : `<div style="color: var(--text-muted); font-size: 0.85em;">Aucune photo — ajoute des photos dans l'onglet Photos.</div>`}
+                ${removeBtn}
+            </div>
+        `;
+        this._openInlinePanel(ll, html, {
+            centerScreen: true,
+            onBack: () => this._openPingOptionsWheel(pinId),
+            onMount: (root) => {
+                // Motif de mutation des panneaux existants : load → find → muter → save → render → close.
+                const apply = (photoId: string | undefined): void => {
+                    const list = this._loadPins();
+                    const p2 = list.find((x) => x.id === pinId);
+                    if (p2) {
+                        if (photoId) p2.photoId = photoId;
+                        else delete p2.photoId; // jamais `= undefined` (précédent panels.ts:48)
+                        this._savePins(list);
+                        this._renderPins();
+                    }
+                    this._closeInlinePanel();
+                };
+                // Vignettes async — best-effort, le panneau reste utilisable sans images.
+                void ImageStore.getMany(photos.map((ph) => String(ph.id)))
+                    .then((imgs) => {
+                        root.querySelectorAll<HTMLImageElement>('img[data-photo-id]').forEach((img) => {
+                            const src = imgs[img.dataset.photoId ?? ''];
+                            if (src) img.src = src;
+                        });
+                    })
+                    .catch(() => { /* vignettes best-effort */ });
+                root.querySelectorAll<HTMLButtonElement>('.pin-photo-tile').forEach((b) => {
+                    b.onclick = (): void => apply(b.dataset.id);
+                });
+                const rm = root.querySelector<HTMLButtonElement>('[data-act="remove-photo"]');
+                if (rm) rm.onclick = (): void => apply(undefined);
+            },
+        });
+    },
+
+    /**
+     * Mini-panneau d'affichage à la demande de la photo d'un ping : miniature lazy
+     * + « Plein écran » (PhotoSwipe), « Changer », « Retirer ». Si la photo a été
+     * supprimée de la galerie (orphelin), nettoie proprement le `photoId`.
+     */
+    _openPinPhotoViewer(this: PlanMapInternal, pinId: string): void {
+        const p = this._loadPins().find((x) => x.id === pinId);
+        if (!p || !p.photoId) return;
+        const photoId = p.photoId;
+        const ll = { lng: p.lng, lat: p.lat };
+        const btn = (act: string, icon: string, title: string): string => `
+            <button type="button" data-act="${act}" title="${escHtml(title)}" aria-label="${escHtml(title)}"
+                style="min-width: 40px; min-height: 38px; border-radius: 8px; cursor: pointer; flex: 1;
+                       background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.18);
+                       color: #fff; display: inline-flex; align-items: center; justify-content: center;">
+                <span class="material-symbols-outlined" style="font-size: 20px;">${icon}</span>
+            </button>`;
+        const html = `
+            <div style="display: flex; flex-direction: column; gap: 8px; width: 220px; max-width: 100%;">
+                <img data-pin-photo alt="Photo du ping" loading="lazy"
+                    style="width: 100%; max-height: 160px; object-fit: contain; border-radius: 8px; background: rgba(255,255,255,0.06);" />
+                <div data-photo-missing style="display: none; color: var(--text-muted); font-size: 0.85em;">Photo supprimée</div>
+                <div style="display: flex; gap: 6px;">
+                    ${btn('full', 'fullscreen', 'Plein écran')}
+                    ${btn('change', 'photo_library', 'Changer')}
+                    ${btn('remove', 'delete', 'Retirer')}
+                </div>
+            </div>
+        `;
+        this._openInlinePanel(ll, html, {
+            onMount: (root) => {
+                const img = root.querySelector<HTMLImageElement>('img[data-pin-photo]');
+                const missing = root.querySelector<HTMLElement>('[data-photo-missing]');
+                // Miniature async (jamais de pré-génération — piège perf MapLibre #5656).
+                void ImageStore.get(photoId).then((src) => {
+                    if (!img || !img.isConnected) return;
+                    if (src) { img.src = src; return; }
+                    // Orphelin : photo supprimée de la galerie → message + retrait propre.
+                    img.style.display = 'none';
+                    if (missing) missing.style.display = 'block';
+                    const list = this._loadPins();
+                    const p2 = list.find((x) => x.id === pinId);
+                    if (p2 && p2.photoId) {
+                        delete p2.photoId;
+                        this._savePins(list);
+                        this._renderPins();
+                    }
+                }).catch(() => { /* miniature best-effort */ });
+                const on = (act: string, fn: () => void): void => {
+                    const b = root.querySelector<HTMLButtonElement>(`[data-act="${act}"]`);
+                    if (b) b.onclick = fn;
+                };
+                on('full', () => { void openPhotoLightbox(photoId); });
+                on('change', () => { this._closeInlinePanel(); this._openPinPhotoPanel(pinId); });
+                on('remove', () => {
+                    const list = this._loadPins();
+                    const p2 = list.find((x) => x.id === pinId);
+                    if (p2) {
+                        delete p2.photoId; // jamais `= undefined` (précédent panels.ts:48)
+                        this._savePins(list);
+                        this._renderPins();
+                    }
+                    this._closeInlinePanel();
                 });
             },
         });

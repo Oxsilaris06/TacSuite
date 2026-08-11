@@ -87,6 +87,72 @@ function makeFakeThis(opts: { pins?: PlanPin[]; withMap?: boolean } = {}): { fak
 
 afterEach(() => {
     document.body.innerHTML = '';
+    localStorage.clear();
+});
+
+describe('_openPinPhotoPanel / _openPinPhotoViewer (photo↔ping, Goal.md §4)', () => {
+    beforeEach(() => {
+        vi.useFakeTimers();
+    });
+    afterEach(() => {
+        vi.useRealTimers();
+    });
+
+    it('_openPinPhotoPanel : ne jette pas quand le pin ciblé est absent', () => {
+        const { fake } = makeFakeThis({ pins: [] });
+        expect(() => fake._openPinPhotoPanel('missing')).not.toThrow();
+        expect(document.querySelectorAll('.plan-inline-panel')).toHaveLength(0);
+    });
+
+    it('_openPinPhotoPanel : cliquer une vignette pose photoId, sauve, re-rend et ferme', () => {
+        localStorage.setItem('pcTacPhotos', JSON.stringify([{ id: 'ph1', title: 'Recon' }]));
+        const { fake, mocks, pins } = makeFakeThis({ pins: [makePin({ id: 'p1' })] });
+        fake._openPinPhotoPanel('p1');
+        vi.advanceTimersByTime(50);
+
+        const tile = document.querySelector<HTMLButtonElement>('.plan-inline-panel .pin-photo-tile[data-id="ph1"]');
+        expect(tile).not.toBeNull();
+        tile?.click();
+
+        expect(pins().find((x) => x.id === 'p1')?.photoId).toBe('ph1');
+        expect(mocks.renderPins).toHaveBeenCalled();
+        expect(document.querySelectorAll('.plan-inline-panel')).toHaveLength(0);
+    });
+
+    it('_openPinPhotoPanel : « Retirer la photo » DELETE le photoId (jamais `= undefined`)', () => {
+        localStorage.setItem('pcTacPhotos', JSON.stringify([{ id: 'ph1', title: 'Recon' }]));
+        const { fake, pins } = makeFakeThis({ pins: [makePin({ id: 'p1', photoId: 'ph1' })] });
+        fake._openPinPhotoPanel('p1');
+        vi.advanceTimersByTime(50);
+
+        const rm = document.querySelector<HTMLButtonElement>('.plan-inline-panel [data-act="remove-photo"]');
+        expect(rm).not.toBeNull();
+        rm?.click();
+
+        const p = pins().find((x) => x.id === 'p1');
+        expect(p && 'photoId' in p).toBe(false);
+    });
+
+    it('_openPinPhotoViewer : ne jette pas sans pin ni sans photoId, et n\'ouvre rien', () => {
+        const { fake } = makeFakeThis({ pins: [makePin({ id: 'p1' })] });
+        expect(() => fake._openPinPhotoViewer('missing')).not.toThrow();
+        expect(() => fake._openPinPhotoViewer('p1')).not.toThrow();
+        expect(document.querySelectorAll('.plan-inline-panel')).toHaveLength(0);
+    });
+
+    it('_openPinPhotoViewer : « Retirer » supprime le photoId et ferme le panneau', () => {
+        const { fake, pins } = makeFakeThis({ pins: [makePin({ id: 'p1', photoId: 'ph1' })] });
+        fake._openPinPhotoViewer('p1');
+        vi.advanceTimersByTime(50);
+
+        const rm = document.querySelector<HTMLButtonElement>('.plan-inline-panel [data-act="remove"]');
+        expect(rm).not.toBeNull();
+        rm?.click();
+
+        const p = pins().find((x) => x.id === 'p1');
+        expect(p && 'photoId' in p).toBe(false);
+        expect(document.querySelectorAll('.plan-inline-panel')).toHaveLength(0);
+    });
 });
 
 describe('_closeInlinePanel (planMap.js:3745)', () => {

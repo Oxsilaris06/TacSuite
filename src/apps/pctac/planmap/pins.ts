@@ -57,6 +57,21 @@ import type {
     ResolvedPin,
 } from './types.js';
 
+/**
+ * C5 (Goal.md §3) — journal auto des actions carte : trace la pose/suppression
+ * d'un pin d'ENTITÉ dans la main courante. Fire-and-forget : la journalisation
+ * ne doit JAMAIS casser le flux carte (try/catch silencieux + garde de contrat).
+ */
+function logMapAction(remarques: string): void {
+    try {
+        const lm = window.LogManager;
+        if (typeof lm?.addEntry !== 'function') return;
+        const d = new Date();
+        const heure = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+        lm.addEntry({ mode: 'free', pax: 'Carte', heure, remarques });
+    } catch { /* silencieux — cf. ci-dessus */ }
+}
+
 export const PinsMethods = {
     // planMap.js:1156-1188
     _onMapClick(this: PlanMapInternal, e: MapMouseEvent): void {
@@ -99,13 +114,19 @@ export const PinsMethods = {
         pins.push(pin);
         this._savePins(pins);
         this._renderPins();
+        // C5 : pose d'un pin d'entité → main courante (jamais bloquant).
+        if (pin.entityRef) logMapAction(`Ping posé : ${this._resolvePin(pin).label}`);
     },
 
     // planMap.js:1197-1201
     _removePin(this: PlanMapInternal, id: string): void {
-        const pins = this._loadPins().filter(p => p.id !== id);
+        const all = this._loadPins();
+        const gone = all.find(p => p.id === id);
+        const pins = all.filter(p => p.id !== id);
         this._savePins(pins);
         this._renderPins();
+        // C5 : suppression d'un pin d'entité → main courante (jamais bloquant).
+        if (gone?.entityRef) logMapAction(`Ping retiré : ${this._resolvePin(gone).label}`);
     },
 
     // planMap.js:1203-1207
@@ -164,6 +185,9 @@ export const PinsMethods = {
             text,
             pin.locked ? 1 : 0,
             this._locked ? 1 : 0,
+            // photo↔ping (Goal.md §4) : sans ce champ, la réconciliation ne
+            // redessine jamais le pin après ajout/retrait de photo (branche no-op).
+            pin.photoId || '',
         ].join('|');
     },
 
@@ -281,6 +305,33 @@ export const PinsMethods = {
             this._makeLockBadge(locked, () => this._togglePinLock(pinId, false), 'corner'),
         );
 
+        // Badge photo (photo↔ping, Goal.md §4) : coin bas-gauche LIBRE (le cadenas
+        // occupe top/right). `position:absolute` sur le badge lui-même — INVARIANT 1 :
+        // jamais de `position:`/`inset:` dans le cssText de pinWrap.
+        if (pin.photoId) {
+            const pb = document.createElement('span');
+            pb.className = 'plan-photo-badge material-symbols-outlined';
+            pb.textContent = 'photo_camera';
+            pb.title = 'Voir la photo';
+            pb.setAttribute('aria-label', pb.title);
+            pb.style.cssText = 'position:absolute; bottom:-7px; left:-7px; font-size:13px; padding:2px;'
+                + ' line-height:1; cursor:pointer; pointer-events:auto; user-select:none;'
+                + ' color:#38bdf8; background:rgba(15,18,24,0.95);'
+                + ' box-shadow:0 1px 3px rgba(0,0,0,0.6); border-radius:50%; z-index:3;';
+            // INVARIANT 2a : les 3 stopPropagation obligatoires, sinon le tap
+            // déclenche le drag natif du marker.
+            const stop = (e: Event): void => { e.stopPropagation(); };
+            pb.addEventListener('pointerdown', stop);
+            pb.addEventListener('mousedown', stop);
+            pb.addEventListener('touchstart', stop, { passive: true });
+            pb.addEventListener('click', this._safe((e: MouseEvent) => {
+                e.stopPropagation();
+                e.preventDefault();
+                this._openPinPhotoViewer(pinId);
+            }, 'photoBadge:click'));
+            pinWrap.appendChild(pb);
+        }
+
         // L'ancre dépend du type → si elle change, on doit la réappliquer.
         const anchor = (customIcon || isVehicle) ? 'center' : 'bottom';
         if (entry.pinMarker && entry._anchor !== anchor) {
@@ -390,7 +441,7 @@ export const PinsMethods = {
                 this._openPingOptionsWheel(entry.pin.id);
             },
         }, {
-            isExcluded: (target) => !!(target instanceof Element && target.closest('.plan-lock-badge')),
+            isExcluded: (target) => !!(target instanceof Element && target.closest('.plan-lock-badge, .plan-photo-badge')),
             safe: (fn, label) => this._safe(fn, label),
             extraTouchTargets: [entry.labelEl],
         });

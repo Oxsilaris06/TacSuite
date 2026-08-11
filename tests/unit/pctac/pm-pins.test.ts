@@ -227,6 +227,14 @@ describe('_pinSignature — INVARIANT 2b (SPEC-PLANMAP-SPLIT §5.3) : verrou par
         expect(sigB).not.toBe(sigA);
     });
 
+    it('change quand pin.photoId change (photo↔ping, Goal.md §4 — piège 1 : sans ce champ, badge jamais redessiné)', () => {
+        const fake = makeFakeThis();
+        const pin = makePin({ id: 'p1' });
+        const sigBefore = PinsMethods._pinSignature.call(fake, pin);
+        const sigAfter = PinsMethods._pinSignature.call(fake, { ...pin, photoId: 'ph1' });
+        expect(sigAfter).not.toBe(sigBefore);
+    });
+
     it('ne change PAS pour un pin strictement identique (rendu stable, zéro jank)', () => {
         const fake = makeFakeThis();
         const pin = makePin({ id: 'p1' });

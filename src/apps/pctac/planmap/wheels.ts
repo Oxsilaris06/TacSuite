@@ -214,6 +214,14 @@ export const WheelsMethods = {
                 action: () => this._openPinColorPanel(pinId),
             },
             {
+                id: 'photo',
+                icon: 'photo_camera',
+                label: pin.photoId ? 'Changer photo' : 'Photo',
+                color: '#fff',
+                bg: 'rgba(14,165,233,0.95)',
+                action: () => this._openPinPhotoPanel(pinId),
+            },
+            {
                 id: 'lock',
                 icon: pin.locked ? 'lock' : 'lock_open',
                 label: pin.locked ? 'Déverrouiller' : 'Verrouiller',

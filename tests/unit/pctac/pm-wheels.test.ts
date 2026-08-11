@@ -311,7 +311,7 @@ describe('wheels.ts — _openPingOptionsWheel (planMap.js:3648-3724)', () => {
         expect(fake._activeWheel).toBeNull();
     });
 
-    it('ping trouvé → ouvre la roue, titre = label||kind||\'Ping\', 7 options (planMap.js:3656-3723)', () => {
+    it('ping trouvé → ouvre la roue, titre = label||kind||\'Ping\', 8 options (7 d\'origine + photo) (planMap.js:3656-3723)', () => {
         const { fake, pins } = makeFakeThis();
         pins.push({ id: 'p1', lng: 1, lat: 2, label: 'Sentinelle', locked: false });
 
@@ -320,7 +320,7 @@ describe('wheels.ts — _openPingOptionsWheel (planMap.js:3648-3724)', () => {
         expect(fake._activeWheel).not.toBeNull();
         const wrap = document.body.querySelector('.plan-wheel');
         expect(wrap?.textContent).toContain('Sentinelle');
-        expect(wrap?.querySelectorAll('button').length).toBe(1 + 7);
+        expect(wrap?.querySelectorAll('button').length).toBe(1 + 8);
     });
 
     it('titre replié sur kind puis "Ping" quand label absent (planMap.js:3719)', () => {
