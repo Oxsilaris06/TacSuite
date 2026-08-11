@@ -3,6 +3,8 @@
 > **Révision 2 — 2026-08-11**, ré-audit complet après livraison intégrale de la roadmap R0→R6 (HEAD `0268d27`). Lecture seule, aucun code modifié.
 > Méthode : 3 ré-audits délégués en parallèle (UI/UX PC-Tac, UI/UX OI + design system, carto/photos/persistance) avec vérification vrai/faux de chaque constat de la révision 1 contre le code réel, + recherche web des solutions intégrables (conservée, toujours valide). Croisés avec graphify et `state.md`.
 > Cadre : applications tactiques à visée institutionnelle — chaque suggestion vise la vitesse et la précision du traitement de l'information, ou la robustesse d'usage. Rien de décoratif.
+>
+> **STATUT (2026-08-11, commits locaux d440d07→4a71293, rien poussé)** : ✅ **livrés** — étape 0 (coupes §8 hors arbitrage : deps qrcodejs/html5-qrcode, .gitignore, legacy.ts, ping-modal, setPaxMode+refs, tuto Dashboard, medias morts, CSS pingModal) et les **14 quick wins S** (U1-U14). U1 réalisé via la roue (option « Entité »), pas la modale (supprimée). U2 : loupe + bouton tri (inversion par heure) intégrés à l'en-tête du tableau journal, bandeau de recherche au-dessus du tableau. Gate : typecheck 0, lint 0, vitest 1835/1835. **Restent** : tranches M (U15-U26, photo↔ping §4, C1/C5/C8), structurel (U27-U33), carte séparée différée.
 
 ---
 
@@ -224,8 +226,8 @@ Fiches actuelles — Adversaire : photo + 8 champs (`index.html:118-145`, nom, p
 
 ## 7. Matrice récapitulative effort × ROI
 
-### ROI fort / effort S — 14 quick wins
-U1 pin d'entité via roue · U2 recherche journal · U3 confirm suppression log · U4 conflit tri/drag · U5 tokens OI cassés · U6 alert() presentation (bug) · U7 aria-labelledby OI · U8 dock clavier · U9 confirm photo OI · U10 aria onglets/stepper · U11 états vides · U12 toasts erreurs/succès · U13 fiche Ami éditable · U14 libellés exacts
+### ROI fort / effort S — 14 quick wins — ✅ TOUS LIVRÉS (2026-08-11)
+U1 pin d'entité via roue · U2 recherche journal (+ tri par heure, en-tête tableau) · U3 confirm suppression log · U4 conflit tri/drag (drag supprimé, tri = vérité) · U5 tokens OI cassés · U6 alert() presentation (bug corrigé : refus = pas de PDF) · U7 aria-labelledby OI · U8 dock clavier · U9 confirm photo OI · U10 aria onglets/stepper · U11 états vides · U12 toasts erreurs/succès · U13 fiche Ami éditable · U14 libellés exacts
 
 ### ROI fort / effort M
 **Photo↔ping (§4)** · U15 date d'opération · U16/C1 statut sur fiche + PDF + pin · U17 stepper honnête · U18 validation généralisée · U19 toast unique · U20 thème unifié + anti-flash · U21 indicateur autosave · U22 raccourcis · U23 en-tête de mission · U24 toolbar/dock réorganisés · U25 promptDialog · U26 états de chargement · C5 journalisation auto · C8 lien adv↔otage
@@ -241,6 +243,8 @@ C6-C7, C9-C10 · U27-U33 (dock partagé, typo tokenisée, spécificité oi.css, 
 ## 8. Coupes nettes (audit over-engineering, 2026-08-11)
 
 Suppressions pures — zéro risque fonctionnel sauf mention contraire, **~1 400 lignes et 2 dépendances** récupérables. Chaque coupe rend les chantiers §2-§5 moins chers (moins de code à migrer, thémer, auditer).
+
+> ✅ **TOUT LIVRÉ (2026-08-11)** sauf les items « = U19/U27/U28 » (tranches M/L à venir). Tests morts associés (pm-pingmodal, pm-legacy, bloc getAdversaryImageInfo) supprimés ou adaptés.
 
 ### Dépendances mortes (effort S, gain immédiat)
 | Coupe | Preuve | Remplacement |
@@ -270,8 +274,8 @@ Suppressions pures — zéro risque fonctionnel sauf mention contraire, **~1 400
 | commentaires/libellés mensongers (« 6 FABs », tooltip FAB Ping) | = U14 |
 
 ### Séquence suggérée
-0. **Coupes §8 sans dépendance** (½ journée) — deps mortes, `.gitignore`, code mort hors pingModal : allège tout ce qui suit
-1. **Quick wins S** (~2 jours cumulés) — U1 d'abord : débloque C2, le lien fiche↔carte, **et** la coupe pingModal (§8)
+0. ✅ **Coupes §8 sans dépendance** — fait (2026-08-11)
+1. ✅ **Quick wins S** — fait (2026-08-11, U1 via roue + coupe pingModal incluse)
 2. **Photo↔ping (§4) + U16/C1 + C5** — même zone de code, synergie forte : pin nommé + statut + photo + journal auto = le pin devient l'objet opérationnel central. Lightbox = PhotoSwipe v5 (arbitré desktop+mobile)
 3. **Structurel M restant** (U15, U17-U26) par tranches verticales
 4. *(différé)* Carte onglet séparé — reprendre le design §5 quand le chantier sera relancé
