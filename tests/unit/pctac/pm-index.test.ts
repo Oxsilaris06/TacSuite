@@ -93,18 +93,6 @@ const CHROME_METHODS = [
     '_hideHint',
 ];
 
-/** Table §4.5 (ping-modal.ts) — 8 méthodes. */
-const PING_MODAL_METHODS = [
-    '_openPingModal',
-    '_closePingModal',
-    '_renderPingEntities',
-    '_setSelectedIcon',
-    '_refreshIconSuggestions',
-    '_renderIconCatalog',
-    '_bindIconPickerOnce',
-    '_armFreePinPlacement',
-];
-
 /** Table §4.6 (pins.ts) — 15 méthodes (dont `getPinsSummary` du contrat public). */
 const PINS_METHODS = [
     '_onMapClick',
@@ -221,6 +209,7 @@ const PANELS_METHODS = [
     '_openIconCatalogPanel',
     '_openPinColorPanel',
     '_openIconCatalogPanelForEdit',
+    '_openEntityPickerPanel',
 ];
 
 /** Table §4.14 (text-modal.ts) — 7 méthodes. */
@@ -246,26 +235,11 @@ const AOI_METHODS = [
     '_createAoiProgressBar',
 ];
 
-/** Table §4.17 (legacy.ts) — 10 méthodes (code mort interne, conservé verbatim). */
-const LEGACY_METHODS = [
-    '_onShapeClick',
-    '_renderFloatingToolbar',
-    '_startTransform',
-    '_startMoveShape',
-    '_startResizeShape',
-    '_endMoveShape',
-    '_cancelMoveShape',
-    '_teardownMove',
-    '_showTransformToolbar',
-    '_hideTransformToolbar',
-];
-
 const ALL_METHODS = [
     ...STATE_METHODS,
     ...GEO_METHODS,
     ...MAP_CORE_METHODS,
     ...CHROME_METHODS,
-    ...PING_MODAL_METHODS,
     ...PINS_METHODS,
     ...DRAW_LAYERS_METHODS,
     ...DRAW_TOOLS_METHODS,
@@ -277,7 +251,6 @@ const ALL_METHODS = [
     ...TEXT_MODAL_METHODS,
     ...CAPTURE_METHODS,
     ...AOI_METHODS,
-    ...LEGACY_METHODS,
 ];
 
 /**
@@ -319,7 +292,7 @@ const ALL_PROPERTIES = [
 
 describe('planmap/index.ts — PlanMap (façade, SPEC-PLANMAP-SPLIT §1.4)', () => {
     it(`expose les ${ALL_METHODS.length} méthodes du littéral d'origine, chacune une fonction`, async () => {
-        expect(ALL_METHODS).toHaveLength(159);
+        expect(ALL_METHODS).toHaveLength(142);
         const { PlanMap } = await import('../../../src/apps/pctac/planmap/index.js');
         const facade = PlanMap as unknown as Record<string, unknown>;
         for (const name of ALL_METHODS) {
@@ -338,8 +311,8 @@ describe('planmap/index.ts — PlanMap (façade, SPEC-PLANMAP-SPLIT §1.4)', () 
         }
     });
 
-    it('189 membres visés par SPEC-PLANMAP-SPLIT §0 ⇒ 188 réellement présents dans planMap.js (159 + 27 + 2, écart de comptage du document déjà signalé par pm-core.test.ts)', () => {
-        expect(ALL_METHODS.length + ALL_PROPERTIES.length).toBe(188);
+    it('membres réellement présents après coupe ping-modal/legacy (142 méthodes + 27 propriétés + 2 constantes)', () => {
+        expect(ALL_METHODS.length + ALL_PROPERTIES.length).toBe(171);
     });
 
     it("aucun nom de méthode n'est partagé entre deux groupes (sinon l'ordre des spreads perdrait silencieusement un membre)", () => {

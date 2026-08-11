@@ -255,7 +255,6 @@ export interface PlanMapState {
     /* --- 28 propriétés créées à l'exécution (hors littéral) --- */
     _searchSeq: number;                     // :834
     pendingEntityPin: PlanEntityRef | null; // :1022, 1150, 1165
-    _iconPickerBound: boolean;              // :1115
     _pinCircleFeatures: PinCircleFeature[] | null;   // :1386-1400, 1598
     _pinDiameterLabels: Record<string, Marker> | null; // :1427, 1600, 1623
     _pinDecoMarkers: Marker[] | null;       // :1571-1572, 1622
@@ -348,16 +347,6 @@ export interface PlanMapInternal extends PlanMapState, PlanMapContract {
     _toggleDrawDock(force?: boolean): void;
     _showHint(msg: string): void;
     _hideHint(): void;
-
-    /* --- ping-modal.ts (8) --- */
-    _openPingModal(): void;
-    _closePingModal(): void;
-    _renderPingEntities(): void;
-    _setSelectedIcon(iconId: string, iconLabel: string): void;
-    _refreshIconSuggestions(labelText: string): void;
-    _renderIconCatalog(filterText: string): void;
-    _bindIconPickerOnce(): void;
-    _armFreePinPlacement(): void;
 
     /* --- pins.ts (15, dont getPinsSummary déjà hérité) --- */
     _onMapClick(e: MapMouseEvent): void;
@@ -463,6 +452,7 @@ export interface PlanMapInternal extends PlanMapState, PlanMapContract {
     _openIconCatalogPanel(lngLat: LngLatObj): void;
     _openPinColorPanel(pinId: string): void;
     _openIconCatalogPanelForEdit(pinId: string): void;
+    _openEntityPickerPanel(lngLat: LngLatObj): void;
 
     /* --- text-modal.ts (7) --- */
     _openTextModal(targetId: string): void;
@@ -482,16 +472,4 @@ export interface PlanMapInternal extends PlanMapState, PlanMapContract {
     _confirmAoi(bbox: GeoBBox): Promise<void>;
     _runAoiDownload(bbox: GeoBBox, minZ: number, maxZ: number, templates: readonly TileTemplate[], estTotal: number): Promise<void>;
     _createAoiProgressBar(estTotal: number): AoiProgressUi;
-
-    /* --- legacy.ts (10, code mort interne — cf. SPEC-PLANMAP-SPLIT §7) --- */
-    _onShapeClick(e: MapLayerMouseEvent): void;
-    _renderFloatingToolbar(): void;
-    _startTransform(opts: TransformOptions): void;
-    _startMoveShape(shapeId: string, anchorLngLat: LngLatTuple): void;
-    _startResizeShape(shapeId: string): void;
-    _endMoveShape(): void;
-    _cancelMoveShape(): void;
-    _teardownMove(): void;
-    _showTransformToolbar(message: string): void;
-    _hideTransformToolbar(): void;
 }

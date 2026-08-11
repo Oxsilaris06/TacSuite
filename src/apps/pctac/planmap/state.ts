@@ -58,7 +58,6 @@ export function createPlanMapState(): PlanMapState {
          * lecture de l'original : `undefined` → falsy). */
         _searchSeq: 0,                     // :834
         pendingEntityPin: null,            // :1022, 1150, 1165
-        _iconPickerBound: false,           // :1115
         _pinCircleFeatures: null,          // :1386-1400, 1598
         _pinDiameterLabels: null,          // :1427, 1600, 1623
         _pinDecoMarkers: null,             // :1571-1572, 1622

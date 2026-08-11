@@ -1,12 +1,12 @@
 /**
- * chrome.ts — Toolbar 6 FABs, plein écran, recherche Nominatim, marqueur de
+ * chrome.ts — Toolbar 8 FABs, plein écran, recherche Nominatim, marqueur de
  * recherche, dock de dessin, hint (P2.CONV, paquet `pm-chrome`).
  * ===========================================================================
  *
  * Port TypeScript VERBATIM des 9 méthodes « CHROME » de `modules/pctac/planMap.js`
  * (GStart-main, lecture seule) :
- *   - `_bindUi`               (:695)  — câblage des 6 FABs, du bandeau de
- *     recherche et de la modale Ping (sélecteur couleur OTAN)
+ *   - `_bindUi`               (:695)  — câblage des 8 FABs et du bandeau de
+ *     recherche
  *   - `_toggleFullscreen`     (:769)
  *   - `_updateFullscreenIcon` (:782)
  *   - `_toggleSearchPanel`    (:798)
@@ -76,7 +76,7 @@ export const ChromeMethods = {
         });
         if (searchClose) searchClose.onclick = () => this._toggleSearchPanel(false);
 
-        // --- Toolbar unifiée : 6 FABs ---
+        // --- Toolbar unifiée : 8 FABs ---
         const btnSearch = document.getElementById('plan_btn_search');
         if (btnSearch) btnSearch.onclick = () => this._toggleSearchPanel();
 
@@ -117,33 +117,6 @@ export const ChromeMethods = {
         const aoiBtn = document.getElementById('plan_btn_aoi');
         if (aoiBtn) aoiBtn.onclick = () => this._startAoiFraming();
 
-        // --- Modale Ping hybride ---
-        const pingClose = document.getElementById('pingModalCloseBtn');
-        if (pingClose) pingClose.onclick = () => this._closePingModal();
-        const freePinConfirm = document.getElementById('freePinConfirmBtn');
-        if (freePinConfirm) freePinConfirm.onclick = () => this._armFreePinPlacement();
-
-        // Sélecteur de couleur OTAN dans la modale
-        const colorSelect = document.getElementById('free_pin_color_select');
-        if (colorSelect) {
-            colorSelect.querySelectorAll<HTMLElement>('.pax-select-option').forEach((btn) => {
-                btn.onclick = () => {
-                    colorSelect.querySelectorAll<HTMLElement>('.pax-select-option').forEach((b) => {
-                        b.classList.remove('selected');
-                        b.style.background = '';
-                        b.style.color = '';
-                    });
-                    btn.classList.add('selected');
-                    btn.style.background = String(btn.dataset.color);
-                    btn.style.color = ['#eab308', '#22c55e', '#94a3b8'].includes(String(btn.dataset.color)) ? '#000' : '#fff';
-                    (document.getElementById('free_pin_color') as HTMLInputElement).value = String(btn.dataset.color);
-                    (document.getElementById('free_pin_kind') as HTMLInputElement).value = String(btn.dataset.kind);
-                };
-            });
-            // Sélection par défaut : Inter (bleu)
-            const def = colorSelect.querySelector<HTMLElement>('[data-kind="Inter"]');
-            if (def) def.click();
-        }
     },
 
     /** Passe le conteneur de carte en plein écran (ou en sort) */

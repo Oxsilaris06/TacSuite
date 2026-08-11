@@ -24,7 +24,7 @@ import { SafeMethods, createPlanMapState } from '../../../src/apps/pctac/planmap
 import type { PlanMapInternal } from '../../../src/apps/pctac/planmap/types.js';
 
 describe('state.ts — createPlanMapState() (planMap.js:301-328 + ad hoc §3.2)', () => {
-    it('retourne exactement les 58 clés attendues, avec les bonnes valeurs initiales', () => {
+    it('retourne exactement les 57 clés attendues, avec les bonnes valeurs initiales', () => {
         const s = createPlanMapState();
 
         // Décompte exhaustif : 27 (littéral, planMap.js:302-328 — vérifié par lecture
@@ -67,7 +67,6 @@ describe('state.ts — createPlanMapState() (planMap.js:301-328 + ad hoc §3.2)'
                 // 28 propriétés ad hoc
                 '_searchSeq',
                 'pendingEntityPin',
-                '_iconPickerBound',
                 '_pinCircleFeatures',
                 '_pinDiameterLabels',
                 '_pinDecoMarkers',
@@ -100,7 +99,7 @@ describe('state.ts — createPlanMapState() (planMap.js:301-328 + ad hoc §3.2)'
                 'persistence',
             ].sort(),
         );
-        expect(Object.keys(s)).toHaveLength(58);
+        expect(Object.keys(s)).toHaveLength(57);
     });
 
     it('`persistence` : adapter fonctionnel posé par défaut (mission R3-c) — round-trip pins/shapes via localStorage', () => {
@@ -157,7 +156,6 @@ describe('state.ts — createPlanMapState() (planMap.js:301-328 + ad hoc §3.2)'
         expect(s._searchSeq).toBe(0);
         expect(s._wheelJustClosed).toBe(0);
         // false pour tout booléen
-        expect(s._iconPickerBound).toBe(false);
         expect(s._pinDiameterSrc).toBe(false);
         expect(s.drawPrecisionMode).toBe(false);
         expect(s._textModalBound).toBe(false);

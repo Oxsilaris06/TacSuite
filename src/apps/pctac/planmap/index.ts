@@ -25,11 +25,9 @@ import { ChromeMethods } from './chrome.js';
 import { DrawLayersMethods } from './draw-layers.js';
 import { DrawToolsMethods } from './draw-tools.js';
 import { GeoMethods } from './geo.js';
-import { LegacyMethods } from './legacy.js';
 import { MapCoreMethods } from './map-core.js';
 import { MeasureMethods } from './measure.js';
 import { PanelsMethods } from './panels.js';
-import { PingModalMethods } from './ping-modal.js';
 import { PinsMethods } from './pins.js';
 import { createPlanMapState, SafeMethods } from './state.js';
 import { ShapesGesturesMethods } from './shapes-gestures.js';
@@ -51,7 +49,6 @@ export const PlanMap: PlanMapInternal = {
     ...GeoMethods,
     ...MapCoreMethods,
     ...ChromeMethods,
-    ...PingModalMethods,
     ...PinsMethods,
     ...DrawLayersMethods,
     ...DrawToolsMethods,
@@ -63,7 +60,6 @@ export const PlanMap: PlanMapInternal = {
     ...TextModalMethods,
     ...CaptureMethods,
     ...AoiMethods,
-    ...LegacyMethods,
 };
 
 // planMap.js:5596 — VERBATIM : la façade est posée au SCOPE MODULE.

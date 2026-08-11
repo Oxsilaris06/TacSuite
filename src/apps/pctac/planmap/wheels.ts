@@ -102,6 +102,14 @@ export const WheelsMethods = {
             action: () => this._quickPlacePing(lngLat, o, o.icon),
         }));
         opts.push({
+            id: 'entity',
+            icon: 'groups',
+            label: 'Entité',
+            color: '#fff',
+            bg: '#7c3aed',
+            action: () => this._openEntityPickerPanel(lngLat),
+        });
+        opts.push({
             id: 'catalog',
             icon: 'apps',
             label: 'Catalogue',

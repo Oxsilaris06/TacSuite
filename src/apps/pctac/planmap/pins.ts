@@ -144,8 +144,7 @@ export const PinsMethods = {
         }
         // `pin.label`/`pin.color` sont optionnels dans `PlanPin` (données historiques
         // + `noUncheckedIndexedAccess`/`exactOptionalPropertyTypes`) mais toujours
-        // renseignés pour un ping libre (posé par `_armFreePinPlacement`/
-        // `_quickPlacePing`) — repli `''` neutre en observable (même principe que
+        // renseignés pour un ping libre (posé par `_quickPlacePing`) — repli `''` neutre en observable (même principe que
         // `coordAt`, SPEC-PLANMAP-SPLIT.md §6.3).
         return { label: pin.label ?? '', color: pin.color ?? '', kind: pin.kind || 'libre' };
     },

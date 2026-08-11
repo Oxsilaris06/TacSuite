@@ -224,7 +224,7 @@ describe('wheels.ts — _otanColors (planMap.js:3572-3583)', () => {
 });
 
 describe('wheels.ts — _openCreatePingWheel (planMap.js:3591-3626)', () => {
-    it('ouvre une roue avec titre "Nouveau ping" et 7 options (5 OTAN + catalogue + copier coords)', () => {
+    it('ouvre une roue avec titre "Nouveau ping" et 8 options (5 OTAN + entité + catalogue + copier coords)', () => {
         const { fake } = makeFakeThis();
 
         WheelsMethods._openCreatePingWheel.call(fake, { lng: 2.35, lat: 48.85 });
@@ -233,7 +233,7 @@ describe('wheels.ts — _openCreatePingWheel (planMap.js:3591-3626)', () => {
         expect(activeWheel.element).not.toBeNull();
         const wrap = document.body.querySelector('.plan-wheel');
         expect(wrap).not.toBeNull();
-        expect(assertNonNull(wrap).querySelectorAll('button').length).toBe(1 + 7); // bouton central + 7 options
+        expect(assertNonNull(wrap).querySelectorAll('button').length).toBe(1 + 8); // bouton central + 8 options
     });
 
     it('un second appel ferme la roue précédente avant d\'en ouvrir une nouvelle (via le vrai _closeWheel)', () => {

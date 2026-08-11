@@ -17,8 +17,10 @@
  * (lecture seule).
  */
 
-import type { InlinePanelElement, InlinePanelOptions, LngLatObj, PlanMapInternal } from './types.js';
-import { PIN_ICONS, suggestPinIcons } from '@pctac/config.js';
+import type { InlinePanelElement, InlinePanelOptions, LngLatObj, PlanEntityKind, PlanMapInternal } from './types.js';
+import { ADVERSARIES_KEY, FRIENDS_KEY, HOSTAGES_KEY, PIN_ICONS, suggestPinIcons } from '@pctac/config.js';
+import { Storage } from '@pctac/storage.js';
+import { ENTITY_COLORS, escHtml } from './constants.js';
 
 export const PanelsMethods = {
     // ============================================================
@@ -564,6 +566,66 @@ export const PanelsMethods = {
                 renderGrid('');
                 fi.addEventListener('input', () => renderGrid(fi.value));
             }
+        });
+    },
+
+    /**
+     * Panneau inline listant les entités (adversaires/otages/amis) PAS ENCORE
+     * placées sur la carte. Clic sur une entité → pose immédiate du pin lié à
+     * `ll` (même mécanique que la branche `pendingEntityPin` de
+     * `pins._onMapClick`). Logique « placé » déplacée de l'ex-ping-modal.ts
+     * (`_renderPingEntities`, supprimé).
+     */
+    _openEntityPickerPanel(this: PlanMapInternal, ll: LngLatObj): void {
+        const pins = this._loadPins();
+        const placedIds = new Set(pins.filter((p) => p.entityRef).map((p) => `${p.entityRef?.kind}:${p.entityRef?.id}`));
+
+        const block = (title: string, items: ReturnType<typeof Storage.loadCollection>, kind: PlanEntityKind, color: string): string => {
+            const unplaced = items.filter((it) => !placedIds.has(`${kind}:${it.id}`));
+            if (!unplaced.length) return '';
+            return `
+                <div style="margin-bottom: 8px;">
+                    <div style="font-size: 0.7em; color: var(--text-muted); text-transform: uppercase; margin-bottom: 4px;">${escHtml(title)}</div>
+                    ${unplaced.map((it) => {
+                        const nom = typeof it.nom === 'string' ? it.nom : '';
+                        const prenom = typeof it.prenom === 'string' ? it.prenom : '';
+                        const unite = typeof it.unite === 'string' ? it.unite : '';
+                        const label = `${nom} ${prenom}`.trim() || unite || '(sans nom)';
+                        return `
+                            <div class="plan-entity-item" data-kind="${kind}" data-id="${escHtml(String(it.id))}"
+                                 style="display: flex; align-items: center; gap: 6px; padding: 8px 8px; border-radius: 4px; cursor: pointer; background: rgba(255,255,255,0.03); border-left: 3px solid ${color};">
+                                <span style="flex: 1; font-size: 0.9em;">${escHtml(label)}</span>
+                            </div>
+                        `;
+                    }).join('')}
+                </div>
+            `;
+        };
+
+        const html =
+            '<strong style="font-size: 13px;">Placer une entité</strong>' +
+            (block('Adversaires', Storage.loadCollection(ADVERSARIES_KEY), 'adv', ENTITY_COLORS.adv) +
+             block('Otages', Storage.loadCollection(HOSTAGES_KEY), 'host', ENTITY_COLORS.host) +
+             block('Amis / Unités', Storage.loadCollection(FRIENDS_KEY), 'friend', ENTITY_COLORS.friend) ||
+             '<div style="color: var(--text-muted); font-size: 0.85em; padding: 6px;">Aucune entité à placer. Ajoute des adversaires/otages/amis dans leurs onglets respectifs.</div>');
+
+        this._openInlinePanel(ll, `<div style="max-height: 50vh; overflow-y: auto; min-width: 220px;">${html}</div>`, {
+            onMount: (root) => {
+                root.querySelectorAll<HTMLElement>('.plan-entity-item').forEach((el) => {
+                    el.onclick = () => {
+                        // dataset posés juste au-dessus par block() — cast de typage pur.
+                        const kind = el.dataset.kind as PlanEntityKind;
+                        const id = el.dataset.id ?? '';
+                        this._addPin({
+                            id: `${kind}_${id}_${Date.now()}`,
+                            entityRef: { kind, id },
+                            lng: ll.lng,
+                            lat: ll.lat,
+                        });
+                        this._closeInlinePanel();
+                    };
+                });
+            },
         });
     },
 };

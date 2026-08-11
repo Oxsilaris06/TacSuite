@@ -69,8 +69,6 @@ function createFakePlanMap(overrides: Record<string, unknown> = {}): {
         _openCreatePingWheel: vi.fn(),
         _toggleStreetLabels: vi.fn(),
         _startAoiFraming: vi.fn(),
-        _closePingModal: vi.fn(),
-        _armFreePinPlacement: vi.fn(),
         ...overrides,
     };
 
