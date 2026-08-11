@@ -123,8 +123,6 @@ declare global {
         QrSync?: QrSyncContract | undefined;
 
         /* --- binds individuels de ui.js:885-890 (utilisés par les onclick) --- */
-        /** `UI.setPaxMode` bindé (ui.js:885). */
-        setPaxMode: UIContract['setPaxMode'];
         /** `UI.openEditModal` bindé (ui.js:886) — consommé par ui.js:214 (`innerHTML`). */
         openEditModal: UIContract['openEditModal'];
         /** `UI.switchMainView` bindé (ui.js:887). */

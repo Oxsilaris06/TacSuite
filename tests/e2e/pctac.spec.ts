@@ -257,58 +257,16 @@ test.describe('PC-Tac — Checklist fonctionnelle (docs/recon-pctac.md §6)', ()
     await step("suppression d'une entrée", async () => {
       const row = page.locator('#logTable tbody tr', { hasText: 'Entrée B — E2E' });
       await row.locator('button.delete-btn, .delete-btn').click();
+      // U3 : deleteLogEntry passe désormais par confirmDialog() (danger:true).
+      await clickConfirmDialogOk(page);
       await expect
         .soft(page.locator('#logTable tbody tr', { hasText: 'Entrée B — E2E' }))
         .toHaveCount(0, { timeout: 1500 });
     });
   });
 
-  // R7 (P2.FIX reprise 1) — CHECKLIST-PCTAC.md item #8 : réordonnancement du
-  // journal par glisser-déposer, jusqu'ici vérifié seulement par revue de
-  // code (ui.ts:310-340 vs ui.js:253-284). `locator.dragTo()` reproduit une
-  // vraie séquence HTML5 DnD (dragstart/dragover/drop), contrairement à des
-  // mouse.move/down/up bruts qui ne déclenchent pas fiablement ces événements.
-  // Deux entrées de MÊME heure (le tri de `Storage.saveLogData` est stable :
-  // à heure égale, l'ordre du DOM au moment du drop est préservé) pour que le
-  // nouvel ordre survive au tri par heure appliqué à chaque sauvegarde.
-  test('Main Courante — réordonnancement du journal par glisser-déposer', async ({ page }) => {
-    await step('créer deux entrées de même heure', async () => {
-      await page.locator('#heure_input').fill('10:00');
-      await page.locator('.pax-select-option[data-pax="Inter"]').click();
-      await page.locator('#lieu_input').fill('DND-A E2E');
-      await page.locator('#remarques_input').fill('x');
-      await page.locator('#log-form button[type="submit"]').click();
-      await expect
-        .soft(page.locator('#logTable tbody tr', { hasText: 'DND-A E2E' }))
-        .toBeVisible({ timeout: 1500 });
-
-      await page.locator('#heure_input').fill('10:00');
-      await page.locator('.pax-select-option[data-pax="Inter"]').click();
-      await page.locator('#lieu_input').fill('DND-B E2E');
-      await page.locator('#remarques_input').fill('x');
-      await page.locator('#log-form button[type="submit"]').click();
-      const rows = page.locator('#logTable tbody tr');
-      await expect.soft(rows).toHaveCount(2, { timeout: 1500 });
-      // Ordre d'insertion stable : A avant B (même heure).
-      await expect.soft(rows.nth(0)).toContainText('DND-A E2E');
-      await expect.soft(rows.nth(1)).toContainText('DND-B E2E');
-    });
-
-    await step('glisser la 2e ligne au-dessus de la 1re', async () => {
-      const rows = page.locator('#logTable tbody tr');
-      await rows.nth(1).dragTo(rows.nth(0), { targetPosition: { x: 20, y: 2 } });
-      await expect.soft(rows.nth(0)).toContainText('DND-B E2E', { timeout: 1500 });
-      await expect.soft(rows.nth(1)).toContainText('DND-A E2E', { timeout: 1500 });
-    });
-
-    await step('drop persisté : ordre conservé après rechargement', async () => {
-      await page.reload();
-      await page.waitForLoadState('domcontentloaded');
-      const rows = page.locator('#logTable tbody tr');
-      await expect.soft(rows.nth(0)).toContainText('DND-B E2E', { timeout: 1500 });
-      await expect.soft(rows.nth(1)).toContainText('DND-A E2E', { timeout: 1500 });
-    });
-  });
+  // U4 — le drag&drop du journal a été SUPPRIMÉ (le tri chronologique de
+  // Storage.saveLogData est la source de vérité) : test de réordonnancement retiré.
 
   test('Main Courante — mode PAX libre + couleur personnalisée', async ({ page }) => {
     // REVALIDÉ post-P2.D (CHECKLIST-PCTAC.md item #6) : `.mode-toggle-btn` et
@@ -327,13 +285,8 @@ test.describe('PC-Tac — Checklist fonctionnelle (docs/recon-pctac.md §6)', ()
       await expect.soft(page.locator('.mode-toggle-btn')).toHaveCount(0);
       await expect.soft(page.locator('#pax_select_wrapper_free')).toHaveCount(0);
     });
-    await step('window.setPaxMode("free") — logique portée fonctionnelle (façade)', async () => {
-      const modeAfter = await page.evaluate(() => {
-        window.setPaxMode('free');
-        return (document.getElementById('pax_mode_input') as HTMLInputElement | null)?.value ?? null;
-      });
-      expect.soft(modeAfter).toBe('free');
-    });
+    // `setPaxMode` (code mort) a été SUPPRIMÉ de ui.ts/UIContract : plus rien
+    // à vérifier via la façade window.
   });
 
   test('Main Courante — autosuggestion de lieu (historique)', async ({ page }) => {
@@ -350,16 +303,25 @@ test.describe('PC-Tac — Checklist fonctionnelle (docs/recon-pctac.md §6)', ()
     });
   });
 
-  test('Main Courante — recherche/filtre journal (dépendance connue, cf. CHECKLIST-PCTAC.md)', async ({
-    page,
-  }) => {
-    // NOTE : `UI.toggleSearchMode/filterLogs` référencent `#search_container` /
-    // `#searchInput` / `#addLogBtn` (modules/pctac/ui.js:701-719) qui n'existent
-    // dans AUCUN DOM statique — ni pctac2.html (ORIGINAL), ni pctac/index.html
-    // (porté) — et aucun bouton n'invoque `toggleSearchMode()` dans l'original.
-    // Ce test documente l'état (déjà mort dans la source), il ne doit pas être
-    // interprété comme une régression du portage. Voir docs/CHECKLIST-PCTAC.md.
-    await expect.soft(page.locator('#search_container')).toHaveCount(0);
+  test('Main Courante — recherche/filtre journal (U2)', async ({ page }) => {
+    // U2 : le markup (#search_container / #searchInput / #addLogBtn / loupe
+    // #openSearchBtn) existe désormais et main.ts câble les 3 handlers.
+    await step('ajouter deux entrées puis filtrer', async () => {
+      for (const lieu of ['Recherche-A E2E', 'Recherche-B E2E']) {
+        await page.locator('#heure_input').fill('11:00');
+        await page.locator('.pax-select-option[data-pax="Inter"]').click();
+        await page.locator('#lieu_input').fill(lieu);
+        await page.locator('#remarques_input').fill('x');
+        await page.locator('#log-form button[type="submit"]').click();
+      }
+      await page.locator('#openSearchBtn').click();
+      await expect.soft(page.locator('#search_container')).toBeVisible();
+      await page.locator('#searchInput').fill('recherche-b');
+      await expect.soft(page.locator('#logTable tbody tr:visible')).toHaveCount(1);
+      await page.locator('#closeSearchBtn').click();
+      await expect.soft(page.locator('#search_container')).toBeHidden();
+      await expect.soft(page.locator('#logTable tbody tr:visible')).toHaveCount(2);
+    });
   });
 
   // ------------------------------------------------------------------
@@ -1013,7 +975,8 @@ test.describe('PC-Tac — Checklist fonctionnelle (docs/recon-pctac.md §6)', ()
       // remarque que pour #editModal ci-dessus).
       await expect.soft(page.locator('#resetModal')).toBeVisible({ timeout: 1500 });
       await page.locator('#confirmResetBtn').click();
-      await expect.soft(page.locator('#logTable tbody tr')).toHaveCount(0, { timeout: 1500 });
+      // U11 : journal vide → une ligne d'état vide « Aucun événement enregistré ».
+      await expect.soft(page.locator('#logTable tbody tr .empty-state')).toHaveCount(1, { timeout: 1500 });
     });
 
     await step('transfert par QR — EXCLU DU PORTAGE (décision explicite, qrSync.js code mort)', async () => {

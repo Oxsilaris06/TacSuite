@@ -61,7 +61,7 @@ if (!window.PocheTuto || !window.PocheTuto.mount) {
         // Le bouton s'intègre dans le dock flottant natif de la page (#dockMenu).
         dock: {
             selector: '#dockMenu',
-            itemTag: 'div',
+            itemTag: 'button', // U8 — accès clavier natif, comme les autres items du dock
             itemClass: 'dock-menu-item',
             icon: 'menu_book',
             title: 'Tutoriel interactif — PC Tac',
@@ -132,8 +132,20 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.querySelectorAll('.tab-btn').forEach((btnEl) => {
         const btn = btnEl as HTMLElement;
         btn.setAttribute('role', 'tab'); // T13 (a11y)
+        // U10 (a11y) — liaison onglet ↔ panneau : aria-selected est ensuite
+        // maintenu par UI.switchMainView à chaque bascule.
+        const viewId = btn.dataset.view;
+        if (viewId) {
+            btn.id = 'tab-' + viewId;
+            btn.setAttribute('aria-controls', viewId);
+            btn.setAttribute('aria-selected', String(btn.classList.contains('active')));
+            const view = document.getElementById(viewId);
+            if (view) {
+                view.setAttribute('role', 'tabpanel');
+                view.setAttribute('aria-labelledby', btn.id);
+            }
+        }
         btn.addEventListener('click', () => {
-            const viewId = btn.dataset.view;
             if (viewId) UI.switchMainView(viewId);
         });
     });
@@ -173,7 +185,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 paxColor: paxInput.dataset.customColor || (UI.elements.paxCustomColorInput as HTMLInputElement).value,
                 heure: (UI.elements.heureInput as HTMLInputElement).value,
                 lieu: (UI.elements.lieuInput as HTMLInputElement).value,
-                freePax: UI.elements.freePaxInput ? UI.elements.freePaxInput.value : '',
+                freePax: '', // #free_pax_input n'existe pas dans le HTML (ref fantôme supprimée)
                 remarques: (UI.elements.remarquesInput as HTMLTextAreaElement).value,
             };
             const newEntry = LogManager.addEntry(formData);
@@ -185,6 +197,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 (UI.elements.remarquesInput as HTMLTextAreaElement).focus();
                 window.isTimeInputManuallyChanged = false; // l'entrée est posée : l'horloge reprend
                 UI.updateTimeInput(true);
+                toast('Événement ajouté', { kind: 'success' }); // U12
             }
         });
     }
@@ -333,6 +346,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                         }
                     }
                     if (cfg.view === 'view-amis') UI.renderFriends();
+                    toast('Fiche ajoutée', { kind: 'success' }); // U12
                 }
             });
         }
@@ -356,6 +370,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                         }
                     } catch (err) {
                         console.error('Erreur de compression:', err);
+                        toast('Échec du traitement de la photo', { kind: 'error' }); // U12
                     }
                 }
             });
@@ -391,7 +406,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     // §5.3 étape 17 — EXPOSITIONS GLOBALES.
-    window.deleteLogEntry = (id) => {
+    window.deleteLogEntry = async (id) => {
+        // U3 — même garde que deleteCollectionItem ci-dessous.
+        const confirmed = await confirmDialog({
+            message: 'Supprimer cette entrée du journal ?',
+            confirmLabel: 'Supprimer',
+            danger: true,
+        });
+        if (!confirmed) return;
         LogManager.deleteEntry(id);
         UI.renderLogTable(Storage.loadLogData());
     };
@@ -523,6 +545,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     editAdvPhotoInput.dataset.compressedBase64 = compressedData;
                 } catch (err) {
                     console.error('Erreur de compression:', err);
+                    toast('Échec du traitement de la photo', { kind: 'error' }); // U12
                 }
             }
         };
@@ -543,10 +566,23 @@ document.addEventListener('DOMContentLoaded', async () => {
                     editHostPhotoInput.dataset.compressedBase64 = compressedData;
                 } catch (err) {
                     console.error('Erreur de compression:', err);
+                    toast('Échec du traitement de la photo', { kind: 'error' }); // U12
                 }
             }
         };
     }
+
+    // U13 — Édition Ami (champs seuls)
+    const confirmEditFriendBtn = document.getElementById('confirmEditFriendBtn');
+    if (confirmEditFriendBtn) confirmEditFriendBtn.onclick = () => UI.handleFriendUpdate();
+
+    // U2 — Recherche dans le journal (loupe / fermeture / filtrage à la frappe)
+    const openSearchBtn = document.getElementById('openSearchBtn');
+    if (openSearchBtn) openSearchBtn.onclick = () => UI.toggleSearchMode();
+    const closeSearchBtn = document.getElementById('closeSearchBtn');
+    if (closeSearchBtn) closeSearchBtn.onclick = () => UI.closeSearchMode();
+    const searchInput = document.getElementById('searchInput');
+    if (searchInput) searchInput.addEventListener('input', () => UI.filterLogs());
 
     // Édition Log (Enregistrer + Annuler du Reset)
     const confirmEditLogBtn = document.getElementById('confirmEditBtn');

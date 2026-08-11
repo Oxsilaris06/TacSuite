@@ -62,17 +62,13 @@
  * `contracts.ts` (interdit par la mission) ; à signaler au gate.
  */
 
-import type { PctacLogEntry, PctacPaxMode, UIContract } from '@shared/types/contracts.js';
+import type { PctacLogEntry, UIContract } from '@shared/types/contracts.js';
 import { PDF_PAX_COLORS, FREE_MODE_COLORS, LONG_PRESS_DELAY, PHOTO_CATEGORIES } from '@pctac/config.js';
 import { Storage } from '@pctac/storage.js';
 import { ImageStore } from '@pctac/image-store.js';
 import { LogManager } from '@pctac/log-manager.js';
 import { esc } from '@shared/ui-platform.js';
 import { confirmDialog } from '@shared/feedback.js';
-
-// Écart signalé en tête de fichier : remplace la propriété dynamique
-// `this._logDndBound` (ui.js:246, 249), absente de UIContract.
-let logDndBound = false;
 
 /**
  * Gestionnaire de l'interface utilisateur PC TAC
@@ -93,17 +89,13 @@ export const UI: UIContract = {
       paxInput: document.getElementById('pax_input') as HTMLInputElement | null,
       paxModeInput: document.getElementById('pax_mode_input') as HTMLInputElement | null,
       paxCustomColorInput: document.getElementById('pax_custom_color_input') as HTMLInputElement | null,
-      freePaxInput: document.getElementById('free_pax_input') as HTMLInputElement | null,
       lieuInput: document.getElementById('lieu_input') as HTMLInputElement | null,
       remarquesInput: document.getElementById('remarques_input') as HTMLTextAreaElement | null,
       paxSelectContainer: document.getElementById('pax_select_container'),
-      suggestionsBox: document.getElementById('pax_suggestions'),
-      freeColorPalette: document.getElementById('free_color_palette'),
       darkModeIcon: document.getElementById('darkModeIcon'),
       fullscreenIcon: document.getElementById('fullscreenIcon'),
       dockMenu: document.getElementById('dockMenu'),
       dockToggleIcon: document.querySelector('#dockToggleBtn .material-symbols-outlined') as HTMLElement | null,
-      jsonImportInput: document.getElementById('jsonImportInput') as HTMLInputElement | null,
       adversaryForm: document.getElementById('adversary-form') as HTMLFormElement | null,
       hostageForm: document.getElementById('hostage-form') as HTMLFormElement | null,
       friendForm: document.getElementById('friend-form') as HTMLFormElement | null,
@@ -171,7 +163,9 @@ export const UI: UIContract = {
    */
   switchMainView(viewId: string): void {
     document.querySelectorAll<HTMLElement>('.tab-btn').forEach((btn) => {
-      btn.classList.toggle('active', btn.dataset.view === viewId);
+      const active = btn.dataset.view === viewId;
+      btn.classList.toggle('active', active);
+      btn.setAttribute('aria-selected', String(active)); // U10 (a11y onglets)
     });
     document.querySelectorAll('.tab-content-view').forEach((view) => {
       view.classList.toggle('active', view.id === viewId);
@@ -192,23 +186,6 @@ export const UI: UIContract = {
       // Quota localStorage plein : la préférence de vue n'est pas persistée,
       // mais la bascule DOM a déjà eu lieu (ui.js:116).
     }
-  },
-
-  /**
-   * Change le mode de sélection du Pax
-   * ui.js:122-133
-   */
-  setPaxMode(mode: PctacPaxMode): void {
-    if (!this.elements.paxModeInput) return;
-    this.elements.paxModeInput.value = mode;
-    const isStandard = mode === 'standard';
-    document.querySelectorAll<HTMLElement>('.mode-toggle-btn').forEach((tab) => {
-      tab.classList.toggle('active', tab.dataset.mode === mode);
-    });
-    const standardWrapper = document.getElementById('pax_select_wrapper_standard');
-    const freeWrapper = document.getElementById('pax_select_wrapper_free');
-    if (standardWrapper) standardWrapper.style.display = isStandard ? 'block' : 'none';
-    if (freeWrapper) freeWrapper.style.display = isStandard ? 'none' : 'block';
   },
 
   /**
@@ -283,6 +260,11 @@ export const UI: UIContract = {
     const tbody = this.elements.logTableBody;
     if (!tbody) return;
     tbody.innerHTML = '';
+    // U11 — état vide explicite plutôt qu'un tableau muet.
+    if (logData.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="4" class="empty-state">Aucun événement enregistré</td></tr>';
+      return;
+    }
     logData.forEach((entry) => {
       let paxColor: string;
       let paxText: string;
@@ -304,8 +286,6 @@ export const UI: UIContract = {
       }
       const row = tbody.insertRow();
       row.dataset.id = entry.id;
-      row.draggable = true;
-      row.className = 'draggable';
       row.innerHTML = `
                 <td style="width: 15%;">
                     <div class="heure-cell-container">
@@ -322,79 +302,9 @@ export const UI: UIContract = {
                 <td style="width: 35%;">${esc(entry.lieu)}</td>
                 <td style="width: 35%;">${esc(entry.remarques)}</td>
             `;
-      // Réordonnancement par glisser-déposer : les handlers dragover/drop
-      // existaient mais RIEN ne posait la classe .dragging ni n'écoutait
-      // dragstart → la fonctionnalité était morte.
-      row.addEventListener('dragstart', (ev) => {
-        row.classList.add('dragging');
-        if (ev.dataTransfer) {
-          ev.dataTransfer.effectAllowed = 'move';
-          try { ev.dataTransfer.setData('text/plain', entry.id); } catch {
-            // setData peut échouer selon le navigateur/contexte (ui.js:233).
-          }
-        }
-      });
-      row.addEventListener('dragend', (ev) => {
-        UI.handleDragEnd();
-        // Drag ANNULÉ (lâché hors table, Échap) : le dragover a déjà réordonné
-        // le DOM en live mais handleDrop n'a pas sauvegardé — on resynchronise
-        // l'affichage sur le stockage pour éviter un ordre menteur.
-        if (ev.dataTransfer && ev.dataTransfer.dropEffect === 'none') {
-          UI.renderLogTable(Storage.loadLogData());
-        }
-      });
     });
-    if (!logDndBound && this.elements.logTableBody) {
-      this.elements.logTableBody.addEventListener('dragover', (e) => UI.handleDragOver(e));
-      this.elements.logTableBody.addEventListener('drop', (e) => UI.handleDrop(e));
-      logDndBound = true;
-    }
-  },
-
-  // ui.js:253-260
-  handleDragOver(e: DragEvent): void {
-    e.preventDefault();
-    const dragging = document.querySelector('.dragging');
-    if (!dragging) return;
-    const tbody = UI.elements.logTableBody;
-    if (!tbody) return;
-    const afterElement = UI.getDragAfterElement(tbody, e.clientY);
-    if (afterElement == null) tbody.appendChild(dragging);
-    else tbody.insertBefore(dragging, afterElement);
-  },
-
-  // ui.js:262-270
-  getDragAfterElement(container: Element, y: number): Element | undefined {
-    const draggableElements = [...container.querySelectorAll<HTMLElement>('.draggable:not(.dragging)')];
-    return draggableElements.reduce<{ offset: number; element: Element | undefined }>((closest, child) => {
-      const box = child.getBoundingClientRect();
-      const offset = y - box.top - box.height / 2;
-      if (offset < 0 && offset > closest.offset) return { offset: offset, element: child };
-      else return closest;
-    }, { offset: Number.NEGATIVE_INFINITY, element: undefined }).element;
-  },
-
-  // ui.js:272-279
-  handleDrop(e: DragEvent): void {
-    e.preventDefault();
-    const tbody = UI.elements.logTableBody;
-    if (!tbody) return;
-    const logData = Array.from(tbody.querySelectorAll('tr'))
-      .map((row) => {
-        const id = row.dataset.id;
-        return Storage.loadLogData().find((l) => l.id === id);
-      })
-      // Typage strict de .find() (retourne `T | undefined`) : filtre les
-      // entrées introuvables, jamais le cas en pratique (les lignes
-      // proviennent de Storage.loadLogData() elle-même).
-      .filter((entry): entry is PctacLogEntry => entry !== undefined);
-    Storage.saveLogData(logData);
-  },
-
-  // ui.js:281-284
-  handleDragEnd(): void {
-    const dragging = document.querySelector('.dragging');
-    if (dragging) dragging.classList.remove('dragging');
+    // U4 — drag&drop du journal SUPPRIMÉ : le tri chronologique de
+    // Storage.saveLogData est la source de vérité de l'ordre.
   },
 
   // ui.js:286-296
@@ -566,6 +476,10 @@ export const UI: UIContract = {
     const list = await ImageStore.hydrate(raw, 'photo');
     const tbody = document.getElementById('adversary-table-body');
     if (!tbody) return;
+    if (list.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="3" class="empty-state">Aucun adversaire — utilisez le formulaire ci-dessus</td></tr>';
+      return;
+    }
     tbody.innerHTML = list.map((item) => `
             <tr>
                 <td style="width: 80px;">
@@ -599,6 +513,10 @@ export const UI: UIContract = {
     const list = await ImageStore.hydrate(raw, 'photo');
     const tbody = document.getElementById('hostage-table-body');
     if (!tbody) return;
+    if (list.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="3" class="empty-state">Aucun otage — utilisez le formulaire ci-dessus</td></tr>';
+      return;
+    }
     tbody.innerHTML = list.map((item) => `
             <tr>
                 <td style="width: 80px;">
@@ -629,15 +547,56 @@ export const UI: UIContract = {
     const list = Storage.loadCollection('pcTacFriends') || [];
     const tbody = document.getElementById('friend-table-body');
     if (!tbody) return;
+    if (list.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="5" class="empty-state">Aucun ami — utilisez le formulaire ci-dessus</td></tr>';
+      return;
+    }
     tbody.innerHTML = list.map((item) => `
             <tr>
                 <td>${esc(item.nom)} ${esc(item.prenom)}</td>
                 <td>${esc(item.unite)}</td>
                 <td>${esc(item.tph)}</td>
                 <td>${esc(item.mission)}</td>
-                <td><button class="delete-btn" onclick="window.deleteCollectionItem('pcTacFriends', '${item.id}', 'view-amis')" aria-label="Supprimer cet ami"><span class="material-symbols-outlined" style="font-size: 18px;">delete</span></button></td>
+                <td>
+                    <div style="display: flex; gap: 5px;">
+                        <button class="action-btn-small edit" onclick="window.UI.showEditFriendModal('${item.id}')" title="Modifier" aria-label="Modifier cet ami"><span class="material-symbols-outlined" style="font-size: 18px;">edit</span></button>
+                        <button class="delete-btn" onclick="window.deleteCollectionItem('pcTacFriends', '${item.id}', 'view-amis')" aria-label="Supprimer cet ami"><span class="material-symbols-outlined" style="font-size: 18px;">delete</span></button>
+                    </div>
+                </td>
             </tr>
         `).join('');
+  },
+
+  // U13 — édition d'une fiche Ami (parité avec showEditAdversaryModal, sans photo).
+  showEditFriendModal(id: string): void {
+    const list = Storage.loadCollection('pcTacFriends');
+    const item = list.find((f) => f.id === id);
+    if (!item) return;
+    (document.getElementById('edit_friend_id') as HTMLInputElement).value = id;
+    ['nom', 'prenom', 'unite', 'tph', 'mission'].forEach((f) => {
+      const el = document.getElementById('edit_friend_' + f) as HTMLInputElement | null;
+      if (el) el.value = (item[f] as string | undefined) || '';
+    });
+    (document.getElementById('editFriendModal') as HTMLDialogElement).showModal();
+  },
+
+  hideEditFriendModal(): void {
+    (document.getElementById('editFriendModal') as HTMLDialogElement).close();
+  },
+
+  handleFriendUpdate(): void {
+    const id = (document.getElementById('edit_friend_id') as HTMLInputElement).value;
+    if (!id) return;
+    const list = Storage.loadCollection('pcTacFriends');
+    const item = list.find((f) => f.id === id);
+    if (!item) { this.hideEditFriendModal(); return; }
+    ['nom', 'prenom', 'unite', 'tph', 'mission'].forEach((f) => {
+      const el = document.getElementById('edit_friend_' + f) as HTMLInputElement | null;
+      if (el) item[f] = el.value.trim();
+    });
+    Storage.saveCollection('pcTacFriends', list);
+    this.hideEditFriendModal();
+    this.renderFriends();
   },
 
   /**
@@ -654,6 +613,7 @@ export const UI: UIContract = {
     const raw = Storage.loadCollection('pcTacPhotos') || [];
     const board = document.getElementById('photo-board');
     if (!board) return;
+    const emptyMsg = '<div class="empty-state">Aucune photo — utilisez le formulaire ci-dessus</div>';
     const preFiltered = filterCategory === 'all' ? raw : raw.filter((item) => item.category === filterCategory);
     const filteredList = await ImageStore.hydrate(preFiltered, 'data');
 
@@ -674,7 +634,7 @@ export const UI: UIContract = {
       catSelect.value = filterCategory;
     }
 
-    board.innerHTML = filteredList.map((item) => `
+    board.innerHTML = filteredList.length === 0 ? emptyMsg : filteredList.map((item) => `
             <div class="photo-card" draggable="true" data-id="${item.id}" data-category="${item.category}" data-status="${item.status || 'active'}" ondragstart="UI.handlePhotoDragStart(event)" ondragover="UI.handlePhotoDragOver(event)" ondrop="UI.handlePhotoDrop(event)" ondragend="UI.handlePhotoDragEnd()">
                 <img src="${item.data}" onclick="UI.openLightbox('${item.data}', '${esc(String(item.title || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'"))}')" alt="${esc(item.title)}">
                 <div style="padding: 10px; display: flex; flex-direction: column; gap: 5px;">
@@ -811,8 +771,6 @@ export const UI: UIContract = {
   // ui.js:653-674
   initColorPalettes(): void {
     const palettes = [
-      { id: 'free_color_palette', inputId: 'pax_custom_color_input' },
-      { id: 'edit_free_color_palette', inputId: 'edit_free_color_val' },
       { id: 'new_pax_color_palette', inputId: 'new_pax_color_val' },
     ];
     palettes.forEach((p) => {
@@ -1065,7 +1023,6 @@ export const UI: UIContract = {
 
 // ui.js:884-890 — façades window.*, posées AU SCOPE MODULE (SPEC-PCTAC-CONVERSION.md §4)
 window.UI = UI;
-window.setPaxMode = UI.setPaxMode.bind(UI);
 window.openEditModal = UI.openEditModal.bind(UI);
 window.switchMainView = UI.switchMainView.bind(UI);
 window.toggleSearchMode = UI.toggleSearchMode.bind(UI);

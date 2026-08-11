@@ -35,7 +35,6 @@
  */
 
 import type { Map as MapLibreMap } from 'maplibre-gl';
-import type { Html5Qrcode } from 'html5-qrcode';
 import type { TutoChapter, TutoData, TutoFlatStep } from './tuto.js';
 
 /* =========================================================================
@@ -537,8 +536,6 @@ export type PctacQrRow = (string | undefined)[];
 export type PctacQrScanCallback = (logs: PctacLogEntry[]) => void;
 
 export interface QrSyncContract {
-    /** Instance du scanner caméra, `null` tant qu'aucun scan n'est en cours. */
-    html5QrCode: Html5Qrcode | null;
     /** Lots courants (chaque lot = `QR_BATCH_SIZE` lignes, soit 5). */
     qrChunks: PctacQrRow[][];
     /** Index du lot affiché. */
@@ -577,17 +574,13 @@ export interface PctacUiElements {
     paxModeInput: HTMLInputElement | null;
     /** `<input type="hidden">` portant l'hex de couleur libre. */
     paxCustomColorInput: HTMLInputElement | null;
-    freePaxInput: HTMLInputElement | null;
     lieuInput: HTMLInputElement | null;
     remarquesInput: HTMLTextAreaElement | null;
     paxSelectContainer: HTMLElement | null;
-    suggestionsBox: HTMLElement | null;
-    freeColorPalette: HTMLElement | null;
     darkModeIcon: HTMLElement | null;
     fullscreenIcon: HTMLElement | null;
     dockMenu: HTMLElement | null;
     dockToggleIcon: HTMLElement | null;
-    jsonImportInput: HTMLInputElement | null;
     adversaryForm: HTMLFormElement | null;
     hostageForm: HTMLFormElement | null;
     friendForm: HTMLFormElement | null;
@@ -625,7 +618,6 @@ export interface UIContract {
     getContrastYIQ(hexcolor: string | null | undefined): string;
     /** N'écrase pas l'heure si `window.isTimeInputManuallyChanged` sauf `force`. */
     updateTimeInput(force?: boolean): void;
-    setPaxMode(mode: PctacPaxMode): void;
     deleteCustomPax(id: string): void;
     renderCustomPaxOptions(): void;
     showCreatePaxModal(): void;
@@ -637,11 +629,6 @@ export interface UIContract {
 
     /* --- tableau du journal --- */
     renderLogTable(logData: readonly PctacLogEntry[]): void;
-    handleDragOver(e: DragEvent): void;
-    /** Élément avant lequel insérer, ou `undefined` si insertion en fin de liste. */
-    getDragAfterElement(container: Element, y: number): Element | undefined;
-    handleDrop(e: DragEvent): void;
-    handleDragEnd(): void;
     openEditModal(id: string): void;
     confirmEditLog(): void;
     hideEditModal(): void;
@@ -674,6 +661,10 @@ export interface UIContract {
     showEditHostageModal(id: string): Promise<void>;
     hideEditHostageModal(): void;
     handleHostageUpdate(): Promise<void>;
+    /** U13 — édition d'une fiche Ami (champs seuls, pas de photo). */
+    showEditFriendModal(id: string): void;
+    hideEditFriendModal(): void;
+    handleFriendUpdate(): void;
 
     /** Handler `keydown` du lightbox, conservé pour pouvoir être retiré. */
     _lightboxKeydown?: ((e: KeyboardEvent) => void) | undefined;

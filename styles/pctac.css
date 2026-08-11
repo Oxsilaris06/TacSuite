@@ -1191,65 +1191,6 @@ body.up-kb-open .up-kb-aware {
             }
         }
 
-        /* --- Modale Ping : optimisation mobile --- */
-        #pingModal #ping_entities_list { max-height: 30vh; }
-        #pingModal #pin_icon_catalog   { max-height: 38vh; }
-        #pingModal .pin-icon-suggest {
-            min-height: 44px;     /* cible tactile confortable */
-        }
-        #pingModal .pin-icon-cell {
-            min-height: 70px;
-        }
-        @media (max-width: 640px) {
-            #pingModal {
-                width: 100% !important;
-                max-width: 100% !important;
-                height: 100% !important;
-                max-height: 100% !important;
-                top: 0; left: 0;
-                transform: none;
-                border-radius: var(--tac-zero);
-                padding: 18px 14px;
-                overflow-y: auto;
-            }
-            #pingModal h3 { font-size: 1.05em; }
-            #pingModal #pin_icon_suggestions {
-                gap: var(--tac-space-2);
-            }
-            #pingModal .pin-icon-suggest {
-                flex: 1 1 calc(50% - 8px);
-                justify-content: center;
-                padding: 10px var(--tac-space-2);
-                font-size: 0.9em;
-            }
-            #pingModal #pin_icon_grid > div > div:nth-child(2) {
-                /* Plus de cellules par ligne sur mobile : icônes plus petites */
-                grid-template-columns: repeat(auto-fill, minmax(64px, 1fr)) !important;
-            }
-            #pingModal .pin-icon-cell {
-                padding: 6px 2px;
-                font-size: 0.65em;
-                min-height: 64px;
-            }
-            #pingModal .pin-icon-cell .material-symbols-outlined {
-                font-size: 22px !important;
-            }
-            #pingModal #free_pin_color_select .pax-select-option {
-                flex: 1 1 calc(33% - 6px);
-                min-height: 44px;
-                justify-content: center;
-                display: flex;
-                align-items: center;
-            }
-            #pingModal .add-btn {
-                min-height: 48px;
-                font-size: 1em;
-            }
-            #pingModal #pin_icon_current_preview {
-                padding: 10px;
-            }
-        }
-
         .lightbox {
             position: fixed;
             top: 0;
@@ -1323,6 +1264,10 @@ body.up-kb-open .up-kb-aware {
         }
 
         .dock-menu-item {
+            /* U8 — les items sont désormais des <button> : neutralise le style natif. */
+            appearance: none;
+            padding: var(--tac-zero);
+            font: inherit;
             width: 42px;
             height: 42px;
             border-radius: 50%;
@@ -1813,7 +1758,7 @@ body.up-kb-open .up-kb-aware {
  * l'identique depuis l'inline d'origine (mêmes valeurs, même ordre).
  * Restent inline (non touchés, cf. mission R1-T4 règle 1) : tout attribut où
  * le JS de src/apps/pctac/ lit/écrit une propriété qui y figure (display
- * togglé par ui.ts/draw-tools.ts/text-modal.ts/tchap-live.ts/ping-modal.ts,
+ * togglé par ui.ts/draw-tools.ts/text-modal.ts/tchap-live.ts,
  * background/color/cursor/borderColor pilotés par draw-tools.ts/
  * shapes-render.ts/tchap-live.ts sur les boutons .plan-draw-btn,
  * .plan-draw-color, .plan-text-color, #plan_draw_undo/redo/lock/
@@ -1919,36 +1864,13 @@ body.up-kb-open .up-kb-aware {
 .pctac-modal-close-btn { position: absolute; top: 15px; right: 15px; background: none; border: none; color: var(--text-muted); cursor: pointer; display: flex; align-items: center; justify-content: center; width: 30px; height: 30px; z-index: 10; }
 .material-symbols-outlined.pctac-icon-accent-mid { vertical-align: middle; color: var(--accent-blue); }
 .pctac-m-18-0 { margin: 18px 0; }
-/* #pingModal #ping_entities_list (au lieu d'une classe) : styles/pctac.css:1193
-   fixe déjà `#pingModal #ping_entities_list { max-height: 30vh; }` sans media
-   query, spécificité 2 id — une classe seule perdrait tout le temps (l'inline
-   d'origine gagnait toujours). On égale la spécificité pour préserver 220px. */
-.pctac-ping-entities-list,
-#pingModal #ping_entities_list { display: flex; flex-direction: column; gap: 6px; max-height: 220px; overflow-y: auto; margin-top: 6px; }
 .pctac-hr-divider { border-top: 1px solid var(--border-glass); margin: 18px 0; }
 .pctac-mt-6 { margin-top: 6px; }
 .pctac-m-12-0 { margin: 12px 0; }
-.pctac-color-select-row { display: flex; gap: 8px; flex-wrap: wrap; }
-/* #pingModal #pin_icon_suggestions : styles/pctac.css:1214 (media max-width:640px)
-   fixe `gap: var(--tac-space-2)` en spécificité 2 id — égalée ici pour garder 6px. */
-.pctac-icon-suggestions-row,
-#pingModal #pin_icon_suggestions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
 .pctac-space-between-row { display: flex; align-items: center; gap: 10px; justify-content: space-between; }
 .pctac-m-0 { margin: 0; }
-/* Spécificité #pingModal #pin_icon_picker_toggle (au lieu d'une simple classe) :
-   #pingModal .add-btn (styles/pctac.css, media max-width:640px) a pour spécificité
-   1 id + 1 classe ; l'ancien style inline (spécificité maximale) gagnait toujours.
-   Une classe seule (0 id + 1 classe) perdrait sur mobile — on égale donc la
-   spécificité de la règle existante pour préserver le rendu original. */
-#pingModal #pin_icon_picker_toggle { width: auto; padding: 6px 12px; background: var(--bg-input); font-size: 0.85em; }
 .material-symbols-outlined.pctac-icon-18-mid { font-size: 18px; vertical-align: middle; }
-/* #pingModal #pin_icon_current_preview : styles/pctac.css:1246 (media max-width:640px)
-   fixe `padding: 10px` en spécificité 2 id — égalée ici pour garder 8px. */
-.pctac-icon-current-preview,
-#pingModal #pin_icon_current_preview { display: flex; align-items: center; gap: 10px; margin-top: 8px; padding: 8px; background: rgba(255,255,255,0.04); border-radius: 6px; }
-.material-symbols-outlined.pctac-icon-current-glyph { font-size: 32px; color: #3b82f6; }
 .pctac-mb-10 { margin-bottom: 10px; }
-.pctac-ping-footer-note { color: var(--text-muted); font-size: 0.85em; margin-top: 12px; }
 
 .pctac-liens-layout { display: flex; gap: 20px; min-height: 500px; }
 .pctac-liens-carto-col { flex: 1; display: flex; flex-direction: column; gap: 15px; }
@@ -2021,3 +1943,10 @@ body.light-mode .pctac-liens-btn-row--wa:hover { background: #bee9ce; box-shadow
 .material-symbols-outlined.pctac-icon-accent-fallback { color: var(--accent-blue, #3b82f6); }
 .material-symbols-outlined.pctac-icon-danger { color: var(--danger-red); }
 
+/* U11 — état vide des listes (journal, adversaires, otages, amis, photos) */
+.empty-state {
+    text-align: center;
+    color: var(--text-muted);
+    font-style: italic;
+    padding: 18px 10px;
+}

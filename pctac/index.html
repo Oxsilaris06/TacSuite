@@ -59,7 +59,7 @@
         <div id="view-main-courante" class="tab-content-view active">
             <div class="log-entry-form">
                 <form id="log-form">
-                    <div class="form-row pctac-row-log">
+                    <div class="form-row main-fields pctac-row-log">
                         <div class="pctac-field-heure">
                             <label for="heure_input">Heure</label>
                             <input type="time" id="heure_input" required class="pctac-input-heure">
@@ -90,10 +90,22 @@
                         <label for="remarques_input">Remarques</label>
                         <textarea id="remarques_input" rows="2" placeholder="Saisir un compte-rendu..."></textarea>
                     </div>
-                    <button type="submit" class="add-log-btn pctac-mt-15">
+                    <button type="submit" id="addLogBtn" class="add-log-btn pctac-mt-15">
                         <span class="material-symbols-outlined" aria-hidden="true">add_task</span> Ajouter au Log
                     </button>
                 </form>
+                <!-- U2 — Recherche dans le journal (UI.toggleSearchMode / closeSearchMode / filterLogs) -->
+                <button type="button" id="openSearchBtn" class="add-btn pctac-btn-auto-md pctac-mt-15" title="Rechercher dans le journal" aria-label="Rechercher dans le journal">
+                    <span class="material-symbols-outlined" aria-hidden="true">search</span>
+                </button>
+                <div id="search_container" class="pctac-mt-15" style="display: none;">
+                    <div class="pctac-search-row">
+                        <input type="text" id="searchInput" placeholder="Rechercher (heure, pax, lieu, remarques)…" autocomplete="off" class="pctac-flex-1" aria-label="Rechercher dans le journal">
+                        <button type="button" id="closeSearchBtn" class="add-btn pctac-btn-search-close" aria-label="Fermer la recherche">
+                            <span class="material-symbols-outlined" aria-hidden="true">close</span>
+                        </button>
+                    </div>
+                </div>
             </div>
             <div id="logTableContainer">
                 <table class="log-table" id="logTable">
@@ -285,7 +297,7 @@
                     <div class="plan-search-hint">Ex&nbsp;: «&nbsp;12 rue de la Paix, Paris&nbsp;» ou «&nbsp;48.8566, 2.3522&nbsp;»</div>
                 </div>
 
-                <!-- Toolbar unifiée : 6 FABs (Recherche / Plein écran / 3D / Capture / Ping / Dessin) -->
+                <!-- Toolbar unifiée : 8 FABs (Recherche / Plein écran / 3D / Capture / Ping / Dessin / Noms de rues / Zone hors-ligne) -->
                 <div id="plan_unified_toolbar">
                     <button type="button" id="plan_btn_search" class="plan-tool-fab" title="Recherche adresse / coordonnées GPS" aria-label="Rechercher une adresse ou des coordonnées GPS">
                         <span class="material-symbols-outlined">search</span>
@@ -299,7 +311,7 @@
                     <button type="button" id="plan_btn_capture" class="plan-tool-fab" title="Capture haute qualité du plan" aria-label="Capturer le plan">
                         <span class="material-symbols-outlined">photo_camera</span>
                     </button>
-                    <button type="button" id="plan_btn_ping" class="plan-tool-fab" title="Ajouter un point (entité ou libre)" aria-label="Ajouter un point sur la carte">
+                    <button type="button" id="plan_btn_ping" class="plan-tool-fab" title="Ajouter un ping" aria-label="Ajouter un ping">
                         <span class="material-symbols-outlined">add_location</span>
                     </button>
                     <button type="button" id="plan_btn_draw" class="plan-tool-fab" title="Outils de dessin" aria-label="Ouvrir les outils de dessin">
@@ -444,72 +456,6 @@
                 </div>
             </div>
         </div>
-
-        <!-- Modale PING hybride : entités existantes OU nouveau point libre -->
-        <dialog class="modal pctac-modal-large pctac-modal-scroll" id="pingModal" aria-labelledby="pingModalTitle">
-            <button type="button" id="pingModalCloseBtn" class="pctac-modal-close-btn" aria-label="Fermer la fenêtre d'ajout de point">
-                <span class="material-symbols-outlined pctac-icon-24">close</span>
-            </button>
-            <h3 id="pingModalTitle"><span class="material-symbols-outlined pctac-icon-accent-mid">add_location</span> Ajouter un point</h3>
-
-            <!-- Section 1 : entités déjà créées -->
-            <div class="pctac-m-18-0">
-                <label>Placer une entité existante</label>
-                <div id="ping_entities_list" class="pctac-ping-entities-list"></div>
-            </div>
-
-            <div class="pctac-hr-divider"></div>
-
-            <!-- Section 2 : nouveau point libre -->
-            <div>
-                <label for="free_pin_label">Ou créer un nouveau point</label>
-                <input type="text" id="free_pin_label" placeholder="Libellé (ex: PC repli, FPT pompier, sniper toit...)" class="pctac-mt-6" autocomplete="off">
-
-                <div class="pctac-m-12-0">
-                    <label>Type / Couleur</label>
-                    <div class="pctac-color-select-row" id="free_pin_color_select">
-                        <button type="button" class="pax-select-option" data-color="#ef4444" data-kind="Adv">Adv</button>
-                        <button type="button" class="pax-select-option" data-color="#eab308" data-kind="Otage">Otage</button>
-                        <button type="button" class="pax-select-option" data-color="#3b82f6" data-kind="Inter">Inter</button>
-                        <button type="button" class="pax-select-option" data-color="#22c55e" data-kind="Oscar">Oscar</button>
-                        <button type="button" class="pax-select-option" data-color="#94a3b8" data-kind="Inconnu">Inconnu</button>
-                    </div>
-                    <input type="hidden" id="free_pin_color" value="#3b82f6">
-                    <input type="hidden" id="free_pin_kind" value="Inter">
-                </div>
-
-                <!-- Suggestions automatiques d'icônes en fonction du libellé -->
-                <div id="pin_icon_suggestions_wrap" style="margin: 12px 0; display: none;">
-                    <label class="pctac-muted-sm">Icônes suggérées d'après l'intitulé</label>
-                    <div id="pin_icon_suggestions" class="pctac-icon-suggestions-row"></div>
-                </div>
-
-                <!-- Choix d'icône (catalogue complet) -->
-                <div class="pctac-m-12-0">
-                    <div class="pctac-space-between-row">
-                        <label class="pctac-m-0">Icône du point</label>
-                        <button type="button" id="pin_icon_picker_toggle" class="add-btn">
-                            <span class="material-symbols-outlined pctac-icon-18-mid" aria-hidden="true">apps</span>
-                            Choisir
-                        </button>
-                    </div>
-                    <div id="pin_icon_current_preview" class="pctac-icon-current-preview">
-                        <span id="pin_icon_current_glyph" class="material-symbols-outlined pctac-icon-current-glyph">place</span>
-                        <span id="pin_icon_current_label" class="pctac-muted-09">Pin par défaut</span>
-                    </div>
-                    <input type="hidden" id="free_pin_icon" value="">
-
-                    <!-- Catalogue complet, repliable -->
-                    <div id="pin_icon_catalog" style="display: none; margin-top: 10px; max-height: 260px; overflow-y: auto; border: 1px solid var(--border-glass); border-radius: 6px; padding: 10px; background: rgba(0,0,0,0.2);">
-                        <input type="text" id="pin_icon_search" placeholder="Filtrer (ex: pompier, drogue, camera...)" class="pctac-mb-10" autocomplete="off">
-                        <div id="pin_icon_grid"></div>
-                    </div>
-                </div>
-
-                <button type="button" class="add-btn" id="freePinConfirmBtn">Créer ce point</button>
-            </div>
-            <p class="pctac-ping-footer-note">Après sélection, clique sur la carte pour placer le point.</p>
-        </dialog>
 
         <!-- VUE : LIENS EXTERNES -->
         <div id="view-liens" class="tab-content-view">
@@ -689,6 +635,23 @@
         </div>
     </dialog>
 
+    <!-- U13 — Modale d'édition d'ami (champs seuls, calquée sur #editAdversaryModal) -->
+    <dialog class="modal pctac-modal-large" id="editFriendModal" aria-labelledby="editFriendModalTitle">
+        <h3 id="editFriendModalTitle">Modifier Ami</h3>
+        <input type="hidden" id="edit_friend_id">
+        <div class="pctac-edit-fields">
+            <div class="row-2"><div><label for="edit_friend_nom">Nom</label><input type="text" id="edit_friend_nom" class="pctac-input-lg"></div>
+            <div><label for="edit_friend_prenom">Prénom</label><input type="text" id="edit_friend_prenom" class="pctac-input-lg"></div></div>
+            <div class="row-2"><div><label for="edit_friend_unite">Unité</label><input type="text" id="edit_friend_unite" class="pctac-input-lg"></div>
+            <div><label for="edit_friend_tph">TPH</label><input type="text" id="edit_friend_tph" class="pctac-input-lg"></div></div>
+            <div><label for="edit_friend_mission">Mission</label><input type="text" id="edit_friend_mission" class="pctac-input-lg"></div>
+        </div>
+        <div class="pctac-actions-row">
+            <button type="button" class="add-btn" id="confirmEditFriendBtn">Enregistrer</button>
+            <button type="button" class="add-btn pctac-btn-bg-input" onclick="UI.hideEditFriendModal()">Annuler</button>
+        </div>
+    </dialog>
+
     <!-- Modale de saisie de texte pour annotation dans/sur un dessin -->
     <dialog class="modal pctac-modal-large pctac-plan-text-modal" id="planTextModal" aria-labelledby="planTextModalTitle">
         <h3 id="planTextModalTitle">Annoter le dessin</h3>
@@ -761,33 +724,33 @@
         </a>
 
         <!-- Archive tout-en-un : export .pctac.zip (données + images) -->
-        <div class="dock-menu-item" id="exportJsonDockBtn" title="Exporter une archive .pctac.zip (données + photos)">
+        <button type="button" class="dock-menu-item" id="exportJsonDockBtn" title="Exporter une archive .pctac.zip (données + photos)" aria-label="Exporter une archive .pctac.zip (données + photos)">
             <span class="material-symbols-outlined">archive</span>
-        </div>
+        </button>
         <!-- Import archive .pctac.zip (ou .json legacy) -->
-        <div class="dock-menu-item" id="importJsonDockBtn" title="Importer une archive .pctac.zip">
+        <button type="button" class="dock-menu-item" id="importJsonDockBtn" title="Importer une archive .pctac.zip" aria-label="Importer une archive .pctac.zip">
             <span class="material-symbols-outlined">unarchive</span>
-        </div>
+        </button>
 
         <!-- PASSERELLE OI → PC TAC : importe l'équipe + les adversaires depuis une archive .oi.zip -->
-        <div class="dock-menu-item" id="importOiDockBtn" title="Importer l'équipe et les adversaires depuis l'Ordre Initial (.oi.zip)">
+        <button type="button" class="dock-menu-item" id="importOiDockBtn" title="Importer l'équipe et les adversaires depuis l'Ordre Initial (.oi.zip)" aria-label="Importer l'équipe et les adversaires depuis l'Ordre Initial (.oi.zip)">
             <span class="material-symbols-outlined pctac-icon-accent-fallback">move_to_inbox</span>
-        </div>
+        </button>
 
-        <div class="dock-menu-item" id="darkModeToggle" title="Changer le thème">
+        <button type="button" class="dock-menu-item" id="darkModeToggle" title="Changer le thème" aria-label="Changer le thème">
             <span class="material-symbols-outlined" id="darkModeIcon">nightlight</span>
-        </div>
-        <div class="dock-menu-item" id="fullscreenToggle" title="Plein écran">
+        </button>
+        <button type="button" class="dock-menu-item" id="fullscreenToggle" title="Plein écran" aria-label="Basculer le plein écran">
             <span class="material-symbols-outlined" id="fullscreenIcon">fullscreen</span>
-        </div>
+        </button>
         <!-- Bouton PDF (téléchargement direct) -->
-        <div class="dock-menu-item" id="previewPdfDockBtn" title="Générer et télécharger le PDF">
+        <button type="button" class="dock-menu-item" id="previewPdfDockBtn" title="Générer et télécharger le PDF" aria-label="Générer et télécharger le PDF">
             <span class="material-symbols-outlined">picture_as_pdf</span>
-        </div>
+        </button>
         <!-- Bouton Réinitialisation -->
-        <div class="dock-menu-item" id="resetDataDockBtn" title="Réinitialiser toutes les données">
+        <button type="button" class="dock-menu-item" id="resetDataDockBtn" title="Réinitialiser toutes les données" aria-label="Réinitialiser toutes les données">
             <span class="material-symbols-outlined pctac-icon-danger">delete_forever</span>
-        </div>
+        </button>
     </div>
 
     <!-- Tutoriel interactif -->

@@ -175,31 +175,6 @@ describe('handlePhotoDrop — garde contre splice(-1,1) (ui.js:598, PIÈGE VITAL
   });
 });
 
-describe('renderLogTable — logDndBound évite le double binding (ui.js:246-250)', () => {
-  it('un deuxième appel ne pose pas une deuxième paire de listeners dragover/drop', async () => {
-    // Instance FRAÎCHE du module : `logDndBound` est une variable de scope
-    // MODULE (cf. en-tête de ui.ts) qui doit être réinitialisée pour isoler ce
-    // test des autres — même stratégie que pc-imagestore.test.ts.
-    vi.resetModules();
-    const fresh = await import('@pctac/ui.js');
-
-    document.body.innerHTML = '<table id="logTable"><tbody></tbody></table>';
-    fresh.UI.initElements();
-
-    const dropSpy = vi.spyOn(fresh.UI, 'handleDrop').mockImplementation(() => {});
-
-    fresh.UI.renderLogTable([]);
-    fresh.UI.renderLogTable([]); // 2e appel : ne doit PAS rebinder dragover/drop
-
-    const tbody = document.querySelector('#logTable tbody') as Element;
-    tbody.dispatchEvent(new Event('drop', { bubbles: true, cancelable: true }));
-
-    // Si le binding était dupliqué (un listener par appel de renderLogTable),
-    // handleDrop serait invoqué 2 fois pour un seul évènement 'drop'.
-    expect(dropSpy).toHaveBeenCalledTimes(1);
-  });
-});
-
 describe('UI — les méthodes de rendu ne jettent pas quand leur conteneur DOM est absent', () => {
   it('renderAdversaries résout sans jeter si #adversary-table-body est absent', async () => {
     await expect(UI.renderAdversaries()).resolves.toBeUndefined();
@@ -237,12 +212,5 @@ describe('UI — les méthodes de rendu ne jettent pas quand leur conteneur DOM 
   it('openLightbox/closeLightbox ne jettent pas si la modale lightbox est absente', () => {
     expect(() => UI.openLightbox('data:image/png;base64,AAA', 'Titre')).not.toThrow();
     expect(() => UI.closeLightbox()).not.toThrow();
-  });
-
-  it('handleDragOver/handleDrop ne jettent pas si UI.elements.logTableBody est absent', () => {
-    UI.initElements();
-    const fakeDragEvent = { preventDefault: () => {}, clientY: 0 } as unknown as DragEvent;
-    expect(() => UI.handleDragOver(fakeDragEvent)).not.toThrow();
-    expect(() => UI.handleDrop(fakeDragEvent)).not.toThrow();
   });
 });
