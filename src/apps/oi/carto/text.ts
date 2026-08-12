@@ -4,33 +4,39 @@
  * équivalente, GStart-main n'a jamais eu de texte libre côté OI).
  * ===========================================================================
  *
- * Référence de comportement : PC-Tac `planmap/text-modal.ts` (`_addFreeText`,
- * `_confirmTextModal` — texte vidé = suppression). Coupe la plus simple côté
- * OI (pas de markup dédié dans `oi/index.html`, pas de modale à câbler) :
- * saisie via `promptDialog` (`@shared/feedback.js`, dialog générique déjà
- * jsdom-safe) au lieu de la modale `#planTextModal` de PC-Tac.
+ * Référence de comportement : PC-Tac `planmap/text-modal.ts` (`_addFreeText`)
+ * + `planmap/shapes-render.ts` (`_renderShapeTexts`). Le texte libre est une
+ * forme `type:'text'` unifiée dans `_loadShapes`/`_saveShapes` (même
+ * frontière de persistance que `line`/`rectangle`/`circle`/`measure`), rendue
+ * en annotation NUE (halo, pas de cadre/fond) — parité visuelle PC-Tac
+ * `.plan-shape-text` — et sélectionnable/déplaçable/supprimable via le
+ * chantier `shape-edit.ts` EXACTEMENT comme les autres formes : la machine
+ * de gestes partagée `@shared/shape-gestures.js` gère déjà nativement le cas
+ * `type === 'text'` (poignée `textresize`, translation, cf. `shapeHandles`/
+ * `startHandleGesture`) — aucun code de geste dédié à écrire ici.
  *
- * Modèle de données : `OiCartoText` (types.ts), persisté sous
- * `Store.state.formData.cartography.texts` via `_loadTexts`/`_saveTexts`
- * (state.ts) — même schéma de frontière que `pins`/`shapes`.
+ * Coupe la plus simple côté OI vs PC-Tac (pas de markup dédié dans
+ * `oi/index.html`, pas de modale à câbler) : saisie via `promptDialog`
+ * (`@shared/feedback.js`, dialog générique déjà jsdom-safe) au lieu de la
+ * modale `#planTextModal` de PC-Tac — le texte est donc connu AVANT la
+ * création de la forme (pas de forme fantôme à nettoyer si annulé, contraste
+ * avec `_hideTextModal`/`_confirmTextModal` côté PC-Tac).
  *
- * Rendu : un `maplibregl.Marker` draggable par texte (même famille que
- * `pins.ts`), indexé dans `this.textMarkers` (Map dédiée, state.ts) — PAS
- * `this.markers` (partagé pins/shapes, collision d'id à éviter).
+ * MIGRATION : l'ANCIEN modèle (`OiCartoText`, bucket dédié
+ * `cartography.texts`) est migré paresseusement vers des shapes `type:'text'`
+ * par `_migrateLegacyTexts` (appelée en tête de `_renderShapeTexts`,
+ * idempotente — no-op une fois le bucket vidé).
  *
- * ponytail: `_renderTexts` recrée TOUS les markers à chaque appel (pas de
- * réconciliation par signature façon `pins.ts` R3-e) — nombre de textes posés
- * sur une carte OI reste faible en pratique (contrairement aux pins). Si le
- * jank devient sensible, porter le même patron `_pinSignature`/réutilisation
- * par id que `pins.ts`.
+ * Édition : clic simple sur l'étiquette = geste générique (tap = sélection +
+ * poignées + toolbar, drag = déplacement) via `_startShapeGesture` — parité
+ * PC-Tac (marker `pointerdown` → `_startShapeGesture`, `shapes-render.ts`).
+ * Double-clic = édition du contenu (`_editText`, `promptDialog`) — vider le
+ * champ supprime l'étiquette (parité PC-Tac `_confirmTextModal`, texte vide =
+ * suppression).
  *
- * UNDO/REDO — SIGNALÉ, non câblé : `_pushHistory`/`_undo`/`_redo` (draw.ts,
- * hors périmètre de ce paquet) empilent `JSON.stringify(this._loadShapes())`
- * — un format propre aux formes dessinées, pas aux textes libres (bucket de
- * persistance distinct, `cartography.texts`). Les brancher correctement
- * demanderait d'étendre le format de pile d'historique dans `draw.ts`
- * (fichier interdit à ce paquet). Suppression/édition de texte restent donc
- * SANS undo/redo pour l'instant.
+ * UNDO/REDO : câblé — `_startFreeText`/`_editText`/`_removeText` appellent
+ * `_pushHistory()` avant mutation, comme tout autre shape (draw.ts). Écart
+ * comblé vs l'ancienne version bucket-dédié (non câblée, cf. historique git).
  */
 
 import maplibregl from 'maplibre-gl';
@@ -38,27 +44,21 @@ import type { Marker } from 'maplibre-gl';
 
 import { promptDialog } from '@shared/feedback.js';
 
-import type { LngLatObj, OICartoInternal, OiCartoText } from './types.js';
-
-/** Palette cycle simple (roue de couleur = trop pour cette coupe) — réutilise les teintes `OI_PIN_DEFS` + blanc/jaune lisibles sur fond carte. */
-export const OI_TEXT_COLORS: readonly string[] = ['#ffffff', '#facc15', '#3b82f6', '#ef4444', '#22c55e'];
+import type { LngLatObj, OICartoInternal, OiCartoShape, OiCartoText } from './types.js';
 
 export const TextMethods = {
     /**
-     * Persistance — délègue à `_getCartoState()` (state.ts, `PersistMethods`)
-     * comme `pins`/`shapes`. Pas d'adapter dédié (scope minimal, cf. en-tête) :
-     * lecture/écriture directe du champ `texts` du conteneur carto.
+     * Lecture de l'ANCIEN bucket `cartography.texts` (migration uniquement,
+     * cf. en-tête fichier). Accès direct au champ (pas d'adapter dédié,
+     * bucket voué à disparaître une fois toutes les archives migrées).
      */
     _loadTexts(this: OICartoInternal): OiCartoText[] {
         const carto = this._getCartoState();
-        // ÉCART SIGNALÉ (même angle que state.ts) : `OiCartographyState`
-        // (contracts.ts, contrat figé, hors périmètre de ce paquet) n'a pas de
-        // champ `texts` — accès via cast local, comportement runtime identique
-        // (lit `undefined` → tableau vide si absent).
         const raw = (carto as unknown as { texts?: OiCartoText[] } | null)?.texts;
         return Array.isArray(raw) ? raw : [];
     },
 
+    /** Écriture de l'ANCIEN bucket `cartography.texts` (migration uniquement — vidé après migration). */
     _saveTexts(this: OICartoInternal, texts: readonly OiCartoText[]): void {
         const carto = this._getCartoState();
         if (!carto) return;
@@ -66,121 +66,134 @@ export const TextMethods = {
     },
 
     /**
-     * Câblage attendu (agent d'intégration) : appelé avec les coordonnées du
-     * point cliqué/de la roue (ex. bouton toolbar « Texte » armant un
-     * placement au clic suivant, ou action directe de roue de création —
-     * même ergonomie que `_quickPlacePing`, `pins.ts`). Prompt la saisie,
-     * n'ajoute rien si annulé/vide.
+     * Migre une fois pour toutes les anciennes étiquettes `cartography.texts`
+     * (modèle marker dédié, pré-unification shape) en shapes `type:'text'`.
+     * Idempotente : no-op si le bucket est vide/absent (déjà migré, ou
+     * archive jamais passée par l'ancien modèle).
+     */
+    _migrateLegacyTexts(this: OICartoInternal): void {
+        const legacy = this._loadTexts();
+        if (!legacy.length) return;
+        const shapes = this._loadShapes().slice();
+        for (const t of legacy) {
+            const shape: OiCartoShape = {
+                id: t.id, type: 'text', color: t.color, textColor: t.color,
+                coords: [[t.lng, t.lat]], text: t.text,
+            };
+            shapes.push(shape);
+        }
+        this._saveShapes(shapes);
+        this._saveTexts([]); // bucket vidé : migration faite, ne se rejoue plus
+    },
+
+    /**
+     * Pose un texte libre au point cliqué (couleur = couleur active du dock
+     * dessin, `this.drawColor` — parité PC-Tac `this.drawColor || '#ffffff'`).
+     * N'ajoute rien si annulé/vide (saisie AVANT création, cf. en-tête).
      */
     async _startFreeText(this: OICartoInternal, lngLat: LngLatObj): Promise<void> {
         const value = await promptDialog({ title: 'Texte libre', message: 'Texte à afficher sur la carte' });
         if (value === null) return; // annulé
         const text = value.trim();
         if (!text) return; // vide → rien à poser
-        const texts = this._loadTexts().slice();
-        texts.push({
-            id: 'text_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7),
-            lng: lngLat.lng,
-            lat: lngLat.lat,
+        this._pushHistory();
+        const color = this.drawColor || '#ffffff';
+        const shape: OiCartoShape = {
+            id: 'shape_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7),
+            type: 'text',
+            color,
+            textColor: color,
+            coords: [[lngLat.lng, lngLat.lat]],
             text,
-            color: OI_TEXT_COLORS[0] ?? '#ffffff',
-        });
-        this._saveTexts(texts);
-        this._renderTexts();
+        };
+        const list = this._loadShapes();
+        list.push(shape);
+        this._saveShapes(list);
+        this._refreshUndoRedoButtons();
+        this._renderShapes();
     },
 
     /**
-     * Édite le texte d'une étiquette existante. Vider le champ supprime
-     * l'étiquette (parité PC-Tac `_confirmTextModal`, texte vide = suppression).
+     * Édite le contenu d'un texte existant (double-clic, parité PC-Tac).
+     * Vider le champ supprime l'étiquette (parité PC-Tac `_confirmTextModal`).
      */
     async _editText(this: OICartoInternal, id: string): Promise<void> {
-        const texts = this._loadTexts();
-        const target = texts.find((t) => t.id === id);
+        const list = this._loadShapes();
+        const target = list.find((s) => s.id === id && s.type === 'text');
         if (!target) return;
-        const value = await promptDialog({ title: 'Modifier le texte', message: 'Texte à afficher', initial: target.text });
+        const value = await promptDialog({ title: 'Modifier le texte', message: 'Texte à afficher', initial: target.text || '' });
         if (value === null) return; // annulé, inchangé
         const trimmed = value.trim();
         if (!trimmed) {
             this._removeText(id);
             return;
         }
+        this._pushHistory();
         target.text = trimmed;
-        this._saveTexts(texts);
-        this._renderTexts();
+        this._saveShapes(list);
+        this._refreshUndoRedoButtons();
+        this._renderShapes();
     },
 
-    /** Supprime une étiquette de texte. */
+    /** Supprime une étiquette de texte (shape `type:'text'`). */
     _removeText(this: OICartoInternal, id: string): void {
-        const texts = this._loadTexts().filter((t) => t.id !== id);
-        this._saveTexts(texts);
-        this._renderTexts();
-    },
-
-    /** Cycle simple à travers `OI_TEXT_COLORS` (pas de roue de couleur complète pour cette coupe). */
-    _cycleTextColor(this: OICartoInternal, id: string): void {
-        const texts = this._loadTexts();
-        const target = texts.find((t) => t.id === id);
-        if (!target) return;
-        const idx = OI_TEXT_COLORS.indexOf(target.color);
-        target.color = OI_TEXT_COLORS[(idx + 1) % OI_TEXT_COLORS.length] ?? (OI_TEXT_COLORS[0] ?? '#ffffff');
-        this._saveTexts(texts);
-        this._renderTexts();
+        this._pushHistory();
+        this._saveShapes(this._loadShapes().filter((s) => s.id !== id));
+        if (this._selectedShapeId === id) this._deselectShape();
+        this._refreshUndoRedoButtons();
+        this._renderShapes();
     },
 
     /**
-     * Rend toutes les étiquettes de texte en markers draggables. Recrée tout
-     * à chaque appel (cf. `ponytail:` en-tête de fichier).
+     * Rend les annotations texte libres : HTML markers nus (halo, pas de
+     * cadre/fond — parité PC-Tac `.plan-shape-text`/`_renderShapeTexts`).
+     * Recrée tout à chaque appel (nombre de textes posés sur une carte OI
+     * reste faible en pratique — même angle que l'historique `pins.ts`).
      */
-    _renderTexts(this: OICartoInternal): void {
-        const map = this.map;
-        // Nettoyage systématique, y compris sans carte (état cohérent).
+    _renderShapeTexts(this: OICartoInternal): void {
+        this._migrateLegacyTexts();
         for (const marker of this.textMarkers.values()) {
             try { marker.remove(); } catch { /* déjà retiré du DOM — sans effet */ }
         }
         this.textMarkers.clear();
+        const map = this.map;
         if (!map) return;
 
-        for (const t of this._loadTexts()) {
-            const el = document.createElement('div');
-            el.className = 'oi-carto-text-label';
-            el.style.borderLeftColor = t.color;
-            el.style.cursor = 'grab';
+        for (const s of this._loadShapes()) {
+            if (s.type !== 'text' || !s.text) continue;
+            const pt = s.coords[0];
+            if (!pt) continue;
 
-            const span = document.createElement('span');
-            span.className = 'oi-carto-text-content';
-            span.textContent = t.text;
-            span.title = 'Cliquer pour modifier';
-            span.addEventListener('click', (e) => { e.stopPropagation(); void this._editText(t.id); });
-            el.appendChild(span);
+            const div = document.createElement('div');
+            div.className = 'oi-carto-shape-text';
+            div.textContent = s.text;
+            const col = s.textColor || s.color || '#fff';
+            const fontSize = Math.max(9, Math.min(72, s.fontSize || 13));
+            div.style.color = col;
+            div.style.fontSize = fontSize + 'px';
 
-            const swatch = document.createElement('button');
-            swatch.type = 'button';
-            swatch.className = 'oi-carto-text-swatch';
-            swatch.style.background = t.color;
-            swatch.title = 'Changer la couleur';
-            swatch.addEventListener('click', (e) => { e.stopPropagation(); this._cycleTextColor(t.id); });
-            el.appendChild(swatch);
+            const shapeId = s.id;
+            // Délégation au state-machine gestuelle commune (parité PC-Tac
+            // `onTextPointerDown`) : tap = sélection, drag = déplacement.
+            const onPointerDown = (ev: PointerEvent | TouchEvent): void => {
+                if (this.drawTool || this._gesture) return;
+                ev.preventDefault();
+                ev.stopPropagation();
+                const rect = map.getCanvas().getBoundingClientRect();
+                const touch = 'touches' in ev ? ev.touches[0] : undefined;
+                const clientX = touch ? touch.clientX : (('clientX' in ev && ev.clientX) || 0);
+                const clientY = touch ? touch.clientY : (('clientY' in ev && ev.clientY) || 0);
+                const lngLat = map.unproject([clientX - rect.left, clientY - rect.top]);
+                this._startShapeGesture(shapeId, lngLat);
+            };
+            div.addEventListener('pointerdown', onPointerDown);
+            div.addEventListener('touchstart', onPointerDown, { passive: false });
+            div.addEventListener('dblclick', (e) => { e.stopPropagation(); void this._editText(shapeId); });
 
-            const del = document.createElement('button');
-            del.type = 'button';
-            del.className = 'oi-carto-text-delete material-symbols-outlined';
-            del.textContent = 'close';
-            del.title = 'Supprimer';
-            del.addEventListener('click', (e) => { e.stopPropagation(); this._removeText(t.id); });
-            el.appendChild(del);
-
-            const marker: Marker = new maplibregl.Marker({ element: el, anchor: 'left', draggable: true })
-                .setLngLat([t.lng, t.lat])
+            const marker: Marker = new maplibregl.Marker({ element: div, anchor: 'center' })
+                .setLngLat([pt[0], pt[1]])
                 .addTo(map);
-
-            marker.on('dragend', this._safe(() => {
-                const ll = marker.getLngLat();
-                const all = this._loadTexts().slice();
-                const found = all.find((x) => x.id === t.id);
-                if (found) { found.lng = ll.lng; found.lat = ll.lat; this._saveTexts(all); }
-            }, 'text:dragend'));
-
-            this.textMarkers.set(t.id, marker);
+            this.textMarkers.set(shapeId, marker);
         }
     },
 };

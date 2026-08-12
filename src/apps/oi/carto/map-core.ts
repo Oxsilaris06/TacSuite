@@ -161,6 +161,14 @@ export const MapCoreMethods = {
         this.map.on('rotateend', this._safe(() => this._saveView(), 'rotateend'));
 
         this.map.on('click', this._safe((e: MapMouseEvent) => this._onMapClick(e), 'mapClick'));
+        // Double-clic : termine une mesure en cours (sinon comportement zoom natif) — parité PC-Tac.
+        this.map.on('dblclick', this._safe((e: MapMouseEvent) => {
+            if (this.drawTool === 'measure' && this._measureState) {
+                if (e.preventDefault) e.preventDefault();
+                if (e.originalEvent && e.originalEvent.preventDefault) e.originalEvent.preventDefault();
+                this._finishMeasure();
+            }
+        }, 'mapDblClick'));
 
         // Drag-to-draw — souris ET tactile
         this.map.on('mousedown', this._safe((e: MapMouseEvent | MapTouchEvent) => this._handleDrawDown(e), 'drawDown'));
@@ -181,9 +189,10 @@ export const MapCoreMethods = {
             // même patron que `is3D` ci-dessus — alignement PC-Tac).
             this.streetLabelsOn = !!savedView.streetLabelsOn;
             if (this.streetLabelsOn) this._ensureStreetLabelLayers();
+            // `_renderShapes()` (draw.ts) rejoue désormais aussi
+            // `_renderShapeTexts()`/`_renderCommittedMeasures()` en interne
+            // (consolidation parité PC-Tac) — un seul appel suffit ici.
             this._renderShapes();
-            this._renderCommittedMeasures();
-            this._renderTexts();
             setTimeout(() => this.map && this.map.resize(), 60);
         }, 'load'));
 
@@ -207,9 +216,14 @@ export const MapCoreMethods = {
         const btnSearch = document.getElementById('oi_carto_btn_search');
         if (btnSearch) btnSearch.onclick = () => this._toggleSearchPanel();
 
+        // Parité PC-Tac chrome.ts:108-116 : le FAB ping ouvre directement la
+        // roue de création de pin au centre de la vue courante.
         const btnPing = document.getElementById('oi_carto_btn_ping');
-        if (btnPing) btnPing.onclick = () =>
-            toast('Touchez la carte pour placer un point (appui long sur mobile)');
+        if (btnPing) btnPing.onclick = () => {
+            if (!this.map) return;
+            const c = this.map.getCenter();
+            this._openCreatePinWheel({ lng: c.lng, lat: c.lat });
+        };
 
         const btnDraw = document.getElementById('oi_carto_btn_draw');
         if (btnDraw) btnDraw.onclick = () => this._toggleDrawDock();
@@ -247,22 +261,6 @@ export const MapCoreMethods = {
             this._toggleStreetLabels();
             btnStreets.classList.toggle('active', this.streetLabelsOn);
         };
-
-        const btnMeasure = document.getElementById('oi_carto_btn_measure');
-        if (btnMeasure) btnMeasure.onclick = () => this._toggleMeasure();
-
-        const btnRings = document.getElementById('oi_carto_btn_rings');
-        if (btnRings) btnRings.onclick = () => this._addEngagementRings();
-
-        const btnLegend = document.getElementById('oi_carto_btn_legend');
-        const legend = document.getElementById('oi_carto_legend');
-        if (btnLegend && legend) {
-            btnLegend.classList.toggle('active', !legend.hidden);
-            btnLegend.onclick = () => {
-                legend.hidden = !legend.hidden;
-                btnLegend.classList.toggle('active', !legend.hidden);
-            };
-        }
 
         const btn3d = document.getElementById('oi_carto_btn_3d');
         if (btn3d) btn3d.onclick = () => this._toggle3D();

@@ -84,10 +84,10 @@ describe('constants.ts — OI_CARTO_RASTER_STYLE (oi_cartographie.js:23-48)', ()
 });
 
 describe('constants.ts — OI_PIN_DEFS (oi_cartographie.js:56-62)', () => {
-	it('exactement 5 entrées', () => {
-		expect(Object.keys(OI_PIN_DEFS)).toHaveLength(5);
+	it('exactement 6 entrées (+ `generic`, roue de création → Catalogue → Génériques)', () => {
+		expect(Object.keys(OI_PIN_DEFS)).toHaveLength(6);
 		expect(Object.keys(OI_PIN_DEFS).sort()).toEqual(
-			['member', 'cyno', 'rame_vl', 'vl_target', 'rassemblement'].sort(),
+			['member', 'cyno', 'rame_vl', 'vl_target', 'rassemblement', 'generic'].sort(),
 		);
 	});
 

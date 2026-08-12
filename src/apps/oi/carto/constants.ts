@@ -93,7 +93,7 @@ export const OI_CARTO_RASTER_STYLE: StyleSpecification = {
  * oi_cartographie.js:50-62 — VERBATIM.
  */
 export const OI_PIN_DEFS: Record<
-    'member' | 'cyno' | 'rame_vl' | 'vl_target' | 'rassemblement',
+    'member' | 'cyno' | 'rame_vl' | 'vl_target' | 'rassemblement' | 'generic',
     { icon: string; color: string; label: string }
 > = {
     member: { icon: 'local_police', color: '#3b82f6', label: 'Membre' },
@@ -101,6 +101,10 @@ export const OI_PIN_DEFS: Record<
     rame_vl: { icon: 'directions_car', color: '#3b82f6', label: 'Rame VL' },
     vl_target: { icon: 'directions_car', color: '#ef4444', label: 'VL Target' },
     rassemblement: { icon: 'groups', color: '#22c55e', label: 'Rassemblement' },
+    // Roue de création → Catalogue → Génériques (chantier roue OI, parité
+    // PC-Tac `PIN_ICONS`) : `pin.icon` porte toujours l'icône choisie, cette
+    // entrée n'est qu'un repli visuel (icône/couleur par défaut si absent).
+    generic: { icon: 'place', color: '#94a3b8', label: 'Point' },
 };
 
 /** oi_cartographie.js:63 — VERBATIM. */

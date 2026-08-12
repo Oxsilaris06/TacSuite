@@ -282,11 +282,13 @@ export const MeasureMethods = {
         this._saveShapes(list);
         this._renderCommittedMeasures();
         this._refreshUndoRedoButtons();
+        this._setTool(null);
     },
 
     /** Annule la mesure en cours. */
     _cancelMeasure(this: OICartoInternal): void {
         this._clearMeasureState();
+        this._setTool(null);
     },
 
     /** Nettoie l'état + l'UI de mesure (markers, barre, preview, hint). */
@@ -335,19 +337,25 @@ export const MeasureMethods = {
     },
 
     /**
-     * Rend la géométrie + étiquettes des mesures/anneaux persistés (source
-     * dédiée `oi-carto-measure-src`). À rejouer à chaque `_renderShapes`
-     * (draw.ts, hors périmètre) — cf. rapport de câblage.
+     * Rend les ÉTIQUETTES des mesures/anneaux persistés (segment + total +
+     * rayon d'anneau). À rejouer à chaque `_renderShapes` (draw.ts) — cf.
+     * rapport de câblage.
+     *
+     * ÉCART ASSUMÉ vs version antérieure (parité PC-Tac, chantier
+     * `oi-carto-measure`) : la GÉOMÉTRIE (ligne/anneaux) des mesures commitées
+     * vit désormais dans la source PARTAGÉE `oi-carto-shapes-src`
+     * (`draw.ts::_renderShapes`, AVEC `shapeId` — cliquable/sélectionnable,
+     * toolbar supprimer/couleur), plus dans `oi-carto-measure-src` : cette
+     * dernière ne sert plus qu'à la PREVIEW live (`_renderMeasurePreview`),
+     * vidée ici hors mesure active pour éviter tout doublon visuel.
      */
     _renderCommittedMeasures(this: OICartoInternal): void {
         this._committedMeasureMarkers.forEach((m) => { try { m.remove(); } catch { /* déjà retiré */ } });
         this._committedMeasureMarkers = [];
         if (!this.map) return;
         const shapes = this._loadShapes();
-        const features: GeoJSON.Feature[] = [];
         for (const s of shapes) {
             if (s.type === 'measure' && Array.isArray(s.coords) && s.coords.length >= 2) {
-                features.push({ type: 'Feature', geometry: { type: 'LineString', coordinates: s.coords }, properties: { color: s.color || '#ef4444' } });
                 const savedColor = this.drawColor;
                 this.drawColor = s.color || '#ef4444';
                 this._renderMeasureLabels(s.coords, true);
@@ -356,7 +364,6 @@ export const MeasureMethods = {
                 const color = s.color || '#ef4444';
                 for (const ring of s.rings) {
                     if (!ring || !Array.isArray(ring.coords) || !ring.coords.length) continue;
-                    features.push({ type: 'Feature', geometry: { type: 'Polygon', coordinates: [ring.coords] }, properties: { color } });
                     const top = geoEdgeNorth(s.center, ring.radiusM);
                     const div = document.createElement('div');
                     div.className = 'oi-carto-measure-ring-label';
@@ -368,6 +375,6 @@ export const MeasureMethods = {
             }
         }
         const src = this.map.getSource<GeoJSONSource>('oi-carto-measure-src');
-        if (src && !this._measureState) src.setData({ type: 'FeatureCollection', features });
+        if (src && !this._measureState) src.setData({ type: 'FeatureCollection', features: [] });
     },
 };

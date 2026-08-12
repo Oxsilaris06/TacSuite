@@ -75,9 +75,11 @@ function makeFakeState(map: FakeMap | null): OICartoInternal {
         _selectShape: vi.fn(),
         drawPrecisionMode: false,
         _gesture: null,
-        // Dépendance externe mockée (groupe `carto/measure.ts`, hors périmètre) :
-        // `_renderShapes` (draw.ts) rejoue aussi le rendu des mesures persistées.
+        // Dépendances externes mockées (`carto/measure.ts`/`carto/text.ts`,
+        // hors périmètre) : `_renderShapes` (draw.ts) rejoue aussi le rendu
+        // des mesures/textes persistés (consolidation parité PC-Tac).
         _renderCommittedMeasures: vi.fn(),
+        _renderShapeTexts: vi.fn(),
     };
     return state as unknown as OICartoInternal;
 }

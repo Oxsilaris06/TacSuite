@@ -61,6 +61,7 @@ function makeFakeState(map: FakeMap | null): OICartoInternal {
         _refreshUndoRedoButtons: vi.fn(),
         _showHint: vi.fn(),
         _hideHint: vi.fn(),
+        _setTool: vi.fn(),
     };
     return state as unknown as OICartoInternal;
 }

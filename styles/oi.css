@@ -4159,17 +4159,21 @@ body.up-kb-open .up-kb-aware {
             background: var(--border-color);
         }
 
-        .oi-carto-shape-toolbar-delete {
+        .oi-carto-shape-toolbar-delete,
+        .oi-carto-shape-toolbar-edit {
             background: transparent;
             border: none;
-            color: var(--danger-red);
             cursor: pointer;
             display: flex;
             align-items: center;
             padding: 0 2px;
         }
 
-        .oi-carto-shape-toolbar-delete .material-symbols-outlined {
+        .oi-carto-shape-toolbar-delete { color: var(--danger-red); }
+        .oi-carto-shape-toolbar-edit { color: var(--text-primary); }
+
+        .oi-carto-shape-toolbar-delete .material-symbols-outlined,
+        .oi-carto-shape-toolbar-edit .material-symbols-outlined {
             font-size: 20px;
         }
 
@@ -4290,46 +4294,29 @@ body.up-kb-open .up-kb-aware {
             z-index: 3;
         }
 
-        /* --- Texte libre (text.ts) : étiquette draggable + swatch couleur + suppression --- */
-        .oi-carto-text-label {
-            display: flex;
-            align-items: center;
-            gap: 6px;
-            padding: 4px 8px;
-            background: rgba(0, 0, 0, 0.82);
-            color: #fff;
-            font-size: 13px;
-            font-weight: 500;
-            border-left: 4px solid #fff;
-            border-radius: 3px;
-            white-space: nowrap;
-            box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.35), 0 1px 4px rgba(0, 0, 0, 0.75);
-            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
-        }
-
-        .oi-carto-text-content {
-            cursor: pointer;
-        }
-
-        .oi-carto-text-swatch {
-            width: 14px;
-            height: 14px;
-            border-radius: 50%;
-            border: 1px solid rgba(255, 255, 255, 0.6);
-            padding: 0;
-            cursor: pointer;
-            flex: 0 0 auto;
-        }
-
-        .oi-carto-text-delete {
-            font-size: 15px;
-            line-height: 1;
-            color: #fca5a5;
-            background: none;
-            border: none;
-            padding: 0;
-            cursor: pointer;
-            flex: 0 0 auto;
+        /* --- Texte libre (text.ts) : forme `type:'text'`, parité PC-Tac `.plan-shape-text`
+           (annotation nue, halo, PAS de cadre/fond) — sélection/drag/suppression via
+           shape-edit comme les autres formes (toolbar flottante générique). */
+        .oi-carto-shape-text {
+            font-family: var(--font-ui, system-ui, sans-serif);
+            font-weight: 700;
+            line-height: 1.18;
+            text-align: center;
+            max-width: 240px;
+            max-height: 120px;
+            white-space: pre-wrap;
+            overflow: hidden;
+            text-shadow:
+                0 0 3px rgba(0, 0, 0, 0.95),
+                0 0 6px rgba(0, 0, 0, 0.7),
+                0 1px 2px rgba(0, 0, 0, 0.9);
+            padding: 1px 4px;
+            box-sizing: border-box;
+            cursor: grab;
+            user-select: none;
+            -webkit-user-select: none;
+            -webkit-touch-callout: none;
+            touch-action: none;
         }
 
         /* Grille de choix d'une photo du formulaire (panneau d'attache). */

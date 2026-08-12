@@ -58,7 +58,12 @@ export interface OiCartoWheelHandle {
  * Les 5 « kinds » de pin (clés de `OI_PIN_DEFS`, oi_cartographie.js:56-62) —
  * seules valeurs jamais construites par `_armPinPlacement` (:649-696).
  */
-export type OiCartoPinKind = 'member' | 'cyno' | 'rame_vl' | 'vl_target' | 'rassemblement';
+/**
+ * `generic` (roue de création → Catalogue → Génériques, chantier roue OI,
+ * parité PC-Tac `PIN_ICONS`) : pin d'icône libre, hors les 5 kinds métier —
+ * `OiCartoPin.icon` porte alors l'id d'icône choisi dans `@shared/pin-icons.js`.
+ */
+export type OiCartoPinKind = 'member' | 'cyno' | 'rame_vl' | 'vl_target' | 'rassemblement' | 'generic';
 
 /** Point posé sur la carte, persisté par `_savePins` (oi_cartographie.js:862-873). */
 export interface OiCartoPin {
@@ -117,7 +122,7 @@ export interface OiCartoPhotoTarget {
 }
 
 /** Les 3 outils de tracé (oi_cartographie.js:278, `data-tool` des `.oi-carto-draw-btn`). */
-export type OiCartoDrawTool = 'line' | 'rectangle' | 'circle';
+export type OiCartoDrawTool = 'line' | 'rectangle' | 'circle' | 'text' | 'measure';
 
 /** État temporaire pendant un tracé (`_handleDrawDown`/`_handleDrawMove`, oi_cartographie.js:1442,1448). */
 export interface OiCartoDrawState {
@@ -125,8 +130,11 @@ export interface OiCartoDrawState {
     current: LngLatTuple;
 }
 
-/** Type d'une forme persistée (oi_cartographie.js:1482-1486). */
-export type OiCartoShapeType = 'line' | 'rectangle' | 'circle';
+/** Type d'une forme persistée (oi_cartographie.js:1482-1486). `'text'` : hors littéral
+ * d'origine — texte libre unifié dans le modèle shape (parité PC-Tac `PlanShapeType`,
+ * cf. `carto/text.ts`), sélectionnable/déplaçable/supprimable via shape-edit comme les
+ * autres formes, au lieu d'un bucket `cartography.texts` dédié non éditable. */
+export type OiCartoShapeType = 'line' | 'rectangle' | 'circle' | 'text';
 /**
  * Types de forme MESURE (paquet `oi-carto-measure`, hors littéral
  * `oi_cartographie.js` — introduit par ce chantier, parité PC-Tac
@@ -161,6 +169,14 @@ export interface OiCartoShape {
      * ce paquet, consomme `s.coords` inconditionnellement).
      */
     rings?: { radiusM: number; coords: LngLatTuple[] }[] | undefined;
+    /** `text` uniquement : contenu de l'annotation libre (parité PC-Tac `PlanShape.text`). */
+    text?: string | undefined;
+    /** `text` uniquement : couleur du texte (distincte de `color`, parité PC-Tac `PlanShape.textColor`). */
+    textColor?: string | undefined;
+    /** `text` uniquement : taille de police en px, 9-72 (parité PC-Tac `PlanShape.fontSize`, poignée `textresize`). */
+    fontSize?: number | undefined;
+    /** Verrou par-forme (lu par `@shared/shape-gestures.js` — jamais posé côté OI, cf. `isLocked`/pas de toggle dédié). */
+    locked?: boolean | undefined;
 }
 
 /** État en cours d'une mesure (mode togglable, non encore validée). */
@@ -327,8 +343,20 @@ export interface OICartoInternal extends OICartoContract {
     // hors source oi_cartographie.js — introduit par ce chantier) ---
     _openCreatePinWheel(lngLat: LngLatObj): void;
     _quickPlacePing(lngLat: LngLatObj, pending: OiCartoPendingPin): void;
-    _openMemberPickerPanel(lngLat: LngLatObj): void;
-    _openVehiclePickerPanel(lngLat: LngLatObj): void;
+    /**
+     * Panneau inline unifié « Ajouter entité » (parité PC-Tac `_openEntityPickerPanel`,
+     * fusion des ex- `_openMemberPickerPanel`/`_openVehiclePickerPanel`) : membres
+     * PATRACDVR (grisés si déjà placés), Cyno, véhicules (rame VL + VL target),
+     * rassemblement.
+     */
+    _openEntityPickerPanel(lngLat: LngLatObj): void;
+    /**
+     * Panneau inline « Catalogue » (même emplacement/présentation que PC-Tac
+     * `_openIconCatalogPanel`) : deux onglets — Génériques (`@shared/pin-icons.js`,
+     * pin `kind: 'generic'`) et Personnalisés (pins métier OI : cyno, rame VL,
+     * VL target, rassemblement).
+     */
+    _openIconCatalogPanel(lngLat: LngLatObj): void;
     _wireLongPressForPing(): void;
 
     // --- Roue d'options d'un pin + panneaux inline (panels.ts) ---
@@ -459,22 +487,33 @@ export interface OICartoInternal extends OICartoContract {
 
     // --- TEXTE LIBRE (text.ts, paquet `oi-carto-text`, hors source
     // oi_cartographie.js — port fonctionnel introduit par ce chantier,
-    // cf. en-tête de `text.ts`) ---
-    /** Markers MapLibre des étiquettes de texte libre, indexés par id (dédié — pas `markers`, partagé pins/shapes). */
+    // cf. en-tête de `text.ts`). Depuis l'unification shape (parité PC-Tac
+    // `text-modal.ts`) : le texte est une forme `type:'text'` persistée dans
+    // `_loadShapes`/`_saveShapes`, sélectionnable/déplaçable/supprimable via
+    // shape-edit comme les autres formes. `_loadTexts`/`_saveTexts` restent
+    // pour lire/vider une seule fois l'ANCIEN bucket `cartography.texts`
+    // (migration paresseuse, cf. `_migrateLegacyTexts`). ---
+    /** Markers MapLibre des étiquettes de texte libre, indexés par shape id (dédié — pas `markers`, partagé pins/shapes). */
     textMarkers: Map<string, Marker>;
+    /** Lecture de l'ANCIEN bucket `cartography.texts` (migration uniquement, cf. `_migrateLegacyTexts`). */
     _loadTexts(): OiCartoText[];
+    /** Écriture de l'ANCIEN bucket `cartography.texts` (migration uniquement — vidé après migration). */
     _saveTexts(texts: readonly OiCartoText[]): void;
+    /** Migre une fois pour toutes les anciennes étiquettes `cartography.texts` en shapes `type:'text'`. Idempotent (no-op si bucket vide). */
+    _migrateLegacyTexts(): void;
     _startFreeText(lngLat: LngLatObj): Promise<void>;
     _editText(id: string): Promise<void>;
     _removeText(id: string): void;
-    _cycleTextColor(id: string): void;
-    _renderTexts(): void;
+    /** Rend les annotations texte libres (shapes `type:'text'`) — HTML markers nus, halo, PAS de cadre (parité PC-Tac `_renderShapeTexts`). */
+    _renderShapeTexts(): void;
 }
 
 /**
- * Étiquette de texte libre posée sur la carte OI, persistée par `_saveTexts`
- * (text.ts) sous `Store.state.formData.cartography.texts` — bucket dédié,
- * même frontière de persistance que `pins`/`shapes` (cf. en-tête `state.ts`).
+ * Étiquette de texte libre — ANCIEN modèle (pré-unification shape), persisté
+ * sous `Store.state.formData.cartography.texts`. Conservé uniquement pour
+ * typer la migration paresseuse d'archives existantes vers `OiCartoShape`
+ * (`type:'text'`, cf. `_migrateLegacyTexts`) — plus jamais écrit par la pose
+ * (`_startFreeText`).
  */
 export interface OiCartoText {
     id: string;

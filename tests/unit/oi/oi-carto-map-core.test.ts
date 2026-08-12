@@ -206,7 +206,7 @@ function makeFakeThis(overrides: Record<string, unknown> = {}): OICartoInternal 
         _measureState: null,
 
         // --- Texte libre (carto/text.ts, autre paquet) ---
-        _renderTexts: vi.fn(),
+        _renderShapeTexts: vi.fn(),
         _startFreeText: vi.fn(async () => {}),
 
         ...overrides,
@@ -366,8 +366,6 @@ describe('_bindUi (oi_cartographie.js:419-500)', () => {
             <button id="oi_carto_btn_labels"></button>
             <button id="oi_carto_btn_3d"></button>
             <button id="oi_carto_btn_fullscreen"></button>
-            <button id="oi_carto_btn_measure"></button>
-            <button id="oi_carto_btn_rings"></button>
             <input id="oi_carto_address_input" type="text" />
             <button id="oi_carto_search_btn"></button>
             <button id="oi_carto_search_close"></button>
@@ -390,14 +388,18 @@ describe('_bindUi (oi_cartographie.js:419-500)', () => {
         const toggleLabels = vi.fn();
         const toggle3D = vi.fn();
         const toggleFullscreen = vi.fn();
+        const openCreatePinWheel = vi.fn();
+        const fakeMap = { getCenter: vi.fn(() => ({ lng: 2.1, lat: 48.1 })) };
         const fake = makeFakeThis({
             close,
+            map: fakeMap,
             _toggleSearchPanel: toggleSearchPanel,
             _toggleDrawDock: toggleDrawDock,
             _openCaptureModal: openCaptureModal,
             _toggleLabels: toggleLabels,
             _toggle3D: toggle3D,
             _toggleFullscreen: toggleFullscreen,
+            _openCreatePinWheel: openCreatePinWheel,
         });
 
         MapCoreMethods._bindUi.call(fake);
@@ -406,8 +408,10 @@ describe('_bindUi (oi_cartographie.js:419-500)', () => {
         expect(close).toHaveBeenCalledTimes(1);
         document.getElementById('oi_carto_btn_search')?.click();
         expect(toggleSearchPanel).toHaveBeenCalledWith();
+        // Parité PC-Tac chrome.ts:108-116 : le FAB ping ouvre la roue de
+        // création de pin au centre de la vue courante.
         document.getElementById('oi_carto_btn_ping')?.click();
-        expect(toastSpy).toHaveBeenCalledWith('Touchez la carte pour placer un point (appui long sur mobile)');
+        expect(openCreatePinWheel).toHaveBeenCalledWith({ lng: 2.1, lat: 48.1 });
         document.getElementById('oi_carto_btn_draw')?.click();
         expect(toggleDrawDock).toHaveBeenCalledTimes(1);
         document.getElementById('oi_carto_btn_capture')?.click();
@@ -418,19 +422,6 @@ describe('_bindUi (oi_cartographie.js:419-500)', () => {
         expect(toggle3D).toHaveBeenCalledTimes(1);
         document.getElementById('oi_carto_btn_fullscreen')?.click();
         expect(toggleFullscreen).toHaveBeenCalledTimes(1);
-    });
-
-    it('mesure : #oi_carto_btn_measure → _toggleMeasure, #oi_carto_btn_rings → _addEngagementRings', () => {
-        buildDom();
-        const toggleMeasure = vi.fn();
-        const addEngagementRings = vi.fn();
-        const fake = makeFakeThis({ _toggleMeasure: toggleMeasure, _addEngagementRings: addEngagementRings });
-        MapCoreMethods._bindUi.call(fake);
-
-        document.getElementById('oi_carto_btn_measure')?.click();
-        expect(toggleMeasure).toHaveBeenCalledTimes(1);
-        document.getElementById('oi_carto_btn_rings')?.click();
-        expect(addEngagementRings).toHaveBeenCalledTimes(1);
     });
 
     it('fullscreenchange / webkitfullscreenchange déclenchent _updateFullscreenIcon', () => {

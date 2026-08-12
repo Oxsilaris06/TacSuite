@@ -162,6 +162,11 @@ function makeFakeThis(overrides: Partial<OICartoInternal> = {}): OICartoInternal
         // Roue de création stubée par défaut (comme `_renderPins`) : isole les
         // tests du flux clic-carte ; describe dédié plus bas pour le flux réel.
         _openCreatePinWheel: vi.fn(),
+        // Panneaux ouverts par la roue de création (« Ajouter entité »/« Catalogue »),
+        // stubés par défaut : le describe dédié plus bas vérifie seulement l'APPEL
+        // depuis `_openCreatePinWheel` (même patron que `_openCreatePinWheel` ci-dessus).
+        _openEntityPickerPanel: vi.fn(),
+        _openIconCatalogPanel: vi.fn(),
         // --- Groupe carto/measure.ts, hors périmètre de ce paquet — stubs. ---
         _measureState: null,
         _measureAddVertex: vi.fn(),
@@ -402,39 +407,25 @@ describe('_onMapClick (oi_cartographie.js:856-878)', () => {
         return { lngLat: { lng, lat } } as unknown as MapMouseEvent;
     }
 
-    it('sans placement en attente : ne crée aucun pin, ouvre la roue de création (parité PC-Tac)', () => {
+    it('sans placement en attente : ne crée aucun pin, n\'ouvre JAMAIS la roue au clic simple (parité PC-Tac planmap/pins.ts:77-109)', () => {
         const fake = makeFakeThis({ _loadPins: () => [] });
         PinsMethods._onMapClick.call(fake, makeClick(1, 2));
         expect(fake._savePins).not.toHaveBeenCalled();
-        expect(fake._openCreatePinWheel).toHaveBeenCalledWith({ lng: 1, lat: 2 });
-    });
-
-    it('roue active : le clic carte n\'ouvre PAS de roue de création (la roue gère sa fermeture)', () => {
-        const fake = makeFakeThis({
-            _loadPins: () => [],
-            _activeWheel: { open: vi.fn(), destroy: vi.fn(), element: null },
-        });
-        PinsMethods._onMapClick.call(fake, makeClick(1, 2));
         expect(fake._openCreatePinWheel).not.toHaveBeenCalled();
     });
 
-    it('roue fermée à l\'instant (_wheelJustClosed < 400 ms) : pas de réouverture', () => {
-        const fake = makeFakeThis({ _loadPins: () => [], _wheelJustClosed: Date.now() });
-        PinsMethods._onMapClick.call(fake, makeClick(1, 2));
-        expect(fake._openCreatePinWheel).not.toHaveBeenCalled();
-    });
-
-    it('clic qui ferme un panneau inline : ferme le panneau sans ouvrir la roue de création', () => {
+    it('clic qui ferme un panneau inline : ferme le panneau, n\'ouvre pas de roue', () => {
         const fake = makeFakeThis({ _loadPins: () => [], _inlinePanel: document.createElement('div') });
         PinsMethods._onMapClick.call(fake, makeClick(1, 2));
         expect(fake._closeInlinePanel).toHaveBeenCalledTimes(1);
         expect(fake._openCreatePinWheel).not.toHaveBeenCalled();
     });
 
-    it('mesure active (_measureState) : ajoute un sommet de mesure, n\'ouvre pas la roue de création', () => {
+    it('drawTool === measure : ajoute un sommet de mesure, n\'ouvre pas de roue (parité PC-Tac)', () => {
         const measureAddVertex = vi.fn();
         const fake = makeFakeThis({
             _loadPins: () => [],
+            drawTool: 'measure',
             _measureState: { vertices: [], cursor: null },
             _measureAddVertex: measureAddVertex,
         });
@@ -444,7 +435,14 @@ describe('_onMapClick (oi_cartographie.js:856-878)', () => {
         expect(fake._savePins).not.toHaveBeenCalled();
     });
 
-    it('pendant un dessin (drawTool actif) : le clic est ignoré', () => {
+    it('drawTool === measure sans mesure démarrée : ne pose aucun sommet', () => {
+        const measureAddVertex = vi.fn();
+        const fake = makeFakeThis({ _loadPins: () => [], drawTool: 'measure', _measureAddVertex: measureAddVertex });
+        PinsMethods._onMapClick.call(fake, makeClick(1, 2));
+        expect(measureAddVertex).not.toHaveBeenCalled();
+    });
+
+    it('pendant un autre dessin (drawTool actif) : le clic est ignoré', () => {
         const pending: OiCartoPendingPin = { kind: 'rassemblement', label: 'Point' };
         const fake = makeFakeThis({ drawTool: 'line', pendingPin: pending, _loadPins: () => [] });
         PinsMethods._onMapClick.call(fake, makeClick(1, 2));
@@ -511,18 +509,34 @@ describe('_quickPlacePing (roue de création, parité PC-Tac)', () => {
     });
 });
 
-describe('_openCreatePinWheel — option « Texte » (paquet carto/text.ts)', () => {
-    it('propose une option Texte qui appelle _startFreeText aux coordonnées du clic', () => {
+describe('_openCreatePinWheel — parité de présentation PC-Tac (roue OI)', () => {
+    it("n'a PAS d'option Texte (texte = outil du dock dessin, cf. carto/text.ts)", () => {
         wheelOptsSpy.mockClear();
         const fake = makeFakeThis({ _loadPins: () => [] });
 
         PinsMethods._openCreatePinWheel.call(fake, { lng: 2.1, lat: 48.1 });
 
         const opts = (wheelOptsSpy.mock.calls[0]?.[0] as { options: Array<{ id?: string; action?: () => void }> }).options;
-        const textOpt = opts.find((o) => o.id === 'text');
-        expect(textOpt).toBeDefined();
-        textOpt?.action?.();
-        expect(fake._startFreeText).toHaveBeenCalledWith({ lng: 2.1, lat: 48.1 });
+        expect(opts.find((o) => o.id === 'text')).toBeUndefined();
+    });
+
+    it('propose « Ajouter entité » (panneau unifié) et « Catalogue »', () => {
+        wheelOptsSpy.mockClear();
+        const fake = makeFakeThis({ _loadPins: () => [] });
+
+        PinsMethods._openCreatePinWheel.call(fake, { lng: 2.1, lat: 48.1 });
+
+        const opts = (wheelOptsSpy.mock.calls[0]?.[0] as { options: Array<{ id?: string; action?: () => void }> }).options;
+        const entityOpt = opts.find((o) => o.id === 'entity');
+        const catalogOpt = opts.find((o) => o.id === 'catalog');
+        expect(entityOpt).toBeDefined();
+        expect(catalogOpt).toBeDefined();
+
+        entityOpt?.action?.();
+        expect(fake._openEntityPickerPanel).toHaveBeenCalledWith({ lng: 2.1, lat: 48.1 });
+
+        catalogOpt?.action?.();
+        expect(fake._openIconCatalogPanel).toHaveBeenCalledWith({ lng: 2.1, lat: 48.1 });
     });
 });
 

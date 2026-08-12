@@ -60,6 +60,9 @@ const TOOLBAR_COLORS: { color: string; label: string; cls: string }[] = [
 /** Centroïde d'une forme OI (pivot du pinch + ancre de la toolbar). */
 function shapeCentroid(s: OiCartoShape): LngLatTuple {
     if (s.type === 'circle' && s.center) return s.center;
+    // `measure-rings` n'a pas de `coords` (délibéré, cf. types.ts) — le
+    // centre du geste/toolbar est `s.center` (posé par `_addEngagementRings`).
+    if (s.type === 'measure-rings' && s.center) return s.center;
     const pts = s.coords;
     if (!pts.length) return [0, 0];
     let lng = 0, lat = 0;
@@ -165,6 +168,15 @@ export const ShapeEditMethods = {
         if (!feat || !feat.properties) return;
         const id = feat.properties.shapeId as string | undefined;
         if (!id) return;
+        // Mesures/anneaux commités (parité PC-Tac : annotation lecture seule,
+        // pas de move/resize générique) : clic-sélection uniquement, via le
+        // `map.on('click', …)` déjà câblé (draw.ts::_initDrawingLayers →
+        // `_onShapeClick`) — on NE démarre PAS la machine tap/drag ici, pour
+        // ne pas translater `center` sans re-projeter `rings[].coords`
+        // (`startShapeDragGesture`, @shared/shape-gestures.js, ne connaît que
+        // `coords`/`center`/`edge`, pas la géométrie dérivée des anneaux).
+        const shape = this._loadShapes().find((s) => s.id === id);
+        if (shape && (shape.type === 'measure' || shape.type === 'measure-rings')) return;
         if (e.preventDefault) e.preventDefault();
         if (oe && oe.preventDefault) oe.preventDefault();
         this._startShapeGesture(id, e.lngLat);
@@ -274,6 +286,7 @@ export const ShapeEditMethods = {
                 const t = list.find(x => x.id === shapeId);
                 if (!t) return;
                 t.color = c.color;
+                if (t.type === 'text') t.textColor = c.color; // parité PC-Tac `_confirmTextModal` (color === textColor)
                 this._saveShapes(list);
                 this._renderShapes();
                 this._refreshUndoRedoButtons();
@@ -285,6 +298,17 @@ export const ShapeEditMethods = {
         const sep = document.createElement('div');
         sep.className = 'oi-carto-shape-toolbar-sep';
         el.appendChild(sep);
+
+        if (s.type === 'text') {
+            const edit = document.createElement('button');
+            edit.type = 'button';
+            edit.className = 'oi-carto-shape-toolbar-edit';
+            edit.title = 'Modifier le texte';
+            edit.setAttribute('aria-label', 'Modifier le texte');
+            edit.innerHTML = '<span class="material-symbols-outlined" aria-hidden="true">edit</span>';
+            edit.onclick = this._safe(() => { void this._editText(shapeId); }, 'shapeToolbar:editText');
+            el.appendChild(edit);
+        }
 
         const del = document.createElement('button');
         del.type = 'button';

@@ -405,3 +405,122 @@ describe('_bindShapeEditGestures — désélection', () => {
         expect(ev.defaultPrevented).toBe(true);
     });
 });
+
+// ============================================================
+// Mesures/anneaux commités : sélectionnables au clic, supprimables via
+// toolbar — PAS de move/resize générique (parité PC-Tac : annotation
+// lecture seule pour la géométrie, cf. `carto/shape-edit.ts::_shapePointerDown`).
+// ============================================================
+describe('_shapePointerDown — mesures/anneaux : clic-sélection sans drag', () => {
+    function makeDownEvent(shapeId: string): MapLayerMouseEvent {
+        return {
+            features: [{ properties: { shapeId } }],
+            lngLat: { lng: 0.5, lat: 0.5 },
+            preventDefault: vi.fn(),
+            originalEvent: undefined,
+        } as unknown as MapLayerMouseEvent;
+    }
+
+    it("type 'measure' : mousedown n'amorce PAS de geste (le clic gère la sélection)", () => {
+        const measure: OiCartoShape = { id: 'm1', type: 'measure', color: '#ef4444', coords: [[0, 0], [1, 1]], totalM: 100 };
+        const { fake, map } = makeFakeThis({ shapes: [measure] });
+
+        fake._shapePointerDown(makeDownEvent('m1'));
+
+        expect(assertNonNull(map).dragPan.disable).not.toHaveBeenCalled();
+        expect(fake._gesture).toBeNull();
+    });
+
+    it("type 'measure-rings' : mousedown n'amorce PAS de geste", () => {
+        const rings: OiCartoShape = {
+            id: 'ring1', type: 'measure-rings', color: '#ef4444', coords: [],
+            center: [0, 0], rings: [{ radiusM: 50, coords: [[0, 1]] }],
+        };
+        const { fake, map } = makeFakeThis({ shapes: [rings] });
+
+        fake._shapePointerDown(makeDownEvent('ring1'));
+
+        expect(assertNonNull(map).dragPan.disable).not.toHaveBeenCalled();
+        expect(fake._gesture).toBeNull();
+    });
+
+    it("type 'line' (contrôle) : mousedown amorce bien le geste normalement", () => {
+        const line: OiCartoShape = { id: 'l1', type: 'line', color: '#fff', coords: [[0, 0], [1, 1]] };
+        const { fake, map } = makeFakeThis({ shapes: [line] });
+
+        fake._shapePointerDown(makeDownEvent('l1'));
+
+        expect(assertNonNull(map).dragPan.disable).toHaveBeenCalledTimes(1);
+        expect(fake._gesture).not.toBeNull();
+    });
+});
+
+describe('_selectShape — mesures/anneaux : toolbar sans poignées', () => {
+    it("type 'measure' sélectionnée : toolbar (couleur+supprimer) mais AUCUNE poignée", () => {
+        const measure: OiCartoShape = { id: 'm1', type: 'measure', color: '#ef4444', coords: [[0, 0], [1, 1]], totalM: 100 };
+        const { fake } = makeFakeThis({ shapes: [measure] });
+
+        fake._selectShape('m1');
+
+        expect(fake._handleMarkers).toHaveLength(0);
+        expect(fake._shapeToolbarMarker).not.toBeNull();
+    });
+
+    it("type 'measure-rings' : ancre/centroïde de la toolbar = `s.center` (coords vide, pas [0,0])", () => {
+        const rings: OiCartoShape = {
+            id: 'ring1', type: 'measure-rings', color: '#ef4444', coords: [],
+            center: [2, 3], rings: [{ radiusM: 50, coords: [[2, 4]] }],
+        };
+        const { fake } = makeFakeThis({ shapes: [rings] });
+
+        fake._selectShape('ring1');
+
+        const ll = assertNonNull(fake._shapeToolbarMarker).getLngLat() as unknown as [number, number];
+        expect(ll).toEqual([2, 3]);
+    });
+
+    it('le bouton supprimer retire la mesure sélectionnée (toolbar générique, aucun code dédié)', () => {
+        const measure: OiCartoShape = { id: 'm1', type: 'measure', color: '#ef4444', coords: [[0, 0], [1, 1]], totalM: 100 };
+        const { fake, shapes } = makeFakeThis({ shapes: [measure] });
+        fake._selectShape('m1');
+
+        const el = assertNonNull(fake._shapeToolbarMarker).getElement();
+        const del = assertNonNull(el.querySelector<HTMLButtonElement>('.oi-carto-shape-toolbar-delete'));
+        del.click();
+
+        expect(shapes()).toHaveLength(0);
+        expect(fake._selectedShapeId).toBeNull();
+    });
+});
+
+describe('_renderShapeToolbar — texte : bouton "modifier" + synchro textColor', () => {
+    it("type 'text' sélectionné : la toolbar expose un bouton édition en plus de couleur/supprimer", () => {
+        const text: OiCartoShape = { id: 't1', type: 'text', color: '#fff', textColor: '#fff', coords: [[0, 0]], text: 'X' };
+        const { fake } = makeFakeThis({ shapes: [text] });
+        fake._selectShape('t1');
+
+        const el = assertNonNull(fake._shapeToolbarMarker).getElement();
+        expect(el.querySelectorAll('.oi-carto-shape-toolbar-edit')).toHaveLength(1);
+    });
+
+    it("type 'line' (contrôle) : pas de bouton édition", () => {
+        const line: OiCartoShape = { id: 'l1', type: 'line', color: '#fff', coords: [[0, 0], [1, 1]] };
+        const { fake } = makeFakeThis({ shapes: [line] });
+        fake._selectShape('l1');
+
+        const el = assertNonNull(fake._shapeToolbarMarker).getElement();
+        expect(el.querySelectorAll('.oi-carto-shape-toolbar-edit')).toHaveLength(0);
+    });
+
+    it("un swatch couleur sur un texte met aussi à jour `textColor` (parité PC-Tac color===textColor)", () => {
+        const text: OiCartoShape = { id: 't1', type: 'text', color: '#ffffff', textColor: '#ffffff', coords: [[0, 0]], text: 'X' };
+        const { fake, shapes } = makeFakeThis({ shapes: [text] });
+        fake._selectShape('t1');
+
+        const el = assertNonNull(fake._shapeToolbarMarker).getElement();
+        const blue = assertNonNull(el.querySelector<HTMLButtonElement>('.oi-carto-draw-color-blue'));
+        blue.click();
+
+        expect(shapes()[0]).toMatchObject({ color: '#3b82f6', textColor: '#3b82f6' });
+    });
+});

@@ -820,18 +820,6 @@ Gestuelle et visuelle entre les éléments INDIA</textarea>
                         title="Afficher / masquer les libellés des pins" aria-label="Afficher ou masquer les libellés des pins">
                         <span class="material-symbols-outlined">label</span>
                     </button>
-                    <button type="button" id="oi_carto_btn_legend" class="oi-carto-fab"
-                        title="Afficher / masquer la légende" aria-label="Afficher ou masquer la légende">
-                        <span class="material-symbols-outlined">legend_toggle</span>
-                    </button>
-                    <button type="button" id="oi_carto_btn_measure" class="oi-carto-fab"
-                        title="Mesurer distance / azimut" aria-label="Mesurer une distance et un azimut sur la carte">
-                        <span class="material-symbols-outlined">straighten</span>
-                    </button>
-                    <button type="button" id="oi_carto_btn_rings" class="oi-carto-fab"
-                        title="Poser des anneaux d'engagement (50/100/200 m)" aria-label="Poser des anneaux d'engagement autour du centre de la carte">
-                        <span class="material-symbols-outlined">radar</span>
-                    </button>
                 </div>
                 <button type="button" id="oi_carto_btn_close" class="oi-carto-fab close-fab"
                     title="Fermer la cartographie" aria-label="Fermer la cartographie">
@@ -850,6 +838,12 @@ Gestuelle et visuelle entre les éléments INDIA</textarea>
                 </button>
                 <button type="button" class="oi-carto-draw-btn" data-tool="circle" title="Tracer un cercle" aria-label="Tracer un cercle">
                     <span class="material-symbols-outlined">circle</span>
+                </button>
+                <button type="button" class="oi-carto-draw-btn" data-tool="text" title="Ajouter un texte" aria-label="Ajouter un texte">
+                    <span class="material-symbols-outlined">title</span>
+                </button>
+                <button type="button" class="oi-carto-draw-btn" data-tool="measure" title="Mesurer distance / azimut" aria-label="Mesurer une distance et un azimut sur la carte">
+                    <span class="material-symbols-outlined">straighten</span>
                 </button>
                 <div class="oi-carto-dock-sep"></div>
                 <div id="oi_carto_draw_colors">
@@ -896,19 +890,6 @@ Gestuelle et visuelle entre les éléments INDIA</textarea>
                     <span>Annuler</span>
                 </button>
             </div>
-
-            <!-- Légende repliable (pattern #plan_legend PC-Tac) : catégories de pins OI -->
-            <details id="oi_carto_legend" class="oi-carto-legend">
-                <summary class="oi-carto-legend-summary">
-                    <span class="material-symbols-outlined icon-mid-18">legend_toggle</span>Légende
-                </summary>
-                <div class="oi-carto-legend-items">
-                    <span class="oi-carto-legend-item"><span class="oi-carto-legend-dot oi-carto-legend-dot--force"></span>Force (membre, cyno, rame VL)</span>
-                    <span class="oi-carto-legend-item"><span class="oi-carto-legend-dot oi-carto-legend-dot--target"></span>VL Target (adverse)</span>
-                    <span class="oi-carto-legend-item"><span class="oi-carto-legend-dot oi-carto-legend-dot--rassemblement"></span>Rassemblement</span>
-                    <span class="oi-carto-legend-item"><span class="oi-carto-legend-dot oi-carto-legend-dot--generic"></span>Point générique</span>
-                </div>
-            </details>
         </div>
     </dialog>
 

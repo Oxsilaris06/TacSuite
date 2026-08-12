@@ -91,6 +91,7 @@ import maplibregl from 'maplibre-gl';
 import type { MapMouseEvent, MapTouchEvent, Marker, PointLike } from 'maplibre-gl';
 
 import { confirmDialog, toast } from '@shared/feedback.js';
+import { PIN_ICONS } from '@shared/pin-icons.js';
 import { attachPinGestures, createDblZoomSuppressor } from '@shared/pin-gestures.js';
 import type { PinGestureHandle } from '@shared/pin-gestures.js';
 import { esc } from '@shared/ui-platform.js';
@@ -488,13 +489,20 @@ export const PinsMethods = {
     },
 
     // oi_cartographie.js:856-878 + roue de création au clic (parité PC-Tac)
+    // Parité PC-Tac planmap/pins.ts:77-109 : d'abord l'outil mesure (sommets
+    // au clic), puis tout autre outil de dessin actif bloque le clic simple,
+    // puis la pose d'un pin armé (pending) — RIEN d'autre : le clic simple
+    // n'ouvre JAMAIS de roue.
     _onMapClick(this: OICartoInternal, e: MapMouseEvent): void {
-        // Un clic sur le fond ferme tout panneau flottant d'édition de pin —
-        // et ce clic de fermeture n'ouvre PAS de roue de création dans la foulée.
-        const hadPanel = !!this._inlinePanel;
+        // Un clic sur le fond ferme tout panneau flottant d'édition de pin.
         this._closeInlinePanel();
-        if (this._measureState) { this._measureAddVertex([e.lngLat.lng, e.lngLat.lat]); return; }
-        if (this.drawTool) return; // pendant un dessin, les clics sont gérés ailleurs
+        // Outil mesure : chaque clic pose un sommet (machine d'états dédiée).
+        if (this.drawTool === 'measure') {
+            if (this._measureState) this._measureAddVertex([e.lngLat.lng, e.lngLat.lat]);
+            return;
+        }
+        // Pendant un autre outil de dessin, les clics sont gérés par mousedown/up.
+        if (this.drawTool) return;
         if (this.pendingPin) {
             const p = this.pendingPin;
             this._addPin({
@@ -513,27 +521,16 @@ export const PinsMethods = {
             this._hideHint();
             // Rafraîchit la modale d'ajout si encore ouverte (état "placé").
             this._renderPingLists();
-            return;
         }
-        // --- Nouvelle ergonomie (parité PC-Tac) : clic sur zone vide → roue
-        // de création de pin aux coordonnées cliquées. ---
-        if (hadPanel) return;
-        if (this._activeWheel) return; // la roue gère elle-même sa fermeture
-        // Le clic qui vient de FERMER une roue (clic extérieur) ne rouvre rien.
-        if (this._wheelJustClosed && Date.now() - this._wheelJustClosed < 400) return;
-        // Clic issu d'un marker / d'une roue / d'un panneau : géré par eux.
-        const target = e.originalEvent?.target;
-        if (target instanceof Element
-            && target.closest('.maplibregl-marker, .oi-wheel, .oi-carto-inline-panel')) return;
-        this._openCreatePinWheel(e.lngLat);
     },
 
     /**
-     * Roue de CRÉATION d'un pin au point cliqué (parité PC-Tac
-     * `_openCreatePingWheel`) : segments de pose directe pour les pins métier
-     * OI génériques (cyno / rame VL / VL target / rassemblement), panneaux
-     * inline pour les membres PATRACDVR et les véhicules nommés, re-pose
-     * rapide du dernier type utilisé, copie de coordonnées.
+     * Roue de CRÉATION d'un pin au point cliqué — parité de PRÉSENTATION avec
+     * PC-Tac `_openCreatePingWheel` (`@pctac/planmap/wheels.ts`) : re-pose
+     * rapide du dernier type utilisé, « Ajouter entité » (panneau unifié
+     * membres/Cyno/véhicules/rassemblement), « Catalogue » (icônes génériques
+     * + pins métier OI), copie de coordonnées. Pas d'option Texte (outil du
+     * dock dessin, cf. `text.ts`).
      */
     _openCreatePinWheel(this: OICartoInternal, lngLat: LngLatObj): void {
         this._closeWheel();
@@ -551,16 +548,8 @@ export const PinsMethods = {
                 action: quick(last),
             });
         }
-        opts.push({ id: 'member', icon: 'badge', label: 'Membre', bg: OI_PIN_DEFS.member.color, action: () => this._openMemberPickerPanel(lngLat) });
-        opts.push({ id: 'cyno', icon: OI_PIN_DEFS.cyno.icon, label: 'Cyno', bg: OI_PIN_DEFS.cyno.color, action: quick({ kind: 'cyno', label: 'Cyno' }) });
-        opts.push({ id: 'rame_vl', icon: OI_PIN_DEFS.rame_vl.icon, label: 'Rame VL', bg: OI_PIN_DEFS.rame_vl.color, action: quick({ kind: 'rame_vl', label: 'Rame VL' }) });
-        opts.push({ id: 'vl_target', icon: OI_PIN_DEFS.vl_target.icon, label: 'VL Target', bg: OI_PIN_DEFS.vl_target.color, action: quick({ kind: 'vl_target', label: 'VL Target' }) });
-        opts.push({ id: 'rassemblement', icon: OI_PIN_DEFS.rassemblement.icon, label: 'Rassemblement', bg: OI_PIN_DEFS.rassemblement.color, action: quick({ kind: 'rassemblement', label: 'Rassemblement' }) });
-        // Véhicules nommés (PATRACDVR + adverses) : panneau, seulement s'il y en a.
-        if (this._getPatracdvrVehicles().length || this._getAdversaryVehicles().length) {
-            opts.push({ id: 'vehicles', icon: 'garage', label: 'Véhicules', bg: '#475569', action: () => this._openVehiclePickerPanel(lngLat) });
-        }
-        opts.push({ id: 'text', icon: 'text_fields', label: 'Texte', bg: 'rgba(100,116,139,0.95)', action: () => { void this._startFreeText(lngLat); } });
+        opts.push({ id: 'entity', icon: 'groups', label: 'Ajouter entité', bg: '#7c3aed', action: () => this._openEntityPickerPanel(lngLat) });
+        opts.push({ id: 'catalog', icon: 'apps', label: 'Catalogue', bg: '#475569', action: () => this._openIconCatalogPanel(lngLat) });
         opts.push({ id: 'copycoords', icon: 'my_location', label: 'Copier coords', bg: 'rgba(15,118,110,0.95)', action: () => this._copyCoords(lngLat.lng, lngLat.lat) });
 
         this._activeWheel = new OIWheel({
@@ -599,75 +588,184 @@ export const PinsMethods = {
     },
 
     /**
-     * Panneau inline « Placer un membre » : membres PATRACDVR (fonction Cyno
-     * incluse → kind `cyno`), posés directement au point de la roue. Un membre
-     * déjà placé est grisé (repose possible — le retrait passe par la roue du
-     * pin ou la modale dormante).
+     * Panneau inline unifié « Ajouter entité » (parité PC-Tac
+     * `_openEntityPickerPanel`, `@pctac/planmap/panels.ts:611` — fusion des ex-
+     * `_openMemberPickerPanel`/`_openVehiclePickerPanel`) : membres PATRACDVR
+     * (fonction Cyno incluse → section dédiée, kind `cyno`), rames VL/VL Target
+     * (générique + véhicules nommés du formulaire), rassemblement — tout posé
+     * directement au point de la roue. Un membre déjà placé est grisé (repose
+     * possible — le retrait passe par la roue du pin ou la modale dormante).
      */
-    _openMemberPickerPanel(this: OICartoInternal, lngLat: LngLatObj): void {
+    _openEntityPickerPanel(this: OICartoInternal, lngLat: LngLatObj): void {
         this._closeWheel();
         const members = Array.from(document.querySelectorAll<HTMLElement>('.patracdvr-member-btn'))
             .filter(b => b.dataset.trigramme && b.dataset.trigramme !== 'N/A');
+        const regularMembers = members.filter(b => b.dataset.fonction !== 'Cyno');
+        const cynoMembers = members.filter(b => b.dataset.fonction === 'Cyno');
         const html = `
             <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
-                <span class="material-symbols-outlined" style="font-size:18px; color:#60a5fa;">badge</span>
-                <strong style="font-size:13px;">Placer un membre</strong>
+                <span class="material-symbols-outlined" style="font-size:18px; color:#60a5fa;">groups</span>
+                <strong style="font-size:13px;">Ajouter une entité</strong>
             </div>
-            <div class="oi-carto-ping-list" style="display:flex; flex-wrap:wrap; gap:6px; max-height:230px; overflow-y:auto;"></div>`;
+            <div id="oi-entity-sections" style="display:flex; flex-direction:column; gap:8px; max-height:280px; overflow-y:auto; min-width:220px;"></div>`;
         this._openInlinePanel(lngLat, html, (panel) => {
-            const listEl = panel.querySelector<HTMLDivElement>('.oi-carto-ping-list');
-            if (!listEl) return;
-            if (!members.length) {
-                listEl.innerHTML = this._emptyMsg('Aucun membre PATRACDVR configuré.');
-                return;
+            const root = panel.querySelector<HTMLDivElement>('#oi-entity-sections');
+            if (!root) return;
+
+            const section = (title: string, icon: string): HTMLDivElement => {
+                const wrap = document.createElement('div');
+                const head = document.createElement('div');
+                head.className = 'oi-carto-fn-group-title';
+                head.innerHTML = `<span class="material-symbols-outlined" style="font-size:15px; vertical-align:middle;">${icon}</span> ${esc(title)}`;
+                wrap.appendChild(head);
+                const row = document.createElement('div');
+                row.style.cssText = 'display:flex; flex-wrap:wrap; gap:6px;';
+                wrap.appendChild(row);
+                root.appendChild(wrap);
+                return row;
+            };
+            const place = (pending: OiCartoPendingPin) => (): void => {
+                this._closeInlinePanel();
+                this._quickPlacePing(lngLat, pending);
+            };
+
+            // Membres (hors fonction Cyno).
+            if (regularMembers.length) {
+                const row = section('Membres', 'badge');
+                regularMembers.forEach(b => {
+                    const tri = b.dataset.trigramme ?? '';
+                    const fonction = b.dataset.fonction || '';
+                    const label = this._memberLabel(b);
+                    row.appendChild(this._memberButton({
+                        text: label, color: OI_PIN_DEFS.member.color, placed: this._isMemberPlaced(tri), tri,
+                        onPlace: place({ kind: 'member', label, memberTri: tri, fonction, icon: oiIconForMember(fonction, b.dataset.cellule) }),
+                    }));
+                });
             }
-            members.forEach(b => {
+
+            // Cyno — pin générique + membres de fonction "Cyno".
+            const cynoRow = section('Cyno', OI_PIN_DEFS.cyno.icon);
+            cynoRow.appendChild(this._pinButton('Cyno (générique)', OI_PIN_DEFS.cyno.color, place({ kind: 'cyno', label: 'Cyno' })));
+            cynoMembers.forEach(b => {
                 const tri = b.dataset.trigramme ?? '';
                 const fonction = b.dataset.fonction || '';
-                const kind: OiCartoPinKind = fonction === 'Cyno' ? 'cyno' : 'member';
                 const label = this._memberLabel(b);
-                const btn = this._pinButton(label, OI_PIN_DEFS[kind].color, () => {
-                    this._closeInlinePanel();
-                    this._quickPlacePing(lngLat, {
-                        kind, label, memberTri: tri, fonction,
-                        icon: oiIconForMember(fonction, b.dataset.cellule),
-                    });
-                });
-                if (this._isMemberPlaced(tri)) {
-                    btn.classList.add('oi-carto-member-placed');
-                    btn.textContent = `✓ ${label}`;
-                    btn.title = 'Déjà placé';
-                }
-                listEl.appendChild(btn);
+                cynoRow.appendChild(this._memberButton({
+                    text: label, color: OI_PIN_DEFS.cyno.color, placed: this._isMemberPlaced(tri), tri,
+                    onPlace: place({ kind: 'cyno', label, memberTri: tri, fonction, icon: oiIconForMember(fonction, b.dataset.cellule) }),
+                }));
             });
+
+            // Rame VL / VL Target — générique + véhicules nommés du formulaire.
+            const vehRow = section('Véhicules', 'garage');
+            vehRow.appendChild(this._pinButton('Rame VL (générique)', OI_PIN_DEFS.rame_vl.color, place({ kind: 'rame_vl', label: 'Rame VL' })));
+            this._getPatracdvrVehicles().forEach(name => {
+                vehRow.appendChild(this._pinButton(name, OI_PIN_DEFS.rame_vl.color, place({ kind: 'rame_vl', label: name })));
+            });
+            vehRow.appendChild(this._pinButton('VL Target (générique)', OI_PIN_DEFS.vl_target.color, place({ kind: 'vl_target', label: 'VL Target' })));
+            this._getAdversaryVehicles().forEach(name => {
+                vehRow.appendChild(this._pinButton(name, OI_PIN_DEFS.vl_target.color, place({ kind: 'vl_target', label: name })));
+            });
+
+            // Rassemblement / points clés.
+            const rasRow = section('Rassemblement / Points clés', OI_PIN_DEFS.rassemblement.icon);
+            rasRow.appendChild(this._pinButton('Rassemblement', OI_PIN_DEFS.rassemblement.color, place({ kind: 'rassemblement', label: 'Rassemblement' })));
+
+            if (!root.childElementCount) {
+                root.innerHTML = this._emptyMsg('Aucune entité disponible.');
+            }
         });
     },
 
-    /** Panneau inline « Véhicules » : rames VL du PATRACDVR + véhicules adverses. */
-    _openVehiclePickerPanel(this: OICartoInternal, lngLat: LngLatObj): void {
+    /**
+     * Panneau inline « Catalogue » — même emplacement/présentation que PC-Tac
+     * `_openIconCatalogPanel` (`@pctac/planmap/panels.ts:419`), deux onglets
+     * SÉPARÉS (parité arbitrage roue OI) : « Génériques » (`@shared/pin-icons.js`,
+     * même catalogue que PC-Tac, pose un pin `kind: 'generic'`) et
+     * « Personnalisés » (pins métier OI : Cyno / Rame VL / VL Target /
+     * Rassemblement, pose directe du kind correspondant).
+     */
+    _openIconCatalogPanel(this: OICartoInternal, lngLat: LngLatObj): void {
         this._closeWheel();
         const html = `
-            <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
-                <span class="material-symbols-outlined" style="font-size:18px; color:#60a5fa;">garage</span>
-                <strong style="font-size:13px;">Placer un véhicule</strong>
-            </div>
-            <div class="oi-carto-ping-list" style="display:flex; flex-wrap:wrap; gap:6px; max-height:230px; overflow-y:auto;"></div>`;
+            <div style="display:flex; flex-direction:column; gap:8px; width:300px; max-width:100%; box-sizing:border-box;">
+                <div style="display:flex; gap:6px;">
+                    <button type="button" id="oi-cat-tab-generic" class="add-btn" style="flex:1; width:auto; padding:6px;">Génériques</button>
+                    <button type="button" id="oi-cat-tab-custom" class="add-btn" style="flex:1; width:auto; padding:6px;">Personnalisés</button>
+                </div>
+                <input type="text" id="oi-cat-filter" placeholder="Filtrer…" autocomplete="off"
+                    style="min-height:36px; background:rgba(255,255,255,0.08); color:#fff; border:1px solid rgba(255,255,255,0.18);
+                           border-radius:8px; padding:6px 10px; font-size:14px; outline:none;">
+                <div id="oi-cat-grid" style="display:grid; grid-template-columns:repeat(auto-fill, minmax(58px, 1fr));
+                     gap:6px; max-height:230px; overflow-y:auto;"></div>
+            </div>`;
         this._openInlinePanel(lngLat, html, (panel) => {
-            const listEl = panel.querySelector<HTMLDivElement>('.oi-carto-ping-list');
-            if (!listEl) return;
-            const place = (kind: OiCartoPinKind, label: string) => () => {
-                this._closeInlinePanel();
-                this._quickPlacePing(lngLat, { kind, label });
+            const grid = panel.querySelector<HTMLElement>('#oi-cat-grid');
+            const filterInput = panel.querySelector<HTMLInputElement>('#oi-cat-filter');
+            const tabGeneric = panel.querySelector<HTMLButtonElement>('#oi-cat-tab-generic');
+            const tabCustom = panel.querySelector<HTMLButtonElement>('#oi-cat-tab-custom');
+            if (!grid || !filterInput || !tabGeneric || !tabCustom) return;
+
+            let tab: 'generic' | 'custom' = 'generic';
+            const customEntries: Array<{ id: OiCartoPinKind; icon: string; label: string; color: string }> = [
+                { id: 'cyno', icon: OI_PIN_DEFS.cyno.icon, label: OI_PIN_DEFS.cyno.label, color: OI_PIN_DEFS.cyno.color },
+                { id: 'rame_vl', icon: OI_PIN_DEFS.rame_vl.icon, label: OI_PIN_DEFS.rame_vl.label, color: OI_PIN_DEFS.rame_vl.color },
+                { id: 'vl_target', icon: OI_PIN_DEFS.vl_target.icon, label: OI_PIN_DEFS.vl_target.label, color: OI_PIN_DEFS.vl_target.color },
+                { id: 'rassemblement', icon: OI_PIN_DEFS.rassemblement.icon, label: OI_PIN_DEFS.rassemblement.label, color: OI_PIN_DEFS.rassemblement.color },
+            ];
+
+            const renderTabs = (): void => {
+                tabGeneric.style.background = tab === 'generic' ? '#3b82f6' : '';
+                tabCustom.style.background = tab === 'custom' ? '#3b82f6' : '';
             };
-            this._getPatracdvrVehicles().forEach(name => {
-                listEl.appendChild(this._pinButton(name, OI_PIN_DEFS.rame_vl.color, place('rame_vl', name)));
-            });
-            this._getAdversaryVehicles().forEach(name => {
-                listEl.appendChild(this._pinButton(name, OI_PIN_DEFS.vl_target.color, place('vl_target', name)));
-            });
-            if (!listEl.childElementCount) {
-                listEl.innerHTML = this._emptyMsg('Aucun véhicule saisi dans le formulaire.');
-            }
+
+            const renderGrid = (filter = ''): void => {
+                const q = filter.toLowerCase().trim();
+                if (tab === 'generic') {
+                    const filtered = PIN_ICONS.filter((ic) =>
+                        !q || (ic.label + ' ' + ic.cat + ' ' + ic.id + ' ' + ic.tags.join(' ')).toLowerCase().includes(q));
+                    grid.innerHTML = filtered.map((ic) => `
+                        <button type="button" class="oi-cat-ic" data-id="${ic.id}" data-label="${esc(ic.label)}" title="${esc(ic.label)}"
+                            style="display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px;
+                                   min-height:52px; padding:6px 4px; border-radius:8px; background:rgba(255,255,255,0.06);
+                                   border:1px solid rgba(255,255,255,0.18); color:#fff; cursor:pointer;">
+                            <span class="material-symbols-outlined" aria-hidden="true" style="font-size:22px;">${ic.id}</span>
+                            <span style="font-size:0.68em; text-align:center; line-height:1.05; word-break:break-word;">${esc(ic.label)}</span>
+                        </button>`).join('');
+                    grid.querySelectorAll<HTMLButtonElement>('.oi-cat-ic').forEach((b) => {
+                        b.onclick = () => {
+                            const id = b.dataset.id ?? 'place';
+                            const label = b.dataset.label ?? id;
+                            this._closeInlinePanel();
+                            this._quickPlacePing(lngLat, { kind: 'generic', label, icon: id });
+                        };
+                    });
+                } else {
+                    const filtered = customEntries.filter((ic) => !q || (ic.label + ' ' + ic.id).toLowerCase().includes(q));
+                    grid.innerHTML = filtered.map((ic) => `
+                        <button type="button" class="oi-cat-custom" data-id="${ic.id}" title="${esc(ic.label)}"
+                            style="display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px;
+                                   min-height:52px; padding:6px 4px; border-radius:8px; background:rgba(255,255,255,0.06);
+                                   border:1px solid rgba(255,255,255,0.18); color:#fff; cursor:pointer;">
+                            <span class="material-symbols-outlined" aria-hidden="true" style="font-size:22px; color:${ic.color};">${ic.icon}</span>
+                            <span style="font-size:0.68em; text-align:center; line-height:1.05; word-break:break-word;">${esc(ic.label)}</span>
+                        </button>`).join('');
+                    grid.querySelectorAll<HTMLButtonElement>('.oi-cat-custom').forEach((b) => {
+                        b.onclick = () => {
+                            const kind = (b.dataset.id ?? 'rassemblement') as OiCartoPinKind;
+                            const entry = customEntries.find((e) => e.id === kind);
+                            this._closeInlinePanel();
+                            this._quickPlacePing(lngLat, { kind, label: entry ? entry.label : kind });
+                        };
+                    });
+                }
+            };
+
+            tabGeneric.onclick = () => { tab = 'generic'; renderTabs(); renderGrid(filterInput.value); };
+            tabCustom.onclick = () => { tab = 'custom'; renderTabs(); renderGrid(filterInput.value); };
+            filterInput.addEventListener('input', () => renderGrid(filterInput.value));
+            renderTabs();
+            renderGrid('');
         });
     },
 

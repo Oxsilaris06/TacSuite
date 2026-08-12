@@ -778,8 +778,7 @@ test.describe('OI — Checklist fonctionnelle (docs/recon-oi.md §9)', () => {
       await page.locator('#oi_carto_btn_more').click();
       for (const id of [
         'oi_carto_btn_3d', 'oi_carto_btn_capture', 'oi_carto_btn_streets',
-        'oi_carto_btn_labels', 'oi_carto_btn_legend',
-        'oi_carto_btn_measure', 'oi_carto_btn_rings',
+        'oi_carto_btn_labels',
       ]) {
         await expect.soft(page.locator(`#${id}`)).toBeVisible();
       }

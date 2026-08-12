@@ -208,15 +208,24 @@ export const DrawMethods = {
     // oi_cartographie.js:1400-1427 (+ mode précision, parité PC-Tac draw-tools.ts:106-150)
     _setTool(this: OICartoInternal, tool: OiCartoDrawTool | null): void {
         if (tool && this.drawTool === tool) tool = null; // toggle
+        // Quitter proprement une mesure en cours si on change/désactive d'outil
+        // (parité PC-Tac draw-tools.ts:100).
+        if (this._measureState && tool !== 'measure') this._clearMeasureState();
         this.drawTool = tool;
         this.drawState = null;
         this._clearPreview();
         if (tool) { this.pendingPin = null; this._hideHint(); }
 
+        // Outil mesure : démarre sa propre machine d'états (sommets au clic).
+        if (tool === 'measure') this._toggleMeasure();
+
         // Mode précision (mobile/tactile) : points posés au réticule central,
-        // via les boutons Viser/Valider/Annuler — parité PC-Tac.
+        // via les boutons Viser/Valider/Annuler — parité PC-Tac. L'outil texte
+        // se pose en un seul clic (pas de drag) ; l'outil mesure a sa propre
+        // machine d'états (sommets au clic) : ni l'un ni l'autre n'utilise le
+        // mode précision réticule.
         const isMobile = window.innerWidth <= 768 || ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
-        this.drawPrecisionMode = !!(tool && isMobile);
+        this.drawPrecisionMode = !!(tool && isMobile && tool !== 'text' && tool !== 'measure');
 
         document.querySelectorAll<HTMLElement>('.oi-carto-draw-btn[data-tool]').forEach(b => {
             const active = b.dataset.tool === tool;
@@ -272,9 +281,18 @@ export const DrawMethods = {
     // oi_cartographie.js:1437-1443
     _handleDrawDown(this: OICartoInternal, e: MapMouseEvent | MapTouchEvent): void {
         if (!this.drawTool) return;
+        // La mesure n'est pas un drag : elle est pilotée par _onMapClick (sommets au clic).
+        if (this.drawTool === 'measure') return;
         // Mode précision : le tracé est piloté par les boutons Viser/Valider,
         // jamais par un appui direct (parité PC-Tac draw-tools.ts:194).
         if (this.drawPrecisionMode) return;
+        // Outil texte : un seul clic suffit (pas de drag) — parité PC-Tac draw-tools.ts:196-202.
+        if (this.drawTool === 'text') {
+            if (e.originalEvent) { e.originalEvent.preventDefault(); e.originalEvent.stopPropagation(); }
+            void this._startFreeText({ lng: e.lngLat.lng, lat: e.lngLat.lat });
+            this._setTool(null);
+            return;
+        }
         if (e.originalEvent) { e.originalEvent.preventDefault(); e.originalEvent.stopPropagation(); }
         if (e.preventDefault) e.preventDefault();
         // Adaptation TS (absente de l'original, jamais déclenchée en pratique) :
@@ -383,21 +401,54 @@ export const DrawMethods = {
     },
 
     // oi_cartographie.js:1512-1522
+    // ÉCART ASSUMÉ vs original (parité PC-Tac, chantiers `oi-carto-measure`/
+    // `oi-carto-text`) : `measure`/`measure-rings` rejoignent désormais la
+    // source PARTAGÉE `oi-carto-shapes-src` (AVEC `shapeId`) au lieu d'en être
+    // exclus — elles deviennent ainsi cliquables/sélectionnables par la même
+    // machine `_onShapeClick`/`_shapePointerDown` que `line`/`rectangle`/
+    // `circle` (déplacement générique volontairement coupé pour ces deux
+    // types, cf. garde dédiée `shape-edit.ts::_shapePointerDown` — seul le
+    // clic-sélection est activé, pas le drag). `text` reste EXCLU de cette
+    // source (rendu 100% par marker HTML, `text.ts::_renderShapeTexts`, qui
+    // porte lui-même l'interactivité tap/drag — pas de géométrie de secours
+    // nécessaire ici, contrairement à PC-Tac `shapes-render.ts` qui ajoute une
+    // zone de clic invisible dédiée : simplification OI assumée, le marker
+    // suffit à capter tap/drag/dblclick).
     _renderShapes(this: OICartoInternal): void {
         const src = this.map && this.map.getSource<GeoJSONSource>('oi-carto-shapes-src');
         if (!src) return;
         // Adaptation TS : annotation de retour explicite sur le callback — sans
         // elle, le littéral `type: 'Feature'` s'infère `string`, incompatible
         // avec `GeoJSON.Feature['type']` (`'Feature'` littéral).
-        const features = this._loadShapes()
-            .filter((s) => s.type !== 'measure' && s.type !== 'measure-rings')
-            .map((s): GeoJSON.Feature => {
-                if (s.type === 'line') {
-                    return { type: 'Feature', id: s.id, geometry: { type: 'LineString', coordinates: s.coords }, properties: { color: s.color, shapeId: s.id } };
+        const features: GeoJSON.Feature[] = [];
+        for (const s of this._loadShapes()) {
+            if (s.type === 'text') {
+                continue; // rendu dédié par marker HTML (text.ts), pas de géométrie ici
+            } else if (s.type === 'line') {
+                features.push({ type: 'Feature', id: s.id, geometry: { type: 'LineString', coordinates: s.coords }, properties: { color: s.color, shapeId: s.id } });
+            } else if (s.type === 'measure') {
+                if (Array.isArray(s.coords) && s.coords.length >= 2) {
+                    features.push({ type: 'Feature', id: s.id, geometry: { type: 'LineString', coordinates: s.coords }, properties: { color: s.color || '#ef4444', shapeId: s.id } });
                 }
-                return { type: 'Feature', id: s.id, geometry: { type: 'Polygon', coordinates: [s.coords] }, properties: { color: s.color, shapeId: s.id } };
-            });
+            } else if (s.type === 'measure-rings') {
+                if (Array.isArray(s.rings)) {
+                    for (const ring of s.rings) {
+                        if (!ring || !Array.isArray(ring.coords) || !ring.coords.length) continue;
+                        features.push({ type: 'Feature', geometry: { type: 'Polygon', coordinates: [ring.coords] }, properties: { color: s.color || '#ef4444', shapeId: s.id } });
+                    }
+                }
+            } else {
+                features.push({ type: 'Feature', id: s.id, geometry: { type: 'Polygon', coordinates: [s.coords] }, properties: { color: s.color, shapeId: s.id } });
+            }
+        }
         src.setData({ type: 'FeatureCollection', features });
+        // Consolidation (parité PC-Tac `_renderShapes` :2604-2665, qui rejoue
+        // aussi `_renderShapeTexts`/`_renderCommittedMeasures`/`_renderHandles`
+        // à chaque synchronisation) : chaque appelant de `_renderShapes` (draw,
+        // undo/redo, shape-edit, measure, text) obtient un rafraîchissement
+        // complet sans avoir à connaître les 3 sous-systèmes de rendu.
+        this._renderShapeTexts();
+        this._renderCommittedMeasures();
     },
 
     // oi_cartographie.js:1524-1535 — ÉCART DE FOND (chantier shape-edit,

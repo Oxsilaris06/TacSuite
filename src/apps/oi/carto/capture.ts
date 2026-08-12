@@ -178,7 +178,6 @@ export const CaptureMethods = {
             document.getElementById('oi_carto_draw_dock'),
             document.getElementById('oi_carto_search_panel'),
             document.getElementById('oi_carto_hint'),
-            document.getElementById('oi_carto_legend'),
             this._activeWheel?.element ?? null,
             this._inlinePanel,
         ].filter((el): el is HTMLElement => !!el);
