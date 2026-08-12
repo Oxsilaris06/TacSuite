@@ -19,15 +19,26 @@ import {
 } from '@oi/carto/constants.js';
 
 describe('constants.ts — OI_CARTO_RASTER_STYLE (oi_cartographie.js:23-48)', () => {
-	it('version 8, 3 sources (satellite, terrain-dem, openfreemap), 1 couche', () => {
+	it('version 8, 4 sources (satellite, ign-ortho, terrain-dem, openfreemap), 2 couches, glyphs OpenFreeMap', () => {
 		expect(OI_CARTO_RASTER_STYLE.version).toBe(8);
+		expect(OI_CARTO_RASTER_STYLE.glyphs).toBe('https://tiles.openfreemap.org/fonts/{fontstack}/{range}.pbf');
 		expect(Object.keys(OI_CARTO_RASTER_STYLE.sources)).toEqual([
 			'satellite',
+			'ign-ortho',
 			'terrain-dem',
 			'openfreemap',
 		]);
-		expect(OI_CARTO_RASTER_STYLE.layers).toHaveLength(1);
+		expect(OI_CARTO_RASTER_STYLE.layers).toHaveLength(2);
 		expect(OI_CARTO_RASTER_STYLE.layers[0]).toEqual({ id: 'satellite', type: 'raster', source: 'satellite' });
+		expect(OI_CARTO_RASTER_STYLE.layers[1]).toEqual({
+			id: 'ign-ortho',
+			type: 'raster',
+			source: 'ign-ortho',
+			paint: {
+				'raster-opacity': ['interpolate', ['linear'], ['zoom'], 11, 0, 13, 1],
+				'raster-fade-duration': 500,
+			},
+		});
 	});
 
 	it('source satellite : tuiles ArcGIS World_Imagery, tileSize 256, maxzoom 19', () => {

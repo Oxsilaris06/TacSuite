@@ -264,7 +264,7 @@ describe('_openPinWheel (oi_cartographie.js:1009-1029)', () => {
         expect(closePanelSpy).toHaveBeenCalledTimes(1);
     });
 
-    it('construit une roue à 5 options + 1 bouton central, la détruit après l’action « Supprimer »', () => {
+    it('construit une roue à 7 options + 1 bouton central, la détruit après l’action « Supprimer »', () => {
         const map = makeFakeMap();
         const state = makePanelsState({ map, pins: [makePin({ id: 'p1' })] });
 
@@ -274,7 +274,9 @@ describe('_openPinWheel (oi_cartographie.js:1009-1029)', () => {
         const wheel = state._activeWheel as unknown as OIWheel;
         if (!wheel.element) throw new Error('wheel.element manquant');
         const buttons = wheel.element.querySelectorAll('button');
-        expect(buttons.length).toBe(6); // 1 centre + 5 options (icon/color/rename/goto/delete)
+        // 1 centre + 7 options (icon/color/rename/lock/goto/copycoords/delete —
+        // parité PC-Tac, chantier roue enrichie ; photo différée).
+        expect(buttons.length).toBe(8);
 
         const deleteBtn = buttons[buttons.length - 1];
         if (!deleteBtn) throw new Error('bouton « Supprimer » introuvable');
@@ -295,7 +297,7 @@ describe('_openPinWheel (oi_cartographie.js:1009-1029)', () => {
         const wheel = state._activeWheel as unknown as OIWheel;
         if (!wheel.element) throw new Error('wheel.element manquant');
         const buttons = wheel.element.querySelectorAll('button');
-        const gotoBtn = buttons[4]; // 0=centre,1=icon,2=color,3=rename,4=goto
+        const gotoBtn = buttons[5]; // 0=centre,1=icon,2=color,3=rename,4=lock,5=goto
         if (!gotoBtn) throw new Error('bouton « Centrer » introuvable');
 
         gotoBtn.dispatchEvent(new MouseEvent('click', { bubbles: true }));

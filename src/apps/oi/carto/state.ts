@@ -157,6 +157,9 @@ export function createOICartoState(): Pick<
     | 'drawState'
     | 'history'
     | 'redoStack'
+    | 'streetLabelsOn'
+    | 'lastQuickPin'
+    | '_wheelJustClosed'
     | 'persistence'
 > {
     return {
@@ -173,6 +176,9 @@ export function createOICartoState(): Pick<
         drawState: null, // :280 — état temporaire pendant un tracé
         history: [], // :281 — pile JSON des shapes avant chaque modif
         redoStack: [], // :282
+        streetLabelsOn: false, // overlay noms de rues (alignement PC-Tac, hors littéral — cf. types.ts)
+        lastQuickPin: null, // dernier type posé par la roue de création (hors littéral — cf. types.ts)
+        _wheelJustClosed: 0, // anti-réouverture de roue au clic de fermeture (parité PC-Tac)
         persistence: buildCartoPersistenceAdapter(), // R3-c, hors littéral (cf. ci-dessus)
     };
 }
@@ -236,6 +242,7 @@ export const PersistMethods = {
             pitch: this.map.getPitch(),
             bearing: this.map.getBearing(),
             is3D: this.is3D,
+            streetLabelsOn: this.streetLabelsOn,
         };
         this.persistence.saveView(view);
     },

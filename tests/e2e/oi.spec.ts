@@ -759,19 +759,33 @@ test.describe('OI — Checklist fonctionnelle (docs/recon-oi.md §9)', () => {
   // ------------------------------------------------------------------
   // Cartographie OI (MapLibre)
   // ------------------------------------------------------------------
-  test('Cartographie — ouverture/fermeture modale + toolbar 7 boutons', async ({ page }) => {
+  test('Cartographie — ouverture/fermeture modale + toolbar 4 FABs + tiroir « Plus »', async ({ page }) => {
     await step('ouverture (#cartographyBtn dock → OICarto.open, id-based addEventListener)', async () => {
       await page.locator('#cartographyBtn').click();
       await expect.soft(page.locator('#cartographyModal')).toBeVisible({ timeout: 2000 });
       await expect.soft(page.locator('canvas.maplibregl-canvas')).toBeVisible({ timeout: 3000 });
     });
-    await step('toolbar verticale complète', async () => {
+    await step('FABs primaires visibles, tiroir replié', async () => {
       for (const id of [
         'oi_carto_btn_search', 'oi_carto_btn_ping', 'oi_carto_btn_draw',
-        'oi_carto_btn_capture', 'oi_carto_btn_labels', 'oi_carto_btn_3d', 'oi_carto_btn_fullscreen',
+        'oi_carto_btn_fullscreen', 'oi_carto_btn_more',
       ]) {
         await expect.soft(page.locator(`#${id}`)).toBeVisible();
       }
+      await expect.soft(page.locator('#oi_carto_more_tools')).toBeHidden();
+    });
+    await step('tiroir « Plus » : ouverture, outils secondaires, fermeture Échap', async () => {
+      await page.locator('#oi_carto_btn_more').click();
+      for (const id of [
+        'oi_carto_btn_3d', 'oi_carto_btn_capture', 'oi_carto_btn_streets',
+        'oi_carto_btn_labels', 'oi_carto_btn_legend',
+      ]) {
+        await expect.soft(page.locator(`#${id}`)).toBeVisible();
+      }
+      await page.keyboard.press('Escape');
+      await expect.soft(page.locator('#oi_carto_more_tools')).toBeHidden();
+      // Échap intercepté par le tiroir : la modale reste ouverte
+      await expect.soft(page.locator('#cartographyModal')).toBeVisible();
     });
     await step('recherche adresse/coordonnées GPS (Nominatim)', async () => {
       await page.locator('#oi_carto_btn_search').click();
@@ -813,15 +827,19 @@ test.describe('OI — Checklist fonctionnelle (docs/recon-oi.md §9)', () => {
     await expect.soft(page.locator('#cartographyModal')).toBeVisible({ timeout: 2000 });
     await expect.soft(page.locator('canvas.maplibregl-canvas')).toBeVisible({ timeout: 3000 });
 
-    await step('poser un pin « Rassemblement » : modale → clic sur la carte → persisté (cartography.pins)', async () => {
-      await page.locator('#oi_carto_btn_ping').click();
-      await expect.soft(page.locator('#oi_carto_ping_modal')).toBeVisible({ timeout: 1500 });
-      await page.locator('#oi_carto_rassemblement_list button', { hasText: 'Rassemblement' }).click();
-      // _armPinPlacement ferme la modale et arme le placement (pins.ts:356-362).
-      await expect.soft(page.locator('#oi_carto_ping_modal')).toBeHidden({ timeout: 1500 });
+    await step('poser un pin « Rassemblement » : clic carte → roue de création → persisté (cartography.pins)', async () => {
+      // Le bouton ping n'ouvre plus la modale : clic sur zone vide → roue de
+      // création (_openCreatePinWheel, pins.ts) → segment « Rassemblement »
+      // pose directement le pin (_quickPlacePing).
       const map = page.locator('canvas.maplibregl-canvas');
       await map.click({ position: { x: 120, y: 120 } });
+      await expect.soft(page.locator('.oi-wheel')).toBeVisible({ timeout: 1500 });
+      await page.locator('.oi-wheel button[title="Rassemblement"]').click();
       await expect.poll(cartoPinsCount, { timeout: 2000 }).toBe(1);
+      // _quickPlacePing rouvre la roue d'OPTIONS du pin ~80 ms après la pose
+      // (pins.ts:571) : la fermer (bouton central) avant l'étape dessin.
+      await page.locator('.oi-wheel button[title="Fermer"]').click();
+      await expect.soft(page.locator('.oi-wheel')).toBeHidden({ timeout: 1500 });
     });
 
     await step('dessiner un rectangle : dock → outil → glisser sur la carte → persisté (cartography.shapes)', async () => {

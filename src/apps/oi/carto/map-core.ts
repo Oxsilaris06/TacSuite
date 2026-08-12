@@ -16,7 +16,7 @@
  * AUCUN import d'un autre groupe de méthodes `carto/*` : les appels
  * `this._renderPins()`, `this._initDrawingLayers()`, `this._bindDrawUi()`,
  * `this._renderShapes()`, `this._onMapClick()`, `this._handleDrawDown/Move/Up()`,
- * `this._openPingModal()`, `this._toggleDrawDock()`, `this._openCaptureModal()`,
+ * `this._wireLongPressForPing()`, `this._toggleDrawDock()`, `this._openCaptureModal()`,
  * `this._toggleLabels()`, `this._closeWheel()`, `this._closeInlinePanel()`,
  * `this._saveView()`/`this._loadView()`, `this._setTool()`, `this._undo()`,
  * `this._redo()`, `this._exportToField()`, `this._closePingModal()`,
@@ -94,7 +94,7 @@
  */
 
 import maplibregl from 'maplibre-gl';
-import type { MapMouseEvent, MapTouchEvent, SkySpecification } from 'maplibre-gl';
+import type { AddLayerObject, MapMouseEvent, MapTouchEvent, SkySpecification } from 'maplibre-gl';
 
 import { toast } from '@shared/feedback.js';
 
@@ -173,6 +173,10 @@ export const MapCoreMethods = {
         this.map.on('load', this._safe(() => {
             this._initDrawingLayers();
             if (savedView.is3D) this._enable3D(false);
+            // Restauration de l'overlay noms de rues (persisté avec la vue,
+            // même patron que `is3D` ci-dessus — alignement PC-Tac).
+            this.streetLabelsOn = !!savedView.streetLabelsOn;
+            if (this.streetLabelsOn) this._ensureStreetLabelLayers();
             this._renderShapes();
             setTimeout(() => this.map && this.map.resize(), 60);
         }, 'load'));
@@ -189,6 +193,8 @@ export const MapCoreMethods = {
 
     // oi_cartographie.js:419-500
     _bindUi(this: OICartoInternal): void {
+        this._wireLongPressForPing();
+
         const btnClose = document.getElementById('oi_carto_btn_close');
         if (btnClose) btnClose.onclick = () => this.close();
 
@@ -196,7 +202,8 @@ export const MapCoreMethods = {
         if (btnSearch) btnSearch.onclick = () => this._toggleSearchPanel();
 
         const btnPing = document.getElementById('oi_carto_btn_ping');
-        if (btnPing) btnPing.onclick = () => this._openPingModal();
+        if (btnPing) btnPing.onclick = () =>
+            toast('Touchez la carte pour placer un point (appui long sur mobile)');
 
         const btnDraw = document.getElementById('oi_carto_btn_draw');
         if (btnDraw) btnDraw.onclick = () => this._toggleDrawDock();
@@ -206,6 +213,44 @@ export const MapCoreMethods = {
 
         const btnLabels = document.getElementById('oi_carto_btn_labels');
         if (btnLabels) btnLabels.onclick = () => this._toggleLabels();
+
+        // --- Tiroir « Plus » (pattern PC-Tac U24, planmap/chrome.ts:83-89) ---
+        const btnMore = document.getElementById('oi_carto_btn_more');
+        const moreTools = document.getElementById('oi_carto_more_tools');
+        const closeMore = (): void => {
+            if (!moreTools || moreTools.hidden) return;
+            moreTools.hidden = true;
+            if (btnMore) btnMore.setAttribute('aria-expanded', 'false');
+        };
+        if (btnMore && moreTools) {
+            btnMore.onclick = () => {
+                const open = moreTools.hidden;
+                moreTools.hidden = !open;
+                btnMore.setAttribute('aria-expanded', String(open));
+            };
+            // Fermeture au clic extérieur (les FABs du tiroir passent d'abord)
+            document.addEventListener('click', (e) => {
+                if (moreTools.hidden) return;
+                const t = e.target as Node;
+                if (!moreTools.contains(t) && !btnMore.contains(t)) closeMore();
+            });
+        }
+
+        const btnStreets = document.getElementById('oi_carto_btn_streets');
+        if (btnStreets) btnStreets.onclick = () => {
+            this._toggleStreetLabels();
+            btnStreets.classList.toggle('active', this.streetLabelsOn);
+        };
+
+        const btnLegend = document.getElementById('oi_carto_btn_legend');
+        const legend = document.getElementById('oi_carto_legend');
+        if (btnLegend && legend) {
+            btnLegend.classList.toggle('active', !legend.hidden);
+            btnLegend.onclick = () => {
+                legend.hidden = !legend.hidden;
+                btnLegend.classList.toggle('active', !legend.hidden);
+            };
+        }
 
         const btn3d = document.getElementById('oi_carto_btn_3d');
         if (btn3d) btn3d.onclick = () => this._toggle3D();
@@ -254,10 +299,11 @@ export const MapCoreMethods = {
                 this._closeInlinePanel();
                 this._saveView();
             });
-            // Échap : si un outil de dessin / un placement est actif, on l'annule
-            // au lieu de fermer la modale.
+            // Échap : si le tiroir « Plus », un outil de dessin ou un placement
+            // est actif, on l'annule au lieu de fermer la modale.
             modal.addEventListener('cancel', (e) => {
-                if (this.drawTool) { e.preventDefault(); this._setTool(null); }
+                if (moreTools && !moreTools.hidden) { e.preventDefault(); closeMore(); }
+                else if (this.drawTool) { e.preventDefault(); this._setTool(null); }
                 else if (this.pendingPin) { e.preventDefault(); this.pendingPin = null; this._hideHint(); }
             });
         }
@@ -412,6 +458,73 @@ export const MapCoreMethods = {
                 : 'Erreur réseau. Vérifiez la connexion.';
             resultsBox.innerHTML = `<em style="color: var(--danger-red);">${msg}</em>`;
         }
+    },
+
+    /* ----- OVERLAY NOMS DE RUES (vectoriel OpenFreeMap, keyless) -----
+     * Alignement fond de carte PC-Tac (@pctac/planmap/map-core.ts, hors
+     * `oi_cartographie.js`). Réutilise la source vectorielle 'openfreemap'
+     * déjà déclarée dans le style (schéma OpenMapTiles). Couches ajoutées
+     * paresseusement (1er affichage) → aucune tuile vectorielle téléchargée
+     * tant que l'overlay reste masqué. Couleur jaune vif + halo sombre pour
+     * ressortir nettement sur l'imagerie satellite. Persistance via la vue
+     * (`_saveView`), pas localStorage : seule frontière de persistance OI. */
+    _ensureStreetLabelLayers(this: OICartoInternal): boolean {
+        if (!this.map || this.map.getLayer('street-labels')) return true;
+        // NB : NE PAS gater sur isStyleLoaded() — la source vectorielle 'openfreemap'
+        // n'ayant aucune couche active, son TileJSON n'est pas encore chargé, donc
+        // isStyleLoaded() reste false et les couches ne seraient jamais ajoutées.
+        // La source est déclarée dans le style (sync) ; si absente, on diffère.
+        if (!this.map.getSource('openfreemap')) { this.map.once('idle', () => this._ensureStreetLabelLayers()); return false; }
+        const vis = this.streetLabelsOn ? 'visible' : 'none';
+        const paint = { 'text-color': '#ffe14d', 'text-halo-color': '#0a0c10', 'text-halo-width': 1.6 };
+        try {
+            // `as unknown as AddLayerObject` : même adaptation de typage pur que
+            // PC-Tac (`@pctac/planmap/map-core.ts`, `_ensureStreetLabelLayers`) —
+            // valeurs `paint`/`layout` GL valides, comportement runtime inchangé.
+            // Villes / quartiers
+            this.map.addLayer({
+                id: 'place-labels', type: 'symbol', source: 'openfreemap', 'source-layer': 'place',
+                layout: {
+                    visibility: vis,
+                    'text-field': ['get', 'name'],
+                    'text-font': ['Noto Sans Bold'],
+                    'text-size': ['interpolate', ['linear'], ['zoom'], 6, 11, 12, 15, 16, 18],
+                    'text-max-width': 8,
+                },
+                paint,
+            } as unknown as AddLayerObject);
+            // Noms de rues / routes (placés le long de la voie)
+            this.map.addLayer({
+                id: 'street-labels', type: 'symbol', source: 'openfreemap', 'source-layer': 'transportation_name',
+                layout: {
+                    visibility: vis,
+                    'text-field': ['get', 'name'],
+                    'text-font': ['Noto Sans Regular'],
+                    'symbol-placement': 'line',
+                    'text-rotation-alignment': 'map',
+                    'text-size': ['interpolate', ['linear'], ['zoom'], 12, 10, 18, 13],
+                },
+                paint,
+            } as unknown as AddLayerObject);
+            return true;
+        } catch (e) { console.warn('[OICarto] couches noms de rues indisponibles:', e); return false; }
+    },
+
+    _applyStreetLabelsVisibility(this: OICartoInternal): void {
+        if (!this.map) return;
+        const vis = this.streetLabelsOn ? 'visible' : 'none';
+        for (const id of ['street-labels', 'place-labels']) {
+            if (this.map.getLayer(id)) this.map.setLayoutProperty(id, 'visibility', vis);
+        }
+    },
+
+    /** Bascule l'overlay noms de rues (câblé sur #oi_carto_btn_streets, cf. _bindUi). */
+    _toggleStreetLabels(this: OICartoInternal): void {
+        if (!this.map) return;
+        this.streetLabelsOn = !this.streetLabelsOn;
+        if (this.streetLabelsOn) this._ensureStreetLabelLayers();
+        this._applyStreetLabelsVisibility();
+        this._saveView(); // persiste le flag avec la vue (cf. state.ts)
     },
 
     // ------------------------------------------------------------------

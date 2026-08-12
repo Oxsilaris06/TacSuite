@@ -150,6 +150,7 @@ function makeFakeThis(overrides: Record<string, unknown> = {}): OICartoInternal 
         _getPatracdvrVehicles: vi.fn(() => []),
         _getAdversaryVehicles: vi.fn(() => []),
         _armPinPlacement: vi.fn(),
+        _wireLongPressForPing: vi.fn(),
         _onMapClick: vi.fn(),
         _addPin: vi.fn(),
         _removePin: vi.fn(),
@@ -369,7 +370,6 @@ describe('_bindUi (oi_cartographie.js:419-500)', () => {
         buildDom();
         const close = vi.fn();
         const toggleSearchPanel = vi.fn();
-        const openPingModal = vi.fn();
         const toggleDrawDock = vi.fn();
         const openCaptureModal = vi.fn();
         const toggleLabels = vi.fn();
@@ -378,7 +378,6 @@ describe('_bindUi (oi_cartographie.js:419-500)', () => {
         const fake = makeFakeThis({
             close,
             _toggleSearchPanel: toggleSearchPanel,
-            _openPingModal: openPingModal,
             _toggleDrawDock: toggleDrawDock,
             _openCaptureModal: openCaptureModal,
             _toggleLabels: toggleLabels,
@@ -393,7 +392,7 @@ describe('_bindUi (oi_cartographie.js:419-500)', () => {
         document.getElementById('oi_carto_btn_search')?.click();
         expect(toggleSearchPanel).toHaveBeenCalledWith();
         document.getElementById('oi_carto_btn_ping')?.click();
-        expect(openPingModal).toHaveBeenCalledTimes(1);
+        expect(toastSpy).toHaveBeenCalledWith('Touchez la carte pour placer un point (appui long sur mobile)');
         document.getElementById('oi_carto_btn_draw')?.click();
         expect(toggleDrawDock).toHaveBeenCalledTimes(1);
         document.getElementById('oi_carto_btn_capture')?.click();

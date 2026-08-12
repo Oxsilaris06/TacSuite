@@ -782,7 +782,7 @@ Gestuelle et visuelle entre les éléments INDIA</textarea>
                     «&nbsp;48.8566, 2.3522&nbsp;»</div>
             </div>
 
-            <!-- Toolbar verticale : Recherche / Pin / Dessin / 3D / Plein écran / Fermer -->
+            <!-- Toolbar unifiée (pattern PC-Tac U24) : 4 FABs primaires + tiroir « Plus » + Fermer -->
             <div class="oi-carto-toolbar">
                 <button type="button" id="oi_carto_btn_search" class="oi-carto-fab"
                     title="Recherche adresse / coordonnées GPS" aria-label="Rechercher une adresse ou des coordonnées GPS">
@@ -795,21 +795,36 @@ Gestuelle et visuelle entre les éléments INDIA</textarea>
                 <button type="button" id="oi_carto_btn_draw" class="oi-carto-fab" title="Outils de dessin" aria-label="Ouvrir les outils de dessin">
                     <span class="material-symbols-outlined">draw</span>
                 </button>
-                <button type="button" id="oi_carto_btn_capture" class="oi-carto-fab"
-                    title="Capture de la carte (télécharger ou exporter vers un champ photo)" aria-label="Capturer la carte">
-                    <span class="material-symbols-outlined">photo_camera</span>
-                </button>
-                <button type="button" id="oi_carto_btn_labels" class="oi-carto-fab"
-                    title="Afficher / masquer les libellés des pins" aria-label="Afficher ou masquer les libellés des pins">
-                    <span class="material-symbols-outlined">label</span>
-                </button>
-                <button type="button" id="oi_carto_btn_3d" class="oi-carto-fab"
-                    title="Basculer vue 2D / 3D relief" aria-label="Basculer entre vue 2D et 3D">
-                    <span class="material-symbols-outlined">deployed_code</span>
-                </button>
                 <button type="button" id="oi_carto_btn_fullscreen" class="oi-carto-fab" title="Plein écran" aria-label="Basculer le plein écran">
                     <span class="material-symbols-outlined">fullscreen</span>
                 </button>
+                <button type="button" id="oi_carto_btn_more" class="oi-carto-fab"
+                    title="Plus d'outils (3D, capture, noms de rues, libellés, légende)" aria-label="Afficher plus d'outils"
+                    aria-expanded="false" aria-controls="oi_carto_more_tools">
+                    <span class="material-symbols-outlined">more_horiz</span>
+                </button>
+                <div id="oi_carto_more_tools" hidden>
+                    <button type="button" id="oi_carto_btn_3d" class="oi-carto-fab"
+                        title="Basculer vue 2D / 3D relief" aria-label="Basculer entre vue 2D et 3D">
+                        <span class="material-symbols-outlined">deployed_code</span>
+                    </button>
+                    <button type="button" id="oi_carto_btn_capture" class="oi-carto-fab"
+                        title="Capture de la carte (télécharger ou exporter vers un champ photo)" aria-label="Capturer la carte">
+                        <span class="material-symbols-outlined">photo_camera</span>
+                    </button>
+                    <button type="button" id="oi_carto_btn_streets" class="oi-carto-fab"
+                        title="Afficher les noms de rues" aria-label="Afficher ou masquer les noms de rues">
+                        <span class="material-symbols-outlined">signpost</span>
+                    </button>
+                    <button type="button" id="oi_carto_btn_labels" class="oi-carto-fab"
+                        title="Afficher / masquer les libellés des pins" aria-label="Afficher ou masquer les libellés des pins">
+                        <span class="material-symbols-outlined">label</span>
+                    </button>
+                    <button type="button" id="oi_carto_btn_legend" class="oi-carto-fab"
+                        title="Afficher / masquer la légende" aria-label="Afficher ou masquer la légende">
+                        <span class="material-symbols-outlined">legend_toggle</span>
+                    </button>
+                </div>
                 <button type="button" id="oi_carto_btn_close" class="oi-carto-fab close-fab"
                     title="Fermer la cartographie" aria-label="Fermer la cartographie">
                     <span class="material-symbols-outlined">close</span>
@@ -851,6 +866,19 @@ Gestuelle et visuelle entre les éléments INDIA</textarea>
                     <span class="material-symbols-outlined">delete_sweep</span>
                 </button>
             </div>
+
+            <!-- Légende repliable (pattern #plan_legend PC-Tac) : catégories de pins OI -->
+            <details id="oi_carto_legend" class="oi-carto-legend">
+                <summary class="oi-carto-legend-summary">
+                    <span class="material-symbols-outlined icon-mid-18">legend_toggle</span>Légende
+                </summary>
+                <div class="oi-carto-legend-items">
+                    <span class="oi-carto-legend-item"><span class="oi-carto-legend-dot oi-carto-legend-dot--force"></span>Force (membre, cyno, rame VL)</span>
+                    <span class="oi-carto-legend-item"><span class="oi-carto-legend-dot oi-carto-legend-dot--target"></span>VL Target (adverse)</span>
+                    <span class="oi-carto-legend-item"><span class="oi-carto-legend-dot oi-carto-legend-dot--rassemblement"></span>Rassemblement</span>
+                    <span class="oi-carto-legend-item"><span class="oi-carto-legend-dot oi-carto-legend-dot--generic"></span>Point générique</span>
+                </div>
+            </details>
         </div>
     </dialog>
 

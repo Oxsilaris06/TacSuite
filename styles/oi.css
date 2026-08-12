@@ -3829,6 +3829,17 @@ body.up-kb-open .up-kb-aware {
             gap: var(--space-2);
         }
 
+        /* Tiroir « Plus » (pattern PC-Tac U24) : mêmes FABs, empilés sous le bouton */
+        #oi_carto_more_tools {
+            display: flex;
+            flex-direction: column;
+            gap: var(--space-2);
+        }
+
+        #oi_carto_more_tools[hidden] {
+            display: none;
+        }
+
         .oi-carto-fab {
             width: 50px;
             height: 50px;
@@ -4005,10 +4016,81 @@ body.up-kb-open .up-kb-aware {
             gap: var(--space-2);
         }
 
+        /* Légende repliable (pattern .pctac-plan-legend) — variables sémantiques
+           thème clair/sombre déjà résolues par oi.css (--bg-container, etc.) */
+        .oi-carto-legend {
+            position: absolute;
+            bottom: 12px;
+            right: 12px;
+            z-index: var(--z-panel);
+            background: var(--bg-container);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-sm);
+            box-shadow: var(--shadow-lg);
+            font-size: 0.85em;
+            max-width: 70%;
+            color: var(--text-primary);
+        }
+
+        .oi-carto-legend[hidden] {
+            display: none;
+        }
+
+        .oi-carto-legend-summary {
+            cursor: pointer;
+            padding: 8px 12px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-weight: 600;
+            list-style: none;
+        }
+
+        .oi-carto-legend-summary::-webkit-details-marker,
+        .oi-carto-legend-summary::marker {
+            display: none;
+        }
+
+        .oi-carto-legend-items {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+            flex-wrap: wrap;
+            padding: 2px 12px 10px;
+        }
+
+        .oi-carto-legend-item {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .oi-carto-legend-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            display: inline-block;
+        }
+
+        /* Couleurs = OI_PIN_DEFS (src/apps/oi/carto/constants.ts:95-111) */
+        .oi-carto-legend-dot--force { background: #3b82f6; }
+        .oi-carto-legend-dot--target { background: #ef4444; }
+        .oi-carto-legend-dot--rassemblement { background: #22c55e; }
+        .oi-carto-legend-dot--generic { background: #a1a1aa; }
+
         @media (max-width: 768px) {
             .oi-carto-fab {
                 width: 46px;
                 height: 46px;
+            }
+
+            .oi-carto-legend {
+                font-size: 0.75em;
+            }
+
+            /* Dock dessin ouvert : masquer la légende (même règle que PC-Tac) */
+            #oi_carto_draw_dock.open ~ .oi-carto-legend {
+                display: none;
             }
         }
 

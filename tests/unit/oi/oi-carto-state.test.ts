@@ -334,7 +334,7 @@ describe('_loadView / _saveView (oi_cartographie.js:374-393)', () => {
         expect(() => PersistMethods._saveView.call(fake)).not.toThrow();
     });
 
-    it('_saveView : persiste exactement { center:[lng,lat], zoom, pitch, bearing, is3D }', () => {
+    it('_saveView : persiste exactement { center:[lng,lat], zoom, pitch, bearing, is3D, streetLabelsOn }', () => {
         const map = makeFakeMap({
             getCenter: vi.fn(() => ({ lng: 4.835, lat: 45.764 })),
             getZoom: vi.fn(() => 12.5),
@@ -351,6 +351,7 @@ describe('_loadView / _saveView (oi_cartographie.js:374-393)', () => {
             pitch: 45,
             bearing: 90,
             is3D: true,
+            streetLabelsOn: false,
         });
     });
 
@@ -364,7 +365,7 @@ describe('_loadView / _saveView (oi_cartographie.js:374-393)', () => {
         PersistMethods._saveView.call(fake);
         const reloaded = PersistMethods._loadView.call(fake);
 
-        expect(reloaded).toEqual({ center: [1.2, 43.6], zoom: 8, pitch: 0, bearing: 0, is3D: false });
+        expect(reloaded).toEqual({ center: [1.2, 43.6], zoom: 8, pitch: 0, bearing: 0, is3D: false, streetLabelsOn: false });
     });
 
     it('_loadView : vue persistée avec center non-tableau (état corrompu) ⇒ repli par défaut', () => {

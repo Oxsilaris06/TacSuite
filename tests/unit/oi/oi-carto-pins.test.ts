@@ -47,22 +47,25 @@ function assertNonNull<T>(value: T | null | undefined, message = 'expected non-n
 // internes de `maplibregl.Map` lors de `addTo()`, qu'un faux `map` minimal ne
 // fournit pas (vérifié dans les paquets pctac équivalents : jette sous
 // jsdom). `pins.ts` (OI) n'utilise que `.setLngLat`/`.getLngLat`/`.addTo`/
-// `.remove`/`.on`/`.getElement` du vrai Marker (pas de `setDraggable`/
-// `setOffset`, absents de la source `oi_cartographie.js`).
+// `.remove`/`.on`/`.getElement`/`.setDraggable` du vrai Marker (`setDraggable`
+// ajouté par le chantier « verrou de pin », parité PC-Tac).
 vi.mock('maplibre-gl', () => {
     class FakeMarker {
         private _element: HTMLElement;
         private _lngLat: { lng: number; lat: number };
         private _listeners = new Map<string, () => void>();
-        constructor(opts: { element?: HTMLElement } = {}) {
+        _draggable: boolean | undefined;
+        constructor(opts: { element?: HTMLElement; draggable?: boolean } = {}) {
             this._element = opts.element ?? document.createElement('div');
             this._lngLat = { lng: 0, lat: 0 };
+            this._draggable = opts.draggable;
         }
         setLngLat(ll: { lng: number; lat: number }): this { this._lngLat = ll; return this; }
         getLngLat(): { lng: number; lat: number } { return this._lngLat; }
         addTo(): this { return this; }
         remove(): this { return this; }
         getElement(): HTMLElement { return this._element; }
+        setDraggable(v: boolean): this { this._draggable = v; return this; }
         on(type: string, cb: () => void): this { this._listeners.set(type, cb); return this; }
         // Aide de test (pas de la surface maplibre réelle) :
         _fire(type: string): void { this._listeners.get(type)?.(); }
@@ -121,10 +124,18 @@ function makeFakeThis(overrides: Partial<OICartoInternal> = {}): OICartoInternal
         _savePins: vi.fn((p: readonly OiCartoPin[]): void => { pins = p.slice(); }),
         // --- Autres groupes carto (map-core.ts, panels.ts, draw.ts) — stubs,
         // hors périmètre de ce paquet. ---
+        lastQuickPin: null,
+        _wheelJustClosed: 0,
+        // Câblage appui long neutralisé par défaut : les fausses cartes `{}`
+        // de ces tests n'exposent pas `.on` (describe dédié plus bas).
+        _longPressWired: true,
         _showHint: vi.fn(),
         _hideHint: vi.fn(),
         _closeInlinePanel: vi.fn(),
+        _closeWheel: vi.fn(),
         _openPinWheel: vi.fn(),
+        _openInlinePanel: vi.fn(),
+        _copyCoords: vi.fn(),
         _setTool: vi.fn(),
         // --- Groupe sous test : VRAIES méthodes (cross-appels internes). ---
         ...PinsMethods,
@@ -137,6 +148,9 @@ function makeFakeThis(overrides: Partial<OICartoInternal> = {}): OICartoInternal
         _renderPins: vi.fn(),
         _renderPingLists: vi.fn(),
         _closePingModal: vi.fn(),
+        // Roue de création stubée par défaut (comme `_renderPins`) : isole les
+        // tests du flux clic-carte ; describe dédié plus bas pour le flux réel.
+        _openCreatePinWheel: vi.fn(),
         ...overrides,
     };
     return base as unknown as OICartoInternal;
@@ -372,10 +386,33 @@ describe('_onMapClick (oi_cartographie.js:856-878)', () => {
         return { lngLat: { lng, lat } } as unknown as MapMouseEvent;
     }
 
-    it('sans placement en attente : ne crée aucun pin', () => {
+    it('sans placement en attente : ne crée aucun pin, ouvre la roue de création (parité PC-Tac)', () => {
         const fake = makeFakeThis({ _loadPins: () => [] });
         PinsMethods._onMapClick.call(fake, makeClick(1, 2));
         expect(fake._savePins).not.toHaveBeenCalled();
+        expect(fake._openCreatePinWheel).toHaveBeenCalledWith({ lng: 1, lat: 2 });
+    });
+
+    it('roue active : le clic carte n\'ouvre PAS de roue de création (la roue gère sa fermeture)', () => {
+        const fake = makeFakeThis({
+            _loadPins: () => [],
+            _activeWheel: { open: vi.fn(), destroy: vi.fn(), element: null },
+        });
+        PinsMethods._onMapClick.call(fake, makeClick(1, 2));
+        expect(fake._openCreatePinWheel).not.toHaveBeenCalled();
+    });
+
+    it('roue fermée à l\'instant (_wheelJustClosed < 400 ms) : pas de réouverture', () => {
+        const fake = makeFakeThis({ _loadPins: () => [], _wheelJustClosed: Date.now() });
+        PinsMethods._onMapClick.call(fake, makeClick(1, 2));
+        expect(fake._openCreatePinWheel).not.toHaveBeenCalled();
+    });
+
+    it('clic qui ferme un panneau inline : ferme le panneau sans ouvrir la roue de création', () => {
+        const fake = makeFakeThis({ _loadPins: () => [], _inlinePanel: document.createElement('div') });
+        PinsMethods._onMapClick.call(fake, makeClick(1, 2));
+        expect(fake._closeInlinePanel).toHaveBeenCalledTimes(1);
+        expect(fake._openCreatePinWheel).not.toHaveBeenCalled();
     });
 
     it('pendant un dessin (drawTool actif) : le clic est ignoré', () => {
@@ -418,6 +455,49 @@ describe('_armPinPlacement (oi_cartographie.js:849-854)', () => {
         const fake = makeFakeThis({ drawTool: 'line' });
         PinsMethods._armPinPlacement.call(fake, { kind: 'cyno', label: 'Cyno' });
         expect(fake._setTool).toHaveBeenCalledWith(null);
+    });
+});
+
+describe('_quickPlacePing (roue de création, parité PC-Tac)', () => {
+    it('pose le pin aux coordonnées, mémorise lastQuickPin, puis ouvre la roue d\'options', () => {
+        vi.useFakeTimers();
+        try {
+            const fake = makeFakeThis({ _loadPins: () => [] });
+            const pending: OiCartoPendingPin = { kind: 'cyno', label: 'Cyno' };
+
+            PinsMethods._quickPlacePing.call(fake, { lng: 2.1, lat: 48.1 }, pending);
+
+            expect(fake._savePins).toHaveBeenCalledTimes(1);
+            const saved = (fake._savePins as unknown as { mock: { calls: [OiCartoPin[]][] } }).mock.calls[0]?.[0];
+            const created = assertNonNull(saved)[0];
+            expect(created).toMatchObject({ kind: 'cyno', label: 'Cyno', lng: 2.1, lat: 48.1 });
+            expect(fake.lastQuickPin).toBe(pending);
+            expect(fake._renderPingLists).toHaveBeenCalledTimes(1);
+
+            vi.advanceTimersByTime(100);
+            expect(fake._openPinWheel).toHaveBeenCalledWith(assertNonNull(created).id);
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+});
+
+describe('_wireLongPressForPing — câblé depuis _bindUi (map-core.ts)', () => {
+    it('câble l\'appui long UNE seule fois (garde _longPressWired)', () => {
+        const on = vi.fn();
+        const fake = makeFakeThis({
+            map: { on } as unknown as OICartoInternal['map'],
+            _loadPins: () => [],
+            _longPressWired: undefined,
+        });
+
+        PinsMethods._wireLongPressForPing.call(fake);
+        expect(fake._longPressWired).toBe(true);
+        const callsAfterFirst = on.mock.calls.length;
+        expect(callsAfterFirst).toBeGreaterThan(0); // mousedown/touchstart/… posés
+
+        PinsMethods._wireLongPressForPing.call(fake);
+        expect(on.mock.calls.length).toBe(callsAfterFirst); // pas de ré-attache
     });
 });
 

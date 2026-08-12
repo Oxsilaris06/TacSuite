@@ -95,7 +95,7 @@ Recommandation : conserver jusqu'au gate P4.C, retirer ensuite.
 |---|---|---|
 | `intro` | `title`, `text` | `text` est présent dans deux jeux mais **jamais lu** par moteur (seul `intro.title` l'est, `tuto-engine.js:463`) |
 | `chapter` | `id`, `icon`, `title`, `summary`, `steps` | 8 chapitres (oi) / 9 (pctac), tous champs présents |
-| `step` | `title`, `body`, `terms`, `selector`, `tip` | 56 steps (oi) / 73 (pctac) ; `selector` `null` 5×/36× ; `tip` `null` 6×/20× ; `terms` `string[]` parfois vide (4× pctac) ; **aucun `""`** — l'absence est toujours `null` |
+| `step` | `title`, `body`, `terms`, `selector`, `tip` | 57 steps (oi) / 73 (pctac) ; `selector` `null` 5×/36× ; `tip` `null` 6×/20× ; `terms` `string[]` parfois vide (4× pctac) ; **aucun `""`** — l'absence est toujours `null` |
 
 `body` et `tip` acceptent mini-markdown `**gras**` (échappé d'abord).
 `terms` n'est pas affiché : il alimente uniquement recherche

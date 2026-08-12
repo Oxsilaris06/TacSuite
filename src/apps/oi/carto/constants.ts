@@ -22,6 +22,11 @@ import type { StyleSpecification } from 'maplibre-gl';
  */
 export const OI_CARTO_RASTER_STYLE: StyleSpecification = {
     version: 8,
+    // Polices keyless servies par OpenFreeMap (même origine que les tuiles vectorielles)
+    // — requises pour le rendu texte des noms de rues. NB : fonts.openmaptiles.org
+    // renvoie du text/html (cassé) ; tiles.openfreemap.org/fonts renvoie le protobuf.
+    // Aligné sur PC-Tac (@pctac/planmap/constants.ts, RASTER_STYLE).
+    glyphs: 'https://tiles.openfreemap.org/fonts/{fontstack}/{range}.pbf',
     sources: {
         satellite: {
             type: 'raster',
@@ -29,6 +34,23 @@ export const OI_CARTO_RASTER_STYLE: StyleSpecification = {
             tileSize: 256,
             maxzoom: 19,
             attribution: 'Tiles © Esri',
+        },
+        // Ortho HD IGN 20 cm (BD ORTHO, Géoplateforme, SANS clé, schéma XYZ vérifié).
+        // PIÈGE : hors couverture (étranger/mer dans la grille) l'IGN renvoie une tuile
+        // JPEG BLANCHE OPAQUE (~1.6 Ko), pas un 404 → elle masquerait Esri. Comme on ne
+        // peut pas filtrer une tuile raster blanche, on n'affiche l'IGN qu'à partir du
+        // z11 (cf. raster-opacity) — là la vue est dominée par du sol FR, donc pas de
+        // blanc ; à plus bas zoom Esri reste seul (et le 20 cm ne se voit pas avant ~z13).
+        // `bounds` évite en plus de requêter l'IGN loin hors de France.
+        // Aligné sur PC-Tac (@pctac/planmap/constants.ts, RASTER_STYLE).
+        'ign-ortho': {
+            type: 'raster',
+            tiles: ['https://data.geopf.fr/tms/1.0.0/HR.ORTHOIMAGERY.ORTHOPHOTOS/{z}/{x}/{y}.jpeg'],
+            tileSize: 256,
+            minzoom: 11,
+            maxzoom: 19,
+            bounds: [-5.6, 41.1, 9.8, 51.3],
+            attribution: 'BD ORTHO © IGN / Géoplateforme',
         },
         'terrain-dem': {
             type: 'raster-dem',
@@ -44,7 +66,21 @@ export const OI_CARTO_RASTER_STYLE: StyleSpecification = {
             attribution: '© OpenFreeMap © OpenStreetMap',
         },
     },
-    layers: [{ id: 'satellite', type: 'raster', source: 'satellite' }],
+    layers: [
+        { id: 'satellite', type: 'raster', source: 'satellite' },
+        {
+            id: 'ign-ortho', type: 'raster', source: 'ign-ortho',
+            paint: {
+                // Fusion seamless Esri → IGN : fondu progressif au zoom sur la bande
+                // z11→z13 (l'IGN monte en transparence par-dessus Esri puis devient
+                // opaque). Volontairement HAUT : à <z11 (vues régionales où mer/étranger
+                // sont dans le champ) on reste sur Esri → pas de tuiles blanches IGN ;
+                // l'IGN HD prend le relais une fois zoomé sur une zone française.
+                'raster-opacity': ['interpolate', ['linear'], ['zoom'], 11, 0, 13, 1],
+                'raster-fade-duration': 500,
+            },
+        },
+    ],
 };
 
 /**

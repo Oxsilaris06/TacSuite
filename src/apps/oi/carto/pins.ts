@@ -88,7 +88,7 @@
  */
 
 import maplibregl from 'maplibre-gl';
-import type { MapMouseEvent, Marker } from 'maplibre-gl';
+import type { MapMouseEvent, MapTouchEvent, Marker, PointLike } from 'maplibre-gl';
 
 import { confirmDialog, toast } from '@shared/feedback.js';
 import { attachPinGestures, createDblZoomSuppressor } from '@shared/pin-gestures.js';
@@ -96,7 +96,8 @@ import type { PinGestureHandle } from '@shared/pin-gestures.js';
 import { esc } from '@shared/ui-platform.js';
 
 import { OI_PIN_DEFS, OI_PIN_FALLBACK, oiIconForMember } from './constants.js';
-import type { OICartoInternal, OiCartoPendingPin, OiCartoPin, OiCartoPinKind } from './types.js';
+import type { LngLatObj, OICartoInternal, OiCartoPendingPin, OiCartoPin, OiCartoPinKind } from './types.js';
+import { OIWheel } from './wheel.js';
 
 /**
  * Forme du couple de markers stocké sous chaque id de `this.markers`
@@ -137,6 +138,7 @@ function pinSignature(pin: OiCartoPin): string {
         pin.lng, pin.lat, pin.kind, pin.label,
         pin.memberTri || '', pin.fonction || '', pin.icon || '', pin.color || '',
         pin.text || '',
+        pin.locked ? 1 : 0, // verrou : change draggable/cursor (parité PC-Tac)
     ].join('|');
 }
 
@@ -460,29 +462,291 @@ export const PinsMethods = {
         this._showHint(`Cliquez sur la carte pour placer « ${pending.label} »`);
     },
 
-    // oi_cartographie.js:856-878
+    // oi_cartographie.js:856-878 + roue de création au clic (parité PC-Tac)
     _onMapClick(this: OICartoInternal, e: MapMouseEvent): void {
-        // Un clic sur le fond ferme tout panneau flottant d'édition de pin.
+        // Un clic sur le fond ferme tout panneau flottant d'édition de pin —
+        // et ce clic de fermeture n'ouvre PAS de roue de création dans la foulée.
+        const hadPanel = !!this._inlinePanel;
         this._closeInlinePanel();
         if (this.drawTool) return; // pendant un dessin, les clics sont gérés ailleurs
-        if (!this.pendingPin) return;
-        const p = this.pendingPin;
-        this._addPin({
-            id: 'pin_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7),
-            kind: p.kind,
-            label: p.label,
-            // Métadonnées membre + icône auto/personnalisée (placement OI).
-            memberTri: p.memberTri || null,
-            fonction: p.fonction || null,
-            icon: p.icon || null,
-            color: p.color || null,
-            lng: e.lngLat.lng,
-            lat: e.lngLat.lat,
+        if (this.pendingPin) {
+            const p = this.pendingPin;
+            this._addPin({
+                id: 'pin_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7),
+                kind: p.kind,
+                label: p.label,
+                // Métadonnées membre + icône auto/personnalisée (placement OI).
+                memberTri: p.memberTri || null,
+                fonction: p.fonction || null,
+                icon: p.icon || null,
+                color: p.color || null,
+                lng: e.lngLat.lng,
+                lat: e.lngLat.lat,
+            });
+            this.pendingPin = null;
+            this._hideHint();
+            // Rafraîchit la modale d'ajout si encore ouverte (état "placé").
+            this._renderPingLists();
+            return;
+        }
+        // --- Nouvelle ergonomie (parité PC-Tac) : clic sur zone vide → roue
+        // de création de pin aux coordonnées cliquées. ---
+        if (hadPanel) return;
+        if (this._activeWheel) return; // la roue gère elle-même sa fermeture
+        // Le clic qui vient de FERMER une roue (clic extérieur) ne rouvre rien.
+        if (this._wheelJustClosed && Date.now() - this._wheelJustClosed < 400) return;
+        // Clic issu d'un marker / d'une roue / d'un panneau : géré par eux.
+        const target = e.originalEvent?.target;
+        if (target instanceof Element
+            && target.closest('.maplibregl-marker, .oi-wheel, .oi-carto-inline-panel')) return;
+        this._openCreatePinWheel(e.lngLat);
+    },
+
+    /**
+     * Roue de CRÉATION d'un pin au point cliqué (parité PC-Tac
+     * `_openCreatePingWheel`) : segments de pose directe pour les pins métier
+     * OI génériques (cyno / rame VL / VL target / rassemblement), panneaux
+     * inline pour les membres PATRACDVR et les véhicules nommés, re-pose
+     * rapide du dernier type utilisé, copie de coordonnées.
+     */
+    _openCreatePinWheel(this: OICartoInternal, lngLat: LngLatObj): void {
+        this._closeWheel();
+        this._closeInlinePanel();
+        const quick = (pending: OiCartoPendingPin) => () => this._quickPlacePing(lngLat, pending);
+        const opts: Array<{ id?: string; icon: string; label: string; bg?: string; color?: string; action?: () => void }> = [];
+        // Re-pose du dernier type utilisé (quick-place, parité PC-Tac).
+        const last = this.lastQuickPin;
+        if (last) {
+            opts.push({
+                id: 'last',
+                icon: last.icon || OI_PIN_DEFS[last.kind].icon,
+                label: `↻ ${last.label}`,
+                bg: 'rgba(59,130,246,0.95)',
+                action: quick(last),
+            });
+        }
+        opts.push({ id: 'member', icon: 'badge', label: 'Membre', bg: OI_PIN_DEFS.member.color, action: () => this._openMemberPickerPanel(lngLat) });
+        opts.push({ id: 'cyno', icon: OI_PIN_DEFS.cyno.icon, label: 'Cyno', bg: OI_PIN_DEFS.cyno.color, action: quick({ kind: 'cyno', label: 'Cyno' }) });
+        opts.push({ id: 'rame_vl', icon: OI_PIN_DEFS.rame_vl.icon, label: 'Rame VL', bg: OI_PIN_DEFS.rame_vl.color, action: quick({ kind: 'rame_vl', label: 'Rame VL' }) });
+        opts.push({ id: 'vl_target', icon: OI_PIN_DEFS.vl_target.icon, label: 'VL Target', bg: OI_PIN_DEFS.vl_target.color, action: quick({ kind: 'vl_target', label: 'VL Target' }) });
+        opts.push({ id: 'rassemblement', icon: OI_PIN_DEFS.rassemblement.icon, label: 'Rassemblement', bg: OI_PIN_DEFS.rassemblement.color, action: quick({ kind: 'rassemblement', label: 'Rassemblement' }) });
+        // Véhicules nommés (PATRACDVR + adverses) : panneau, seulement s'il y en a.
+        if (this._getPatracdvrVehicles().length || this._getAdversaryVehicles().length) {
+            opts.push({ id: 'vehicles', icon: 'garage', label: 'Véhicules', bg: '#475569', action: () => this._openVehiclePickerPanel(lngLat) });
+        }
+        opts.push({ id: 'copycoords', icon: 'my_location', label: 'Copier coords', bg: 'rgba(15,118,110,0.95)', action: () => this._copyCoords(lngLat.lng, lngLat.lat) });
+
+        this._activeWheel = new OIWheel({
+            ...(this.map ? { map: this.map } : {}),
+            lngLat,
+            title: 'Nouveau point',
+            options: opts,
+            onClose: () => { this._activeWheel = null; this._wheelJustClosed = Date.now(); },
         });
-        this.pendingPin = null;
-        this._hideHint();
-        // Rafraîchit la modale d'ajout si encore ouverte (état "placé").
+        this._activeWheel.open();
+    },
+
+    /**
+     * Pose directe d'un pin (parité PC-Tac `_quickPlacePing`), mémorise le
+     * type pour la re-pose rapide, puis ouvre la roue d'options du pin posé
+     * pour ajustements immédiats.
+     */
+    _quickPlacePing(this: OICartoInternal, lngLat: LngLatObj, pending: OiCartoPendingPin): void {
+        const id = 'pin_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
+        this._addPin({
+            id,
+            kind: pending.kind,
+            label: pending.label,
+            memberTri: pending.memberTri || null,
+            fonction: pending.fonction || null,
+            icon: pending.icon || null,
+            color: pending.color || null,
+            lng: lngLat.lng,
+            lat: lngLat.lat,
+        });
+        this.lastQuickPin = pending;
+        // Rafraîchit la modale d'ajout (dormante) si encore ouverte (état "placé").
         this._renderPingLists();
+        // Roue d'édition ouverte dans la foulée (parité PC-Tac, délai 80 ms).
+        setTimeout(() => this._openPinWheel(id), 80);
+    },
+
+    /**
+     * Panneau inline « Placer un membre » : membres PATRACDVR (fonction Cyno
+     * incluse → kind `cyno`), posés directement au point de la roue. Un membre
+     * déjà placé est grisé (repose possible — le retrait passe par la roue du
+     * pin ou la modale dormante).
+     */
+    _openMemberPickerPanel(this: OICartoInternal, lngLat: LngLatObj): void {
+        this._closeWheel();
+        const members = Array.from(document.querySelectorAll<HTMLElement>('.patracdvr-member-btn'))
+            .filter(b => b.dataset.trigramme && b.dataset.trigramme !== 'N/A');
+        const html = `
+            <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
+                <span class="material-symbols-outlined" style="font-size:18px; color:#60a5fa;">badge</span>
+                <strong style="font-size:13px;">Placer un membre</strong>
+            </div>
+            <div class="oi-carto-ping-list" style="display:flex; flex-wrap:wrap; gap:6px; max-height:230px; overflow-y:auto;"></div>`;
+        this._openInlinePanel(lngLat, html, (panel) => {
+            const listEl = panel.querySelector<HTMLDivElement>('.oi-carto-ping-list');
+            if (!listEl) return;
+            if (!members.length) {
+                listEl.innerHTML = this._emptyMsg('Aucun membre PATRACDVR configuré.');
+                return;
+            }
+            members.forEach(b => {
+                const tri = b.dataset.trigramme ?? '';
+                const fonction = b.dataset.fonction || '';
+                const kind: OiCartoPinKind = fonction === 'Cyno' ? 'cyno' : 'member';
+                const label = this._memberLabel(b);
+                const btn = this._pinButton(label, OI_PIN_DEFS[kind].color, () => {
+                    this._closeInlinePanel();
+                    this._quickPlacePing(lngLat, {
+                        kind, label, memberTri: tri, fonction,
+                        icon: oiIconForMember(fonction, b.dataset.cellule),
+                    });
+                });
+                if (this._isMemberPlaced(tri)) {
+                    btn.classList.add('oi-carto-member-placed');
+                    btn.textContent = `✓ ${label}`;
+                    btn.title = 'Déjà placé';
+                }
+                listEl.appendChild(btn);
+            });
+        });
+    },
+
+    /** Panneau inline « Véhicules » : rames VL du PATRACDVR + véhicules adverses. */
+    _openVehiclePickerPanel(this: OICartoInternal, lngLat: LngLatObj): void {
+        this._closeWheel();
+        const html = `
+            <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
+                <span class="material-symbols-outlined" style="font-size:18px; color:#60a5fa;">garage</span>
+                <strong style="font-size:13px;">Placer un véhicule</strong>
+            </div>
+            <div class="oi-carto-ping-list" style="display:flex; flex-wrap:wrap; gap:6px; max-height:230px; overflow-y:auto;"></div>`;
+        this._openInlinePanel(lngLat, html, (panel) => {
+            const listEl = panel.querySelector<HTMLDivElement>('.oi-carto-ping-list');
+            if (!listEl) return;
+            const place = (kind: OiCartoPinKind, label: string) => () => {
+                this._closeInlinePanel();
+                this._quickPlacePing(lngLat, { kind, label });
+            };
+            this._getPatracdvrVehicles().forEach(name => {
+                listEl.appendChild(this._pinButton(name, OI_PIN_DEFS.rame_vl.color, place('rame_vl', name)));
+            });
+            this._getAdversaryVehicles().forEach(name => {
+                listEl.appendChild(this._pinButton(name, OI_PIN_DEFS.vl_target.color, place('vl_target', name)));
+            });
+            if (!listEl.childElementCount) {
+                listEl.innerHTML = this._emptyMsg('Aucun véhicule saisi dans le formulaire.');
+            }
+        });
+    },
+
+    /**
+     * Détecteur d'appui long façon Google Maps (port de PC-Tac
+     * `_wireLongPressForPing`, draw-layers.ts:398) : 480 ms d'appui immobile
+     * sur zone vide ouvre la roue de création. Annulé au moindre mouvement
+     * (pan), au relâchement, ou si l'appui démarre sur un marker/une forme.
+     * Feedback visuel : anneau animé pendant le décompte.
+     */
+    _wireLongPressForPing(this: OICartoInternal): void {
+        if (this._longPressWired) return;
+        const map = this.map;
+        if (!map) return;
+        this._longPressWired = true;
+
+        const LP_DELAY = 480; // ms
+        const LP_TOLERANCE = 8; // px de tolérance
+        let lp: {
+            startPx: { x: number; y: number };
+            startLngLat: LngLatObj;
+            ringEl: HTMLDivElement;
+            timer: ReturnType<typeof setTimeout>;
+        } | null = null;
+
+        const cancel = (): void => {
+            if (!lp) return;
+            clearTimeout(lp.timer);
+            try { lp.ringEl.remove(); } catch { /* déjà retiré du DOM — sans effet */ }
+            lp = null;
+        };
+        const isOnFeature = (point: PointLike): boolean => {
+            try {
+                return map.queryRenderedFeatures(point, {
+                    layers: ['oi-carto-shapes-fill', 'oi-carto-shapes-line'],
+                }).length > 0;
+            } catch { return false; } // couches pas encore posées (avant _initDrawingLayers)
+        };
+        const showRing = (clientX: number, clientY: number): HTMLDivElement => {
+            const ring = document.createElement('div');
+            ring.style.cssText = `
+                position: fixed; left: ${clientX}px; top: ${clientY}px;
+                width: 12px; height: 12px;
+                transform: translate(-50%, -50%);
+                border-radius: 50%;
+                border: 3px solid #3b82f6;
+                box-shadow: 0 0 0 0 rgba(59,130,246,0.6);
+                pointer-events: none;
+                z-index: 9999;
+                animation: oiCartoLpRing ${LP_DELAY}ms linear forwards;
+            `;
+            document.body.appendChild(ring);
+            return ring;
+        };
+        // Keyframe injecté une fois
+        if (!document.getElementById('oi-carto-lp-ring-style')) {
+            const s = document.createElement('style');
+            s.id = 'oi-carto-lp-ring-style';
+            s.textContent = `@keyframes oiCartoLpRing {
+                0%   { width: 12px; height: 12px; opacity: 0.4; }
+                100% { width: 56px; height: 56px; opacity: 0.95; box-shadow: 0 0 12px 6px rgba(59,130,246,0.45); }
+            }`;
+            document.head.appendChild(s);
+        }
+
+        const start = (e: MapMouseEvent | MapTouchEvent): void => {
+            if (this.drawTool || this.pendingPin) return;
+            if (this._activeWheel || this._inlinePanel) return;
+            const oe = e.originalEvent;
+            // Multi-touch (pinch zoom etc.) → on annule le long-press
+            if (oe && 'touches' in oe && oe.touches.length > 1) { cancel(); return; }
+            if (lp) cancel(); // ne pas empiler
+            // Appui démarré sur un marker / la roue / un panneau : géré par eux.
+            const target = oe && oe.target instanceof Element ? oe.target : null;
+            if (target && target.closest('.maplibregl-marker, .oi-wheel, .oi-carto-inline-panel')) return;
+            if (isOnFeature(e.point)) return; // forme → priorité au gestionnaire de forme
+            const touch = oe && 'touches' in oe ? oe.touches[0] : undefined;
+            const clientX = touch ? touch.clientX : (oe && 'clientX' in oe && oe.clientX) || 0;
+            const clientY = touch ? touch.clientY : (oe && 'clientY' in oe && oe.clientY) || 0;
+            lp = {
+                startPx: { x: e.point.x, y: e.point.y },
+                startLngLat: e.lngLat,
+                ringEl: showRing(clientX, clientY),
+                timer: setTimeout(() => {
+                    if (!lp) return;
+                    const ll = lp.startLngLat;
+                    cancel();
+                    this._openCreatePinWheel(ll);
+                }, LP_DELAY),
+            };
+        };
+        const move = (e: MapMouseEvent | MapTouchEvent): void => {
+            if (!lp) return;
+            const dx = e.point.x - lp.startPx.x, dy = e.point.y - lp.startPx.y;
+            if (Math.hypot(dx, dy) > LP_TOLERANCE) cancel();
+        };
+
+        map.on('mousedown', this._safe(start, 'longpress:start'));
+        map.on('touchstart', this._safe(start, 'longpress:start'));
+        map.on('mousemove', this._safe(move, 'longpress:move'));
+        map.on('touchmove', this._safe(move, 'longpress:move'));
+        map.on('mouseup', this._safe(cancel, 'longpress:cancel'));
+        map.on('touchend', this._safe(cancel, 'longpress:cancel'));
+        map.on('touchcancel', this._safe(cancel, 'longpress:cancel'));
+        map.on('dragstart', this._safe(cancel, 'longpress:cancel'));
+        map.on('movestart', this._safe(cancel, 'longpress:cancel'));
     },
 
     // oi_cartographie.js:880-885
@@ -557,9 +821,12 @@ export const PinsMethods = {
                 pinWrap.style.cssText = 'min-width:44px; min-height:44px; width:44px; height:44px; cursor:grab; display:flex; align-items:center; justify-content:center; touch-action:none;';
                 const labelEl = document.createElement('div');
                 applyPinVisual(pinWrap, labelEl, pin);
+                pinWrap.style.cursor = pin.locked ? 'pointer' : 'grab';
                 if (!this.labelsVisible) labelEl.style.display = 'none';
 
-                const pinMarker = new maplibregl.Marker({ element: pinWrap, anchor: 'center', draggable: true })
+                // Verrou : un pin verrouillé n'est pas déplaçable (parité PC-Tac,
+                // `draggable: !pin.locked` — le tap simple reste actif pour la roue).
+                const pinMarker = new maplibregl.Marker({ element: pinWrap, anchor: 'center', draggable: !pin.locked })
                     .setLngLat([pin.lng, pin.lat])
                     .addTo(map);
                 const labelMarker = new maplibregl.Marker({ element: labelEl, anchor: 'top', offset: labelOffset })
@@ -615,10 +882,12 @@ export const PinsMethods = {
 
                 this.markers.set(pin.id, { pin: pinMarker, label: labelMarker, pinWrap, labelEl, gestures, sig });
             } else if (entry.sig !== sig) {
-                // --- MISE À JOUR EN PLACE (position + contenu visuel) ---
+                // --- MISE À JOUR EN PLACE (position + contenu visuel + verrou) ---
                 entry.pin.setLngLat([pin.lng, pin.lat]);
                 entry.label.setLngLat([pin.lng, pin.lat]);
                 applyPinVisual(entry.pinWrap, entry.labelEl, pin);
+                entry.pin.setDraggable(!pin.locked); // verrou (parité PC-Tac)
+                entry.pinWrap.style.cursor = pin.locked ? 'pointer' : 'grab';
                 entry.sig = sig;
             }
             // else : signature identique → AUCUNE écriture DOM (zéro jank).

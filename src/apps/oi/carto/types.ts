@@ -73,6 +73,12 @@ export interface OiCartoPin {
      * sur `label`/`fonction` à l'affichage (oi_cartographie.js:942,946,1112).
      */
     text?: string | undefined;
+    /**
+     * Position verrouillée (parité PC-Tac, `PlanPin.locked`) : bloque le drag
+     * du marker (`draggable: !pin.locked`, cf. `_renderPins`). Basculé par
+     * `_togglePinLock` (panels.ts). Absent = déverrouillé.
+     */
+    locked?: boolean | undefined;
 }
 
 /**
@@ -137,6 +143,8 @@ export interface OiCartoShape {
  */
 export interface OiCartoViewState extends OiCartoView {
     is3D?: boolean | undefined;
+    /** Overlay noms de rues actif (alignement fond de carte PC-Tac) — persisté avec la vue. */
+    streetLabelsOn?: boolean | undefined;
 }
 
 /**
@@ -159,9 +167,37 @@ export interface OICartoInternal extends OICartoContract {
     drawState: OiCartoDrawState | null; // :280
     history: string[]; // :281 — pile JSON (`JSON.stringify(this._loadShapes())`)
     redoStack: string[]; // :282
+    /**
+     * Overlay noms de rues (vectoriel OpenFreeMap) actif — alignement fond de
+     * carte PC-Tac (hors littéral `oi_cartographie.js`, introduit par le port ;
+     * jumeau de `PlanMapInternal.streetLabelsOn`). Persisté via la vue
+     * (`OiCartoViewState.streetLabelsOn`), pas en localStorage : la SEULE
+     * frontière de persistance de `carto/` est `Store.state.formData.cartography`.
+     */
+    streetLabelsOn: boolean;
+    /**
+     * Dernier type de pin posé par la roue de création (`_quickPlacePing`) —
+     * proposé en « re-pose » rapide au sommet de la roue suivante (parité
+     * quick-place PC-Tac). Jamais persisté (mémoire de session uniquement).
+     */
+    lastQuickPin: OiCartoPendingPin | null;
+    /**
+     * Horodatage de la dernière fermeture de roue (parité PC-Tac
+     * `_wheelJustClosed`) : le clic carte qui FERME une roue ne doit pas en
+     * rouvrir une autre dans la foulée (fenêtre 400 ms, cf. `_onMapClick`).
+     */
+    _wheelJustClosed: number;
 
     // --- champ ad hoc (jamais dans le littéral, cf. commentaire ci-dessus) ---
     _inlinePanelMove: (() => void) | null;
+
+    /**
+     * Câblage appui long effectué (garde du câblage paresseux depuis
+     * `_renderPins` — le site propre serait `_bindUi`, map-core.ts, hors
+     * périmètre de ce chantier). Optionnel comme `_captureBusy` : `undefined`
+     * se comporte comme `false`.
+     */
+    _longPressWired?: boolean | undefined;
 
     /**
      * Verrou anti-concurrence de capture (mission R3-e, hors littéral
@@ -245,6 +281,15 @@ export interface OICartoInternal extends OICartoContract {
     _clearAllPins(): void; // :893
     _renderPins(): void; // :904
 
+    // --- Roue de CRÉATION de pin au clic/appui long carte (pins.ts, parité
+    // PC-Tac `_openCreatePingWheel`/`_quickPlacePing`/`_wireLongPressForPing`,
+    // hors source oi_cartographie.js — introduit par ce chantier) ---
+    _openCreatePinWheel(lngLat: LngLatObj): void;
+    _quickPlacePing(lngLat: LngLatObj, pending: OiCartoPendingPin): void;
+    _openMemberPickerPanel(lngLat: LngLatObj): void;
+    _openVehiclePickerPanel(lngLat: LngLatObj): void;
+    _wireLongPressForPing(): void;
+
     // --- Roue d'options d'un pin + panneaux inline (panels.ts) ---
     _closeWheel(): void; // :997
     _closeInlinePanel(): void; // :1001
@@ -258,6 +303,11 @@ export interface OICartoInternal extends OICartoContract {
     _openPinColorPanel(pinId: string): void; // :1083
     _openPinRenamePanel(pinId: string): void; // :1109
     _toggleLabels(): void; // :1147
+    // --- Parité roue d'options PC-Tac (hors source, introduit par ce chantier) ---
+    /** Copie MGRS + GPS dans le presse-papier, toast de confirmation (@shared/coords + @shared/feedback). */
+    _copyCoords(lng: number, lat: number): void;
+    /** Verrouille/déverrouille la position d'un pin (bloque le drag) — parité PC-Tac `_togglePinLock`. */
+    _togglePinLock(pinId: string, reopenWheel?: boolean): void;
 
     // --- CAPTURE — téléchargement / export vers un champ photo (capture.ts) ---
     _openCaptureModal(): void; // :1164
@@ -287,6 +337,11 @@ export interface OICartoInternal extends OICartoContract {
     _refreshUndoRedoButtons(): void; // :1559
     _rectPolygon(a: LngLatTuple, b: LngLatTuple): LngLatTuple[]; // :1573
     _circlePolygon(center: LngLatTuple, edge: LngLatTuple): LngLatTuple[]; // :1578
+
+    // --- Overlay noms de rues (map-core.ts, alignement PC-Tac, hors source) ---
+    _ensureStreetLabelLayers(): boolean;
+    _applyStreetLabelsVisibility(): void;
+    _toggleStreetLabels(): void;
 
     // --- Relief 3D + bâtiments (map-core.ts) ---
     _toggle3D(): void; // :1609

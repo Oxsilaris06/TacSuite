@@ -43,6 +43,8 @@
  * (lecture seule).
  */
 
+import { formatCoordsClipboard, shortMgrs } from '@shared/coords.js';
+import { toast } from '@shared/feedback.js';
 import { esc } from '@shared/ui-platform.js';
 
 import { OI_ICON_CATALOG } from './constants.js';
@@ -80,9 +82,11 @@ interface OiCartoWheelOption {
 }
 
 export const PanelsMethods = {
-    // oi_cartographie.js:997-999
+    // oi_cartographie.js:997-999 + horodatage anti-réouverture (parité PC-Tac
+    // `_wheelJustClosed` : le clic carte qui ferme une roue n'en rouvre pas une).
     _closeWheel(this: OICartoInternal): void {
         if (this._activeWheel) { try { this._activeWheel.destroy(); } catch { /* ignore */ } this._activeWheel = null; }
+        this._wheelJustClosed = Date.now();
     },
 
     // oi_cartographie.js:1001-1007
@@ -101,11 +105,17 @@ export const PanelsMethods = {
         this._closeWheel();
         this._closeInlinePanel();
         const ll: LngLatObj = { lng: pin.lng, lat: pin.lat };
+        const locked = !!pin.locked;
         const opts: OiCartoWheelOption[] = [
             { id: 'icon', icon: 'category', label: 'Icône', bg: 'rgba(59,130,246,0.95)', action: () => this._openPinIconPanel(pinId) },
             { id: 'color', icon: 'palette', label: 'Couleur', bg: 'rgba(168,85,247,0.95)', action: () => this._openPinColorPanel(pinId) },
             { id: 'rename', icon: 'edit', label: 'Renommer', bg: 'rgba(234,179,8,0.95)', color: '#000', action: () => this._openPinRenamePanel(pinId) },
+            // Verrou de position (parité PC-Tac) : bloque le drag du marker.
+            { id: 'lock', icon: locked ? 'lock' : 'lock_open', label: locked ? 'Déverrouiller' : 'Verrouiller', bg: locked ? 'rgba(234,179,8,0.95)' : 'rgba(100,116,139,0.95)', action: () => this._togglePinLock(pinId) },
             { id: 'goto', icon: 'my_location', label: 'Centrer', bg: 'rgba(34,197,94,0.95)', color: '#000', action: () => this.map && this.map.flyTo({ center: [pin.lng, pin.lat], zoom: Math.max(this.map.getZoom(), 17), speed: 1.2 }) },
+            // Coordonnées MGRS + GPS : copie presse-papier + toast (parité PC-Tac).
+            { id: 'copycoords', icon: 'pin_drop', label: 'Copier coords', bg: 'rgba(15,118,110,0.95)', action: () => this._copyCoords(pin.lng, pin.lat) },
+            // { id: 'photo', … } — Photo du pin : chantier séparé ultérieur (parité PC-Tac différée).
             { id: 'delete', icon: 'delete', label: 'Supprimer', bg: 'rgba(239,68,68,0.95)', action: () => { this._removePin(pinId); this._renderPingLists(); } },
         ];
         this._activeWheel = new OIWheel({
@@ -118,9 +128,57 @@ export const PanelsMethods = {
             lngLat: ll,
             title: pin.memberTri ? `${pin.memberTri}${pin.fonction && pin.fonction !== 'Sans' ? ' · ' + pin.fonction : ''}` : (pin.text || pin.label),
             options: opts,
-            onClose: () => { this._activeWheel = null; },
+            onClose: () => { this._activeWheel = null; this._wheelJustClosed = Date.now(); },
         });
         this._activeWheel.open();
+    },
+
+    /**
+     * Copie les coordonnées d'un point dans le presse-papier (décimal + DMS +
+     * MGRS, via `formatCoordsClipboard`) — port de PC-Tac `_copyCoords`
+     * (wheels.ts:44), avec le toast partagé au lieu du hint. Fallback
+     * execCommand si l'API Clipboard est absente (contexte non sécurisé).
+     */
+    _copyCoords(this: OICartoInternal, lng: number, lat: number): void {
+        const text = formatCoordsClipboard(lng, lat);
+        const done = (): void => { toast('Coordonnées copiées — ' + shortMgrs(lng, lat)); };
+        const fallback = (): void => {
+            try {
+                const ta = document.createElement('textarea');
+                ta.value = text;
+                ta.style.cssText = 'position:fixed;opacity:0;pointer-events:none;';
+                document.body.appendChild(ta);
+                ta.select();
+                document.execCommand('copy');
+                ta.remove();
+                done();
+            } catch {
+                // Dernier recours : on affiche les coordonnées pour copie manuelle.
+                toast('Copie impossible — ' + shortMgrs(lng, lat), { kind: 'error' });
+            }
+        };
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(text).then(done).catch(fallback);
+        } else {
+            fallback();
+        }
+    },
+
+    /**
+     * Verrouille / déverrouille la position d'un pin (parité PC-Tac
+     * `_togglePinLock`, pins.ts:693) : le drag du marker est bloqué par
+     * `_renderPins` (`draggable: !pin.locked`). Depuis la roue, la rouvre
+     * pour refléter le nouvel état.
+     */
+    _togglePinLock(this: OICartoInternal, pinId: string, reopenWheel = true): void {
+        const list = this._loadPins();
+        const pin = list.find((p) => p.id === pinId);
+        if (!pin) return;
+        pin.locked = !pin.locked;
+        this._savePins(list);
+        this._renderPins();
+        toast(pin.locked ? 'Pin verrouillé' : 'Pin déverrouillé');
+        if (reopenWheel) this._openPinWheel(pinId);
     },
 
     /** Panneau flottant ancré au pin (suit la carte). */

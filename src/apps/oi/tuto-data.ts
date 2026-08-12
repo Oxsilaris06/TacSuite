@@ -629,6 +629,15 @@ export const oiTutoData: TutoData = {
           tip: "Échap désactive l'outil de dessin actif sans fermer la carte."
         },
         {
+          title: "Ouvrir le tiroir « Plus »",
+          body: "Le bouton \"Plus d'outils (3D, capture, noms de rues, libellés, légende)\" (icône more_horiz) ouvre un tiroir regroupant les outils supplémentaires : relief 3D, capture, noms de rues, libellés et légende. Ouvrez ce tiroir pour accéder aux boutons décrits dans les étapes suivantes ; un clic hors du tiroir le referme.",
+          terms: [
+            "Plus d'outils (3D, capture, noms de rues, libellés, légende)"
+          ],
+          selector: "#oi_carto_btn_more",
+          tip: "Les boutons des deux prochaines étapes vivent dans ce tiroir : ouvrez-le d'abord pour les repérer sur la carte."
+        },
+        {
           title: "Affichage : libelles, relief 3D, plein ecran",
           body: "Le bouton \"Afficher / masquer les libellés des pins\" bascule tous les libellés (contre la superposition), son icône passant de label à label_off. \"Basculer vue 2D / 3D relief\" active le relief (élévation + bâtiments extrudés) et incline la vue ; le recliquer revient à plat. \"Plein écran\" agrandit la carte à tout l'écran (icône fullscreen ↔ fullscreen_exit).",
           terms: [
