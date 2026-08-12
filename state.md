@@ -73,6 +73,15 @@ Vérification finale : typecheck 0, lint 0, vitest 1857/1857, visuel 60 états 0
 - **Rectification décision structurante 1** (ligne 9, 2026-08-09) : la formulation « le moteur PC-Tac est généralisé comme socle commun ; OI est re-basé dessus » était trompeuse — l'enquête n'avait livré que 5 primitives partagées, pas un re-basage. L'écart carto OI/PC-Tac a été comblé ce jour par parité ciblée ; `oi/carto/` reste une implémentation propre consommant `@shared`, pas un re-basage sur le moteur PC-Tac.
 - Commits locaux 749fe07, 1191cca, f6c9946 — NON poussés.
 
+### 2026-08-12 (suite — recette Nico, alignement strict)
+- Retours recette carto OI corrigés (c7e9ab7, 2 agents parallèles + intégration) :
+  - clic simple carte redevenu neutre (parité `_onMapClick` PC-Tac : mesure → drawTool → pending), la roue ne s'ouvre plus au clic ; FAB ping → roue centrée vue.
+  - roue restructurée : « Ajouter entité » unifié (membres PATRACDVR/cyno/véhicules-rames/rassemblement), « Catalogue » à 2 onglets — Génériques (`PIN_ICONS` extrait vers `src/shared/pin-icons.ts`, PC-Tac re-exporte à l'identique) et Personnalisés (pins OI) ; option Texte retirée de la roue.
+  - texte = outil du dock dessin, modèle shape `type:'text'` (rendu nu avec halo, sans cadre, couleur palette), sélection/drag/édition via shape-edit, migration des anciens `cartography.texts`.
+  - mesure = outil du dock (dblclic termine) ; mesures commitées sélectionnables/supprimables au clic (écart assumé : PC-Tac ne le permet pas, demande explicite Nico).
+  - légende supprimée (décision Nico : code couleur libre).
+- Gate : typecheck 0, lint 0, vitest 1896/1896. Commit local c7e9ab7 — NON poussé.
+
 ## Dérogations actées
 
 - **AA boutons remplis, thème sombre** (2026-08-09, décision Nico) : `--accent-fill` sombre rétabli à `#4f8dff` (`--tac-blue-500`) — le correctif #2563eb changeait le bleu de l'interface. Ratio blanc/#4f8dff = 3.19:1, sous le seuil AA 4.5:1. Alternative conforme proposée (texte encre sombre sur #4f8dff, 6.6:1) — en attente de décision, non appliquée.
