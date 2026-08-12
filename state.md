@@ -62,6 +62,17 @@ Vérification finale : typecheck 0, lint 0, vitest 1857/1857, visuel 60 états 0
   - Transverse : U20 anti-flash + pont clés thème portail↔apps ; U24 toolbar 4 FABs + tiroir « Plus », dock en wrap.
 - Gate : typecheck 0, lint 0, vitest 1831/1831 verts. Restes actés dans Goal.md §7.
 
+### 2026-08-12
+- **Enquête photos exports** (déléguée, 2 verdicts) :
+  - OI : théorie **CONFIRMÉE** — `exportArchive` dumpait tout le store IndexedDB `OI_GeneratorLiteDB/images` (`getAllKeys`, `formulaires.ts:1263`) au lieu des images référencées ; orphelins garantis par suppression DOM pure des blocs MOICP/ZMSPCP/Effraction (`articulation.ts:140,241,956`) ; import sans purge si « Photos HD » décoché. Corrigé (749fe07) : filtre export `dataStr.includes(String(k))` + `removeBlockEl` purge IDB + PC-Tac purge `photoId` des pins à la suppression de photo.
+  - PC-Tac : théorie **INFIRMÉE** — export borné aux collections localStorage (pull ciblé `archive.ts:149-177`) ; seule fuite = référence `photoId` morte dans `pcTacPlanPins` (corrigée).
+- **Carto OI — parité PC-Tac** (arbitrage Nico 2026-08-12 : parité ciblée + mesure/gestes/texte, entités PATRACDVR conservées ; stratégie hybride retenue) :
+  - Vagues 1-2 (1191cca) : couche IGN BD ORTHO + labels rues openfreemap togglables/persistés ; toolbar 4 FABs + tiroir « Plus » + légende ; roue de création ping au clic/appui long (modale dormante), quick-place, panneaux membre/véhicule PATRACDVR ; roue options pin enrichie (verrou, copie coords MGRS+GPS) ; extraction de la machine à gestes formes vers `src/shared/shape-gestures.ts` (injection, adaptateur PC-Tac mince, API intacte) ; tuto 57 steps.
+  - Vague 3 (f6c9946) : formes éditables (sélection/poignées/drag/resize/pinch via shared), précision de tracé (réticule), mesure (distance+azimut+anneaux d'engagement), texte libre (roue → `promptDialog`, persisté `cartography.texts`), photo↔ping complet (badge, panneau vignettes formulaire, viewer PhotoSwipe, orphelins nettoyés, auto-embarqué à l'export).
+- Gate final : typecheck 0, lint 0, vitest 1884/1884.
+- **Rectification décision structurante 1** (ligne 9, 2026-08-09) : la formulation « le moteur PC-Tac est généralisé comme socle commun ; OI est re-basé dessus » était trompeuse — l'enquête n'avait livré que 5 primitives partagées, pas un re-basage. L'écart carto OI/PC-Tac a été comblé ce jour par parité ciblée ; `oi/carto/` reste une implémentation propre consommant `@shared`, pas un re-basage sur le moteur PC-Tac.
+- Commits locaux 749fe07, 1191cca, f6c9946 — NON poussés.
+
 ## Dérogations actées
 
 - **AA boutons remplis, thème sombre** (2026-08-09, décision Nico) : `--accent-fill` sombre rétabli à `#4f8dff` (`--tac-blue-500`) — le correctif #2563eb changeait le bleu de l'interface. Ratio blanc/#4f8dff = 3.19:1, sous le seuil AA 4.5:1. Alternative conforme proposée (texte encre sombre sur #4f8dff, 6.6:1) — en attente de décision, non appliquée.
