@@ -73,6 +73,16 @@ vi.mock('maplibre-gl', () => {
     return { default: { Marker: FakeMarker } };
 });
 
+// Capture des options passées à `OIWheel` (groupe `wheel.ts`, hors périmètre
+// de ce paquet) pour vérifier le contenu de la roue de création sans DOM réel.
+const wheelOptsSpy = vi.hoisted(() => vi.fn());
+vi.mock('../../../src/apps/oi/carto/wheel.js', () => ({
+    OIWheel: class {
+        constructor(opts: unknown) { wheelOptsSpy(opts); }
+        open(): void { /* no-op */ }
+    },
+}));
+
 /** Double de `_safe` (carto/state.ts — `SafeMethods`, hors `dependsOn` de ce
  *  paquet) reproduisant le comportement de l'original (oi_cartographie.js:286-291)
  *  pour que les handlers posés par `_renderPins` s'exécutent normalement. */
@@ -134,6 +144,7 @@ function makeFakeThis(overrides: Partial<OICartoInternal> = {}): OICartoInternal
         _closeInlinePanel: vi.fn(),
         _closeWheel: vi.fn(),
         _openPinWheel: vi.fn(),
+        _openPinPhotoViewer: vi.fn(),
         _openInlinePanel: vi.fn(),
         _copyCoords: vi.fn(),
         _setTool: vi.fn(),
@@ -151,6 +162,11 @@ function makeFakeThis(overrides: Partial<OICartoInternal> = {}): OICartoInternal
         // Roue de création stubée par défaut (comme `_renderPins`) : isole les
         // tests du flux clic-carte ; describe dédié plus bas pour le flux réel.
         _openCreatePinWheel: vi.fn(),
+        // --- Groupe carto/measure.ts, hors périmètre de ce paquet — stubs. ---
+        _measureState: null,
+        _measureAddVertex: vi.fn(),
+        // --- Groupe carto/text.ts, hors périmètre de ce paquet — stub. ---
+        _startFreeText: vi.fn(),
         ...overrides,
     };
     return base as unknown as OICartoInternal;
@@ -415,6 +431,19 @@ describe('_onMapClick (oi_cartographie.js:856-878)', () => {
         expect(fake._openCreatePinWheel).not.toHaveBeenCalled();
     });
 
+    it('mesure active (_measureState) : ajoute un sommet de mesure, n\'ouvre pas la roue de création', () => {
+        const measureAddVertex = vi.fn();
+        const fake = makeFakeThis({
+            _loadPins: () => [],
+            _measureState: { vertices: [], cursor: null },
+            _measureAddVertex: measureAddVertex,
+        });
+        PinsMethods._onMapClick.call(fake, makeClick(1, 2));
+        expect(measureAddVertex).toHaveBeenCalledWith([1, 2]);
+        expect(fake._openCreatePinWheel).not.toHaveBeenCalled();
+        expect(fake._savePins).not.toHaveBeenCalled();
+    });
+
     it('pendant un dessin (drawTool actif) : le clic est ignoré', () => {
         const pending: OiCartoPendingPin = { kind: 'rassemblement', label: 'Point' };
         const fake = makeFakeThis({ drawTool: 'line', pendingPin: pending, _loadPins: () => [] });
@@ -479,6 +508,21 @@ describe('_quickPlacePing (roue de création, parité PC-Tac)', () => {
         } finally {
             vi.useRealTimers();
         }
+    });
+});
+
+describe('_openCreatePinWheel — option « Texte » (paquet carto/text.ts)', () => {
+    it('propose une option Texte qui appelle _startFreeText aux coordonnées du clic', () => {
+        wheelOptsSpy.mockClear();
+        const fake = makeFakeThis({ _loadPins: () => [] });
+
+        PinsMethods._openCreatePinWheel.call(fake, { lng: 2.1, lat: 48.1 });
+
+        const opts = (wheelOptsSpy.mock.calls[0]?.[0] as { options: Array<{ id?: string; action?: () => void }> }).options;
+        const textOpt = opts.find((o) => o.id === 'text');
+        expect(textOpt).toBeDefined();
+        textOpt?.action?.();
+        expect(fake._startFreeText).toHaveBeenCalledWith({ lng: 2.1, lat: 48.1 });
     });
 });
 
@@ -719,6 +763,47 @@ describe('_renderPins — réconciliation par signature (mission R3-e)', () => {
         el.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, clientX: 10, clientY: 10, pointerType: 'mouse' }));
         el.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, cancelable: true, clientX: 10, clientY: 10, pointerType: 'mouse' }));
         expect(openPinWheel).not.toHaveBeenCalled();
+    });
+
+    // Photo↔pin (parité PC-Tac) : `photoId` fait partie de la signature —
+    // l'attache/le retrait d'une photo doit actualiser le marker EN PLACE
+    // (badge photo), sans recréation.
+    it('pin avec photoId : badge photo rendu ; clic sur le badge → _openPinPhotoViewer(pin.id)', () => {
+        const openViewer = vi.fn();
+        const fake = makeFakeThis({
+            map: {} as unknown as OICartoInternal['map'],
+            _loadPins: () => [makePin({ id: 'p1', photoId: 'img_1' })],
+            _openPinPhotoViewer: openViewer,
+        });
+
+        PinsMethods._renderPins.call(fake);
+
+        const entry = fake.markers.get('p1') as { pin: { getElement(): HTMLElement } };
+        const badge = assertNonNull(
+            entry.pin.getElement().querySelector<HTMLElement>('.oi-carto-photo-badge'),
+            'badge photo absent',
+        );
+        badge.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+
+        expect(openViewer).toHaveBeenCalledWith('p1');
+    });
+
+    it('photoId ajouté entre deux rendus : signature changée → badge ajouté EN PLACE (marker NON recréé)', () => {
+        const fake = makeFakeThis({
+            map: {} as unknown as OICartoInternal['map'],
+            _loadPins: () => [makePin({ id: 'p1' })],
+        });
+
+        PinsMethods._renderPins.call(fake);
+        const entry1 = fake.markers.get('p1') as { pin: { getElement(): HTMLElement } };
+        expect(entry1.pin.getElement().querySelector('.oi-carto-photo-badge')).toBeNull();
+
+        fake._loadPins = () => [makePin({ id: 'p1', photoId: 'img_1' })];
+        PinsMethods._renderPins.call(fake);
+        const entry2 = fake.markers.get('p1') as { pin: { getElement(): HTMLElement } };
+
+        expect(entry2.pin).toBe(entry1.pin); // pas de recréation (réconciliation)
+        expect(entry2.pin.getElement().querySelector('.oi-carto-photo-badge')).not.toBeNull();
     });
 
     it('un pin conservé et un pin supprimé dans le même rendu : le conservé garde sa référence, le supprimé disparaît', () => {

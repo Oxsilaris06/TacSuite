@@ -43,6 +43,7 @@
  * (lecture seule).
  */
 
+import { dbManager } from '@oi/init.js';
 import { formatCoordsClipboard, shortMgrs } from '@shared/coords.js';
 import { toast } from '@shared/feedback.js';
 import { esc } from '@shared/ui-platform.js';
@@ -81,6 +82,47 @@ interface OiCartoWheelOption {
     action?: () => void;
 }
 
+/**
+ * Ouvre PhotoSwipe v5 sur UNE image pleine résolution (photo↔pin, port de
+ * PC-Tac `openPhotoLightbox`, `@pctac/planmap/panels.ts:32`). Spécificité OI :
+ * le store d'images (`dbManager`, IndexedDB `OI_GeneratorLiteDB`/`images`)
+ * renvoie des Blob (pas des data URLs) → object URL, révoquée à la fermeture
+ * (`destroy`) de PhotoSwipe. Import dynamique (lib + CSS) : rien n'est payé
+ * tant qu'on n'ouvre pas.
+ */
+async function openPhotoLightbox(photoId: string): Promise<void> {
+    try {
+        const blob = await dbManager.getItem(photoId);
+        if (!blob) return;
+        if (document.fullscreenElement) {
+            try { await document.exitFullscreen(); } catch { /* best-effort */ }
+        }
+        const src = URL.createObjectURL(blob);
+        try {
+            // PhotoSwipe exige width/height : l'Image est chargée pour les mesurer.
+            const dims = await new Promise<{ w: number; h: number }>((resolve, reject) => {
+                const im = new Image();
+                im.onload = (): void => resolve({ w: im.naturalWidth, h: im.naturalHeight });
+                im.onerror = (): void => reject(new Error('image illisible'));
+                im.src = src;
+            });
+            await import('photoswipe/style.css');
+            const { default: PhotoSwipe } = await import('photoswipe');
+            const pswp = new PhotoSwipe({
+                dataSource: [{ src, width: dims.w, height: dims.h }],
+                index: 0,
+            });
+            pswp.on('destroy', () => URL.revokeObjectURL(src));
+            pswp.init();
+        } catch (e) {
+            URL.revokeObjectURL(src);
+            throw e;
+        }
+    } catch (e) {
+        console.error('[OICarto] lightbox photo échec:', e);
+    }
+}
+
 export const PanelsMethods = {
     // oi_cartographie.js:997-999 + horodatage anti-réouverture (parité PC-Tac
     // `_wheelJustClosed` : le clic carte qui ferme une roue n'en rouvre pas une).
@@ -115,7 +157,9 @@ export const PanelsMethods = {
             { id: 'goto', icon: 'my_location', label: 'Centrer', bg: 'rgba(34,197,94,0.95)', color: '#000', action: () => this.map && this.map.flyTo({ center: [pin.lng, pin.lat], zoom: Math.max(this.map.getZoom(), 17), speed: 1.2 }) },
             // Coordonnées MGRS + GPS : copie presse-papier + toast (parité PC-Tac).
             { id: 'copycoords', icon: 'pin_drop', label: 'Copier coords', bg: 'rgba(15,118,110,0.95)', action: () => this._copyCoords(pin.lng, pin.lat) },
-            // { id: 'photo', … } — Photo du pin : chantier séparé ultérieur (parité PC-Tac différée).
+            // Photo du pin (photo↔pin, parité PC-Tac) : panneau d'attache si
+            // aucune photo, viewer (miniature / plein écran) sinon.
+            { id: 'photo', icon: 'photo_camera', label: pin.photoId ? 'Voir photo' : 'Photo', bg: 'rgba(14,165,233,0.95)', action: () => { if (pin.photoId) this._openPinPhotoViewer(pinId); else this._openPinPhotoPanel(pinId); } },
             { id: 'delete', icon: 'delete', label: 'Supprimer', bg: 'rgba(239,68,68,0.95)', action: () => { this._removePin(pinId); this._renderPingLists(); } },
         ];
         this._activeWheel = new OIWheel({
@@ -328,6 +372,133 @@ export const PanelsMethods = {
             okBtn.onclick = apply;
             input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); apply(); } });
             setTimeout(() => input.focus(), 40);
+        });
+    },
+
+    /**
+     * Panneau d'attache d'une photo au pin (photo↔pin, port de PC-Tac
+     * `_openPinPhotoPanel`, planmap/panels.ts:670). Les photos disponibles
+     * sont les vignettes déjà uploadées dans le formulaire OI (medias.ts,
+     * `.image-preview-item` > `img.image-preview` d'id `img_…`) : leur `src`
+     * DOM (data URL) sert directement de vignette — aucune lecture IndexedDB
+     * ici. Pas d'upload depuis la carte (hors périmètre).
+     */
+    _openPinPhotoPanel(this: OICartoInternal, pinId: string): void {
+        const pin = this._loadPins().find((p) => p.id === pinId);
+        if (!pin) return;
+        const current = pin.photoId || '';
+        const previews = Array.from(document.querySelectorAll<HTMLImageElement>('.image-preview-item img.image-preview'))
+            .filter((img) => img.id.startsWith('img_'));
+        const tiles = previews.map((img) => {
+            const title = (img.closest('.image-preview-item')
+                ?.querySelector<HTMLInputElement>('.photo-title-input')?.value || '').trim() || 'Photo';
+            const on = img.id === current;
+            return `
+                <button type="button" class="oi-carto-photo-tile${on ? ' selected' : ''}" data-id="${esc(img.id)}" title="${esc(title)}">
+                    <img src="${img.src}" alt="${esc(title)}" loading="lazy">
+                    <span>${esc(title)}</span>
+                </button>`;
+        }).join('');
+        const removeBtn = current
+            ? '<button type="button" class="oi-carto-photo-remove" data-act="remove-photo">Retirer la photo</button>'
+            : '';
+        const html = `
+            <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
+                <span class="material-symbols-outlined" style="font-size:18px; color:#38bdf8;">photo_camera</span>
+                <strong style="font-size:13px;">Photo du pin</strong>
+            </div>
+            ${previews.length
+                ? `<div class="oi-carto-photo-grid">${tiles}</div>`
+                : '<p style="color:var(--text-muted); font-size:0.85em; margin:0;">Aucune photo — ajoutez des photos dans le formulaire.</p>'}
+            ${removeBtn}`;
+        this._openInlinePanel({ lng: pin.lng, lat: pin.lat }, html, (panel) => {
+            // Motif de mutation des panneaux existants : load → find → muter →
+            // save → render → close.
+            const apply = (photoId: string | undefined): void => {
+                const list = this._loadPins();
+                const t = list.find((p) => p.id === pinId);
+                if (t) {
+                    if (photoId) t.photoId = photoId;
+                    else delete t.photoId; // jamais `= undefined` (précédent PC-Tac panels.ts:719)
+                    this._savePins(list);
+                    this._renderPins();
+                }
+                this._closeInlinePanel();
+            };
+            panel.querySelectorAll<HTMLButtonElement>('.oi-carto-photo-tile').forEach((b) => {
+                b.onclick = () => apply(b.dataset.id);
+            });
+            const rm = panel.querySelector<HTMLButtonElement>('[data-act="remove-photo"]');
+            if (rm) rm.onclick = () => apply(undefined);
+        });
+    },
+
+    /**
+     * Viewer de la photo attachée : miniature + « Plein écran » (PhotoSwipe),
+     * « Changer », « Retirer » (photo↔pin, port de PC-Tac `_openPinPhotoViewer`,
+     * planmap/panels.ts:748). Si l'image a été supprimée du formulaire
+     * (orphelin), nettoie paresseusement le `photoId` du pin (même pattern que
+     * PC-Tac planmap/panels.ts:777-790).
+     */
+    _openPinPhotoViewer(this: OICartoInternal, pinId: string): void {
+        const pin = this._loadPins().find((p) => p.id === pinId);
+        if (!pin || !pin.photoId) return;
+        const photoId = pin.photoId;
+        const btn = (act: string, icon: string, title: string): string => `
+            <button type="button" class="oi-carto-photo-act" data-act="${act}" title="${esc(title)}" aria-label="${esc(title)}">
+                <span class="material-symbols-outlined" style="font-size:20px;">${icon}</span>
+            </button>`;
+        const html = `
+            <div style="display:flex; flex-direction:column; gap:8px; width:220px; max-width:100%;">
+                <img data-pin-photo alt="Photo du pin" loading="lazy"
+                    style="width:100%; max-height:160px; object-fit:contain; border-radius:8px; background:rgba(255,255,255,0.06);">
+                <div data-photo-missing style="display:none; color:var(--text-muted); font-size:0.85em;">Photo supprimée</div>
+                <div style="display:flex; gap:6px;">
+                    ${btn('full', 'fullscreen', 'Plein écran')}
+                    ${btn('change', 'photo_library', 'Changer')}
+                    ${btn('remove', 'delete', 'Retirer')}
+                </div>
+            </div>`;
+        this._openInlinePanel({ lng: pin.lng, lat: pin.lat }, html, (panel) => {
+            const img = panel.querySelector<HTMLImageElement>('img[data-pin-photo]');
+            const missing = panel.querySelector<HTMLElement>('[data-photo-missing]');
+            // Orphelin : image absente d'IndexedDB → message + retrait propre.
+            const orphan = (): void => {
+                if (img) img.style.display = 'none';
+                if (missing) missing.style.display = 'block';
+                const list = this._loadPins();
+                const p2 = list.find((p) => p.id === pinId);
+                if (p2 && p2.photoId) {
+                    delete p2.photoId;
+                    this._savePins(list);
+                    this._renderPins();
+                }
+            };
+            // Miniature async : Blob IndexedDB → object URL, révoquée dès le
+            // chargement de l'image (spécificité OI — PC-Tac stocke des data URLs).
+            void dbManager.getItem(photoId).then((blob) => {
+                if (!img || !img.isConnected) return;
+                if (!blob) { orphan(); return; }
+                const url = URL.createObjectURL(blob);
+                img.onload = (): void => URL.revokeObjectURL(url);
+                img.src = url;
+            }).catch(() => orphan());
+            const on = (act: string, fn: () => void): void => {
+                const b = panel.querySelector<HTMLButtonElement>(`[data-act="${act}"]`);
+                if (b) b.onclick = fn;
+            };
+            on('full', () => { void openPhotoLightbox(photoId); });
+            on('change', () => { this._closeInlinePanel(); this._openPinPhotoPanel(pinId); });
+            on('remove', () => {
+                const list = this._loadPins();
+                const p2 = list.find((p) => p.id === pinId);
+                if (p2) {
+                    delete p2.photoId; // jamais `= undefined` (précédent PC-Tac panels.ts:719)
+                    this._savePins(list);
+                    this._renderPins();
+                }
+                this._closeInlinePanel();
+            });
         });
     },
 

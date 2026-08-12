@@ -3981,6 +3981,198 @@ body.up-kb-open .up-kb-aware {
             margin: 1px 0;
         }
 
+        /* --- Mesure distance/azimut + anneaux d'engagement (parité PC-Tac) --- */
+        .oi-carto-measure-controls {
+            position: absolute;
+            left: 50%;
+            bottom: 18px;
+            transform: translateX(-50%);
+            display: flex;
+            gap: var(--space-2);
+            z-index: var(--z-panel);
+            background: rgba(10, 12, 16, 0.82);
+            padding: var(--space-2);
+            border-radius: 14px;
+            box-shadow: 0 4px 18px rgba(0, 0, 0, 0.55);
+            backdrop-filter: blur(4px);
+        }
+
+        .oi-carto-measure-btn {
+            display: inline-flex;
+            align-items: center;
+            min-height: 44px;
+            padding: 0 var(--space-3);
+            border: none;
+            border-radius: 10px;
+            font-size: 14px;
+            font-weight: 700;
+            cursor: pointer;
+            touch-action: manipulation;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        .oi-carto-measure-btn-undo {
+            background: rgba(120, 120, 120, 0.95);
+            color: #fff;
+        }
+
+        .oi-carto-measure-btn-finish {
+            background: var(--accent-green, #22c55e);
+            color: #000;
+        }
+
+        .oi-carto-measure-btn-cancel {
+            background: rgba(239, 68, 68, 0.95);
+            color: #fff;
+        }
+
+        .oi-carto-measure-label,
+        .oi-carto-measure-ring-label {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 1px;
+            background: rgba(10, 12, 16, 0.86);
+            color: #fff;
+            padding: 2px 8px;
+            border-radius: 10px;
+            border: 1px solid currentColor;
+            font-family: var(--font-data, ui-monospace, monospace);
+            font-size: 12px;
+            font-weight: 700;
+            line-height: 1.15;
+            white-space: nowrap;
+            pointer-events: none;
+            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.55);
+        }
+
+        .oi-carto-measure-ring-label {
+            padding: 1px 7px;
+            border-radius: 9px;
+            font-size: 11px;
+        }
+
+        .oi-carto-measure-label-total {
+            font-size: 11px;
+        }
+
+        /* --- Mode dessin de précision (réticule central, parité PC-Tac) --- */
+        #oi_carto_draw_crosshair {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            z-index: var(--z-panel);
+            pointer-events: none;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            width: 60px;
+            height: 60px;
+        }
+
+        #oi_carto_draw_crosshair.active {
+            display: flex;
+        }
+
+        #oi_carto_draw_crosshair::before,
+        #oi_carto_draw_crosshair::after {
+            content: '';
+            position: absolute;
+            background: var(--accent-blue);
+            box-shadow: 0 0 6px var(--accent-blue);
+        }
+
+        #oi_carto_draw_crosshair::before {
+            width: 30px;
+            height: 2px;
+        }
+
+        #oi_carto_draw_crosshair::after {
+            width: 2px;
+            height: 30px;
+        }
+
+        #oi_carto_draw_crosshair .reticle-ring {
+            width: 42px;
+            height: 42px;
+            border: 1.5px dashed var(--accent-blue);
+            border-radius: 50%;
+            box-shadow: inset 0 0 4px var(--accent-blue), 0 0 4px var(--accent-blue);
+            position: absolute;
+        }
+
+        #oi_carto_draw_crosshair .reticle-center {
+            width: 4px;
+            height: 4px;
+            background: #fff;
+            border-radius: 50%;
+            position: absolute;
+            box-shadow: 0 0 4px var(--accent-blue);
+        }
+
+        #oi_carto_draw_precision_controls {
+            display: none;
+            position: absolute;
+            bottom: 75px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: var(--z-panel);
+            gap: 10px;
+        }
+
+        .oi-carto-precision-btn {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 10px 16px;
+            border-radius: 30px;
+            font-weight: bold;
+            border: 1px solid var(--border-color);
+            color: #fff;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4);
+            cursor: pointer;
+            font-family: inherit;
+        }
+
+        #oi_carto_draw_precision_start { background: var(--accent-blue); }
+        #oi_carto_draw_precision_confirm { background: #22c55e; display: none; }
+        #oi_carto_draw_precision_cancel { background: var(--danger-red); display: none; }
+
+        /* --- Toolbar flottante de la forme sélectionnée (shape-edit.ts) --- */
+        .oi-carto-shape-toolbar {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            background: var(--bg-container);
+            border: 1px solid var(--border-color);
+            border-radius: 20px;
+            padding: 6px 10px;
+            box-shadow: var(--shadow-lg);
+            pointer-events: auto;
+        }
+
+        .oi-carto-shape-toolbar-sep {
+            width: 1px;
+            height: 18px;
+            background: var(--border-color);
+        }
+
+        .oi-carto-shape-toolbar-delete {
+            background: transparent;
+            border: none;
+            color: var(--danger-red);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            padding: 0 2px;
+        }
+
+        .oi-carto-shape-toolbar-delete .material-symbols-outlined {
+            font-size: 20px;
+        }
+
         #oi_carto_hint {
             position: absolute;
             top: 12px;
@@ -4077,6 +4269,142 @@ body.up-kb-open .up-kb-aware {
         .oi-carto-legend-dot--target { background: #ef4444; }
         .oi-carto-legend-dot--rassemblement { background: #22c55e; }
         .oi-carto-legend-dot--generic { background: #a1a1aa; }
+
+        /* --- Photo↔pin (parité PC-Tac) : badge sur le marker + panneaux --- */
+
+        /* Badge photo, coin bas-gauche du pin (pins.ts `applyPinVisual`). */
+        .oi-carto-photo-badge {
+            position: absolute;
+            bottom: -6px;
+            left: -6px;
+            font-size: 14px;
+            padding: 2px;
+            line-height: 1;
+            cursor: pointer;
+            pointer-events: auto;
+            user-select: none;
+            color: #38bdf8;
+            background: rgba(15, 18, 24, 0.95);
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+            border-radius: 50%;
+            z-index: 3;
+        }
+
+        /* --- Texte libre (text.ts) : étiquette draggable + swatch couleur + suppression --- */
+        .oi-carto-text-label {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 8px;
+            background: rgba(0, 0, 0, 0.82);
+            color: #fff;
+            font-size: 13px;
+            font-weight: 500;
+            border-left: 4px solid #fff;
+            border-radius: 3px;
+            white-space: nowrap;
+            box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.35), 0 1px 4px rgba(0, 0, 0, 0.75);
+            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
+        }
+
+        .oi-carto-text-content {
+            cursor: pointer;
+        }
+
+        .oi-carto-text-swatch {
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            border: 1px solid rgba(255, 255, 255, 0.6);
+            padding: 0;
+            cursor: pointer;
+            flex: 0 0 auto;
+        }
+
+        .oi-carto-text-delete {
+            font-size: 15px;
+            line-height: 1;
+            color: #fca5a5;
+            background: none;
+            border: none;
+            padding: 0;
+            cursor: pointer;
+            flex: 0 0 auto;
+        }
+
+        /* Grille de choix d'une photo du formulaire (panneau d'attache). */
+        .oi-carto-photo-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(84px, 1fr));
+            gap: 6px;
+            width: 300px;
+            max-width: 100%;
+            max-height: 230px;
+            overflow-y: auto;
+            touch-action: pan-y;
+            -webkit-overflow-scrolling: touch;
+            padding-right: 2px;
+        }
+
+        .oi-carto-photo-tile {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 3px;
+            padding: 5px;
+            border-radius: 8px;
+            cursor: pointer;
+            color: #fff;
+            background: rgba(255, 255, 255, 0.06);
+            border: 1px solid rgba(255, 255, 255, 0.18);
+        }
+
+        .oi-carto-photo-tile.selected {
+            background: rgba(34, 197, 94, 0.22);
+            border-color: #22c55e;
+        }
+
+        .oi-carto-photo-tile img {
+            width: 100%;
+            height: 64px;
+            object-fit: cover;
+            border-radius: 6px;
+            background: rgba(255, 255, 255, 0.06);
+        }
+
+        .oi-carto-photo-tile span {
+            font-size: 0.68em;
+            text-align: center;
+            line-height: 1.05;
+            word-break: break-word;
+        }
+
+        .oi-carto-photo-remove {
+            width: 100%;
+            min-height: 38px;
+            margin-top: 8px;
+            padding: 0 12px;
+            border-radius: 8px;
+            cursor: pointer;
+            background: rgba(239, 68, 68, 0.18);
+            border: 1px solid #ef4444;
+            color: #fff;
+        }
+
+        /* Boutons d'action du viewer photo (plein écran / changer / retirer). */
+        .oi-carto-photo-act {
+            flex: 1;
+            min-width: 40px;
+            min-height: 38px;
+            border-radius: 8px;
+            cursor: pointer;
+            background: rgba(255, 255, 255, 0.08);
+            border: 1px solid rgba(255, 255, 255, 0.18);
+            color: #fff;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+        }
 
         @media (max-width: 768px) {
             .oi-carto-fab {

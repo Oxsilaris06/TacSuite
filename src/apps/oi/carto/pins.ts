@@ -139,6 +139,7 @@ function pinSignature(pin: OiCartoPin): string {
         pin.memberTri || '', pin.fonction || '', pin.icon || '', pin.color || '',
         pin.text || '',
         pin.locked ? 1 : 0, // verrou : change draggable/cursor (parité PC-Tac)
+        pin.photoId || '', // photo↔pin : change le badge photo (parité PC-Tac)
     ].join('|');
 }
 
@@ -152,7 +153,12 @@ function pinSignature(pin: OiCartoPin): string {
  * (`labelsVisible`, géré exclusivement par `_toggleLabels`, panels.ts, hors
  * signature — cf. en-tête de fichier).
  */
-function applyPinVisual(pinWrap: HTMLDivElement, labelEl: HTMLDivElement, pin: OiCartoPin): void {
+function applyPinVisual(
+    pinWrap: HTMLDivElement,
+    labelEl: HTMLDivElement,
+    pin: OiCartoPin,
+    onPhotoClick?: () => void,
+): void {
     const def = OI_PIN_DEFS[pin.kind] || OI_PIN_FALLBACK;
     const color = pin.color || def.color;   // couleur personnalisée prioritaire
     const icon = pin.icon || def.icon;       // icône auto/personnalisée prioritaire
@@ -163,6 +169,25 @@ function applyPinVisual(pinWrap: HTMLDivElement, labelEl: HTMLDivElement, pin: O
             font-size: 38px; color: ${color}; line-height: 1;
             text-shadow: 0 0 2px #fff, 0 0 2px #fff, 0 0 2px #fff, 0 0 2px #fff, 0 2px 4px rgba(0,0,0,0.6);
             font-variation-settings: 'FILL' 1;">${icon}</span>`;
+
+    // --- 1bis) Badge photo (photo↔pin, port de PC-Tac planmap/pins.ts:311-333) :
+    // coin bas-gauche du pin, recréé à chaque passage (l'innerHTML ci-dessus
+    // vide pinWrap). Style : `.oi-carto-photo-badge` (styles/oi.css).
+    if (pin.photoId && onPhotoClick) {
+        const pb = document.createElement('span');
+        pb.className = 'oi-carto-photo-badge material-symbols-outlined';
+        pb.textContent = 'photo_camera';
+        pb.title = 'Voir la photo';
+        pb.setAttribute('aria-label', pb.title);
+        // stopPropagation obligatoires (invariant PC-Tac) : sans eux le tap
+        // déclenche le drag natif du marker / la machine pin-gestures.
+        const stop = (e: Event): void => { e.stopPropagation(); };
+        pb.addEventListener('pointerdown', stop);
+        pb.addEventListener('mousedown', stop);
+        pb.addEventListener('touchstart', stop, { passive: true });
+        pb.addEventListener('click', (e) => { e.stopPropagation(); e.preventDefault(); onPhotoClick(); });
+        pinWrap.appendChild(pb);
+    }
 
     // --- 2) Marqueur libellé : trigramme + intitulé SOUS l'icône --- (oi_cartographie.js:934-946)
     // Pour un membre : trigramme (gras) sur la 1re ligne, intitulé (fonction
@@ -468,6 +493,7 @@ export const PinsMethods = {
         // et ce clic de fermeture n'ouvre PAS de roue de création dans la foulée.
         const hadPanel = !!this._inlinePanel;
         this._closeInlinePanel();
+        if (this._measureState) { this._measureAddVertex([e.lngLat.lng, e.lngLat.lat]); return; }
         if (this.drawTool) return; // pendant un dessin, les clics sont gérés ailleurs
         if (this.pendingPin) {
             const p = this.pendingPin;
@@ -534,6 +560,7 @@ export const PinsMethods = {
         if (this._getPatracdvrVehicles().length || this._getAdversaryVehicles().length) {
             opts.push({ id: 'vehicles', icon: 'garage', label: 'Véhicules', bg: '#475569', action: () => this._openVehiclePickerPanel(lngLat) });
         }
+        opts.push({ id: 'text', icon: 'text_fields', label: 'Texte', bg: 'rgba(100,116,139,0.95)', action: () => { void this._startFreeText(lngLat); } });
         opts.push({ id: 'copycoords', icon: 'my_location', label: 'Copier coords', bg: 'rgba(15,118,110,0.95)', action: () => this._copyCoords(lngLat.lng, lngLat.lat) });
 
         this._activeWheel = new OIWheel({
@@ -820,7 +847,8 @@ export const PinsMethods = {
                 const pinWrap = document.createElement('div');
                 pinWrap.style.cssText = 'min-width:44px; min-height:44px; width:44px; height:44px; cursor:grab; display:flex; align-items:center; justify-content:center; touch-action:none;';
                 const labelEl = document.createElement('div');
-                applyPinVisual(pinWrap, labelEl, pin);
+                applyPinVisual(pinWrap, labelEl, pin,
+                    this._safe(() => this._openPinPhotoViewer(pin.id), 'photoBadge:click'));
                 pinWrap.style.cursor = pin.locked ? 'pointer' : 'grab';
                 if (!this.labelsVisible) labelEl.style.display = 'none';
 
@@ -885,7 +913,8 @@ export const PinsMethods = {
                 // --- MISE À JOUR EN PLACE (position + contenu visuel + verrou) ---
                 entry.pin.setLngLat([pin.lng, pin.lat]);
                 entry.label.setLngLat([pin.lng, pin.lat]);
-                applyPinVisual(entry.pinWrap, entry.labelEl, pin);
+                applyPinVisual(entry.pinWrap, entry.labelEl, pin,
+                    this._safe(() => this._openPinPhotoViewer(pin.id), 'photoBadge:click'));
                 entry.pin.setDraggable(!pin.locked); // verrou (parité PC-Tac)
                 entry.pinWrap.style.cursor = pin.locked ? 'pointer' : 'grab';
                 entry.sig = sig;

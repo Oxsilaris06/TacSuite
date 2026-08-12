@@ -20,7 +20,7 @@
  * existant — cf. en-tête `carto/draw.ts`) ; `toast` (`@shared/feedback.js`) mocké
  * plutôt que `vi.stubGlobal('alert', ...)`, même pattern que `pc-archive.test.ts`.
  */
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Mock } from 'vitest';
 import type { MapLayerMouseEvent, MapMouseEvent, MapTouchEvent } from 'maplibre-gl';
 
@@ -66,13 +66,33 @@ function makeFakeState(map: FakeMap | null): OICartoInternal {
         // Les 19 méthodes sous test — implémentations réelles.
         ...DrawMethods,
 
-        // Dépendances externes mockées (groupes `state.ts` / `map-core.ts`).
+        // Dépendances externes mockées (groupes `state.ts` / `map-core.ts` /
+        // `shape-edit.ts` — chantier shape-edit).
         _loadShapes: vi.fn((): OiCartoShape[] => shapesStore),
         _saveShapes: vi.fn((list: readonly OiCartoShape[]) => { shapesStore = [...list]; }),
         _hideHint: vi.fn(),
+        _bindShapeEditGestures: vi.fn(),
+        _selectShape: vi.fn(),
+        drawPrecisionMode: false,
+        _gesture: null,
+        // Dépendance externe mockée (groupe `carto/measure.ts`, hors périmètre) :
+        // `_renderShapes` (draw.ts) rejoue aussi le rendu des mesures persistées.
+        _renderCommittedMeasures: vi.fn(),
     };
     return state as unknown as OICartoInternal;
 }
+
+// `_setTool` détecte le tactile via `'ontouchstart' in window` (parité
+// PC-Tac, cf. `tests/unit/pctac/pm-drawtools.test.ts:246-247`) : jsdom pose
+// cette clé en PROPRE sur `window` par défaut (vrai même en environnement
+// "desktop" simulé), ce qui bascule tous les outils en `drawPrecisionMode`
+// et fausse les scénarios souris de ce fichier. On la retire avant chaque
+// test pour retrouver un `isMobile` déterministe (largeur jsdom 1024 > 768,
+// `navigator.maxTouchPoints` absent) — comportement desktop, celui visé par
+// les cycles down/move/up ci-dessous.
+beforeEach(() => {
+    delete (window as unknown as { ontouchstart?: unknown }).ontouchstart;
+});
 
 afterEach(() => {
     document.body.innerHTML = '';
@@ -564,36 +584,39 @@ describe('_renderShapes (oi_cartographie.js:1512-1522)', () => {
     });
 });
 
-describe('_onShapeClick (oi_cartographie.js:1524-1535)', () => {
-    it('sur confirmation : supprime la forme, ré-render, rafraîchit les boutons', () => {
+describe('_onShapeClick — chantier shape-edit : le clic SÉLECTIONNE (plus de suppression directe)', () => {
+    it('clic sur une forme : la sélectionne (poignées + toolbar via _selectShape), sans la supprimer', () => {
         const state = makeFakeState(null);
         state._saveShapes([
             { id: 'keep', type: 'line', color: '#fff', coords: [] },
-            { id: 'del', type: 'line', color: '#fff', coords: [] },
+            { id: 'sel', type: 'line', color: '#fff', coords: [] },
         ]);
-        const renderSpy = vi.spyOn(state, '_renderShapes');
-        const refreshSpy = vi.spyOn(state, '_refreshUndoRedoButtons');
-        const e = { features: [{ properties: { shapeId: 'del' } }] } as unknown as MapLayerMouseEvent;
+        const e = { features: [{ properties: { shapeId: 'sel' } }] } as unknown as MapLayerMouseEvent;
 
         state._onShapeClick(e);
 
-        expect(state._loadShapes()).toEqual([{ id: 'keep', type: 'line', color: '#fff', coords: [] }]);
-        expect(renderSpy).toHaveBeenCalledTimes(1);
-        expect(refreshSpy).toHaveBeenCalledTimes(1);
-        // R2-T2b : plus de `confirm()` — suppression directe (réversible via Undo, `_pushHistory`
-        // appelée avant le retrait) + toast de confirmation non bloquant.
-        expect(toastSpy).toHaveBeenCalledWith(expect.stringContaining('supprimé'), { kind: 'success' });
+        expect(state._selectShape).toHaveBeenCalledWith('sel');
+        expect(state._loadShapes()).toHaveLength(2); // aucune suppression au clic
     });
 
-    it('un outil de dessin actif bloque la suppression au clic (priorité au tracé)', () => {
+    it('un outil de dessin actif bloque la sélection au clic (priorité au tracé)', () => {
         const state = makeFakeState(null);
         state.drawTool = 'line';
-        state._saveShapes([{ id: 'del', type: 'line', color: '#fff', coords: [] }]);
-        const e = { features: [{ properties: { shapeId: 'del' } }] } as unknown as MapLayerMouseEvent;
+        const e = { features: [{ properties: { shapeId: 'sel' } }] } as unknown as MapLayerMouseEvent;
 
         state._onShapeClick(e);
 
-        expect(state._loadShapes()).toEqual([{ id: 'del', type: 'line', color: '#fff', coords: [] }]);
+        expect(state._selectShape).not.toHaveBeenCalled();
+    });
+
+    it('un geste en cours (_gesture) bloque la sélection au clic', () => {
+        const state = makeFakeState(null);
+        state._gesture = { shapeId: 'sel' };
+        const e = { features: [{ properties: { shapeId: 'sel' } }] } as unknown as MapLayerMouseEvent;
+
+        state._onShapeClick(e);
+
+        expect(state._selectShape).not.toHaveBeenCalled();
     });
 
     it('aucune feature au clic : ne jette pas', () => {
@@ -616,6 +639,9 @@ describe('_initDrawingLayers (oi_cartographie.js:1314-1364)', () => {
         expect(map.addLayer).toHaveBeenCalledTimes(5); // buildings-3d + shapes-fill + shapes-line + preview-fill + preview-line
         expect(map.on).toHaveBeenCalledWith('click', 'oi-carto-shapes-fill', expect.any(Function));
         expect(map.on).toHaveBeenCalledWith('click', 'oi-carto-shapes-line', expect.any(Function));
+        // Chantier shape-edit : le câblage des gestes d'édition est délégué au
+        // groupe `shape-edit.ts` (mocké ici, dépendance externe au groupe draw).
+        expect(state._bindShapeEditGestures).toHaveBeenCalledTimes(1);
     });
 
     it('ne jette pas quand this.map est absent (garde de typage)', () => {

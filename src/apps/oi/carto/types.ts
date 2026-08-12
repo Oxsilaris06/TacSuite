@@ -16,9 +16,12 @@
 
 import type {
     MapLayerMouseEvent,
+    MapLayerTouchEvent,
     MapMouseEvent,
     MapTouchEvent,
+    Marker,
 } from 'maplibre-gl';
+import type { ShapeGestureState } from '@shared/shape-gestures.js';
 import type {
     OICartoContract,
     OiCartographyState,
@@ -79,6 +82,16 @@ export interface OiCartoPin {
      * `_togglePinLock` (panels.ts). Absent = déverrouillé.
      */
     locked?: boolean | undefined;
+    /**
+     * Photo attachée (photo↔pin, parité PC-Tac `PlanPin.photoId`) : id d'une
+     * image du formulaire OI (`img_…`, IndexedDB `OI_GeneratorLiteDB`/`images`,
+     * valeur Blob). Orphelin toléré : nettoyé paresseusement par
+     * `_openPinPhotoViewer` (panels.ts) si l'image n'existe plus. Absent = pas
+     * de photo. Voyage dans `Store.state.formData.cartography.pins` (donc
+     * présent dans le data.json d'archive → l'export d'images embarque l'id,
+     * formulaires.ts `dataStr.includes`).
+     */
+    photoId?: string | undefined;
 }
 
 /**
@@ -114,11 +127,20 @@ export interface OiCartoDrawState {
 
 /** Type d'une forme persistée (oi_cartographie.js:1482-1486). */
 export type OiCartoShapeType = 'line' | 'rectangle' | 'circle';
+/**
+ * Types de forme MESURE (paquet `oi-carto-measure`, hors littéral
+ * `oi_cartographie.js` — introduit par ce chantier, parité PC-Tac
+ * `@pctac/planmap/measure.ts`). Union séparée (pas fusionnée dans
+ * `OiCartoShapeType` : `_setTool`/`draw.ts`, hors périmètre de ce paquet,
+ * n'accepte que les 3 outils de tracé) — `OiCartoShape.type` accepte les deux
+ * unions.
+ */
+export type OiCartoMeasureShapeType = 'measure' | 'measure-rings';
 
 /** Une forme (dessin) persistée par `_saveShapes` (oi_cartographie.js:1482-1486). */
 export interface OiCartoShape {
     id: string;
-    type: OiCartoShapeType;
+    type: OiCartoShapeType | OiCartoMeasureShapeType;
     color: string;
     /** Séquence de points `[lng, lat]` du tracé (segment, polygone rectangle fermé, ou approx. cercle). */
     coords: LngLatTuple[];
@@ -126,6 +148,25 @@ export interface OiCartoShape {
     center?: LngLatTuple | undefined;
     /** `circle` uniquement : point de bord ayant fixé le rayon (oi_cartographie.js:1486). */
     edge?: LngLatTuple | undefined;
+    /**
+     * `measure` uniquement : distance cumulée en mètres (parité PC-Tac
+     * `PlanShape.totalM`, `@pctac/planmap/measure.ts`). Absent sur les autres
+     * types.
+     */
+    totalM?: number | undefined;
+    /**
+     * `measure-rings` uniquement : anneaux d'engagement concentriques (parité
+     * PC-Tac `PlanShape.rings`). `coords` reste requis (`[]` pour ce type,
+     * cf. `carto/measure.ts` — `_renderShapes`/`draw.ts`, hors périmètre de
+     * ce paquet, consomme `s.coords` inconditionnellement).
+     */
+    rings?: { radiusM: number; coords: LngLatTuple[] }[] | undefined;
+}
+
+/** État en cours d'une mesure (mode togglable, non encore validée). */
+export interface OiCartoMeasureState {
+    vertices: LngLatTuple[];
+    cursor: LngLatTuple | null;
 }
 
 /**
@@ -308,6 +349,10 @@ export interface OICartoInternal extends OICartoContract {
     _copyCoords(lng: number, lat: number): void;
     /** Verrouille/déverrouille la position d'un pin (bloque le drag) — parité PC-Tac `_togglePinLock`. */
     _togglePinLock(pinId: string, reopenWheel?: boolean): void;
+    /** Panneau d'attache d'une photo du formulaire au pin (photo↔pin, parité PC-Tac `_openPinPhotoPanel`). */
+    _openPinPhotoPanel(pinId: string): void;
+    /** Viewer de la photo attachée : miniature + plein écran (PhotoSwipe) / changer / retirer (parité PC-Tac). */
+    _openPinPhotoViewer(pinId: string): void;
 
     // --- CAPTURE — téléchargement / export vers un champ photo (capture.ts) ---
     _openCaptureModal(): void; // :1164
@@ -347,4 +392,94 @@ export interface OICartoInternal extends OICartoContract {
     _toggle3D(): void; // :1609
     _enable3D(animate?: boolean): void; // :1614
     _disable3D(): void; // :1652
+
+    // --- ÉDITION DE FORMES (shape-edit.ts, parité PC-Tac `shapes-gestures.ts`,
+    // hors source oi_cartographie.js — introduit par ce chantier) ---
+    /** Mode précision de tracé (mobile) : points posés au réticule central (parité PC-Tac `drawPrecisionMode`). */
+    drawPrecisionMode: boolean;
+    /** Slot unique d'état de geste en cours (drag/pinch/poignée) — lu par la machine partagée `@shared/shape-gestures.js`. */
+    _gesture: ShapeGestureState<OiCartoShape> | null;
+    /** Forme actuellement sélectionnée (poignées + toolbar visibles), sinon null. */
+    _selectedShapeId: string | null;
+    /** Markers MapLibre portant les poignées de la forme sélectionnée. */
+    _handleMarkers: Marker[];
+    /** Marker MapLibre portant la toolbar flottante (supprimer + couleur). */
+    _shapeToolbarMarker: Marker | null;
+    /** Listener touchstart posé pendant une sélection (pinch 2 doigts), sinon null. */
+    _pinchListener: ((e: MapTouchEvent) => void) | null;
+    /** Câble sélection/gestes/désélection (appelé par `_initDrawingLayers`, draw.ts). */
+    _bindShapeEditGestures(): void;
+    /** Entrée par couches formes : amorce tap/drag (parité PC-Tac `_shapePointerDown`). */
+    _shapePointerDown(e: MapLayerMouseEvent | MapLayerTouchEvent): void;
+    /** Machine tap/drag d'une forme — délègue à `startShapeDragGesture` (machine partagée). */
+    _startShapeGesture(shapeId: string, startLngLat: LngLatObj): void;
+    _selectShape(shapeId: string): void;
+    _deselectShape(): void;
+    _clearHandles(): void;
+    _renderHandles(): void;
+    _attachPinchListeners(): void;
+    _detachPinchListeners(): void;
+    _startPinchGesture(): void;
+    /** Toolbar flottante minimale de la forme sélectionnée : supprimer + couleurs. */
+    _renderShapeToolbar(): void;
+    _clearShapeToolbar(): void;
+    _updateShapeToolbarPos(): void;
+
+    // --- MESURE — distance/azimut + anneaux d'engagement (measure.ts, parité
+    // PC-Tac `@pctac/planmap/measure.ts`, hors littéral oi_cartographie.js —
+    // introduit par ce chantier) ---
+    /** État de la mesure en cours (`null` = mode mesure inactif). */
+    _measureState: OiCartoMeasureState | null;
+    /** HTML markers des étiquettes de la mesure en cours (preview live). */
+    _measureLabelMarkers: Marker[];
+    /** HTML markers des étiquettes des mesures/anneaux persistés. */
+    _committedMeasureMarkers: Marker[];
+    /** Barre flottante de contrôle (Annuler dernier / Terminer / Quitter). */
+    _measureControls: HTMLDivElement | null;
+    _measureUndoBtn: HTMLButtonElement | null;
+    /** Bascule le mode mesure (parité PC-Tac `_startMeasure`/`_cancelMeasure`). */
+    _toggleMeasure(): void;
+    _measureAddVertex(lngLat: LngLatTuple): void;
+    _measureUpdateCursor(lngLat: LngLatTuple): void;
+    _renderMeasurePreview(): void;
+    _renderMeasureLabels(pts: readonly LngLatTuple[], committed: boolean): void;
+    _buildMeasureControls(): void;
+    _updateMeasureControls(): void;
+    _removeMeasureControls(): void;
+    _measureUndoVertex(): void;
+    _finishMeasure(): void;
+    _cancelMeasure(): void;
+    _clearMeasureState(): void;
+    /** Pose des anneaux d'engagement concentriques (50/100/200 m) autour de `center` (défaut = centre de vue). */
+    _addEngagementRings(center?: LngLatTuple): void;
+    /** Étiquettes des mesures/anneaux persistés (rejouée à chaque `_renderShapes`, cf. rapport de câblage). */
+    _renderCommittedMeasures(): void;
+    /** Crée la source/couche GeoJSON dédiée à la preview de mesure (idempotent). Cf. rapport de câblage. */
+    _initMeasureLayers(): void;
+
+    // --- TEXTE LIBRE (text.ts, paquet `oi-carto-text`, hors source
+    // oi_cartographie.js — port fonctionnel introduit par ce chantier,
+    // cf. en-tête de `text.ts`) ---
+    /** Markers MapLibre des étiquettes de texte libre, indexés par id (dédié — pas `markers`, partagé pins/shapes). */
+    textMarkers: Map<string, Marker>;
+    _loadTexts(): OiCartoText[];
+    _saveTexts(texts: readonly OiCartoText[]): void;
+    _startFreeText(lngLat: LngLatObj): Promise<void>;
+    _editText(id: string): Promise<void>;
+    _removeText(id: string): void;
+    _cycleTextColor(id: string): void;
+    _renderTexts(): void;
+}
+
+/**
+ * Étiquette de texte libre posée sur la carte OI, persistée par `_saveTexts`
+ * (text.ts) sous `Store.state.formData.cartography.texts` — bucket dédié,
+ * même frontière de persistance que `pins`/`shapes` (cf. en-tête `state.ts`).
+ */
+export interface OiCartoText {
+    id: string;
+    lng: number;
+    lat: number;
+    text: string;
+    color: string;
 }

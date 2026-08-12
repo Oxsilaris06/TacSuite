@@ -48,6 +48,14 @@ vi.mock('@shared/feedback.js', () => ({
     toast: toastSpy,
 }));
 
+// Photo↔pin : `panels.ts` importe `dbManager` depuis `@oi/init.js` (lecture
+// des Blob d'images). Mock complet du module : importer le vrai `init.ts`
+// exécuterait ses effets de bord (Store.loadFromStorage, etc.) sous jsdom.
+const dbGetItemSpy = vi.hoisted(() => vi.fn(async (): Promise<Blob | undefined> => undefined));
+vi.mock('@oi/init.js', () => ({
+    dbManager: { getItem: dbGetItemSpy },
+}));
+
 import { PanelsMethods } from '../../../src/apps/oi/carto/panels.js';
 import type { OICartoInternal, OiCartoPin } from '../../../src/apps/oi/carto/types.js';
 import { OIWheel } from '../../../src/apps/oi/carto/wheel.js';
@@ -147,6 +155,8 @@ afterEach(() => {
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
     toastSpy.mockClear();
+    dbGetItemSpy.mockClear();
+    dbGetItemSpy.mockImplementation(async () => undefined);
 });
 
 // ---------------------------------------------------------------------------
@@ -264,7 +274,7 @@ describe('_openPinWheel (oi_cartographie.js:1009-1029)', () => {
         expect(closePanelSpy).toHaveBeenCalledTimes(1);
     });
 
-    it('construit une roue à 7 options + 1 bouton central, la détruit après l’action « Supprimer »', () => {
+    it('construit une roue à 8 options + 1 bouton central, la détruit après l’action « Supprimer »', () => {
         const map = makeFakeMap();
         const state = makePanelsState({ map, pins: [makePin({ id: 'p1' })] });
 
@@ -274,9 +284,9 @@ describe('_openPinWheel (oi_cartographie.js:1009-1029)', () => {
         const wheel = state._activeWheel as unknown as OIWheel;
         if (!wheel.element) throw new Error('wheel.element manquant');
         const buttons = wheel.element.querySelectorAll('button');
-        // 1 centre + 7 options (icon/color/rename/lock/goto/copycoords/delete —
-        // parité PC-Tac, chantier roue enrichie ; photo différée).
-        expect(buttons.length).toBe(8);
+        // 1 centre + 8 options (icon/color/rename/lock/goto/copycoords/photo/
+        // delete — parité PC-Tac, chantier roue enrichie + photo↔pin).
+        expect(buttons.length).toBe(9);
 
         const deleteBtn = buttons[buttons.length - 1];
         if (!deleteBtn) throw new Error('bouton « Supprimer » introuvable');
@@ -303,6 +313,139 @@ describe('_openPinWheel (oi_cartographie.js:1009-1029)', () => {
         gotoBtn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
 
         expect(map.flyTo).toHaveBeenCalledWith({ center: [3, 44], zoom: 19, speed: 1.2 });
+    });
+
+    // Photo↔pin (parité PC-Tac) : l'option « Photo » de la roue ouvre le
+    // panneau d'attache si aucune photo, le viewer sinon.
+    it('option Photo sans photoId : ouvre le panneau d’attache (_openPinPhotoPanel)', () => {
+        const state = makePanelsState({ map: makeFakeMap(), pins: [makePin({ id: 'p1' })] });
+        const openPanel = vi.spyOn(state, '_openPinPhotoPanel').mockImplementation(() => { /* isolé */ });
+        const openViewer = vi.spyOn(state, '_openPinPhotoViewer');
+
+        state._openPinWheel('p1');
+        const wheel = state._activeWheel as unknown as OIWheel;
+        if (!wheel.element) throw new Error('wheel.element manquant');
+        const photoBtn = wheel.element.querySelectorAll('button')[7]; // 0=centre,…,7=photo
+        if (!photoBtn) throw new Error('bouton « Photo » introuvable');
+        photoBtn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+
+        expect(openPanel).toHaveBeenCalledWith('p1');
+        expect(openViewer).not.toHaveBeenCalled();
+    });
+
+    it('option Photo avec photoId : ouvre le viewer (_openPinPhotoViewer)', () => {
+        const state = makePanelsState({ map: makeFakeMap(), pins: [makePin({ id: 'p1', photoId: 'img_1' })] });
+        const openPanel = vi.spyOn(state, '_openPinPhotoPanel');
+        const openViewer = vi.spyOn(state, '_openPinPhotoViewer').mockImplementation(() => { /* isolé */ });
+
+        state._openPinWheel('p1');
+        const wheel = state._activeWheel as unknown as OIWheel;
+        if (!wheel.element) throw new Error('wheel.element manquant');
+        const photoBtn = wheel.element.querySelectorAll('button')[7];
+        if (!photoBtn) throw new Error('bouton « Photo » introuvable');
+        photoBtn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+
+        expect(openViewer).toHaveBeenCalledWith('p1');
+        expect(openPanel).not.toHaveBeenCalled();
+    });
+});
+
+// Photo↔pin (parité PC-Tac `_openPinPhotoPanel`/`_openPinPhotoViewer`) : les
+// photos disponibles sont les vignettes du formulaire OI (`.image-preview-item`,
+// medias.ts) ; le stockage réel (Blob IndexedDB, `dbManager`) est mocké.
+describe('_openPinPhotoPanel — attache d’une photo du formulaire', () => {
+    function addFormPhoto(id: string, title = ''): void {
+        document.body.insertAdjacentHTML('beforeend', `
+            <div class="image-preview-item">
+                <img id="${id}" class="image-preview" src="data:image/png;base64,AAAA">
+                <input type="text" class="photo-title-input" value="${title}">
+            </div>`);
+    }
+
+    it('liste les vignettes img_* du formulaire ; clic sur une tuile → photoId posé + save + render + close', () => {
+        addFormPhoto('img_abc', 'Façade');
+        const state = makePanelsState({ map: makeFakeMap(), pins: [makePin({ id: 'p1' })] });
+
+        state._openPinPhotoPanel('p1');
+
+        const panel = state._inlinePanel;
+        if (!panel) throw new Error('panneau photo non ouvert');
+        const tile = panel.querySelector<HTMLButtonElement>('.oi-carto-photo-tile[data-id="img_abc"]');
+        if (!tile) throw new Error('tuile img_abc introuvable');
+        expect(tile.textContent).toContain('Façade');
+
+        tile.click();
+
+        expect(state._loadPins().find((p) => p.id === 'p1')?.photoId).toBe('img_abc');
+        expect(state._savePins).toHaveBeenCalled();
+        expect(state._renderPins).toHaveBeenCalled();
+        expect(state._inlinePanel).toBeNull(); // panneau refermé
+    });
+
+    it('« Retirer la photo » (pin déjà photographié) : photoId supprimé du pin', () => {
+        addFormPhoto('img_abc');
+        const state = makePanelsState({
+            map: makeFakeMap(),
+            pins: [makePin({ id: 'p1', photoId: 'img_abc' })],
+        });
+
+        state._openPinPhotoPanel('p1');
+
+        const panel = state._inlinePanel;
+        if (!panel) throw new Error('panneau photo non ouvert');
+        // La tuile de la photo courante est marquée sélectionnée.
+        expect(panel.querySelector('.oi-carto-photo-tile[data-id="img_abc"].selected')).not.toBeNull();
+        const rm = panel.querySelector<HTMLButtonElement>('[data-act="remove-photo"]');
+        if (!rm) throw new Error('bouton « Retirer la photo » introuvable');
+
+        rm.click();
+
+        const p1 = state._loadPins().find((p) => p.id === 'p1');
+        expect(p1 && 'photoId' in p1).toBe(false); // clé retirée (delete, jamais `= undefined`)
+        expect(state._renderPins).toHaveBeenCalled();
+    });
+
+    it('aucune photo dans le formulaire : message vide, pas de tuile', () => {
+        const state = makePanelsState({ map: makeFakeMap(), pins: [makePin({ id: 'p1' })] });
+
+        state._openPinPhotoPanel('p1');
+
+        const panel = state._inlinePanel;
+        if (!panel) throw new Error('panneau photo non ouvert');
+        expect(panel.querySelectorAll('.oi-carto-photo-tile').length).toBe(0);
+        expect(panel.textContent).toContain('Aucune photo');
+    });
+});
+
+describe('_openPinPhotoViewer — orphelin nettoyé paresseusement', () => {
+    it('ne fait rien si le pin n’a pas de photoId', () => {
+        const state = makePanelsState({ map: makeFakeMap(), pins: [makePin({ id: 'p1' })] });
+
+        state._openPinPhotoViewer('p1');
+
+        expect(state._inlinePanel).toBeNull();
+        expect(dbGetItemSpy).not.toHaveBeenCalled();
+    });
+
+    it('image absente d’IndexedDB (orphelin) : message « Photo supprimée » + photoId retiré du pin', async () => {
+        dbGetItemSpy.mockResolvedValue(undefined);
+        const state = makePanelsState({
+            map: makeFakeMap(),
+            pins: [makePin({ id: 'p1', photoId: 'img_gone' })],
+        });
+
+        state._openPinPhotoViewer('p1');
+
+        const panel = state._inlinePanel;
+        if (!panel) throw new Error('viewer non ouvert');
+        expect(dbGetItemSpy).toHaveBeenCalledWith('img_gone');
+
+        await vi.waitFor(() => {
+            const p1 = state._loadPins().find((p) => p.id === 'p1');
+            expect(p1 && 'photoId' in p1).toBe(false); // nettoyage paresseux (pattern PC-Tac)
+        });
+        expect(panel.querySelector<HTMLElement>('[data-photo-missing]')?.style.display).toBe('block');
+        expect(state._renderPins).toHaveBeenCalled();
     });
 });
 

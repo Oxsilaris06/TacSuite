@@ -165,6 +165,9 @@ export const MapCoreMethods = {
         // Drag-to-draw — souris ET tactile
         this.map.on('mousedown', this._safe((e: MapMouseEvent | MapTouchEvent) => this._handleDrawDown(e), 'drawDown'));
         this.map.on('mousemove', this._safe((e: MapMouseEvent | MapTouchEvent) => this._handleDrawMove(e), 'drawMove'));
+        this.map.on('mousemove', this._safe((e: MapMouseEvent | MapTouchEvent) => {
+            if (this._measureState) this._measureUpdateCursor([e.lngLat.lng, e.lngLat.lat]);
+        }, 'measureMove'));
         this.map.on('mouseup', this._safe((e: MapMouseEvent | MapTouchEvent) => this._handleDrawUp(e), 'drawUp'));
         this.map.on('touchstart', this._safe((e: MapMouseEvent | MapTouchEvent) => this._handleDrawDown(e), 'drawDown'));
         this.map.on('touchmove', this._safe((e: MapMouseEvent | MapTouchEvent) => this._handleDrawMove(e), 'drawMove'));
@@ -172,12 +175,15 @@ export const MapCoreMethods = {
 
         this.map.on('load', this._safe(() => {
             this._initDrawingLayers();
+            this._initMeasureLayers();
             if (savedView.is3D) this._enable3D(false);
             // Restauration de l'overlay noms de rues (persisté avec la vue,
             // même patron que `is3D` ci-dessus — alignement PC-Tac).
             this.streetLabelsOn = !!savedView.streetLabelsOn;
             if (this.streetLabelsOn) this._ensureStreetLabelLayers();
             this._renderShapes();
+            this._renderCommittedMeasures();
+            this._renderTexts();
             setTimeout(() => this.map && this.map.resize(), 60);
         }, 'load'));
 
@@ -241,6 +247,12 @@ export const MapCoreMethods = {
             this._toggleStreetLabels();
             btnStreets.classList.toggle('active', this.streetLabelsOn);
         };
+
+        const btnMeasure = document.getElementById('oi_carto_btn_measure');
+        if (btnMeasure) btnMeasure.onclick = () => this._toggleMeasure();
+
+        const btnRings = document.getElementById('oi_carto_btn_rings');
+        if (btnRings) btnRings.onclick = () => this._addEngagementRings();
 
         const btnLegend = document.getElementById('oi_carto_btn_legend');
         const legend = document.getElementById('oi_carto_legend');

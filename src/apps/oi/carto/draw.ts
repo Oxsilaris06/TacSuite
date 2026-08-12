@@ -110,6 +110,10 @@ export const DrawMethods = {
 
         map.on('click', 'oi-carto-shapes-fill', (e) => this._onShapeClick(e));
         map.on('click', 'oi-carto-shapes-line', (e) => this._onShapeClick(e));
+
+        // Chantier shape-edit : sélection/drag/poignées/pinch sur les formes
+        // (groupe `shape-edit.ts`, consommé via `this` — patron §6.2).
+        this._bindShapeEditGestures();
     },
 
     // oi_cartographie.js:1366-1388
@@ -134,6 +138,7 @@ export const DrawMethods = {
             this._pushHistory();
             this._saveShapes([]);
             this._renderShapes();
+            this._renderCommittedMeasures();
             this._refreshUndoRedoButtons();
             toast('Dessins effacés — Annuler pour revenir en arrière.', { kind: 'success' });
         };
@@ -141,6 +146,50 @@ export const DrawMethods = {
         if (undoBtn) undoBtn.onclick = () => this._undo();
         const redoBtn = document.getElementById('oi_carto_draw_redo');
         if (redoBtn) redoBtn.onclick = () => this._redo();
+
+        // Boutons du tracé de précision (réticule central, mobile) — parité
+        // PC-Tac `@pctac/planmap/draw-layers.ts:302-372`. Les événements passés
+        // à `_handleDrawMove`/`_handleDrawUp` sont synthétiques (`{ lngLat }`,
+        // sans `originalEvent`) : ce sont les seuls acceptés en mode précision.
+        const pStart = document.getElementById('oi_carto_draw_precision_start');
+        const pConfirm = document.getElementById('oi_carto_draw_precision_confirm');
+        const pCancel = document.getElementById('oi_carto_draw_precision_cancel');
+        const resetPrecisionButtons = (): void => {
+            if (pStart) pStart.style.display = 'flex';
+            if (pConfirm) pConfirm.style.display = 'none';
+            if (pCancel) pCancel.style.display = 'none';
+        };
+        if (pStart) pStart.onclick = () => {
+            if (!this.drawTool || !this.map) return;
+            const center = this.map.getCenter();
+            const lngLat: LngLatTuple = [center.lng, center.lat];
+            this.drawState = { start: lngLat, current: lngLat };
+            pStart.style.display = 'none';
+            if (pConfirm) pConfirm.style.display = 'flex';
+            if (pCancel) pCancel.style.display = 'flex';
+            // Premier aperçu au réticule (événement synthétique, cf. ci-dessus)
+            this._handleDrawMove({ lngLat: center } as unknown as MapMouseEvent);
+        };
+        if (pConfirm) pConfirm.onclick = () => {
+            if (!this.drawTool || !this.drawState || !this.map) return;
+            this._handleDrawUp({ lngLat: this.map.getCenter() } as unknown as MapMouseEvent);
+            resetPrecisionButtons();
+        };
+        if (pCancel) pCancel.onclick = () => {
+            this.drawState = null;
+            this._clearPreview();
+            resetPrecisionButtons();
+        };
+        // L'aperçu suit le réticule (centre carte) pendant le pan de visée.
+        if (this.map) {
+            const map = this.map;
+            map.on('move', () => {
+                if (this.drawPrecisionMode && this.drawState) {
+                    this._handleDrawMove({ lngLat: map.getCenter() } as unknown as MapMouseEvent);
+                }
+            });
+        }
+
         this._setDrawColor(this.drawColor);
         this._refreshUndoRedoButtons();
     },
@@ -156,13 +205,18 @@ export const DrawMethods = {
         if (!shouldOpen && this.drawTool) this._setTool(null);
     },
 
-    // oi_cartographie.js:1400-1427
+    // oi_cartographie.js:1400-1427 (+ mode précision, parité PC-Tac draw-tools.ts:106-150)
     _setTool(this: OICartoInternal, tool: OiCartoDrawTool | null): void {
         if (tool && this.drawTool === tool) tool = null; // toggle
         this.drawTool = tool;
         this.drawState = null;
         this._clearPreview();
         if (tool) { this.pendingPin = null; this._hideHint(); }
+
+        // Mode précision (mobile/tactile) : points posés au réticule central,
+        // via les boutons Viser/Valider/Annuler — parité PC-Tac.
+        const isMobile = window.innerWidth <= 768 || ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+        this.drawPrecisionMode = !!(tool && isMobile);
 
         document.querySelectorAll<HTMLElement>('.oi-carto-draw-btn[data-tool]').forEach(b => {
             const active = b.dataset.tool === tool;
@@ -172,13 +226,29 @@ export const DrawMethods = {
                 : 'var(--text-primary)';
         });
 
+        // Réticule + boutons de précision
+        const crosshair = document.getElementById('oi_carto_draw_crosshair');
+        const precControls = document.getElementById('oi_carto_draw_precision_controls');
+        if (crosshair) crosshair.classList.toggle('active', this.drawPrecisionMode);
+        if (precControls) {
+            precControls.style.display = this.drawPrecisionMode ? 'flex' : 'none';
+            // Réinitialiser l'état visuel des boutons de visée
+            const pStart = document.getElementById('oi_carto_draw_precision_start');
+            const pConfirm = document.getElementById('oi_carto_draw_precision_confirm');
+            const pCancel = document.getElementById('oi_carto_draw_precision_cancel');
+            if (pStart) pStart.style.display = 'flex';
+            if (pConfirm) pConfirm.style.display = 'none';
+            if (pCancel) pCancel.style.display = 'none';
+        }
+
         if (this.map) {
             // Adaptation TS : capture en `const map` — évite que `this.map` perde
             // son narrowing non-null entre les appels successifs ci-dessous (même
             // principe que `@pctac/planmap/draw-tools.ts` `_setTool`).
             const map = this.map;
             map.getCanvas().style.cursor = tool ? 'crosshair' : '';
-            if (tool) {
+            // En mode précision, le pan reste actif : on vise en déplaçant la carte.
+            if (tool && !this.drawPrecisionMode) {
                 map.dragPan.disable();
                 map.doubleClickZoom.disable();
                 map.boxZoom.disable();
@@ -202,6 +272,9 @@ export const DrawMethods = {
     // oi_cartographie.js:1437-1443
     _handleDrawDown(this: OICartoInternal, e: MapMouseEvent | MapTouchEvent): void {
         if (!this.drawTool) return;
+        // Mode précision : le tracé est piloté par les boutons Viser/Valider,
+        // jamais par un appui direct (parité PC-Tac draw-tools.ts:194).
+        if (this.drawPrecisionMode) return;
         if (e.originalEvent) { e.originalEvent.preventDefault(); e.originalEvent.stopPropagation(); }
         if (e.preventDefault) e.preventDefault();
         // Adaptation TS (absente de l'original, jamais déclenchée en pratique) :
@@ -214,6 +287,9 @@ export const DrawMethods = {
     // oi_cartographie.js:1445-1468
     _handleDrawMove(this: OICartoInternal, e: MapMouseEvent | MapTouchEvent): void {
         if (!this.drawTool || !this.drawState) return;
+        // Mode précision : ignorer les glissements de doigt directs sur l'écran
+        // (seuls les événements synthétiques `{ lngLat }` du réticule passent).
+        if (this.drawPrecisionMode && e.originalEvent) return;
         // Adaptation TS : capture en `const drawState` — évite toute perte de
         // narrowing non-null de `this.drawState` à travers les branches
         // ci-dessous (même principe que `@pctac/planmap/draw-tools.ts`
@@ -247,6 +323,8 @@ export const DrawMethods = {
     // oi_cartographie.js:1470-1488
     _handleDrawUp(this: OICartoInternal, e: MapMouseEvent | MapTouchEvent): void {
         if (!this.drawTool || !this.drawState) return;
+        // Mode précision : idem `_handleDrawMove` — relâchements directs ignorés.
+        if (this.drawPrecisionMode && e.originalEvent) return;
         // Adaptation TS : capture en `const drawState` — même principe que
         // `_handleDrawMove` ci-dessus.
         const drawState = this.drawState;
@@ -262,7 +340,9 @@ export const DrawMethods = {
         const map = this.map;
         const p1 = map.project({ lng: start[0], lat: start[1] });
         const p2 = map.project({ lng: end[0], lat: end[1] });
-        if (Math.hypot(p2.x - p1.x, p2.y - p1.y) < 4) {
+        // En mode précision le filtre « clic trop court » ne s'applique pas :
+        // le point de départ a été posé volontairement au réticule (parité PC-Tac).
+        if (!this.drawPrecisionMode && Math.hypot(p2.x - p1.x, p2.y - p1.y) < 4) {
             this.drawState = null;
             this._clearPreview();
             return;
@@ -285,6 +365,7 @@ export const DrawMethods = {
         this.drawState = null;
         this._clearPreview();
         this._renderShapes();
+        this._renderCommittedMeasures();
         this._refreshUndoRedoButtons();
         // L'outil reste actif pour enchaîner ; Échap pour quitter.
     },
@@ -308,29 +389,29 @@ export const DrawMethods = {
         // Adaptation TS : annotation de retour explicite sur le callback — sans
         // elle, le littéral `type: 'Feature'` s'infère `string`, incompatible
         // avec `GeoJSON.Feature['type']` (`'Feature'` littéral).
-        const features = this._loadShapes().map((s): GeoJSON.Feature => {
-            if (s.type === 'line') {
-                return { type: 'Feature', id: s.id, geometry: { type: 'LineString', coordinates: s.coords }, properties: { color: s.color, shapeId: s.id } };
-            }
-            return { type: 'Feature', id: s.id, geometry: { type: 'Polygon', coordinates: [s.coords] }, properties: { color: s.color, shapeId: s.id } };
-        });
+        const features = this._loadShapes()
+            .filter((s) => s.type !== 'measure' && s.type !== 'measure-rings')
+            .map((s): GeoJSON.Feature => {
+                if (s.type === 'line') {
+                    return { type: 'Feature', id: s.id, geometry: { type: 'LineString', coordinates: s.coords }, properties: { color: s.color, shapeId: s.id } };
+                }
+                return { type: 'Feature', id: s.id, geometry: { type: 'Polygon', coordinates: [s.coords] }, properties: { color: s.color, shapeId: s.id } };
+            });
         src.setData({ type: 'FeatureCollection', features });
     },
 
-    // oi_cartographie.js:1524-1535
+    // oi_cartographie.js:1524-1535 — ÉCART DE FOND (chantier shape-edit,
+    // parité PC-Tac) : le clic ne SUPPRIME plus la forme, il la SÉLECTIONNE
+    // (poignées + toolbar flottante, groupe `shape-edit.ts`). La suppression
+    // vit désormais dans la toolbar (toujours réversible via Undo).
     _onShapeClick(this: OICartoInternal, e: MapLayerMouseEvent): void {
         if (this.drawTool) return;
+        if (this._gesture) return; // un geste (drag/pinch/poignée) est en cours
         const feat = e.features && e.features[0];
         if (!feat) return;
         const id = feat.properties.shapeId;
         if (!id) return;
-        // R2-T2b : même rationale que le bouton « Effacer » ci-dessus — `_pushHistory()`
-        // rend la suppression réversible via Undo, `confirm()` natif devenu redondant.
-        this._pushHistory();
-        this._saveShapes(this._loadShapes().filter(s => s.id !== id));
-        this._renderShapes();
-        this._refreshUndoRedoButtons();
-        toast('Dessin supprimé — Annuler pour revenir en arrière.', { kind: 'success' });
+        this._selectShape(id);
     },
 
     // oi_cartographie.js:1537-1541
@@ -352,6 +433,7 @@ export const DrawMethods = {
         if (prev === undefined) return;
         try { this._saveShapes(JSON.parse(prev)); } catch { /* JSON invalide : ignoré, comportement d'origine (:1546) */ }
         this._renderShapes();
+        this._renderCommittedMeasures();
         this._refreshUndoRedoButtons();
     },
 
@@ -365,6 +447,7 @@ export const DrawMethods = {
         if (next === undefined) return;
         try { this._saveShapes(JSON.parse(next)); } catch { /* JSON invalide : ignoré, comportement d'origine (:1554) */ }
         this._renderShapes();
+        this._renderCommittedMeasures();
         this._refreshUndoRedoButtons();
     },
 

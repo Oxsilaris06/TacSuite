@@ -196,6 +196,19 @@ function makeFakeThis(overrides: Record<string, unknown> = {}): OICartoInternal 
         _rectPolygon: vi.fn(() => []),
         _circlePolygon: vi.fn(() => []),
 
+        // --- Mesure (carto/measure.ts, autre paquet) ---
+        _initMeasureLayers: vi.fn(),
+        _toggleMeasure: vi.fn(),
+        _measureAddVertex: vi.fn(),
+        _measureUpdateCursor: vi.fn(),
+        _renderCommittedMeasures: vi.fn(),
+        _addEngagementRings: vi.fn(),
+        _measureState: null,
+
+        // --- Texte libre (carto/text.ts, autre paquet) ---
+        _renderTexts: vi.fn(),
+        _startFreeText: vi.fn(async () => {}),
+
         ...overrides,
     } as unknown as OICartoInternal;
 }
@@ -353,6 +366,8 @@ describe('_bindUi (oi_cartographie.js:419-500)', () => {
             <button id="oi_carto_btn_labels"></button>
             <button id="oi_carto_btn_3d"></button>
             <button id="oi_carto_btn_fullscreen"></button>
+            <button id="oi_carto_btn_measure"></button>
+            <button id="oi_carto_btn_rings"></button>
             <input id="oi_carto_address_input" type="text" />
             <button id="oi_carto_search_btn"></button>
             <button id="oi_carto_search_close"></button>
@@ -403,6 +418,19 @@ describe('_bindUi (oi_cartographie.js:419-500)', () => {
         expect(toggle3D).toHaveBeenCalledTimes(1);
         document.getElementById('oi_carto_btn_fullscreen')?.click();
         expect(toggleFullscreen).toHaveBeenCalledTimes(1);
+    });
+
+    it('mesure : #oi_carto_btn_measure → _toggleMeasure, #oi_carto_btn_rings → _addEngagementRings', () => {
+        buildDom();
+        const toggleMeasure = vi.fn();
+        const addEngagementRings = vi.fn();
+        const fake = makeFakeThis({ _toggleMeasure: toggleMeasure, _addEngagementRings: addEngagementRings });
+        MapCoreMethods._bindUi.call(fake);
+
+        document.getElementById('oi_carto_btn_measure')?.click();
+        expect(toggleMeasure).toHaveBeenCalledTimes(1);
+        document.getElementById('oi_carto_btn_rings')?.click();
+        expect(addEngagementRings).toHaveBeenCalledTimes(1);
     });
 
     it('fullscreenchange / webkitfullscreenchange déclenchent _updateFullscreenIcon', () => {

@@ -23,9 +23,12 @@
 import { CaptureMethods } from './capture.js';
 import { DrawMethods } from './draw.js';
 import { MapCoreMethods } from './map-core.js';
+import { MeasureMethods } from './measure.js';
 import { PanelsMethods } from './panels.js';
 import { PinsMethods } from './pins.js';
+import { ShapeEditMethods } from './shape-edit.js';
 import { createOICartoState, PersistMethods, SafeMethods } from './state.js';
+import { TextMethods } from './text.js';
 import type { OICartoInternal } from './types.js';
 
 // oi_cartographie.js:269-1667 — réassemblage VERBATIM de l'objet littéral
@@ -51,6 +54,9 @@ export const OICarto: OICartoInternal = {
     ...PanelsMethods,
     ...CaptureMethods,
     ...DrawMethods,
+    ...ShapeEditMethods,
+    ...MeasureMethods,
+    ...TextMethods,
 };
 
 // oi_cartographie.js:1669 — VERBATIM : la façade est posée au SCOPE MODULE.

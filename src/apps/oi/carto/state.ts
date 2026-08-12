@@ -161,6 +161,18 @@ export function createOICartoState(): Pick<
     | 'lastQuickPin'
     | '_wheelJustClosed'
     | 'persistence'
+    | 'drawPrecisionMode'
+    | '_gesture'
+    | '_selectedShapeId'
+    | '_handleMarkers'
+    | '_shapeToolbarMarker'
+    | '_pinchListener'
+    | '_measureState'
+    | '_measureLabelMarkers'
+    | '_committedMeasureMarkers'
+    | '_measureControls'
+    | '_measureUndoBtn'
+    | 'textMarkers'
 > {
     return {
         _activeWheel: null, // :270
@@ -180,6 +192,22 @@ export function createOICartoState(): Pick<
         lastQuickPin: null, // dernier type posé par la roue de création (hors littéral — cf. types.ts)
         _wheelJustClosed: 0, // anti-réouverture de roue au clic de fermeture (parité PC-Tac)
         persistence: buildCartoPersistenceAdapter(), // R3-c, hors littéral (cf. ci-dessus)
+        // --- Édition de formes + précision (chantier shape-edit, hors littéral — cf. types.ts) ---
+        drawPrecisionMode: false,
+        _gesture: null,
+        _selectedShapeId: null,
+        _handleMarkers: [],
+        _shapeToolbarMarker: null,
+        _pinchListener: null,
+        // --- Mesure (chantier measure, hors littéral — cf. types.ts) ---
+        _measureState: null,
+        _measureLabelMarkers: [],
+        _committedMeasureMarkers: [],
+        _measureControls: null,
+        _measureUndoBtn: null,
+        // --- Texte libre (chantier text, hors littéral — cf. types.ts) : Map dédiée
+        // (pas `markers`, partagé pins/shapes, collision d'id à éviter). ---
+        textMarkers: new Map(),
     };
 }
 

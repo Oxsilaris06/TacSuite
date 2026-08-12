@@ -824,6 +824,14 @@ Gestuelle et visuelle entre les éléments INDIA</textarea>
                         title="Afficher / masquer la légende" aria-label="Afficher ou masquer la légende">
                         <span class="material-symbols-outlined">legend_toggle</span>
                     </button>
+                    <button type="button" id="oi_carto_btn_measure" class="oi-carto-fab"
+                        title="Mesurer distance / azimut" aria-label="Mesurer une distance et un azimut sur la carte">
+                        <span class="material-symbols-outlined">straighten</span>
+                    </button>
+                    <button type="button" id="oi_carto_btn_rings" class="oi-carto-fab"
+                        title="Poser des anneaux d'engagement (50/100/200 m)" aria-label="Poser des anneaux d'engagement autour du centre de la carte">
+                        <span class="material-symbols-outlined">radar</span>
+                    </button>
                 </div>
                 <button type="button" id="oi_carto_btn_close" class="oi-carto-fab close-fab"
                     title="Fermer la cartographie" aria-label="Fermer la cartographie">
@@ -864,6 +872,28 @@ Gestuelle et visuelle entre les éléments INDIA</textarea>
                 <button type="button" id="oi_carto_draw_clear" class="oi-carto-draw-btn carto-draw-clear-btn"
                     title="Effacer tous les dessins" aria-label="Effacer tous les dessins">
                     <span class="material-symbols-outlined">delete_sweep</span>
+                </button>
+            </div>
+
+            <!-- Réticule de visée pour le mode dessin de précision (mobile, parité PC-Tac #plan_draw_crosshair) -->
+            <div id="oi_carto_draw_crosshair">
+                <div class="reticle-ring"></div>
+                <div class="reticle-center"></div>
+            </div>
+
+            <!-- Boutons du tracé de précision (parité PC-Tac #plan_draw_precision_controls) -->
+            <div id="oi_carto_draw_precision_controls">
+                <button type="button" id="oi_carto_draw_precision_start" class="oi-carto-precision-btn">
+                    <span class="material-symbols-outlined icon-mid-18" aria-hidden="true">add_circle</span>
+                    <span>Débuter tracé</span>
+                </button>
+                <button type="button" id="oi_carto_draw_precision_confirm" class="oi-carto-precision-btn">
+                    <span class="material-symbols-outlined icon-mid-18" aria-hidden="true">check_circle</span>
+                    <span>Valider</span>
+                </button>
+                <button type="button" id="oi_carto_draw_precision_cancel" class="oi-carto-precision-btn">
+                    <span class="material-symbols-outlined icon-mid-18" aria-hidden="true">cancel</span>
+                    <span>Annuler</span>
                 </button>
             </div>
 
