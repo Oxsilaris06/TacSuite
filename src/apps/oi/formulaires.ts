@@ -1252,7 +1252,8 @@ async function exportArchive(): Promise<void> {
             const raw = localStorage.getItem(k);
             if (raw !== null) data[k] = raw;
         });
-        zip.file('data.json', JSON.stringify(data, null, 2));
+        const dataStr = JSON.stringify(data, null, 2);
+        zip.file('data.json', dataStr);
 
         // 3) Images (Blobs IndexedDB) -> octets bruts + table des types MIME
         const imageMeta: Record<string, string> = {};
@@ -1261,6 +1262,8 @@ async function exportArchive(): Promise<void> {
         if (dbManager && dbManager.db) {
             let keys: IDBValidKey[] = [];
             try { keys = await dbManager.getAllKeys(); } catch { keys = []; }
+            // n'exporter que les images référencées par la session (le store IDB accumule des orphelines)
+            keys = keys.filter((k) => dataStr.includes(String(k)));
             for (const key of keys) {
                 const keyStr = String(key);
                 try {

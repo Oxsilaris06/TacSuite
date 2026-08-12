@@ -95,6 +95,7 @@ import {
     DASHBOARD_KEY,
     hostageStatusFromBlessures,
 } from '@pctac/config.js';
+import { PINS_KEY } from '@pctac/planmap/constants.js';
 
 /**
  * Point d'entrée principal du module PC TAC
@@ -452,6 +453,25 @@ document.addEventListener('DOMContentLoaded', async () => {
             Storage.saveCollection(photoKey, filteredPhotos);
             try { await ImageStore.delete(syncId); } catch (e) { console.error('[PC TAC] delete sync échec:', e); }
         }
+
+        // Purge des références photo mortes dans les pings du plan (sinon
+        // exportées telles quelles dans l'archive, nettoyées seulement au
+        // premier affichage du viewer — cf. planmap/panels.ts, nettoyage lazy).
+        try {
+            const pins = Persist.get<{ photoId?: string }[]>(PINS_KEY, { validator: Array.isArray, fallback: [] }) || [];
+            const syncId = id + '_sync';
+            let pinsTouched = false;
+            for (const pin of pins) {
+                if (pin && (pin.photoId === id || pin.photoId === syncId)) {
+                    delete pin.photoId; // jamais `= undefined` (précédent panels.ts:48)
+                    pinsTouched = true;
+                }
+            }
+            if (pinsTouched) {
+                Persist.set(PINS_KEY, pins);
+                if (window.PlanMap && window.PlanMap.initialized) window.PlanMap.refresh();
+            }
+        } catch { /* purge pings non bloquante */ }
 
         // Purge de l'état du board relationnel : position du nœud supprimé et
         // liens manuels qui le référencent (sinon orphelins persistés à vie).

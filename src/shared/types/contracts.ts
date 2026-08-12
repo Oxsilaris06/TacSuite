@@ -1282,6 +1282,8 @@ export interface OiArticulationGlobals {
     refreshRameVL(savedData?: readonly string[]): void;
     refreshColonneProgression(savedOrder?: readonly string[]): void;
     refreshOrdrePenetration(savedOrder?: readonly string[]): void;
+    /** Supprime le bloc `btn.closest(selector)` + purge IndexedDB de ses photos. */
+    removeBlockEl(btn: HTMLElement, selector: string): void;
 }
 
 /** `modules/drag.js` — drag&drop natif + émulation tactile. */

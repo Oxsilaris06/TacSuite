@@ -89,7 +89,7 @@
  * (lecture seule).
  */
 
-import { DEFAULTS, Store } from '@oi/init.js';
+import { DEFAULTS, Store, dbManager } from '@oi/init.js';
 import { sortable } from '@shared/ui-platform.js';
 import type {
     OiEffractionBlock,
@@ -137,7 +137,7 @@ export function addMoicp(data?: Partial<OiMoicpBlock> | null): void {
                     onclick="event.stopPropagation()" oninput="syncDomToStore()">
             </h3>
             <div style="display: flex; align-items: center; gap: 8px;">
-                <button type="button" class="remove-btn" onclick="event.stopPropagation(); this.closest('.moicp-block').remove(); syncDomToStore();"
+                <button type="button" class="remove-btn" onclick="event.stopPropagation(); removeBlockEl(this, '.moicp-block');"
                     style="min-height: 36px; height: 36px; width: 36px; padding: 0; border-radius: 50%;" title="Supprimer ce MOICP" aria-label="Supprimer ce MOICP"><span class="material-symbols-outlined">close</span></button>
                 <span class="material-symbols-outlined">expand_more</span>
             </div>
@@ -238,7 +238,7 @@ export function addZmspcp(data?: Partial<OiZmspcpBlock> | null): void {
                     onclick="event.stopPropagation()" oninput="syncDomToStore()">
             </h3>
             <div style="display: flex; align-items: center; gap: 8px;">
-                <button type="button" class="remove-btn" onclick="event.stopPropagation(); this.closest('.zmspcp-block').remove(); syncDomToStore();"
+                <button type="button" class="remove-btn" onclick="event.stopPropagation(); removeBlockEl(this, '.zmspcp-block');"
                     style="min-height: 36px; height: 36px; width: 36px; padding: 0; border-radius: 50%;" title="Supprimer ce ZMSPCP" aria-label="Supprimer ce ZMSPCP"><span class="material-symbols-outlined">close</span></button>
                 <span class="material-symbols-outlined">expand_more</span>
             </div>
@@ -953,7 +953,7 @@ export function addEffraction(data?: Partial<OiEffractionBlock> | null): void {
                     onclick="event.stopPropagation()" oninput="syncDomToStore()">
             </h3>
             <div style="display: flex; align-items: center; gap: 8px;">
-                <button type="button" class="remove-btn" onclick="event.stopPropagation(); this.closest('.effraction-block').remove(); syncDomToStore();"
+                <button type="button" class="remove-btn" onclick="event.stopPropagation(); removeBlockEl(this, '.effraction-block');"
                     style="min-height: 36px; height: 36px; width: 36px; padding: 0; border-radius: 50%;" title="Supprimer" aria-label="Supprimer cette cellule effraction"><span class="material-symbols-outlined">close</span></button>
                 <span class="material-symbols-outlined">expand_more</span>
             </div>
@@ -1174,6 +1174,30 @@ export function saveEffractionTools(): void {
     window.syncDomToStore();
 }
 
+/**
+ * Suppression d'un bloc d'articulation AVEC purge IndexedDB des photos qu'il
+ * contient (sinon images orphelines dans `OI_GeneratorLiteDB/images`). Purge
+ * best-effort (`.catch` console) : appelée depuis des handlers `onclick`
+ * inline, pas d'`await` possible. Même révocation d'object URL que
+ * `medias.ts` `removeImage` (capture locale, noUncheckedIndexedAccess).
+ */
+export function removeBlockEl(btn: HTMLElement, selector: string): void {
+    const block = btn.closest<HTMLElement>(selector);
+    if (!block) return;
+    for (const img of block.querySelectorAll<HTMLElement>('.image-preview')) {
+        const cachedUrl = Store.state.objectUrlsCache[img.id];
+        if (cachedUrl) {
+            URL.revokeObjectURL(cachedUrl);
+            delete Store.state.objectUrlsCache[img.id];
+        }
+        dbManager.deleteItem(img.id).catch((error: unknown) => {
+            console.error("Erreur lors de la purge d'une image du bloc supprimé:", error);
+        });
+    }
+    block.remove();
+    window.syncDomToStore();
+}
+
 // --- GLOBAL EXPOSURE --- articulation.js:20-27 + :1002-1009 : les deux blocs de
 // pose de l'original portent sur des déclarations de fonction HOISTÉES, donc à
 // valeurs finales identiques (cf. §11.3 en tête de fichier) ⇒ UNE SEULE pose ici,
@@ -1188,3 +1212,4 @@ window.refreshArticulationFromPatracdvr = refreshArticulationFromPatracdvr;
 window.refreshRameVL = refreshRameVL;
 window.refreshColonneProgression = refreshColonneProgression;
 window.refreshOrdrePenetration = refreshOrdrePenetration;
+window.removeBlockEl = removeBlockEl;
