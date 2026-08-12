@@ -100,6 +100,13 @@ const initialState: OiStoreState = {
 
 const listeners = new Set<(state: OiStoreState) => void>();
 
+// ponytail: débounce trailing 250ms de saveToStorage() UNIQUEMENT — la mutation
+// d'état et les subscribers restent synchrones. Le drag d'une forme (shape-gestures.ts)
+// appelle Store à chaque mousemove ; sans ça, chaque frame stringifie tout formData
+// (photos base64 incluses) + écrit localStorage = coût GC/heap qui dégrade le framerate.
+const SAVE_DEBOUNCE_MS = 250;
+let saveTimer: ReturnType<typeof setTimeout> | null = null;
+
 /**
  * Crée un proxy récursif pour surveiller les changements de propriétés,
  * même dans les objets imbriqués (ex: Store.state.formData.nom = '...')
@@ -165,6 +172,22 @@ const StoreBase: OiStoreContract = {
         for (const listener of listeners) {
             listener(this.state);
         }
+        // Débounce trailing : la mutation/notification reste synchrone, seule
+        // l'écriture localStorage (stringify formData entier) est différée.
+        if (saveTimer !== null) clearTimeout(saveTimer);
+        saveTimer = setTimeout(() => {
+            saveTimer = null;
+            this.saveToStorage();
+        }, SAVE_DEBOUNCE_MS);
+    },
+
+    flush(): void {
+        // No-op si rien n'est en attente : évite d'écraser localStorage avec un
+        // `state.formData` en mémoire potentiellement obsolète (ex. juste après
+        // un import de session qui écrit localStorage directement, hors Store).
+        if (saveTimer === null) return;
+        clearTimeout(saveTimer);
+        saveTimer = null;
         this.saveToStorage();
     },
 
@@ -235,6 +258,14 @@ const StoreBase: OiStoreContract = {
                 // supplémentaire (identique à l'original, qui ne valide rien non plus).
                 this.state.formData = JSON.parse(data) as typeof this.state.formData;
                 console.log('✅ Store initialisé depuis le stockage');
+                // Cette affectation traverse le proxy `state` (this = Store, cf. tests
+                // oi-store.test.ts « ÉCART DE COMPRÉHENSION TRACÉ ») et arme donc le
+                // débounce de notify(). Sans flush immédiat, ce timer resterait en
+                // attente et écrirait — bien plus tard, en pleine exécution d'un autre
+                // flux (ex. import de session) — un `formData` obsolète par-dessus des
+                // données entretemps modifiées ailleurs. On flushe ici : l'écriture est
+                // de toute façon un no-op (mêmes données que celles qu'on vient de lire).
+                this.flush();
             } catch (e) {
                 console.error('Invalid JSON in localStorage', e);
             }
@@ -257,6 +288,21 @@ export const Store = new Proxy(StoreBase, {
 
 // --- INITIALISATION DU STORE ---
 Store.loadFromStorage();
+
+// Filet de sécurité : garantit qu'un flush débouncé en attente est bien écrit
+// avant la fermeture/masquage de l'onglet — aucune donnée perdue.
+// Garde `isFormLoading` (RÈGLE D'OR §2.2, formulaires.ts) : pendant un import
+// de session (SPEC §9), localStorage est écrit directement, HORS Store ; un
+// flush ici écraserait cette écriture avec un `state.formData` obsolète.
+function flushOnBoundary(): void {
+    if (window.isFormLoading) return;
+    Store.flush();
+}
+window.addEventListener('beforeunload', flushOnBoundary);
+window.addEventListener('pagehide', flushOnBoundary);
+document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') flushOnBoundary();
+});
 
 
 // ==================== DBManager.js ====================

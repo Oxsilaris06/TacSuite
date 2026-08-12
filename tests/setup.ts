@@ -54,3 +54,23 @@ function installMemoryStorage(name: 'localStorage' | 'sessionStorage'): void {
 
 installMemoryStorage('localStorage');
 installMemoryStorage('sessionStorage');
+
+/**
+ * OI Store.notify() débounce l'écriture localStorage (250ms, perf carto —
+ * cf. src/apps/oi/init.ts). Un test qui mute Store.state sans attendre ce
+ * délai laisse un `setTimeout` RÉEL en attente ; comme `vi.resetModules()`
+ * (utilisé par les tests OI) ne l'annule pas, ce timer orphelin peut se
+ * déclencher pendant un test ULTÉRIEUR et y écraser localStorage avec les
+ * données périmées de l'instance de Store abandonnée. On flushe le Store de
+ * la fenêtre courante à la fin de CHAQUE test, avant que le test suivant ne
+ * réinitialise les modules — no-op si aucun flush n'est en attente.
+ */
+import { afterEach } from 'vitest';
+afterEach(() => {
+  const win = globalThis as unknown as { Store?: { flush?: () => void } };
+  try {
+    win.Store?.flush?.();
+  } catch {
+    /* Store non initialisé / module non OI : rien à flusher. */
+  }
+});

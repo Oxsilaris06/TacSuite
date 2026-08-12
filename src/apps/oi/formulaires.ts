@@ -1137,7 +1137,11 @@ window.isFormLoading = false; // formulaires.js:360
 // (et non la version débouncée, dont le minuteur ne se déclenche jamais si la page se ferme).
 // formulaires.js:851-858
 (function installFlushOnBoundaries() {
-    const flush = (): void => { try { immediateSync(); } catch { /* non bloquant */ } };
+    // window.isFormLoading garde AUSSI Store.flush() : sinon un flush débouncé
+    // resté en attente (mutation antérieure au chargement/import en cours)
+    // écraserait localStorage avec un state.formData obsolète — même garde que
+    // syncDomToStoreCore (SPEC §9).
+    const flush = (): void => { try { immediateSync(); if (!window.isFormLoading) Store.flush(); } catch { /* non bloquant */ } };
     window.addEventListener('pagehide', flush);
     window.addEventListener('beforeunload', flush);
     document.addEventListener('visibilitychange', () => {
@@ -1240,6 +1244,7 @@ async function exportArchive(): Promise<void> {
     try {
         // 1) Flush DOM -> Store -> localStorage (immédiat, non débouncé)
         immediateSync();
+        Store.flush(); // notify() débounce l'écriture localStorage (perf carto) — on force l'écrit avant lecture ci-dessous.
         if (dbManager && !dbManager.db) {
             try { await dbManager.init(); } catch { /* IndexedDB indispo */ }
         }

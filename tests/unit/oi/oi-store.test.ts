@@ -232,14 +232,17 @@ describe('oi-store — Store (Proxy profond) + dbManager (IndexedDB)', () => {
             expect(listener).toHaveBeenCalled();
         });
 
-        it('notify() persiste aussi (saveToStorage via notify — comportement d\'origine)', async () => {
+        it('notify() persiste aussi, après le débounce (saveToStorage différé — perf carto)', async () => {
+            vi.useFakeTimers();
             installFakeIndexedDb();
             const { Store } = await import('@oi/init.js');
 
             Store.state.currentStep = 3;
+            vi.advanceTimersByTime(250);
 
             const saved = localStorage.getItem('tactical_oi_data');
             expect(saved).not.toBeNull();
+            vi.useRealTimers();
         });
     });
 
@@ -347,6 +350,111 @@ describe('oi-store — Store (Proxy profond) + dbManager (IndexedDB)', () => {
             Store.loadFromStorage();
 
             expect(listener).toHaveBeenCalled();
+        });
+    });
+
+    describe('notify() — débounce trailing 250ms de saveToStorage() (perf carto, drag)', () => {
+        afterEach(() => {
+            vi.useRealTimers();
+        });
+
+        it('N mutations rapprochées ne produisent qu\'UN seul saveToStorage() après le délai', async () => {
+            installFakeIndexedDb();
+            const { Store } = await import('@oi/init.js');
+            vi.useFakeTimers();
+
+            const saveSpy = vi.spyOn(Store, 'saveToStorage');
+
+            for (let i = 0; i < 20; i++) {
+                Store.state.currentStep = i;
+            }
+            expect(saveSpy).not.toHaveBeenCalled();
+
+            vi.advanceTimersByTime(250);
+            expect(saveSpy).toHaveBeenCalledTimes(1);
+        });
+
+        it('les subscribers reçoivent bien CHAQUE notify (mutation/notification restent synchrones)', async () => {
+            installFakeIndexedDb();
+            const { Store } = await import('@oi/init.js');
+            vi.useFakeTimers();
+
+            const listener = vi.fn();
+            Store.subscribe(listener);
+
+            for (let i = 0; i < 5; i++) {
+                Store.state.currentStep = i;
+            }
+
+            expect(listener).toHaveBeenCalledTimes(5);
+        });
+
+        it('une lecture Store.state juste après mutation voit la donnée (mutation synchrone, pas d\'attente du débounce)', async () => {
+            installFakeIndexedDb();
+            const { Store } = await import('@oi/init.js');
+            vi.useFakeTimers();
+
+            Store.state.formData.situation = 'valeur fraîche';
+
+            expect(Store.state.formData.situation).toBe('valeur fraîche');
+        });
+
+        it('Store.flush() écrit immédiatement, même sans attendre le délai', async () => {
+            installFakeIndexedDb();
+            const { Store } = await import('@oi/init.js');
+            vi.useFakeTimers();
+
+            const saveSpy = vi.spyOn(Store, 'saveToStorage');
+            Store.state.currentStep = 7;
+            expect(saveSpy).not.toHaveBeenCalled();
+
+            Store.flush();
+            expect(saveSpy).toHaveBeenCalledTimes(1);
+
+            // Le timer en attente a été annulé par flush() : pas de second appel au délai.
+            vi.advanceTimersByTime(250);
+            expect(saveSpy).toHaveBeenCalledTimes(1);
+        });
+
+        it('flush sur beforeunload écrit immédiatement (pas de perte de données à la fermeture)', async () => {
+            installFakeIndexedDb();
+            const { Store } = await import('@oi/init.js');
+            vi.useFakeTimers();
+
+            Store.state.currentStep = 9;
+            const saveSpy = vi.spyOn(Store, 'saveToStorage');
+
+            window.dispatchEvent(new Event('beforeunload'));
+
+            expect(saveSpy).toHaveBeenCalledTimes(1);
+            expect(localStorage.getItem('tactical_oi_data')).not.toBeNull();
+        });
+
+        it('flush sur pagehide écrit immédiatement', async () => {
+            installFakeIndexedDb();
+            const { Store } = await import('@oi/init.js');
+            vi.useFakeTimers();
+
+            Store.state.currentStep = 11;
+            const saveSpy = vi.spyOn(Store, 'saveToStorage');
+
+            window.dispatchEvent(new Event('pagehide'));
+
+            expect(saveSpy).toHaveBeenCalledTimes(1);
+        });
+
+        it('flush sur visibilitychange (hidden) écrit immédiatement', async () => {
+            installFakeIndexedDb();
+            const { Store } = await import('@oi/init.js');
+            vi.useFakeTimers();
+
+            Store.state.currentStep = 13;
+            const saveSpy = vi.spyOn(Store, 'saveToStorage');
+
+            Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true });
+            document.dispatchEvent(new Event('visibilitychange'));
+
+            expect(saveSpy).toHaveBeenCalledTimes(1);
         });
     });
 

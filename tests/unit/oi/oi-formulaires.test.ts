@@ -123,18 +123,24 @@ describe('oi-formulaires — persistance du formulaire OI', () => {
             // Rien n'est encore écrit tant que le minuteur de 500ms n'a pas expiré.
             expect(setItemSpy).not.toHaveBeenCalled();
 
-            vi.advanceTimersByTime(500);
+            // 500ms (débounce syncDomToStore) + 250ms (débounce Store.notify -> saveToStorage, perf carto).
+            vi.advanceTimersByTime(750);
 
             expect(setItemSpy).toHaveBeenCalledTimes(1);
         });
 
-        it('flushFormData / syncDomToStoreImmediate : écrit IMMÉDIATEMENT (pas de minuteur)', async () => {
+        it('flushFormData / syncDomToStoreImmediate : écrit IMMÉDIATEMENT une fois flushé (mutation Store immédiate, écriture localStorage débouncée 250ms)', async () => {
+            vi.useFakeTimers();
             const mod = await import('@oi/formulaires.js');
             stubCrossModuleWindow();
 
             const setItemSpy = vi.spyOn(localStorage, 'setItem');
             mod.flushFormData();
 
+            // La mutation Store est immédiate (pas de minuteur DOM->Store) mais
+            // l'écriture localStorage elle-même reste débouncée (250ms, perf carto).
+            expect(setItemSpy).not.toHaveBeenCalled();
+            vi.advanceTimersByTime(250);
             expect(setItemSpy).toHaveBeenCalledTimes(1);
         });
 
@@ -528,13 +534,14 @@ describe('oi-formulaires — persistance du formulaire OI', () => {
 
             window.addAdversary();
             expect(document.querySelectorAll('.adversary-entry.open')).toHaveLength(1);
-            vi.advanceTimersByTime(500);
+            // 500ms (débounce syncDomToStore) + 250ms (débounce Store.notify -> saveToStorage, perf carto).
+            vi.advanceTimersByTime(750);
             expect(setItemSpy).toHaveBeenCalledTimes(1); // syncDomToStore() (débouncé) déclenché par la création manuelle
 
             setItemSpy.mockClear();
             window.addAdversary({ id: 'adv_x', nom_adversaire: 'RESTAURE', me_list: [], etat_esprit_list: [], volume_list: [], vehicules_list: [] });
             expect(document.querySelectorAll('.adversary-entry')).toHaveLength(2);
-            vi.advanceTimersByTime(500);
+            vi.advanceTimersByTime(750);
             // Restauration : AUCUN appel à syncDomToStore (ni immédiat ni débouncé).
             expect(setItemSpy).not.toHaveBeenCalled();
             expect(mod.syncDomToStore).toBeTypeOf('function');

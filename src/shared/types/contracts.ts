@@ -991,6 +991,8 @@ export interface OiStoreContract {
     checkIntegrity(): Promise<void>;
     /** Peuple `state.formData` directement (contourne le proxy à l'init). */
     loadFromStorage(): void;
+    /** Écrit immédiatement `saveToStorage()` si un flush est en attente (débounce `notify`). */
+    flush(): void;
 }
 
 /** `window.dbManager` (init.js:341) — IndexedDB `OI_GeneratorLiteDB` / store `images`. */

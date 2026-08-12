@@ -35,6 +35,14 @@ export interface CoherenceResult {
 // formulaires.js:744-793 (partie règles, verbatim)
 export function collectCoherence(): CoherenceResult {
     const key = window.LOCAL_STORAGE_KEY || 'tactical_oi_data';
+    // NB : localStorage est ici la source de vérité qu'on RELIT pour rafraîchir
+    // Store.state.formData (cf. en-tête du fichier) — PAS l'inverse. Un
+    // `Store.flush()` avant cette lecture écraserait localStorage avec la copie
+    // en mémoire (potentiellement plus VIEILLE que ce qui a pu y être écrit
+    // directement ailleurs, ex. import de session) : contraire à l'intention.
+    // Fenêtre de désynchronisation acceptée : jusqu'à 250ms (débounce
+    // Store.notify -> saveToStorage, perf carto) entre une mutation Store très
+    // récente et sa lecture ici — même compromis que l'indicateur autosave U21.
     const dataString = localStorage.getItem(key);
     Store.state.formData = JSON.parse(dataString || '{}') as OiFormData;
     const getVal = (id: string): string => (Store.state.formData[id] as string | undefined) || '';
