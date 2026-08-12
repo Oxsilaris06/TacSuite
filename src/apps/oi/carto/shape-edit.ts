@@ -88,7 +88,24 @@ function gestureDeps(self: OICartoInternal, map: MapLibreMap): ShapeGestureDeps<
         map,
         loadShapes: () => self._loadShapes(),
         saveShapes: list => self._saveShapes(list),
-        renderShapes: () => self._renderShapes(),
+        // Pendant le drag de la forme SÉLECTIONNÉE, `renderShapes()` (ici) est
+        // appelé à CHAQUE mousemove pour re-rendre la géométrie/le marker texte
+        // — mais PAS les poignées/la toolbar (§ci-dessous), qui restent donc
+        // figées à leur ANCIENNE position pendant que la forme glisse dessous.
+        // Pour un texte, la poignée `textresize` et la toolbar sont à quelques
+        // px du marker lui-même : cette poignée figée peut intercepter le
+        // pointerdown du drag suivant (rendu APRÈS le marker texte, donc
+        // au-dessus en z-order) — geste perçu comme buggé côté desktop. On les
+        // masque le temps du drag ; `onDragEnd` (`_selectShape`) les refait
+        // apparaître à la position finale (même correctif que `afterHandleDrag`
+        // pour le drag de poignée, déjà correct).
+        renderShapes: () => {
+            self._renderShapes();
+            if (self._gesture?.isDrag && self._gesture.shapeId === self._selectedShapeId) {
+                self._clearHandles();
+                self._clearShapeToolbar();
+            }
+        },
         pushHistory: () => self._pushHistory(),
         refreshUndoRedoButtons: () => self._refreshUndoRedoButtons(),
         safe: <A extends unknown[], R>(fn: (...args: A) => R, label?: string) => self._safe(fn, label),
@@ -99,6 +116,12 @@ function gestureDeps(self: OICartoInternal, map: MapLibreMap): ShapeGestureDeps<
         // Fin de drag : garde la forme sélectionnée pour l'édition immédiate.
         onDragEnd: shapeId => {
             self._refreshUndoRedoButtons();
+            // `_selectShape` court-circuite en simple repositionnement quand
+            // `_selectedShapeId` est DÉJÀ `shapeId` (cas ici : jamais changé
+            // pendant le drag) — mais poignées/toolbar viennent d'être purgées
+            // ci-dessus (`renderShapes`), il n'y a rien à repositionner : il
+            // faut les (re)CRÉER. `null` force la branche complète.
+            self._selectedShapeId = null;
             self._selectShape(shapeId);
         },
         // Tap sans drag : sélection directe (poignées + toolbar) — pas de

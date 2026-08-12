@@ -270,6 +270,78 @@ describe('_shapePointerDown', () => {
 });
 
 // ============================================================
+// Drag de la forme SÉLECTIONNÉE : poignées/toolbar masquées le temps du
+// geste (sinon figées à l'ancienne position, poignée quasi au même point
+// que le marker texte → intercepte le pointerdown suivant, cf. shape-edit.ts
+// commentaire `gestureDeps.renderShapes`).
+// ============================================================
+describe('drag de la forme sélectionnée — poignées/toolbar masquées puis restaurées', () => {
+    function makeDownEvent(shapeId: string): MapLayerMouseEvent {
+        return {
+            features: [{ properties: { shapeId } }],
+            lngLat: { lng: 0.5, lat: 0.5 },
+            preventDefault: vi.fn(),
+            originalEvent: undefined,
+        } as unknown as MapLayerMouseEvent;
+    }
+
+    it('mousemove (drag en cours) sur la forme déjà sélectionnée : purge poignées + toolbar', () => {
+        const text: OiCartoShape = { id: 't1', type: 'text', color: '#fff', textColor: '#fff', coords: [[0.5, 0.5]], text: 'X' };
+        const { fake, map } = makeFakeThis({ shapes: [text] });
+        fake._selectShape('t1'); // poignées + toolbar déjà affichées (sélection précédente)
+        expect(fake._handleMarkers.length).toBeGreaterThan(0);
+        expect(fake._shapeToolbarMarker).not.toBeNull();
+
+        fake._shapePointerDown(makeDownEvent('t1'));
+        const m = assertNonNull(map);
+        const onMove = m.on.mock.calls.find(c => c[0] === 'mousemove')?.[1] as (e: unknown) => void;
+
+        // Déplacement au-delà du seuil de drag (6px) : project() = ll*100.
+        onMove({ lngLat: { lng: 0.6, lat: 0.6 } });
+
+        expect(fake._gesture?.isDrag).toBe(true);
+        expect(fake._handleMarkers).toEqual([]);
+        expect(fake._shapeToolbarMarker).toBeNull();
+    });
+
+    it('mouseup en fin de drag : poignées + toolbar réapparaissent à la position finale', () => {
+        const text: OiCartoShape = { id: 't1', type: 'text', color: '#fff', textColor: '#fff', coords: [[0.5, 0.5]], text: 'X' };
+        const { fake, map } = makeFakeThis({ shapes: [text] });
+        fake._selectShape('t1');
+
+        fake._shapePointerDown(makeDownEvent('t1'));
+        const m = assertNonNull(map);
+        const onMove = m.on.mock.calls.find(c => c[0] === 'mousemove')?.[1] as (e: unknown) => void;
+        const onUp = m.on.mock.calls.find(c => c[0] === 'mouseup')?.[1] as (e: unknown) => void;
+
+        onMove({ lngLat: { lng: 0.6, lat: 0.6} });
+        expect(fake._handleMarkers).toEqual([]);
+
+        onUp({ lngLat: { lng: 0.6, lat: 0.6 } });
+
+        expect(fake._gesture).toBeNull();
+        expect(fake._handleMarkers.length).toBeGreaterThan(0); // la poignée textresize revient
+        expect(fake._shapeToolbarMarker).not.toBeNull();
+    });
+
+    it("tap sans drag (pas de franchissement de seuil) : poignées/toolbar restent affichées sans clignoter", () => {
+        const text: OiCartoShape = { id: 't1', type: 'text', color: '#fff', textColor: '#fff', coords: [[0.5, 0.5]], text: 'X' };
+        const { fake, map } = makeFakeThis({ shapes: [text] });
+        fake._selectShape('t1');
+
+        fake._shapePointerDown(makeDownEvent('t1'));
+        const m = assertNonNull(map);
+        const onUp = m.on.mock.calls.find(c => c[0] === 'mouseup')?.[1] as (e: unknown) => void;
+
+        onUp({ lngLat: { lng: 0.5, lat: 0.5 } }); // pas de move : tap
+
+        expect(fake._gesture).toBeNull();
+        expect(fake._handleMarkers.length).toBeGreaterThan(0);
+        expect(fake._shapeToolbarMarker).not.toBeNull();
+    });
+});
+
+// ============================================================
 // Pinch : attache/détache sans fuite
 // ============================================================
 describe('_attachPinchListeners / _detachPinchListeners', () => {
