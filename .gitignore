@@ -18,3 +18,10 @@ graphify-out/
 mempalace.yaml
 entities.json
 graphify-out/
+
+# Outils agents IA locaux (skills) — ne pas versionner
+.agents/
+.continue/
+.openhands/
+.kiro/
+.claude/
