@@ -9,7 +9,7 @@
  * SPEC-PCTAC-CONVERSION §8.4) : `makeFakeMap()` fournit un faux `map` ne
  * portant que la surface réellement appelée par map-core.ts (`on`, `once`,
  * `off`, `stop`, `jumpTo`, `setTerrain`, `setSky`, `getLayer`,
- * `setLayoutProperty`, `getSource`, `addLayer`, `getCenter`, `getZoom`,
+ * `setLayoutProperty`, `setPaintProperty`, `getSource`, `addLayer`, `getCenter`, `getZoom`,
  * `getPitch`, `getBearing`, `resize`), tous en `vi.fn()`. `makeFakeThis()`
  * combine cet état avec des stubs `vi.fn()` pour les méthodes des AUTRES
  * paquets (chrome.ts, pins.ts, draw-layers.ts, draw-tools.ts, measure.ts,
@@ -36,6 +36,12 @@
  * / `_updateLidarBtn`, ajoutées à map-core.ts. Le point sensible couvert ici est
  * l'EXCLUSIVITÉ (une seule des 3 couches visible) et le cyclage bouclant sur
  * « aucun ».
+ *
+ * §7 (HORS planMap.js) — fond topo couleur Plan IGN v2 et courbes de niveau :
+ * `_applyTopoVisibility` / `_togglePlanIgn` / `_toggleContours` /
+ * `_initTopoLayers` / `_updateTopoBtns`. Point sensible couvert : l'opacité de
+ * l'ombrage LiDAR SUIT le fond (0,85 sur l'imagerie, 0,45 sur le Plan IGN), ce
+ * qui couple `_applyTopoVisibility` à `_applyLidarVisibility`.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -47,7 +53,14 @@ vi.mock('@pctac/planmap/tiles.js', () => ({
 const toastSpy = vi.hoisted(() => vi.fn());
 vi.mock('@shared/feedback.js', () => ({ toast: toastSpy }));
 
-import { LIDAR_KEY, VIEW_KEY } from '../../../src/apps/pctac/planmap/constants.js';
+import {
+    CONTOURS_KEY,
+    LIDAR_KEY,
+    LIDAR_OPACITY_OVER_IMAGERY,
+    LIDAR_OPACITY_OVER_TOPO,
+    PLANIGN_KEY,
+    VIEW_KEY,
+} from '../../../src/apps/pctac/planmap/constants.js';
 import { MapCoreMethods } from '../../../src/apps/pctac/planmap/map-core.js';
 import { prefetchFranceTiles } from '../../../src/apps/pctac/planmap/tiles.js';
 import type { PlanMapInternal } from '../../../src/apps/pctac/planmap/types.js';
@@ -75,6 +88,7 @@ function makeFakeMap(overrides: Record<string, unknown> = {}) {
         setSky: vi.fn(),
         getLayer: vi.fn(),
         setLayoutProperty: vi.fn(),
+        setPaintProperty: vi.fn(),
         getSource: vi.fn(),
         addLayer: vi.fn(),
         resize: vi.fn(),
@@ -95,6 +109,8 @@ function makeFakeThis(overrides: Record<string, unknown> = {}): PlanMapInternal 
         is3D: false,
         streetLabelsOn: false,
         lidarLayer: null,
+        planIgnOn: false,
+        contoursOn: false,
         _locked: false,
         _pinCancel: null,
         drawTool: null,
@@ -140,6 +156,9 @@ function makeFakeThis(overrides: Record<string, unknown> = {}): PlanMapInternal 
         _setLidarLayer: vi.fn(),
         _updateLidarBtn: vi.fn(),
         _initLidar: vi.fn(),
+        _applyTopoVisibility: vi.fn(),
+        _updateTopoBtns: vi.fn(),
+        _initTopoLayers: vi.fn(),
 
         ...overrides,
     } as unknown as PlanMapInternal;
@@ -772,5 +791,116 @@ describe('Overlays LiDAR HD — _applyLidarVisibility / _setLidarLayer / _cycleL
         document.body.innerHTML = '';
         const fake = makeFakeThis();
         expect(() => MapCoreMethods._updateLidarBtn.call(fake)).not.toThrow();
+    });
+});
+
+// ---------------------------------------------------------------------------
+// 7. Fond topo couleur (Plan IGN v2) + courbes de niveau (hors planMap.js)
+// ---------------------------------------------------------------------------
+
+describe('Fond topo & courbes — _applyTopoVisibility / _togglePlanIgn / _toggleContours / _initTopoLayers', () => {
+    it('_applyTopoVisibility() applique les DEUX bascules indépendamment', () => {
+        const map = makeFakeMap({ getLayer: vi.fn(() => ({})) });
+        const fake = makeFakeThis({ map, planIgnOn: true, contoursOn: false });
+
+        MapCoreMethods._applyTopoVisibility.call(fake);
+
+        expect(map.setLayoutProperty).toHaveBeenCalledWith('planign', 'visibility', 'visible');
+        expect(map.setLayoutProperty).toHaveBeenCalledWith('contours', 'visibility', 'none');
+    });
+
+    // Le couplage qui fait tout l'intérêt du mode : sur le Plan IGN l'ombrage
+    // s'efface pour laisser lire les couleurs, sur l'imagerie il domine.
+    it('l\'opacité de l\'ombrage LiDAR suit le fond : 0,45 sur Plan IGN, 0,85 sur imagerie', () => {
+        const map = makeFakeMap({ getLayer: vi.fn(() => ({})) });
+        const fake = makeFakeThis({
+            map, lidarLayer: 'mnt', planIgnOn: true,
+            _applyLidarVisibility: MapCoreMethods._applyLidarVisibility,
+        });
+
+        MapCoreMethods._applyTopoVisibility.call(fake);
+        expect(map.setPaintProperty).toHaveBeenCalledWith('lidar-mnt', 'raster-opacity', LIDAR_OPACITY_OVER_TOPO);
+
+        map.setPaintProperty.mockClear();
+        fake.planIgnOn = false;
+        MapCoreMethods._applyTopoVisibility.call(fake);
+        expect(map.setPaintProperty).toHaveBeenCalledWith('lidar-mnt', 'raster-opacity', LIDAR_OPACITY_OVER_IMAGERY);
+    });
+
+    it('_applyTopoVisibility() sans carte ⇒ ne jette pas', () => {
+        const fake = makeFakeThis({ map: null });
+        expect(() => MapCoreMethods._applyTopoVisibility.call(fake)).not.toThrow();
+    });
+
+    it('_togglePlanIgn() bascule l\'état et persiste PLANIGN_KEY', () => {
+        const fake = makeFakeThis({ map: makeFakeMap() });
+
+        MapCoreMethods._togglePlanIgn.call(fake);
+        expect(fake.planIgnOn).toBe(true);
+        expect(localStorage.getItem(PLANIGN_KEY)).toBe('1');
+
+        MapCoreMethods._togglePlanIgn.call(fake);
+        expect(fake.planIgnOn).toBe(false);
+        expect(localStorage.getItem(PLANIGN_KEY)).toBe('0');
+    });
+
+    it('_toggleContours() bascule l\'état et persiste CONTOURS_KEY, sans toucher au fond', () => {
+        const fake = makeFakeThis({ map: makeFakeMap(), planIgnOn: true });
+
+        MapCoreMethods._toggleContours.call(fake);
+
+        expect(fake.contoursOn).toBe(true);
+        expect(localStorage.getItem(CONTOURS_KEY)).toBe('1');
+        expect(fake.planIgnOn).toBe(true);
+    });
+
+    it('les deux bascules sans carte ⇒ aucun changement d\'état', () => {
+        const fake = makeFakeThis({ map: null });
+
+        MapCoreMethods._togglePlanIgn.call(fake);
+        MapCoreMethods._toggleContours.call(fake);
+
+        expect(fake.planIgnOn).toBe(false);
+        expect(fake.contoursOn).toBe(false);
+    });
+
+    it('_initTopoLayers() restaure les deux états persistés', () => {
+        localStorage.setItem(PLANIGN_KEY, '1');
+        localStorage.setItem(CONTOURS_KEY, '1');
+        const applyTopo = vi.fn();
+        const fake = makeFakeThis({ _applyTopoVisibility: applyTopo });
+
+        MapCoreMethods._initTopoLayers.call(fake);
+
+        expect(fake.planIgnOn).toBe(true);
+        expect(fake.contoursOn).toBe(true);
+        expect(applyTopo).toHaveBeenCalledTimes(1);
+    });
+
+    it('_initTopoLayers() sans rien en storage ⇒ imagerie seule, aucune couche IGN requêtée', () => {
+        const fake = makeFakeThis();
+
+        MapCoreMethods._initTopoLayers.call(fake);
+
+        expect(fake.planIgnOn).toBe(false);
+        expect(fake.contoursOn).toBe(false);
+    });
+
+    it('_updateTopoBtns() reflète les deux états sur leurs boutons respectifs', () => {
+        document.body.innerHTML = '<button id="plan_btn_topo"></button><button id="plan_btn_contours"></button>';
+        const fake = makeFakeThis({ planIgnOn: true, contoursOn: false });
+
+        MapCoreMethods._updateTopoBtns.call(fake);
+
+        expect(document.getElementById('plan_btn_topo')?.classList.contains('active')).toBe(true);
+        expect(document.getElementById('plan_btn_topo')?.title).toContain('imagerie satellite');
+        expect(document.getElementById('plan_btn_contours')?.classList.contains('active')).toBe(false);
+        expect(document.getElementById('plan_btn_contours')?.title).toBe('Afficher les courbes de niveau');
+    });
+
+    it('_updateTopoBtns() sans boutons dans le DOM ⇒ ne jette pas', () => {
+        document.body.innerHTML = '';
+        const fake = makeFakeThis();
+        expect(() => MapCoreMethods._updateTopoBtns.call(fake)).not.toThrow();
     });
 });

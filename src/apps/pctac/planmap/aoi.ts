@@ -182,11 +182,16 @@ export const AoiMethods = {
     /** Estime tuiles + volume, vérifie le quota, demande confirmation, lance. */
     // planMap.js:5414-5451
     async _confirmAoi(this: PlanMapInternal, bbox: GeoBBox): Promise<void> {
-        // L'ombrage LiDAR HD affiché au moment du téléchargement part AVEC l'AOI :
-        // sans ça, la couche disparaîtrait hors ligne alors qu'elle est justement
-        // celle qui sert sur le terrain (relief sous couvert). Hors planMap.js.
-        const lidarSourceId = this.lidarLayer ? LIDAR_HD_LAYERS[this.lidarLayer].sourceId : null;
-        const templates: TileTemplate[] = styleTileTemplates(lidarSourceId ? [lidarSourceId] : []);
+        // Les couches IGN affichées au moment du téléchargement partent AVEC l'AOI :
+        // sans ça, elles disparaîtraient hors ligne alors que ce sont justement
+        // celles qui servent sur le terrain (relief sous couvert, fond topo,
+        // courbes). On n'embarque QUE les couches actives, pour ne pas gonfler le
+        // volume de qui ne les affiche pas. Hors planMap.js.
+        const extraSources: string[] = [];
+        if (this.lidarLayer) extraSources.push(LIDAR_HD_LAYERS[this.lidarLayer].sourceId);
+        if (this.planIgnOn) extraSources.push('planign');
+        if (this.contoursOn) extraSources.push('contours');
+        const templates: TileTemplate[] = styleTileTemplates(extraSources);
         if (!templates.length) { toast('Aucune source cartographique disponible.', { kind: 'error' }); return; }
         const minZ = this.AOI_MIN_Z, maxZ = this.AOI_MAX_Z;
         const tileCount = estimateTileCount(bbox, minZ, maxZ, templates);

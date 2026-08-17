@@ -38,6 +38,8 @@ export function createPlanMapState(): PlanMapState {
         _pinCancel: null, // annule l'épinglage caméra 3D en cours (anti-dérive DEM)
         streetLabelsOn: false, // overlay noms de rues (vectoriel OpenFreeMap)
         lidarLayer: null,      // overlay LiDAR HD actif : 'mnt' | 'mns' | 'mnh' | null
+        planIgnOn: false,      // fond topographique couleur Plan IGN v2
+        contoursOn: false,     // overlay courbes de niveau (RGE ALTI)
         _selectedShapeId: null,  // forme actuellement sélectionnée (handles visibles)
         _handleMarkers: [],      // poignées HTML rendues pour la forme sélectionnée
         _textMarkers: [],        // labels HTML pour annotations texte

@@ -451,7 +451,7 @@ test.describe('PC-Tac — Checklist fonctionnelle (docs/recon-pctac.md §6)', ()
   // Plan (carte tactique MapLibre)
   // ------------------------------------------------------------------
   test('Plan — initialisation carte + toolbar unifiée', async ({ page }) => {
-    await step('carte + 9 FABs de la toolbar unifiée', async () => {
+    await step('carte + 11 FABs de la toolbar unifiée', async () => {
       await clickTab(page, 'view-plan');
       await page.waitForTimeout(1500);
       await expect.soft(page.locator('canvas.maplibregl-canvas')).toBeVisible({ timeout: 3000 });
@@ -464,6 +464,8 @@ test.describe('PC-Tac — Checklist fonctionnelle (docs/recon-pctac.md §6)', ()
         'plan_btn_draw',
         'plan_btn_labels',
         'plan_btn_lidar',
+        'plan_btn_topo',
+        'plan_btn_contours',
         'plan_btn_aoi',
       ]) {
         await expect.soft(page.locator(`#${id}`)).toBeVisible();
@@ -781,6 +783,41 @@ test.describe('PC-Tac — Checklist fonctionnelle (docs/recon-pctac.md §6)', ()
       await expect.soft(btn).not.toHaveClass(/active/, { timeout: 1500 });
       // La couche éteinte ne laisse rien derrière elle en stockage.
       expect.soft(await page.evaluate(() => localStorage.getItem('pcTacPlanLidar'))).toBeNull();
+    });
+  });
+
+  // Fond topo couleur + courbes : deux bascules INDÉPENDANTES, composables avec
+  // l'ombrage LiDAR. On vérifie l'indépendance (l'une n'éteint pas l'autre) et
+  // la persistance séparée des deux clés.
+  test('Plan — fond Plan IGN et courbes de niveau (#plan_btn_topo, #plan_btn_contours)', async ({ page }) => {
+    await step('les deux bascules sont indépendantes et persistées séparément', async () => {
+      await clickTab(page, 'view-plan');
+      await page.waitForTimeout(1500);
+      await page.locator('#plan_btn_more').click();
+
+      const topo = page.locator('#plan_btn_topo');
+      const contours = page.locator('#plan_btn_contours');
+      const state = () => page.evaluate(() => {
+        const pm = (window as unknown as { PlanMap: { planIgnOn: boolean; contoursOn: boolean } }).PlanMap;
+        return { topo: pm.planIgnOn, contours: pm.contoursOn };
+      });
+
+      expect.soft(await state()).toEqual({ topo: false, contours: false });
+      await topo.click();
+      expect.soft(await state()).toEqual({ topo: true, contours: false });
+      await contours.click();
+      expect.soft(await state()).toEqual({ topo: true, contours: true });
+      await expect.soft(topo).toHaveClass(/active/, { timeout: 1500 });
+      await expect.soft(contours).toHaveClass(/active/, { timeout: 1500 });
+
+      // Éteindre le fond ne doit PAS emporter les courbes avec lui.
+      await topo.click();
+      expect.soft(await state()).toEqual({ topo: false, contours: true });
+
+      expect.soft(await page.evaluate(() => [
+        localStorage.getItem('pcTacPlanTopo'),
+        localStorage.getItem('pcTacPlanContours'),
+      ])).toEqual(['0', '1']);
     });
   });
 
