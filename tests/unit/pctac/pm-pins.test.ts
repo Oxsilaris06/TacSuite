@@ -448,6 +448,31 @@ describe('_renderPins — réconciliation par ID + INVARIANT 2b (draggable, plan
         expect(pinMarkers.has('p2')).toBe(true);
     });
 
+    // Non-régression : `icon` fait partie de `_pinSignature` (pins.ts:183) au
+    // même titre que `color`/`text`/`locked`/`photoId` — un changement d'icône
+    // via la roue d'options (`_openIconCatalogPanelForEdit`, panels.ts) doit
+    // repeindre le glyph du marker EN PLACE, sans recréation, sans zoom.
+    it('icône modifiée : repeint pinWrap EN PLACE, garde la même référence de marker', () => {
+        const map = { getSource: vi.fn(), addSource: vi.fn(), addLayer: vi.fn() };
+        const fake = makeFakeThis({ map: map as unknown as PlanMapInternal['map'] });
+        fake._savePins([makePin({ id: 'p1', icon: 'place' })]);
+        PinsMethods._renderPins.call(fake);
+
+        const pinMarkers = assertNonNull(fake._pinMarkers);
+        const entry1 = assertNonNull(pinMarkers.get('p1'));
+        expect(entry1.pinWrap.innerHTML).toContain('place');
+
+        fake._savePins([makePin({ id: 'p1', icon: 'star' })]);
+        PinsMethods._renderPins.call(fake);
+
+        const entry2 = assertNonNull(pinMarkers.get('p1'));
+        expect(entry2).toBe(entry1); // même entrée (pas de recréation)
+        expect(entry2.pinMarker).toBe(entry1.pinMarker); // marker pin NON recréé
+        expect(entry2.pinWrap).toBe(entry1.pinWrap); // même élément DOM
+        expect(entry2.pinWrap.innerHTML).toContain('star'); // glyph actualisé
+        expect(entry2.pinWrap.innerHTML).not.toContain('place');
+    });
+
     it('sans carte (this.map === null) : ne fait rien, ne jette pas', () => {
         const fake = makeFakeThis({ map: null });
         fake._savePins([makePin({ id: 'p1' })]);

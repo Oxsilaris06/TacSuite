@@ -103,11 +103,10 @@ describe('config.ts — QR_BATCH_SIZE / LONG_PRESS_DELAY (config.js:60-61)', () 
 });
 
 describe('config.ts — PIN_ICONS (config.js:74-152)', () => {
-    it('contient 52 entrées (recompté verbatim depuis la source)', () => {
-        // NB : la mission annonçait 51 entrées ; un recomptage exhaustif du
-        // tableau source (`{ id: ... }` entre config.js:74 et :152) en donne
-        // 52. Valeur de référence retenue = comptage effectif de la source.
-        expect(PIN_ICONS).toHaveLength(52);
+    it('contient 51 entrées (doublon Surveillance/Observation fusionné, décision Nico 2026-08-17)', () => {
+        // NB : 52 entrées à l'origine ; `remove_red_eye` (Surveillance) a été
+        // fusionné dans `visibility` (Observation) — doublon supprimé.
+        expect(PIN_ICONS).toHaveLength(51);
     });
 
     it('a des ids uniques', () => {
@@ -127,7 +126,7 @@ describe('config.ts — PIN_ICONS (config.js:74-152)', () => {
 
     it('première et dernière entrée (bornes vérifiées)', () => {
         expect(PIN_ICONS[0]).toEqual({
-            id: 'local_police', label: 'Police', cat: 'Forces', tags: ['police', 'flic', 'agent', 'op'],
+            id: 'local_police', label: 'Gendarmerie', cat: 'Forces', tags: ['gendarmerie', 'gendarme', 'brigade', 'psig', 'bta'],
         });
         expect(PIN_ICONS[PIN_ICONS.length - 1]).toEqual({
             id: 'flag', label: 'Repère', cat: 'Lieu', tags: ['repere', 'flag', 'marker', 'drapeau'],
@@ -219,10 +218,11 @@ describe('suggestPinIcons (config.js:167-186)', () => {
     });
 
     it('un match exact de token (label === tag) score plus haut qu’un match partiel', () => {
-        // 'gendarme' matche exactement le tag 'gendarme' de military_tech (score 3),
-        // et n'apparaît dans aucun autre tag en tant que sous-chaîne pertinente.
+        // 'gendarme' matche exactement le tag 'gendarme' de local_police (score 3,
+        // libellés permutés — décision Nico 2026-08-17), et n'apparaît dans aucun
+        // autre tag en tant que sous-chaîne pertinente.
         const results = suggestPinIcons('gendarme');
-        expect(results[0]?.id).toBe('military_tech');
+        expect(results[0]?.id).toBe('local_police');
     });
 });
 

@@ -15,19 +15,20 @@ import type { PctacPinIcon } from '@shared/types/contracts.js';
 
 export const PIN_ICONS: PctacPinIcon[] = [
     // --- Forces de l'ordre ---
-    // Police = casquette (local_police = écusson police badge ronde),
-    // Gendarmerie = étoile militaire (military_tech) pour la distinguer nettement.
-    { id: 'local_police', label: 'Police', cat: 'Forces', tags: ['police', 'flic', 'agent', 'op'] },
-    { id: 'military_tech', label: 'Gendarmerie', cat: 'Forces', tags: ['gendarmerie', 'gendarme', 'brigade', 'militaire'] },
+    // Gendarmerie = bouclier étoile (local_police), Armée = médaille (military_tech),
+    // Police = bouclier silhouette (shield_person). Mêmes id Material qu'avant,
+    // libellés permutés (décision Nico 2026-08-17).
+    { id: 'local_police', label: 'Gendarmerie', cat: 'Forces', tags: ['gendarmerie', 'gendarme', 'brigade', 'psig', 'bta'] },
+    { id: 'military_tech', label: 'Armée', cat: 'Forces', tags: ['armee', 'militaire', 'soldat'] },
     { id: 'security', label: 'Sécurité', cat: 'Forces', tags: ['securite', 'garde', 'protection'] },
-    { id: 'shield_person', label: 'Inter armé', cat: 'Forces', tags: ['inter', 'gign', 'raid', 'gipn', 'intervention', 'swat'] },
+    { id: 'shield_person', label: 'Police', cat: 'Forces', tags: ['police', 'policier', 'agent', 'pn'] },
 
     // --- Pompiers / secours ---
     { id: 'local_fire_department', label: 'Pompier', cat: 'Secours', tags: ['pompier', 'sapeur', 'sdis', 'feu', 'spp'] },
     { id: 'fire_truck', label: 'FPT/VSAV', cat: 'Secours', tags: ['pompier', 'fpt', 'vsav', 'camion pompier', 'vehicule pompier'] },
     { id: 'medical_services', label: 'SAMU', cat: 'Secours', tags: ['samu', 'medecin', 'medical', 'medic', 'ambulance', 'soin', 'soins'] },
     { id: 'ambulance', label: 'Ambulance', cat: 'Secours', tags: ['ambulance', 'smur', 'vsav'] },
-    { id: 'health_and_safety', label: 'PMA', cat: 'Secours', tags: ['pma', 'sante', 'soin', 'soins', 'secours'] },
+    { id: 'health_and_safety', label: 'PRV', cat: 'Secours', tags: ['prv', 'victimes', 'regroupement', 'secours'] },
     { id: 'monitor_heart', label: 'Réa', cat: 'Secours', tags: ['rea', 'reanimation', 'urgence'] },
 
     // --- Cyno ---
@@ -71,8 +72,7 @@ export const PIN_ICONS: PctacPinIcon[] = [
     // --- Surveillance / observation ---
     { id: 'videocam', label: 'Caméra', cat: 'Obs', tags: ['camera', 'video', 'surveillance', 'cctv', 'videosurveillance'] },
     { id: 'photo_camera', label: 'Photo', cat: 'Obs', tags: ['photo', 'appareil', 'cliche'] },
-    { id: 'visibility', label: 'Observation', cat: 'Obs', tags: ['observation', 'vue', 'watch', 'spotter', 'jumelles', 'obs'] },
-    { id: 'remove_red_eye', label: 'Surveillance', cat: 'Obs', tags: ['surveillance', 'vue', 'vigie', 'planque'] },
+    { id: 'visibility', label: 'Observation', cat: 'Obs', tags: ['observation', 'vue', 'watch', 'spotter', 'jumelles', 'obs', 'surveillance', 'vigie', 'planque'] },
 
     // --- Véhicules ---
     { id: 'directions_car', label: 'Voiture', cat: 'Véhicule', tags: ['voiture', 'vl', 'car', 'vehicule', 'vehicule leger'] },
