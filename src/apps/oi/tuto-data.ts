@@ -629,24 +629,37 @@ export const oiTutoData: TutoData = {
           tip: "Échap désactive l'outil de dessin actif sans fermer la carte."
         },
         {
-          title: "Ouvrir le tiroir « Plus »",
-          body: "Le bouton \"Plus d'outils (3D, capture, noms de rues, libellés, légende)\" (icône more_horiz) ouvre un tiroir regroupant les outils supplémentaires : relief 3D, capture, noms de rues, libellés et légende. Ouvrez ce tiroir pour accéder aux boutons décrits dans les étapes suivantes ; un clic hors du tiroir le referme.",
+          title: "Ouvrir le panneau Calques",
+          body: "Le bouton \"Calques et fond de carte\" (icône layers) ouvre un panneau qui regroupe les réglages d'affichage de la carte, en 3 sections. Fond de carte : \"Fond Plan IGN\" bascule entre l'imagerie satellite et la carte topographique couleur de l'IGN. Surimpressions : \"Ombrage LiDAR HD\" superpose le relief LiDAR HD de l'IGN — chaque appui passe à la couche suivante (MNT sol nu, puis MNS sursol, puis MNH hauteur de végétation, puis extinction), la pastille du bouton rappelle la couche affichée ; \"Afficher les courbes de niveau\" superpose les courbes de niveau IGN ; \"Afficher les noms de rues\" superpose les libellés de voirie. Vue : \"Basculer vue 2D / 3D relief\" active le relief (élévation + bâtiments extrudés) et incline la vue. Ouvrez ce panneau pour accéder aux boutons décrits dans les étapes suivantes ; un clic hors du panneau (ou la touche Échap) le referme.",
           terms: [
-            "Plus d'outils (3D, capture, noms de rues, libellés, légende)"
+            "Calques et fond de carte",
+            "Fond Plan IGN (carte topographique couleur)",
+            "Ombrage LiDAR HD (relief sous la végétation)",
+            "Afficher les courbes de niveau",
+            "Afficher les noms de rues",
+            "Basculer vue 2D / 3D relief"
           ],
-          selector: "#oi_carto_btn_more",
-          tip: "Les boutons des deux prochaines étapes vivent dans ce tiroir : ouvrez-le d'abord pour les repérer sur la carte."
+          selector: "#oi_carto_btn_layers",
+          tip: "Le programme LiDAR HD est déployé par blocs : hors zone couverte, l'ombrage n'apparaît pas et l'imagerie reste visible. Si le relief 3D est indisponible, un message « Relief 3D indisponible (réseau ?)... » s'affiche."
         },
         {
-          title: "Affichage : libelles, relief 3D, plein ecran",
-          body: "Le bouton \"Afficher / masquer les libellés des pins\" bascule tous les libellés (contre la superposition), son icône passant de label à label_off. \"Basculer vue 2D / 3D relief\" active le relief (élévation + bâtiments extrudés) et incline la vue ; le recliquer revient à plat. \"Plein écran\" agrandit la carte à tout l'écran (icône fullscreen ↔ fullscreen_exit).",
+          title: "Ouvrir le tiroir « Plus »",
+          body: "Le bouton \"Plus d'outils (capture, libellés des pins)\" (icône more_horiz) ouvre un tiroir regroupant les actions restantes : capture et libellés des pins. Les réglages d'affichage de la carte (fond, LiDAR, courbes, noms de rues, 3D) vivent désormais dans le panneau Calques (étape précédente). Ouvrez ce tiroir pour accéder aux boutons décrits dans l'étape suivante ; un clic hors du tiroir le referme.",
+          terms: [
+            "Plus d'outils (capture, libellés des pins)"
+          ],
+          selector: "#oi_carto_btn_more",
+          tip: "Les boutons de l'étape suivante vivent dans ce tiroir : ouvrez-le d'abord pour les repérer sur la carte."
+        },
+        {
+          title: "Libellés des pins et plein écran",
+          body: "Le bouton \"Afficher / masquer les libellés des pins\" bascule tous les libellés (contre la superposition), son icône passant de label à label_off. \"Plein écran\" agrandit la carte à tout l'écran (icône fullscreen ↔ fullscreen_exit).",
           terms: [
             "Afficher / masquer les libellés des pins",
-            "Basculer vue 2D / 3D relief",
             "Plein écran"
           ],
           selector: "#oi_carto_btn_labels",
-          tip: "Si le relief est indisponible, un message « Relief 3D indisponible (réseau ?)... » s'affiche."
+          tip: null
         },
         {
           title: "Capturer la carte et fermer",

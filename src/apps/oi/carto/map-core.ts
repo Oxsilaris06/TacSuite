@@ -98,14 +98,42 @@ import type { AddLayerObject, MapMouseEvent, MapTouchEvent, SkySpecification } f
 
 import { toast } from '@shared/feedback.js';
 
-import { OI_CARTO_RASTER_STYLE } from './constants.js';
-import type { OICartoInternal } from './types.js';
+import {
+    LIDAR_HD_LAYERS,
+    LIDAR_LAYER_IDS,
+    LIDAR_OPACITY_OVER_IMAGERY,
+    LIDAR_OPACITY_OVER_TOPO,
+    OI_CARTO_RASTER_STYLE,
+} from './constants.js';
+import type { OICartoInternal, OiCartoLidarLayerId } from './types.js';
 
 /** Résultat Nominatim (endpoint `/search`) — seuls les champs lus par `_searchAddress`. */
 interface NominatimResult {
     display_name: string;
     lon: string;
     lat: string;
+}
+
+/** Ferme le tiroir « Plus » (#oi_carto_more_tools) s'il est ouvert. Fonction de
+ *  module (pas de `this`) : appelée depuis `_bindUi` (clic extérieur, Échap,
+ *  ouverture du panneau Calques ou de la recherche) — exclusion mutuelle des
+ *  3 panneaux flottants de la carte, alignement `@pctac/planmap/chrome.ts`. */
+function closeMoreDrawer(): void {
+    const moreTools = document.getElementById('oi_carto_more_tools');
+    const btnMore = document.getElementById('oi_carto_btn_more');
+    if (!moreTools || moreTools.hidden) return;
+    moreTools.hidden = true;
+    if (btnMore) btnMore.setAttribute('aria-expanded', 'false');
+}
+
+/** Ferme le panneau « Calques » (#oi_carto_layers_panel) s'il est ouvert. Même
+ *  logique que `closeMoreDrawer` (exclusion mutuelle des panneaux). */
+function closeLayersPanel(): void {
+    const panel = document.getElementById('oi_carto_layers_panel');
+    const btn = document.getElementById('oi_carto_btn_layers');
+    if (!panel || !panel.classList.contains('open')) return;
+    panel.classList.remove('open');
+    if (btn) btn.setAttribute('aria-expanded', 'false');
 }
 
 export const MapCoreMethods = {
@@ -189,6 +217,16 @@ export const MapCoreMethods = {
             // même patron que `is3D` ci-dessus — alignement PC-Tac).
             this.streetLabelsOn = !!savedView.streetLabelsOn;
             if (this.streetLabelsOn) this._ensureStreetLabelLayers();
+            // Restauration fond topo + courbes + LiDAR (persistés avec la vue,
+            // hors oi_cartographie.js — alignement PC-Tac). Le fond AVANT
+            // l'ombrage : `_applyLidarVisibility` lit `planIgnOn` pour choisir
+            // l'opacité, il doit donc déjà être restauré (cf. `_initTopoLayers`).
+            this.planIgnOn = !!savedView.planIgnOn;
+            this.contoursOn = !!savedView.contoursOn;
+            const savedLidar = savedView.lidarLayer;
+            this.lidarLayer = LIDAR_LAYER_IDS.find((id) => id === savedLidar) ?? null;
+            this._initTopoLayers();
+            this._initLidar();
             // `_renderShapes()` (draw.ts) rejoue désormais aussi
             // `_renderShapeTexts()`/`_renderCommittedMeasures()` en interne
             // (consolidation parité PC-Tac) — un seul appel suffit ici.
@@ -234,17 +272,18 @@ export const MapCoreMethods = {
         const btnLabels = document.getElementById('oi_carto_btn_labels');
         if (btnLabels) btnLabels.onclick = () => this._toggleLabels();
 
-        // --- Tiroir « Plus » (pattern PC-Tac U24, planmap/chrome.ts:83-89) ---
+        // --- Tiroir « Plus » (pattern PC-Tac U24, planmap/chrome.ts:83-89) :
+        // réduit à capture + libellés de pins (les réglages d'affichage carte
+        // vivent désormais dans le panneau « Calques » ci-dessous, PC-Tac
+        // `git show 0c42d49`). ---
         const btnMore = document.getElementById('oi_carto_btn_more');
         const moreTools = document.getElementById('oi_carto_more_tools');
-        const closeMore = (): void => {
-            if (!moreTools || moreTools.hidden) return;
-            moreTools.hidden = true;
-            if (btnMore) btnMore.setAttribute('aria-expanded', 'false');
-        };
         if (btnMore && moreTools) {
             btnMore.onclick = () => {
                 const open = moreTools.hidden;
+                // Exclusion mutuelle : ouvrir « Plus » ferme le panneau Calques
+                // et le bandeau de recherche (jamais deux panneaux superposés).
+                if (open) { closeLayersPanel(); this._toggleSearchPanel(false); }
                 moreTools.hidden = !open;
                 btnMore.setAttribute('aria-expanded', String(open));
             };
@@ -252,7 +291,25 @@ export const MapCoreMethods = {
             document.addEventListener('click', (e) => {
                 if (moreTools.hidden) return;
                 const t = e.target as Node;
-                if (!moreTools.contains(t) && !btnMore.contains(t)) closeMore();
+                if (!moreTools.contains(t) && !btnMore.contains(t)) closeMoreDrawer();
+            });
+        }
+
+        // --- Panneau « Calques » (fond de carte + surimpressions + vue) — même
+        // mécanique que le tiroir « Plus » ci-dessus, PC-Tac `git show 0c42d49`. ---
+        const btnLayers = document.getElementById('oi_carto_btn_layers');
+        const layersPanel = document.getElementById('oi_carto_layers_panel');
+        if (btnLayers && layersPanel) {
+            btnLayers.onclick = () => {
+                const open = !layersPanel.classList.contains('open');
+                if (open) { closeMoreDrawer(); this._toggleSearchPanel(false); }
+                layersPanel.classList.toggle('open', open);
+                btnLayers.setAttribute('aria-expanded', String(open));
+            };
+            document.addEventListener('click', (e) => {
+                if (!layersPanel.classList.contains('open')) return;
+                const t = e.target as Node;
+                if (!layersPanel.contains(t) && !btnLayers.contains(t)) closeLayersPanel();
             });
         }
 
@@ -264,6 +321,17 @@ export const MapCoreMethods = {
 
         const btn3d = document.getElementById('oi_carto_btn_3d');
         if (btn3d) btn3d.onclick = () => this._toggle3D();
+
+        // Ombrage LiDAR HD, fond Plan IGN couleur, courbes de niveau (hors
+        // oi_cartographie.js, alignement PC-Tac — cf. bloc dédié en fin de fichier).
+        const btnLidar = document.getElementById('oi_carto_btn_lidar');
+        if (btnLidar) btnLidar.onclick = () => this._cycleLidarLayer();
+
+        const btnTopo = document.getElementById('oi_carto_btn_topo');
+        if (btnTopo) btnTopo.onclick = () => this._togglePlanIgn();
+
+        const btnContours = document.getElementById('oi_carto_btn_contours');
+        if (btnContours) btnContours.onclick = () => this._toggleContours();
 
         const btnFs = document.getElementById('oi_carto_btn_fullscreen');
         if (btnFs) btnFs.onclick = () => this._toggleFullscreen();
@@ -309,10 +377,12 @@ export const MapCoreMethods = {
                 this._closeInlinePanel();
                 this._saveView();
             });
-            // Échap : si le tiroir « Plus », un outil de dessin ou un placement
-            // est actif, on l'annule au lieu de fermer la modale.
+            // Échap : si le tiroir « Plus », le panneau Calques, un outil de
+            // dessin ou un placement est actif, on l'annule au lieu de fermer
+            // la modale.
             modal.addEventListener('cancel', (e) => {
-                if (moreTools && !moreTools.hidden) { e.preventDefault(); closeMore(); }
+                if (moreTools && !moreTools.hidden) { e.preventDefault(); closeMoreDrawer(); }
+                else if (layersPanel && layersPanel.classList.contains('open')) { e.preventDefault(); closeLayersPanel(); }
                 else if (this.drawTool) { e.preventDefault(); this._setTool(null); }
                 else if (this.pendingPin) { e.preventDefault(); this.pendingPin = null; this._hideHint(); }
             });
@@ -336,6 +406,10 @@ export const MapCoreMethods = {
         panel.classList.toggle('open', shouldOpen);
         if (fab) fab.classList.toggle('active', shouldOpen);
         if (shouldOpen) {
+            // Exclusion mutuelle : ouvrir la recherche ferme le tiroir « Plus »
+            // et le panneau Calques (jamais deux panneaux superposés).
+            closeMoreDrawer();
+            closeLayersPanel();
             const input = document.getElementById('oi_carto_address_input');
             if (input) input.focus();
         }
@@ -535,6 +609,129 @@ export const MapCoreMethods = {
         if (this.streetLabelsOn) this._ensureStreetLabelLayers();
         this._applyStreetLabelsVisibility();
         this._saveView(); // persiste le flag avec la vue (cf. state.ts)
+    },
+
+    /* ----- OVERLAY LiDAR HD (ombrages IGN/Géoplateforme, keyless) -----
+     * Alignement `@pctac/planmap/map-core.ts`, hors `oi_cartographie.js`. Les
+     * 3 couches raster sont déclarées MASQUÉES dans `OI_CARTO_RASTER_STYLE`
+     * (constants.ts) : aucune tuile n'est requêtée tant qu'aucune n'est
+     * visible, et leur position dans le style les place au-dessus de
+     * l'imagerie mais SOUS tout ce qui est ajouté après `load` (dessins,
+     * pings, bâtiments 3D, noms de rues). Persisté avec la vue (`_saveView`),
+     * pas en localStorage — seule frontière de persistance `carto/`. */
+
+    /** Applique la visibilité des 3 couches (une seule active au plus) + le bouton.
+     *  L'opacité suit le FOND : sur l'imagerie l'ombrage domine, sur le Plan IGN
+     *  il s'efface pour laisser lire les couleurs et les figurés de la carte. */
+    _applyLidarVisibility(this: OICartoInternal): void {
+        if (!this.map) return;
+        const opacity = this.planIgnOn ? LIDAR_OPACITY_OVER_TOPO : LIDAR_OPACITY_OVER_IMAGERY;
+        for (const id of LIDAR_LAYER_IDS) {
+            const layerId = LIDAR_HD_LAYERS[id].sourceId;
+            if (!this.map.getLayer(layerId)) continue;
+            this.map.setLayoutProperty(layerId, 'visibility', this.lidarLayer === id ? 'visible' : 'none');
+            this.map.setPaintProperty(layerId, 'raster-opacity', opacity);
+        }
+        this._updateLidarBtn();
+    },
+
+    /** Sélectionne un overlay (ou `null` pour tout éteindre) et le persiste. */
+    _setLidarLayer(this: OICartoInternal, id: OiCartoLidarLayerId | null): void {
+        this.lidarLayer = id;
+        this._applyLidarVisibility();
+        this._saveView();
+    },
+
+    /** Bouton unique : aucun → MNT → MNS → MNH → aucun. */
+    _cycleLidarLayer(this: OICartoInternal): void {
+        if (!this.map) return;
+        const cur = this.lidarLayer;
+        const idx = cur === null ? -1 : LIDAR_LAYER_IDS.indexOf(cur);
+        // `idx + 1 === length` → retour à « aucun » (undefined via l'accès borné).
+        const next = LIDAR_LAYER_IDS[idx + 1] ?? null;
+        this._setLidarLayer(next);
+        if (next) {
+            const def = LIDAR_HD_LAYERS[next];
+            toast(def.label + ' — ' + def.hint, { kind: 'info' });
+        } else {
+            toast('Ombrage LiDAR HD masqué', { kind: 'info' });
+        }
+    },
+
+    /** Applique l'overlay restauré depuis la vue (posé par `_init`, cf. `load`). */
+    _initLidar(this: OICartoInternal): void {
+        this._applyLidarVisibility();
+    },
+
+    _updateLidarBtn(this: OICartoInternal): void {
+        const btn = document.getElementById('oi_carto_btn_lidar');
+        if (!btn) return;
+        const cur = this.lidarLayer;
+        btn.classList.toggle('active', cur !== null);
+        btn.title = cur
+            ? LIDAR_HD_LAYERS[cur].label + ' — ' + LIDAR_HD_LAYERS[cur].hint + ' (toucher : couche suivante)'
+            : 'Ombrage LiDAR HD (relief sous la végétation)';
+        // Repère textuel du mode courant sur la pastille du FAB.
+        const badge = btn.querySelector('.oi-carto-fab-badge');
+        if (badge) badge.textContent = cur ? cur.toUpperCase() : '';
+    },
+
+    /* ----- FOND TOPO COULEUR + COURBES DE NIVEAU (IGN, keyless) -----
+     * Alignement PC-Tac, hors `oi_cartographie.js`. Deux bascules
+     * INDÉPENDANTES, déclarées masquées dans `OI_CARTO_RASTER_STYLE` comme les
+     * ombrages : le Plan IGN v2 apporte la couleur que le LiDAR HD n'a pas
+     * (l'IGN ne publie que des ombrages gris), les courbes apportent la cote
+     * altimétrique. Les trois se composent librement. */
+
+    _applyTopoVisibility(this: OICartoInternal): void {
+        if (!this.map) return;
+        if (this.map.getLayer('planign')) {
+            this.map.setLayoutProperty('planign', 'visibility', this.planIgnOn ? 'visible' : 'none');
+        }
+        if (this.map.getLayer('contours')) {
+            this.map.setLayoutProperty('contours', 'visibility', this.contoursOn ? 'visible' : 'none');
+        }
+        // Le fond conditionne l'opacité de l'ombrage LiDAR (cf. _applyLidarVisibility).
+        this._applyLidarVisibility();
+        this._updateTopoBtns();
+    },
+
+    _togglePlanIgn(this: OICartoInternal): void {
+        if (!this.map) return;
+        this.planIgnOn = !this.planIgnOn;
+        this._applyTopoVisibility();
+        this._saveView();
+        toast(this.planIgnOn ? 'Fond Plan IGN (couleur)' : 'Fond imagerie satellite', { kind: 'info' });
+    },
+
+    _toggleContours(this: OICartoInternal): void {
+        if (!this.map) return;
+        this.contoursOn = !this.contoursOn;
+        this._applyTopoVisibility();
+        this._saveView();
+        toast(this.contoursOn ? 'Courbes de niveau affichées' : 'Courbes de niveau masquées', { kind: 'info' });
+    },
+
+    /** Applique les deux bascules restaurées depuis la vue (posées par `_init`, cf. `load`). */
+    _initTopoLayers(this: OICartoInternal): void {
+        this._applyTopoVisibility();
+    },
+
+    _updateTopoBtns(this: OICartoInternal): void {
+        const topoBtn = document.getElementById('oi_carto_btn_topo');
+        if (topoBtn) {
+            topoBtn.classList.toggle('active', this.planIgnOn);
+            topoBtn.title = this.planIgnOn
+                ? 'Revenir au fond imagerie satellite'
+                : 'Fond Plan IGN (carte topographique couleur)';
+        }
+        const contoursBtn = document.getElementById('oi_carto_btn_contours');
+        if (contoursBtn) {
+            contoursBtn.classList.toggle('active', this.contoursOn);
+            contoursBtn.title = this.contoursOn
+                ? 'Masquer les courbes de niveau'
+                : 'Afficher les courbes de niveau';
+        }
     },
 
     // ------------------------------------------------------------------

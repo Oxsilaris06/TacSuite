@@ -158,6 +158,9 @@ export function createOICartoState(): Pick<
     | 'history'
     | 'redoStack'
     | 'streetLabelsOn'
+    | 'lidarLayer'
+    | 'planIgnOn'
+    | 'contoursOn'
     | 'lastQuickPin'
     | '_wheelJustClosed'
     | 'persistence'
@@ -189,6 +192,9 @@ export function createOICartoState(): Pick<
         history: [], // :281 — pile JSON des shapes avant chaque modif
         redoStack: [], // :282
         streetLabelsOn: false, // overlay noms de rues (alignement PC-Tac, hors littéral — cf. types.ts)
+        lidarLayer: null, // overlay LiDAR HD actif (alignement PC-Tac, hors littéral — cf. types.ts)
+        planIgnOn: false, // fond topographique couleur Plan IGN v2 (alignement PC-Tac, hors littéral)
+        contoursOn: false, // overlay courbes de niveau (alignement PC-Tac, hors littéral)
         lastQuickPin: null, // dernier type posé par la roue de création (hors littéral — cf. types.ts)
         _wheelJustClosed: 0, // anti-réouverture de roue au clic de fermeture (parité PC-Tac)
         persistence: buildCartoPersistenceAdapter(), // R3-c, hors littéral (cf. ci-dessus)
@@ -271,6 +277,9 @@ export const PersistMethods = {
             bearing: this.map.getBearing(),
             is3D: this.is3D,
             streetLabelsOn: this.streetLabelsOn,
+            lidarLayer: this.lidarLayer,
+            planIgnOn: this.planIgnOn,
+            contoursOn: this.contoursOn,
         };
         this.persistence.saveView(view);
     },
