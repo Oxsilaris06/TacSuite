@@ -9,17 +9,27 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+	CONTOURS_MIN_ZOOM,
+	CONTOURS_WMTS_LAYER,
+	FRANCE_TILE_BOUNDS,
+	LIDAR_HD_LAYERS,
+	LIDAR_LAYER_IDS,
+	LIDAR_MAX_ZOOM,
+	LIDAR_MIN_ZOOM,
+	LIDAR_OPACITY_OVER_IMAGERY,
 	OI_CARTO_RASTER_STYLE,
 	OI_FONCTION_ICONS,
 	OI_ICON_CATALOG,
 	OI_PIN_DEFS,
 	OI_PIN_FALLBACK,
+	PLANIGN_WMTS_LAYER,
+	geopfWmtsTileUrl,
 	oiIconForMember,
 	oiNormalize,
 } from '@oi/carto/constants.js';
 
-describe('constants.ts — OI_CARTO_RASTER_STYLE (oi_cartographie.js:23-48)', () => {
-	it('version 8, 4 sources (satellite, ign-ortho, terrain-dem, openfreemap), 2 couches, glyphs OpenFreeMap', () => {
+describe('constants.ts — OI_CARTO_RASTER_STYLE (oi_cartographie.js:23-48 + overlays IGN hors littéral)', () => {
+	it('version 8, 4 sources planMap.js + planign/contours/3 LiDAR, 7 couches, glyphs OpenFreeMap', () => {
 		expect(OI_CARTO_RASTER_STYLE.version).toBe(8);
 		expect(OI_CARTO_RASTER_STYLE.glyphs).toBe('https://tiles.openfreemap.org/fonts/{fontstack}/{range}.pbf');
 		expect(Object.keys(OI_CARTO_RASTER_STYLE.sources)).toEqual([
@@ -27,8 +37,16 @@ describe('constants.ts — OI_CARTO_RASTER_STYLE (oi_cartographie.js:23-48)', ()
 			'ign-ortho',
 			'terrain-dem',
 			'openfreemap',
+			'planign',
+			'contours',
+			'lidar-mnt',
+			'lidar-mns',
+			'lidar-mnh',
 		]);
-		expect(OI_CARTO_RASTER_STYLE.layers).toHaveLength(2);
+		expect(OI_CARTO_RASTER_STYLE.layers).toHaveLength(7);
+		expect(OI_CARTO_RASTER_STYLE.layers.map((l) => l.id)).toEqual([
+			'satellite', 'ign-ortho', 'planign', 'lidar-mnt', 'lidar-mns', 'lidar-mnh', 'contours',
+		]);
 		expect(OI_CARTO_RASTER_STYLE.layers[0]).toEqual({ id: 'satellite', type: 'raster', source: 'satellite' });
 		expect(OI_CARTO_RASTER_STYLE.layers[1]).toEqual({
 			id: 'ign-ortho',
@@ -80,6 +98,44 @@ describe('constants.ts — OI_CARTO_RASTER_STYLE (oi_cartographie.js:23-48)', ()
 		expect(ofm.type).toBe('vector');
 		expect(ofm.url).toBe('https://tiles.openfreemap.org/planet');
 		expect(ofm.attribution).toBe('© OpenFreeMap © OpenStreetMap');
+	});
+
+	it('les 3 sources LiDAR HD : bounds FRANCE_TILE_BOUNDS, minzoom/maxzoom, opacité initiale', () => {
+		for (const id of LIDAR_LAYER_IDS) {
+			const def = LIDAR_HD_LAYERS[id];
+			const src = OI_CARTO_RASTER_STYLE.sources[def.sourceId] as {
+				type: string; tiles: string[]; bounds?: number[]; minzoom?: number; maxzoom?: number;
+			};
+			expect(src.type).toBe('raster');
+			expect(src.tiles).toEqual([geopfWmtsTileUrl(def.wmtsLayer)]);
+			expect(src.bounds).toEqual(FRANCE_TILE_BOUNDS);
+			expect(src.minzoom).toBe(LIDAR_MIN_ZOOM);
+			expect(src.maxzoom).toBe(LIDAR_MAX_ZOOM);
+
+			const layer = OI_CARTO_RASTER_STYLE.layers.find((l) => l.id === def.sourceId) as {
+				layout?: { visibility?: string }; paint?: { 'raster-opacity'?: number };
+			};
+			expect(layer.layout?.visibility).toBe('none');
+			expect(layer.paint?.['raster-opacity']).toBe(LIDAR_OPACITY_OVER_IMAGERY);
+		}
+	});
+
+	it('source planign : Plan IGN v2, masquée par défaut', () => {
+		const src = OI_CARTO_RASTER_STYLE.sources.planign as { type: string; tiles: string[]; bounds?: number[] };
+		expect(src.type).toBe('raster');
+		expect(src.tiles).toEqual([geopfWmtsTileUrl(PLANIGN_WMTS_LAYER)]);
+		expect(src.bounds).toEqual(FRANCE_TILE_BOUNDS);
+		const layer = OI_CARTO_RASTER_STYLE.layers.find((l) => l.id === 'planign') as { layout?: { visibility?: string } };
+		expect(layer.layout?.visibility).toBe('none');
+	});
+
+	it('source contours : RGE ALTI vectorisé, minzoom CONTOURS_MIN_ZOOM, masquée par défaut', () => {
+		const src = OI_CARTO_RASTER_STYLE.sources.contours as { type: string; tiles: string[]; minzoom?: number };
+		expect(src.type).toBe('raster');
+		expect(src.tiles).toEqual([geopfWmtsTileUrl(CONTOURS_WMTS_LAYER)]);
+		expect(src.minzoom).toBe(CONTOURS_MIN_ZOOM);
+		const layer = OI_CARTO_RASTER_STYLE.layers.find((l) => l.id === 'contours') as { layout?: { visibility?: string } };
+		expect(layer.layout?.visibility).toBe('none');
 	});
 });
 

@@ -202,7 +202,23 @@ export interface OiCartoViewState extends OiCartoView {
     is3D?: boolean | undefined;
     /** Overlay noms de rues actif (alignement fond de carte PC-Tac) — persisté avec la vue. */
     streetLabelsOn?: boolean | undefined;
+    /** Overlay LiDAR HD actif (alignement PC-Tac) — persisté avec la vue. */
+    lidarLayer?: OiCartoLidarLayerId | null | undefined;
+    /** Fond topographique couleur Plan IGN v2 (alignement PC-Tac) — persisté avec la vue. */
+    planIgnOn?: boolean | undefined;
+    /** Overlay courbes de niveau (alignement PC-Tac) — persisté avec la vue. */
+    contoursOn?: boolean | undefined;
 }
+
+/**
+ * Overlay LiDAR HD sélectionné (alignement `@pctac/planmap/types.ts`,
+ * `LidarLayerId`), hors littéral `oi_cartographie.js` — introduit par ce
+ * chantier. `mnt` = sol nu, `mns` = sursol, `mnh` = hauteur de végétation.
+ * Union structurellement identique (mais déclarée indépendamment, cf. en-tête
+ * de fichier) à celle utilisée dans `constants.ts` (`LIDAR_LAYER_IDS`) — les
+ * deux fichiers restent des feuilles, sans import croisé.
+ */
+export type OiCartoLidarLayerId = 'mnt' | 'mns' | 'mnh';
 
 /**
  * `OICartoInternal` — surface INTERNE complète de l'objet littéral `OICarto`
@@ -232,6 +248,23 @@ export interface OICartoInternal extends OICartoContract {
      * frontière de persistance de `carto/` est `Store.state.formData.cartography`.
      */
     streetLabelsOn: boolean;
+    /**
+     * Overlay LiDAR HD actif (hors littéral `oi_cartographie.js`, alignement
+     * `@pctac/planmap/map-core.ts`) — `null` = aucun. Persisté avec la vue
+     * (`OiCartoViewState.lidarLayer`), pas en localStorage : seule frontière
+     * de persistance `carto/`.
+     */
+    lidarLayer: OiCartoLidarLayerId | null;
+    /**
+     * Fond topographique couleur Plan IGN v2 (hors littéral, alignement
+     * PC-Tac). Persisté avec la vue (`OiCartoViewState.planIgnOn`).
+     */
+    planIgnOn: boolean;
+    /**
+     * Overlay courbes de niveau (hors littéral, alignement PC-Tac). Persisté
+     * avec la vue (`OiCartoViewState.contoursOn`).
+     */
+    contoursOn: boolean;
     /**
      * Dernier type de pin posé par la roue de création (`_quickPlacePing`) —
      * proposé en « re-pose » rapide au sommet de la roue suivante (parité
@@ -415,6 +448,21 @@ export interface OICartoInternal extends OICartoContract {
     _ensureStreetLabelLayers(): boolean;
     _applyStreetLabelsVisibility(): void;
     _toggleStreetLabels(): void;
+
+    // --- Overlays LiDAR HD (map-core.ts, alignement PC-Tac, hors source) ---
+    _applyLidarVisibility(): void;
+    _setLidarLayer(id: OiCartoLidarLayerId | null): void;
+    _cycleLidarLayer(): void;
+    _initLidar(): void;
+    _updateLidarBtn(): void;
+
+    // --- Fond topo couleur (Plan IGN v2) + courbes de niveau (map-core.ts,
+    // alignement PC-Tac, hors source) ---
+    _applyTopoVisibility(): void;
+    _togglePlanIgn(): void;
+    _toggleContours(): void;
+    _initTopoLayers(): void;
+    _updateTopoBtns(): void;
 
     // --- Relief 3D + bâtiments (map-core.ts) ---
     _toggle3D(): void; // :1609

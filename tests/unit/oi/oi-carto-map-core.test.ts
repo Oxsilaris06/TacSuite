@@ -53,6 +53,7 @@ vi.mock('maplibre-gl', () => ({
     },
 }));
 
+import { LIDAR_OPACITY_OVER_IMAGERY, LIDAR_OPACITY_OVER_TOPO } from '../../../src/apps/oi/carto/constants.js';
 import { MapCoreMethods } from '../../../src/apps/oi/carto/map-core.js';
 import type { OICartoInternal } from '../../../src/apps/oi/carto/types.js';
 
@@ -77,6 +78,7 @@ function makeFakeMap(overrides: Record<string, unknown> = {}) {
         setSky: vi.fn(),
         getLayer: vi.fn(),
         setLayoutProperty: vi.fn(),
+        setPaintProperty: vi.fn(),
         ...overrides,
     };
 }
@@ -103,6 +105,10 @@ function makeFakeThis(overrides: Record<string, unknown> = {}): OICartoInternal 
         history: [],
         redoStack: [],
         _inlinePanelMove: null,
+        // Overlays IGN (hors littéral oi_cartographie.js, alignement PC-Tac).
+        lidarLayer: null,
+        planIgnOn: false,
+        contoursOn: false,
 
         // Enveloppe `_safe` neutre : n'attrape rien, retourne `fn` telle quelle.
         _safe: vi.fn((fn: (...a: never[]) => unknown) => fn),
@@ -124,6 +130,18 @@ function makeFakeThis(overrides: Record<string, unknown> = {}): OICartoInternal 
         _toggle3D: vi.fn(),
         _enable3D: vi.fn(),
         _disable3D: vi.fn(),
+
+        // --- Overlays IGN (map-core.ts, alignement PC-Tac, hors source) ---
+        _applyLidarVisibility: vi.fn(),
+        _setLidarLayer: vi.fn(),
+        _cycleLidarLayer: vi.fn(),
+        _initLidar: vi.fn(),
+        _updateLidarBtn: vi.fn(),
+        _applyTopoVisibility: vi.fn(),
+        _togglePlanIgn: vi.fn(),
+        _toggleContours: vi.fn(),
+        _initTopoLayers: vi.fn(),
+        _updateTopoBtns: vi.fn(),
 
         // --- Persistance (carto/state.ts, autre paquet) ---
         _getCartoState: vi.fn(() => null),
@@ -362,9 +380,17 @@ describe('_bindUi (oi_cartographie.js:419-500)', () => {
             <button id="oi_carto_btn_search"></button>
             <button id="oi_carto_btn_ping"></button>
             <button id="oi_carto_btn_draw"></button>
+            <button id="oi_carto_btn_layers" aria-controls="oi_carto_layers_panel"></button>
+            <div id="oi_carto_layers_panel"></div>
+            <button id="oi_carto_btn_more" aria-controls="oi_carto_more_tools"></button>
+            <div id="oi_carto_more_tools" hidden></div>
             <button id="oi_carto_btn_capture"></button>
             <button id="oi_carto_btn_labels"></button>
             <button id="oi_carto_btn_3d"></button>
+            <button id="oi_carto_btn_topo"></button>
+            <button id="oi_carto_btn_lidar"></button>
+            <button id="oi_carto_btn_contours"></button>
+            <button id="oi_carto_btn_streets"></button>
             <button id="oi_carto_btn_fullscreen"></button>
             <input id="oi_carto_address_input" type="text" />
             <button id="oi_carto_search_btn"></button>
@@ -389,6 +415,10 @@ describe('_bindUi (oi_cartographie.js:419-500)', () => {
         const toggle3D = vi.fn();
         const toggleFullscreen = vi.fn();
         const openCreatePinWheel = vi.fn();
+        const cycleLidarLayer = vi.fn();
+        const togglePlanIgn = vi.fn();
+        const toggleContours = vi.fn();
+        const toggleStreetLabels = vi.fn();
         const fakeMap = { getCenter: vi.fn(() => ({ lng: 2.1, lat: 48.1 })) };
         const fake = makeFakeThis({
             close,
@@ -400,6 +430,10 @@ describe('_bindUi (oi_cartographie.js:419-500)', () => {
             _toggle3D: toggle3D,
             _toggleFullscreen: toggleFullscreen,
             _openCreatePinWheel: openCreatePinWheel,
+            _cycleLidarLayer: cycleLidarLayer,
+            _togglePlanIgn: togglePlanIgn,
+            _toggleContours: toggleContours,
+            _toggleStreetLabels: toggleStreetLabels,
         });
 
         MapCoreMethods._bindUi.call(fake);
@@ -422,6 +456,59 @@ describe('_bindUi (oi_cartographie.js:419-500)', () => {
         expect(toggle3D).toHaveBeenCalledTimes(1);
         document.getElementById('oi_carto_btn_fullscreen')?.click();
         expect(toggleFullscreen).toHaveBeenCalledTimes(1);
+        // Panneau Calques (hors source, alignement PC-Tac) : LiDAR HD, Plan IGN, courbes, rues.
+        document.getElementById('oi_carto_btn_lidar')?.click();
+        expect(cycleLidarLayer).toHaveBeenCalledTimes(1);
+        document.getElementById('oi_carto_btn_topo')?.click();
+        expect(togglePlanIgn).toHaveBeenCalledTimes(1);
+        document.getElementById('oi_carto_btn_contours')?.click();
+        expect(toggleContours).toHaveBeenCalledTimes(1);
+        document.getElementById('oi_carto_btn_streets')?.click();
+        expect(toggleStreetLabels).toHaveBeenCalledTimes(1);
+    });
+
+    it('panneau « Calques » : ouverture ferme le tiroir « Plus » (exclusion mutuelle), Échap le referme sans fermer la modale', () => {
+        buildDom();
+        const fake = makeFakeThis();
+        MapCoreMethods._bindUi.call(fake);
+
+        const btnMore = document.getElementById('oi_carto_btn_more') as HTMLButtonElement;
+        const moreTools = document.getElementById('oi_carto_more_tools') as HTMLDivElement;
+        const btnLayers = document.getElementById('oi_carto_btn_layers') as HTMLButtonElement;
+        const layersPanel = document.getElementById('oi_carto_layers_panel') as HTMLDivElement;
+
+        btnMore.click();
+        expect(moreTools.hidden).toBe(false);
+
+        btnLayers.click();
+        expect(layersPanel.classList.contains('open')).toBe(true);
+        expect(btnLayers.getAttribute('aria-expanded')).toBe('true');
+        // Exclusion mutuelle : ouvrir le panneau Calques ferme le tiroir « Plus ».
+        expect(moreTools.hidden).toBe(true);
+        expect(btnMore.getAttribute('aria-expanded')).toBe('false');
+
+        const modal = document.getElementById('cartographyModal') as HTMLDialogElement;
+        const ev = new Event('cancel', { cancelable: true });
+        modal.dispatchEvent(ev);
+
+        expect(ev.defaultPrevented).toBe(true);
+        expect(layersPanel.classList.contains('open')).toBe(false);
+        expect(btnLayers.getAttribute('aria-expanded')).toBe('false');
+    });
+
+    it('panneau « Calques » : clic extérieur le referme', () => {
+        buildDom();
+        const fake = makeFakeThis();
+        MapCoreMethods._bindUi.call(fake);
+
+        const btnLayers = document.getElementById('oi_carto_btn_layers') as HTMLButtonElement;
+        const layersPanel = document.getElementById('oi_carto_layers_panel') as HTMLDivElement;
+
+        btnLayers.click();
+        expect(layersPanel.classList.contains('open')).toBe(true);
+
+        document.body.click();
+        expect(layersPanel.classList.contains('open')).toBe(false);
     });
 
     it('fullscreenchange / webkitfullscreenchange déclenchent _updateFullscreenIcon', () => {
@@ -1196,5 +1283,197 @@ describe('_disable3D (oi_cartographie.js:1652-1666)', () => {
 
         expect(() => MapCoreMethods._disable3D.call(fake)).not.toThrow();
         expect(fake.is3D).toBe(false);
+    });
+});
+
+// ---------------------------------------------------------------------------
+// 15. Overlays LiDAR HD (hors oi_cartographie.js — alignement PC-Tac,
+// cf. constants.ts LIDAR_HD_LAYERS). Persisté avec la vue (`_saveView`), pas
+// en localStorage — seule différence de fond avec le jumeau PC-Tac.
+// ---------------------------------------------------------------------------
+
+describe('Overlays LiDAR HD — _applyLidarVisibility / _setLidarLayer / _cycleLidarLayer', () => {
+    it('_applyLidarVisibility() n\'affiche QUE la couche active, masque les deux autres', () => {
+        const map = makeFakeMap({ getLayer: vi.fn(() => ({})) });
+        const updateBtn = vi.fn();
+        const fake = makeFakeThis({ map, lidarLayer: 'mns', _updateLidarBtn: updateBtn });
+
+        MapCoreMethods._applyLidarVisibility.call(fake);
+
+        expect(map.setLayoutProperty).toHaveBeenCalledWith('lidar-mnt', 'visibility', 'none');
+        expect(map.setLayoutProperty).toHaveBeenCalledWith('lidar-mns', 'visibility', 'visible');
+        expect(map.setLayoutProperty).toHaveBeenCalledWith('lidar-mnh', 'visibility', 'none');
+        expect(updateBtn).toHaveBeenCalledTimes(1);
+    });
+
+    it('_applyLidarVisibility() avec lidarLayer=null masque les trois couches', () => {
+        const map = makeFakeMap({ getLayer: vi.fn(() => ({})) });
+        const fake = makeFakeThis({ map, lidarLayer: null });
+
+        MapCoreMethods._applyLidarVisibility.call(fake);
+
+        for (const id of ['lidar-mnt', 'lidar-mns', 'lidar-mnh']) {
+            expect(map.setLayoutProperty).toHaveBeenCalledWith(id, 'visibility', 'none');
+        }
+    });
+
+    it('_applyLidarVisibility() sans carte ⇒ ne jette pas', () => {
+        const fake = makeFakeThis({ map: null });
+        expect(() => MapCoreMethods._applyLidarVisibility.call(fake)).not.toThrow();
+    });
+
+    it('_setLidarLayer() met à jour lidarLayer et persiste la vue', () => {
+        const applyVis = vi.fn();
+        const saveView = vi.fn();
+        const fake = makeFakeThis({ map: makeFakeMap(), _applyLidarVisibility: applyVis, _saveView: saveView });
+
+        MapCoreMethods._setLidarLayer.call(fake, 'mnt');
+        expect(fake.lidarLayer).toBe('mnt');
+
+        MapCoreMethods._setLidarLayer.call(fake, null);
+        expect(fake.lidarLayer).toBeNull();
+        expect(saveView).toHaveBeenCalledTimes(2);
+    });
+
+    it('_cycleLidarLayer() cycle aucun → mnt → mns → mnh → aucun', () => {
+        const fake = makeFakeThis({ map: makeFakeMap(), _setLidarLayer: MapCoreMethods._setLidarLayer, _saveView: vi.fn() });
+
+        const seen: (string | null)[] = [];
+        for (let i = 0; i < 4; i++) {
+            MapCoreMethods._cycleLidarLayer.call(fake);
+            seen.push(fake.lidarLayer);
+        }
+        expect(seen).toEqual(['mnt', 'mns', 'mnh', null]);
+    });
+
+    it('_cycleLidarLayer() sans carte ⇒ ne change rien', () => {
+        const setLayer = vi.fn();
+        const fake = makeFakeThis({ map: null, _setLidarLayer: setLayer });
+
+        MapCoreMethods._cycleLidarLayer.call(fake);
+
+        expect(setLayer).not.toHaveBeenCalled();
+    });
+
+    it('_updateLidarBtn() reflète la couche active sur le bouton (classe, titre, pastille)', () => {
+        document.body.innerHTML = '<button id="oi_carto_btn_lidar"><span class="oi-carto-fab-badge"></span></button>';
+        const fake = makeFakeThis({ lidarLayer: 'mnt' });
+
+        MapCoreMethods._updateLidarBtn.call(fake);
+
+        const btn = document.getElementById('oi_carto_btn_lidar');
+        expect(btn?.classList.contains('active')).toBe(true);
+        expect(btn?.title).toContain('MNT');
+        expect(btn?.querySelector('.oi-carto-fab-badge')?.textContent).toBe('MNT');
+    });
+
+    it('_updateLidarBtn() à l\'arrêt : bouton inactif et pastille vide', () => {
+        document.body.innerHTML = '<button id="oi_carto_btn_lidar" class="active"><span class="oi-carto-fab-badge">MNH</span></button>';
+        const fake = makeFakeThis({ lidarLayer: null });
+
+        MapCoreMethods._updateLidarBtn.call(fake);
+
+        const btn = document.getElementById('oi_carto_btn_lidar');
+        expect(btn?.classList.contains('active')).toBe(false);
+        expect(btn?.querySelector('.oi-carto-fab-badge')?.textContent).toBe('');
+    });
+
+    it('_updateLidarBtn() sans bouton dans le DOM ⇒ ne jette pas', () => {
+        document.body.innerHTML = '';
+        const fake = makeFakeThis();
+        expect(() => MapCoreMethods._updateLidarBtn.call(fake)).not.toThrow();
+    });
+});
+
+// ---------------------------------------------------------------------------
+// 16. Fond topo couleur (Plan IGN v2) + courbes de niveau (hors
+// oi_cartographie.js — alignement PC-Tac). Point sensible : l'opacité de
+// l'ombrage LiDAR SUIT le fond, ce qui couple `_applyTopoVisibility` à
+// `_applyLidarVisibility`.
+// ---------------------------------------------------------------------------
+
+describe('Fond topo & courbes — _applyTopoVisibility / _togglePlanIgn / _toggleContours', () => {
+    it('_applyTopoVisibility() applique les DEUX bascules indépendamment', () => {
+        const map = makeFakeMap({ getLayer: vi.fn(() => ({})) });
+        const fake = makeFakeThis({ map, planIgnOn: true, contoursOn: false });
+
+        MapCoreMethods._applyTopoVisibility.call(fake);
+
+        expect(map.setLayoutProperty).toHaveBeenCalledWith('planign', 'visibility', 'visible');
+        expect(map.setLayoutProperty).toHaveBeenCalledWith('contours', 'visibility', 'none');
+    });
+
+    // Le couplage qui fait tout l'intérêt du mode : sur le Plan IGN l'ombrage
+    // s'efface pour laisser lire les couleurs, sur l'imagerie il domine.
+    it('l\'opacité de l\'ombrage LiDAR suit le fond : 0,45 sur Plan IGN, 0,85 sur imagerie', () => {
+        const map = makeFakeMap({ getLayer: vi.fn(() => ({})) });
+        const fake = makeFakeThis({
+            map, lidarLayer: 'mnt', planIgnOn: true,
+            _applyLidarVisibility: MapCoreMethods._applyLidarVisibility,
+        });
+
+        MapCoreMethods._applyTopoVisibility.call(fake);
+        expect(map.setPaintProperty).toHaveBeenCalledWith('lidar-mnt', 'raster-opacity', LIDAR_OPACITY_OVER_TOPO);
+
+        map.setPaintProperty.mockClear();
+        fake.planIgnOn = false;
+        MapCoreMethods._applyTopoVisibility.call(fake);
+        expect(map.setPaintProperty).toHaveBeenCalledWith('lidar-mnt', 'raster-opacity', LIDAR_OPACITY_OVER_IMAGERY);
+    });
+
+    it('_applyTopoVisibility() sans carte ⇒ ne jette pas', () => {
+        const fake = makeFakeThis({ map: null });
+        expect(() => MapCoreMethods._applyTopoVisibility.call(fake)).not.toThrow();
+    });
+
+    it('_togglePlanIgn() bascule l\'état et persiste la vue', () => {
+        const saveView = vi.fn();
+        const fake = makeFakeThis({ map: makeFakeMap(), _saveView: saveView });
+
+        MapCoreMethods._togglePlanIgn.call(fake);
+        expect(fake.planIgnOn).toBe(true);
+
+        MapCoreMethods._togglePlanIgn.call(fake);
+        expect(fake.planIgnOn).toBe(false);
+        expect(saveView).toHaveBeenCalledTimes(2);
+    });
+
+    it('_toggleContours() bascule l\'état et persiste la vue, sans toucher au fond', () => {
+        const saveView = vi.fn();
+        const fake = makeFakeThis({ map: makeFakeMap(), planIgnOn: true, _saveView: saveView });
+
+        MapCoreMethods._toggleContours.call(fake);
+
+        expect(fake.contoursOn).toBe(true);
+        expect(saveView).toHaveBeenCalledTimes(1);
+        expect(fake.planIgnOn).toBe(true);
+    });
+
+    it('les deux bascules sans carte ⇒ aucun changement d\'état', () => {
+        const fake = makeFakeThis({ map: null });
+
+        MapCoreMethods._togglePlanIgn.call(fake);
+        MapCoreMethods._toggleContours.call(fake);
+
+        expect(fake.planIgnOn).toBe(false);
+        expect(fake.contoursOn).toBe(false);
+    });
+
+    it('_updateTopoBtns() reflète les deux états sur leurs boutons respectifs', () => {
+        document.body.innerHTML = '<button id="oi_carto_btn_topo"></button><button id="oi_carto_btn_contours"></button>';
+        const fake = makeFakeThis({ planIgnOn: true, contoursOn: false });
+
+        MapCoreMethods._updateTopoBtns.call(fake);
+
+        expect(document.getElementById('oi_carto_btn_topo')?.classList.contains('active')).toBe(true);
+        expect(document.getElementById('oi_carto_btn_topo')?.title).toContain('imagerie satellite');
+        expect(document.getElementById('oi_carto_btn_contours')?.classList.contains('active')).toBe(false);
+        expect(document.getElementById('oi_carto_btn_contours')?.title).toBe('Afficher les courbes de niveau');
+    });
+
+    it('_updateTopoBtns() sans boutons dans le DOM ⇒ ne jette pas', () => {
+        document.body.innerHTML = '';
+        const fake = makeFakeThis();
+        expect(() => MapCoreMethods._updateTopoBtns.call(fake)).not.toThrow();
     });
 });

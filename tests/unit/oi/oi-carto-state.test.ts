@@ -188,6 +188,11 @@ describe('createOICartoState (oi_cartographie.js:270-282)', () => {
         expect(state.drawState).toBeNull();
         expect(state.history).toEqual([]);
         expect(state.redoStack).toEqual([]);
+        // Hors littéral oi_cartographie.js (alignement PC-Tac) : aucune couche
+        // IGN active au premier lancement.
+        expect(state.lidarLayer).toBeNull();
+        expect(state.planIgnOn).toBe(false);
+        expect(state.contoursOn).toBe(false);
     });
 
     it('deux appels produisent des références indépendantes (markers/history/redoStack)', () => {
@@ -334,14 +339,14 @@ describe('_loadView / _saveView (oi_cartographie.js:374-393)', () => {
         expect(() => PersistMethods._saveView.call(fake)).not.toThrow();
     });
 
-    it('_saveView : persiste exactement { center:[lng,lat], zoom, pitch, bearing, is3D, streetLabelsOn }', () => {
+    it('_saveView : persiste exactement { center:[lng,lat], zoom, pitch, bearing, is3D, streetLabelsOn, lidarLayer, planIgnOn, contoursOn }', () => {
         const map = makeFakeMap({
             getCenter: vi.fn(() => ({ lng: 4.835, lat: 45.764 })),
             getZoom: vi.fn(() => 12.5),
             getPitch: vi.fn(() => 45),
             getBearing: vi.fn(() => 90),
         });
-        const fake = makeFakeThis({ map, is3D: true });
+        const fake = makeFakeThis({ map, is3D: true, lidarLayer: 'mnt', planIgnOn: true, contoursOn: true });
 
         PersistMethods._saveView.call(fake);
 
@@ -352,6 +357,9 @@ describe('_loadView / _saveView (oi_cartographie.js:374-393)', () => {
             bearing: 90,
             is3D: true,
             streetLabelsOn: false,
+            lidarLayer: 'mnt',
+            planIgnOn: true,
+            contoursOn: true,
         });
     });
 
@@ -365,7 +373,10 @@ describe('_loadView / _saveView (oi_cartographie.js:374-393)', () => {
         PersistMethods._saveView.call(fake);
         const reloaded = PersistMethods._loadView.call(fake);
 
-        expect(reloaded).toEqual({ center: [1.2, 43.6], zoom: 8, pitch: 0, bearing: 0, is3D: false, streetLabelsOn: false });
+        expect(reloaded).toEqual({
+            center: [1.2, 43.6], zoom: 8, pitch: 0, bearing: 0, is3D: false, streetLabelsOn: false,
+            lidarLayer: null, planIgnOn: false, contoursOn: false,
+        });
     });
 
     it('_loadView : vue persistée avec center non-tableau (état corrompu) ⇒ repli par défaut', () => {

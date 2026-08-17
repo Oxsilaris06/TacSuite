@@ -177,6 +177,7 @@ export const CaptureMethods = {
             document.querySelector<HTMLElement>('.oi-carto-toolbar'),
             document.getElementById('oi_carto_draw_dock'),
             document.getElementById('oi_carto_search_panel'),
+            document.getElementById('oi_carto_layers_panel'),
             document.getElementById('oi_carto_hint'),
             this._activeWheel?.element ?? null,
             this._inlinePanel,

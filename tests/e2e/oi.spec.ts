@@ -759,27 +759,38 @@ test.describe('OI — Checklist fonctionnelle (docs/recon-oi.md §9)', () => {
   // ------------------------------------------------------------------
   // Cartographie OI (MapLibre)
   // ------------------------------------------------------------------
-  test('Cartographie — ouverture/fermeture modale + toolbar 4 FABs + tiroir « Plus »', async ({ page }) => {
+  test('Cartographie — ouverture/fermeture modale + toolbar 5 FABs + panneau Calques + tiroir « Plus »', async ({ page }) => {
     await step('ouverture (#cartographyBtn dock → OICarto.open, id-based addEventListener)', async () => {
       await page.locator('#cartographyBtn').click();
       await expect.soft(page.locator('#cartographyModal')).toBeVisible({ timeout: 2000 });
       await expect.soft(page.locator('canvas.maplibregl-canvas')).toBeVisible({ timeout: 3000 });
     });
-    await step('FABs primaires visibles, tiroir replié', async () => {
+    await step('FABs primaires visibles, panneau et tiroir repliés', async () => {
       for (const id of [
-        'oi_carto_btn_search', 'oi_carto_btn_ping', 'oi_carto_btn_draw',
+        'oi_carto_btn_search', 'oi_carto_btn_ping', 'oi_carto_btn_draw', 'oi_carto_btn_layers',
         'oi_carto_btn_fullscreen', 'oi_carto_btn_more',
       ]) {
         await expect.soft(page.locator(`#${id}`)).toBeVisible();
       }
       await expect.soft(page.locator('#oi_carto_more_tools')).toBeHidden();
+      await expect.soft(page.locator('#oi_carto_layers_panel')).toBeHidden();
     });
-    await step('tiroir « Plus » : ouverture, outils secondaires, fermeture Échap', async () => {
-      await page.locator('#oi_carto_btn_more').click();
+    await step('panneau « Calques » : ouverture, fond de carte / surimpressions / vue, fermeture Échap', async () => {
+      await page.locator('#oi_carto_btn_layers').click();
       for (const id of [
-        'oi_carto_btn_3d', 'oi_carto_btn_capture', 'oi_carto_btn_streets',
-        'oi_carto_btn_labels',
+        'oi_carto_btn_topo', 'oi_carto_btn_lidar', 'oi_carto_btn_contours',
+        'oi_carto_btn_streets', 'oi_carto_btn_3d',
       ]) {
+        await expect.soft(page.locator(`#${id}`)).toBeVisible();
+      }
+      await page.keyboard.press('Escape');
+      await expect.soft(page.locator('#oi_carto_layers_panel')).toBeHidden();
+      // Échap intercepté par le panneau : la modale reste ouverte
+      await expect.soft(page.locator('#cartographyModal')).toBeVisible();
+    });
+    await step('tiroir « Plus » : ouverture, capture + libellés, fermeture Échap', async () => {
+      await page.locator('#oi_carto_btn_more').click();
+      for (const id of ['oi_carto_btn_capture', 'oi_carto_btn_labels']) {
         await expect.soft(page.locator(`#${id}`)).toBeVisible();
       }
       await page.keyboard.press('Escape');

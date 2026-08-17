@@ -782,7 +782,8 @@ Gestuelle et visuelle entre les éléments INDIA</textarea>
                     «&nbsp;48.8566, 2.3522&nbsp;»</div>
             </div>
 
-            <!-- Toolbar unifiée (pattern PC-Tac U24) : 4 FABs primaires + tiroir « Plus » + Fermer -->
+            <!-- Toolbar unifiée (pattern PC-Tac U24, réconciliée git show 0c42d49) :
+                 5 FABs primaires (dont Calques) + tiroir « Plus » (actions) + Fermer -->
             <div class="oi-carto-toolbar">
                 <button type="button" id="oi_carto_btn_search" class="oi-carto-fab"
                     title="Recherche adresse / coordonnées GPS" aria-label="Rechercher une adresse ou des coordonnées GPS">
@@ -795,26 +796,23 @@ Gestuelle et visuelle entre les éléments INDIA</textarea>
                 <button type="button" id="oi_carto_btn_draw" class="oi-carto-fab" title="Outils de dessin" aria-label="Ouvrir les outils de dessin">
                     <span class="material-symbols-outlined">draw</span>
                 </button>
+                <button type="button" id="oi_carto_btn_layers" class="oi-carto-fab"
+                    title="Calques et fond de carte" aria-label="Afficher les calques et le fond de carte"
+                    aria-expanded="false" aria-controls="oi_carto_layers_panel">
+                    <span class="material-symbols-outlined">layers</span>
+                </button>
                 <button type="button" id="oi_carto_btn_fullscreen" class="oi-carto-fab" title="Plein écran" aria-label="Basculer le plein écran">
                     <span class="material-symbols-outlined">fullscreen</span>
                 </button>
                 <button type="button" id="oi_carto_btn_more" class="oi-carto-fab"
-                    title="Plus d'outils (3D, capture, noms de rues, libellés, légende)" aria-label="Afficher plus d'outils"
+                    title="Plus d'outils (capture, libellés des pins)" aria-label="Afficher plus d'outils"
                     aria-expanded="false" aria-controls="oi_carto_more_tools">
                     <span class="material-symbols-outlined">more_horiz</span>
                 </button>
                 <div id="oi_carto_more_tools" hidden>
-                    <button type="button" id="oi_carto_btn_3d" class="oi-carto-fab"
-                        title="Basculer vue 2D / 3D relief" aria-label="Basculer entre vue 2D et 3D">
-                        <span class="material-symbols-outlined">deployed_code</span>
-                    </button>
                     <button type="button" id="oi_carto_btn_capture" class="oi-carto-fab"
                         title="Capture de la carte (télécharger ou exporter vers un champ photo)" aria-label="Capturer la carte">
                         <span class="material-symbols-outlined">photo_camera</span>
-                    </button>
-                    <button type="button" id="oi_carto_btn_streets" class="oi-carto-fab"
-                        title="Afficher les noms de rues" aria-label="Afficher ou masquer les noms de rues">
-                        <span class="material-symbols-outlined">signpost</span>
                     </button>
                     <button type="button" id="oi_carto_btn_labels" class="oi-carto-fab"
                         title="Afficher / masquer les libellés des pins" aria-label="Afficher ou masquer les libellés des pins">
@@ -825,6 +823,56 @@ Gestuelle et visuelle entre les éléments INDIA</textarea>
                     title="Fermer la cartographie" aria-label="Fermer la cartographie">
                     <span class="material-symbols-outlined">close</span>
                 </button>
+            </div>
+
+            <!-- Panneau Calques (ouvert via le FAB Calques) : fond de carte + surimpressions + vue,
+                 pattern PC-Tac (git show 0c42d49) transposé aux ids oi_carto_*. -->
+            <div id="oi_carto_layers_panel">
+                <div class="oi-layers-section">
+                    <p class="oi-layers-section-title">Fond de carte</p>
+                    <div class="oi-layers-row">
+                        <button type="button" id="oi_carto_btn_topo" class="oi-carto-fab"
+                            title="Fond Plan IGN (carte topographique couleur)" aria-label="Basculer entre le fond imagerie satellite et le fond Plan IGN couleur">
+                            <span class="material-symbols-outlined">map</span>
+                        </button>
+                        <span class="oi-layers-label">Plan IGN couleur</span>
+                    </div>
+                </div>
+                <div class="oi-layers-section">
+                    <p class="oi-layers-section-title">Surimpressions</p>
+                    <div class="oi-layers-row">
+                        <button type="button" id="oi_carto_btn_lidar" class="oi-carto-fab"
+                            title="Ombrage LiDAR HD (relief sous la végétation)" aria-label="Basculer l'ombrage LiDAR HD : MNT, MNS, MNH ou aucun">
+                            <span class="material-symbols-outlined">landslide</span>
+                            <span class="oi-carto-fab-badge" aria-hidden="true"></span>
+                        </button>
+                        <span class="oi-layers-label">Ombrage LiDAR HD</span>
+                    </div>
+                    <div class="oi-layers-row">
+                        <button type="button" id="oi_carto_btn_contours" class="oi-carto-fab"
+                            title="Afficher les courbes de niveau" aria-label="Afficher ou masquer les courbes de niveau">
+                            <span class="material-symbols-outlined">altitude</span>
+                        </button>
+                        <span class="oi-layers-label">Courbes de niveau</span>
+                    </div>
+                    <div class="oi-layers-row">
+                        <button type="button" id="oi_carto_btn_streets" class="oi-carto-fab"
+                            title="Afficher les noms de rues" aria-label="Afficher ou masquer les noms de rues">
+                            <span class="material-symbols-outlined">signpost</span>
+                        </button>
+                        <span class="oi-layers-label">Noms de rues</span>
+                    </div>
+                </div>
+                <div class="oi-layers-section">
+                    <p class="oi-layers-section-title">Vue</p>
+                    <div class="oi-layers-row">
+                        <button type="button" id="oi_carto_btn_3d" class="oi-carto-fab"
+                            title="Basculer vue 2D / 3D relief" aria-label="Basculer entre vue 2D et 3D">
+                            <span class="material-symbols-outlined">deployed_code</span>
+                        </button>
+                        <span class="oi-layers-label">Relief 3D</span>
+                    </div>
+                </div>
             </div>
 
             <!-- Dock dessin réductible (ouvert via le FAB Dessin) -->

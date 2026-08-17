@@ -3914,6 +3914,88 @@ body.up-kb-open .up-kb-aware {
             background: var(--accent-glow);
         }
 
+        /* Pastille du FAB LiDAR HD : rappelle la couche active (MNT/MNS/MNH).
+           Vide (donc invisible) quand aucun ombrage n'est affiché. Alignement
+           PC-Tac (.plan-fab-badge) — ne redéfinit jamais .oi-carto-fab, seul
+           l'ancrage du bouton précis change (position: relative). */
+        #oi_carto_btn_lidar {
+            position: relative;
+        }
+
+        .oi-carto-fab-badge:empty {
+            display: none;
+        }
+
+        .oi-carto-fab-badge {
+            position: absolute;
+            bottom: 2px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-family: var(--font-data, ui-monospace, monospace);
+            font-size: 8px;
+            font-weight: 700;
+            letter-spacing: 0.5px;
+            line-height: 1;
+            pointer-events: none;
+        }
+
+        /* Panneau Calques (fond de carte + surimpressions + vue) — ouvert via le
+           FAB Calques. Ancrage compact collé au rail, même emplacement que le
+           dock dessin/panneau recherche ci-dessous. Ne redéfinit jamais
+           .oi-carto-fab : les FABs gardent leur taille, seul le libellé s'ajoute.
+           Fond translucide + flou (idiome OI : color-mix sur --bg-container,
+           correct clair/sombre sans couleur en dur, cf. .modal-footer). */
+        #oi_carto_layers_panel {
+            position: absolute;
+            top: 12px;
+            right: 74px;
+            z-index: var(--z-panel);
+            display: none;
+            flex-direction: column;
+            gap: var(--space-2);
+            width: 220px;
+            max-width: calc(100% - 90px);
+            max-height: calc(100% - 24px);
+            overflow-y: auto;
+            background: color-mix(in srgb, var(--bg-container) 92%, transparent);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-md);
+            padding: 10px;
+            box-shadow: var(--shadow-lg);
+        }
+
+        #oi_carto_layers_panel.open {
+            display: flex;
+        }
+
+        .oi-layers-section-title {
+            margin: 6px 0 2px;
+            font-family: var(--font-ui);
+            font-size: 0.7em;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--text-muted);
+        }
+
+        .oi-layers-section:first-child .oi-layers-section-title {
+            margin-top: 0;
+        }
+
+        .oi-layers-row {
+            display: flex;
+            align-items: center;
+            gap: var(--space-2);
+        }
+
+        .oi-layers-label {
+            font-family: var(--font-ui);
+            font-size: 0.85em;
+            color: var(--text-primary);
+        }
+
         /* Dock dessin réductible — bande verticale compacte, à gauche des FABs */
         #oi_carto_draw_dock {
             position: absolute;
@@ -4406,6 +4488,31 @@ body.up-kb-open .up-kb-aware {
             /* Dock dessin ouvert : masquer la légende (même règle que PC-Tac) */
             #oi_carto_draw_dock.open ~ .oi-carto-legend {
                 display: none;
+            }
+
+            /* Panneau Calques en feuille compacte, ancrée au même bord que le
+               rail : ne doit ni déborder ni couvrir le centre de la carte,
+               défilement interne si le contenu dépasse. La modale carto OI est
+               plus contrainte qu'en pleine page (PC-Tac) : valeurs éprouvées
+               reprises telles quelles (`git show 9693e01`) — largeur 194px,
+               libellés resserrés sur une ligne, fond plus translucide/flouté. */
+            #oi_carto_layers_panel {
+                right: 64px;
+                width: 194px;
+                max-width: calc(100% - 74px);
+                max-height: 55%;
+                background: color-mix(in srgb, var(--bg-container) 80%, transparent);
+                backdrop-filter: blur(14px);
+                -webkit-backdrop-filter: blur(14px);
+            }
+
+            .oi-layers-row {
+                gap: 8px;
+            }
+
+            .oi-layers-label {
+                font-size: 0.74em;
+                line-height: 1.15;
             }
         }
 
