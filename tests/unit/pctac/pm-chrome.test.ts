@@ -69,6 +69,8 @@ function createFakePlanMap(overrides: Record<string, unknown> = {}): {
         _openCreatePingWheel: vi.fn(),
         _toggleStreetLabels: vi.fn(),
         _cycleLidarLayer: vi.fn(),
+        _togglePlanIgn: vi.fn(),
+        _toggleContours: vi.fn(),
         _startAoiFraming: vi.fn(),
         ...overrides,
     };
@@ -136,6 +138,23 @@ describe('ChromeMethods — les 9 méthodes ne jettent pas quand le DOM est abse
     it('_bindUi (planMap.js:695)', () => {
         const { instance } = createFakePlanMap();
         expect(() => instance._bindUi()).not.toThrow();
+    });
+
+    // Hors planMap.js : fond topo couleur et courbes de niveau, deux bascules
+    // indépendantes composables avec l'ombrage LiDAR.
+    it('_bindUi câble #plan_btn_topo et #plan_btn_contours sur leurs bascules', () => {
+        document.body.innerHTML = '<button id="plan_btn_topo"></button><button id="plan_btn_contours"></button>';
+        const togglePlanIgn = vi.fn();
+        const toggleContours = vi.fn();
+        const { instance } = createFakePlanMap({ _togglePlanIgn: togglePlanIgn, _toggleContours: toggleContours });
+
+        instance._bindUi();
+        document.getElementById('plan_btn_topo')?.dispatchEvent(new MouseEvent('click'));
+        document.getElementById('plan_btn_contours')?.dispatchEvent(new MouseEvent('click'));
+
+        expect(togglePlanIgn).toHaveBeenCalledTimes(1);
+        expect(toggleContours).toHaveBeenCalledTimes(1);
+        document.body.innerHTML = '';
     });
 
     // Hors planMap.js : bouton d'ombrage LiDAR HD (cyclage MNT/MNS/MNH/aucun).

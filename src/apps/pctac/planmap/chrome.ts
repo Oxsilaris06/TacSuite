@@ -125,6 +125,14 @@ export const ChromeMethods = {
         const lidarBtn = document.getElementById('plan_btn_lidar');
         if (lidarBtn) lidarBtn.onclick = () => this._cycleLidarLayer();
 
+        // Fond topo couleur (Plan IGN v2) et courbes de niveau : deux bascules
+        // indépendantes, composables avec l'ombrage LiDAR.
+        const topoBtn = document.getElementById('plan_btn_topo');
+        if (topoBtn) topoBtn.onclick = () => this._togglePlanIgn();
+
+        const contoursBtn = document.getElementById('plan_btn_contours');
+        if (contoursBtn) contoursBtn.onclick = () => this._toggleContours();
+
         // Téléchargement carte d'une zone d'opération (AOI) hors-ligne (CONTRAT C4).
         const aoiBtn = document.getElementById('plan_btn_aoi');
         if (aoiBtn) aoiBtn.onclick = () => this._startAoiFraming();

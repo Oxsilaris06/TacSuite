@@ -398,6 +398,11 @@ describe('tiles.ts — styleTileTemplates (planMap.js:132-155)', () => {
         }
     });
 
+    it('extraSourceIds accepte plusieurs sources (fond topo + courbes + ombrage)', () => {
+        const ids = styleTileTemplates(['planign', 'contours', 'lidar-mnt']).map(t => t.id);
+        expect(ids).toEqual(['satellite', 'ign-ortho', 'terrain-dem', 'planign', 'contours', 'lidar-mnt']);
+    });
+
     it('extraSourceIds inconnu du style ⇒ ignoré (liste de base inchangée)', () => {
         expect(styleTileTemplates(['inexistante']).map(t => t.id))
             .toEqual(['satellite', 'ign-ortho', 'terrain-dem']);

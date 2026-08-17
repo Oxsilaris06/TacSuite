@@ -24,7 +24,7 @@ import { SafeMethods, createPlanMapState } from '../../../src/apps/pctac/planmap
 import type { PlanMapInternal } from '../../../src/apps/pctac/planmap/types.js';
 
 describe('state.ts — createPlanMapState() (planMap.js:301-328 + ad hoc §3.2)', () => {
-    it('retourne exactement les 58 clés attendues, avec les bonnes valeurs initiales', () => {
+    it('retourne exactement les 60 clés attendues, avec les bonnes valeurs initiales', () => {
         const s = createPlanMapState();
 
         // Décompte exhaustif : 27 (littéral, planMap.js:302-328 — vérifié par lecture
@@ -97,11 +97,13 @@ describe('state.ts — createPlanMapState() (planMap.js:301-328 + ad hoc §3.2)'
                 'AOI_MAX_Z',
                 // 1 adapter de persistance (mission R3-c, hors littéral)
                 'persistence',
-                // 1 overlay LiDAR HD actif (hors littéral planMap.js)
+                // 1 overlay LiDAR HD actif + 2 bascules topo (hors littéral planMap.js)
                 'lidarLayer',
+                'planIgnOn',
+                'contoursOn',
             ].sort(),
         );
-        expect(Object.keys(s)).toHaveLength(58);
+        expect(Object.keys(s)).toHaveLength(60);
     });
 
     it('`persistence` : adapter fonctionnel posé par défaut (mission R3-c) — round-trip pins/shapes via localStorage', () => {
@@ -138,6 +140,8 @@ describe('state.ts — createPlanMapState() (planMap.js:301-328 + ad hoc §3.2)'
         expect(s.streetLabelsOn).toBe(false);
         // Hors littéral planMap.js : aucun ombrage LiDAR HD au premier lancement.
         expect(s.lidarLayer).toBeNull();
+        expect(s.planIgnOn).toBe(false);
+        expect(s.contoursOn).toBe(false);
         expect(s._selectedShapeId).toBeNull();
         expect(s._handleMarkers).toEqual([]);
         expect(s._textMarkers).toEqual([]);
@@ -280,16 +284,20 @@ describe('constants.ts — RASTER_STYLE (planMap.js:43-113 + overlays LiDAR HD)'
             'openfreemap',
             'bdtopo',
             // Ajout hors planMap.js : ombrages LiDAR HD (constants.ts).
+            'planign',
+            'contours',
             'lidar-mnt',
             'lidar-mns',
             'lidar-mnh',
         ]);
     });
 
-    it('2 couches planMap.js + les 3 couches LiDAR HD, dans cet ordre', () => {
-        expect(RASTER_STYLE.layers).toHaveLength(5);
+    // L'ORDRE est le contrat visuel : la couleur en bas (imagerie puis fond topo),
+    // le relief au milieu (ombrages LiDAR), les lignes toujours lisibles au-dessus.
+    it('2 couches planMap.js + fond topo + 3 ombrages + courbes, dans cet ordre', () => {
+        expect(RASTER_STYLE.layers).toHaveLength(7);
         expect(RASTER_STYLE.layers.map((l) => l.id)).toEqual([
-            'satellite', 'ign-ortho', 'lidar-mnt', 'lidar-mns', 'lidar-mnh',
+            'satellite', 'ign-ortho', 'planign', 'lidar-mnt', 'lidar-mns', 'lidar-mnh', 'contours',
         ]);
     });
 

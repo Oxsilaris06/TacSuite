@@ -58,7 +58,17 @@ import type {
     SkySpecification,
 } from 'maplibre-gl';
 
-import { LIDAR_HD_LAYERS, LIDAR_KEY, LIDAR_LAYER_IDS, RASTER_STYLE, VIEW_KEY } from './constants.js';
+import {
+    CONTOURS_KEY,
+    LIDAR_HD_LAYERS,
+    LIDAR_KEY,
+    LIDAR_LAYER_IDS,
+    LIDAR_OPACITY_OVER_IMAGERY,
+    LIDAR_OPACITY_OVER_TOPO,
+    PLANIGN_KEY,
+    RASTER_STYLE,
+    VIEW_KEY,
+} from './constants.js';
 import { prefetchFranceTiles } from './tiles.js';
 import type { LidarLayerId, PlanMapInternal, PlanView } from './types.js';
 import { toast } from '@shared/feedback.js';
@@ -131,6 +141,9 @@ export const MapCoreMethods = {
             this._renderShapes();
             this._renderShapeTexts();
             this._initStreetLabels();
+            // Le fond AVANT l'ombrage : `_applyLidarVisibility` lit `planIgnOn`
+            // pour choisir l'opacité, il doit donc déjà être restauré.
+            this._initTopoLayers();
             this._initLidar();
         });
 
@@ -470,13 +483,17 @@ export const MapCoreMethods = {
      * l'imagerie mais SOUS tout ce qui est ajouté après `load` (dessins, pings,
      * bâtiments 3D, noms de rues). Basculer se réduit donc à une visibilité. */
 
-    /** Applique la visibilité des 3 couches (une seule active au plus) + le bouton. */
+    /** Applique la visibilité des 3 couches (une seule active au plus) + le bouton.
+     *  L'opacité suit le FOND : sur l'imagerie l'ombrage domine, sur le Plan IGN
+     *  il s'efface pour laisser lire les couleurs et les figurés de la carte. */
     _applyLidarVisibility(this: PlanMapInternal): void {
         if (!this.map) return;
+        const opacity = this.planIgnOn ? LIDAR_OPACITY_OVER_TOPO : LIDAR_OPACITY_OVER_IMAGERY;
         for (const id of LIDAR_LAYER_IDS) {
             const layerId = LIDAR_HD_LAYERS[id].sourceId;
             if (!this.map.getLayer(layerId)) continue;
             this.map.setLayoutProperty(layerId, 'visibility', this.lidarLayer === id ? 'visible' : 'none');
+            this.map.setPaintProperty(layerId, 'raster-opacity', opacity);
         }
         this._updateLidarBtn();
     },
@@ -527,5 +544,66 @@ export const MapCoreMethods = {
         // Repère textuel du mode courant sur la pastille du FAB.
         const badge = btn.querySelector('.plan-fab-badge');
         if (badge) badge.textContent = cur ? cur.toUpperCase() : '';
+    },
+
+    /* ----- FOND TOPO COULEUR + COURBES DE NIVEAU (IGN, keyless) -----
+     * HORS planMap.js. Deux bascules INDÉPENDANTES, déclarées masquées dans
+     * `RASTER_STYLE` comme les ombrages : le Plan IGN v2 apporte la couleur que
+     * le LiDAR HD n'a pas (l'IGN ne publie que des ombrages gris), les courbes
+     * apportent la cote altimétrique. Les trois se composent librement — le
+     * trio « Plan IGN + ombrage MNT + courbes » donne la carte de terrain
+     * ombrée classique, mais les courbes seules sur l'ortho marchent aussi. */
+
+    _applyTopoVisibility(this: PlanMapInternal): void {
+        if (!this.map) return;
+        if (this.map.getLayer('planign')) {
+            this.map.setLayoutProperty('planign', 'visibility', this.planIgnOn ? 'visible' : 'none');
+        }
+        if (this.map.getLayer('contours')) {
+            this.map.setLayoutProperty('contours', 'visibility', this.contoursOn ? 'visible' : 'none');
+        }
+        // Le fond conditionne l'opacité de l'ombrage LiDAR (cf. _applyLidarVisibility).
+        this._applyLidarVisibility();
+        this._updateTopoBtns();
+    },
+
+    _togglePlanIgn(this: PlanMapInternal): void {
+        if (!this.map) return;
+        this.planIgnOn = !this.planIgnOn;
+        this._applyTopoVisibility();
+        try { localStorage.setItem(PLANIGN_KEY, this.planIgnOn ? '1' : '0'); } catch { /* non bloquant */ }
+        toast(this.planIgnOn ? 'Fond Plan IGN (couleur)' : 'Fond imagerie satellite', { kind: 'info' });
+    },
+
+    _toggleContours(this: PlanMapInternal): void {
+        if (!this.map) return;
+        this.contoursOn = !this.contoursOn;
+        this._applyTopoVisibility();
+        try { localStorage.setItem(CONTOURS_KEY, this.contoursOn ? '1' : '0'); } catch { /* non bloquant */ }
+        toast(this.contoursOn ? 'Courbes de niveau affichées' : 'Courbes de niveau masquées', { kind: 'info' });
+    },
+
+    /** Restaure les deux bascules persistées au chargement de la carte. */
+    _initTopoLayers(this: PlanMapInternal): void {
+        try { this.planIgnOn = localStorage.getItem(PLANIGN_KEY) === '1'; } catch { this.planIgnOn = false; }
+        try { this.contoursOn = localStorage.getItem(CONTOURS_KEY) === '1'; } catch { this.contoursOn = false; }
+        this._applyTopoVisibility();
+    },
+
+    _updateTopoBtns(this: PlanMapInternal): void {
+        const topoBtn = document.getElementById('plan_btn_topo');
+        if (topoBtn) {
+            topoBtn.classList.toggle('active', this.planIgnOn);
+            topoBtn.title = this.planIgnOn
+                ? 'Revenir au fond imagerie satellite'
+                : 'Fond Plan IGN (carte topographique couleur)';
+        }
+        const contoursBtn = document.getElementById('plan_btn_contours');
+        if (contoursBtn) {
+            contoursBtn.classList.toggle('active', this.contoursOn);
+            contoursBtn.title = this.contoursOn
+                ? 'Masquer les courbes de niveau'
+                : 'Afficher les courbes de niveau';
+        }
     },
 };

@@ -26,6 +26,9 @@ export const VIEW_KEY = 'pcTacPlanView';
 export const SHAPES_KEY = 'pcTacPlanShapes';
 // Overlay LiDAR HD actif (hors planMap.js — cf. LIDAR_HD_LAYERS ci-dessous).
 export const LIDAR_KEY = 'pcTacPlanLidar';
+// Fond topographique Plan IGN v2 / courbes de niveau (hors planMap.js).
+export const PLANIGN_KEY = 'pcTacPlanTopo';
+export const CONTOURS_KEY = 'pcTacPlanContours';
 
 // Code couleur — strictement aligné sur la légende affichée
 // (--danger-red, --civil-yellow, --inter-blue, --ao-green dans pctac2.html)
@@ -57,6 +60,10 @@ export const ENTITY_COLORS: Record<PlanEntityKind, string> = {
  * opaque — cf. le piège documenté sur `ign-ortho`). Un trou de couverture laisse
  * donc simplement l'imagerie en dessous visible : l'overlay est sûr à tout zoom.
  * ===================================================================== */
+
+/** Emprise commune des flux IGN métropolitains (BD ORTHO, LiDAR HD, Plan IGN,
+ *  courbes) : évite de requêter la Géoplateforme loin hors de France. */
+export const FRANCE_TILE_BOUNDS: [number, number, number, number] = [-5.6, 41.1, 9.8, 51.3];
 
 /** Zoom max de la pyramide WMTS des ombrages LiDAR HD (grille PM).
  *  z18 ≈ 0,6 m/px, cohérent avec un produit à 50 cm. Au-delà MapLibre
@@ -102,8 +109,10 @@ export const LIDAR_HD_LAYERS: Record<LidarLayerId, LidarLayerDef> = {
     },
 };
 
-/** URL de tuile WMTS Géoplateforme (grille PM = XYZ) pour une ressource donnée. */
-export function lidarTileUrl(wmtsLayer: string): string {
+/** URL de tuile WMTS Géoplateforme (grille PM = XYZ) pour une ressource donnée.
+ *  PNG imposé partout : c'est le seul format à canal alpha, donc le seul qui
+ *  permette la SUPERPOSITION (un JPEG rendrait chaque couche opaque). */
+export function geopfWmtsTileUrl(wmtsLayer: string): string {
     return 'https://data.geopf.fr/wmts?SERVICE=WMTS&VERSION=1.0.0&REQUEST=GetTile'
         + '&LAYER=' + wmtsLayer
         + '&STYLE=normal&FORMAT=image/png&TILEMATRIXSET=PM'
@@ -117,16 +126,22 @@ function lidarSources(): StyleSpecification['sources'] {
         const def = LIDAR_HD_LAYERS[id];
         out[def.sourceId] = {
             type: 'raster',
-            tiles: [lidarTileUrl(def.wmtsLayer)],
+            tiles: [geopfWmtsTileUrl(def.wmtsLayer)],
             tileSize: 256,
             minzoom: LIDAR_MIN_ZOOM,
             maxzoom: LIDAR_MAX_ZOOM,
-            bounds: [-5.6, 41.1, 9.8, 51.3],
+            bounds: FRANCE_TILE_BOUNDS,
             attribution: 'LiDAR HD © IGN / Géoplateforme',
         };
     }
     return out;
 }
+
+/** Opacité de l'ombrage LiDAR SUR L'IMAGERIE : il domine, on lit le micro-relief. */
+export const LIDAR_OPACITY_OVER_IMAGERY = 0.85;
+/** Opacité de l'ombrage LiDAR SUR LE FOND TOPO : baissée pour que les couleurs
+ *  et les figurés du Plan IGN restent lisibles sous l'ombrage. */
+export const LIDAR_OPACITY_OVER_TOPO = 0.45;
 
 /** Les 3 couches raster LiDAR HD, MASQUÉES par défaut : tant qu'aucune n'est
  *  visible, MapLibre ne requête aucune tuile (coût réseau nul à l'arrêt). */
@@ -144,6 +159,33 @@ function lidarLayers(): StyleSpecification['layers'] {
         },
     }));
 }
+
+/* =====================================================================
+ * FOND TOPOGRAPHIQUE & COURBES DE NIVEAU (IGN / Géoplateforme) — HORS planMap.js
+ *
+ * Les ombrages LiDAR HD ci-dessus sont en NIVEAUX DE GRIS : l'IGN ne publie
+ * aucun rendu couleur du LiDAR HD. La couleur vient donc de ce qu'on met
+ * DESSOUS, et la lecture altimétrique de ce qu'on met DESSUS :
+ *
+ *   1. `planign`  — Plan IGN v2, la cartographie topographique COULEUR de l'IGN
+ *                   (WMTS keyless, licence Etalab 2.0). Recouvre l'imagerie
+ *                   quand il est actif : c'est un FOND, pas un calque.
+ *   2. `contours` — courbes de niveau vectorisées depuis le RGE ALTI, servies en
+ *                   PNG transparent. Indépendantes du fond : elles se posent
+ *                   aussi bien sur l'ortho que sur le Plan IGN.
+ *
+ * Empilement voulu (ordre des couches dans `RASTER_STYLE.layers`) :
+ *   satellite → ign-ortho → planign → ombrages LiDAR → contours
+ * soit : la couleur en bas, le relief au milieu, les lignes toujours lisibles
+ * au-dessus. C'est le rendu classique d'une carte de terrain ombrée.
+ * ===================================================================== */
+
+/** Plan IGN v2 — cartographie topographique couleur, WMTS keyless. */
+export const PLANIGN_WMTS_LAYER = 'GEOGRAPHICALGRIDSYSTEMS.PLANIGNV2';
+/** Courbes de niveau (RGE ALTI vectorisé), PNG transparent. */
+export const CONTOURS_WMTS_LAYER = 'ELEVATION.CONTOUR.LINE';
+/** En deçà, les courbes se chevauchent en un aplat illisible. */
+export const CONTOURS_MIN_ZOOM = 11;
 
 // Style satellite ESRI World Imagery + modèle d'élévation (DEM) AWS Open Data
 // Tout sans clé API, sans tracking. Le DEM ne sert qu'au relief 3D (setTerrain).
@@ -202,6 +244,25 @@ export const RASTER_STYLE: StyleSpecification = {
             maxzoom: 16,
             attribution: 'BD TOPO © IGN / Géoplateforme'
         },
+        // Fond topographique COULEUR de l'IGN — recouvre l'imagerie quand actif.
+        planign: {
+            type: 'raster',
+            tiles: [geopfWmtsTileUrl(PLANIGN_WMTS_LAYER)],
+            tileSize: 256,
+            maxzoom: 19,
+            bounds: FRANCE_TILE_BOUNDS,
+            attribution: 'Plan IGN v2 © IGN / Géoplateforme'
+        },
+        // Courbes de niveau — PNG transparent, superposable à n'importe quel fond.
+        contours: {
+            type: 'raster',
+            tiles: [geopfWmtsTileUrl(CONTOURS_WMTS_LAYER)],
+            tileSize: 256,
+            minzoom: CONTOURS_MIN_ZOOM,
+            maxzoom: 18,
+            bounds: FRANCE_TILE_BOUNDS,
+            attribution: 'Courbes de niveau © IGN / Géoplateforme'
+        },
         // Ombrages LiDAR HD (WMTS Géoplateforme, sans clé) — cf. bloc ci-dessus.
         ...lidarSources()
     },
@@ -219,10 +280,24 @@ export const RASTER_STYLE: StyleSpecification = {
                 'raster-fade-duration': 500
             }
         },
+        // Fond topo COULEUR : au-dessus de l'imagerie (il la remplace), sous les
+        // ombrages LiDAR (qui viennent l'ombrer) — masqué par défaut.
+        {
+            id: 'planign', type: 'raster', source: 'planign',
+            layout: { visibility: 'none' },
+            paint: { 'raster-fade-duration': 300 }
+        },
         // Overlays LiDAR HD : AU-DESSUS de l'imagerie, mais déclarés ICI (dans le
         // style) donc SOUS toutes les couches ajoutées après `load` — dessins,
         // formes, bâtiments 3D, noms de rues (cf. draw-layers.ts, map-core.ts).
-        ...lidarLayers()
+        ...lidarLayers(),
+        // Courbes de niveau : au-dessus des ombrages, pour rester lisibles quel
+        // que soit le fond — masquées par défaut.
+        {
+            id: 'contours', type: 'raster', source: 'contours',
+            layout: { visibility: 'none' },
+            paint: { 'raster-opacity': 0.9, 'raster-fade-duration': 300 }
+        }
     ]
 };
 

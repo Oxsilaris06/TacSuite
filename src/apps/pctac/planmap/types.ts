@@ -251,6 +251,12 @@ export interface PlanMapState {
     /** Overlay LiDAR HD actif (hors littéral `planMap.js`) — `null` = aucun.
      *  Persisté en localStorage sous `LIDAR_KEY` (constants.ts). */
     lidarLayer: LidarLayerId | null;
+    /** Fond topographique couleur Plan IGN v2 (hors littéral `planMap.js`).
+     *  Persisté sous `PLANIGN_KEY`. */
+    planIgnOn: boolean;
+    /** Overlay courbes de niveau (hors littéral `planMap.js`).
+     *  Persisté sous `CONTOURS_KEY`. */
+    contoursOn: boolean;
     _selectedShapeId: string | null;
     _handleMarkers: Marker[];
     _textMarkers: Marker[];
@@ -355,6 +361,12 @@ export interface PlanMapInternal extends PlanMapState, PlanMapContract {
     _cycleLidarLayer(): void;
     _initLidar(): void;
     _updateLidarBtn(): void;
+    /* Fond topo couleur + courbes de niveau (hors planMap.js) */
+    _applyTopoVisibility(): void;
+    _togglePlanIgn(): void;
+    _toggleContours(): void;
+    _initTopoLayers(): void;
+    _updateTopoBtns(): void;
 
     /* --- chrome.ts (9) --- */
     _bindUi(): void;

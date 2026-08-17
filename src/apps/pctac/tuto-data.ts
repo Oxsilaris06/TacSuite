@@ -205,6 +205,18 @@ export const pctacTutoData: TutoData = {
           tip: "Le programme LiDAR HD est deploye par blocs : hors zone couverte l'ombrage n'apparait pas et l'imagerie reste visible. L'ombrage actif au moment d'un telechargement hors-ligne part avec la zone."
         },
         {
+          title: "Fond topographique couleur et courbes de niveau",
+          body: "L'IGN ne diffuse le LiDAR HD qu'en niveaux de gris : la couleur vient de ce qu'on met dessous. Le bouton 'Fond Plan IGN' (icone 'map') remplace l'imagerie satellite par la carte topographique couleur de l'IGN ; le bouton 'Courbes de niveau' (icone 'altitude') superpose les courbes, aussi bien sur l'imagerie que sur le fond topo. Les trois bascules se composent librement : Plan IGN + ombrage MNT + courbes donne la carte de terrain ombree classique. Sur le fond topo, l'ombrage LiDAR s'attenue automatiquement pour laisser lire les couleurs et les figures de la carte.",
+          selector: "#plan_btn_topo",
+          terms: [
+            "Fond Plan IGN (carte topographique couleur)",
+            "Revenir au fond imagerie satellite",
+            "Afficher les courbes de niveau",
+            "Masquer les courbes de niveau"
+          ],
+          tip: "Chaque bascule est memorisee separement, et seules les couches actives partent dans un telechargement hors-ligne."
+        },
+        {
           title: "Consulter la legende",
           body: "En bas a droite de la carte, le volet \"Legende\" (depliable) explique le code couleur des points d'equipe : \"Nouveau\", \"En mouvement\", \"Immobile\", \"Deco imminente\".",
           selector: "#plan_legend",

@@ -1,28 +1,35 @@
 #!/usr/bin/env node
 /**
- * check-ign-lidar.mjs — Sonde d'accès aux ombrages LiDAR HD (IGN/Géoplateforme).
+ * check-ign-lidar.mjs — Sonde d'accès aux flux IGN/Géoplateforme de la carte PC-Tac.
  * ===========================================================================
  *
  * À lancer depuis un poste ayant un accès Internet direct :
  *
  *     node scripts/check-ign-lidar.mjs
  *
- * Vérifie, pour chacune des 3 ressources WMTS utilisées par la carte PC-Tac
- * (`src/apps/pctac/planmap/constants.ts` → `LIDAR_HD_LAYERS`) :
+ * Vérifie, pour chaque ressource WMTS déclarée dans `RASTER_STYLE`
+ * (`src/apps/pctac/planmap/constants.ts`) :
  *   1. que le service répond SANS clé d'API ;
  *   2. jusqu'à quel niveau de zoom la pyramide `PM` sert réellement des tuiles,
  *      sur un point de contrôle situé en zone couverte.
  *
- * Le zoom max observé doit correspondre à `LIDAR_MAX_ZOOM` (constants.ts) :
- * si la sonde remonte un niveau différent, c'est cette constante qu'il faut
- * ajuster — MapLibre sur-zoome au-delà, mais requêterait des tuiles absentes
- * si la constante était trop haute.
+ * Le zoom max observé doit correspondre aux constantes du style
+ * (`LIDAR_MAX_ZOOM`, `maxzoom` des sources `planign`/`contours`) : si la sonde
+ * remonte un niveau différent, ce sont ces constantes qu'il faut ajuster —
+ * MapLibre sur-zoome au-delà, mais requêterait des tuiles absentes si elles
+ * étaient trop hautes.
+ *
+ * C'est aussi le moyen de confirmer que `ELEVATION.CONTOUR.LINE` est bien le
+ * nom de la ressource « courbes de niveau » : une ressource inexistante ne sert
+ * AUCUNE tuile à aucun zoom, et la sonde le dit explicitement.
  */
 
 const WMTS_LAYERS = {
-    mnt: 'IGNF_LIDAR-HD_MNT_ELEVATION.ELEVATIONGRIDCOVERAGE.SHADOW',
-    mns: 'IGNF_LIDAR-HD_MNS_ELEVATION.ELEVATIONGRIDCOVERAGE.SHADOW',
-    mnh: 'IGNF_LIDAR-HD_MNH_ELEVATION.ELEVATIONGRIDCOVERAGE.SHADOW',
+    'LiDAR HD MNT (sol nu)': 'IGNF_LIDAR-HD_MNT_ELEVATION.ELEVATIONGRIDCOVERAGE.SHADOW',
+    'LiDAR HD MNS (sursol)': 'IGNF_LIDAR-HD_MNS_ELEVATION.ELEVATIONGRIDCOVERAGE.SHADOW',
+    'LiDAR HD MNH (hauteur)': 'IGNF_LIDAR-HD_MNH_ELEVATION.ELEVATIONGRIDCOVERAGE.SHADOW',
+    'Plan IGN v2 (fond couleur)': 'GEOGRAPHICALGRIDSYSTEMS.PLANIGNV2',
+    'Courbes de niveau': 'ELEVATION.CONTOUR.LINE',
 };
 
 // Point de contrôle en zone couverte (massif de la Chartreuse, relief marqué).
@@ -57,20 +64,21 @@ async function probe(layer, z) {
 
 let anyFailure = false;
 
-for (const [id, layer] of Object.entries(WMTS_LAYERS)) {
-    console.log(`\n=== ${id.toUpperCase()} — ${layer}`);
+for (const [name, layer] of Object.entries(WMTS_LAYERS)) {
+    console.log(`\n=== ${name}\n    ${layer}`);
     let maxOk = null;
+    let minOk = null;
     for (let z = ZOOM_RANGE.min; z <= ZOOM_RANGE.max; z++) {
         const r = await probe(layer, z);
         const detail = r.error ? r.error : `HTTP ${r.status} ${r.type} ${r.bytes} o`;
         console.log(`  z${String(z).padStart(2)} ${r.ok ? '✔' : '✘'}  ${detail}`);
-        if (r.ok) maxOk = z;
+        if (r.ok) { maxOk = z; if (minOk === null) minOk = z; }
     }
     if (maxOk === null) {
         anyFailure = true;
-        console.log('  → AUCUNE tuile servie : service inaccessible depuis ce poste.');
+        console.log('  → AUCUNE tuile servie : ressource inexistante, renommée, ou service injoignable.');
     } else {
-        console.log(`  → zoom max servi : z${maxOk} (à comparer à LIDAR_MAX_ZOOM).`);
+        console.log(`  → tuiles servies de z${minOk} à z${maxOk} (à comparer aux minzoom/maxzoom du style).`);
     }
 }
 
