@@ -37,6 +37,7 @@ export function createPlanMapState(): PlanMapState {
         is3D: false,     // mode relief 3D actif
         _pinCancel: null, // annule l'épinglage caméra 3D en cours (anti-dérive DEM)
         streetLabelsOn: false, // overlay noms de rues (vectoriel OpenFreeMap)
+        lidarLayer: null,      // overlay LiDAR HD actif : 'mnt' | 'mns' | 'mnh' | null
         _selectedShapeId: null,  // forme actuellement sélectionnée (handles visibles)
         _handleMarkers: [],      // poignées HTML rendues pour la forme sélectionnée
         _textMarkers: [],        // labels HTML pour annotations texte

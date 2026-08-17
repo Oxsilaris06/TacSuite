@@ -192,6 +192,19 @@ export const pctacTutoData: TutoData = {
           tip: null
         },
         {
+          title: "Afficher l'ombrage LiDAR HD",
+          body: "Le bouton 'Ombrage LiDAR HD' (icone 'landslide') superpose a l'imagerie les ombrages LiDAR HD de l'IGN. Chaque appui passe a la couche suivante : MNT (sol nu : relief reel SOUS la vegetation, chemins, talus, fosses), puis MNS (sursol : bati et canopee), puis MNH (hauteur de vegetation), puis extinction. La pastille du bouton rappelle la couche affichee et le choix est memorise entre les sessions.",
+          selector: "#plan_btn_lidar",
+          terms: [
+            "Ombrage LiDAR HD (relief sous la végétation)",
+            "LiDAR HD — MNT (sol nu)",
+            "LiDAR HD — MNS (sursol)",
+            "LiDAR HD — MNH (hauteur)",
+            "Ombrage LiDAR HD masqué"
+          ],
+          tip: "Le programme LiDAR HD est deploye par blocs : hors zone couverte l'ombrage n'apparait pas et l'imagerie reste visible. L'ombrage actif au moment d'un telechargement hors-ligne part avec la zone."
+        },
+        {
           title: "Consulter la legende",
           body: "En bas a droite de la carte, le volet \"Legende\" (depliable) explique le code couleur des points d'equipe : \"Nouveau\", \"En mouvement\", \"Immobile\", \"Deco imminente\".",
           selector: "#plan_legend",

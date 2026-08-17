@@ -30,6 +30,12 @@
  *  5. `_toggleStreetLabels` bascule la clé 'pcTacStreetLabels'.
  * (+ un socle de tests de fumée sur les 10 autres méthodes : ne jettent pas
  * quand le DOM/la carte attendus sont absents ou minimalement fournis.)
+ *
+ * §6 (HORS planMap.js) — overlays LiDAR HD (IGN/Géoplateforme) : les 5 méthodes
+ * `_applyLidarVisibility` / `_setLidarLayer` / `_cycleLidarLayer` / `_initLidar`
+ * / `_updateLidarBtn`, ajoutées à map-core.ts. Le point sensible couvert ici est
+ * l'EXCLUSIVITÉ (une seule des 3 couches visible) et le cyclage bouclant sur
+ * « aucun ».
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -41,7 +47,7 @@ vi.mock('@pctac/planmap/tiles.js', () => ({
 const toastSpy = vi.hoisted(() => vi.fn());
 vi.mock('@shared/feedback.js', () => ({ toast: toastSpy }));
 
-import { VIEW_KEY } from '../../../src/apps/pctac/planmap/constants.js';
+import { LIDAR_KEY, VIEW_KEY } from '../../../src/apps/pctac/planmap/constants.js';
 import { MapCoreMethods } from '../../../src/apps/pctac/planmap/map-core.js';
 import { prefetchFranceTiles } from '../../../src/apps/pctac/planmap/tiles.js';
 import type { PlanMapInternal } from '../../../src/apps/pctac/planmap/types.js';
@@ -88,6 +94,7 @@ function makeFakeThis(overrides: Record<string, unknown> = {}): PlanMapInternal 
         initialized: false,
         is3D: false,
         streetLabelsOn: false,
+        lidarLayer: null,
         _locked: false,
         _pinCancel: null,
         drawTool: null,
@@ -127,6 +134,12 @@ function makeFakeThis(overrides: Record<string, unknown> = {}): PlanMapInternal 
         _disable3D: vi.fn(),
         _pinCamera: vi.fn(),
         _initOfflineCache: vi.fn(),
+
+        // Overlays LiDAR HD (hors planMap.js) — mêmes conventions que ci-dessus.
+        _applyLidarVisibility: vi.fn(),
+        _setLidarLayer: vi.fn(),
+        _updateLidarBtn: vi.fn(),
+        _initLidar: vi.fn(),
 
         ...overrides,
     } as unknown as PlanMapInternal;
@@ -641,5 +654,123 @@ describe('smoke — méthodes restantes de map-core.ts', () => {
         const btn = document.getElementById('plan_btn_labels');
         expect(btn?.classList.contains('active')).toBe(true);
         expect(btn?.title).toBe('Masquer les noms de rues');
+    });
+});
+
+// ---------------------------------------------------------------------------
+// 6. Overlays LiDAR HD (hors planMap.js — cf. constants.ts LIDAR_HD_LAYERS)
+// ---------------------------------------------------------------------------
+
+describe('Overlays LiDAR HD — _applyLidarVisibility / _setLidarLayer / _cycleLidarLayer / _initLidar', () => {
+    it('_applyLidarVisibility() n\'affiche QUE la couche active, masque les deux autres', () => {
+        const map = makeFakeMap({ getLayer: vi.fn(() => ({})) });
+        const updateBtn = vi.fn();
+        const fake = makeFakeThis({ map, lidarLayer: 'mns', _updateLidarBtn: updateBtn });
+
+        MapCoreMethods._applyLidarVisibility.call(fake);
+
+        expect(map.setLayoutProperty).toHaveBeenCalledWith('lidar-mnt', 'visibility', 'none');
+        expect(map.setLayoutProperty).toHaveBeenCalledWith('lidar-mns', 'visibility', 'visible');
+        expect(map.setLayoutProperty).toHaveBeenCalledWith('lidar-mnh', 'visibility', 'none');
+        expect(updateBtn).toHaveBeenCalledTimes(1);
+    });
+
+    it('_applyLidarVisibility() avec lidarLayer=null masque les trois couches', () => {
+        const map = makeFakeMap({ getLayer: vi.fn(() => ({})) });
+        const fake = makeFakeThis({ map, lidarLayer: null });
+
+        MapCoreMethods._applyLidarVisibility.call(fake);
+
+        for (const id of ['lidar-mnt', 'lidar-mns', 'lidar-mnh']) {
+            expect(map.setLayoutProperty).toHaveBeenCalledWith(id, 'visibility', 'none');
+        }
+    });
+
+    it('_applyLidarVisibility() sans carte ⇒ ne jette pas', () => {
+        const fake = makeFakeThis({ map: null });
+        expect(() => MapCoreMethods._applyLidarVisibility.call(fake)).not.toThrow();
+    });
+
+    it('_setLidarLayer() écrit LIDAR_KEY, et l\'efface quand on éteint', () => {
+        const applyVis = vi.fn();
+        const fake = makeFakeThis({ map: makeFakeMap(), _applyLidarVisibility: applyVis });
+
+        MapCoreMethods._setLidarLayer.call(fake, 'mnt');
+        expect(fake.lidarLayer).toBe('mnt');
+        expect(localStorage.getItem(LIDAR_KEY)).toBe('mnt');
+
+        MapCoreMethods._setLidarLayer.call(fake, null);
+        expect(fake.lidarLayer).toBeNull();
+        expect(localStorage.getItem(LIDAR_KEY)).toBeNull();
+        expect(applyVis).toHaveBeenCalledTimes(2);
+    });
+
+    it('_cycleLidarLayer() cycle aucun → mnt → mns → mnh → aucun', () => {
+        const fake = makeFakeThis({ map: makeFakeMap(), _setLidarLayer: MapCoreMethods._setLidarLayer });
+
+        const seen: (string | null)[] = [];
+        for (let i = 0; i < 4; i++) {
+            MapCoreMethods._cycleLidarLayer.call(fake);
+            seen.push(fake.lidarLayer);
+        }
+        expect(seen).toEqual(['mnt', 'mns', 'mnh', null]);
+    });
+
+    it('_cycleLidarLayer() sans carte ⇒ ne change rien', () => {
+        const setLayer = vi.fn();
+        const fake = makeFakeThis({ map: null, _setLidarLayer: setLayer });
+
+        MapCoreMethods._cycleLidarLayer.call(fake);
+
+        expect(setLayer).not.toHaveBeenCalled();
+    });
+
+    it('_initLidar() restaure la couche persistée', () => {
+        localStorage.setItem(LIDAR_KEY, 'mnh');
+        const applyVis = vi.fn();
+        const fake = makeFakeThis({ _applyLidarVisibility: applyVis });
+
+        MapCoreMethods._initLidar.call(fake);
+
+        expect(fake.lidarLayer).toBe('mnh');
+        expect(applyVis).toHaveBeenCalledTimes(1);
+    });
+
+    it('_initLidar() sur valeur inconnue en storage ⇒ aucun overlay (pas de couche fantôme)', () => {
+        localStorage.setItem(LIDAR_KEY, 'mnx');
+        const fake = makeFakeThis();
+
+        MapCoreMethods._initLidar.call(fake);
+
+        expect(fake.lidarLayer).toBeNull();
+    });
+
+    it('_updateLidarBtn() reflète la couche active sur le bouton (classe, titre, pastille)', () => {
+        document.body.innerHTML = '<button id="plan_btn_lidar"><span class="plan-fab-badge"></span></button>';
+        const fake = makeFakeThis({ lidarLayer: 'mnt' });
+
+        MapCoreMethods._updateLidarBtn.call(fake);
+
+        const btn = document.getElementById('plan_btn_lidar');
+        expect(btn?.classList.contains('active')).toBe(true);
+        expect(btn?.title).toContain('MNT');
+        expect(btn?.querySelector('.plan-fab-badge')?.textContent).toBe('MNT');
+    });
+
+    it('_updateLidarBtn() à l\'arrêt : bouton inactif et pastille vide', () => {
+        document.body.innerHTML = '<button id="plan_btn_lidar" class="active"><span class="plan-fab-badge">MNH</span></button>';
+        const fake = makeFakeThis({ lidarLayer: null });
+
+        MapCoreMethods._updateLidarBtn.call(fake);
+
+        const btn = document.getElementById('plan_btn_lidar');
+        expect(btn?.classList.contains('active')).toBe(false);
+        expect(btn?.querySelector('.plan-fab-badge')?.textContent).toBe('');
+    });
+
+    it('_updateLidarBtn() sans bouton dans le DOM ⇒ ne jette pas', () => {
+        document.body.innerHTML = '';
+        const fake = makeFakeThis();
+        expect(() => MapCoreMethods._updateLidarBtn.call(fake)).not.toThrow();
     });
 });

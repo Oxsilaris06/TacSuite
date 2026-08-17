@@ -38,6 +38,14 @@ export interface LngLatObj { lng: number; lat: number }
 
 /** Entité liée d'un ping (planMap.js:1218-1224). */
 export type PlanEntityKind = 'adv' | 'host' | 'friend';
+
+/**
+ * Overlay LiDAR HD (IGN/Géoplateforme) sélectionné — hors `planMap.js`.
+ * Déclaré ICI et non dans `constants.ts` pour que `types.ts` reste la feuille
+ * du découpage (§3) : `constants.ts` importe ce type, jamais l'inverse.
+ * `mnt` = sol nu, `mns` = sursol, `mnh` = hauteur de végétation.
+ */
+export type LidarLayerId = 'mnt' | 'mns' | 'mnh';
 export interface PlanEntityRef { kind: PlanEntityKind; id: string }
 
 /** Un ping persisté sous `pcTacPlanPins` (planMap.js:1167-1184, 3634-3642). */
@@ -240,6 +248,9 @@ export interface PlanMapState {
     is3D: boolean;
     _pinCancel: (() => void) | null;
     streetLabelsOn: boolean;
+    /** Overlay LiDAR HD actif (hors littéral `planMap.js`) — `null` = aucun.
+     *  Persisté en localStorage sous `LIDAR_KEY` (constants.ts). */
+    lidarLayer: LidarLayerId | null;
     _selectedShapeId: string | null;
     _handleMarkers: Marker[];
     _textMarkers: Marker[];
@@ -338,6 +349,12 @@ export interface PlanMapInternal extends PlanMapState, PlanMapContract {
     _toggleStreetLabels(): void;
     _initStreetLabels(): void;
     _updateStreetLabelsBtn(): void;
+    /* Overlays LiDAR HD (hors planMap.js) */
+    _applyLidarVisibility(): void;
+    _setLidarLayer(id: LidarLayerId | null): void;
+    _cycleLidarLayer(): void;
+    _initLidar(): void;
+    _updateLidarBtn(): void;
 
     /* --- chrome.ts (9) --- */
     _bindUi(): void;

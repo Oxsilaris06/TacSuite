@@ -24,7 +24,7 @@ import { SafeMethods, createPlanMapState } from '../../../src/apps/pctac/planmap
 import type { PlanMapInternal } from '../../../src/apps/pctac/planmap/types.js';
 
 describe('state.ts — createPlanMapState() (planMap.js:301-328 + ad hoc §3.2)', () => {
-    it('retourne exactement les 57 clés attendues, avec les bonnes valeurs initiales', () => {
+    it('retourne exactement les 58 clés attendues, avec les bonnes valeurs initiales', () => {
         const s = createPlanMapState();
 
         // Décompte exhaustif : 27 (littéral, planMap.js:302-328 — vérifié par lecture
@@ -97,9 +97,11 @@ describe('state.ts — createPlanMapState() (planMap.js:301-328 + ad hoc §3.2)'
                 'AOI_MAX_Z',
                 // 1 adapter de persistance (mission R3-c, hors littéral)
                 'persistence',
+                // 1 overlay LiDAR HD actif (hors littéral planMap.js)
+                'lidarLayer',
             ].sort(),
         );
-        expect(Object.keys(s)).toHaveLength(57);
+        expect(Object.keys(s)).toHaveLength(58);
     });
 
     it('`persistence` : adapter fonctionnel posé par défaut (mission R3-c) — round-trip pins/shapes via localStorage', () => {
@@ -134,6 +136,8 @@ describe('state.ts — createPlanMapState() (planMap.js:301-328 + ad hoc §3.2)'
         expect(s.is3D).toBe(false);
         expect(s._pinCancel).toBeNull();
         expect(s.streetLabelsOn).toBe(false);
+        // Hors littéral planMap.js : aucun ombrage LiDAR HD au premier lancement.
+        expect(s.lidarLayer).toBeNull();
         expect(s._selectedShapeId).toBeNull();
         expect(s._handleMarkers).toEqual([]);
         expect(s._textMarkers).toEqual([]);
@@ -267,20 +271,26 @@ describe('constants.ts — ENTITY_COLORS (planMap.js:35-39)', () => {
     });
 });
 
-describe('constants.ts — RASTER_STYLE (planMap.js:43-113)', () => {
-    it('5 sources', () => {
+describe('constants.ts — RASTER_STYLE (planMap.js:43-113 + overlays LiDAR HD)', () => {
+    it('5 sources planMap.js + les 3 sources LiDAR HD', () => {
         expect(Object.keys(RASTER_STYLE.sources)).toEqual([
             'satellite',
             'ign-ortho',
             'terrain-dem',
             'openfreemap',
             'bdtopo',
+            // Ajout hors planMap.js : ombrages LiDAR HD (constants.ts).
+            'lidar-mnt',
+            'lidar-mns',
+            'lidar-mnh',
         ]);
     });
 
-    it('2 couches', () => {
-        expect(RASTER_STYLE.layers).toHaveLength(2);
-        expect(RASTER_STYLE.layers.map((l) => l.id)).toEqual(['satellite', 'ign-ortho']);
+    it('2 couches planMap.js + les 3 couches LiDAR HD, dans cet ordre', () => {
+        expect(RASTER_STYLE.layers).toHaveLength(5);
+        expect(RASTER_STYLE.layers.map((l) => l.id)).toEqual([
+            'satellite', 'ign-ortho', 'lidar-mnt', 'lidar-mns', 'lidar-mnh',
+        ]);
     });
 
     it('glyphs OpenFreeMap', () => {

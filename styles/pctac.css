@@ -1380,6 +1380,29 @@ body.up-kb-open .up-kb-aware {
             font-size: 26px;
         }
 
+        /* Pastille du FAB LiDAR HD : rappelle la couche active (MNT/MNS/MNH).
+           Vide (donc invisible) quand aucun ombrage n'est affiché. */
+        #plan_btn_lidar {
+            position: relative;
+        }
+
+        .plan-fab-badge:empty {
+            display: none;
+        }
+
+        .plan-fab-badge {
+            position: absolute;
+            bottom: 2px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-family: var(--font-data);
+            font-size: 8px;
+            font-weight: 700;
+            letter-spacing: 0.5px;
+            line-height: 1;
+            pointer-events: none;
+        }
+
         /* Dock dessin réductible — bande verticale compacte, collée à gauche des FABs */
         #plan_draw_dock {
             position: absolute;
