@@ -62,6 +62,7 @@ export const CaptureMethods = {
             document.getElementById('plan_unified_toolbar'),
             document.getElementById('plan_draw_dock'),
             document.getElementById('plan_search_panel'),
+            document.getElementById('plan_layers_panel'),
             document.getElementById('plan_legend'),
             document.getElementById('plan_hint'),
             document.getElementById('plan_draw_crosshair'),

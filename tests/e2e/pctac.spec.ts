@@ -451,23 +451,32 @@ test.describe('PC-Tac — Checklist fonctionnelle (docs/recon-pctac.md §6)', ()
   // Plan (carte tactique MapLibre)
   // ------------------------------------------------------------------
   test('Plan — initialisation carte + toolbar unifiée', async ({ page }) => {
-    await step('carte + 11 FABs de la toolbar unifiée', async () => {
+    await step('carte + 6 FABs du rail principal', async () => {
       await clickTab(page, 'view-plan');
       await page.waitForTimeout(1500);
       await expect.soft(page.locator('canvas.maplibregl-canvas')).toBeVisible({ timeout: 3000 });
       for (const id of [
         'plan_btn_search',
-        'plan_btn_fullscreen',
-        'plan_btn_3d',
-        'plan_btn_capture',
         'plan_btn_ping',
         'plan_btn_draw',
-        'plan_btn_labels',
-        'plan_btn_lidar',
-        'plan_btn_topo',
-        'plan_btn_contours',
-        'plan_btn_aoi',
+        'plan_btn_layers',
+        'plan_btn_fullscreen',
+        'plan_btn_more',
       ]) {
+        await expect.soft(page.locator(`#${id}`)).toBeVisible();
+      }
+    });
+
+    await step('tiroir « Plus » : capture + zone hors-ligne', async () => {
+      await page.locator('#plan_btn_more').click();
+      for (const id of ['plan_btn_capture', 'plan_btn_aoi']) {
+        await expect.soft(page.locator(`#${id}`)).toBeVisible();
+      }
+    });
+
+    await step('panneau « Calques » : fond de carte, surimpressions, vue', async () => {
+      await page.locator('#plan_btn_layers').click();
+      for (const id of ['plan_btn_topo', 'plan_btn_lidar', 'plan_btn_contours', 'plan_btn_labels', 'plan_btn_3d']) {
         await expect.soft(page.locator(`#${id}`)).toBeVisible();
       }
     });
@@ -484,6 +493,8 @@ test.describe('PC-Tac — Checklist fonctionnelle (docs/recon-pctac.md §6)', ()
       const before = await page.evaluate(
         () => (window as unknown as { PlanMap: { is3D: boolean } }).PlanMap.is3D,
       );
+      // Le FAB vit dans le panneau « Calques », fermé par défaut.
+      await page.locator('#plan_btn_layers').click();
       await page.locator('#plan_btn_3d').click();
       await page.waitForTimeout(400); // _enable3D/_disable3D animent la caméra
       const after = await page.evaluate(
@@ -738,6 +749,8 @@ test.describe('PC-Tac — Checklist fonctionnelle (docs/recon-pctac.md §6)', ()
       await clickTab(page, 'view-plan');
       await page.locator('#plan_btn_draw').click();
       await page.locator('#plan_draw_diameter_toggle').click();
+      // Le FAB vit dans le panneau « Calques », fermé par défaut.
+      await page.locator('#plan_btn_layers').click();
       await page.locator('#plan_btn_labels').click();
       await expect.soft(page.locator('#plan_btn_labels')).toHaveClass(/active/, { timeout: 1500 });
     });
@@ -763,8 +776,8 @@ test.describe('PC-Tac — Checklist fonctionnelle (docs/recon-pctac.md §6)', ()
     await step('4 clics ramènent au point de départ, en passant par les 3 couches', async () => {
       await clickTab(page, 'view-plan');
       await page.waitForTimeout(1500);
-      // Le FAB vit dans le tiroir « Plus » (U24), `hidden` par défaut.
-      await page.locator('#plan_btn_more').click();
+      // Le FAB vit dans le panneau « Calques », fermé par défaut.
+      await page.locator('#plan_btn_layers').click();
       const btn = page.locator('#plan_btn_lidar');
       // Même procédé que le test 2D/3D ci-dessus : `lidarLayer` est un état
       // INTERNE de `PlanMap`, hors du contrat public `PlanMapContract`.
@@ -793,7 +806,7 @@ test.describe('PC-Tac — Checklist fonctionnelle (docs/recon-pctac.md §6)', ()
     await step('les deux bascules sont indépendantes et persistées séparément', async () => {
       await clickTab(page, 'view-plan');
       await page.waitForTimeout(1500);
-      await page.locator('#plan_btn_more').click();
+      await page.locator('#plan_btn_layers').click();
 
       const topo = page.locator('#plan_btn_topo');
       const contours = page.locator('#plan_btn_contours');
@@ -824,6 +837,9 @@ test.describe('PC-Tac — Checklist fonctionnelle (docs/recon-pctac.md §6)', ()
   test('Plan — zone hors-ligne (AOI) : armement du cadrage', async ({ page }) => {
     await step('clic sur le FAB AOI arme le cadrage rectangle', async () => {
       await clickTab(page, 'view-plan');
+      await page.waitForTimeout(1200);
+      // Le FAB vit dans le tiroir « Plus », fermé par défaut.
+      await page.locator('#plan_btn_more').click();
       await page.locator('#plan_btn_aoi').click();
       await expect.soft(page.locator('#plan_btn_aoi')).toHaveClass(/active/, { timeout: 1500 });
     });
