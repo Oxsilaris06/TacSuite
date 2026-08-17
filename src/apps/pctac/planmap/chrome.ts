@@ -63,6 +63,28 @@ interface NominatimResult {
     lat: string;
 }
 
+/** Ferme le tiroir « Plus » (#plan_more_tools) s'il est ouvert. Fonction de
+ *  module (pas de `this`) : appelée à la fois depuis `_bindUi` (clic extérieur,
+ *  Échap, ouverture du panneau Calques) et depuis `_toggleSearchPanel`
+ *  (exclusion mutuelle des 3 panneaux flottants de la carte). */
+function closeMoreDrawer(): void {
+    const moreTools = document.getElementById('plan_more_tools');
+    const btnMore = document.getElementById('plan_btn_more');
+    if (!moreTools || moreTools.hidden) return;
+    moreTools.hidden = true;
+    if (btnMore) btnMore.setAttribute('aria-expanded', 'false');
+}
+
+/** Ferme le panneau « Calques » (#plan_layers_panel) s'il est ouvert. Même
+ *  logique que `closeMoreDrawer` (exclusion mutuelle des panneaux). */
+function closeLayersPanel(): void {
+    const panel = document.getElementById('plan_layers_panel');
+    const btn = document.getElementById('plan_btn_layers');
+    if (!panel || !panel.classList.contains('open')) return;
+    panel.classList.remove('open');
+    if (btn) btn.setAttribute('aria-expanded', 'false');
+}
+
 export const ChromeMethods = {
     // planMap.js:695-766
     _bindUi(this: PlanMapInternal): void {
@@ -84,9 +106,38 @@ export const ChromeMethods = {
         const moreTools = document.getElementById('plan_more_tools');
         if (btnMore && moreTools) btnMore.onclick = () => {
             const open = moreTools.hidden;
+            // Exclusion mutuelle : ouvrir « Plus » ferme le panneau Calques et
+            // le bandeau de recherche (jamais deux panneaux superposés).
+            if (open) { closeLayersPanel(); this._toggleSearchPanel(false); }
             moreTools.hidden = !open;
             btnMore.setAttribute('aria-expanded', String(open));
         };
+
+        // Panneau « Calques » (fond de carte + surimpressions + vue) — même
+        // mécanique que le tiroir « Plus » ci-dessus (U24).
+        const btnLayers = document.getElementById('plan_btn_layers');
+        const layersPanel = document.getElementById('plan_layers_panel');
+        if (btnLayers && layersPanel) btnLayers.onclick = () => {
+            const open = !layersPanel.classList.contains('open');
+            if (open) { closeMoreDrawer(); this._toggleSearchPanel(false); }
+            layersPanel.classList.toggle('open', open);
+            btnLayers.setAttribute('aria-expanded', String(open));
+        };
+
+        // Fermeture au clic extérieur : tiroir « Plus » et panneau « Calques ».
+        if ((btnMore && moreTools) || (btnLayers && layersPanel)) {
+            document.addEventListener('click', (e) => {
+                const t = e.target as Node;
+                if (moreTools && !moreTools.hidden && btnMore && !moreTools.contains(t) && !btnMore.contains(t)) closeMoreDrawer();
+                if (layersPanel && layersPanel.classList.contains('open') && btnLayers && !layersPanel.contains(t) && !btnLayers.contains(t)) closeLayersPanel();
+            });
+            // Échap : ferme le tiroir « Plus » ou le panneau « Calques » si ouvert.
+            document.addEventListener('keydown', (e) => {
+                if (e.key !== 'Escape') return;
+                if (moreTools && !moreTools.hidden) closeMoreDrawer();
+                else if (layersPanel && layersPanel.classList.contains('open')) closeLayersPanel();
+            });
+        }
 
         const btnFs = document.getElementById('plan_btn_fullscreen');
         if (btnFs) btnFs.onclick = () => this._toggleFullscreen();
@@ -189,6 +240,10 @@ export const ChromeMethods = {
         panel.classList.toggle('open', shouldOpen);
         if (fab) fab.classList.toggle('active', shouldOpen);
         if (shouldOpen) {
+            // Exclusion mutuelle : ouvrir la recherche ferme le tiroir « Plus »
+            // et le panneau Calques (jamais deux panneaux superposés).
+            closeMoreDrawer();
+            closeLayersPanel();
             const input = document.getElementById('plan_address_input');
             if (input) input.focus();
         }

@@ -1489,6 +1489,60 @@ body.up-kb-open .up-kb-aware {
             margin-top: 6px;
         }
 
+        /* Panneau Calques (fond de carte + surimpressions + vue) — ouvert via le FAB
+           Calques. Ancrage compact collé au rail (comme #plan_draw_dock), fond
+           translucide/ombre repris de #plan_search_panel. Ne redéfinit jamais
+           .plan-tool-fab : les FABs gardent leur taille, seul le libellé s'ajoute. */
+        #plan_layers_panel {
+            position: absolute;
+            top: 10px;
+            right: 70px;
+            z-index: var(--z-panel);
+            display: none;
+            flex-direction: column;
+            gap: var(--tac-space-2);
+            width: 220px;
+            max-width: calc(100% - 90px);
+            max-height: calc(100% - 20px);
+            overflow-y: auto;
+            background: var(--bg-glass-heavy);
+            backdrop-filter: blur(10px);
+            border: 1px solid var(--border-glass);
+            border-radius: var(--radius-sm);
+            padding: 10px;
+            box-shadow: var(--shadow-panel-float);
+        }
+
+        #plan_layers_panel.open {
+            display: flex;
+        }
+
+        .plan-layers-section-title {
+            margin: 6px 0 2px;
+            font-family: var(--font-ui);
+            font-size: 0.7em;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--text-muted);
+        }
+
+        .plan-layers-section:first-child .plan-layers-section-title {
+            margin-top: 0;
+        }
+
+        .plan-layers-row {
+            display: flex;
+            align-items: center;
+            gap: var(--tac-space-2);
+        }
+
+        .plan-layers-label {
+            font-family: var(--font-ui);
+            font-size: 0.85em;
+            color: var(--text-main);
+        }
+
         @media (max-width: 768px) {
             /* Sur mobile, la carte prend plus de hauteur utile */
             #plan_legend {
@@ -1505,6 +1559,20 @@ body.up-kb-open .up-kb-aware {
             .plan-tool-fab {
                 width: 46px;
                 height: 46px;
+            }
+
+            /* Panneau Calques en feuille compacte, ancrée au même bord que le
+               rail : ne doit ni déborder ni couvrir le centre de la carte,
+               défilement interne si le contenu dépasse. */
+            #plan_layers_panel {
+                right: 64px;
+                width: 190px;
+                max-width: calc(100% - 74px);
+                max-height: 55%;
+            }
+
+            .plan-layers-label {
+                font-size: 0.78em;
             }
         }
 

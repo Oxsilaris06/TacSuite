@@ -182,6 +182,15 @@ export const pctacTutoData: TutoData = {
           tip: "C'est un verrou GLOBAL, distinct du verrou par annotation \"Verrouiller\"/\"Deverrouiller\" de la roue d'un pin."
         },
         {
+          title: "Ouvrir le panneau Calques",
+          body: "Le bouton 'Calques et fond de carte' (icone 'layers') ouvre un panneau qui regroupe les reglages d'affichage de la carte : fond de carte, surimpressions (LiDAR HD, courbes de niveau, noms de rues) et vue. Ouvre ce panneau pour acceder aux boutons decrits dans les etapes suivantes ; un clic hors du panneau (ou la touche Echap) le referme.",
+          terms: [
+            "Calques et fond de carte"
+          ],
+          selector: "#plan_btn_layers",
+          tip: "Les etapes suivantes vivent dans ce panneau : ouvre-le d'abord pour reperer les boutons sur la carte."
+        },
+        {
           title: "Afficher ou masquer les noms de rues",
           body: "Le bouton panneau (titre \"Afficher les noms de rues\") superpose les libelles de voirie et de lieux sur la carte. Une fois actif, son titre devient \"Masquer les noms de rues\" et l'etat est memorise entre les sessions.",
           selector: "#plan_btn_labels",

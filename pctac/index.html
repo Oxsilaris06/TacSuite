@@ -311,7 +311,7 @@
                     <div class="plan-search-hint">Ex&nbsp;: «&nbsp;12 rue de la Paix, Paris&nbsp;» ou «&nbsp;48.8566, 2.3522&nbsp;»</div>
                 </div>
 
-                <!-- Toolbar unifiée : 8 FABs (Recherche / Plein écran / 3D / Capture / Ping / Dessin / Noms de rues / Zone hors-ligne) -->
+                <!-- Toolbar unifiée : 6 FABs (Recherche / Ping / Dessin / Calques / Plein écran / Plus) -->
                 <div id="plan_unified_toolbar">
                     <button type="button" id="plan_btn_search" class="plan-tool-fab" title="Recherche adresse / coordonnées GPS" aria-label="Rechercher une adresse ou des coordonnées GPS">
                         <span class="material-symbols-outlined">search</span>
@@ -322,36 +322,68 @@
                     <button type="button" id="plan_btn_draw" class="plan-tool-fab" title="Outils de dessin" aria-label="Ouvrir les outils de dessin">
                         <span class="material-symbols-outlined">draw</span>
                     </button>
+                    <button type="button" id="plan_btn_layers" class="plan-tool-fab" title="Calques et fond de carte" aria-label="Afficher les calques et le fond de carte" aria-expanded="false" aria-controls="plan_layers_panel">
+                        <span class="material-symbols-outlined">layers</span>
+                    </button>
                     <button type="button" id="plan_btn_fullscreen" class="plan-tool-fab" title="Plein écran" aria-label="Basculer le plein écran">
                         <span class="material-symbols-outlined">fullscreen</span>
                     </button>
                     <!-- U24 — outils secondaires repliés derrière « Plus » (hiérarchie + fin du débordement mobile) -->
-                    <button type="button" id="plan_btn_more" class="plan-tool-fab" title="Plus d'outils (3D, capture, rues, LiDAR HD, zone hors-ligne)" aria-label="Afficher plus d'outils" aria-expanded="false" aria-controls="plan_more_tools">
+                    <button type="button" id="plan_btn_more" class="plan-tool-fab" title="Plus d'outils (capture, zone hors-ligne)" aria-label="Afficher plus d'outils" aria-expanded="false" aria-controls="plan_more_tools">
                         <span class="material-symbols-outlined">more_horiz</span>
                     </button>
                     <div id="plan_more_tools" hidden>
-                        <button type="button" id="plan_btn_3d" class="plan-tool-fab" title="Basculer vue 2D / 3D relief" aria-label="Basculer entre vue 2D et 3D">
-                            <span class="material-symbols-outlined">deployed_code</span>
-                        </button>
                         <button type="button" id="plan_btn_capture" class="plan-tool-fab" title="Capture haute qualité du plan" aria-label="Capturer le plan">
                             <span class="material-symbols-outlined">photo_camera</span>
-                        </button>
-                        <button type="button" id="plan_btn_labels" class="plan-tool-fab" title="Afficher les noms de rues" aria-label="Afficher ou masquer les noms de rues">
-                            <span class="material-symbols-outlined">signpost</span>
-                        </button>
-                        <button type="button" id="plan_btn_lidar" class="plan-tool-fab" title="Ombrage LiDAR HD (relief sous la végétation)" aria-label="Basculer l'ombrage LiDAR HD : MNT, MNS, MNH ou aucun">
-                            <span class="material-symbols-outlined">landslide</span>
-                            <span class="plan-fab-badge" aria-hidden="true"></span>
-                        </button>
-                        <button type="button" id="plan_btn_topo" class="plan-tool-fab" title="Fond Plan IGN (carte topographique couleur)" aria-label="Basculer entre le fond imagerie satellite et le fond Plan IGN couleur">
-                            <span class="material-symbols-outlined">map</span>
-                        </button>
-                        <button type="button" id="plan_btn_contours" class="plan-tool-fab" title="Afficher les courbes de niveau" aria-label="Afficher ou masquer les courbes de niveau">
-                            <span class="material-symbols-outlined">altitude</span>
                         </button>
                         <button type="button" id="plan_btn_aoi" class="plan-tool-fab" title="Télécharger la carte d'une zone (hors-ligne)" aria-label="Télécharger la carte d'une zone hors ligne">
                             <span class="material-symbols-outlined">sim_card_download</span>
                         </button>
+                    </div>
+                </div>
+
+                <!-- Panneau Calques (ouvert via le FAB Calques) : fond de carte + surimpressions + vue,
+                     boutons déplacés tels quels depuis #plan_more_tools, mêmes ids/handlers. -->
+                <div id="plan_layers_panel">
+                    <div class="plan-layers-section">
+                        <p class="plan-layers-section-title">Fond de carte</p>
+                        <div class="plan-layers-row">
+                            <button type="button" id="plan_btn_topo" class="plan-tool-fab" title="Fond Plan IGN (carte topographique couleur)" aria-label="Basculer entre le fond imagerie satellite et le fond Plan IGN couleur">
+                                <span class="material-symbols-outlined">map</span>
+                            </button>
+                            <span class="plan-layers-label">Plan IGN couleur</span>
+                        </div>
+                    </div>
+                    <div class="plan-layers-section">
+                        <p class="plan-layers-section-title">Surimpressions</p>
+                        <div class="plan-layers-row">
+                            <button type="button" id="plan_btn_lidar" class="plan-tool-fab" title="Ombrage LiDAR HD (relief sous la végétation)" aria-label="Basculer l'ombrage LiDAR HD : MNT, MNS, MNH ou aucun">
+                                <span class="material-symbols-outlined">landslide</span>
+                                <span class="plan-fab-badge" aria-hidden="true"></span>
+                            </button>
+                            <span class="plan-layers-label">Ombrage LiDAR HD</span>
+                        </div>
+                        <div class="plan-layers-row">
+                            <button type="button" id="plan_btn_contours" class="plan-tool-fab" title="Afficher les courbes de niveau" aria-label="Afficher ou masquer les courbes de niveau">
+                                <span class="material-symbols-outlined">altitude</span>
+                            </button>
+                            <span class="plan-layers-label">Courbes de niveau</span>
+                        </div>
+                        <div class="plan-layers-row">
+                            <button type="button" id="plan_btn_labels" class="plan-tool-fab" title="Afficher les noms de rues" aria-label="Afficher ou masquer les noms de rues">
+                                <span class="material-symbols-outlined">signpost</span>
+                            </button>
+                            <span class="plan-layers-label">Noms de rues</span>
+                        </div>
+                    </div>
+                    <div class="plan-layers-section">
+                        <p class="plan-layers-section-title">Vue</p>
+                        <div class="plan-layers-row">
+                            <button type="button" id="plan_btn_3d" class="plan-tool-fab" title="Basculer vue 2D / 3D relief" aria-label="Basculer entre vue 2D et 3D">
+                                <span class="material-symbols-outlined">deployed_code</span>
+                            </button>
+                            <span class="plan-layers-label">Relief 3D</span>
+                        </div>
                     </div>
                 </div>
 
