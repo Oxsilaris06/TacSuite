@@ -268,7 +268,9 @@ export const OI_PIN_FALLBACK: { icon: string; color: string; label: string } = {
 /**
  * Mapping fonction OI → icône Material (placement automatique des membres).
  * La cellule "India *" bascule aussi sur l'icône pion d'échecs si la fonction
- * n'a pas de mapping plus spécifique. oi_cartographie.js:65-80 — VERBATIM.
+ * n'a pas de mapping plus spécifique. oi_cartographie.js:65-80 — VERBATIM,
+ * SAUF `chef oscar` : `eye_tracking` → `visibility` (fusion avec `ao`,
+ * décision Nico 2026-08-17, doublon d'icône Observation supprimé côté `pin-icons.ts`).
  */
 export const OI_FONCTION_ICONS: Record<string, string> = {
     'chef de dispo': 'stars',
@@ -277,7 +279,7 @@ export const OI_FONCTION_ICONS: Record<string, string> = {
     effrac: 'hardware',
     inter: 'chess',
     india: 'chess',
-    'chef oscar': 'eye_tracking',
+    'chef oscar': 'visibility',
     ao: 'visibility',
     conducteur: 'search_hands_free',
     de: 'saved_search',
@@ -304,14 +306,15 @@ export function oiIconForMember(fonction: string | null | undefined, cellule: st
     return OI_PIN_DEFS.member.icon; // défaut : gendarme
 }
 
-/** Catalogue d'icônes pour la sélection libre (roue → Icône). oi_cartographie.js:94-110 — VERBATIM. */
+/** Catalogue d'icônes pour la sélection libre (roue → Icône). oi_cartographie.js:94-110 — VERBATIM,
+ *  SAUF fusion `eye_tracking`→`visibility` (doublon Chef Oscar/AO, décision Nico 2026-08-17) : label
+ *  renommé « AO / Chef Oscar » pour couvrir les deux rôles, id `eye_tracking` retiré (pas de doublon d'id). */
 export const OI_ICON_CATALOG: { id: string; label: string }[] = [
     { id: 'stars', label: 'Chef dispo' },
     { id: 'support_agent', label: 'Chef inter' },
     { id: 'hardware', label: 'Effrac' },
     { id: 'chess', label: 'Inter / India' },
-    { id: 'eye_tracking', label: 'Chef Oscar' },
-    { id: 'visibility', label: 'AO' },
+    { id: 'visibility', label: 'AO / Chef Oscar' },
     { id: 'search_hands_free', label: 'Conducteur' },
     { id: 'saved_search', label: 'DE' },
     { id: 'pets', label: 'Cyno' },

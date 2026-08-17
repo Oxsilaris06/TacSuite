@@ -756,6 +756,31 @@ describe('_renderPins — réconciliation par signature (mission R3-e)', () => {
         expect(entry2.label.getElement().textContent).toBe('Nouveau nom'); // contenu actualisé
     });
 
+    // Non-régression : `icon` fait partie de `pinSignature` (pins.ts:140) au même
+    // titre que `color`/`label`/`locked`/`photoId` — un changement d'icône via la
+    // roue d'options (`_openPinIconPanel`, panels.ts) doit repeindre le glyph du
+    // marker EN PLACE, sans recréation, sans attendre un zoom.
+    it('icône modifiée : repeint le glyph EN PLACE, garde la même référence de marker', () => {
+        const fake = makeFakeThis({
+            map: {} as unknown as OICartoInternal['map'],
+            _loadPins: () => [makePin({ id: 'p1', icon: 'place' })],
+        });
+
+        PinsMethods._renderPins.call(fake);
+        const entry1 = fake.markers.get('p1') as { pin: { getElement(): HTMLElement }; label: { getElement(): HTMLElement } };
+        expect(entry1.pin.getElement().innerHTML).toContain('place');
+
+        fake._loadPins = () => [makePin({ id: 'p1', icon: 'star' })];
+        PinsMethods._renderPins.call(fake);
+        const entry2 = fake.markers.get('p1') as { pin: { getElement(): HTMLElement }; label: { getElement(): HTMLElement } };
+
+        expect(entry2).toBe(entry1); // même entrée (pas de recréation)
+        expect(entry2.pin).toBe(entry1.pin); // marker pin NON recréé
+        expect(entry2.pin.getElement()).toBe(entry1.pin.getElement()); // même élément DOM
+        expect(entry2.pin.getElement().innerHTML).toContain('star'); // glyph actualisé
+        expect(entry2.pin.getElement().innerHTML).not.toContain('place');
+    });
+
     it('pin supprimé : détruit le marker ET détache les gestes (plus de tap → roue après suppression)', () => {
         const openPinWheel = vi.fn();
         const fake = makeFakeThis({

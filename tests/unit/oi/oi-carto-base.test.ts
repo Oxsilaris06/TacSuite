@@ -171,7 +171,7 @@ describe('constants.ts — OI_FONCTION_ICONS (oi_cartographie.js:65-80)', () => 
 			effrac: 'hardware',
 			inter: 'chess',
 			india: 'chess',
-			'chef oscar': 'eye_tracking',
+			'chef oscar': 'visibility',
 			ao: 'visibility',
 			conducteur: 'search_hands_free',
 			de: 'saved_search',
@@ -181,8 +181,8 @@ describe('constants.ts — OI_FONCTION_ICONS (oi_cartographie.js:65-80)', () => 
 });
 
 describe('constants.ts — OI_ICON_CATALOG (oi_cartographie.js:94-110)', () => {
-	it('28 entrées, {id,label}, présence des extrêmes (1re et dernière)', () => {
-		expect(OI_ICON_CATALOG).toHaveLength(28);
+	it('27 entrées (doublon eye_tracking/visibility fusionné, décision Nico 2026-08-17), {id,label}, présence des extrêmes (1re et dernière)', () => {
+		expect(OI_ICON_CATALOG).toHaveLength(27);
 		expect(OI_ICON_CATALOG[0]).toEqual({ id: 'stars', label: 'Chef dispo' });
 		expect(OI_ICON_CATALOG[OI_ICON_CATALOG.length - 1]).toEqual({ id: 'videocam', label: 'Caméra' });
 	});
