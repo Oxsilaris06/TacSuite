@@ -15,18 +15,27 @@
 import { FRANCE_BBOX, OFFLINE_MAP_CACHE, RASTER_STYLE, SAT_TILE_TEMPLATE } from './constants.js';
 import type { GeoBBox, PrefetchOptions, PrefetchProgress, PrefetchResult, TileTemplate } from './types.js';
 
+/** Sources toujours embarquées dans un téléchargement hors-ligne. */
+// planMap.js:135 (liste inline de _styleTileTemplates)
+export const BASE_TILE_SOURCE_IDS: readonly string[] = ['satellite', 'ign-ortho', 'terrain-dem'];
+
 /**
  * Construit la LISTE des templates XYZ réellement actifs, lue depuis RASTER_STYLE.
  * On ne code en dur aucune URL : on extrait l'imagerie Esri (satellite), l'IGN BD
  * ORTHO (ign-ortho) et le DEM (terrain-dem) tels que déclarés dans le style. Chaque
  * template porte ses bornes de zoom (minzoom/maxzoom) et son `bounds` éventuel afin
  * de ne pas requêter une source hors de sa couverture (ex. IGN hors métropole).
+ *
+ * @param extraSourceIds  sources supplémentaires à embarquer — sert à ajouter
+ *   l'ombrage LiDAR HD actif au téléchargement d'une AOI (hors planMap.js) sans
+ *   imposer les trois ombrages à tous les téléchargements. Les identifiants
+ *   inconnus du style sont simplement ignorés (même garde que les autres).
  */
 // planMap.js:132-155 (fonction _styleTileTemplates)
-export function styleTileTemplates(): TileTemplate[] {
+export function styleTileTemplates(extraSourceIds: readonly string[] = []): TileTemplate[] {
     const out: TileTemplate[] = [];
     const src = RASTER_STYLE.sources || {};
-    for (const id of ['satellite', 'ign-ortho', 'terrain-dem'] as const) {
+    for (const id of [...BASE_TILE_SOURCE_IDS, ...extraSourceIds]) {
         const s = src[id];
         // `'tiles' in s` écarte les variantes de `SourceSpecification` qui n'ont
         // ni `tiles` ni `minzoom`/`maxzoom`/`bounds` (GeoJSON/Video/Image) — les

@@ -451,7 +451,7 @@ test.describe('PC-Tac — Checklist fonctionnelle (docs/recon-pctac.md §6)', ()
   // Plan (carte tactique MapLibre)
   // ------------------------------------------------------------------
   test('Plan — initialisation carte + toolbar unifiée', async ({ page }) => {
-    await step('carte + 8 FABs de la toolbar unifiée', async () => {
+    await step('carte + 9 FABs de la toolbar unifiée', async () => {
       await clickTab(page, 'view-plan');
       await page.waitForTimeout(1500);
       await expect.soft(page.locator('canvas.maplibregl-canvas')).toBeVisible({ timeout: 3000 });
@@ -463,6 +463,7 @@ test.describe('PC-Tac — Checklist fonctionnelle (docs/recon-pctac.md §6)', ()
         'plan_btn_ping',
         'plan_btn_draw',
         'plan_btn_labels',
+        'plan_btn_lidar',
         'plan_btn_aoi',
       ]) {
         await expect.soft(page.locator(`#${id}`)).toBeVisible();
@@ -750,6 +751,36 @@ test.describe('PC-Tac — Checklist fonctionnelle (docs/recon-pctac.md §6)', ()
       const legend = page.locator('#plan_legend');
       await legend.locator('summary').click();
       await expect.soft(legend).toHaveAttribute('open', '', { timeout: 1500 });
+    });
+  });
+
+  // Overlays LiDAR HD (IGN) : l'état interne `window.PlanMap.lidarLayer` est le
+  // seul témoin fiable en headless (le rendu raster dépend du réseau IGN et de
+  // WebGL). On vérifie le cyclage MNT → MNS → MNH → aucun et sa persistance.
+  test('Plan — ombrage LiDAR HD (#plan_btn_lidar) : cyclage MNT/MNS/MNH/aucun', async ({ page }) => {
+    await step('4 clics ramènent au point de départ, en passant par les 3 couches', async () => {
+      await clickTab(page, 'view-plan');
+      await page.waitForTimeout(1500);
+      // Le FAB vit dans le tiroir « Plus » (U24), `hidden` par défaut.
+      await page.locator('#plan_btn_more').click();
+      const btn = page.locator('#plan_btn_lidar');
+      // Même procédé que le test 2D/3D ci-dessus : `lidarLayer` est un état
+      // INTERNE de `PlanMap`, hors du contrat public `PlanMapContract`.
+      const current = () => page.evaluate(
+        () => (window as unknown as { PlanMap: { lidarLayer: string | null } }).PlanMap.lidarLayer,
+      );
+
+      expect.soft(await current()).toBeNull();
+      for (const expected of ['mnt', 'mns', 'mnh']) {
+        await btn.click();
+        expect.soft(await current()).toBe(expected);
+      }
+      await expect.soft(btn).toHaveClass(/active/, { timeout: 1500 });
+      await btn.click();
+      expect.soft(await current()).toBeNull();
+      await expect.soft(btn).not.toHaveClass(/active/, { timeout: 1500 });
+      // La couche éteinte ne laisse rien derrière elle en stockage.
+      expect.soft(await page.evaluate(() => localStorage.getItem('pcTacPlanLidar'))).toBeNull();
     });
   });
 

@@ -380,6 +380,28 @@ describe('tiles.ts — styleTileTemplates (planMap.js:132-155)', () => {
             expect(ign.bounds).toEqual([-5.6, 41.1, 9.8, 51.3]);
         }
     });
+
+    // Hors planMap.js : embarquement de l'ombrage LiDAR HD actif dans une AOI.
+    it('extraSourceIds ajoute la source demandée (ombrage LiDAR HD) à la liste', () => {
+        const templates = styleTileTemplates(['lidar-mnt']);
+        expect(templates.map(t => t.id)).toEqual(['satellite', 'ign-ortho', 'terrain-dem', 'lidar-mnt']);
+
+        const lidar = templates.find(t => t.id === 'lidar-mnt');
+        expect(lidar).toBeDefined();
+        if (lidar) {
+            expect(lidar.url).toContain('IGNF_LIDAR-HD_MNT_ELEVATION.ELEVATIONGRIDCOVERAGE.SHADOW');
+            // Grille PM = XYZ : les 3 substitutions MapLibre doivent être présentes.
+            expect(lidar.url).toContain('TILEMATRIX={z}');
+            expect(lidar.url).toContain('TILECOL={x}');
+            expect(lidar.url).toContain('TILEROW={y}');
+            expect(lidar.bounds).toEqual([-5.6, 41.1, 9.8, 51.3]);
+        }
+    });
+
+    it('extraSourceIds inconnu du style ⇒ ignoré (liste de base inchangée)', () => {
+        expect(styleTileTemplates(['inexistante']).map(t => t.id))
+            .toEqual(['satellite', 'ign-ortho', 'terrain-dem']);
+    });
 });
 
 describe('tiles.ts — enumerateTiles vs estimateTileCount (planMap.js:172-233) — propriété invariante', () => {

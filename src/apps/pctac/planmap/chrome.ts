@@ -121,6 +121,10 @@ export const ChromeMethods = {
         const labelsBtn = document.getElementById('plan_btn_labels');
         if (labelsBtn) labelsBtn.onclick = () => this._toggleStreetLabels();
 
+        // Ombrages LiDAR HD (IGN) : un seul bouton, cyclage MNT → MNS → MNH → off.
+        const lidarBtn = document.getElementById('plan_btn_lidar');
+        if (lidarBtn) lidarBtn.onclick = () => this._cycleLidarLayer();
+
         // Téléchargement carte d'une zone d'opération (AOI) hors-ligne (CONTRAT C4).
         const aoiBtn = document.getElementById('plan_btn_aoi');
         if (aoiBtn) aoiBtn.onclick = () => this._startAoiFraming();

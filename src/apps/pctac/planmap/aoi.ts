@@ -27,7 +27,7 @@
 
 import type { MapMouseEvent, MapTouchEvent } from 'maplibre-gl';
 
-import { AOI_INDEX_KEY, AOI_MAX_TILES } from './constants.js';
+import { AOI_INDEX_KEY, AOI_MAX_TILES, LIDAR_HD_LAYERS } from './constants.js';
 import { estimateTileCount, prefetchTiles, styleTileTemplates } from './tiles.js';
 import type {
     AoiFramingHandlers,
@@ -182,7 +182,11 @@ export const AoiMethods = {
     /** Estime tuiles + volume, vérifie le quota, demande confirmation, lance. */
     // planMap.js:5414-5451
     async _confirmAoi(this: PlanMapInternal, bbox: GeoBBox): Promise<void> {
-        const templates: TileTemplate[] = styleTileTemplates();
+        // L'ombrage LiDAR HD affiché au moment du téléchargement part AVEC l'AOI :
+        // sans ça, la couche disparaîtrait hors ligne alors qu'elle est justement
+        // celle qui sert sur le terrain (relief sous couvert). Hors planMap.js.
+        const lidarSourceId = this.lidarLayer ? LIDAR_HD_LAYERS[this.lidarLayer].sourceId : null;
+        const templates: TileTemplate[] = styleTileTemplates(lidarSourceId ? [lidarSourceId] : []);
         if (!templates.length) { toast('Aucune source cartographique disponible.', { kind: 'error' }); return; }
         const minZ = this.AOI_MIN_Z, maxZ = this.AOI_MAX_Z;
         const tileCount = estimateTileCount(bbox, minZ, maxZ, templates);

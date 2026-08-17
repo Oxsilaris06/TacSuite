@@ -58,9 +58,9 @@ import type {
     SkySpecification,
 } from 'maplibre-gl';
 
-import { RASTER_STYLE, VIEW_KEY } from './constants.js';
+import { LIDAR_HD_LAYERS, LIDAR_KEY, LIDAR_LAYER_IDS, RASTER_STYLE, VIEW_KEY } from './constants.js';
 import { prefetchFranceTiles } from './tiles.js';
-import type { PlanMapInternal, PlanView } from './types.js';
+import type { LidarLayerId, PlanMapInternal, PlanView } from './types.js';
 import { toast } from '@shared/feedback.js';
 
 export const MapCoreMethods = {
@@ -131,6 +131,7 @@ export const MapCoreMethods = {
             this._renderShapes();
             this._renderShapeTexts();
             this._initStreetLabels();
+            this._initLidar();
         });
 
         this._renderPins();
@@ -460,5 +461,71 @@ export const MapCoreMethods = {
         if (!btn) return;
         btn.classList.toggle('active', !!this.streetLabelsOn);
         btn.title = this.streetLabelsOn ? 'Masquer les noms de rues' : 'Afficher les noms de rues';
+    },
+
+    /* ----- OVERLAY LiDAR HD (ombrages IGN/Géoplateforme, keyless) -----
+     * HORS planMap.js. Les 3 couches raster sont déclarées MASQUÉES dans
+     * `RASTER_STYLE` (constants.ts) : aucune tuile n'est requêtée tant qu'aucune
+     * n'est visible, et leur position dans le style les place au-dessus de
+     * l'imagerie mais SOUS tout ce qui est ajouté après `load` (dessins, pings,
+     * bâtiments 3D, noms de rues). Basculer se réduit donc à une visibilité. */
+
+    /** Applique la visibilité des 3 couches (une seule active au plus) + le bouton. */
+    _applyLidarVisibility(this: PlanMapInternal): void {
+        if (!this.map) return;
+        for (const id of LIDAR_LAYER_IDS) {
+            const layerId = LIDAR_HD_LAYERS[id].sourceId;
+            if (!this.map.getLayer(layerId)) continue;
+            this.map.setLayoutProperty(layerId, 'visibility', this.lidarLayer === id ? 'visible' : 'none');
+        }
+        this._updateLidarBtn();
+    },
+
+    /** Sélectionne un overlay (ou `null` pour tout éteindre) et le persiste. */
+    _setLidarLayer(this: PlanMapInternal, id: LidarLayerId | null): void {
+        this.lidarLayer = id;
+        this._applyLidarVisibility();
+        try {
+            if (id) localStorage.setItem(LIDAR_KEY, id);
+            else localStorage.removeItem(LIDAR_KEY);
+        } catch { /* stockage indispo : non bloquant */ }
+    },
+
+    /** Bouton unique : aucun → MNT → MNS → MNH → aucun. */
+    _cycleLidarLayer(this: PlanMapInternal): void {
+        if (!this.map) return;
+        const cur = this.lidarLayer;
+        const idx = cur === null ? -1 : LIDAR_LAYER_IDS.indexOf(cur);
+        // `idx + 1 === length` → retour à « aucun » (undefined via l'accès borné).
+        const next = LIDAR_LAYER_IDS[idx + 1] ?? null;
+        this._setLidarLayer(next);
+        if (next) {
+            const def = LIDAR_HD_LAYERS[next];
+            toast(def.label + ' — ' + def.hint, { kind: 'info' });
+        } else {
+            toast('Ombrage LiDAR HD masqué', { kind: 'info' });
+        }
+    },
+
+    /** Restaure l'overlay persisté au chargement de la carte. */
+    _initLidar(this: PlanMapInternal): void {
+        let saved: string | null = null;
+        try { saved = localStorage.getItem(LIDAR_KEY); } catch { saved = null; }
+        // Valeur inconnue (clé corrompue / ancienne version) → aucun overlay.
+        this.lidarLayer = LIDAR_LAYER_IDS.find((id) => id === saved) ?? null;
+        this._applyLidarVisibility();
+    },
+
+    _updateLidarBtn(this: PlanMapInternal): void {
+        const btn = document.getElementById('plan_btn_lidar');
+        if (!btn) return;
+        const cur = this.lidarLayer;
+        btn.classList.toggle('active', cur !== null);
+        btn.title = cur
+            ? LIDAR_HD_LAYERS[cur].label + ' — ' + LIDAR_HD_LAYERS[cur].hint + ' (toucher : couche suivante)'
+            : 'Ombrage LiDAR HD (relief sous la végétation)';
+        // Repère textuel du mode courant sur la pastille du FAB.
+        const badge = btn.querySelector('.plan-fab-badge');
+        if (badge) badge.textContent = cur ? cur.toUpperCase() : '';
     },
 };

@@ -68,6 +68,7 @@ function createFakePlanMap(overrides: Record<string, unknown> = {}): {
         _takeScreenshot: vi.fn(async () => {}),
         _openCreatePingWheel: vi.fn(),
         _toggleStreetLabels: vi.fn(),
+        _cycleLidarLayer: vi.fn(),
         _startAoiFraming: vi.fn(),
         ...overrides,
     };
@@ -135,6 +136,19 @@ describe('ChromeMethods — les 9 méthodes ne jettent pas quand le DOM est abse
     it('_bindUi (planMap.js:695)', () => {
         const { instance } = createFakePlanMap();
         expect(() => instance._bindUi()).not.toThrow();
+    });
+
+    // Hors planMap.js : bouton d'ombrage LiDAR HD (cyclage MNT/MNS/MNH/aucun).
+    it('_bindUi câble #plan_btn_lidar sur _cycleLidarLayer', () => {
+        document.body.innerHTML = '<button id="plan_btn_lidar"></button>';
+        const cycle = vi.fn();
+        const { instance } = createFakePlanMap({ _cycleLidarLayer: cycle });
+
+        instance._bindUi();
+        document.getElementById('plan_btn_lidar')?.dispatchEvent(new MouseEvent('click'));
+
+        expect(cycle).toHaveBeenCalledTimes(1);
+        document.body.innerHTML = '';
     });
 
     it('_toggleFullscreen (planMap.js:769)', () => {

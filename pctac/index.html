@@ -326,7 +326,7 @@
                         <span class="material-symbols-outlined">fullscreen</span>
                     </button>
                     <!-- U24 — outils secondaires repliés derrière « Plus » (hiérarchie + fin du débordement mobile) -->
-                    <button type="button" id="plan_btn_more" class="plan-tool-fab" title="Plus d'outils (3D, capture, rues, zone hors-ligne)" aria-label="Afficher plus d'outils" aria-expanded="false" aria-controls="plan_more_tools">
+                    <button type="button" id="plan_btn_more" class="plan-tool-fab" title="Plus d'outils (3D, capture, rues, LiDAR HD, zone hors-ligne)" aria-label="Afficher plus d'outils" aria-expanded="false" aria-controls="plan_more_tools">
                         <span class="material-symbols-outlined">more_horiz</span>
                     </button>
                     <div id="plan_more_tools" hidden>
@@ -338,6 +338,10 @@
                         </button>
                         <button type="button" id="plan_btn_labels" class="plan-tool-fab" title="Afficher les noms de rues" aria-label="Afficher ou masquer les noms de rues">
                             <span class="material-symbols-outlined">signpost</span>
+                        </button>
+                        <button type="button" id="plan_btn_lidar" class="plan-tool-fab" title="Ombrage LiDAR HD (relief sous la végétation)" aria-label="Basculer l'ombrage LiDAR HD : MNT, MNS, MNH ou aucun">
+                            <span class="material-symbols-outlined">landslide</span>
+                            <span class="plan-fab-badge" aria-hidden="true"></span>
                         </button>
                         <button type="button" id="plan_btn_aoi" class="plan-tool-fab" title="Télécharger la carte d'une zone (hors-ligne)" aria-label="Télécharger la carte d'une zone hors ligne">
                             <span class="material-symbols-outlined">sim_card_download</span>

@@ -11,7 +11,7 @@
 
 import type { StyleSpecification } from 'maplibre-gl';
 import { esc } from '@shared/ui-platform.js';
-import type { GeoBBox, PlanEntityKind } from './types.js';
+import type { GeoBBox, LidarLayerId, PlanEntityKind } from './types.js';
 
 // Échappement HTML pour toute donnée externe injectée en innerHTML/setHTML
 // (résultats Nominatim contributifs, libellés). Aligné sur ui.js.
@@ -24,6 +24,8 @@ export const escHtml = esc;
 export const PINS_KEY = 'pcTacPlanPins';
 export const VIEW_KEY = 'pcTacPlanView';
 export const SHAPES_KEY = 'pcTacPlanShapes';
+// Overlay LiDAR HD actif (hors planMap.js — cf. LIDAR_HD_LAYERS ci-dessous).
+export const LIDAR_KEY = 'pcTacPlanLidar';
 
 // Code couleur — strictement aligné sur la légende affichée
 // (--danger-red, --civil-yellow, --inter-blue, --ao-green dans pctac2.html)
@@ -33,6 +35,115 @@ export const ENTITY_COLORS: Record<PlanEntityKind, string> = {
     host: '#eab308',   // Otage / jaune
     friend: '#3b82f6'  // Inter / bleu
 };
+
+/* =====================================================================
+ * OVERLAYS LiDAR HD (IGN / Géoplateforme) — HORS planMap.js
+ *
+ * Les trois ombrages dérivés du programme LiDAR HD, diffusés SANS CLÉ par la
+ * Géoplateforme en WMTS (même hôte `data.geopf.fr` que la BD ORTHO et la BD
+ * TOPO déjà utilisées ci-dessous, donc déjà couvert par le cache tuiles du
+ * Service Worker, `public/sw.ts:TILE_HOSTS`) :
+ *   - MNT = sol nu     → relief réel SOUS la végétation (chemins, talus, fossés,
+ *                        anciennes traces) : le plus utile en tactique.
+ *   - MNS = sursol     → relief de la surface vue du ciel (bâti + canopée).
+ *   - MNH = hauteur    → hauteur de végétation (MNS − MNT) : densité du couvert.
+ *
+ * Le TileMatrixSet `PM` est la grille Web Mercator standard : `TILEMATRIX={z}`,
+ * `TILECOL={x}`, `TILEROW={y}` se substituent donc directement au schéma XYZ
+ * attendu par une source raster MapLibre.
+ *
+ * COUVERTURE : le programme est déployé par blocs ; hors zone volée le WMTS ne
+ * renvoie PAS de tuile (contrairement à la BD ORTHO qui renvoie du JPEG blanc
+ * opaque — cf. le piège documenté sur `ign-ortho`). Un trou de couverture laisse
+ * donc simplement l'imagerie en dessous visible : l'overlay est sûr à tout zoom.
+ * ===================================================================== */
+
+/** Zoom max de la pyramide WMTS des ombrages LiDAR HD (grille PM).
+ *  z18 ≈ 0,6 m/px, cohérent avec un produit à 50 cm. Au-delà MapLibre
+ *  sur-zoome la tuile z18 (pas de trou). Vérifiable via
+ *  `node scripts/check-ign-lidar.mjs` (sonde le GetCapabilities réel). */
+export const LIDAR_MAX_ZOOM = 18;
+/** En deçà, l'ombrage n'apporte rien et coûte des tuiles inutiles. */
+export const LIDAR_MIN_ZOOM = 8;
+
+/** Identifiants des trois overlays LiDAR HD, dans l'ordre de cyclage du bouton.
+ *  Le type `LidarLayerId` vit dans `types.ts` (feuille du découpage, §3). */
+export const LIDAR_LAYER_IDS: readonly LidarLayerId[] = ['mnt', 'mns', 'mnh'];
+
+export interface LidarLayerDef {
+    /** Identifiant de la source ET de la couche dans le style MapLibre. */
+    sourceId: string;
+    /** Nom de la ressource WMTS Géoplateforme (paramètre `LAYER`). */
+    wmtsLayer: string;
+    /** Libellé court affiché (toast / title du bouton). */
+    label: string;
+    /** Une phrase : ce que la couche montre. */
+    hint: string;
+}
+
+export const LIDAR_HD_LAYERS: Record<LidarLayerId, LidarLayerDef> = {
+    mnt: {
+        sourceId: 'lidar-mnt',
+        wmtsLayer: 'IGNF_LIDAR-HD_MNT_ELEVATION.ELEVATIONGRIDCOVERAGE.SHADOW',
+        label: 'LiDAR HD — MNT (sol nu)',
+        hint: 'Relief du sol sous la végétation',
+    },
+    mns: {
+        sourceId: 'lidar-mns',
+        wmtsLayer: 'IGNF_LIDAR-HD_MNS_ELEVATION.ELEVATIONGRIDCOVERAGE.SHADOW',
+        label: 'LiDAR HD — MNS (sursol)',
+        hint: 'Relief de la surface : bâti + canopée',
+    },
+    mnh: {
+        sourceId: 'lidar-mnh',
+        wmtsLayer: 'IGNF_LIDAR-HD_MNH_ELEVATION.ELEVATIONGRIDCOVERAGE.SHADOW',
+        label: 'LiDAR HD — MNH (hauteur)',
+        hint: 'Hauteur de végétation (densité du couvert)',
+    },
+};
+
+/** URL de tuile WMTS Géoplateforme (grille PM = XYZ) pour une ressource donnée. */
+export function lidarTileUrl(wmtsLayer: string): string {
+    return 'https://data.geopf.fr/wmts?SERVICE=WMTS&VERSION=1.0.0&REQUEST=GetTile'
+        + '&LAYER=' + wmtsLayer
+        + '&STYLE=normal&FORMAT=image/png&TILEMATRIXSET=PM'
+        + '&TILEMATRIX={z}&TILECOL={x}&TILEROW={y}';
+}
+
+/** Les 3 sources raster LiDAR HD, prêtes à être fusionnées dans `RASTER_STYLE`. */
+function lidarSources(): StyleSpecification['sources'] {
+    const out: StyleSpecification['sources'] = {};
+    for (const id of LIDAR_LAYER_IDS) {
+        const def = LIDAR_HD_LAYERS[id];
+        out[def.sourceId] = {
+            type: 'raster',
+            tiles: [lidarTileUrl(def.wmtsLayer)],
+            tileSize: 256,
+            minzoom: LIDAR_MIN_ZOOM,
+            maxzoom: LIDAR_MAX_ZOOM,
+            bounds: [-5.6, 41.1, 9.8, 51.3],
+            attribution: 'LiDAR HD © IGN / Géoplateforme',
+        };
+    }
+    return out;
+}
+
+/** Les 3 couches raster LiDAR HD, MASQUÉES par défaut : tant qu'aucune n'est
+ *  visible, MapLibre ne requête aucune tuile (coût réseau nul à l'arrêt). */
+function lidarLayers(): StyleSpecification['layers'] {
+    return LIDAR_LAYER_IDS.map((id) => ({
+        id: LIDAR_HD_LAYERS[id].sourceId,
+        type: 'raster' as const,
+        source: LIDAR_HD_LAYERS[id].sourceId,
+        layout: { visibility: 'none' as const },
+        paint: {
+            // 0.85 : l'ombrage domine (lecture du micro-relief) tout en laissant
+            // transparaître l'imagerie pour garder les repères visuels.
+            'raster-opacity': 0.85,
+            'raster-fade-duration': 300,
+        },
+    }));
+}
 
 // Style satellite ESRI World Imagery + modèle d'élévation (DEM) AWS Open Data
 // Tout sans clé API, sans tracking. Le DEM ne sert qu'au relief 3D (setTerrain).
@@ -90,7 +201,9 @@ export const RASTER_STYLE: StyleSpecification = {
             minzoom: 0,
             maxzoom: 16,
             attribution: 'BD TOPO © IGN / Géoplateforme'
-        }
+        },
+        // Ombrages LiDAR HD (WMTS Géoplateforme, sans clé) — cf. bloc ci-dessus.
+        ...lidarSources()
     },
     layers: [
         { id: 'satellite', type: 'raster', source: 'satellite' },
@@ -105,7 +218,11 @@ export const RASTER_STYLE: StyleSpecification = {
                 'raster-opacity': ['interpolate', ['linear'], ['zoom'], 11, 0, 13, 1],
                 'raster-fade-duration': 500
             }
-        }
+        },
+        // Overlays LiDAR HD : AU-DESSUS de l'imagerie, mais déclarés ICI (dans le
+        // style) donc SOUS toutes les couches ajoutées après `load` — dessins,
+        // formes, bâtiments 3D, noms de rues (cf. draw-layers.ts, map-core.ts).
+        ...lidarLayers()
     ]
 };
 
