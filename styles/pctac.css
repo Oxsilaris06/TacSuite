@@ -1566,13 +1566,25 @@ body.up-kb-open .up-kb-aware {
                défilement interne si le contenu dépasse. */
             #plan_layers_panel {
                 right: 64px;
-                width: 190px;
+                width: 194px;
                 max-width: calc(100% - 74px);
                 max-height: 55%;
+                /* Plus translucide qu'en desktop : sur un écran étroit le panneau
+                   couvre une part notable de la carte, le fond doit rester lisible
+                   dessous tout en gardant le contraste du texte (blur renforcé). */
+                background: var(--bg-glass);
+                backdrop-filter: blur(14px);
+            }
+
+            /* Le libellé le plus long (« Ombrage LiDAR HD ») tenait sur deux lignes
+               à 190px : lignes resserrées pour garder une ligne par réglage. */
+            .plan-layers-row {
+                gap: 8px;
             }
 
             .plan-layers-label {
-                font-size: 0.78em;
+                font-size: 0.74em;
+                line-height: 1.15;
             }
         }
 
