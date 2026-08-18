@@ -11,14 +11,22 @@
  * `openPreview()` et `openPresentInPlace()` construisent désormais le MÊME blob
  * PDF vectoriel que le téléchargement (`buildOiPdfBlob()`, `@oi/pdf/engine-v3.js`,
  * lui-même adossé à `buildOiDocDefinition()`/`document-builder.ts`, SOURCE UNIQUE
- * DE VÉRITÉ) : `openPreview` l'affiche dans un `<iframe>` embarqué dans
- * `#presentation-content` (Blob URL, révoquée à la fermeture de
- * `#presentationModal`) ; `openPresentInPlace` l'ouvre dans un nouvel onglet
- * (le visualiseur PDF natif du navigateur fournit déjà zoom/plein écran/
- * impression — plus besoin du « deck » HTML custom qu'assemblait
- * `_buildPresentationDocument`). `PDFEngineV2.options` (bloc de config
- * html2canvas/jsPDF, mort depuis le retrait du téléchargement rastérisé,
- * PDF.INTEG) est retiré avec son contrat (`contracts.ts`).
+ * DE VÉRITÉ).
+ *
+ * SPEC-2026-08-18-pdf-et-champs.md §1 — parc Gendarmerie verrouillé : une URL
+ * `blob:` dans un `<iframe>` ne s'affiche pas et le lecteur PDF natif est
+ * souvent désactivé par stratégie de groupe. `openPreview` ne crée donc plus
+ * AUCUNE URL `blob:` ni `<iframe>` : le blob PDF est lu en `ArrayBuffer` et
+ * rendu PAGE PAR PAGE par pdf.js (`pdfjs-dist`, embarqué — worker servi
+ * localement par Vite via `?url`, JAMAIS un CDN, fonctionne hors ligne) dans
+ * des `<canvas>` insérés dans `#presentation-content`. `openPresentInPlace`
+ * garde son chemin nominal (nouvel onglet via `window.open` sur un Blob URL —
+ * le visualiseur PDF natif du navigateur, quand il existe, y fournit zoom/
+ * plein écran/impression) mais retombe désormais sur l'aperçu intégré
+ * ci-dessus si `window.open` échoue ou est bloqué, au lieu d'un simple toast
+ * d'erreur. `PDFEngineV2.options` (bloc de config html2canvas/jsPDF, mort
+ * depuis le retrait du téléchargement rastérisé, PDF.INTEG) est retiré avec
+ * son contrat (`contracts.ts`).
  *
  * `collectAllData()` (collecteur UNIQUE photos IndexedDB + fusion des
  * annotations + fond personnalisé) reste INCHANGÉ et continue de servir les
@@ -52,11 +60,25 @@ function safeJsonParse<T>(str: string, fallback: T): T {
     }
 }
 
+interface OiPdfRenderProgress {
+    /** Appelé après chaque page peinte (1-indexé) — alimente `#pdfLoadingStatus`. */
+    onProgress: (page: number, total: number) => void;
+    /** `true` si un `openPreview()` plus récent (ou la fermeture de la modale)
+     * a supplanté ce rendu — le rendu doit s'arrêter au prochain point de
+     * contrôle plutôt que continuer à peindre un conteneur périmé. */
+    isCancelled: () => boolean;
+}
+
 /** Dépendances injectables (couture de test) pour `openPreview`/`openPresentInPlace`
- * — même précédent que `downloadOiPdfV3({ collect })` (`@oi/pdf/engine-v3.js`). */
+ * — même précédent que `downloadOiPdfV3({ collect })` (`@oi/pdf/engine-v3.js`).
+ * `renderPdf` isole pdf.js (worker, décodage, rendu `<canvas>` — difficile à
+ * exercer sous jsdom, aucun mock requis dans la suite unitaire : elle injecte
+ * un faux rendu, `defaultRenderPdf` — la vraie implémentation pdf.js — n'est
+ * jamais exécutée en test). */
 interface OiPdfBuildDeps {
     collect?: () => Promise<OiPdfCollectedData>;
     buildBlob?: (data: OiPdfCollectedData, opts: { format: OiPdfFormat }) => Promise<Blob>;
+    renderPdf?: (blob: Blob, container: HTMLElement, progress: OiPdfRenderProgress) => Promise<void>;
 }
 
 /** Import dynamique de `buildOiPdfBlob` — isole `pdfmake`/`document-builder.ts`
@@ -71,38 +93,173 @@ function currentPdfFormat(): OiPdfFormat {
     return window.pdfOutputFormat === '16:9' ? '16:9' : 'a4';
 }
 
-/**
- * Le navigateur sait-il afficher un PDF EMBARQUÉ (`<iframe src="blob:...">`) ?
- * `navigator.pdfViewerEnabled` est standard (Chrome/Edge/Firefox/Safari
- * desktop ≥ 16.4) ; SEUL `false` explicite signale une incapacité connue —
- * `undefined` (navigateur trop ancien pour exposer la propriété) reste dans
- * la branche « on tente », cas très majoritaire.
- */
-function canRenderInlinePdf(): boolean {
-    return navigator.pdfViewerEnabled !== false;
+/** Laisse respirer le fil principal entre deux pages — un document de
+ * plusieurs dizaines de pages ne doit pas figer l'UI pendant son rendu. */
+function yieldToMain(): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, 0));
 }
 
-// --- Cycle de vie de l'URL blob de l'aperçu embarqué --------------------
-let previewObjectUrl: string | null = null;
+/**
+ * Rend CHAQUE page du blob PDF dans un `<canvas>`, progressivement, à
+ * l'intérieur de `container` (déjà attaché au DOM — sa largeur mesurée pilote
+ * l'échelle). pdf.js et son worker sont importés dynamiquement (mêmes raisons
+ * que `defaultBuildBlob` : chunk dédié, jamais chargé tant que l'aperçu n'est
+ * pas ouvert) ; le worker est résolu en URL LOCALE par Vite (`?url`) — jamais
+ * un CDN, condition du fonctionnement hors ligne (parc Gendarmerie).
+ *
+ * Terrain pour l'édition future (SPEC §1 point 8, non implémentée ici) :
+ * chaque page est un `.pdf-preview-page` en `position: relative`, aux
+ * dimensions CSS EXACTES de la page (indépendantes du `devicePixelRatio` —
+ * seule la résolution INTERNE du `<canvas>` en tient compte, pour un rendu
+ * net), portant `data-page-number` et `data-scale` (facteur point-PDF →
+ * pixel-CSS, permet à un futur éditeur de convertir les coordonnées du PDF
+ * source en position CSS). Un `.pdf-preview-page-overlay` vide, en
+ * `position: absolute; inset: 0; pointer-events: none`, y est superposé —
+ * prêt à recevoir des zones interactives (l'édition future n'a qu'à y
+ * ajouter des enfants et retirer `pointer-events: none`).
+ */
+async function defaultRenderPdf(blob: Blob, container: HTMLElement, progress: OiPdfRenderProgress): Promise<void> {
+    const pdfjsLib = await import('pdfjs-dist');
+    const workerUrl = (await import('pdfjs-dist/build/pdf.worker.min.mjs?url')).default;
+    pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl;
 
-function revokePreviewObjectUrl(): void {
-    if (previewObjectUrl) {
-        URL.revokeObjectURL(previewObjectUrl);
-        previewObjectUrl = null;
+    const data = new Uint8Array(await blob.arrayBuffer());
+    const loadingTask = pdfjsLib.getDocument({ data });
+    const doc = await loadingTask.promise;
+    try {
+        const total = doc.numPages;
+        // ponytail: largeur mesurée UNE fois avant le rendu — pas de
+        // ResizeObserver pour reflow live si la fenêtre est redimensionnée en
+        // cours de lecture ; upgrade si demandé, en repassant simplement par
+        // un nouvel `openPreview()` (rouvre l'aperçu à la largeur courante).
+        const availableWidth = container.clientWidth || 800;
+        const dpr = window.devicePixelRatio || 1;
+
+        for (let pageNumber = 1; pageNumber <= total; pageNumber++) {
+            if (progress.isCancelled()) return;
+
+            const page = await doc.getPage(pageNumber);
+            const scale = availableWidth / page.getViewport({ scale: 1 }).width;
+            const viewport = page.getViewport({ scale: scale * dpr });
+
+            const pageEl = document.createElement('div');
+            pageEl.className = 'pdf-preview-page';
+            pageEl.dataset.pageNumber = String(pageNumber);
+            pageEl.dataset.scale = String(scale);
+            pageEl.style.width = `${viewport.width / dpr}px`;
+            pageEl.style.height = `${viewport.height / dpr}px`;
+
+            const canvas = document.createElement('canvas');
+            canvas.className = 'pdf-preview-canvas';
+            canvas.width = Math.ceil(viewport.width);
+            canvas.height = Math.ceil(viewport.height);
+
+            const overlay = document.createElement('div');
+            overlay.className = 'pdf-preview-page-overlay';
+
+            pageEl.append(canvas, overlay);
+            container.appendChild(pageEl);
+
+            await page.render({ canvas, viewport }).promise;
+            if (progress.isCancelled()) return;
+
+            progress.onProgress(pageNumber, total);
+            if (pageNumber < total) await yieldToMain();
+        }
+    } finally {
+        void loadingTask.destroy();
     }
 }
 
-/** Révoque l'URL blob de l'aperçu à la fermeture de `#presentationModal`
+// --- Annulation d'un rendu d'aperçu en vol -------------------------------
+// Remplace l'ancienne révocation d'URL blob (obsolète : `openPreview` ne crée
+// plus de Blob URL). Un nouvel `openPreview()` OU la fermeture de la modale
+// incrémentent le compteur : toute boucle de rendu encore active le constate
+// à son prochain point de contrôle (`isCancelled`) et s'arrête — évite de
+// peindre un conteneur périmé ou de continuer un rendu que plus personne ne
+// regarde.
+let renderGeneration = 0;
+
+function cancelPendingPreviewRender(): void {
+    renderGeneration++;
+}
+
+/** Annule le rendu d'aperçu en cours à la fermeture de `#presentationModal`
  * (événement natif `close` d'un `<dialog>` : couvre `.close()` PROGRAMMATIQUE
- * (bouton « Fermer », `main.ts`), la touche Échap ET un clic sur le
- * fond — un seul point de revocation, pas un par site d'appel de `.close()`).
+ * (bouton « Fermer », `main.ts`), la touche Échap ET un clic sur le fond).
  * `addEventListener` avec la MÊME référence de fonction est idempotent par
  * spec DOM (un doublon exact `(type, listener)` sur la même cible est
  * ignoré) : nul besoin d'un drapeau « déjà posé » — sûr à rappeler à chaque
  * `openPreview()`, y compris si `#presentationModal` était remonté entre
  * deux appels. */
 function ensurePreviewCloseCleanup(modal: HTMLDialogElement): void {
-    modal.addEventListener('close', revokePreviewObjectUrl);
+    modal.addEventListener('close', cancelPendingPreviewRender);
+}
+
+/**
+ * Corps de `PDFEngineV2.openPreview` — extrait en fonction libre (plutôt que
+ * `this.openPreview(...)`) pour que `openPresentInPlace` puisse s'y replier
+ * SANS friction de typage : `this`, dans une méthode d'un littéral vérifié
+ * par `satisfies PdfEngineV2Contract`, s'infère au contrat PUBLIC (0
+ * argument) — un appel `this.openPreview(deps)` depuis une AUTRE méthode du
+ * même littéral échouerait donc à la compilation.
+ */
+async function runOpenPreview(deps?: OiPdfBuildDeps): Promise<void> {
+    const presentationContent = document.getElementById('presentation-content');
+    if (!presentationContent) return;
+
+    const modal = document.getElementById('presentationModal') as HTMLDialogElement | null;
+    if (modal) ensurePreviewCloseCleanup(modal);
+
+    // Toute génération PRÉCÉDENTE (rendu encore en cours) est supplantée :
+    // elle le constate à son prochain point de contrôle et s'arrête.
+    const generation = ++renderGeneration;
+    const isCancelled = (): boolean => generation !== renderGeneration;
+
+    const loader = document.getElementById('pdfLoadingModal');
+    const statusText = document.getElementById('pdfLoadingStatus');
+    const updateStatus = (msg: string): void => {
+        if (statusText) statusText.textContent = msg;
+    };
+
+    presentationContent.innerHTML = '';
+    if (loader) loader.style.display = 'flex';
+
+    try {
+        updateStatus('Collecte des données…');
+        const collect = deps?.collect ?? ((): Promise<OiPdfCollectedData> => PDFEngineV2.collectAllData());
+        const data = await collect();
+
+        const format = currentPdfFormat();
+
+        updateStatus('Préparation des images…');
+        updateStatus('Composition du document…');
+        const buildBlob = deps?.buildBlob ?? defaultBuildBlob;
+        const blob = await buildBlob(data, { format });
+
+        if (isCancelled()) return;
+
+        const pagesContainer = document.createElement('div');
+        pagesContainer.className = 'pdf-preview-pages';
+        presentationContent.innerHTML = '';
+        presentationContent.appendChild(pagesContainer);
+
+        updateStatus('Rendu des pages…');
+        const renderPdf = deps?.renderPdf ?? defaultRenderPdf;
+        await renderPdf(blob, pagesContainer, {
+            onProgress: (page, total) => updateStatus(`Rendu des pages… (${page}/${total})`),
+            isCancelled,
+        });
+    } catch (error) {
+        console.error('Preview Error:', error);
+        if (!isCancelled()) {
+            presentationContent.innerHTML =
+                '<div class="pdf-preview-error">Erreur lors de la génération de l\'aperçu. ' +
+                'Utilisez le bouton « Télécharger le PDF » ci-dessous.</div>';
+        }
+    } finally {
+        if (!isCancelled() && loader) loader.style.display = 'none';
+    }
 }
 
 // Exporté (en plus de window.PDFEngineV2, RÈGLE D'OR §2.2 pour les AUTRES
@@ -115,81 +272,31 @@ function ensurePreviewCloseCleanup(modal: HTMLDialogElement): void {
 export const PDFEngineV2 = {
     /**
      * Lance l'aperçu dans `#presentationModal` : construit le MÊME blob PDF
-     * vectoriel que le téléchargement (source unique de vérité, R4-a) et
-     * l'affiche dans un `<iframe>` (`URL.createObjectURL`, révoquée à la
-     * fermeture de la modale). Repli explicite AVANT toute construction si le
-     * navigateur signale son incapacité à peindre un PDF embarqué
-     * (`navigator.pdfViewerEnabled === false` — rare desktop, possible
-     * mobile) : invite à utiliser le bouton « Télécharger le PDF » déjà
-     * présent dans la modale. PAS de tentative d'iframe dans ce cas — un
-     * navigateur incapable de rendre un PDF embarqué déclenche en coulisses
-     * une tentative de TÉLÉCHARGEMENT fantôme pour la navigation de l'iframe
-     * (constaté), risquant de perturber un téléchargement légitime déclenché
-     * peu après (`#downloadPdfBtn`) ; mieux vaut ne rien tenter que ce
-     * repli-là.
+     * vectoriel que le téléchargement (source unique de vérité, R4-a) et le
+     * rend PAGE PAR PAGE dans des `<canvas>` via pdf.js embarqué
+     * (`defaultRenderPdf`) — AUCUNE URL `blob:`, AUCUN `<iframe>`, aucune
+     * dépendance au lecteur PDF du navigateur (SPEC §1 : parc Gendarmerie
+     * verrouillé, `blob:` inexploitable en `<iframe>`, lecteur PDF natif
+     * souvent désactivé). Rendu progressif avec avancement affiché dans
+     * `#pdfLoadingStatus` ; un `openPreview()` plus récent OU la fermeture de
+     * la modale annulent proprement un rendu encore en vol
+     * (`cancelPendingPreviewRender`).
      */
-    async openPreview(deps?: OiPdfBuildDeps): Promise<void> {
-        const presentationContent = document.getElementById('presentation-content');
-        if (!presentationContent) return;
-
-        revokePreviewObjectUrl();
-
-        const modal = document.getElementById('presentationModal') as HTMLDialogElement | null;
-        if (modal) ensurePreviewCloseCleanup(modal);
-
-        if (!canRenderInlinePdf()) {
-            presentationContent.innerHTML =
-                '<div class="pdf-preview-fallback">' +
-                '<h3>Aperçu non disponible sur ce navigateur</h3>' +
-                '<p>Ce navigateur ne sait pas afficher un PDF intégré ici. ' +
-                'Utilisez le bouton « Télécharger le PDF » ci-dessous pour l\'obtenir directement.</p>' +
-                '</div>';
-            return;
-        }
-
-        const loader = document.getElementById('pdfLoadingModal');
-        const statusText = document.getElementById('pdfLoadingStatus');
-        const updateStatus = (msg: string): void => {
-            if (statusText) statusText.textContent = msg;
-        };
-
-        presentationContent.innerHTML = '';
-        if (loader) loader.style.display = 'flex';
-
-        try {
-            updateStatus('Collecte des données…');
-            const collect = deps?.collect ?? ((): Promise<OiPdfCollectedData> => this.collectAllData());
-            const data = await collect();
-
-            const format = currentPdfFormat();
-
-            updateStatus('Préparation des images…');
-            updateStatus('Composition du document…');
-            const buildBlob = deps?.buildBlob ?? defaultBuildBlob;
-            const blob = await buildBlob(data, { format });
-
-            const url = URL.createObjectURL(blob);
-            previewObjectUrl = url;
-
-            const iframe = document.createElement('iframe');
-            iframe.src = url;
-            iframe.title = "Aperçu du PDF de l'Ordre Initial";
-            iframe.className = 'pdf-preview-frame';
-            presentationContent.innerHTML = '';
-            presentationContent.appendChild(iframe);
-        } catch (error) {
-            console.error('Preview Error:', error);
-            presentationContent.innerHTML = '<div class="pdf-preview-error">Erreur lors de la génération de l\'aperçu.</div>';
-        } finally {
-            if (loader) loader.style.display = 'none';
-        }
+    openPreview(deps?: OiPdfBuildDeps): Promise<void> {
+        return runOpenPreview(deps);
     },
 
     /**
      * MODE PRÉSENTATION DÉDIÉ « Présenter ici ». Ouvre le MÊME blob PDF
-     * vectoriel (R4-a) dans un NOUVEL ONGLET : le visualiseur PDF natif du
-     * navigateur fournit déjà zoom, plein écran, navigation clavier/tactile et
-     * impression — inutile de réassembler un « deck » HTML autonome.
+     * vectoriel (R4-a) dans un NOUVEL ONGLET (`window.open` sur un Blob URL) :
+     * quand le navigateur le permet, son visualiseur PDF natif fournit déjà
+     * zoom, plein écran, navigation clavier/tactile et impression — inutile
+     * de réassembler un « deck » HTML autonome. Sur le parc Gendarmerie
+     * verrouillé visé par SPEC §1, `window.open` peut être bloqué (pop-up) ou
+     * déboucher sur un onglet incapable d'afficher le blob : dans ce cas, on
+     * retombe PROPREMENT sur l'aperçu intégré (`openPreview`, pdf.js/canvas)
+     * en réutilisant les données/blob déjà construits, plutôt que de laisser
+     * l'utilisateur avec un simple toast d'erreur.
      */
     async openPresentInPlace(deps?: OiPdfBuildDeps): Promise<void> {
         const loader = document.getElementById('pdfLoadingModal');
@@ -215,7 +322,20 @@ export const PDFEngineV2 = {
             const win = window.open(url, '_blank');
             if (!win) {
                 URL.revokeObjectURL(url);
-                toast("La fenêtre de présentation a été bloquée par le navigateur. Autorisez les pop-ups pour ce site, puis réessayez.", { kind: 'error' });
+                toast("La fenêtre de présentation a été bloquée par le navigateur (pop-up). Affichage dans l'aperçu intégré à la place.", { kind: 'error' });
+                // Repli : même blob déjà construit, aucune recollecte/reconstruction.
+                // `exactOptionalPropertyTypes` : `renderPdf` omise plutôt que
+                // valant `undefined` si `deps` n'en fournit pas (couture de test).
+                await runOpenPreview({
+                    collect: () => Promise.resolve(data),
+                    buildBlob: () => Promise.resolve(blob),
+                    ...(deps?.renderPdf ? { renderPdf: deps.renderPdf } : {}),
+                });
+                const modal = document.getElementById('presentationModal') as HTMLDialogElement | null;
+                if (modal && !modal.open) {
+                    if (typeof modal.showModal === 'function') modal.showModal();
+                    else modal.style.display = 'flex';
+                }
                 return;
             }
             // On révoque l'URL après un délai large : l'onglet a eu le temps de charger.

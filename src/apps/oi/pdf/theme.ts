@@ -22,6 +22,14 @@ export interface OiPdfPalette {
     accent: string;
     danger: string;
     warning: string;
+    /**
+     * Orange ambre dédié à l'UDA (Usage De l'Arme) — distinct de `danger`
+     * (rouge, réservé au NO-GO) et de `warning` (déjà pris : pilules
+     * d'outils d'effraction + carte Liaison de `buildCatPage`). Ajouté pour
+     * le §4.2 de SPEC-2026-08-18-pdf-et-champs.md (bloc UDA de la
+     * finalisation).
+     */
+    uda: string;
     border: string;
     headerRow: string;
     cardAlt: string;
@@ -37,6 +45,7 @@ export const PDF_LIGHT: OiPdfPalette = {
     accent: '#0033a0',
     danger: '#c0392b',
     warning: '#b45309',
+    uda: '#c2410c',
     border: '#999999',
     headerRow: '#dddddd',
     cardAlt: '#f5f5f5',
@@ -52,6 +61,7 @@ export const PDF_DARK: OiPdfPalette = {
     accent: '#5b9bd5',
     danger: '#ef4444',
     warning: '#eab308',
+    uda: '#fb923c',
     border: '#666666',
     headerRow: '#333333',
     cardAlt: '#1c1c1c',

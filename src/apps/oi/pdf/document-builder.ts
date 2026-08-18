@@ -766,7 +766,31 @@ function buildAdversaryFiche(ctx: BuildCtx, adv: OiAdversary, index: number): Co
     };
 }
 
-/** Fiche adversaire + ses galeries « Photos annexes »/« Renfort possible » (pdf-engine-v2.ts:959-969). */
+/**
+ * Page « MODES D'ACTION — <nom> » (SPEC-2026-08-18-pdf-et-champs.md §3) — émise
+ * immédiatement après la fiche de l'adversaire concerné, JAMAIS dans la fiche
+ * elle-même (verrouillée à une page, refus de génération au-delà du palier
+ * plancher 7 px, `buildAdversaryFiche` ci-dessus). Une carte par MA, texte
+ * intégral, `unbreakable:false` explicite : la pagination suit le flux normal
+ * pdfmake (aucune estimation de coût, aucun `ctx.fitErrors.push` — un texte
+ * long déborde simplement sur la page suivante, jamais de refus).
+ * `null` si `ma_list` est absente/vide ou ne contient que des entrées blanches
+ * (adversaire enregistré avant l'ajout du champ, ou aucun MA saisi).
+ */
+function buildAdversaryModesActionPage(ctx: BuildCtx, adv: OiAdversary, nom: string): Content | null {
+    const { p, geo } = ctx;
+    const maList = (adv.ma_list ?? []).filter((ma) => ma.trim() !== '');
+    if (maList.length === 0) {
+        return null;
+    }
+    const cards = maList.map((ma, i) =>
+        card([h3(`MA${i + 1}`, p), { text: str(ma), preserveLeadingSpaces: true }], p, { unbreakable: false }),
+    );
+    const spaced = cards.flatMap((c, i) => (i === 0 ? [c] : [{ text: '', margin: [0, 6, 0, 0] } as Content, c]));
+    return { stack: [h2(`MODES D'ACTION — ${nom}`, p, geo.contentWidthPt), ...spaced] };
+}
+
+/** Fiche adversaire + page « Modes d'action » + ses galeries « Photos annexes »/« Renfort possible » (pdf-engine-v2.ts:959-969). */
 function buildAdversaryPages(ctx: BuildCtx): Content[] {
     const { formData, photosBase64, dynamicPhotos, p, geo } = ctx;
     const adversaries = formData.adversaries ?? [];
@@ -774,6 +798,10 @@ function buildAdversaryPages(ctx: BuildCtx): Content[] {
     adversaries.forEach((adv, idx) => {
         pushPage(acc, buildAdversaryFiche(ctx, adv, idx + 1));
         const nom = strOr(adv.nom_adversaire, 'Inconnu');
+        const maPage = buildAdversaryModesActionPage(ctx, adv, nom);
+        if (maPage !== null) {
+            pushPage(acc, maPage);
+        }
         const extra = dynamicPhotos[`photo_extra_${adv.id}`] ?? [];
         const renfort = dynamicPhotos[`photo_renforts_${adv.id}`] ?? [];
         pushPages(acc, galleryPages(`Adversaire : ${nom} (Photos annexes)`, extra, photosBase64, p, geo));
@@ -785,7 +813,7 @@ function buildAdversaryPages(ctx: BuildCtx): Content[] {
 /* ==========================================================================
  * Section 3 — « 3. ENVIRONNEMENT ET AMIS » (pdf-engine-v2.ts:972-996).
  * ======================================================================== */
-function buildEnvironnement(ctx: BuildCtx): Content {
+function buildEnvironnement(ctx: BuildCtx, num: () => number): Content {
     const { formData, p, geo } = ctx;
     const left = [
         labelValue('Forces Amies / Concours', strOr(formData.amies), p),
@@ -804,7 +832,7 @@ function buildEnvironnement(ctx: BuildCtx): Content {
     // de perte silencieuse si l'un d'eux dépasse la page.
     return {
         stack: [
-            h2('3. ENVIRONNEMENT ET AMIS', p, geo.contentWidthPt),
+            h2(`${num()}. ENVIRONNEMENT ET AMIS`, p, geo.contentWidthPt),
             grid2([card(left, p, { unbreakable: false })], [card(right, p, { unbreakable: false })]),
             { text: '', margin: [0, 5, 0, 0] },
             grid2(
@@ -906,16 +934,16 @@ function executionBodyContent(ctx: BuildCtx, fontPx: number): Content[] {
     ];
 }
 
-/** Page standalone « 4. MISSION DE L'UNITÉ » — repli historique (rendu INCHANGÉ) si la fusion avec « 5. EXÉCUTION » ne tient sur aucun palier. */
-function buildMission(ctx: BuildCtx): Content {
+/** Page standalone « <N>. MISSION DE L'UNITÉ » — repli historique (rendu INCHANGÉ) si la fusion avec « EXÉCUTION » ne tient sur aucun palier. `num` déjà résolu par l'appelant (`buildMissionExecutionPages`), jamais recalculé ici. */
+function buildMission(ctx: BuildCtx, num: number): Content {
     const { p, geo, baseFontSize } = ctx;
-    return { stack: [h2("4. MISSION DE L'UNITÉ", p, geo.contentWidthPt), missionBodyContent(ctx, baseFontSize)] };
+    return { stack: [h2(`${num}. MISSION DE L'UNITÉ`, p, geo.contentWidthPt), missionBodyContent(ctx, baseFontSize)] };
 }
 
-/** Page standalone « 5. EXÉCUTION » — repli historique, cf. JSDoc `buildMission`. */
-function buildExecution(ctx: BuildCtx): Content {
+/** Page standalone « <N>. EXÉCUTION » — repli historique, cf. JSDoc `buildMission`. */
+function buildExecution(ctx: BuildCtx, num: number): Content {
     const { p, geo, baseFontSize } = ctx;
-    return { stack: [h2('5. EXÉCUTION', p, geo.contentWidthPt), ...executionBodyContent(ctx, baseFontSize)] };
+    return { stack: [h2(`${num}. EXÉCUTION`, p, geo.contentWidthPt), ...executionBodyContent(ctx, baseFontSize)] };
 }
 
 /**
@@ -978,8 +1006,14 @@ function missionExecutionCostPt(ctx: BuildCtx, fontPx: number): number {
  * leur police normale — jamais de refus pour ce couple (à la différence des
  * usages P1 stricts fiche adversaire/ZMSPCP/MOICP/effraction).
  */
-function buildMissionExecutionPages(ctx: BuildCtx): Content[] {
+function buildMissionExecutionPages(ctx: BuildCtx, num: () => number): Content[] {
     const { p, geo, baseFontSize } = ctx;
+    // Toujours rendue (jamais omise) : les 2 numéros sont consommés
+    // INCONDITIONNELLEMENT, une fois chacun, avant de choisir la mise en
+    // page (fusionnée ou repli 2 pages) — les deux rendus doivent porter
+    // exactement les mêmes numéros.
+    const missionNum = num();
+    const execNum = num();
     const availablePt = geo.contentHeightPt - EFFRAC_FITS_SAFETY_PT;
     const steps = Array.from(new Set<number>([baseFontSize, ...FIT_FONT_STEPS]))
         .filter((f) => f <= baseFontSize)
@@ -987,13 +1021,13 @@ function buildMissionExecutionPages(ctx: BuildCtx): Content[] {
 
     const mergedPage = (fontPx: number): Content => ({
         stack: [
-            h2("4. MISSION DE L'UNITÉ", p, geo.contentWidthPt),
+            h2(`${missionNum}. MISSION DE L'UNITÉ`, p, geo.contentWidthPt),
             missionBodyContent(ctx, fontPx),
             {
                 canvas: [{ type: 'line', x1: 0, y1: 0, x2: geo.contentWidthPt, y2: 0, lineWidth: 1, lineColor: p.border }],
                 margin: [0, 14, 0, 14],
             },
-            h2('5. EXÉCUTION', p, geo.contentWidthPt),
+            h2(`${execNum}. EXÉCUTION`, p, geo.contentWidthPt),
             ...executionBodyContent(ctx, fontPx),
         ],
         fontSize: fontPx,
@@ -1006,11 +1040,11 @@ function buildMissionExecutionPages(ctx: BuildCtx): Content[] {
     }
 
     // Repli naturel (jamais un refus) : les 2 pages historiques séparées.
-    return [buildMission(ctx), buildExecution(ctx)];
+    return [buildMission(ctx, missionNum), buildExecution(ctx, execNum)];
 }
 
-/** Section 6 — Galerie « 6. LOGISTIQUE & TRANSPORTS (Cheminement) » (pdf-engine-v2.ts:1032-1039) : PR avant domicile, ordre conservé (§3.4 règle 3). */
-function logisticsPhotos(dynamicPhotos: Record<string, OiPhotoMeta[]>): OiPhotoMeta[] {
+/** Photos de la section « TRANSPORT » (pdf-engine-v2.ts:1032-1039) : PR avant domicile, ordre conservé (§3.4 règle 3). Titre NU et numéro portés par le registre de sections (`OI_PDF_SECTIONS`, §5/§6 SPEC-2026-08-18-pdf-et-champs.md) — plus aucune mention de « logistique ». */
+function transportPhotos(dynamicPhotos: Record<string, OiPhotoMeta[]>): OiPhotoMeta[] {
     return [
         ...(dynamicPhotos['photo_container_transport_pr_preview_container'] ?? []),
         ...(dynamicPhotos['photo_container_transport_domicile_preview_container'] ?? []),
@@ -1021,7 +1055,7 @@ function logisticsPhotos(dynamicPhotos: Record<string, OiPhotoMeta[]>): OiPhotoM
  * Section 7 — « 7. ARTICULATION & ORDRES DE MOUVEMENT » (pdf-engine-v2.ts:1042-1057).
  * Toujours rendue (jamais omise dans la source).
  * ======================================================================== */
-function buildArticulationOverview(ctx: BuildCtx): Content {
+function buildArticulationOverview(ctx: BuildCtx, num: () => number): Content {
     const { formData, p, geo } = ctx;
     const rameVl = formData.rame_vl_order ?? [];
     const colonne = formData.colonne_progression_order ?? [];
@@ -1055,7 +1089,7 @@ function buildArticulationOverview(ctx: BuildCtx): Content {
 
     return {
         stack: [
-            h2('7. ARTICULATION & ORDRES DE MOUVEMENT', p, geo.contentWidthPt),
+            h2(`${num()}. ARTICULATION & ORDRES DE MOUVEMENT`, p, geo.contentWidthPt),
             grid2([rameCard], [colonneCard]),
             { text: '', margin: [0, 5, 0, 0] },
             penetrationCard,
@@ -1199,12 +1233,16 @@ function cellGroupPt(memberCount: number, fontPx: number): number {
 
 /**
  * Hauteur totale (pt) de « Composition par Cellule » (h3 + une boîte par
- * cellule + libellé Place du Chef) au palier `fontPx`.
+ * cellule + libellé Place du Chef) au palier `fontPx`. `placeChefLabel` DOIT
+ * être le MÊME libellé que celui passé au `labelValue` de rendu
+ * (`buildArticulationPage`) — sinon le calcul de fit se décale (§4.3
+ * SPEC-2026-08-18-pdf-et-champs.md : le libellé diffère désormais entre
+ * MOICP et ZMSPCP).
  */
-function cellsContentPt(groups: Array<[string, string[]]>, placeChef: string, fontPx: number, columnWidthPt: number): number {
+function cellsContentPt(groups: Array<[string, string[]]>, placeChef: string, fontPx: number, columnWidthPt: number, placeChefLabel: string): number {
     const boxesPt =
         groups.length > 0 ? groups.reduce((sum, [, members]) => sum + cellGroupPt(members.length, fontPx) + 8, 0) : effracLinePt(fontPx);
-    return EFFRAC_H3_PT + boxesPt + textLinePt(`Place du Chef : ${placeChef}`, fontPx, columnWidthPt);
+    return EFFRAC_H3_PT + boxesPt + textLinePt(`${placeChefLabel} : ${placeChef}`, fontPx, columnWidthPt);
 }
 
 /**
@@ -1236,10 +1274,12 @@ function buildArticulationPage(
         groups: Array<[string, string[]]>;
         cellsContent: Content[];
         placeChef: string;
+        /** Libellé du champ Place du Chef — diffère entre MOICP/ZMSPCP (§4.3 SPEC-2026-08-18-pdf-et-champs.md). */
+        placeChefLabel: string;
     },
 ): Content {
     const { p, geo } = ctx;
-    const { title, sectionLabel, coreFields, catLabel, catText, groups, cellsContent, placeChef } = opts;
+    const { title, sectionLabel, coreFields, catLabel, catText, groups, cellsContent, placeChef, placeChefLabel } = opts;
     const catItems = splitAtDashBoundaries(catText || '-');
     const hasBoundary = catItems.length > 1;
     const columnWidthPt = (geo.contentWidthPt - mm(6)) / 2;
@@ -1251,7 +1291,7 @@ function buildArticulationPage(
             ? line /* fieldLabel */ + catItems.reduce((sum, item) => sum + textLinePt(item, fontPx, columnWidthPt), 0)
             : textLinePt(`${catLabel} : ${catText}`, fontPx, columnWidthPt);
         const leftPt = EFFRAC_H3_PT + coreFieldsPt + catPt;
-        const rightPt = cellsContentPt(groups, placeChef, fontPx, columnWidthPt);
+        const rightPt = cellsContentPt(groups, placeChef, fontPx, columnWidthPt, placeChefLabel);
         return EFFRAC_H2_PT + Math.max(leftPt, rightPt);
     };
 
@@ -1267,7 +1307,7 @@ function buildArticulationPage(
 
     const catNode: Content[] = hasBoundary ? [fieldLabel(catLabel, p), ...dashItemList(catItems, p)] : [labelValue(catLabel, catText, p)];
     const left: Content[] = [h3(sectionLabel, p), ...coreFields.map(([label, value]) => labelValue(label, value, p)), ...catNode];
-    const right: Content[] = [h3('Composition par Cellule', p), ...cellsContent, labelValue('Place du Chef', placeChef, p)];
+    const right: Content[] = [h3('Composition par Cellule', p), ...cellsContent, labelValue(placeChefLabel, placeChef, p)];
 
     // Correctif revue (2026-08-10, point 2) : le titre reste COLLÉ à sa règle
     // — le contenu démarre juste dessous, l'espace résiduel (bloc peu
@@ -1297,6 +1337,7 @@ function buildZmspcpPage(ctx: BuildCtx, block: OiZmspcpBlock, memberToCell: Map<
         groups,
         cellsContent,
         placeChef: block.place_chef || '-',
+        placeChefLabel: 'Place du chef AO',
     });
 }
 
@@ -1319,6 +1360,7 @@ function buildMoicpPage(ctx: BuildCtx, block: OiMoicpBlock, memberToCell: Map<st
         groups,
         cellsContent,
         placeChef: block.place_chef || '-',
+        placeChefLabel: 'Place du chef inter',
     });
 }
 
@@ -2225,24 +2267,51 @@ function buildArticulationBlocksLoop(ctx: BuildCtx): Content[] {
 
 /**
  * Section 9 — « 8. CONDUITES À TENIR GÉNÉRALES » (pdf-engine-v2.ts:1195-1216),
- * OMISE si `cat_generales`/`no_go`/`cat_liaison` sont TOUS vides (§3.4 règle 1,
- * condition exacte `:1195`).
+ * OMISE si `cat_generales`/`no_go`/`cat_liaison`/`uda`/`place_chef_dispo` sont
+ * TOUS vides (§3.4 règle 1, condition exacte `:1195`, étendue aux deux
+ * nouveaux champs §4 SPEC-2026-08-18-pdf-et-champs.md pour éviter qu'un OI ne
+ * portant QUE l'un d'eux perde silencieusement la section).
  */
-function buildCatPage(ctx: BuildCtx): Content | null {
+function buildCatPage(ctx: BuildCtx, num: () => number): Content | null {
     const { formData, p, geo } = ctx;
     const cat = formData.cat_generales;
     const nogo = formData.no_go;
     const liaison = formData.cat_liaison;
-    if (!cat && !nogo && !liaison) {
+    const uda = formData.uda;
+    const placeChefDispo = formData.place_chef_dispo;
+    if (!cat && !nogo && !liaison && !uda && !placeChefDispo) {
         return null;
     }
+    // Numéro consommé ICI seulement (jamais dans le repli `null` ci-dessus) :
+    // une section omise ne consomme jamais de numéro (§6 SPEC-2026-08-18-pdf-et-champs.md).
+    const sectionNum = num();
 
-    // Blindage BLIND.A : `cat_generales`/`no_go`/`cat_liaison` sont des champs
-    // texte libres non bornés — filet `unbreakable:false` (audit « tout
-    // unbreakable a un filet »).
+    // Blindage BLIND.A : `cat_generales`/`no_go`/`cat_liaison`/`uda`/
+    // `place_chef_dispo` sont des champs texte libres non bornés — filet
+    // `unbreakable:false` (audit « tout unbreakable a un filet »).
+    const udaCard: Content | null = uda
+        ? accentCard('UDA', [{ text: strOr(uda), preserveLeadingSpaces: true }], p, 'uda', { unbreakable: false })
+        : null;
+    const placeChefDispoCard: Content | null = placeChefDispo
+        ? accentCard('Place du Chef de Dispo', [{ text: strOr(placeChefDispo) }], p, 'accent', { unbreakable: false })
+        : null;
+    // UDA et Place du chef de dispo (§4.1/§4.2) sont rendus APRÈS le bloc
+    // NO-GO : nouvelle ligne grid2 sous la ligne CAT Générales/NO-GO existante
+    // (préserve ce pairage historique plutôt que d'y insérer l'UDA), les deux
+    // nouvelles cartes posées côte à côte ENTRE ELLES (deux cartes courtes,
+    // rendu plus lisible qu'empilées) quand les deux sont renseignées.
+    let extraRow: Content | null = null;
+    if (udaCard && placeChefDispoCard) {
+        extraRow = grid2([udaCard], [placeChefDispoCard]);
+    } else if (udaCard) {
+        extraRow = udaCard;
+    } else if (placeChefDispoCard) {
+        extraRow = placeChefDispoCard;
+    }
+
     return {
         stack: [
-            h2('8. CONDUITES À TENIR GÉNÉRALES', p, geo.contentWidthPt),
+            h2(`${sectionNum}. CONDUITES À TENIR GÉNÉRALES`, p, geo.contentWidthPt),
             grid2(
                 [accentCard('CAT Générales', [{ text: strOr(cat), preserveLeadingSpaces: true }], p, 'accent', { unbreakable: false })],
                 [
@@ -2255,6 +2324,7 @@ function buildCatPage(ctx: BuildCtx): Content | null {
                     ),
                 ],
             ),
+            ...(extraRow !== null ? [{ text: '', margin: [0, 6, 0, 0] } as Content, extraRow] : []),
             { text: '', margin: [0, 6, 0, 0] },
             accentCard('Liaison', [{ text: strOr(liaison), preserveLeadingSpaces: true }], p, 'warning', { unbreakable: false }),
         ],
@@ -2269,7 +2339,7 @@ function buildCatPage(ctx: BuildCtx): Content | null {
  * (PAS les 12 de strategica) ; colonne DIR seulement si ≥1 membre a un `dir`
  * non vide (`:1227`).
  */
-function buildPatracPage(ctx: BuildCtx): Content | null {
+function buildPatracPage(ctx: BuildCtx, num: () => number): Content | null {
     const { formData, p, geo } = ctx;
     const rows = formData.patracdvr_rows ?? [];
     const allRows: Array<{ vehicle: string; m: OiPatracMember }> = [];
@@ -2281,6 +2351,9 @@ function buildPatracPage(ctx: BuildCtx): Content | null {
     if (allRows.length === 0) {
         return null;
     }
+    // Numéro consommé ICI seulement — jamais dans le repli `null` ci-dessus
+    // (§6 SPEC-2026-08-18-pdf-et-champs.md, section omise = pas de numéro).
+    const sectionNum = num();
 
     const hasDir = allRows.some((r) => r.m.dir.trim() !== '');
     // Largeurs adaptées (modèle pagination v2, mission PG.IMPL point 5 — banc
@@ -2328,7 +2401,7 @@ function buildPatracPage(ctx: BuildCtx): Content | null {
     };
 
     return {
-        stack: [h2('7. RÉCAPITULATIF PATRACDVR', p, geo.contentWidthPt), table],
+        stack: [h2(`${sectionNum}. RÉCAPITULATIF PATRACDVR`, p, geo.contentWidthPt), table],
         fontSize: patracFontPx(allRows.length),
     };
 }
@@ -2509,10 +2582,137 @@ export function internPhotoImages(photosBase64: Record<string, string>): {
 }
 
 /**
+ * Compteur de numéro de section PARTAGÉ (§6 SPEC-2026-08-18-pdf-et-champs.md)
+ * — chaque section NUMÉROTÉE appelle `next()` UNE SEULE FOIS, juste avant de
+ * composer son `h2`, et SEULEMENT une fois établi qu'elle n'est PAS omise
+ * (jamais dans un repli `null`/tableau vide en amont) : une section absente
+ * ne consomme donc jamais de numéro, et la numérotation reste CONTINUE quel
+ * que soit l'ordre effectif des sections (`resolveOiPdfSectionOrder`
+ * ci-dessous). Baseline documentée sur `OI_PDF_SECTIONS`.
+ */
+function makeSectionNumberer(start: number): () => number {
+    let n = start;
+    return () => n++;
+}
+
+/**
+ * Descripteur d'une section RÉORDONNABLE du registre `OI_PDF_SECTIONS`.
+ * `title` est le libellé NU (SANS numéro) — le numéro est calculé à la
+ * composition (`makeSectionNumberer`), jamais codé en dur dans un `h2()`.
+ * `build` retourne les pages de la section, ÉVENTUELLEMENT VIDES (section
+ * omise, cf. `pushPages` : un tableau vide ne pousse rien et ne casse pas le
+ * `pageBreak:'before'` de la section suivante).
+ */
+interface OiPdfSectionDef {
+    id: string;
+    title: string;
+    build(ctx: BuildCtx, num: () => number): Content[];
+}
+
+/**
+ * Registre déclaratif des sections RÉORDONNABLES du PDF OI (§1/§2/§6
+ * SPEC-2026-08-18-pdf-et-champs.md) — remplace l'ancienne suite d'appels
+ * impératifs de `buildOiDocDefinition` (`pushPage`/`pushPages` en cascade) :
+ * l'assemblage devient une boucle sur `resolveOiPdfSectionOrder(...)`.
+ *
+ * DEUX sections restent HORS registre, verrouillées par construction :
+ * - la page de garde (`buildCover`) : toujours rendue en PREMIER, en dehors
+ *   de toute réconciliation d'ordre (choix du présent chantier — jamais
+ *   numérotée, jamais réordonnable) ;
+ * - `'adversaires'` EST dans le registre (réordonnable) mais porte SA PROPRE
+ *   numérotation fixe « 2.<index> » (`buildAdversaryFiche`, fichier verrouillé
+ *   pour ce chantier — un autre agent y insère en parallèle les pages « Modes
+ *   d'action ») : son entrée ignore délibérément le compteur `num`. La
+ *   baseline de `makeSectionNumberer` (3, cf. `buildOiDocDefinition`) réserve
+ *   ainsi les slots 1 (garde, non numérotée) et 2 (adversaires) avant que les
+ *   sections DÉRIVÉES ci-dessous ne commencent à 3 — reproduit exactement la
+ *   numérotation historique par défaut. Si `'adversaires'` est un jour
+ *   déplacée à une autre position par l'UI de réordonnancement (non
+ *   implémentée ici), cette baseline fixe devra être revue : hors périmètre
+ *   de ce chantier (fichier verrouillé).
+ */
+const OI_PDF_SECTIONS: OiPdfSectionDef[] = [
+    { id: 'adversaires', title: 'Adversaires', build: (ctx) => buildAdversaryPages(ctx) },
+    { id: 'environnement', title: 'Environnement et amis', build: (ctx, num) => [buildEnvironnement(ctx, num)] },
+    {
+        id: 'transport',
+        title: 'Transport',
+        build: (ctx, num) => {
+            const { dynamicPhotos, photosBase64, p, geo } = ctx;
+            const photos = transportPhotos(dynamicPhotos);
+            // Même condition d'omission que `galleryPages()` (résolu = 0 photo)
+            // — vérifiée EN AMONT pour ne consommer un numéro que si la section
+            // sera bien rendue (§6 : section omise = pas de numéro).
+            if (!photos.some((meta) => photosBase64[meta.id] !== undefined)) {
+                return [];
+            }
+            return galleryPages(`${num()}. TRANSPORT`, photos, photosBase64, p, geo);
+        },
+    },
+    { id: 'mission-execution', title: "Mission de l'unité / Exécution", build: (ctx, num) => buildMissionExecutionPages(ctx, num) },
+    {
+        id: 'articulation',
+        title: 'Articulation & ordres de mouvement',
+        build: (ctx, num) => [buildArticulationOverview(ctx, num), ...buildArticulationBlocksLoop(ctx)],
+    },
+    {
+        id: 'cat',
+        title: 'Conduites à tenir générales',
+        build: (ctx, num) => {
+            const page = buildCatPage(ctx, num);
+            return page !== null ? [page] : [];
+        },
+    },
+    {
+        id: 'patracdvr',
+        title: 'Récapitulatif PATRACDVR',
+        build: (ctx, num) => {
+            const page = buildPatracPage(ctx, num);
+            return page !== null ? [page] : [];
+        },
+    },
+    { id: 'final', title: 'Page finale', build: (ctx) => [buildFinalPage(ctx)] },
+];
+
+/** Ordre par défaut des sections réordonnables (ids `OI_PDF_SECTIONS`, dans l'ordre) — `'transport'` déplacée juste après `'environnement'` (§5 SPEC-2026-08-18-pdf-et-champs.md). Exporté pour une future UI de réordonnancement (repli/réinitialisation). */
+export const OI_PDF_DEFAULT_SECTION_ORDER: string[] = OI_PDF_SECTIONS.map((s) => s.id);
+
+/** Libellés humains NUS par id de section — pour une future UI de réordonnancement. */
+export const OI_PDF_SECTION_LABELS: Record<string, string> = Object.fromEntries(OI_PDF_SECTIONS.map((s) => [s.id, s.title]));
+
+/**
+ * Réconcilie l'ordre PERSISTÉ (`formData.pdf_section_order`) avec le registre
+ * (§2 SPEC-2026-08-18-pdf-et-champs.md) : les ids persistés d'abord, DANS
+ * LEUR ORDRE (dédupliqués, ids inconnus du registre ignorés), puis les ids
+ * par défaut ABSENTS de cette liste, dans leur ordre par défaut mutuel — un
+ * id inconnu ou une liste PARTIELLE (voire absente) ne fait donc JAMAIS
+ * disparaître ni dupliquer une section.
+ */
+export function resolveOiPdfSectionOrder(persisted?: string[] | undefined): string[] {
+    const known = new Set(OI_PDF_DEFAULT_SECTION_ORDER);
+    const seen = new Set<string>();
+    const order: string[] = [];
+    for (const id of persisted ?? []) {
+        if (known.has(id) && !seen.has(id)) {
+            order.push(id);
+            seen.add(id);
+        }
+    }
+    for (const id of OI_PDF_DEFAULT_SECTION_ORDER) {
+        if (!seen.has(id)) {
+            order.push(id);
+        }
+    }
+    return order;
+}
+
+/**
  * Construit la `TDocumentDefinitions` complète des 14 sections de l'OI, dans
- * l'ordre imposé par SPEC-PDF-V3.md §3.2. Port de `pdf-engine-v2.ts:608-1304`
- * (`generateHTML`) — structure/replis/omissions identiques, langage visuel
- * `blocks.ts`/`theme.ts` (strategica).
+ * l'ordre imposé par SPEC-PDF-V3.md §3.2 (par défaut — réordonnable depuis
+ * `formData.pdf_section_order`, cf. `resolveOiPdfSectionOrder`/
+ * `OI_PDF_SECTIONS` ci-dessus, §2 SPEC-2026-08-18-pdf-et-champs.md). Port de
+ * `pdf-engine-v2.ts:608-1304` (`generateHTML`) — structure/replis/omissions
+ * identiques, langage visuel `blocks.ts`/`theme.ts` (strategica).
  */
 export function buildOiDocDefinition(data: OiPdfCollectedData, opts: { format: OiPdfFormat }): TDocumentDefinitions {
     const { formData, isDark } = data;
@@ -2540,22 +2740,19 @@ export function buildOiDocDefinition(data: OiPdfCollectedData, opts: { format: O
     };
 
     const pages: Content[] = [];
+    // Page de garde : verrouillée en première position, HORS registre —
+    // jamais numérotée, jamais réordonnée (cf. JSDoc `OI_PDF_SECTIONS`).
     pushPage(pages, buildCover(ctx));
-    pushPages(pages, buildAdversaryPages(ctx));
-    pushPage(pages, buildEnvironnement(ctx));
-    pushPages(pages, buildMissionExecutionPages(ctx));
-    pushPages(pages, galleryPages('6. LOGISTIQUE & TRANSPORTS (Cheminement)', logisticsPhotos(dynamicPhotos), photosBase64, p, geo));
-    pushPage(pages, buildArticulationOverview(ctx));
-    pushPages(pages, buildArticulationBlocksLoop(ctx));
-    const catPage = buildCatPage(ctx);
-    if (catPage !== null) {
-        pushPage(pages, catPage);
+    // Baseline 3 : slots 1 (garde) et 2 (adversaires, numérotation fixe
+    // « 2.<index> » hors compteur) réservés — cf. JSDoc `OI_PDF_SECTIONS`.
+    const num = makeSectionNumberer(3);
+    const sectionOrder = resolveOiPdfSectionOrder(formData.pdf_section_order);
+    for (const id of sectionOrder) {
+        const section = OI_PDF_SECTIONS.find((s) => s.id === id);
+        if (section) {
+            pushPages(pages, section.build(ctx, num));
+        }
     }
-    const patracPage = buildPatracPage(ctx);
-    if (patracPage !== null) {
-        pushPage(pages, patracPage);
-    }
-    pushPage(pages, buildFinalPage(ctx));
 
     // MISSION P1 (directive Nico 2026-08-10) — REFUS DE GÉNÉRATION explicite :
     // si AU MOINS un usage (fiche adversaire, bloc ZMSPCP/MOICP, cellule

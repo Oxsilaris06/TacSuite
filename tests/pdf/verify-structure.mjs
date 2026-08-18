@@ -80,15 +80,22 @@ import { existsSync, readFileSync, statSync } from 'node:fs';
 // `--lenient`, un marqueur conditionnel absent est signalé SKIP au lieu de
 // faire échouer A3 — mais l'ordre des marqueurs PRÉSENTS reste asserté.
 // ===========================================================================
+// RENUMÉROTATION CONTINUE (SPEC-2026-08-18-pdf-et-champs.md §2/§5/§6, chantier
+// registre de sections `document-builder.ts::OI_PDF_SECTIONS`) : le doublon
+// historique « 7. » (ARTICULATION/PATRACDVR) a été corrigé — la numérotation
+// est désormais dérivée de l'ordre effectif des sections, PATRACDVR devient
+// « 9. ». La section « 6. LOGISTIQUE & TRANSPORTS » a été renommée
+// « TRANSPORT » (plus aucune mention de « logistique ») et déplacée juste
+// après ENVIRONNEMENT (« 4. » dans l'ordre par défaut).
 export const MARKERS = [
   { n: 1, text: 'ORDRE INITIAL', conditional: false },
   { n: 2, text: '1. SITUATION GLOBALE', conditional: false },
   { n: 3, text: 'CIBLES(S)', conditional: false },
   { n: 4, text: '2.1 FICHE ADVERSAIRE', conditional: true },
   { n: 5, text: '3. ENVIRONNEMENT ET AMIS', conditional: false },
-  { n: 6, text: "4. MISSION DE L'UNITÉ", conditional: false },
-  { n: 7, text: '5. EXÉCUTION', conditional: false },
-  { n: 8, text: '6. LOGISTIQUE & TRANSPORTS', conditional: true },
+  { n: 6, text: '4. TRANSPORT', conditional: true },
+  { n: 7, text: "5. MISSION DE L'UNITÉ", conditional: false },
+  { n: 8, text: '6. EXÉCUTION', conditional: false },
   { n: 9, text: '7. ARTICULATION & ORDRES DE MOUVEMENT', conditional: false },
   // PDF.INTEG (mission d'intégration, vérifiée contre un PDF réel généré par
   // downloadOiPdfV3()) — CORRECTIF de casse par rapport à SPEC-PDF-V3.md §7
@@ -111,7 +118,7 @@ export const MARKERS = [
   { n: 11, text: 'ARTICULATION : MOICP', conditional: true },
   { n: 12, text: 'ARTICULATION : EFFRACTION', conditional: true },
   { n: 13, text: '8. CONDUITES À TENIR GÉNÉRALES', conditional: true },
-  { n: 14, text: '7. RÉCAPITULATIF PATRACDVR', conditional: false },
+  { n: 14, text: '9. RÉCAPITULATIF PATRACDVR', conditional: false },
   { n: 15, text: 'AVEZ-VOUS DES QUESTIONS ?', conditional: false },
 ];
 
@@ -673,7 +680,7 @@ function lineTokens(line) {
  */
 export function assertB2_noVerticalWordSplit(text) {
   const pages = splitPages(text);
-  const patracMarker = MARKERS[13]; // '7. RÉCAPITULATIF PATRACDVR'
+  const patracMarker = MARKERS[13]; // '9. RÉCAPITULATIF PATRACDVR' (renumérotation continue, SPEC-2026-08-18-pdf-et-champs.md §6)
   const finalMarker = MARKERS[14]; // 'AVEZ-VOUS DES QUESTIONS ?'
   const normPages = pages.map((p) => normalize(p));
   const startIdx = normPages.findIndex((p) => p.includes(normalize(patracMarker.text)));
@@ -1408,7 +1415,15 @@ function main() {
     { code: 'A1', ...assertA1_geometry(pdfInfo, opts.format) },
     { code: 'A2', ...assertA2_realText(text) },
     { code: 'A3', ...assertA3_sectionOrder(text, { lenient: opts.lenient }) },
-    { code: 'A4', ...assertA4_duplicateSevenPreserved(text) },
+    // A4 (assertA4_duplicateSevenPreserved) RETIRÉE des assertions requises
+    // (SPEC-2026-08-18-pdf-et-champs.md §6) : elle vérifiait la préservation
+    // du doublon HISTORIQUE « 7. » (ARTICULATION + PATRACDVR), désormais
+    // corrigé par la numérotation continue dérivée de l'ordre effectif
+    // (`document-builder.ts::OI_PDF_SECTIONS`) — un PDF correctement généré
+    // ne porte plus JAMAIS 2 titres « 7. », donc cette assertion FAIL
+    // systématiquement si on la laisse dans le pipeline. La fonction pure
+    // reste exportée/testée (logique générique, toujours valide) mais n'est
+    // plus un gardien requis de `main()`.
     { code: 'A5', ...assertA5_embeddedFonts(fonts) },
     { code: 'A6', ...assertA6_noRasterization(images, pdfInfo, opts.photos) },
     { code: 'A7', ...assertA7_weight(fileSizeBytes) },

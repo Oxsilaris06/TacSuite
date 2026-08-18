@@ -742,12 +742,12 @@ describe('spotlight (startSpot/endSpot)', () => {
 });
 
 describe('intégration avec les jeux de données réels (P1.A4)', () => {
-  it('monte les données OI (58 steps attendus, cf. docs/SPEC-CONTRATS.md §1.2 ; +1 étape panneau Calques)', async () => {
+  it('monte les données OI (59 steps attendus, cf. docs/SPEC-CONTRATS.md §1.2 ; +1 étape panneau Calques ; +1 étape modes d\'action adversaire)', async () => {
     const { oiTutoData } = await import('@oi/tuto-data');
     const PocheTuto = await freshPocheTuto();
     const instance = PocheTuto.mount({ appId: 'oi', appName: 'OI - ADI', data: oiTutoData })!;
     expect(instance.chapters).toHaveLength(8);
-    expect(instance.flat).toHaveLength(58);
+    expect(instance.flat).toHaveLength(59);
     instance.open();
     expect(document.querySelector('.ptuto-step-title')?.textContent).toBeTruthy();
   });
