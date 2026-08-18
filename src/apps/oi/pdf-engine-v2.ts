@@ -42,6 +42,7 @@ import type {
 import { createAnnotatedImageBlob } from '@oi/dessin.js';
 import { dbManager, Store } from '@oi/init.js';
 import type { OiPdfFormat } from '@oi/pdf/theme.js';
+import { attachEditableTextLayer, collectEditCandidates } from '@oi/pdf-preview-edit.js';
 import { toast } from '@shared/feedback.js';
 
 // pdf_engine_v2.js:14-16 — Parse JSON tolérant : retourne le fallback si la
@@ -107,16 +108,17 @@ function yieldToMain(): Promise<void> {
  * pas ouvert) ; le worker est résolu en URL LOCALE par Vite (`?url`) — jamais
  * un CDN, condition du fonctionnement hors ligne (parc Gendarmerie).
  *
- * Terrain pour l'édition future (SPEC §1 point 8, non implémentée ici) :
- * chaque page est un `.pdf-preview-page` en `position: relative`, aux
+ * Chaque page est un `.pdf-preview-page` en `position: relative`, aux
  * dimensions CSS EXACTES de la page (indépendantes du `devicePixelRatio` —
  * seule la résolution INTERNE du `<canvas>` en tient compte, pour un rendu
  * net), portant `data-page-number` et `data-scale` (facteur point-PDF →
- * pixel-CSS, permet à un futur éditeur de convertir les coordonnées du PDF
- * source en position CSS). Un `.pdf-preview-page-overlay` vide, en
- * `position: absolute; inset: 0; pointer-events: none`, y est superposé —
- * prêt à recevoir des zones interactives (l'édition future n'a qu'à y
- * ajouter des enfants et retirer `pointer-events: none`).
+ * pixel-CSS). Un `.pdf-preview-page-overlay` (`position: absolute; inset: 0;
+ * pointer-events: none`) y est superposé ; `attachEditableTextLayer`
+ * (`pdf-preview-edit.ts`, SPEC-2026-08-18-pdf-et-champs.md §2) y ajoute, par
+ * page, une zone cliquable pour chaque fragment de texte pdf.js reliable
+ * SANS AMBIGUÏTÉ à un champ du formulaire — chaque zone garde
+ * `pointer-events: auto` sur elle-même, l'overlay reste transparent aux
+ * clics partout ailleurs.
  */
 async function defaultRenderPdf(blob: Blob, container: HTMLElement, progress: OiPdfRenderProgress): Promise<void> {
     const pdfjsLib = await import('pdfjs-dist');
@@ -134,6 +136,9 @@ async function defaultRenderPdf(blob: Blob, container: HTMLElement, progress: Oi
         // un nouvel `openPreview()` (rouvre l'aperçu à la largeur courante).
         const availableWidth = container.clientWidth || 800;
         const dpr = window.devicePixelRatio || 1;
+        // Scan UNE fois pour tout le document : les champs du formulaire ne
+        // changent pas pendant qu'on peint les pages (cf. JSDoc `pdf-preview-edit.ts`).
+        const editCandidates = collectEditCandidates();
 
         for (let pageNumber = 1; pageNumber <= total; pageNumber++) {
             if (progress.isCancelled()) return;
@@ -162,6 +167,11 @@ async function defaultRenderPdf(blob: Blob, container: HTMLElement, progress: Oi
 
             await page.render({ canvas, viewport }).promise;
             if (progress.isCancelled()) return;
+
+            // Régénère l'aperçu complet après correction (§2 point 5 SPEC) — pas
+            // de `deps` : ce chemin n'existe QUE dans la vraie implémentation
+            // pdf.js (jamais en test, cf. JSDoc de fichier), toujours le flux réel.
+            await attachEditableTextLayer(page, pageEl, overlay, viewport, dpr, editCandidates, () => runOpenPreview());
 
             progress.onProgress(pageNumber, total);
             if (pageNumber < total) await yieldToMain();

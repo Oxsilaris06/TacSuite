@@ -931,9 +931,10 @@ export interface OiFormData {
      * Ordre persisté des sections réordonnables du PDF (ids du registre
      * `OI_PDF_SECTIONS`, `document-builder.ts`) — repli sur l'ordre par
      * défaut si absent, partiel, ou porteur d'ids inconnus
-     * (`resolveOiPdfSectionOrder`). Posé pour la fondation de réordonnancement
-     * §2 SPEC-2026-08-18-pdf-et-champs.md ; l'IHM de glisser-déposer n'est
-     * pas encore branchée sur ce champ.
+     * (`resolveOiPdfSectionOrder`). Alimenté par le panneau « Ordre des
+     * sections » de `#presentationModal` (glisser-déposer + boutons
+     * monter/descendre, `pdf-section-order.ts`, §2 SPEC-2026-08-18-pdf-et-
+     * champs.md).
      */
     pdf_section_order?: string[] | undefined;
     /** Tous les autres champs texte du formulaire (situation, mission, environnement…). */

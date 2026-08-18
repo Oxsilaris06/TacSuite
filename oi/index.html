@@ -23,7 +23,19 @@
     <input type="file" id="archiveFileInput" accept=".zip,.json" style="display: none;">
     <input type="file" id="jsonConfigInput" accept=".json" style="display: none;">
     <dialog id="presentationModal" aria-label="Aperçu et génération du PDF">
-        <div id="presentation-content">
+        <div class="pdf-preview-body">
+            <div id="presentation-content">
+            </div>
+            <!-- SPEC-2026-08-18-pdf-et-champs.md §2 — panneau « Ordre des sections » :
+                 colonne latérale repliable (jamais un overlay qui masquerait l'aperçu),
+                 rendue/câblée par pdf-section-order.ts (initPdfSectionOrderPanel). -->
+            <aside id="pdfSectionOrderPanel" class="pdf-section-order-panel" aria-label="Ordre des sections du PDF">
+                <div class="pdf-section-order-header">
+                    <h3>Ordre des sections</h3>
+                    <button type="button" id="pdfSectionOrderResetBtn" class="pdf-section-order-reset">Réinitialiser l'ordre</button>
+                </div>
+                <ol id="pdfSectionOrderList" class="pdf-section-order-list"></ol>
+            </aside>
         </div>
         <div class="modal-actions-pdf">
             <div class="pdf-format-toggle">
@@ -34,6 +46,10 @@
                 </div>
                 <span id="pdfFormatDims" class="toggle-label pdf-format-dims-note">297×210 mm</span>
             </div>
+            <button id="pdfSectionOrderToggleBtn" type="button" class="wizard-nav-btn" aria-expanded="false" aria-controls="pdfSectionOrderPanel"
+                title="Réordonner les sections du PDF">
+                Ordre des sections <span class="material-symbols-outlined icon-1-2em" aria-hidden="true">reorder</span>
+            </button>
             <button id="presentHereBtn" type="button" class="wizard-nav-btn btn-present-here"
                 title="Ouvrir le PDF plein écran dans un nouvel onglet (téléphone, bureau, TV, projecteur)">
                 Présenter ici <span class="material-symbols-outlined icon-1-2em" aria-hidden="true">slideshow</span>

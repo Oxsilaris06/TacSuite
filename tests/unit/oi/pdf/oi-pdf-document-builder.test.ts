@@ -35,9 +35,13 @@ import {
     hypothesisRowHeightPt,
     identityRowPt,
     internPhotoImages,
+    OI_PDF_DEFAULT_SECTION_ORDER,
+    OI_PDF_LOCKED_SECTION_ID,
+    OI_PDF_SECTION_LABELS,
     oiPdfFileName,
     OiPdfFitRefusalError,
     PAGE_CAPACITY,
+    resolveOiPdfSectionOrder,
     splitAtcdBoundaries,
 } from '@oi/pdf/document-builder.js';
 import { SOFT_HYPHEN } from '@oi/pdf/text-utils.js';
@@ -193,6 +197,72 @@ describe('buildOiDocDefinition — ordre des sections (SPEC-2026-08-18-pdf-et-ch
 
         expect(json).toContain('Aucune cible renseignée.');
         expect(json).not.toContain('FICHE ADVERSAIRE');
+    });
+});
+
+// ===========================================================================
+// resolveOiPdfSectionOrder — réordonnancement (§2 SPEC-2026-08-18-pdf-et-
+// champs.md), fondation consommée par le panneau IHM (pdf-section-order.ts).
+// ===========================================================================
+describe('resolveOiPdfSectionOrder', () => {
+    it('sans ordre persisté, renvoie exactement OI_PDF_DEFAULT_SECTION_ORDER', () => {
+        expect(resolveOiPdfSectionOrder(undefined)).toEqual(OI_PDF_DEFAULT_SECTION_ORDER);
+    });
+
+    it('un ordre persisté valide et complet est respecté tel quel', () => {
+        const custom = ['adversaires', 'final', 'environnement', 'transport', 'mission-execution', 'articulation', 'cat', 'patracdvr'];
+        expect(resolveOiPdfSectionOrder(custom)).toEqual(custom);
+    });
+
+    it('ids inconnus ignorés, ids manquants réinsérés dans leur ordre par défaut mutuel — jamais de section perdue ni dupliquée', () => {
+        const persisted = ['final', 'id-inconnu-du-registre', 'transport', 'transport']; // doublon + id fantôme
+        const order = resolveOiPdfSectionOrder(persisted);
+
+        expect(order).toHaveLength(OI_PDF_DEFAULT_SECTION_ORDER.length);
+        expect(new Set(order)).toEqual(new Set(OI_PDF_DEFAULT_SECTION_ORDER));
+        expect(order.filter((id) => id === 'transport')).toHaveLength(1);
+    });
+
+    it("un ordre persisté vide/undefined/corrompu ne casse rien : repli intégral sur l'ordre par défaut", () => {
+        expect(resolveOiPdfSectionOrder([])).toEqual(OI_PDF_DEFAULT_SECTION_ORDER);
+        expect(resolveOiPdfSectionOrder(['n-importe-quoi', '', 'autre-id-bidon'])).toEqual(OI_PDF_DEFAULT_SECTION_ORDER);
+    });
+
+    it("OI_PDF_LOCKED_SECTION_ID ('adversaires') est TOUJOURS épinglée en première position, même si l'ordre persisté la place ailleurs", () => {
+        expect(OI_PDF_LOCKED_SECTION_ID).toBe('adversaires');
+
+        const pushedToEnd = ['environnement', 'transport', 'mission-execution', 'articulation', 'cat', 'patracdvr', 'final', 'adversaires'];
+        const order = resolveOiPdfSectionOrder(pushedToEnd);
+        expect(order[0]).toBe(OI_PDF_LOCKED_SECTION_ID);
+        // Le reste de l'ordre persisté (hors la section verrouillée déplacée) est préservé.
+        expect(order.slice(1)).toEqual(['environnement', 'transport', 'mission-execution', 'articulation', 'cat', 'patracdvr', 'final']);
+    });
+
+    it("OI_PDF_LOCKED_SECTION_ID est épinglée en première position même absente de l'ordre persisté (repli par défaut)", () => {
+        const withoutLocked = ['final', 'environnement'];
+        const order = resolveOiPdfSectionOrder(withoutLocked);
+        expect(order[0]).toBe(OI_PDF_LOCKED_SECTION_ID);
+    });
+
+    it('OI_PDF_SECTION_LABELS couvre exactement les ids de OI_PDF_DEFAULT_SECTION_ORDER (un libellé humain par section réordonnable)', () => {
+        expect(Object.keys(OI_PDF_SECTION_LABELS).sort()).toEqual([...OI_PDF_DEFAULT_SECTION_ORDER].sort());
+    });
+});
+
+describe("buildOiDocDefinition — numérotation stable quand l'ordre des sections DÉRIVÉES change (§2/§6)", () => {
+    it("'adversaires' toujours numérotée « 2.1 » et les sections dérivées restent numérotées en continu à partir de 3, quel que soit l'ordre choisi pour elles", () => {
+        const formData = makeRichFormData();
+        // 'final' déplacée en tête des sections dérivées (juste après 'adversaires',
+        // toujours épinglée en 1re position par resolveOiPdfSectionOrder) — ne doit
+        // JAMAIS décaler ni la numérotation fixe de la fiche adversaire ni la
+        // numérotation continue des sections dérivées suivantes.
+        formData.pdf_section_order = ['final', 'adversaires', 'environnement', 'transport', 'mission-execution', 'articulation', 'cat', 'patracdvr'];
+        const json = JSON.stringify(buildOiDocDefinition(collect(formData, { logphoto: 'data:image/jpeg;base64,bG9n' }), { format: 'a4' }));
+
+        expect(json).toContain('2.1 FICHE ADVERSAIRE : DUPONT');
+        // 'final' (page sans numéro) rendue AVANT 'environnement' (qui redevient « 3. »).
+        expect(json.indexOf('AVEZ-VOUS DES QUESTIONS ?')).toBeLessThan(json.indexOf('3. ENVIRONNEMENT ET AMIS'));
+        expect(json).toContain('3. ENVIRONNEMENT ET AMIS');
     });
 });
 
