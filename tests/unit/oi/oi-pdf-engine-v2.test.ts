@@ -34,27 +34,36 @@
  * `oi-pdf-engine-v3.test.ts`) — AUCUN mock de `pdfmake`/import dynamique
  * requis, `buildBlob` est directement injecté.
  *
+ * SPEC-2026-08-18-pdf-et-champs.md §1 — l'aperçu rend désormais le PDF en
+ * `<canvas>` via pdf.js embarqué au lieu d'un `<iframe>` sur une URL `blob:`.
+ * pdf.js (worker, décodage, rendu canvas) est difficile à exercer sous jsdom
+ * et n'a AUCUN besoin de l'être ici : `deps.renderPdf` (couture de test déjà
+ * du même type que `collect`/`buildBlob`) isole tout ça — `defaultRenderPdf`,
+ * la vraie implémentation pdf.js, n'est jamais exécutée par cette suite. La
+ * garde `canRenderInlinePdf()` (`navigator.pdfViewerEnabled`) et son message
+ * de repli disparaissent avec l'`<iframe>` : plus aucun appelant n'en dépend
+ * (grep confirmé sur `src/`, `tests/`) — les tests correspondants disparaissent
+ * avec elle.
+ *
  * Tests obligatoires (PAQUETS-OI.json id="oi-pdf-engine-v2") :
  *  (a) collectAllData avec un Store mocké contenant une photo (avec et sans
  *      annotations) et un `custom_pdf_background` → `photosBase64` peuplé aux
  *      bonnes clés, ET la copie de `formData` est bien PROFONDE (muter la
  *      copie ne touche pas le Store).
- *  (b) openPreview : injecte le blob dans un `<iframe class="pdf-preview-frame">`
- *      de `#presentation-content` (Blob URL), révoque l'URL précédente à
- *      chaque nouvel appel ET à la fermeture de `#presentationModal`
- *      (événement natif `close`), REPLIE sur un message clair (SANS tenter
- *      l'iframe) quand `navigator.pdfViewerEnabled === false` — un navigateur
- *      qui ne sait pas rendre un PDF embarqué déclenche en coulisses une
- *      tentative de téléchargement fantôme pour la navigation de l'iframe
- *      (constaté empiriquement, cf. tests/e2e/oi.spec.ts qui force le canal
- *      Chromium complet — PAS le « headless shell » par défaut, dépourvu de
- *      visualiseur PDF — pour éviter que ce fantôme ne percute un
- *      téléchargement légitime survenant peu après), affiche/masque le
- *      loader `#pdfLoadingModal`, affiche un message d'erreur en cas d'échec.
+ *  (b) openPreview : construit le blob (collect → buildBlob) puis délègue le
+ *      rendu à `deps.renderPdf` dans un conteneur `.pdf-preview-pages` de
+ *      `#presentation-content`, affiche/masque le loader `#pdfLoadingModal`,
+ *      relaie la progression (`onProgress`) dans `#pdfLoadingStatus`, affiche
+ *      un message d'erreur si `buildBlob`/`renderPdf` échoue, ANNULE un rendu
+ *      encore en vol (au prochain point de contrôle du faux `renderPdf`
+ *      injecté) quand un nouvel `openPreview()` est déclenché OU quand
+ *      `#presentationModal` se ferme (événement natif `close`).
  *  (c) openPresentInPlace : ouvre le blob dans un nouvel onglet
  *      (`window.open`), révoque l'URL après le délai différé en cas
- *      d'ouverture réussie, révoque IMMÉDIATEMENT et alerte si la popup est
- *      bloquée, notifie via `window.toast` en cas d'échec de collecte/build.
+ *      d'ouverture réussie, révoque IMMÉDIATEMENT + alerte + retombe sur
+ *      l'aperçu intégré (pdf.js/canvas, via le même blob déjà construit) si
+ *      la popup est bloquée, notifie via `window.toast` en cas d'échec de
+ *      collecte/build.
  *  (d)/(e) anciennement downloadOiPdf() (nom de fichier + repli SANS_DATE/RED
  *      + branches « librairie absente ») : voir désormais le describe
  *      `downloadOiPdfV3` de `tests/unit/oi/pdf/oi-pdf-engine-v3.test.ts`.
@@ -94,6 +103,24 @@ function makeCollectedData(): OiPdfCollectedData {
         photosBase64: {},
         isDark: false,
     };
+}
+
+function makeFakeBlob(): Blob {
+    return new Blob(['%PDF-fake'], { type: 'application/pdf' });
+}
+
+/** Faux `renderPdf` (couture de test) : simule un rendu à `pageCount` pages,
+ * une par `onProgress`, sans jamais toucher pdf.js. */
+function makeFakeRenderPdf(pageCount = 1) {
+    return vi.fn(async (_blob: Blob, container: HTMLElement, progress: { onProgress: (p: number, t: number) => void; isCancelled: () => boolean }) => {
+        for (let page = 1; page <= pageCount; page++) {
+            if (progress.isCancelled()) return;
+            const pageEl = document.createElement('div');
+            pageEl.className = 'pdf-preview-page';
+            container.appendChild(pageEl);
+            progress.onProgress(page, pageCount);
+        }
+    });
 }
 
 /** Construit `#presentationModal` (dialog) + `#presentation-content`, comme `oi/index.html`. */
@@ -220,40 +247,54 @@ describe('collectAllData', () => {
 });
 
 // ===========================================================================
-// openPreview (R4-a : aperçu = vrai PDF, remplace generateHTML)
+// openPreview (SPEC-2026-08-18-pdf-et-champs.md §1 : rendu pdf.js/<canvas>,
+// remplace l'<iframe> sur Blob URL)
 // ===========================================================================
 describe('openPreview', () => {
-    let createObjectURLSpy: ReturnType<typeof vi.spyOn>;
-
-    beforeEach(() => {
-        createObjectURLSpy = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:preview-1');
-        vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
-    });
-
     it("ne fait rien si #presentation-content est absent (pas de modale montée)", async () => {
         const collect = vi.fn(async () => makeCollectedData());
-        const buildBlob = vi.fn(async () => new Blob(['%PDF-fake'], { type: 'application/pdf' }));
+        const buildBlob = vi.fn(async () => makeFakeBlob());
+        const renderPdf = makeFakeRenderPdf();
 
-        await PDFEngineV2.openPreview({ collect, buildBlob });
+        await PDFEngineV2.openPreview({ collect, buildBlob, renderPdf });
 
         expect(collect).not.toHaveBeenCalled();
         expect(buildBlob).not.toHaveBeenCalled();
+        expect(renderPdf).not.toHaveBeenCalled();
     });
 
-    it('construit le blob (collect → buildBlob avec le format courant) et injecte un <iframe class="pdf-preview-frame"> pointant sur son URL blob', async () => {
+    it('construit le blob (collect → buildBlob avec le format courant) puis délègue le rendu à renderPdf dans un conteneur .pdf-preview-pages', async () => {
         const { content } = buildPresentationDom();
         window.pdfOutputFormat = '16:9';
-        const blob = new Blob(['%PDF-fake'], { type: 'application/pdf' });
+        const blob = makeFakeBlob();
         const collect = vi.fn(async () => makeCollectedData());
         const buildBlob = vi.fn(async () => blob);
+        const renderPdf = makeFakeRenderPdf(2);
 
-        await PDFEngineV2.openPreview({ collect, buildBlob });
+        await PDFEngineV2.openPreview({ collect, buildBlob, renderPdf });
 
         expect(collect).toHaveBeenCalledTimes(1);
         expect(buildBlob).toHaveBeenCalledWith(expect.anything(), { format: '16:9' });
-        const iframe = content.querySelector<HTMLIFrameElement>('.pdf-preview-frame');
-        expect(iframe).not.toBeNull();
-        expect(iframe?.src).toBe('blob:preview-1');
+        expect(renderPdf).toHaveBeenCalledTimes(1);
+        const [renderedBlob, container] = renderPdf.mock.calls[0] as [Blob, HTMLElement, unknown];
+        expect(renderedBlob).toBe(blob);
+        expect(container.className).toBe('pdf-preview-pages');
+        expect(content.contains(container)).toBe(true);
+        // Le faux renderPdf a peint 2 pages dans le conteneur qu'on lui a passé.
+        expect(container.querySelectorAll('.pdf-preview-page')).toHaveLength(2);
+    });
+
+    it("relaie la progression (onProgress) dans #pdfLoadingStatus pendant le rendu", async () => {
+        buildPresentationDom();
+        const { statusText } = buildLoaderDom();
+
+        await PDFEngineV2.openPreview({
+            collect: () => Promise.resolve(makeCollectedData()),
+            buildBlob: () => Promise.resolve(makeFakeBlob()),
+            renderPdf: makeFakeRenderPdf(3),
+        });
+
+        expect(statusText.textContent).toBe('Rendu des pages… (3/3)');
     });
 
     it("affiche/masque le loader #pdfLoadingModal pendant la génération", async () => {
@@ -265,6 +306,7 @@ describe('openPreview', () => {
         const openPromise = PDFEngineV2.openPreview({
             collect: () => Promise.resolve(makeCollectedData()),
             buildBlob: () => pending,
+            renderPdf: makeFakeRenderPdf(),
         });
 
         // Toujours en attente de buildBlob : le loader doit être visible.
@@ -272,25 +314,10 @@ describe('openPreview', () => {
         await Promise.resolve();
         expect(loader.style.display).toBe('flex');
 
-        resolveBuild(new Blob(['%PDF-fake'], { type: 'application/pdf' }));
+        resolveBuild(makeFakeBlob());
         await openPromise;
 
         expect(loader.style.display).toBe('none');
-    });
-
-    it("replie sur un message clair quand navigator.pdfViewerEnabled === false, SANS appeler collect/buildBlob ni créer d'iframe (un navigateur incapable de rendre un PDF embarqué déclenche en coulisses un téléchargement fantôme pour la navigation de l'iframe — évité en ne la tentant pas)", async () => {
-        const { content } = buildPresentationDom();
-        vi.stubGlobal('navigator', { pdfViewerEnabled: false });
-        const collect = vi.fn(async () => makeCollectedData());
-        const buildBlob = vi.fn(async () => new Blob(['%PDF-fake'], { type: 'application/pdf' }));
-
-        await PDFEngineV2.openPreview({ collect, buildBlob });
-
-        expect(collect).not.toHaveBeenCalled();
-        expect(buildBlob).not.toHaveBeenCalled();
-        expect(content.querySelector('.pdf-preview-frame')).toBeNull();
-        expect(content.querySelector('.pdf-preview-fallback')).not.toBeNull();
-        expect(content.textContent).toContain('Télécharger le PDF');
     });
 
     it("affiche un message d'erreur si buildBlob échoue", async () => {
@@ -305,39 +332,78 @@ describe('openPreview', () => {
         expect(content.querySelector('.pdf-preview-error')).not.toBeNull();
     });
 
-    it('révoque l\'URL blob PRÉCÉDENTE quand un nouvel aperçu est généré', async () => {
-        buildPresentationDom();
-        createObjectURLSpy.mockReturnValueOnce('blob:preview-1').mockReturnValueOnce('blob:preview-2');
-        const revokeSpy = vi.spyOn(URL, 'revokeObjectURL');
-        const deps = {
-            collect: () => Promise.resolve(makeCollectedData()),
-            buildBlob: () => Promise.resolve(new Blob(['%PDF-fake'], { type: 'application/pdf' })),
-        };
-
-        await PDFEngineV2.openPreview(deps);
-        await PDFEngineV2.openPreview(deps);
-
-        expect(revokeSpy).toHaveBeenCalledWith('blob:preview-1');
-    });
-
-    it("révoque l'URL blob à la fermeture de #presentationModal (événement natif `close`)", async () => {
-        const { modal } = buildPresentationDom();
-        const revokeSpy = vi.spyOn(URL, 'revokeObjectURL');
+    it("affiche un message d'erreur si renderPdf (pdf.js) échoue, en gardant le bouton de téléchargement exploitable", async () => {
+        const { content } = buildPresentationDom();
+        vi.spyOn(console, 'error').mockImplementation(() => {});
 
         await PDFEngineV2.openPreview({
             collect: () => Promise.resolve(makeCollectedData()),
-            buildBlob: () => Promise.resolve(new Blob(['%PDF-fake'], { type: 'application/pdf' })),
+            buildBlob: () => Promise.resolve(makeFakeBlob()),
+            renderPdf: () => Promise.reject(new Error('pdf.js KO')),
         });
 
-        modal.dispatchEvent(new Event('close'));
+        const errorEl = content.querySelector('.pdf-preview-error');
+        expect(errorEl).not.toBeNull();
+        expect(errorEl?.textContent).toContain('Télécharger le PDF');
+    });
 
-        expect(revokeSpy).toHaveBeenCalledWith('blob:preview-1');
+    it('annule le rendu PRÉCÉDENT (isCancelled devient true) quand un nouvel aperçu est généré avant qu\'il ne se termine', async () => {
+        const { content } = buildPresentationDom();
+        let firstIsCancelled: (() => boolean) | undefined;
+        const firstRenderPdf = vi.fn((_blob: Blob, _container: HTMLElement, progress: { isCancelled: () => boolean }) => {
+            firstIsCancelled = progress.isCancelled;
+            return new Promise<void>(() => {}); // ne se termine jamais dans ce test
+        });
+
+        // Premier rendu : buildBlob résout tout de suite, renderPdf DÉMARRE
+        // (et s'installe) avant qu'un second aperçu ne soit déclenché.
+        void PDFEngineV2.openPreview({
+            collect: () => Promise.resolve(makeCollectedData()),
+            buildBlob: () => Promise.resolve(makeFakeBlob()),
+            renderPdf: firstRenderPdf,
+        });
+        await Promise.resolve();
+        await Promise.resolve();
+        await Promise.resolve();
+        expect(firstRenderPdf).toHaveBeenCalledTimes(1);
+        expect(firstIsCancelled?.()).toBe(false);
+
+        // Deuxième aperçu, avant que le premier ne se termine.
+        await PDFEngineV2.openPreview({
+            collect: () => Promise.resolve(makeCollectedData()),
+            buildBlob: () => Promise.resolve(makeFakeBlob()),
+            renderPdf: makeFakeRenderPdf(),
+        });
+
+        expect(firstIsCancelled?.()).toBe(true);
+        // Le conteneur affiché est celui du DEUXIÈME rendu, pas pollué par le premier.
+        expect(content.querySelectorAll('.pdf-preview-pages')).toHaveLength(1);
+    });
+
+    it("annule le rendu en cours à la fermeture de #presentationModal (événement natif `close`)", async () => {
+        const { modal } = buildPresentationDom();
+        let isCancelled: (() => boolean) | undefined;
+
+        void PDFEngineV2.openPreview({
+            collect: () => Promise.resolve(makeCollectedData()),
+            buildBlob: () => Promise.resolve(makeFakeBlob()),
+            renderPdf: (_blob, _container, progress) => {
+                isCancelled = progress.isCancelled;
+                return new Promise(() => {});
+            },
+        });
+        await Promise.resolve();
+        await Promise.resolve();
+
+        expect(isCancelled?.()).toBe(false);
+        modal.dispatchEvent(new Event('close'));
+        expect(isCancelled?.()).toBe(true);
     });
 });
 
 // ===========================================================================
-// openPresentInPlace (R4-a : nouvel onglet sur le vrai PDF, remplace le
-// « deck » HTML autonome de _buildPresentationDocument)
+// openPresentInPlace (R4-a : nouvel onglet sur le vrai PDF ; SPEC §1 : repli
+// sur l'aperçu intégré pdf.js/<canvas> si le nouvel onglet échoue/est bloqué)
 // ===========================================================================
 describe('openPresentInPlace', () => {
     beforeEach(() => {
@@ -351,7 +417,7 @@ describe('openPresentInPlace', () => {
 
         await PDFEngineV2.openPresentInPlace({
             collect: () => Promise.resolve(makeCollectedData()),
-            buildBlob: () => Promise.resolve(new Blob(['%PDF-fake'], { type: 'application/pdf' })),
+            buildBlob: () => Promise.resolve(makeFakeBlob()),
         });
 
         expect(openSpy).toHaveBeenCalledWith('blob:present-1', '_blank');
@@ -362,16 +428,26 @@ describe('openPresentInPlace', () => {
         vi.useRealTimers();
     });
 
-    it('popup bloquée (window.open renvoie null) : révoque IMMÉDIATEMENT et alerte', async () => {
+    it("popup bloquée (window.open renvoie null) : révoque IMMÉDIATEMENT, alerte, et retombe sur l'aperçu intégré (pdf.js/<canvas>) avec le MÊME blob déjà construit", async () => {
+        const { modal, content } = buildPresentationDom();
         vi.spyOn(window, 'open').mockReturnValue(null);
+        const blob = makeFakeBlob();
+        const renderPdf = makeFakeRenderPdf(1);
 
         await PDFEngineV2.openPresentInPlace({
             collect: () => Promise.resolve(makeCollectedData()),
-            buildBlob: () => Promise.resolve(new Blob(['%PDF-fake'], { type: 'application/pdf' })),
+            buildBlob: () => Promise.resolve(blob),
+            renderPdf,
         });
 
         expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:present-1');
         expect(toastSpy).toHaveBeenCalledWith(expect.stringContaining('bloquée'), { kind: 'error' });
+        // Repli sur l'aperçu intégré : même blob réutilisé (pas de recollecte/rebuild).
+        expect(renderPdf).toHaveBeenCalledTimes(1);
+        expect(renderPdf.mock.calls[0]?.[0]).toBe(blob);
+        expect(content.querySelector('.pdf-preview-page')).not.toBeNull();
+        // jsdom n'implémente pas showModal() : repli défensif par style inline.
+        expect(modal.style.display).toBe('flex');
     });
 
     it("échec de collecte/build : notifie via toast(kind 'error') plutôt que de laisser planter", async () => {
@@ -390,7 +466,7 @@ describe('openPresentInPlace', () => {
 
         await PDFEngineV2.openPresentInPlace({
             collect: () => Promise.resolve(makeCollectedData()),
-            buildBlob: () => Promise.resolve(new Blob(['%PDF-fake'], { type: 'application/pdf' })),
+            buildBlob: () => Promise.resolve(makeFakeBlob()),
         });
 
         expect(loader.style.display).toBe('none');

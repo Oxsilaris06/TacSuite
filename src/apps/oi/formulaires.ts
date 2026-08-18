@@ -321,6 +321,24 @@ function addMeField(value: string = '', containerId: string = 'me_container', fr
     container.appendChild(item);
 }
 
+// Liste dynamique « Modes d'action » de la fiche adversaire (SPEC-2026-08-18-pdf-et-champs.md
+// §3) — NOUVEAU, aucun équivalent dans modules/formulaires.js. Patron : conteneur/bouton
+// d'`addHypothesis` (:609) + numérotation `MA{n}:` d'`addMeField` ci-dessus, mais `<textarea>`
+// (plusieurs phrases attendues) au lieu d'un `<input>`, sans plafond de saisie (aucun n'est
+// spécifié). Rendu PDF sur une page dédiée juste après la fiche — jamais dans la fiche
+// elle-même (fiche verrouillée 1 page, refus de génération au-delà, cf. `document-builder.ts`).
+function addMaField(value: string = '', containerId: string = 'ma_container'): void {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+    const maIndex = container.querySelectorAll('.dynamic-list-item').length + 1;
+    const fieldId = `ma_${containerId}_${maIndex}_${Date.now()}`;
+    const safeVal = (window.UIPlatform ? window.UIPlatform.esc(value) : value);
+    const item = document.createElement('div');
+    item.className = 'dynamic-list-item';
+    item.innerHTML = `<label for="${fieldId}">MA${maIndex}:</label><textarea id="${fieldId}" name="${fieldId}" class="ma-input" rows="4" placeholder="Décrire le mode d'action envisagé..." oninput="syncDomToStore()">${safeVal}</textarea><button type="button" class="remove-btn" onclick="this.parentElement.remove(); syncDomToStore();" aria-label="Supprimer ce mode d'action"><span class="material-symbols-outlined">close</span></button>`;
+    container.appendChild(item);
+}
+
 // formulaires.js:110-153
 function addTimeEvent(type_from_load?: string, hour_from_load: string = '', desc_from_load?: string): void {
     const container = document.getElementById('time_events_container');
@@ -550,6 +568,14 @@ function addAdversary(data: OiAdversary | null = null): void {
                 <div id="vehicules_${id}" class="vehicules-container"></div>
                 <button type="button" class="add-btn" onclick="addDynamicField('vehicules_${id}')"><span class="material-symbols-outlined" aria-hidden="true">add</span> Véhicule</button>
             </section>
+
+            <!-- SECTION : Modes d'action — dernier bloc de la fiche (PDF : page dédiée juste
+                 après la fiche, jamais dans la fiche elle-même, cf. SPEC-2026-08-18-pdf-et-champs.md §3) -->
+            <section class="adv-section">
+                <div class="adv-section-head"><span class="material-symbols-outlined">psychology</span><h4>Modes d'action</h4></div>
+                <div id="ma_${id}" class="ma-container"></div>
+                <button type="button" class="add-btn" onclick="addMaField('', 'ma_${id}')"><span class="material-symbols-outlined" aria-hidden="true">add</span> Mode d'action</button>
+            </section>
         </div>
     `;
 
@@ -586,6 +612,10 @@ function addAdversary(data: OiAdversary | null = null): void {
     }
     if (data?.vehicules_list) {
         data.vehicules_list.forEach((val) => addDynamicField(`vehicules_${id}`, val));
+    }
+    // `ma_list` optionnel (contracts.ts) : absent sur les fiches enregistrées avant son ajout.
+    if (data?.ma_list) {
+        data.ma_list.forEach((val) => addMaField(val, `ma_${id}`));
     }
 
     if (!data) syncDomToStore();
@@ -709,6 +739,7 @@ function syncDomToStoreCore(): void {
             advData.etat_esprit_list = getChipData(`esprit_${advId}`);
             advData.volume_list = getChipData(`volume_${advId}`);
             advData.vehicules_list = Array.from(entry.querySelectorAll<HTMLInputElement>('.vehicules-container .dynamic-input')).map((i) => i.value).filter(Boolean);
+            advData.ma_list = Array.from(entry.querySelectorAll<HTMLTextAreaElement>('.ma-container .ma-input')).map((i) => i.value).filter(Boolean);
             return advData;
         });
 
@@ -1111,6 +1142,7 @@ window.addDynamicField = addDynamicField;
 window.initChipContainer = initChipContainer;
 window.getChipData = getChipData;
 window.addMeField = addMeField;
+window.addMaField = addMaField; // NOUVEAU — liste « Modes d'action » de la fiche adversaire, aucun équivalent formulaires.js
 window.addTimeEvent = addTimeEvent;
 window.updateAdvTitle = updateAdvTitle;
 window.removeAdversary = removeAdversary; // formulaires.js:838 (absent du 1er bloc :362-371)

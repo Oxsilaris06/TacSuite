@@ -16,9 +16,15 @@
  * minuscules ('Articulation : ZMSPCP/MOICP/EFFRACTION - <titre>') sont donc
  * recherchés ici en MAJUSCULES — à la différence du test HTML équivalent de
  * `oi-pdf-engine-v2.test.ts:343-370` (voie B, CSS-only, texte DOM inchangé).
- * Le marqueur « 6. LOGISTIQUE & TRANSPORTS » est volontairement tronqué
- * AVANT le suffixe « (Cheminement) » pour la même raison (il transite aussi
- * par `galleryPages()` → `h2()`), sans perdre la preuve d'ordre recherchée.
+ *
+ * NUMÉROTATION DÉRIVÉE (§2/§6 SPEC-2026-08-18-pdf-et-champs.md) : les
+ * marqueurs numérotés (« 3. ENVIRONNEMENT… » à « 9. RÉCAPITULATIF PATRACDVR »)
+ * ne sont plus codés en dur dans `document-builder.ts` — leur numéro est
+ * calculé par le registre `OI_PDF_SECTIONS`/`resolveOiPdfSectionOrder` selon
+ * l'ordre par défaut (baseline 3, cf. JSDoc `OI_PDF_SECTIONS`). Le marqueur
+ * « 6. LOGISTIQUE & TRANSPORTS » historique (doublon du « 7. ») a été
+ * remplacé par « 4. TRANSPORT », déplacé juste après ENVIRONNEMENT ; le
+ * doublon « 7. » a disparu (PATRACDVR devient « 9. »).
  */
 import { describe, expect, it } from 'vitest';
 import type { Content, ContextPageSize, DynamicBackground, DynamicContent } from 'pdfmake/interfaces';
@@ -127,8 +133,8 @@ function collect(formData: OiFormData, photosBase64: Record<string, string> = {}
 // TEST PIVOT — ordre des 15 marqueurs de la spec §7 (même esprit que
 // oi-pdf-engine-v2.test.ts:343-370, adapté à la casse pdfmake — cf. en-tête).
 // ===========================================================================
-describe('buildOiDocDefinition — ordre des sections (SPEC-PDF-V3.md §7)', () => {
-    it("produit les 15 marqueurs dans l'ordre attendu, y compris les DEUX sections « 7. » (défaut hérité reproduit)", () => {
+describe('buildOiDocDefinition — ordre des sections (SPEC-2026-08-18-pdf-et-champs.md §2/§5/§6)', () => {
+    it("produit les 15 marqueurs dans l'ordre attendu, numérotation CONTINUE dérivée de l'ordre effectif — TRANSPORT juste après ENVIRONNEMENT, plus de doublon « 7. » (fix §6)", () => {
         const data = collect(makeRichFormData(), { logphoto: 'data:image/jpeg;base64,bG9n' });
 
         const dd = buildOiDocDefinition(data, { format: 'a4' });
@@ -140,15 +146,15 @@ describe('buildOiDocDefinition — ordre des sections (SPEC-PDF-V3.md §7)', () 
             'CIBLES(S)',
             '2.1 FICHE ADVERSAIRE : DUPONT',
             '3. ENVIRONNEMENT ET AMIS',
-            "4. MISSION DE L'UNITÉ",
-            '5. EXÉCUTION',
-            '6. LOGISTIQUE & TRANSPORTS',
+            '4. TRANSPORT',
+            "5. MISSION DE L'UNITÉ",
+            '6. EXÉCUTION',
             '7. ARTICULATION & ORDRES DE MOUVEMENT',
             'ARTICULATION : ZMSPCP - ZONE ALPHA',
             'ARTICULATION : MOICP - ITIN BRAVO',
             'ARTICULATION : EFFRACTION - PORTE CHARLIE',
             '8. CONDUITES À TENIR GÉNÉRALES',
-            '7. RÉCAPITULATIF PATRACDVR',
+            '9. RÉCAPITULATIF PATRACDVR',
             'AVEZ-VOUS DES QUESTIONS ?',
         ];
 
@@ -159,11 +165,19 @@ describe('buildOiDocDefinition — ordre des sections (SPEC-PDF-V3.md §7)', () 
         }
     });
 
-    it('exactement 2 titres commençant par « 7. »', () => {
+    it('aucun titre numéroté dupliqué : exactement 1 occurrence de h2 par numéro (fix du doublon historique « 7. », §6)', () => {
         const data = collect(makeRichFormData(), { logphoto: 'data:image/jpeg;base64,bG9n' });
         const json = JSON.stringify(buildOiDocDefinition(data, { format: 'a4' }));
 
-        expect((json.match(/"text":"7\. /g) ?? []).length).toBe(2);
+        // 4 (TRANSPORT) exclu de cette boucle : sa légende de galerie
+        // (`galleryPhotoStack`, blocks.ts) reprend le titre en repli
+        // (`meta.customTitle || "<titre> - Détail"`) — 2 occurrences
+        // ATTENDUES (h2 + légende), comportement PRÉEXISTANT de
+        // `galleryPages()`, pas une régression du fix de numérotation.
+        for (const n of [3, 5, 6, 7, 8, 9]) {
+            expect((json.match(new RegExp(`"text":"${n}\\. `, 'g')) ?? []).length, `numéro ${n}`).toBe(1);
+        }
+        expect((json.match(/"text":"4\. /g) ?? []).length, 'numéro 4 (h2 + légende de galerie)').toBe(2);
     });
 
     it('sans cat_generales/no_go/cat_liaison, « 8. CONDUITES À TENIR GÉNÉRALES » est omise', () => {
@@ -179,6 +193,53 @@ describe('buildOiDocDefinition — ordre des sections (SPEC-PDF-V3.md §7)', () 
 
         expect(json).toContain('Aucune cible renseignée.');
         expect(json).not.toContain('FICHE ADVERSAIRE');
+    });
+});
+
+// ===========================================================================
+// §4 SPEC-2026-08-18-pdf-et-champs.md — Finalisation : Place du chef de
+// dispo, UDA (bloc ambre), libellés Place du Chef différenciés MOICP/ZMSPCP.
+// ===========================================================================
+describe('buildOiDocDefinition — finalisation (§4 SPEC-2026-08-18-pdf-et-champs.md)', () => {
+    it('UDA et Place du chef de dispo apparaissent après le bloc NO-GO quand renseignés', () => {
+        const formData = makeRichFormData();
+        formData.no_go = 'Armes a feu';
+        formData.uda = 'Article L435-1 du CSI';
+        formData.place_chef_dispo = 'PC Mobile';
+        const json = JSON.stringify(buildOiDocDefinition(collect(formData), { format: 'a4' }));
+
+        const nogoIdx = json.indexOf('NO-GO');
+        const udaIdx = json.indexOf('"text":"UDA"');
+        const placeChefDispoIdx = json.indexOf('Place du Chef de Dispo');
+        expect(nogoIdx).toBeGreaterThanOrEqual(0);
+        expect(udaIdx).toBeGreaterThan(nogoIdx);
+        expect(placeChefDispoIdx).toBeGreaterThan(nogoIdx);
+        expect(json).toContain('Article L435-1 du CSI');
+        expect(json).toContain('PC Mobile');
+    });
+
+    it('UDA et Place du chef de dispo sont omis indépendamment quand vides', () => {
+        const formData = makeRichFormData();
+        formData.uda = '';
+        formData.place_chef_dispo = '';
+        const json = JSON.stringify(buildOiDocDefinition(collect(formData), { format: 'a4' }));
+
+        expect(json).not.toContain('"text":"UDA"');
+        expect(json).not.toContain('Place du Chef de Dispo');
+    });
+
+    it('libellés Place du Chef différenciés : « Place du chef inter » (MOICP) vs « Place du chef AO » (ZMSPCP)', () => {
+        const formData = makeRichFormData();
+        formData.moicp_blocks = [
+            { id: 'm1', title: 'BRAVO', mission: '-', objectif: '-', itineraire: '-', points_particuliers: '-', cat: '-', place_chef: 'ABC', members: [] },
+        ];
+        formData.zmspcp_blocks = [
+            { id: 'z1', title: 'ALPHA', zone: '-', mission: '-', secteur: '-', points_particuliers: '-', cat: '-', place_chef: 'DEF', members: [] },
+        ];
+        const json = JSON.stringify(buildOiDocDefinition(collect(formData), { format: 'a4' }));
+
+        expect(json).toContain('PLACE DU CHEF INTER : ');
+        expect(json).toContain('PLACE DU CHEF AO : ');
     });
 });
 
@@ -535,6 +596,55 @@ describe('buildOiDocDefinition — fiche adversaire, bloc IDENTITÉ : tableau bo
         const withMe = JSON.stringify(buildOiDocDefinition(collect(advFormData(['MP9'])), { format: 'a4' }));
         expect(withMe).toContain('"text":"Moyens Employés"');
         expect(withMe).toContain('"text":"MP9"');
+    });
+});
+
+// ===========================================================================
+// SPEC-2026-08-18-pdf-et-champs.md §3 — Modes d'action de la fiche adversaire :
+// page dédiée « MODES D'ACTION — <nom> » émise juste après la fiche, jamais
+// dans la fiche elle-même (verrouillée 1 page, refus de génération possible).
+// ===========================================================================
+describe("buildOiDocDefinition — fiche adversaire, page dédiée « Modes d'action » (SPEC §3)", () => {
+    function advFormDataWithMa(maList?: string[]): OiFormData {
+        return {
+            adversaries: [
+                {
+                    id: 'adv1',
+                    nom_adversaire: 'DUPONT',
+                    domicile_adversaire: '1 rue Test',
+                    me_list: [], etat_esprit_list: [], volume_list: [], vehicules_list: [],
+                    ...(maList !== undefined ? { ma_list: maList } : {}),
+                },
+            ],
+        };
+    }
+
+    it('un adversaire avec 2 MA produit une page « MODES D\'ACTION — DUPONT » avec les 2 cartes MA1/MA2, juste après la fiche', () => {
+        const json = JSON.stringify(
+            buildOiDocDefinition(collect(advFormDataWithMa(['Fuite par le toit', 'Prise d\'otage'])), { format: 'a4' }),
+        );
+
+        const ficheIdx = json.indexOf('2.1 FICHE ADVERSAIRE : DUPONT');
+        const maPageIdx = json.indexOf("MODES D'ACTION — DUPONT");
+        expect(ficheIdx).toBeGreaterThanOrEqual(0);
+        expect(maPageIdx).toBeGreaterThan(ficheIdx);
+        expect(json).toContain('"text":"MA1"');
+        expect(json).toContain('"text":"MA2"');
+        expect(json).toContain('Fuite par le toit');
+        expect(json).toContain("Prise d'otage");
+    });
+
+    it('un adversaire sans MA (champ absent) ne produit aucune page « Modes d\'action »', () => {
+        const json = JSON.stringify(buildOiDocDefinition(collect(advFormDataWithMa(undefined)), { format: 'a4' }));
+        expect(json).not.toContain("MODES D'ACTION");
+    });
+
+    it('un adversaire avec ma_list vide ou ne contenant que des entrées blanches ne produit aucune page « Modes d\'action »', () => {
+        const empty = JSON.stringify(buildOiDocDefinition(collect(advFormDataWithMa([])), { format: 'a4' }));
+        expect(empty).not.toContain("MODES D'ACTION");
+
+        const blank = JSON.stringify(buildOiDocDefinition(collect(advFormDataWithMa(['', '   '])), { format: 'a4' }));
+        expect(blank).not.toContain("MODES D'ACTION");
     });
 });
 

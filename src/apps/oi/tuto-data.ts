@@ -331,6 +331,16 @@ export const oiTutoData: TutoData = {
           ],
           selector: "#adversaries_container",
           tip: "Les véhicules saisis ici alimentent les pins « VL Target » de la cartographie."
+        },
+        {
+          title: "Décrire les modes d'action",
+          body: "En dernier bloc de la fiche, « Modes d'action » liste les manœuvres probables de l'adversaire via le bouton « Mode d'action » (numérotés MA1, MA2…, un texte libre par mode d'action). Chaque fiche adversaire restant limitée à une page PDF, cette liste est imprimée à part, sur une page dédiée juste après la fiche.",
+          terms: [
+            "Modes d'action",
+            "Mode d'action"
+          ],
+          selector: "#adversaries_container",
+          tip: "La page dédiée est omise du PDF tant que la liste reste vide."
         }
       ]
     },
@@ -342,7 +352,7 @@ export const oiTutoData: TutoData = {
       steps: [
         {
           title: "Articuler MOICP / ZMSPCP",
-          body: "Étape « 6. Articulation » : « Créer MOICP » ajoute un bloc « Inter {n} » (« Mission (M): », « Objectif (O): », « Itinéraire (I): », « Points Particuliers (P): », « Conduite à Tenir (C): », « Place du Chef (India): ») ; « Créer ZMSPCP » ajoute un bloc « Appui Observation {n} » (« Zone d'installation (Z): », « Secteur de surveillance (S): »…). Les membres sont auto-peuplés depuis le PATRACDVR et réordonnables par glisser.",
+          body: "Étape « 6. Articulation » : « Créer MOICP » ajoute un bloc « Inter {n} » (« Mission (M): », « Objectif (O): », « Itinéraire (I): », « Points Particuliers (P): », « Conduite à Tenir (C): », « Place du chef inter : ») ; « Créer ZMSPCP » ajoute un bloc « Appui Observation {n} » (« Zone d'installation (Z): », « Secteur de surveillance (S): »…). Les membres sont auto-peuplés depuis le PATRACDVR et réordonnables par glisser.",
           terms: [
             "6. Articulation",
             "Créer MOICP",
@@ -352,7 +362,7 @@ export const oiTutoData: TutoData = {
             "Itinéraire (I):",
             "Points Particuliers (P):",
             "Conduite à Tenir (C):",
-            "Place du Chef (India):",
+            "Place du chef inter :",
             "Créer ZMSPCP",
             "Appui Observation {n}",
             "Zone d'installation (Z):",

@@ -182,6 +182,7 @@ describe('accentCard (OrderPdfStyle.kt:131-136, T4 section 4/9)', () => {
         ['accent', () => p.accent],
         ['danger', () => p.danger],
         ['warning', () => p.warning],
+        ['uda', () => p.uda],
     ] as const)('la couleur du liseré suit kind=%s', (kind, expected) => {
         const result = accentCard('Titre', [{ text: 'corps' }], p, kind) as ContentTable;
         const stripeCell = result.table.body[0]?.[0] as { fillColor?: string };

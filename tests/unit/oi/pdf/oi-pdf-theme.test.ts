@@ -30,13 +30,14 @@ import {
 } from '@oi/pdf/theme.js';
 
 describe('palettes (OrderPdfStyle.kt:30-56)', () => {
-    it('PDF_LIGHT contient exactement les 11 champs strategica clairs (OrderPdfStyle.kt:30-42)', () => {
+    it('PDF_LIGHT contient exactement les 12 champs strategica clairs (OrderPdfStyle.kt:30-42 ; +uda, SPEC-2026-08-18-pdf-et-champs.md §4.2)', () => {
         expect(PDF_LIGHT).toEqual({
             bg: '#ffffff',
             text: '#111111',
             accent: '#0033a0',
             danger: '#c0392b',
             warning: '#b45309',
+            uda: '#c2410c',
             border: '#999999',
             headerRow: '#dddddd',
             cardAlt: '#f5f5f5',
@@ -46,13 +47,14 @@ describe('palettes (OrderPdfStyle.kt:30-56)', () => {
         });
     });
 
-    it('PDF_DARK contient exactement les 11 champs strategica sombres (OrderPdfStyle.kt:43-56)', () => {
+    it('PDF_DARK contient exactement les 12 champs strategica sombres (OrderPdfStyle.kt:43-56 ; +uda, SPEC-2026-08-18-pdf-et-champs.md §4.2)', () => {
         expect(PDF_DARK).toEqual({
             bg: '#000000',
             text: '#e0e0e0',
             accent: '#5b9bd5',
             danger: '#ef4444',
             warning: '#eab308',
+            uda: '#fb923c',
             border: '#666666',
             headerRow: '#333333',
             cardAlt: '#1c1c1c',

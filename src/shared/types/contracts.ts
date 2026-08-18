@@ -875,6 +875,14 @@ export interface OiAdversary {
     etat_esprit_list: string[];
     volume_list: string[];
     vehicules_list: string[];
+    /**
+     * Modes d'action (MA1, MA2…) — dernier bloc de la fiche, rendus sur une
+     * page PDF dédiée juste après la fiche adversaire (jamais dans la fiche
+     * elle-même, cf. SPEC-2026-08-18-pdf-et-champs.md §3). Optionnel :
+     * absent sur les fiches enregistrées avant l'ajout de ce champ — tout
+     * lecteur doit replier sur `[]` (`adv.ma_list ?? []`), jamais y accéder nu.
+     */
+    ma_list?: string[] | undefined;
     /** Champs `data-field` du DOM, tous en `string`. */
     [key: string]: unknown;
 }
@@ -919,6 +927,15 @@ export interface OiFormData {
     options?: OiMemberConfig | undefined;
     /** `'dark'` | `'light'` ; sinon, repli sur la classe `dark-mode` du body. */
     pdf_theme?: string | undefined;
+    /**
+     * Ordre persisté des sections réordonnables du PDF (ids du registre
+     * `OI_PDF_SECTIONS`, `document-builder.ts`) — repli sur l'ordre par
+     * défaut si absent, partiel, ou porteur d'ids inconnus
+     * (`resolveOiPdfSectionOrder`). Posé pour la fondation de réordonnancement
+     * §2 SPEC-2026-08-18-pdf-et-champs.md ; l'IHM de glisser-déposer n'est
+     * pas encore branchée sur ce champ.
+     */
+    pdf_section_order?: string[] | undefined;
     /** Tous les autres champs texte du formulaire (situation, mission, environnement…). */
     [key: string]: unknown;
 }
@@ -1058,11 +1075,16 @@ export interface OiPdfCollectedData {
 // `openPreview`/`openPresentInPlace` ci-dessous) sont RETIRÉS du contrat.
 export interface PdfEngineV2Contract {
     /** Construit le blob PDF vectoriel (même moteur que le téléchargement,
-     * `@oi/pdf/engine-v3.js::buildOiPdfBlob`) et l'affiche dans un `<iframe>`
-     * embarqué dans `#presentation-content`. */
+     * `@oi/pdf/engine-v3.js::buildOiPdfBlob`) et le rend PAGE PAR PAGE dans
+     * des `<canvas>` (pdf.js embarqué, worker local) à l'intérieur de
+     * `#presentation-content` — SPEC-2026-08-18-pdf-et-champs.md §1 : aucune
+     * URL `blob:`, aucun `<iframe>`, fonctionne sur un parc verrouillé/hors
+     * ligne où le lecteur PDF natif du navigateur est indisponible. */
     openPreview(): Promise<void>;
     /** Ouvre le même blob PDF vectoriel dans un nouvel onglet (visualiseur
-     * PDF natif du navigateur : zoom, plein écran, impression). */
+     * PDF natif du navigateur : zoom, plein écran, impression) ; si
+     * `window.open` échoue ou est bloqué, retombe sur l'aperçu intégré
+     * (`openPreview`) plutôt que de laisser un simple message d'erreur. */
     openPresentInPlace(): Promise<void>;
     // downloadOiPdf() RETIRÉE (PDF.INTEG, SPEC-PDF-V3.md §4) : le téléchargement
     // rastérisait via html2canvas + jsPDF ; remplacé par `downloadOiPdfV3()`
@@ -1158,6 +1180,8 @@ export interface OiFormGlobals {
     getChipData(containerId: string): string[];
     /** `fromLoad` lève la limite UX de 3 « Moyens Employés » (restauration fidèle). */
     addMeField(value?: string, containerId?: string, fromLoad?: boolean): void;
+    /** Ligne « Modes d'action » (MA1, MA2…) de la fiche adversaire — pas de plafond de saisie. */
+    addMaField(value?: string, containerId?: string): void;
     addTimeEvent(type_from_load?: string, hour_from_load?: string, desc_from_load?: string): void;
     updateAdvTitle(id: string, val: string): void;
     /** `null` = création manuelle (section dépliée) ; objet = restauration. */

@@ -63,16 +63,16 @@ describe('MARKERS (SPEC-PDF-V3.md §7, liste des 15 marqueurs)', () => {
         );
     });
 
-    it('les indices conditionnels sont exactement 4, 8, 10, 11, 12, 13 (SPEC §7)', () => {
+    it('les indices conditionnels sont exactement 4, 6, 10, 11, 12, 13 (renumérotation continue, SPEC-2026-08-18-pdf-et-champs.md §6 — TRANSPORT en #6)', () => {
         const conditionalIndices = MARKERS.filter((m: { conditional: boolean }) => m.conditional).map(
             (m: { n: number }) => m.n
         );
-        expect(conditionalIndices).toEqual([4, 8, 10, 11, 12, 13]);
+        expect(conditionalIndices).toEqual([4, 6, 10, 11, 12, 13]);
     });
 
-    it('les deux titres « 7. » (#9 et #14) sont bien les défauts hérités attendus par A4', () => {
+    it('le doublon historique « 7. » a disparu : #9 ARTICULATION reste « 7. », #14 PATRACDVR devient « 9. » (fix §6)', () => {
         expect(MARKERS[8]).toMatchObject({ n: 9, text: '7. ARTICULATION & ORDRES DE MOUVEMENT' });
-        expect(MARKERS[13]).toMatchObject({ n: 14, text: '7. RÉCAPITULATIF PATRACDVR' });
+        expect(MARKERS[13]).toMatchObject({ n: 14, text: '9. RÉCAPITULATIF PATRACDVR' });
     });
 });
 
@@ -514,14 +514,16 @@ describe('assertB2_noVerticalWordSplit()', () => {
     });
 
     it('FAIL : mot capitalisé scindé sur 2 lignes adjacentes à la même colonne', () => {
-        const text = `7. RÉCAPITULATIF PATRACDVR\nSHARA\nN reste\nAVEZ-VOUS DES QUESTIONS ?`;
+        // '9.' (pas '7.') : MARKERS[13] porte désormais la numérotation
+        // continue post-fix (SPEC-2026-08-18-pdf-et-champs.md §6).
+        const text = `9. RÉCAPITULATIF PATRACDVR\nSHARA\nN reste\nAVEZ-VOUS DES QUESTIONS ?`;
         const r = assertB2_noVerticalWordSplit(text);
         expect(r.ok).toBe(false);
         expect(r.detail).toMatch(/SHARAN/);
     });
 
     it('PASS : aucun mot cassé dans la section PATRACDVR', () => {
-        const text = `7. RÉCAPITULATIF PATRACDVR\nSHARAN complet\nAVEZ-VOUS DES QUESTIONS ?`;
+        const text = `9. RÉCAPITULATIF PATRACDVR\nSHARAN complet\nAVEZ-VOUS DES QUESTIONS ?`;
         expect(assertB2_noVerticalWordSplit(text).ok).toBe(true);
     });
 });

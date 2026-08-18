@@ -268,10 +268,10 @@ export function accentCard(
     title: string | null,
     body: Content[],
     p: OiPdfPalette,
-    kind: 'accent' | 'danger' | 'warning',
+    kind: 'accent' | 'danger' | 'warning' | 'uda',
     opts?: { unbreakable?: boolean },
 ): Content {
-    const stripeColor = kind === 'danger' ? p.danger : kind === 'warning' ? p.warning : p.accent;
+    const stripeColor = kind === 'danger' ? p.danger : kind === 'warning' ? p.warning : kind === 'uda' ? p.uda : p.accent;
     const titleNode: Content[] =
         title !== null && title !== '' ? [{ text: title, bold: true, color: p.accent, margin: [0, 0, 0, 4] }] : [];
     return {

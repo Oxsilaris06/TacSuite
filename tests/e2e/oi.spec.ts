@@ -965,19 +965,32 @@ test.describe('OI — Checklist fonctionnelle (docs/recon-oi.md §9)', () => {
   // ------------------------------------------------------------------
   // Génération du document (aperçu / téléchargement / présentation / format)
   // ------------------------------------------------------------------
-  // R4-a (D2, « une seule voie d'output PDF ») : l'aperçu (#previewBtn →
-  // openPresentationMode → PDFEngineV2.openPreview) embarque désormais le
-  // MÊME blob PDF vectoriel que le téléchargement, dans un
-  // <iframe class="pdf-preview-frame" src="blob:...">, au lieu du gabarit
-  // HTML dupliqué de `generateHTML` (retiré).
-  test('Génération — aperçu PDF vivant (previewBtn → openPresentationMode → openPreview, iframe sur blob PDF réel)', async ({ page }) => {
+  // SPEC-2026-08-18-pdf-et-champs.md §1 : l'aperçu (#previewBtn →
+  // openPresentationMode → PDFEngineV2.openPreview) rend désormais le MÊME
+  // blob PDF vectoriel que le téléchargement PAGE PAR PAGE dans des
+  // `<canvas class="pdf-preview-canvas">` (pdf.js embarqué, worker local) —
+  // plus aucune URL `blob:`, plus d'`<iframe>` : inexploitable tel quel sur
+  // le parc Gendarmerie verrouillé visé par cette mission (blob: invisible en
+  // iframe, lecteur PDF natif souvent désactivé).
+  test('Génération — aperçu PDF vivant (previewBtn → openPresentationMode → openPreview, pages pdf.js/<canvas> réellement peintes)', async ({ page }) => {
     await goToFinalStepAndOpenPreview(page);
-    await step('clic sur #previewBtn ouvre #presentationModal avec un <iframe> pointant sur le blob PDF réel', async () => {
+    await step('clic sur #previewBtn ouvre #presentationModal avec au moins une page pdf.js peinte (canvas non vide)', async () => {
       await expect.soft(page.locator('#presentationModal')).toBeVisible({ timeout: 5000 });
-      const iframe = page.locator('#presentation-content iframe.pdf-preview-frame');
-      await expect.soft(iframe).toBeVisible({ timeout: 15000 });
-      const src = await iframe.getAttribute('src');
-      expect.soft(src).toMatch(/^blob:/);
+      const firstCanvas = page.locator('#presentation-content canvas.pdf-preview-canvas').first();
+      await expect.soft(firstCanvas).toBeVisible({ timeout: 15000 });
+      const hasPaintedPixels = await firstCanvas.evaluate((canvas: HTMLCanvasElement) => {
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return false;
+        const { data } = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        // Une page pdf.js rendue n'est jamais uniformément transparente
+        // (canal alpha nul) : au moins un pixel opaque suffit à distinguer un
+        // vrai rendu d'un <canvas> resté vierge.
+        for (let i = 3; i < data.length; i += 4) {
+          if (data[i] !== 0) return true;
+        }
+        return false;
+      });
+      expect.soft(hasPaintedPixels).toBe(true);
     });
   });
 

@@ -158,7 +158,7 @@ export function addMoicp(data?: Partial<OiMoicpBlock> | null): void {
             <label>Conduite à Tenir (C):</label>
             <textarea class="moicp-cat" rows="5" oninput="syncDomToStore()">${defaultCat}</textarea>
 
-            <label>Place du Chef (India):</label>
+            <label>Place du chef inter :</label>
             <input type="text" class="moicp-place-chef" value="${data?.place_chef || ''}" oninput="syncDomToStore()">
 
             <h4 style="margin-top: 15px; color: var(--accent-blue);">
@@ -259,7 +259,7 @@ export function addZmspcp(data?: Partial<OiZmspcpBlock> | null): void {
             <label>Conduite à Tenir (C):</label>
             <textarea class="zmspcp-cat" rows="5" oninput="syncDomToStore()">${defaultCat}</textarea>
 
-            <label>Place du Chef (P):</label>
+            <label>Place du chef AO :</label>
             <input type="text" class="zmspcp-place-chef" value="${data?.place_chef || ''}" oninput="syncDomToStore()">
 
             <h4 style="margin-top: 15px; color: var(--moicp-zmspcp-purple, #8e44ad);">

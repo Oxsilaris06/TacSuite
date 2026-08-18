@@ -3243,32 +3243,60 @@ body.up-kb-open .up-kb-aware {
             margin: 0 auto;
         }
 
-        /* R4-a — l'aperçu embarque désormais le PDF vectoriel réel (iframe,
-           PDFEngineV2.openPreview) : plein-bleed, pas de marge/largeur max
-           limitant l'espace de lecture du visualiseur PDF natif. */
-        #presentation-content:has(.pdf-preview-frame) {
+        /* SPEC-2026-08-18-pdf-et-champs.md §1 — l'aperçu rend désormais le PDF
+           vectoriel réel en <canvas> via pdf.js (PDFEngineV2.openPreview),
+           plus d'<iframe>/blob:. Plein-bleed horizontal (la « largeur
+           disponible » que pdf-engine-v2.ts mesure pour choisir l'échelle des
+           pages), un padding propre au conteneur de pages fournit la marge. */
+        #presentation-content:has(.pdf-preview-pages) {
             padding: 0;
             max-width: none;
-            overflow: hidden;
+            overflow-y: auto;
         }
 
-        .pdf-preview-frame {
+        /* Plateau derrière les pages — un ton neutre distinct du blanc des
+           pages, cohérent clair/sombre via les tokens existants. */
+        .pdf-preview-pages {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: var(--space-4);
+            padding: clamp(12px, 4vw, 32px);
+            background: var(--bg-body);
+            min-height: 100%;
+        }
+
+        /* Une page = conteneur positionné aux dimensions CSS EXACTES de la
+           page rendue (indépendantes du devicePixelRatio, cf. commentaire
+           `defaultRenderPdf` dans pdf-engine-v2.ts) — terrain pour l'édition
+           future : zones interactives superposées via `.pdf-preview-page-overlay`,
+           positionnées en coordonnées CSS identiques à celles du canvas. */
+        .pdf-preview-page {
+            position: relative;
+            max-width: 100%;
+            background: #fff;
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+            line-height: 0;
+        }
+
+        .pdf-preview-canvas {
             display: block;
             width: 100%;
             height: 100%;
-            min-height: 70vh;
-            border: none;
-            background: #fff;
+            max-width: 100%;
         }
 
-        .pdf-preview-fallback,
+        /* Vide et non interactive tant que l'édition n'existe pas — l'édition
+           future y ajoute ses zones et retire pointer-events:none. */
+        .pdf-preview-page-overlay {
+            position: absolute;
+            inset: 0;
+            pointer-events: none;
+        }
+
         .pdf-preview-error {
             padding: var(--space-4);
             text-align: center;
-            color: var(--text-secondary);
-        }
-
-        .pdf-preview-error {
             color: var(--danger-red);
         }
 
