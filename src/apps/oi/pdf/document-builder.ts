@@ -2615,21 +2615,27 @@ interface OiPdfSectionDef {
  * impératifs de `buildOiDocDefinition` (`pushPage`/`pushPages` en cascade) :
  * l'assemblage devient une boucle sur `resolveOiPdfSectionOrder(...)`.
  *
- * DEUX sections restent HORS registre, verrouillées par construction :
- * - la page de garde (`buildCover`) : toujours rendue en PREMIER, en dehors
- *   de toute réconciliation d'ordre (choix du présent chantier — jamais
- *   numérotée, jamais réordonnable) ;
- * - `'adversaires'` EST dans le registre (réordonnable) mais porte SA PROPRE
- *   numérotation fixe « 2.<index> » (`buildAdversaryFiche`, fichier verrouillé
- *   pour ce chantier — un autre agent y insère en parallèle les pages « Modes
- *   d'action ») : son entrée ignore délibérément le compteur `num`. La
- *   baseline de `makeSectionNumberer` (3, cf. `buildOiDocDefinition`) réserve
- *   ainsi les slots 1 (garde, non numérotée) et 2 (adversaires) avant que les
- *   sections DÉRIVÉES ci-dessous ne commencent à 3 — reproduit exactement la
- *   numérotation historique par défaut. Si `'adversaires'` est un jour
- *   déplacée à une autre position par l'UI de réordonnancement (non
- *   implémentée ici), cette baseline fixe devra être revue : hors périmètre
- *   de ce chantier (fichier verrouillé).
+ * La page de garde (`buildCover`) reste HORS registre, verrouillée par
+ * construction : toujours rendue en PREMIER, en dehors de toute
+ * réconciliation d'ordre (jamais numérotée, jamais réordonnée).
+ *
+ * `'adversaires'` (`OI_PDF_LOCKED_SECTION_ID`) EST dans le registre (son
+ * libellé alimente l'IHM de réordonnancement, `pdf-section-order.ts`) mais
+ * reste VERROUILLÉE EN POSITION juste après la garde — exclue du
+ * glisser-déposer/boutons de cette IHM ET épinglée en tête par
+ * `resolveOiPdfSectionOrder` ci-dessous, quel que soit l'ordre persisté.
+ * Choix retenu (§2 SPEC-2026-08-18-pdf-et-champs.md, limite connue
+ * documentée) plutôt qu'une numérotation dérivée : la section porte SA
+ * PROPRE numérotation fixe « 2.<index> » (`buildAdversaryFiche`, fichier
+ * verrouillé pour ce chantier — un autre agent y insère en parallèle les
+ * pages « Modes d'action ») et ignore délibérément le compteur `num` ;
+ * rendre cette numérotation dérivée aurait exigé de toucher ce builder, hors
+ * périmètre autorisé. La baseline de `makeSectionNumberer` (3, cf.
+ * `buildOiDocDefinition`) réserve ainsi les slots 1 (garde, non numérotée)
+ * et 2 (adversaires, numérotation fixe hors compteur) avant que les sections
+ * DÉRIVÉES ci-dessous ne commencent à 3 — reproduit exactement la
+ * numérotation historique par défaut, quel que soit l'ordre choisi pour les
+ * AUTRES sections.
  */
 const OI_PDF_SECTIONS: OiPdfSectionDef[] = [
     { id: 'adversaires', title: 'Adversaires', build: (ctx) => buildAdversaryPages(ctx) },
@@ -2674,11 +2680,20 @@ const OI_PDF_SECTIONS: OiPdfSectionDef[] = [
     { id: 'final', title: 'Page finale', build: (ctx) => [buildFinalPage(ctx)] },
 ];
 
-/** Ordre par défaut des sections réordonnables (ids `OI_PDF_SECTIONS`, dans l'ordre) — `'transport'` déplacée juste après `'environnement'` (§5 SPEC-2026-08-18-pdf-et-champs.md). Exporté pour une future UI de réordonnancement (repli/réinitialisation). */
+/** Ordre par défaut des sections réordonnables (ids `OI_PDF_SECTIONS`, dans l'ordre) — `'transport'` déplacée juste après `'environnement'` (§5 SPEC-2026-08-18-pdf-et-champs.md). Exporté pour l'IHM de réordonnancement (`pdf-section-order.ts` — repli/réinitialisation). */
 export const OI_PDF_DEFAULT_SECTION_ORDER: string[] = OI_PDF_SECTIONS.map((s) => s.id);
 
-/** Libellés humains NUS par id de section — pour une future UI de réordonnancement. */
+/** Libellés humains NUS par id de section — affichés par l'IHM de réordonnancement (`pdf-section-order.ts`). */
 export const OI_PDF_SECTION_LABELS: Record<string, string> = Object.fromEntries(OI_PDF_SECTIONS.map((s) => [s.id, s.title]));
+
+/**
+ * Id de la section verrouillée en position, juste après la garde (cf. JSDoc
+ * `OI_PDF_SECTIONS`) — `'adversaires'` porte sa propre numérotation fixe
+ * « 2.<index> » (`buildAdversaryFiche`) qui suppose ce créneau. Exportée
+ * pour que l'IHM de réordonnancement (`pdf-section-order.ts`) l'exclue du
+ * glisser-déposer/boutons monter-descendre.
+ */
+export const OI_PDF_LOCKED_SECTION_ID = 'adversaires';
 
 /**
  * Réconcilie l'ordre PERSISTÉ (`formData.pdf_section_order`) avec le registre
@@ -2686,7 +2701,11 @@ export const OI_PDF_SECTION_LABELS: Record<string, string> = Object.fromEntries(
  * LEUR ORDRE (dédupliqués, ids inconnus du registre ignorés), puis les ids
  * par défaut ABSENTS de cette liste, dans leur ordre par défaut mutuel — un
  * id inconnu ou une liste PARTIELLE (voire absente) ne fait donc JAMAIS
- * disparaître ni dupliquer une section.
+ * disparaître ni dupliquer une section. `OI_PDF_LOCKED_SECTION_ID` est
+ * ENSUITE ÉPINGLÉ en première position quel que soit l'ordre persisté —
+ * défense en profondeur : l'IHM ne le propose jamais au réordonnancement,
+ * mais un `pdf_section_order` corrompu/écrit à la main ne doit jamais faire
+ * dériver sa numérotation fixe (cf. JSDoc `OI_PDF_SECTIONS`).
  */
 export function resolveOiPdfSectionOrder(persisted?: string[] | undefined): string[] {
     const known = new Set(OI_PDF_DEFAULT_SECTION_ORDER);
@@ -2702,6 +2721,11 @@ export function resolveOiPdfSectionOrder(persisted?: string[] | undefined): stri
         if (!seen.has(id)) {
             order.push(id);
         }
+    }
+    const lockedIdx = order.indexOf(OI_PDF_LOCKED_SECTION_ID);
+    if (lockedIdx > 0) {
+        order.splice(lockedIdx, 1);
+        order.unshift(OI_PDF_LOCKED_SECTION_ID);
     }
     return order;
 }

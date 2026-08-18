@@ -3268,9 +3268,10 @@ body.up-kb-open .up-kb-aware {
 
         /* Une page = conteneur positionné aux dimensions CSS EXACTES de la
            page rendue (indépendantes du devicePixelRatio, cf. commentaire
-           `defaultRenderPdf` dans pdf-engine-v2.ts) — terrain pour l'édition
-           future : zones interactives superposées via `.pdf-preview-page-overlay`,
-           positionnées en coordonnées CSS identiques à celles du canvas. */
+           `defaultRenderPdf` dans pdf-engine-v2.ts) — zones interactives
+           superposées via `.pdf-preview-page-overlay`, positionnées en
+           coordonnées CSS identiques à celles du canvas
+           (`pdf-preview-edit.ts`, SPEC-2026-08-18-pdf-et-champs.md §2). */
         .pdf-preview-page {
             position: relative;
             max-width: 100%;
@@ -3286,12 +3287,59 @@ body.up-kb-open .up-kb-aware {
             max-width: 100%;
         }
 
-        /* Vide et non interactive tant que l'édition n'existe pas — l'édition
-           future y ajoute ses zones et retire pointer-events:none. */
+        /* Transparente aux clics partout — seules les zones d'édition qu'elle
+           contient (`.pdf-edit-hit`/`.pdf-edit-input`) reprennent
+           `pointer-events: auto` sur elles-mêmes. */
         .pdf-preview-page-overlay {
             position: absolute;
             inset: 0;
             pointer-events: none;
+        }
+
+        /* Zone cliquable posée sur un fragment de texte pdf.js reliable SANS
+           AMBIGUÏTÉ à un champ du formulaire (`attachEditableTextLayer`,
+           `pdf-preview-edit.ts`) — invisible au repos (« pas un sapin de
+           Noël »), affordance discrète seulement au survol/focus. Teinte
+           translucide fixe (pas de token clair/sombre) : la PAGE PDF peut
+           elle-même être en thème clair OU sombre (`formData.pdf_theme`,
+           indépendant du thème de l'appli) — une transparence lisible sur les
+           deux évite d'avoir à connaître le thème du document ici. */
+        .pdf-edit-hit {
+            position: absolute;
+            pointer-events: auto;
+            cursor: text;
+            background: transparent;
+            border: none;
+            padding: 0;
+            margin: 0;
+            border-radius: 2px;
+        }
+
+        .pdf-edit-hit:hover,
+        .pdf-edit-hit:focus-visible {
+            background: rgba(79, 141, 255, 0.22);
+            outline: 1px dashed rgba(79, 141, 255, 0.75);
+            outline-offset: 1px;
+        }
+
+        /* Champ de correction affiché au-dessus du fragment cliqué — chrome
+           applicatif (comme une infobulle), pas un élément du document : les
+           tokens clair/sombre de l'appli conviennent ici (toujours lisible,
+           quel que soit le thème du PDF dessous). */
+        .pdf-edit-input {
+            position: absolute;
+            pointer-events: auto;
+            z-index: 1;
+            box-sizing: border-box;
+            font-family: inherit;
+            line-height: normal;
+            padding: 1px 4px;
+            background: var(--bg-card);
+            color: var(--text-main);
+            border: 1px solid var(--accent-blue);
+            border-radius: 3px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+            resize: none;
         }
 
         .pdf-preview-error {
@@ -3372,6 +3420,166 @@ body.up-kb-open .up-kb-aware {
             background: var(--accent-fill);
             color: white;
             box-shadow: 0 2px 8px rgba(59,130,246,0.4);
+        }
+
+        /* ==========================================================================
+   PANNEAU « ORDRE DES SECTIONS » (SPEC-2026-08-18-pdf-et-champs.md §2)
+   Colonne latérale repliable, ne recouvre JAMAIS l'aperçu : desktop = ligne
+   (aperçu + colonne côte à côte), mobile = colonne empilée (le panneau se
+   déplie SOUS l'aperçu, jamais par-dessus). Câblée par pdf-section-order.ts.
+   ========================================================================== */
+        .pdf-preview-body {
+            flex: 1;
+            display: flex;
+            min-height: 0;
+            overflow: hidden;
+        }
+
+        #presentation-content {
+            min-width: 0;
+        }
+
+        .pdf-section-order-panel {
+            flex-shrink: 0;
+            width: 0;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            background: var(--bg-interactive);
+            border-left: 1px solid var(--border-color);
+            transition: width var(--transition-quick) ease;
+        }
+
+        .pdf-section-order-panel.is-open {
+            width: min(320px, 40vw);
+        }
+
+        .pdf-section-order-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: var(--space-2);
+            padding: var(--space-3);
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .pdf-section-order-header h3 {
+            margin: 0;
+            font-size: 0.95em;
+            white-space: nowrap;
+        }
+
+        .pdf-section-order-reset {
+            all: unset;
+            cursor: pointer;
+            font-size: 0.75em;
+            font-weight: 600;
+            color: var(--accent-blue);
+            white-space: nowrap;
+        }
+
+        .pdf-section-order-reset:hover {
+            text-decoration: underline;
+        }
+
+        .pdf-section-order-list {
+            list-style: none;
+            margin: 0;
+            padding: var(--space-2);
+            display: flex;
+            flex-direction: column;
+            gap: var(--space-2);
+            overflow-y: auto;
+        }
+
+        .pdf-section-order-row {
+            display: flex;
+            align-items: center;
+            gap: var(--space-2);
+            padding: var(--space-2);
+            background: var(--bg-container);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-md);
+            cursor: grab;
+        }
+
+        .pdf-section-order-row.is-dragging {
+            opacity: 0.4;
+        }
+
+        .pdf-section-order-row--locked {
+            cursor: default;
+            opacity: 0.75;
+        }
+
+        .pdf-section-order-handle {
+            font-size: 18px;
+            color: var(--text-secondary);
+            flex-shrink: 0;
+        }
+
+        .pdf-section-order-label {
+            flex: 1;
+            font-size: 0.85em;
+        }
+
+        .pdf-section-order-locked-tag {
+            font-size: 0.7em;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            color: var(--text-secondary);
+            white-space: nowrap;
+        }
+
+        .pdf-section-order-move-btns {
+            display: flex;
+            gap: 2px;
+            flex-shrink: 0;
+        }
+
+        .pdf-section-order-move-btn {
+            all: unset;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 28px;
+            height: 28px;
+            border-radius: var(--radius-sm);
+            color: var(--text-secondary);
+        }
+
+        .pdf-section-order-move-btn:hover:not(:disabled) {
+            background: rgba(255, 255, 255, 0.08);
+            color: var(--text-primary);
+        }
+
+        .pdf-section-order-move-btn:disabled {
+            opacity: 0.3;
+            cursor: default;
+        }
+
+        .pdf-section-order-move-btn .material-symbols-outlined {
+            font-size: 18px;
+        }
+
+        @media (max-width: 768px) {
+            .pdf-preview-body {
+                flex-direction: column;
+            }
+
+            .pdf-section-order-panel {
+                width: 100%;
+                height: 0;
+                border-left: none;
+                border-top: 1px solid var(--border-color);
+                transition: height var(--transition-quick) ease;
+            }
+
+            .pdf-section-order-panel.is-open {
+                width: 100%;
+                height: min(45vh, 360px);
+            }
         }
 
         .coherence-alert {
