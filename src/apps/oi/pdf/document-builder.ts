@@ -85,6 +85,7 @@ import type {
     OiPdfCollectedData,
     OiPdfEditAnchor,
     OiPhotoMeta,
+    OiTimeEvent,
     OiZmspcpBlock,
 } from '@shared/types/contracts.js';
 
@@ -368,6 +369,20 @@ const EFFRAC_H3_PT = 28;
 /** Paddings verticaux d'une carte (`card()`, haut + bas). */
 const EFFRAC_CARD_VPAD_PT = 16;
 /**
+ * Marge haut/bas (pt) du filet séparateur entre MISSION et EXÉCUTION sur la
+ * page fusionnée (`buildMissionExecutionPages::mergedPage`) — PARTAGÉE par
+ * le rendu (`margin:[0, MISSION_EXEC_SEP_MARGIN_PT, 0,
+ * MISSION_EXEC_SEP_MARGIN_PT]`) et son coût (`missionExecutionCostPt`).
+ * Défaut prouvé (mesure PDF réelle, `long-case.json` 16:9) : le coût du
+ * séparateur était figé à 20 pt alors que le rendu réel en consomme 28
+ * (14 haut + 14 bas), sous-estimation de 8 pt qui laissait le solveur
+ * accepter à tort la page fusionnée — la table Chronologie débordait alors
+ * silencieusement d'UNE ligne sur une page de continuation SANS AUCUN
+ * TITRE (juste l'en-tête de tableau répété), rompant le principe « une
+ * page porte son titre ».
+ */
+const MISSION_EXEC_SEP_MARGIN_PT = 14;
+/**
  * Marge de sécurité globale soustraite de la hauteur utile de page avant
  * toute décision fit-to-page (imprécision résiduelle du repli des mots,
  * marges inter-blocs non modélisées) — direction SÛRE : trop grande déclenche
@@ -399,6 +414,39 @@ function textLinePt(text: string, fontPx: number, columnWidthPt: number): number
 /** Hauteur (pt) d'une carte (`card()`, blocks.ts) dont le CORPS (hors h3) coûte `bodyPt` — h3 + corps + paddings verticaux. */
 function cardWithTitlePt(bodyPt: number): number {
     return EFFRAC_H3_PT + bodyPt + EFFRAC_CARD_VPAD_PT;
+}
+
+/**
+ * Coût SUPPLÉMENTAIRE (pt, jamais négatif) des lignes AU-DELÀ de la
+ * première qu'un titre de longueur VARIABLE (texte utilisateur non borné —
+ * `nom_adversaire`, `block.title` ZMSPCP/MOICP/EFFRACTION) fait gagner à un
+ * bandeau/`h2` dont la constante de coût (`ADV_TITLE_BAR_PT`/`EFFRAC_H2_PT`)
+ * suppose TOUJOURS une seule ligne (mesure réelle sur un titre réaliste).
+ *
+ * Défaut prouvé (mesure PDF réelle, `nom_adversaire` à 25 600 caractères,
+ * `tests/pdf/fixtures/`) : le bandeau « 2.<i> FICHE ADVERSAIRE : <nom> »
+ * (`ficheAdversaireTitleBar`, coût `ADV_TITLE_BAR_PT` FIXE, jamais mesuré)
+ * débordait silencieusement sur ~7 pages, laissant une page de queue
+ * ORPHELINE VIDE (rien que le pied de page) — le solveur `fitUsageToPage`
+ * ne détectait jamais ce débordement (son modèle de coût ignorait purement
+ * et simplement la longueur du titre) et ne déclenchait donc jamais le
+ * refus attendu (`OiPdfFitRefusalError`) pour un usage à contrat dur.
+ * MÊME trou pour tout `h2()` dont le texte embarque du contenu utilisateur
+ * non borné (`buildArticulationPage`/`buildEffractionPages`/
+ * `buildAdversaryModesActionPage`, cf. leurs appels à cette fonction) —
+ * traité de façon HOMOGÈNE ici plutôt que par correctif isolé.
+ *
+ * Direction SÛRE (même philosophie qu'`EFFRAC_FITS_SAFETY_PT`) : la
+ * répartition en lignes utilise `estimateCharsPerLine` (calibré
+ * JetBrainsMono, plus large que l'Oswald condensé réellement utilisé par
+ * `h2()`) — sous-estimer le nombre de caractères par ligne ne fait
+ * QU'accroître le coût mesuré, jamais l'inverse : jamais de débordement
+ * silencieux non détecté par le solveur.
+ */
+function extraTitleLinesPt(text: string, fontPx: number, widthPt: number): number {
+    const cpl = estimateCharsPerLine(fontPx, widthPt);
+    const lines = wrappedLinesWithNewlines(text, cpl);
+    return Math.max(0, lines - 1) * effracLinePt(fontPx);
 }
 
 /**
@@ -1080,7 +1128,11 @@ function buildAdversaryFiche(ctx: BuildCtx, adv: OiAdversary, index: number): Co
         const atcdCardPt = cardWithTitlePt(adversaryAtcdListPt(atcdItems, hasAtcdBoundary, atcdText, fontPx, columnWidthPt));
         const rightPt = (localPt > 0 ? localPt + 6 : 0) + (mobilePt > 0 ? mobilePt + 6 : 0) + atcdCardPt;
 
-        return ADV_TITLE_BAR_PT + Math.max(leftPt, rightPt);
+        // `advTitle` (nom d'adversaire) : texte utilisateur non borné, cf.
+        // JSDoc `extraTitleLinesPt` — mesuré au MÊME palier `fontPx` que le
+        // reste de la fiche (le bandeau hérite de `fontSize: fontPx` posé
+        // sur le `stack` racine, jamais un corps de police propre).
+        return ADV_TITLE_BAR_PT + extraTitleLinesPt(advTitle, fontPx, geo.contentWidthPt) + Math.max(leftPt, rightPt);
     };
 
     const maxPortraitHPt = mm(maxPortraitHMm);
@@ -1314,9 +1366,15 @@ function buildAdversaryModesActionPage(ctx: BuildCtx, adv: OiAdversary, nom: str
     const availablePt = geo.contentHeightPt - EFFRAC_FITS_SAFETY_PT;
     const allIndices = maList.map((_, i) => i);
 
+    // Coût du bandeau titre : `nom` (adversaire) est un texte utilisateur
+    // non borné, cf. JSDoc `extraTitleLinesPt` — mesuré sur le titre de
+    // page 1 (sans plage `maRangeLabel`, dont le suffixe FIXE/numérique
+    // n'ajoute jamais de risque de débordement propre).
+    const titleH2Pt = EFFRAC_H2_PT + extraTitleLinesPt(`MODES D'ACTION — ${nom}`, 17, geo.contentWidthPt);
+
     // 1) UNE SEULE page, paliers 11→7 (mission P1, même solveur que la fiche adversaire).
     const computeCostPt = (fontPx: number): number =>
-        EFFRAC_H2_PT + maList.reduce((sum, ma, i) => sum + maCardPt(ma, fontPx, geo.contentWidthPt) + (i > 0 ? STACKED_CARD_GAP_PT : 0), 0);
+        titleH2Pt + maList.reduce((sum, ma, i) => sum + maCardPt(ma, fontPx, geo.contentWidthPt) + (i > 0 ? STACKED_CARD_GAP_PT : 0), 0);
     const fit = fitUsageToPage(computeCostPt, availablePt);
     if ('fontPx' in fit) {
         return { stack: [h2(`MODES D'ACTION — ${nom}`, p, geo.contentWidthPt), ...renderCards(allIndices)], fontSize: fit.fontPx };
@@ -1326,7 +1384,7 @@ function buildAdversaryModesActionPage(ctx: BuildCtx, adv: OiAdversary, nom: str
     // « (SUITE) », garde C1), palier retenu = celui qui produit le MOINS de
     // pages (à égalité, le plus lisible/premier rencontré l'emporte,
     // `FIT_FONT_STEPS` trié décroissant).
-    const budgetPt = availablePt - EFFRAC_H2_PT;
+    const budgetPt = availablePt - titleH2Pt;
     let best: { groups: number[][]; fontPx: number } | null = null;
     for (const fontPx of FIT_FONT_STEPS) {
         const costs = maList.map((ma) => maCardPt(ma, fontPx, geo.contentWidthPt));
@@ -1540,6 +1598,64 @@ function missionBodyContent(ctx: BuildCtx, fontPx: number): Content {
  * fichier — seul l'ORDRE D'APPEL compte, `registerPdfEditAnchor` étant un
  * simple `push` synchrone (cf. JSDoc `BuildCtx.anchors`).
  */
+/**
+ * Édition en place de la chronologie — liste À PLAT sans identifiant propre,
+ * même mécanique que `hypothesisLine` (`indexedFieldAnchor`, rang = ordre de
+ * construction de `formData.time_events`, `formulaires.ts:772-776`).
+ * `e.type` (repli `<select>`) N'EST PAS ancré (valeur contrainte, cf. JSDoc
+ * de fichier `pdf-preview-edit.ts` : un `<select>` n'est jamais un candidat
+ * d'édition en place). Factorisé pour être appelé IDENTIQUEMENT par le
+ * rendu normal (`executionBodyContent`) et la pagination titrée de secours
+ * (`buildExecutionOverflowPages`, cas limite chronologie volumineuse) —
+ * jamais deux logiques d'ancrage divergentes.
+ */
+function registerChronoAnchors(ctx: BuildCtx, events: OiTimeEvent[]): void {
+    events.forEach((e, i) => {
+        registerPdfEditAnchor(ctx.anchors, indexedFieldAnchor('#time_events_container .time-item .time-hour-input', i), e.hour);
+        registerPdfEditAnchor(ctx.anchors, indexedFieldAnchor('#time_events_container .time-item .time-description-input', i), e.description);
+    });
+}
+
+/** Table Chronologie (en-tête + rangées) pour un SOUS-ENSEMBLE d'événements — réutilisée par `executionBodyContent` (table complète) ET la pagination titrée de secours (une table par page, en-tête RÉPÉTÉ, même mécanique que `buildPatracPage::renderTable`). */
+function chronoTableFor(events: OiTimeEvent[], p: OiPdfPalette): Content {
+    const rows: TableCell[][] =
+        events.length > 0
+            ? events.map((e): TableCell[] => [
+                  { text: e.hour, alignment: 'center', borderColor: cellBorder(p) },
+                  {
+                      // Blindage BLIND.A #2 : `e.type`/`e.description` (`OiTimeEvent`, texte
+                      // libre non typé `str()`) traversent `breakLongTokens()` au point d'entrée.
+                      text: [{ text: breakLongTokens(e.type), bold: true }, { text: ` : ${breakLongTokens(e.description)}` }],
+                      borderColor: cellBorder(p),
+                  },
+              ])
+            : [[{ text: 'N/A', colSpan: 2, alignment: 'center', borderColor: cellBorder(p) }, {}]];
+    return {
+        table: {
+            widths: ['22%', '*'],
+            headerRows: 1,
+            body: [
+                [
+                    { text: 'Heure', bold: true, fillColor: p.headerRow, borderColor: cellBorder(p) },
+                    { text: 'Événement', bold: true, fillColor: p.headerRow, borderColor: cellBorder(p) },
+                ],
+                ...rows,
+            ],
+        },
+        layout: LAYOUT_BORDERED,
+    };
+}
+
+/** Coût (pt) d'UN événement de chronologie (rangée de table) au palier `fontPx`, dans une colonne « Événement » de `eventColWidthPt` — PARTAGÉ par `executionPagePt` (estimation groupée) et la pagination titrée de secours (empaquetage `packCardsByBudget` par événement INDIVIDUEL). */
+function chronoEventPt(e: OiTimeEvent, fontPx: number, eventColWidthPt: number): number {
+    return textLinePt(`${e.type} : ${e.description}`, fontPx, eventColWidthPt) + EFFRAC_ROW_VPAD_PT;
+}
+
+/** Coût (pt) d'UNE hypothèse d'ensemble (ligne `H<i> : <texte>`) au palier `fontPx`, dans une colonne de `columnWidthPt` — PARTAGÉ par `executionPagePt` et la pagination titrée de secours. */
+function hypExecPt(h: string, i: number, fontPx: number, columnWidthPt: number): number {
+    return textLinePt(`H${i + 1} : ${h}`, fontPx, columnWidthPt) + 4;
+}
+
 function executionBodyContent(ctx: BuildCtx, fontPx: number): Content[] {
     const { formData, p } = ctx;
 
@@ -1555,45 +1671,10 @@ function executionBodyContent(ctx: BuildCtx, fontPx: number): Content[] {
     const actionField = fv(ctx, 'Idée de Manœuvre / Action', 'action_body_text');
 
     const events = formData.time_events ?? [];
-    // Édition en place — chronologie : liste À PLAT sans identifiant propre,
-    // même mécanique que `hypothesisLine` (`indexedFieldAnchor`, rang =
-    // ordre de construction de `formData.time_events`, `formulaires.ts:772-776`).
-    // `e.type` (repli `<select>`) N'EST PAS ancré (valeur contrainte, cf.
-    // JSDoc de fichier `pdf-preview-edit.ts` : un `<select>` n'est jamais un
-    // candidat d'édition en place).
-    events.forEach((e, i) => {
-        registerPdfEditAnchor(ctx.anchors, indexedFieldAnchor('#time_events_container .time-item .time-hour-input', i), e.hour);
-        registerPdfEditAnchor(ctx.anchors, indexedFieldAnchor('#time_events_container .time-item .time-description-input', i), e.description);
-    });
-    const chronoRows: TableCell[][] =
-        events.length > 0
-            ? events.map((e): TableCell[] => [
-                  { text: e.hour, alignment: 'center', borderColor: cellBorder(p) },
-                  {
-                      // Blindage BLIND.A #2 : `e.type`/`e.description` (`OiTimeEvent`, texte
-                      // libre non typé `str()`) traversent `breakLongTokens()` au point d'entrée.
-                      text: [{ text: breakLongTokens(e.type), bold: true }, { text: ` : ${breakLongTokens(e.description)}` }],
-                      borderColor: cellBorder(p),
-                  },
-              ])
-            : [[{ text: 'N/A', colSpan: 2, alignment: 'center', borderColor: cellBorder(p) }, {}]];
-    const chronoTable: Content = {
-        table: {
-            widths: ['22%', '*'],
-            headerRows: 1,
-            body: [
-                [
-                    { text: 'Heure', bold: true, fillColor: p.headerRow, borderColor: cellBorder(p) },
-                    { text: 'Événement', bold: true, fillColor: p.headerRow, borderColor: cellBorder(p) },
-                ],
-                ...chronoRows,
-            ],
-        },
-        layout: LAYOUT_BORDERED,
-    };
+    registerChronoAnchors(ctx, events);
     // Blindage BLIND.A : `time_events` (chronologie) est une liste non bornée
     // — filet `unbreakable:false` (audit « tout unbreakable a un filet »).
-    const chronoCard = card([h3('Chronologie Prévisionnelle', p), chronoTable], p, { unbreakable: false });
+    const chronoCard = card([h3('Chronologie Prévisionnelle', p), chronoTableFor(events, p)], p, { unbreakable: false });
 
     const hypotheses = formData.hypotheses ?? [];
     const hypBody: Content[] =
@@ -1644,16 +1725,14 @@ function executionPagePt(ctx: BuildCtx, fontPx: number): number {
     const chronoEventColWidthPt = halfColumnWidthPt * 0.78;
     const chronoRowsPt =
         events.length > 0
-            ? events.reduce((sum, e) => sum + textLinePt(`${e.type} : ${e.description}`, fontPx, chronoEventColWidthPt) + EFFRAC_ROW_VPAD_PT, 0)
+            ? events.reduce((sum, e) => sum + chronoEventPt(e, fontPx, chronoEventColWidthPt), 0)
             : line + EFFRAC_ROW_VPAD_PT;
     const chronoPt = cardWithTitlePt(line /* thead */ + chronoRowsPt);
 
     // Hypothèses d'ensemble : chaque entrée peut s'enrouler sur plusieurs lignes (`H<i> : <texte>`).
     const hypotheses = formData.hypotheses ?? [];
     const hypRowsPt =
-        hypotheses.length > 0
-            ? hypotheses.reduce((sum, h, i) => sum + textLinePt(`H${i + 1} : ${h}`, fontPx, halfColumnWidthPt) + 4, 0)
-            : line;
+        hypotheses.length > 0 ? hypotheses.reduce((sum, h, i) => sum + hypExecPt(h, i, fontPx, halfColumnWidthPt), 0) : line;
     const hypPt = cardWithTitlePt(hypRowsPt);
 
     return EFFRAC_H2_PT + line + 4 + actionPt + 4 + Math.max(chronoPt, hypPt);
@@ -1679,12 +1758,111 @@ function buildMission(ctx: BuildCtx, num: number): Content {
     return { stack: [h2(`${num}. MISSION DE L'UNITÉ`, p, geo.contentWidthPt), missionBodyContent(ctx, fontPx)], fontSize: fontPx };
 }
 
-/** Page standalone « <N>. EXÉCUTION » — repli, cf. JSDoc `buildMission` (même protection fit-to-page, anomalie A, jamais de refus). */
-function buildExecution(ctx: BuildCtx, num: number): Content {
+/** Étiquette de plage numérique 1-based « ÉVÉNEMENT <n> »/« ÉVÉNEMENTS <first>-<last> » d'un groupe d'indices CONTIGU de `packCardsByBudget` — même style que `patracRangeLabel` (chronologie EXÉCUTION, cas limite volumineux, `buildExecutionOverflowPages`). */
+function chronoRangeLabel(indices: number[]): string {
+    const first = (indices[0] as number) + 1;
+    const last = (indices[indices.length - 1] as number) + 1;
+    return first === last ? `ÉVÉNEMENT ${first}` : `ÉVÉNEMENTS ${first}-${last}`;
+}
+
+/** Étiquette de plage numérique 1-based « HYPOTHÈSE <n> »/« HYPOTHÈSES <first>-<last> » — même style que `chronoRangeLabel` (Hypothèses d'ensemble EXÉCUTION, `buildExecutionOverflowPages`). */
+function hypExecRangeLabel(indices: number[]): string {
+    const first = (indices[0] as number) + 1;
+    const last = (indices[indices.length - 1] as number) + 1;
+    return first === last ? `HYPOTHÈSE ${first}` : `HYPOTHÈSES ${first}-${last}`;
+}
+
+/**
+ * Repli EXÉCUTION quand même le palier plancher 7 px ne suffit pas pour TOUT
+ * le corps sur une page dédiée (mesure PDF réelle, 2026-08-19 : chronologie à
+ * 50 événements, garde 16:9 — l'ancien repli laissait la table Chronologie
+ * déborder NATURELLEMENT sur autant de pages « fantômes » que nécessaire,
+ * juste l'en-tête de tableau répété, SANS AUCUN TITRE, rompant le principe
+ * « une page porte son titre » respecté par CIBLES(S)/PATRACDVR/
+ * ARTICULATION/ENVIRONNEMENT). Jamais de refus (même contrat que ce couple,
+ * cf. JSDoc `buildMission`) : date/heure/action (toujours minuscules,
+ * tiennent largement sur une page dédiée) restent sur la page 1 « N.
+ * EXÉCUTION » ; Chronologie ET Hypothèses sont ENSUITE chacune PAGINÉE par
+ * ÉVÉNEMENT/HYPOTHÈSE (même mécanique que `buildPatracPage`/
+ * `buildAdversaryModesActionPage`, `packCardsByBudget`) sur des pages à
+ * titre distinct « N. EXÉCUTION — CHRONOLOGIE <plage> »/« — HYPOTHÈSES
+ * <plage> » (jamais « (SUITE) », garde C1) — jamais de page sans titre.
+ */
+function buildExecutionOverflowPages(ctx: BuildCtx, num: number): Content[] {
+    const { formData, p, geo } = ctx;
+    const availablePt = geo.contentHeightPt - EFFRAC_FITS_SAFETY_PT;
+    const budgetPt = availablePt - EFFRAC_H2_PT;
+    const events = formData.time_events ?? [];
+    const hypotheses = formData.hypotheses ?? [];
+    const eventColWidthPt = geo.contentWidthPt * 0.78;
+
+    // Palier retenu = celui qui produit le MOINS de pages au TOTAL
+    // (chronologie + hypothèses), même esprit que
+    // `buildAdversaryModesActionPage`/`buildCatPage`/`buildPatracPage`
+    // (`FIT_FONT_STEPS` trié décroissant, à égalité le plus lisible l'emporte).
+    let best: { fontPx: number; chronoGroups: number[][]; hypGroups: number[][] } | null = null;
+    for (const fontPx of FIT_FONT_STEPS) {
+        const chronoCosts = events.map((e) => chronoEventPt(e, fontPx, eventColWidthPt));
+        const chronoGroups = packCardsByBudget(chronoCosts, budgetPt);
+        const hypCosts = hypotheses.map((h, i) => hypExecPt(h, i, fontPx, geo.contentWidthPt));
+        const hypGroups = packCardsByBudget(hypCosts, budgetPt);
+        if (best === null || chronoGroups.length + hypGroups.length < best.chronoGroups.length + best.hypGroups.length) {
+            best = { fontPx, chronoGroups, hypGroups };
+        }
+    }
+    const { fontPx, chronoGroups, hypGroups } = best as { fontPx: number; chronoGroups: number[][]; hypGroups: number[][] };
+
+    registerChronoAnchors(ctx, events);
+    const dateExecutionField = fv(ctx, "Date d'exécution", 'date_execution');
+    const heureExecutionField = fv(ctx, 'Heure H', 'heure_execution', {
+        fontSize: Math.round(fontPx * 1.2),
+        valueColor: p.accent,
+        valueBold: true,
+    });
+    const actionField = fv(ctx, 'Idée de Manœuvre / Action', 'action_body_text');
+    const headPage: Content = {
+        stack: [
+            h2(`${num}. EXÉCUTION`, p, geo.contentWidthPt),
+            grid2([dateExecutionField], [heureExecutionField]),
+            { text: '', margin: [0, 4, 0, 0] },
+            actionField,
+        ],
+        fontSize: fontPx,
+    };
+    const chronoPages: Content[] = chronoGroups.map((indices): Content => {
+        const subset = indices.map((i) => events[i] as OiTimeEvent);
+        return {
+            stack: [h2(`${num}. EXÉCUTION — CHRONOLOGIE ${chronoRangeLabel(indices)}`, p, geo.contentWidthPt), chronoTableFor(subset, p)],
+            fontSize: fontPx,
+            pageBreak: 'before',
+        };
+    });
+    const hypPages: Content[] = hypGroups.map((indices): Content => {
+        const body = indices.map((i) => hypothesisLine(i, hypotheses[i] as string, p, ctx.anchors));
+        return {
+            stack: [h2(`${num}. EXÉCUTION — ${hypExecRangeLabel(indices)}`, p, geo.contentWidthPt), ...body],
+            fontSize: fontPx,
+            pageBreak: 'before',
+        };
+    });
+    return [headPage, ...chronoPages, ...hypPages];
+}
+
+/**
+ * Page(s) standalone « <N>. EXÉCUTION » — repli si la fusion avec « MISSION »
+ * ne tient sur aucun palier (`buildMissionExecutionPages`), cf. JSDoc
+ * `buildMission` (même protection fit-to-page, anomalie A, jamais de
+ * refus). Au-delà du palier plancher, cas limite traité par
+ * `buildExecutionOverflowPages` (pagination titrée, jamais de page sans
+ * titre) plutôt que par le débordement naturel silencieux d'avant.
+ */
+function buildExecution(ctx: BuildCtx, num: number): Content[] {
     const { p, geo } = ctx;
     const fit = fitUsageToPage((fontPx) => executionPagePt(ctx, fontPx), geo.contentHeightPt - EFFRAC_FITS_SAFETY_PT);
-    const fontPx = 'fontPx' in fit ? fit.fontPx : FIT_FONT_FLOOR;
-    return { stack: [h2(`${num}. EXÉCUTION`, p, geo.contentWidthPt), ...executionBodyContent(ctx, fontPx)], fontSize: fontPx };
+    if ('fontPx' in fit) {
+        return [{ stack: [h2(`${num}. EXÉCUTION`, p, geo.contentWidthPt), ...executionBodyContent(ctx, fit.fontPx)], fontSize: fit.fontPx }];
+    }
+    return buildExecutionOverflowPages(ctx, num);
 }
 
 /**
@@ -1703,7 +1881,7 @@ function buildExecution(ctx: BuildCtx, num: number): Content {
  * que la mission P1 combat).
  */
 function missionExecutionCostPt(ctx: BuildCtx, fontPx: number): number {
-    return missionPagePt(ctx, fontPx) + 20 /* séparateur */ + executionPagePt(ctx, fontPx);
+    return missionPagePt(ctx, fontPx) + 2 * MISSION_EXEC_SEP_MARGIN_PT + executionPagePt(ctx, fontPx);
 }
 
 /**
@@ -1746,7 +1924,7 @@ function buildMissionExecutionPages(ctx: BuildCtx, num: () => number): Content[]
             missionBodyContent(ctx, fontPx),
             {
                 canvas: [{ type: 'line', x1: 0, y1: 0, x2: geo.contentWidthPt, y2: 0, lineWidth: 1, lineColor: p.border }],
-                margin: [0, 14, 0, 14],
+                margin: [0, MISSION_EXEC_SEP_MARGIN_PT, 0, MISSION_EXEC_SEP_MARGIN_PT],
             },
             h2(`${execNum}. EXÉCUTION`, p, geo.contentWidthPt),
             ...executionBodyContent(ctx, fontPx),
@@ -1761,11 +1939,16 @@ function buildMissionExecutionPages(ctx: BuildCtx, num: () => number): Content[]
     }
 
     // Repli naturel (jamais un refus) : les 2 pages historiques séparées.
-    // EXÉCUTION porte SON PROPRE `pageBreak:'before'` (même contrat que
+    // EXÉCUTION (1+ pages, cf. JSDoc `buildExecution`) porte SON PROPRE
+    // `pageBreak:'before'` sur SA PREMIÈRE page (même contrat que
     // `pushPage`) — sans ce wrapper, `pushPages` (appelant) ne le pose que
     // sur MISSION (1er élément), EXÉCUTION s'enchaînait alors SANS saut
-    // derrière MISSION puis débordait sur une page sans titre (anomalie A).
-    return [buildMission(ctx, missionNum), { stack: [buildExecution(ctx, execNum)], pageBreak: 'before' }];
+    // derrière MISSION puis débordait sur une page sans titre (anomalie A) ;
+    // ses pages de continuation éventuelles (cas limite) portent déjà LEUR
+    // PROPRE `pageBreak:'before'` (`buildExecutionOverflowPages`).
+    const execPages = buildExecution(ctx, execNum);
+    const [execFirst, ...execRest] = execPages;
+    return [buildMission(ctx, missionNum), { stack: [execFirst as Content], pageBreak: 'before' }, ...execRest];
 }
 
 /** Photos de la section « TRANSPORT » (pdf-engine-v2.ts:1032-1039) : PR avant domicile, ordre conservé (§3.4 règle 3). Titre NU et numéro portés par le registre de sections (`OI_PDF_SECTIONS`, §5/§6 SPEC-2026-08-18-pdf-et-champs.md) — plus aucune mention de « logistique ». */
@@ -2103,7 +2286,10 @@ function buildArticulationPage(
             : textLinePt(`${catLabel} : ${catText}`, fontPx, columnWidthPt);
         const leftPt = EFFRAC_H3_PT + coreFieldsPt + catPt;
         const rightPt = cellsContentPt(groups, placeChef, fontPx, columnWidthPt, placeChefLabel);
-        return EFFRAC_H2_PT + Math.max(leftPt, rightPt);
+        // `title` embarque `block.title` (ZMSPCP/MOICP) : texte utilisateur
+        // non borné, cf. JSDoc `extraTitleLinesPt` — `h2()` rend TOUJOURS à
+        // fontSize 17 fixe (jamais le palier `fontPx` du corps), mesuré comme tel.
+        return EFFRAC_H2_PT + extraTitleLinesPt(title, 17, geo.contentWidthPt) + Math.max(leftPt, rightPt);
     };
 
     const fit = fitUsageToPage(computeCostPt, geo.contentHeightPt - EFFRAC_FITS_SAFETY_PT);
@@ -2895,6 +3081,15 @@ function buildEffractionPages(ctx: BuildCtx, block: OiEffractionBlock): Content[
     const tools = doorMeta ? parseTools(doorMeta.tools) : [];
     const topHMm = is169 ? 45 : 55;
     const title = `Articulation : EFFRACTION - ${block.title || '-'}`;
+    // `title` embarque `block.title` : texte utilisateur non borné, cf. JSDoc
+    // `extraTitleLinesPt` — `h2()` rend TOUJOURS à fontSize 17 fixe, quel que
+    // soit le palier choisi pour le corps. Coût PARTAGÉ par les TROIS budgets
+    // de ce fichier qui posent `h2(title, ...)`/`h2(`${title} — ...`, ...)`
+    // (page 1 fusionnée, pages autonomes « d », refus dédié « e ») — un seul
+    // calcul, jamais trois qui divergeraient (mesure PDF réelle 2026-08-19 :
+    // un `block.title` démesuré échappait aux tiers « d »/« e », qui ne
+    // comptaient QUE `EFFRAC_H2_PT` nu).
+    const titleH2Pt = EFFRAC_H2_PT + extraTitleLinesPt(title, 17, geo.contentWidthPt);
     // Titre systématiquement présent (jamais de carte « Hypothèse N » vide) — même filet que `hypNumberFallback` ailleurs dans ce module.
     const hypotheses = block.hypotheses.map((h, i) => ({ ...h, title: h.title || h.id || `Hypothèse ${i + 1}` }));
     const useCards = hypotheses.length <= EFFRAC_HYP_CARDS_MAX;
@@ -2934,7 +3129,7 @@ function buildEffractionPages(ctx: BuildCtx, block: OiEffractionBlock): Content[
         const missionPt = textLinePt(`Mission : ${block.mission || '-'}`, fontPx, geo.contentWidthPt) + 10;
         const specsCardPt = effractionSpecsCardPt(block, fontPx, rightColWidthPt);
         const headPt = Math.max(specsCardPt, photoBandPt);
-        return EFFRAC_H2_PT + missionPt + 6 + headPt + 6;
+        return titleH2Pt + missionPt + 6 + headPt + 6;
     };
     const availablePt = geo.contentHeightPt - EFFRAC_FITS_SAFETY_PT;
 
@@ -2999,7 +3194,7 @@ function buildEffractionPages(ctx: BuildCtx, block: OiEffractionBlock): Content[
     let bestPacking: { groups: OiEffractionHypothesis[][]; fontPx: number; tight: boolean } | null = null;
     for (const { fontPx, tight } of levels) {
         const firstBudgetPt = Math.max(0, availablePt - missionOverheadPt(fontPx) - EFFRAC_H3_PT - EFFRAC_CARD_VPAD_PT);
-        const restBudgetPt = Math.max(0, availablePt - EFFRAC_H2_PT - EFFRAC_H3_PT - EFFRAC_CARD_VPAD_PT);
+        const restBudgetPt = Math.max(0, availablePt - titleH2Pt - EFFRAC_H3_PT - EFFRAC_CARD_VPAD_PT);
         const groups = packHypotheses(hypotheses, (subset) => regionCostPt(subset, fontPx, tight), firstBudgetPt, restBudgetPt);
         if (groups !== null && (bestPacking === null || groups.length < bestPacking.groups.length)) {
             bestPacking = { groups, fontPx, tight };
@@ -3039,7 +3234,7 @@ function buildEffractionPages(ctx: BuildCtx, block: OiEffractionBlock): Content[
     // explicite (directive : « le message de refus explique qu'une hypothèse
     // unique dépasse une page »).
     const floorLevel = useCards ? { fontPx: FIT_FONT_FLOOR, tight: true } : { fontPx: FIT_FONT_FLOOR, tight: false };
-    const dedicatedPageBudgetPt = Math.max(1, availablePt - EFFRAC_H2_PT - EFFRAC_H3_PT - EFFRAC_CARD_VPAD_PT);
+    const dedicatedPageBudgetPt = Math.max(1, availablePt - titleH2Pt - EFFRAC_H3_PT - EFFRAC_CARD_VPAD_PT);
     const worstHyp = hypotheses.reduce((worst, h) => {
         const cost = regionCostPt([h], floorLevel.fontPx, floorLevel.tight);
         const worstCost = regionCostPt([worst], floorLevel.fontPx, floorLevel.tight);
