@@ -3342,6 +3342,27 @@ body.up-kb-open .up-kb-aware {
             resize: none;
         }
 
+        /* Correction refusée (`commitEdit`, `pdf-preview-edit.ts`) — posée sous
+           le fragment cliqué, mêmes tokens d'erreur que `.field-error` (formulaire
+           principal) pour une cohérence visuelle clair/sombre ; jamais de zone
+           source vidée/corrompue derrière ce message (garde native
+           `checkValidity`/sanitisation), donc pas de style « danger » sur le
+           fragment lui-même — seul ce message porte l'alerte. */
+        .pdf-edit-error {
+            position: absolute;
+            z-index: 2;
+            max-width: min(320px, 90vw);
+            margin: 0;
+            padding: var(--space-2) var(--space-3);
+            font-size: 0.8em;
+            line-height: 1.4;
+            color: var(--danger-red);
+            background: var(--danger-bg);
+            border: 1px solid color-mix(in srgb, var(--danger-red) 45%, transparent);
+            border-radius: var(--radius-sm);
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+        }
+
         .pdf-preview-error {
             padding: var(--space-4);
             text-align: center;

@@ -113,6 +113,24 @@
  * seule chaîne rendue, ex. « Naissance : <date> @ <lieu> », listes jointes
  * `meList.join(' / ')` ; titres de section, numéros dérivés, pieds de page,
  * badges/`<select>` PATRACDVR — jamais des candidats).
+ *
+ * DÉCISION `<select>` (mission « garde-fous d'édition », 2026-08-19) :
+ * EXCLUSION MAINTENUE, pas de liste de choix éditable. `document-builder.ts`
+ * ne les anchore déjà JAMAIS (paragraphe ci-dessus) — un texte rendu depuis
+ * un `<select>` (ethnie, type d'horaire T0..T5…) n'a donc AUCUN fragment
+ * candidat et `resolveEditCandidates` ne retient de toute façon que
+ * `HTMLInputElement`/`HTMLTextAreaElement` (garde-fou, JSDoc dédié) : aucune
+ * `.pdf-edit-hit` n'est JAMAIS posée sur ce texte, il ne prend donc jamais
+ * l'affordance clic/survol des zones éditables (`styles/oi.css`,
+ * `.pdf-edit-hit:hover`/`:focus-visible`) — rien ne « paraît éditable » là où
+ * ça ne l'est pas, sans code additionnel. Justification de fond (pas
+ * seulement l'état de fait existant) : une valeur de `<select>` est un code
+ * ENUMÉRÉ contraint côté formulaire ; l'exposer en édition texte libre depuis
+ * l'aperçu permettrait d'y écrire une valeur hors énumération (aucune des
+ * garde-fous `commitEdit` — `checkValidity()`/contraintes natives — ne
+ * couvre un ensemble de choix fermé, un `<select>` n'a pas de `pattern`) et
+ * romprait la cohérence avec le reste du formulaire pour un gain marginal
+ * (ces champs sont courts, déjà corrigibles depuis le formulaire lui-même).
  */
 import { syncDomToStoreImmediate } from '@oi/formulaires.js';
 import type { OiPdfEditAnchor } from '@shared/types/contracts.js';
@@ -283,6 +301,63 @@ function closeActiveEditor(): void {
     activeEditor = null;
 }
 
+/** Message d'erreur affiché après une correction refusée (au plus un à la fois, même contrat que `activeEditor`) — auto-effacé après `EDIT_ERROR_TTL_MS` ou dès qu'un nouvel éditeur/une nouvelle erreur le remplace. */
+let activeErrorEl: HTMLElement | null = null;
+let activeErrorTimer: ReturnType<typeof setTimeout> | null = null;
+
+function closeActiveError(): void {
+    if (activeErrorTimer !== null) { clearTimeout(activeErrorTimer); activeErrorTimer = null; }
+    activeErrorEl?.remove();
+    activeErrorEl = null;
+}
+
+const EDIT_ERROR_TTL_MS = 6000;
+
+/** Affiche le refus juste sous la zone cliquée (`hit`) — `role="alert"` : annoncé par les lecteurs d'écran sans déplacer le focus (cf. JSDoc `commitEdit`, aucune tentative de garder l'éditeur ouvert). Styles `.pdf-edit-error`, `styles/oi.css`. */
+function showEditRejection(hit: HTMLButtonElement, overlay: HTMLElement, message: string): void {
+    closeActiveError();
+    const box = document.createElement('p');
+    box.className = 'pdf-edit-error';
+    box.setAttribute('role', 'alert');
+    box.textContent = message;
+    box.style.left = hit.style.left;
+    box.style.top = `calc(${hit.style.top} + ${hit.style.height} + 2px)`;
+    overlay.appendChild(box);
+    activeErrorEl = box;
+    activeErrorTimer = setTimeout(closeActiveError, EDIT_ERROR_TTL_MS);
+}
+
+/** Message de la garde 2 (`commitEdit`, JSDoc dédié — vidage d'un champ non vide refusé). */
+const EMPTYING_REJECTED_MESSAGE = "Correction refusée : viderait ce champ (valeur actuelle conservée). Utilisez le formulaire pour l'effacer intentionnellement.";
+
+/** Indice de format affiché en cas de refus — seuls les types à format STRICT (date/heure, cf. spec) en ont un utile ; les autres s'appuient sur `validationMessage` natif (`rejectionMessage`). */
+function expectedFormatHint(type: string): string | null {
+    if (type === 'date') return 'AAAA-MM-JJ (ex. 2026-08-19)';
+    if (type === 'time') return 'HH:MM (ex. 14:30)';
+    return null;
+}
+
+/**
+ * Message de refus — distingue 2 cas (capturé AVANT `commitEdit` ne restaure
+ * `el.value`, cf. son JSDoc) :
+ *  - valeur SILENCIEUSEMENT ASSAINIE par le navigateur (`el.value !==
+ *    attempted` après affectation — le bug reproduit, `type="date"`/`"time"`
+ *    rejetant un format invalide en le VIDANT) : `validationMessage` porte
+ *    alors sur la valeur déjà vidée, inexploitable — message dédié avec le
+ *    format attendu ;
+ *  - valeur CONSERVÉE mais invalide au sens de la validation de contraintes
+ *    (`pattern`/`maxLength`/`min`/`max`/`step`/`required`) : `validationMessage`
+ *    natif du navigateur est déjà clair, on le relaie tel quel.
+ */
+function rejectionMessage(el: HTMLInputElement | HTMLTextAreaElement, attempted: string): string {
+    const type = el instanceof HTMLInputElement ? el.type : 'textarea';
+    if (el.value !== attempted) {
+        const hint = expectedFormatHint(type);
+        return `Correction refusée : « ${attempted} » n'est pas une valeur valide.${hint ? ` Format attendu : ${hint}.` : ''} Champ inchangé.`;
+    }
+    return `Correction refusée : ${el.validationMessage || 'valeur invalide'}. Champ inchangé.`;
+}
+
 /**
  * Écrit la correction — PAR L'ÉLÉMENT DOM DU CHAMP SOURCE, jamais par un
  * chemin `formData` recalculé (cf. JSDoc de fichier) : `syncDomToStoreImmediate`
@@ -293,25 +368,105 @@ function closeActiveEditor(): void {
  * ensuite ramenée en vue (position exacte de défilement non préservable —
  * la mise en page peut changer — mais la PAGE reste la même, cf. spec §2
  * point 5).
+ *
+ * GARDE 1 — SANITISATION SILENCIEUSE (bug reproduit : `lever_soleil`,
+ * `type="time"`, un format invalide saisi depuis l'aperçu VIDAIT
+ * silencieusement le champ — le navigateur assainit `.value` d'un
+ * `<input type="date"|"time">` en `""` sans lever d'exception ni le
+ * signaler) — écrit `newValue`, PUIS relit `el.value` et `checkValidity()` :
+ * si l'écriture a été assainie en autre chose que `newValue` (perte
+ * silencieuse) OU si la contrainte native du champ (`pattern`/`min`/`max`/
+ * `step`/`maxLength`/`required`) est violée, `el.value` est IMMÉDIATEMENT
+ * restaurée à sa valeur précédente — AVANT tout `dispatchEvent`/
+ * `syncDomToStoreImmediate`/`regenerate`, donc aucun code externe n'observe
+ * jamais l'état corrompu, même transitoirement.
+ *
+ * GARDE 2 — VIDAGE (mesure navigateur RÉEL, mission « garde-fous
+ * d'édition ») : la garde 1 seule NE SUFFIT PAS une fois `applyFieldConstraints`
+ * posé (spec §2 point 2) — un éditeur `type="time"`/`"date"` assainit DÉJÀ
+ * lui-même toute saisie hors format EN `""` AVANT que `commitEdit` ne la
+ * voie (même algorithme de sanitisation navigateur, appliqué côté éditeur
+ * cette fois) : `newValue` arrive donc déjà vide, `checkValidity()` sur `""`
+ * est VRAIE pour un champ non `required` (vide = état valide) — la garde 1
+ * commettrait alors ce vidage EN LE CROYANT délibéré. Constaté en navigateur
+ * réel (Chromium, PAS seulement jsdom) : `lever_soleil` = « 06:26 » → éditeur
+ * `type="time"`, valeur hors bornes injectée → `editor.value` assaini en
+ * `""` par LE NAVIGATEUR avant même le `blur` → sans cette garde, `""` était
+ * committé comme une correction légitime. Défense : toute transition d'une
+ * valeur NON VIDE vers `""` est refusée, quel que soit le type/la contrainte
+ * — cf. `EMPTYING_REJECTED_MESSAGE`. Vider un champ RESTE possible depuis le
+ * formulaire lui-même (hors périmètre de cet éditeur, spec §2 : correction,
+ * pas suppression) — compromis délibéré, préférable à toute ambiguïté entre
+ * « sanitisation silencieuse » et « vidage volontaire », indiscernables une
+ * fois `newValue` reçu.
+ *
+ * Aucune écriture n'est donc jamais destructrice, y compris pour un type/une
+ * contrainte non anticipée ici (filet générique, pas un `switch` par type).
+ *
+ * EXPORTÉE pour test unitaire DIRECT (`tests/unit/oi/oi-pdf-preview-edit.
+ * test.ts`) — exercer la garde 1 pour une chaîne EFFECTIVEMENT hors format
+ * (pas déjà vidée) nécessite d'appeler cette fonction directement avec le
+ * champ SOURCE réel comme cible : le cycle `openEditor`/blur, une fois
+ * `applyFieldConstraints` posé, n'expose plus JAMAIS une telle chaîne à
+ * `commitEdit` pour `type="time"`/`"date"` (garde 2 ci-dessus, seule garde
+ * exercée par ce chemin pour ces 2 types).
  */
-function commitEdit(candidate: EditCandidate, newValue: string, pageNumber: number, regenerate: () => Promise<void>): void {
+export function commitEdit(candidate: EditCandidate, newValue: string, pageNumber: number, regenerate: () => Promise<void>): { ok: true } | { ok: false; message: string } {
     const el = candidate.el;
-    if (el.value === newValue) return;
+    if (el.value === newValue) return { ok: true };
+    const previousValue = el.value;
+    if (previousValue !== '' && newValue === '') return { ok: false, message: EMPTYING_REJECTED_MESSAGE }; // garde 2, cf. JSDoc ci-dessus.
     el.value = newValue;
+    const accepted = el.value === newValue && el.checkValidity();
+    if (!accepted) {
+        const message = rejectionMessage(el, newValue);
+        el.value = previousValue; // restauration AVANT tout événement/sync — cf. JSDoc ci-dessus.
+        return { ok: false, message };
+    }
     el.dispatchEvent(new Event('input', { bubbles: true }));
     el.dispatchEvent(new Event('change', { bubbles: true }));
     syncDomToStoreImmediate();
     void regenerate().then(() => {
         document.querySelector(`.pdf-preview-page[data-page-number="${pageNumber}"]`)?.scrollIntoView?.({ block: 'start' });
     });
+    return { ok: true };
+}
+
+/**
+ * Reflète `type` + attributs de contrainte natifs du champ SOURCE sur
+ * l'éditeur (spec §2 point 2 : l'éditeur doit épouser le type du champ —
+ * date → sélecteur de date, heure → sélecteur d'heure — plutôt qu'imposer
+ * une saisie libre pour tout). Recensement des types réellement émis par
+ * `#oi-form`/les générateurs de blocs (`oi/index.html`, `formulaires.ts`,
+ * `articulation.ts`) : `text` (par défaut), `date`, `time`, `<textarea>` —
+ * couverts ci-dessous ; `pattern`/`min`/`max`/`step`/`maxLength`/`required`
+ * copiés génériquement (aucun n'est posé aujourd'hui, mais le filet reste
+ * valable si un futur champ en gagne, sans retouche ici). `<select>` n'est
+ * jamais la cible d'un ancrage (cf. JSDoc de fichier et `resolveEditCandidates`)
+ * donc jamais un `candidate.el` ici — pas de branche dédiée.
+ */
+function applyFieldConstraints(editor: HTMLInputElement | HTMLTextAreaElement, source: HTMLInputElement | HTMLTextAreaElement): void {
+    if (editor instanceof HTMLInputElement && source instanceof HTMLInputElement) {
+        editor.type = source.type;
+        if (source.pattern) editor.pattern = source.pattern;
+        if (source.min !== '') editor.min = source.min;
+        if (source.max !== '') editor.max = source.max;
+        if (source.step !== '') editor.step = source.step;
+    }
+    if (source.maxLength >= 0) editor.maxLength = source.maxLength;
+    editor.required = source.required;
 }
 
 /**
  * Ouvre le champ d'édition au-dessus du fragment cliqué — `<textarea>` si le
- * champ source en est un (spec §2 point 3), `<input>` sinon. Entrée valide
+ * champ source en est un (spec §2 point 3), `<input>` du MÊME `type`/mêmes
+ * contraintes sinon (`applyFieldConstraints`, spec §2 point 2). Entrée valide
  * SEULEMENT pour un `<input>` (une `<textarea>` doit pouvoir recevoir un
  * retour à la ligne saisi) ; Échap annule dans les deux cas ; la perte de
- * focus valide toujours (sauf annulation explicite par Échap).
+ * focus tente toujours la validation (`commitEdit`) — un refus affiche un
+ * message (`showEditRejection`) SANS écrire ni fermer l'éditeur autrement
+ * que normalement (cf. JSDoc `commitEdit` : le champ source n'est jamais
+ * touché par une valeur refusée).
  */
 function openEditor(
     hit: HTMLButtonElement,
@@ -321,16 +476,23 @@ function openEditor(
     regenerate: () => Promise<void>,
 ): void {
     closeActiveEditor();
+    closeActiveError();
     const isTextarea = candidate.el.tagName === 'TEXTAREA';
     const editor = document.createElement(isTextarea ? 'textarea' : 'input');
     editor.className = 'pdf-edit-input';
+    applyFieldConstraints(editor, candidate.el);
     editor.value = candidate.el.value;
 
     const hitWidthPx = parseFloat(hit.style.width) || 60;
     const hitHeightPx = parseFloat(hit.style.height) || 14;
+    // Un sélecteur natif date/heure a une largeur intrinsèque (chrome du
+    // picker) supérieure au texte rendu dans le PDF (ex. « 14:30 » tient sur
+    // ~35px de PDF) — plancher relevé pour ces 2 types afin de ne pas le
+    // tronquer visuellement.
+    const isNativeDateOrTime = editor instanceof HTMLInputElement && (editor.type === 'date' || editor.type === 'time');
     editor.style.left = hit.style.left;
     editor.style.top = hit.style.top;
-    editor.style.width = `${Math.max(hitWidthPx, 90)}px`;
+    editor.style.width = `${Math.max(hitWidthPx, isNativeDateOrTime ? 130 : 90)}px`;
     editor.style.height = isTextarea ? `${Math.max(hitHeightPx * 3, 60)}px` : `${hitHeightPx}px`;
     editor.style.fontSize = `${Math.max(hitHeightPx * 0.75, 10)}px`;
 
@@ -355,7 +517,8 @@ function openEditor(
         const value = editor.value;
         closeActiveEditor();
         if (cancelled) return;
-        commitEdit(candidate, value, pageNumber, regenerate);
+        const result = commitEdit(candidate, value, pageNumber, regenerate);
+        if (!result.ok) showEditRejection(hit, overlay, result.message);
     });
 
     overlay.appendChild(editor);

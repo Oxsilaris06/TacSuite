@@ -36,7 +36,7 @@
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { attachEditableTextLayer, createEditMatchState, resolveEditCandidates } from '@oi/pdf-preview-edit.js';
+import { attachEditableTextLayer, commitEdit, createEditMatchState, resolveEditCandidates } from '@oi/pdf-preview-edit.js';
 import type { OiPdfEditAnchor } from '@shared/types/contracts.js';
 import type { PageViewport, PDFPageProxy } from 'pdfjs-dist';
 
@@ -73,9 +73,11 @@ function buildForm(): HTMLFormElement {
     return form;
 }
 
-function addField(form: HTMLFormElement, id: string, value: string, tag: 'input' | 'textarea' = 'input'): HTMLInputElement | HTMLTextAreaElement {
+/** `type` optionnel (input seulement, ex. `'date'`/`'time'`) — posé AVANT `value` pour que la sanitisation native du type s'applique dès la construction, même précédent que les champs réels (`oi/index.html`). */
+function addField(form: HTMLFormElement, id: string, value: string, tag: 'input' | 'textarea' = 'input', type?: string): HTMLInputElement | HTMLTextAreaElement {
     const el = document.createElement(tag);
     el.id = id;
+    if (type && el instanceof HTMLInputElement) el.type = type;
     el.value = value;
     form.appendChild(el);
     return el as HTMLInputElement | HTMLTextAreaElement;
@@ -389,6 +391,171 @@ describe('attachEditableTextLayer', () => {
         overlay.querySelector<HTMLButtonElement>('.pdf-edit-hit')?.click();
 
         expect(overlay.querySelector('.pdf-edit-input')?.tagName).toBe('TEXTAREA');
+    });
+
+    // -- Garde-fous de validation (mission « garde-fous d'édition », bug
+    // reproduit sur `lever_soleil` : un `<input type="time">` recevant un
+    // format invalide était VIDÉ silencieusement par le navigateur, aucun
+    // avertissement — cf. JSDoc `commitEdit`). ----------------------------
+
+    it("l'éditeur ouvert sur un champ source type=\"time\" est LUI-MÊME un <input type=\"time\"> (spec §2 point 2 — épouse le type du champ, pas une saisie libre)", async () => {
+        const form = buildForm();
+        addField(form, 'lever_soleil', '06:45', 'input', 'time');
+        const state = createEditMatchState([anchor('#lever_soleil', '06:45')]);
+        const { pageEl, overlay } = buildPageEl(1);
+        const page = fakePage([{ str: '06:45', transform: [1, 0, 0, 1, 10, 50], width: 30, height: 12 }]);
+
+        await attachEditableTextLayer(page, pageEl, overlay, fakeViewport(), 1, state, vi.fn(async () => {}));
+        overlay.querySelector<HTMLButtonElement>('.pdf-edit-hit')?.click();
+
+        const editor = overlay.querySelector<HTMLInputElement>('.pdf-edit-input');
+        expect(editor?.type).toBe('time');
+        expect(editor?.value).toBe('06:45');
+    });
+
+    // `commitEdit` testée DIRECTEMENT (exportée pour cette raison, cf. son
+    // JSDoc) : le cycle complet `openEditor`/blur ne peut plus reproduire ces
+    // 2 régressions une fois `applyFieldConstraints` posé — un éditeur
+    // `type="time"`/`"date"` assainit déjà lui-même toute saisie non conforme
+    // AVANT que `commitEdit` ne la voie (même algorithme navigateur, cf.
+    // vérification manuelle : jsdom applique la MÊME sanitisation qu'un vrai
+    // navigateur sur `.value =` pour ces types). `commitEdit` reste
+    // néanmoins LA garde qui empêchait historiquement rien — cf. le champ
+    // source RÉEL `type="time"`/`"date"` ci-dessous, jamais un éditeur — donc
+    // la seule façon d'exercer effectivement la sanitisation navigateur SUR
+    // LE CHAMP SOURCE (exactement le bug reproduit : `el.value = newValue`
+    // sans garde) est d'appeler la fonction qui le fait.
+
+    it('RÉGRESSION — commitEdit sur un champ source type="time" (lever_soleil) : un format invalide ne vide JAMAIS le champ, valeur précédente conservée, message de refus renvoyé, aucune régénération', async () => {
+        const form = buildForm();
+        const leverEl = addField(form, 'lever_soleil', '06:45', 'input', 'time');
+        const regenerate = vi.fn(async () => {});
+
+        const result = commitEdit({ el: leverEl }, '25:99', 1, regenerate); // heure hors bornes — un navigateur/jsdom la rejette en assainissant `.value` à ""
+
+        expect(result.ok).toBe(false);
+        expect(leverEl.value).toBe('06:45'); // JAMAIS vidé — le cœur de la régression (bug reproduit : l'ancien code écrivait sans garde)
+        expect(syncSpy).not.toHaveBeenCalled();
+        expect(regenerate).not.toHaveBeenCalled();
+        if (result.ok) throw new Error('unreachable');
+        expect(result.message).toContain('HH:MM');
+    });
+
+    it('RÉGRESSION — commitEdit sur un champ source type="date" (ex. date_op) : un format invalide ne vide jamais le champ (même bug que lever_soleil)', async () => {
+        const form = buildForm();
+        const dateEl = addField(form, 'date_op', '2026-08-19', 'input', 'date');
+        const regenerate = vi.fn(async () => {});
+
+        const result = commitEdit({ el: dateEl }, '19/08/2026', 1, regenerate); // format FR, pas ISO — invalide pour type="date"
+
+        expect(result.ok).toBe(false);
+        expect(dateEl.value).toBe('2026-08-19');
+        expect(regenerate).not.toHaveBeenCalled();
+        if (result.ok) throw new Error('unreachable');
+        expect(result.message).toContain('AAAA-MM-JJ');
+    });
+
+    it('RÉGRESSION (garde 2, mesure navigateur RÉEL — Chromium, pas seulement jsdom) — le cycle complet clic→édition→blur sur lever_soleil ne vide JAMAIS le champ, même quand l\'ÉDITEUR type="time" assainit lui-même la saisie en "" AVANT que commitEdit ne la voie', async () => {
+        // La garde 1 seule (commitEdit relit el.value après affectation) ne
+        // suffit PAS ici : une fois l'éditeur mirroré type="time"
+        // (applyFieldConstraints), IL assainit déjà la saisie hors bornes en
+        // "" — commitEdit reçoit alors newValue="" directement, un vidage qui
+        // checkValidity() considère à tort comme un état valide (champ non
+        // required). Constaté en navigateur réel : sans la garde 2, ce test
+        // échouait (`leverEl.value` devenait "") alors que les tests
+        // `commitEdit` directs ci-dessus passaient déjà — la garde 1 seule ne
+        // couvre pas CE chemin précis.
+        const form = buildForm();
+        const leverEl = addField(form, 'lever_soleil', '06:26', 'input', 'time');
+        const state = createEditMatchState([anchor('#lever_soleil', '06:26')]);
+        const { pageEl, overlay } = buildPageEl(1);
+        const page = fakePage([{ str: '06:26', transform: [1, 0, 0, 1, 10, 50], width: 30, height: 12 }]);
+        const regenerate = vi.fn(async () => {});
+
+        await attachEditableTextLayer(page, pageEl, overlay, fakeViewport(), 1, state, regenerate);
+        overlay.querySelector<HTMLButtonElement>('.pdf-edit-hit')?.click();
+        const editor = overlay.querySelector<HTMLInputElement>('.pdf-edit-input');
+        if (!editor) throw new Error('éditeur absent');
+        expect(editor.type).toBe('time');
+
+        editor.value = '25:99'; // hors bornes — L'ÉDITEUR (type="time") l'assainit déjà en "" ici
+        expect(editor.value).toBe(''); // prémisse du scénario : commitEdit reçoit bien newValue=""
+        editor.dispatchEvent(new Event('blur'));
+
+        expect(leverEl.value).toBe('06:26'); // JAMAIS vidé
+        expect(regenerate).not.toHaveBeenCalled();
+        expect(overlay.querySelector('.pdf-edit-error')?.textContent).toContain('viderait');
+    });
+
+    it("le cycle complet clic→édition→blur affiche le message de refus (`.pdf-edit-error`, role=\"alert\") quand la correction est rejetée — preuve visuelle end-to-end (spec §2 point 4)", async () => {
+        const form = buildForm();
+        const trigrammeEl = addField(form, 'trigramme', 'ABC') as HTMLInputElement;
+        trigrammeEl.pattern = '[A-Z]{3}'; // contrainte NON assainie à l'affectation (contrairement à date/time) — atteint bien `commitEdit` via le cycle normal, cf. commentaire ci-dessus
+        const state = createEditMatchState([anchor('#trigramme', 'ABC')]);
+        const { pageEl, overlay } = buildPageEl(1);
+        const page = fakePage([{ str: 'ABC', transform: [1, 0, 0, 1, 10, 50], width: 30, height: 12 }]);
+        const regenerate = vi.fn(async () => {});
+
+        await attachEditableTextLayer(page, pageEl, overlay, fakeViewport(), 1, state, regenerate);
+        overlay.querySelector<HTMLButtonElement>('.pdf-edit-hit')?.click();
+        const editor = overlay.querySelector<HTMLInputElement>('.pdf-edit-input');
+        if (!editor) throw new Error('éditeur absent');
+
+        editor.value = 'abc-invalide';
+        editor.dispatchEvent(new Event('blur'));
+
+        expect(trigrammeEl.value).toBe('ABC'); // champ inchangé
+        expect(regenerate).not.toHaveBeenCalled();
+        const errorEl = overlay.querySelector('.pdf-edit-error');
+        expect(errorEl).not.toBeNull();
+        expect(errorEl?.getAttribute('role')).toBe('alert');
+        expect(overlay.querySelector('.pdf-edit-input')).toBeNull(); // éditeur refermé (pas de focus-trap)
+    });
+
+    it('une correction VALIDE sur un champ type="date" écrit normalement (couverture positive, symétrique du test de régression)', async () => {
+        const form = buildForm();
+        const dateEl = addField(form, 'date_op', '2026-08-19', 'input', 'date');
+        const state = createEditMatchState([anchor('#date_op', '2026-08-19')]);
+        Element.prototype.scrollIntoView = vi.fn();
+        const { pageEl, overlay } = buildPageEl(1);
+        const page = fakePage([{ str: '2026-08-19', transform: [1, 0, 0, 1, 10, 50], width: 60, height: 12 }]);
+        const regenerate = vi.fn(async () => {});
+
+        await attachEditableTextLayer(page, pageEl, overlay, fakeViewport(), 1, state, regenerate);
+        overlay.querySelector<HTMLButtonElement>('.pdf-edit-hit')?.click();
+        const editor = overlay.querySelector<HTMLInputElement>('.pdf-edit-input');
+        if (!editor) throw new Error('éditeur absent');
+
+        editor.value = '2026-09-01';
+        editor.dispatchEvent(new Event('blur'));
+
+        expect(dateEl.value).toBe('2026-09-01');
+        expect(syncSpy).toHaveBeenCalledTimes(1);
+        expect(regenerate).toHaveBeenCalledTimes(1);
+        expect(overlay.querySelector('.pdf-edit-error')).toBeNull();
+    });
+
+    it('une contrainte native générique (`pattern`, non utilisée aujourd\'hui par `#oi-form` mais couverte par construction) rejette une valeur non conforme SANS écrire, avec le `validationMessage` natif du navigateur', async () => {
+        const form = buildForm();
+        const trigrammeEl = addField(form, 'trigramme', 'ABC') as HTMLInputElement;
+        trigrammeEl.pattern = '[A-Z]{3}';
+        const state = createEditMatchState([anchor('#trigramme', 'ABC')]);
+        const { pageEl, overlay } = buildPageEl(1);
+        const page = fakePage([{ str: 'ABC', transform: [1, 0, 0, 1, 10, 50], width: 30, height: 12 }]);
+        const regenerate = vi.fn(async () => {});
+
+        await attachEditableTextLayer(page, pageEl, overlay, fakeViewport(), 1, state, regenerate);
+        overlay.querySelector<HTMLButtonElement>('.pdf-edit-hit')?.click();
+        const editor = overlay.querySelector<HTMLInputElement>('.pdf-edit-input');
+        if (!editor) throw new Error('éditeur absent');
+        expect(editor.pattern).toBe('[A-Z]{3}'); // contrainte reflétée sur l'éditeur
+
+        editor.value = 'abc-invalide';
+        editor.dispatchEvent(new Event('blur'));
+
+        expect(trigrammeEl.value).toBe('ABC');
+        expect(regenerate).not.toHaveBeenCalled();
+        expect(overlay.querySelector('.pdf-edit-error')).not.toBeNull();
     });
 
     // -- Robustesse de l'alignement (mission « robustesse alignement ») -----
