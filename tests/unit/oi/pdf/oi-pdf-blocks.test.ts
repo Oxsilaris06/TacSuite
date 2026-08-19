@@ -468,6 +468,40 @@ describe('galleryPages (OrderHtmlPhotos.kt:69-92, SPEC-PDF-V3.md §3.3)', () => 
         expect(captionOf(pagesCustom)).toBe('Vue de face');
         expect(captionOf(pagesDefault)).toBe('Porte principale - Détail');
     });
+
+    it('bug PDF-GALLERY-16-9 : le budget de hauteur d\'UNE galerie 1-photo tient dans la page RÉELLE, en A4 ET en 16:9 (avant le correctif, le budget était figé — identique dans les deux formats — et débordait de la page en 16:9)', () => {
+        const geoA4 = pageGeometry('a4');
+        const geo169 = pageGeometry('16:9');
+        const photos = [makePhoto({ id: 'photo-1' })];
+
+        const frameHeightOf = (g: ReturnType<typeof pageGeometry>): number => {
+            const pages = galleryPages('Galerie', photos, photosBase64, p, g);
+            expect(pages).toHaveLength(1); // 1 photo -> 1 page, jamais scindée
+            const page1 = pages[0] as ContentStack;
+            const body = page1.stack[1] as ContentStack;
+            const fig = body.stack[0] as ContentStack;
+            const image = fig.stack[0] as ContentImage;
+            return (image.fit as number[])[1] as number;
+        };
+
+        const heightA4 = frameHeightOf(geoA4);
+        const height169 = frameHeightOf(geo169);
+
+        // Le cadre photo ne doit JAMAIS dépasser la hauteur utile réelle de
+        // la page moins le titre h2 (48 pt, mesuré — cf. PDF_H2_BLOCK_PT,
+        // theme.ts) : au-delà, pdfmake scinde le stack sur une 2e page —
+        // page blanche (titre + pied de page seuls) suivie d'une page
+        // orpheline sans titre, reproduit sur l'archive OI réelle en 16:9.
+        const H2_RESERVE_PT = 48;
+        expect(heightA4).toBeLessThanOrEqual(geoA4.contentHeightPt - H2_RESERVE_PT);
+        expect(height169).toBeLessThanOrEqual(geo169.contentHeightPt - H2_RESERVE_PT);
+
+        // Le 16:9 dispose de moins de hauteur utile que l'A4 : le budget
+        // DOIT rétrécir en conséquence (avant le correctif, `landscape: true`
+        // était figé et les deux valeurs étaient rigoureusement identiques,
+        // quel que soit le format demandé).
+        expect(height169).toBeLessThan(heightA4);
+    });
 });
 
 describe('galleryToolsReservePt (SPEC-PDF-DEFINITIF §5, axe A3 — correctif D3 ; empaquetage en flow, revue design 2026-08-10)', () => {
@@ -519,7 +553,7 @@ describe('galleryToolsReservePt (SPEC-PDF-DEFINITIF §5, axe A3 — correctif D3
         const without = frameHeightOf([makePhoto({ id: 'photo-1' })]);
         const withTools = frameHeightOf([makePhoto({ id: 'photo-1', tools: '["HDR50","Bélier lourd","VIGIK"]', other_tools: 'Bfldkngnfl' })]);
         // Sans outil : hauteur historique inchangée (base - réserve légende).
-        expect(without).toBeCloseTo(mm(photoPageGalleryHeightMm(true)) - mm(10), 6);
+        expect(without).toBeCloseTo(mm(photoPageGalleryHeightMm(geo.contentHeightPt)) - mm(10), 6);
         expect(withTools).toBeLessThan(without);
         expect(withTools).toBeGreaterThanOrEqual(mm(40));
 

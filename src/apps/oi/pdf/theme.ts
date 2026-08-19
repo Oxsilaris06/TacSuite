@@ -318,19 +318,37 @@ export function fitUsageToPage(
 }
 
 /**
- * Hauteur utile (mm) d'une page pleine (garde/finale) selon l'orientation,
- * marges verticales `@page` déduites (8 + 11 mm) — port verbatim de
- * `fullPageHeightMm()` (OrderPdfStyle.kt:60-62).
+ * Hauteur (pt) du bloc titre `h2` de page — texte Oswald 17 + filet + marges,
+ * MESURÉE sur rendu réel pdfmake (`pdftotext -bbox`) : même valeur que
+ * `EFFRAC_H2_PT` (document-builder.ts:257, « h2 de page 47,5 pt » ->
+ * arrondi 48), dupliquée ici faute de pouvoir importer depuis
+ * `document-builder.ts` (sens de dépendance inverse : ce module ne dépend
+ * QUE de `theme.ts`, jamais l'inverse).
  */
-export function fullPageHeightMm(landscape: boolean): number {
-    return landscape ? 186 : 272;
+export const PDF_H2_BLOCK_PT = 48;
+
+/**
+ * Hauteur utile (mm) d'une page pleine (garde/finale), DÉRIVÉE de
+ * `pageGeometry(format).contentHeightPt` (marges verticales `@page` déjà
+ * déduites par `pageGeometry`) — remplace l'ancien port verbatim de
+ * `fullPageHeightMm()` (OrderPdfStyle.kt:60-62) qui figeait 186 mm pour
+ * TOUTE page paysage, sans distinguer A4 (541,42 pt de contenu utile) et
+ * 16:9 (485,15 pt, 56,3 pt de moins) : bug PDF-GALLERY-16-9, budget photo
+ * identique dans les deux formats alors que le 16:9 dispose de nettement
+ * moins de hauteur, cause de page blanche + page orpheline dans les
+ * galeries en 16:9 (`galleryPages`, `blocks.ts`).
+ */
+export function fullPageHeightMm(contentHeightPt: number): number {
+    return contentHeightPt / PT_PER_MM;
 }
 
 /**
  * Hauteur utile (mm) de la galerie d'une page photo dédiée : la page pleine
- * moins la place du titre `<h2>` (~14 mm, marges comprises) — port verbatim
- * de `photoPageGalleryHeightMm()` (OrderPdfStyle.kt:64-68).
+ * moins la place RÉELLE du titre `<h2>` (`PDF_H2_BLOCK_PT`, mesurée sur
+ * rendu pdfmake) — remplace l'ancien "-14 mm" hérité de la CSS
+ * `OrderPdfStyle.kt` (39,7 pt), sous-dimensionné de ~8 pt par rapport au
+ * rendu pdfmake réel du même `h2()`.
  */
-export function photoPageGalleryHeightMm(landscape: boolean): number {
-    return fullPageHeightMm(landscape) - 14;
+export function photoPageGalleryHeightMm(contentHeightPt: number): number {
+    return fullPageHeightMm(contentHeightPt) - PDF_H2_BLOCK_PT / PT_PER_MM;
 }

@@ -248,21 +248,26 @@ describe('patracFontPx — barème PATRACDVR (port OrderHtml.kt:321-327)', () =>
     });
 });
 
-describe('fullPageHeightMm / photoPageGalleryHeightMm (OrderPdfStyle.kt:62,68)', () => {
-    it('fullPageHeightMm(true) === 186 (paysage)', () => {
-        expect(fullPageHeightMm(true)).toBe(186);
+describe('fullPageHeightMm / photoPageGalleryHeightMm (dérivées de pageGeometry().contentHeightPt, bug PDF-GALLERY-16-9)', () => {
+    const geoA4 = pageGeometry('a4');
+    const geo169 = pageGeometry('16:9');
+
+    it('fullPageHeightMm(contentHeightPt) est l\'équivalent mm EXACT de contentHeightPt (aller-retour mm() sans perte)', () => {
+        expect(mm(fullPageHeightMm(geoA4.contentHeightPt))).toBeCloseTo(geoA4.contentHeightPt, 9);
+        expect(mm(fullPageHeightMm(geo169.contentHeightPt))).toBeCloseTo(geo169.contentHeightPt, 9);
     });
 
-    it('fullPageHeightMm(false) === 272 (portrait)', () => {
-        expect(fullPageHeightMm(false)).toBe(272);
+    it('fullPageHeightMm DIFFÈRE entre A4 et 16:9 (le 16:9 dispose de 56,3 pt de moins que l\'A4)', () => {
+        expect(fullPageHeightMm(geoA4.contentHeightPt)).toBeGreaterThan(fullPageHeightMm(geo169.contentHeightPt));
+        expect(mm(fullPageHeightMm(geoA4.contentHeightPt) - fullPageHeightMm(geo169.contentHeightPt))).toBeCloseTo(
+            geoA4.contentHeightPt - geo169.contentHeightPt,
+            9,
+        );
     });
 
-    it('photoPageGalleryHeightMm(true) === 172 (186 - 14, paysage)', () => {
-        expect(photoPageGalleryHeightMm(true)).toBe(172);
-    });
-
-    it('photoPageGalleryHeightMm(false) === 258 (272 - 14, portrait)', () => {
-        expect(photoPageGalleryHeightMm(false)).toBe(258);
+    it('photoPageGalleryHeightMm(contentHeightPt) === fullPageHeightMm - PDF_H2_BLOCK_PT (48 pt, mesuré) converti en mm', () => {
+        expect(mm(photoPageGalleryHeightMm(geoA4.contentHeightPt))).toBeCloseTo(geoA4.contentHeightPt - 48, 9);
+        expect(mm(photoPageGalleryHeightMm(geo169.contentHeightPt))).toBeCloseTo(geo169.contentHeightPt - 48, 9);
     });
 });
 

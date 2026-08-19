@@ -1070,6 +1070,25 @@ export interface OiPdfCollectedData {
     isDark: boolean;
 }
 
+/**
+ * Ancrage texte → champ source pour l'édition en place depuis l'aperçu PDF
+ * (SPEC-2026-08-18-pdf-et-champs.md §2, régression « rien n'est éditable »).
+ * `document-builder.ts`/`blocks.ts` en émettent UNE entrée par fragment de
+ * texte dont le contenu provient d'un champ `#oi-form`, dans l'ORDRE
+ * D'ÉMISSION du document — `pdf-preview-edit.ts` rapproche ensuite les
+ * fragments RÉELS de pdf.js de ce tableau dans ce MÊME ORDRE (jamais par
+ * simple égalité de valeur : deux champs peuvent légitimement partager la
+ * même valeur, ex. deux « - »).
+ */
+export interface OiPdfEditAnchor {
+    /** Sélecteur CSS résolvant, au sein de `#oi-form`, vers le(s) élément(s) DOM source (`document.querySelectorAll`, cf. `index`). */
+    selector: string;
+    /** Rang (0-based) parmi les résultats de `selector` — champs répétés partageant un sélecteur commun (hypothèses, chronologie). */
+    index: number;
+    /** Texte ATTENDU (brut, non normalisé) — permet de reconstituer, fragment pdf.js après fragment, une valeur repliée sur plusieurs lignes. */
+    value: string;
+}
+
 // R4-a (D2, « une seule voie d'output PDF ») : `options` (config html2canvas/
 // jsPDF, morte depuis PDF.INTEG) et `generateHTML`/`OiPdfPageOptions` (gabarit
 // HTML de l'aperçu/présentation, remplacé par le blob pdfmake réel — voir

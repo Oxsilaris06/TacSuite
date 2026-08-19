@@ -4,61 +4,73 @@
  * defaultRenderPdf`, une fois par page rendue, JAMAIS en test unitaire (même
  * précédent que `defaultRenderPdf` lui-même — cf. son JSDoc).
  *
- * STRATÉGIE RETENUE : (a) rapprochement par VALEUR, rendu fiable par un
- * verrou d'UNICITÉ — jamais l'instrumentation du générateur (option (b) de la
- * spec). `document-builder.ts` compose le texte de CHAQUE section via des
- * dizaines d'appels `labelValue`/`kvTable`/`accentCard` dispersés sur ~2800
- * lignes, dont beaucoup concatènent PLUSIEURS champs sources dans une seule
- * chaîne rendue (ex. « Naissance : <date> @ <lieu> », `buildAdversaryFiche`) —
- * instrumenter fidèlement CHAQUE site d'appel pour émettre un index fiable
- * (clé → valeur) aurait exigé un diff massif et dispersé dans un fichier déjà
- * dense, avec un risque réel de dérive entre l'index émis et le rendu réel.
- * Le rapprochement par valeur, en revanche, coûte zéro ligne dans
- * `document-builder.ts`/`blocks.ts` et offre la MÊME garantie de sûreté :
+ * RÉGRESSION CORRIGÉE (mesure du 2026-08-19, cf. rapport de mission) :
+ * l'ancienne stratégie (rapprochement par ÉGALITÉ DE VALEUR ENTIÈRE entre un
+ * fragment pdf.js et la valeur COMPLÈTE d'un champ `#oi-form`) n'exposait
+ * quasiment AUCUNE zone éditable — pdfmake découpe le texte en fragments par
+ * LIGNE/STYLE (`page.getTextContent()`), colle parfois la ponctuation du
+ * libellé au fragment de valeur, et tout champ dont la valeur s'enroule sur
+ * 2+ lignes n'a alors AUCUN fragment qui l'égale exactement.
  *
- *   - Les candidats sont les champs RÉELLEMENT PRÉSENTS dans le formulaire au
- *     moment de l'aperçu (`collectEditCandidates`, scan DOM `#oi-form input/
- *     textarea` — mêmes éléments que `syncDomToStoreCore`, `formulaires.ts`).
- *   - Un fragment de texte pdf.js (`page.getTextContent()`) n'est rendu
- *     ÉDITABLE que si sa valeur normalisée correspond À L'IDENTIQUE à EXACTEMENT
- *     UN SEUL champ candidat — toute ambiguïté (0 ou 2+ champs partageant la
- *     même valeur, ex. deux « - » ou deux « RAS ») désactive l'édition pour ce
- *     fragment plutôt que de risquer d'écrire au mauvais endroit.
- *   - L'écriture passe PAR L'ÉLÉMENT DOM DU CHAMP LUI-MÊME (`.value` + event
- *     `input`/`change` + `syncDomToStoreImmediate()`) — jamais un chemin
- *     `formData` reconstruit à la main : c'est EXACTEMENT le même mécanisme
- *     que la saisie normale, donc le formulaire reflète la correction par
- *     construction (§2 point 4 de la spec) et `Store.state.formData` reste
- *     cohérent avec ce que `syncDomToStoreCore` produirait de toute façon.
+ * STRATÉGIE RETENUE : index d'ancrage émis À LA GÉNÉRATION (`document-
+ * builder.ts`/`blocks.ts`, `BuildCtx.anchors` → `buildOiDocDefinition(...).
+ * pdfEditAnchors`) — chaque valeur ISSUE D'UN CHAMP `#oi-form` y est
+ * enregistrée avec (a) un SÉLECTEUR CSS résolvant vers son élément DOM
+ * source (+ un rang pour les champs répétés partageant un sélecteur), (b)
+ * son texte ATTENDU, DANS L'ORDRE D'ÉMISSION du document. Le rapprochement
+ * fragment pdf.js → ancrage se fait ICI par ALIGNEMENT en flux, ordonné :
  *
- * PÉRIMÈTRE EXACT (restreint délibérément, cf. tolérance explicite de la
- * spec « restreins le périmètre à ce que tu peux garantir ») :
- *   - Seuls les champs `#oi-form input`/`textarea` simples (mission, no_go,
- *     uda, champs adversaire `[data-field]`, blocs ZMSPCP/MOICP/effraction,
- *     hypothèses, ME/MA/véhicules…) sont candidats — PAS les cellules
- *     PATRACDVR (badges glisser-déposer, pas des champs texte), PAS les
- *     `<select>` (valeur contrainte, une saisie libre romprait la
- *     cohérence), PAS les libellés/titres/numéros de section (jamais des
- *     candidats : ils ne proviennent d'aucun champ `#oi-form`).
- *   - Un fragment n'est éditable QUE s'il correspond, texte pour texte
- *     (espaces normalisés), à la valeur ENTIÈRE d'un champ. Un champ dont la
- *     valeur s'enroule sur plusieurs lignes dans le PDF (paragraphe long)
- *     n'a alors AUCUN fragment qui l'égale exactement — non éditable, plutôt
- *     que d'exposer une correction partielle qui écraserait le reste du
- *     champ. Conséquence assumée : les champs `<textarea>` ne sont éditables
- *     DEPUIS L'APERÇU que lorsque leur contenu ACTUEL tient sur une seule
- *     ligne rendue — un champ e.g. `mission_body_text` déjà long reste
- *     corrigible uniquement depuis le formulaire.
+ *   - Un curseur PARTAGÉ (`EditMatchState.cursor`, mutable, avance à travers
+ *     TOUTES les pages dans l'ordre où `defaultRenderPdf` les peint) pointe
+ *     l'ancrage COURANT à retrouver. Pour chaque fragment pdf.js rencontré
+ *     (dans l'ordre où pdf.js les restitue — vérifié EMPIRIQUEMENT fidèle à
+ *     l'ordre d'émission du document, y compris à travers les mises en page
+ *     `columns`/`grid2`, cf. rapport de mission) : s'il ÉTEND la valeur
+ *     ATTENDUE de l'ancrage courant (préfixe, espaces normalisés — une
+ *     valeur repliée sur N lignes est simplement la CONCATÉNATION, espace
+ *     par espace, de ses fragments), il est absorbé et une zone cliquable
+ *     lui est posée ; une fois la valeur ENTIÈRE reconstituée, l'ancrage est
+ *     validé et le curseur avance à l'ancrage suivant.
+ *   - Un fragment qui n'étend PAS l'ancrage courant (titre, libellé,
+ *     ponctuation, connecteur) est simplement IGNORÉ (aucune zone posée) SI
+ *     aucune reconstitution n'est en cours ; s'il INTERROMPT une
+ *     reconstitution déjà entamée, celle-ci est ABANDONNÉE (aucune zone
+ *     partielle exposée, jamais de correction qui n'écraserait qu'une partie
+ *     du champ) et le curseur avance quand même — direction SÛRE : sous-
+ *     couvre plutôt que de risquer un rapprochement au mauvais champ.
+ *   - Plusieurs zones cliquables peuvent ainsi partager le MÊME champ source
+ *     (valeur repliée sur plusieurs lignes, ou valeur scindée en items à
+ *     tiret par `dashItemList`) : un clic sur N'IMPORTE LAQUELLE ouvre
+ *     l'éditeur prérempli avec la valeur COMPLÈTE ACTUELLE du champ (lue
+ *     LIVE sur son élément DOM, jamais reconstruite depuis les fragments).
+ *   - L'écriture passe TOUJOURS PAR L'ÉLÉMENT DOM DU CHAMP LUI-MÊME (`.value`
+ *     + event `input`/`change` + `syncDomToStoreImmediate()`) — jamais un
+ *     chemin `formData` reconstruit à la main : c'est EXACTEMENT le même
+ *     mécanisme que la saisie normale (`formulaires.ts`), donc le formulaire
+ *     reflète la correction par construction et `Store.state.formData` reste
+ *     cohérent. Un sélecteur CSS résout TOUJOURS vers un élément DOM réel
+ *     (`document-builder.ts` ne construit ses sélecteurs qu'à partir
+ *     d'identifiants/classes déjà posés par `formulaires.ts`/`articulation.ts`
+ *     — jamais de champ « tableau »/« bloc répété » écrit hors DOM) : aucun
+ *     chemin `formData` séparé n'est nécessaire.
+ *
+ * PÉRIMÈTRE EXACT (restreint délibérément là où l'ancrage fiable n'est pas
+ * possible, cf. JSDoc `document-builder.ts::buildAdversaryFiche` pour le
+ * détail des exclusions — valeurs AGRÉGEANT plusieurs champs DOM en une
+ * seule chaîne rendue, ex. « Naissance : <date> @ <lieu> », listes jointes
+ * `meList.join(' / ')` ; titres de section, numéros dérivés, pieds de page,
+ * badges/`<select>` PATRACDVR — jamais des candidats).
  */
 import { syncDomToStoreImmediate } from '@oi/formulaires.js';
+import type { OiPdfEditAnchor } from '@shared/types/contracts.js';
 import type { PageViewport, PDFPageProxy } from 'pdfjs-dist';
 
 /** Un item `getTextContent()` porteur de texte (exclut les marqueurs `TextMarkedContent`, sans `str`). */
 type TextContentItem = Awaited<ReturnType<PDFPageProxy['getTextContent']>>['items'][number];
-
-/** Champs `#oi-form` simples, valeur libre — mêmes éléments que `syncDomToStoreCore` (`formulaires.ts`) lit pour reconstruire `Store.state.formData`. `<select>` exclu (valeur contrainte à ses `<option>`, une saisie libre romprait la cohérence). */
-const EDITABLE_FIELDS_SELECTOR =
-    '#oi-form input:not([type="file"]):not([type="checkbox"]):not([type="radio"]):not([type="hidden"]):not([type="button"]):not([type="submit"]), #oi-form textarea';
+/** Variante « fragment de texte » de l'union `TextContentItem` : seule celle-ci
+ * porte `transform`/`width`/`height` (l'autre, `TextMarkedContent`, ne décrit
+ * qu'un marqueur de structure et n'a aucune géométrie). */
+type TextFragment = Extract<TextContentItem, { transform: unknown }>;
 
 export interface EditCandidate {
     el: HTMLInputElement | HTMLTextAreaElement;
@@ -79,29 +91,73 @@ function normalizeForMatch(s: string): string {
  * ce comportement — un détail interne du découpage en lignes de pdfmake,
  * pas quelque chose que ce fichier contrôle. Un connecteur de ponctuation
  * (« : », tiret) collé en tête d'un fragment ne change jamais l'IDENTITÉ du
- * texte qui suit : on retente la correspondance après avoir retiré un tel
- * préfixe UNIQUEMENT si la correspondance EXACTE échoue d'abord.
+ * texte qui suit : appliqué UNIQUEMENT au premier fragment d'une tentative
+ * de reconstruction (cf. `tryExtend`), jamais en milieu de valeur.
  */
 function stripGluedLeadingConnector(s: string): string {
     return s.replace(/^[:\-–—]\s*/, '');
 }
 
+/** Clé stable d'un ancrage — sélecteur + rang (2 ancrages du MÊME champ, ex. 2 items `dashItemList`, partagent la MÊME clé : un seul `EditCandidate` résolu, réutilisé). */
+function anchorKey(a: Pick<OiPdfEditAnchor, 'selector' | 'index'>): string {
+    return `${a.selector}::${a.index}`;
+}
+
 /**
- * Scanne le formulaire LIVE et regroupe les champs par valeur normalisée —
- * un groupe de taille 2+ marque une valeur AMBIGUË (ex. deux champs vides
- * réduits à '-', ou deux trigrammes identiques) : `attachEditableTextLayer`
- * n'expose alors l'édition pour AUCUN des deux, cf. JSDoc de fichier.
+ * Résout CHAQUE ancrage vers son élément DOM source (`document.
+ * querySelectorAll(selector)[index]`) — `#oi-form` scope déjà tous les
+ * sélecteurs construits par `document-builder.ts` (`fieldAnchor`/
+ * `advFieldAnchor`/`blockFieldAnchor`/`indexedFieldAnchor`). Seuls
+ * `HTMLInputElement`/`HTMLTextAreaElement` sont retenus (filet — un
+ * sélecteur ne devrait jamais désigner autre chose en pratique, ex. un
+ * `<select>` n'est jamais la cible d'un ancrage émis par `document-
+ * builder.ts`) ; un sélecteur introuvable/invalide est silencieusement omis
+ * (l'ancrage correspondant ne produira alors aucune zone cliquable — repli
+ * sûr, jamais une exception qui interromprait tout le rendu de l'aperçu).
+ * Un `querySelectorAll` par sélecteur DISTINCT (mise en cache) : un champ
+ * répété (hypothèses, MA…) partage le MÊME sélecteur pour tous ses rangs.
  */
-export function collectEditCandidates(): Map<string, EditCandidate[]> {
-    const map = new Map<string, EditCandidate[]>();
-    document.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>(EDITABLE_FIELDS_SELECTOR).forEach((el) => {
-        const key = normalizeForMatch(el.value);
-        if (!key) return;
-        const list = map.get(key);
-        if (list) list.push({ el });
-        else map.set(key, [{ el }]);
-    });
-    return map;
+export function resolveEditCandidates(anchors: OiPdfEditAnchor[]): Map<string, EditCandidate> {
+    const candidates = new Map<string, EditCandidate>();
+    const bySelector = new Map<string, NodeListOf<Element>>();
+    for (const a of anchors) {
+        const key = anchorKey(a);
+        if (candidates.has(key)) continue;
+        let list = bySelector.get(a.selector);
+        if (list === undefined) {
+            try {
+                list = document.querySelectorAll(a.selector);
+            } catch {
+                list = document.querySelectorAll('.__pdf-edit-invalid-selector__'); // toujours vide, jamais d'exception
+            }
+            bySelector.set(a.selector, list);
+        }
+        const el = list[a.index];
+        if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
+            candidates.set(key, { el });
+        }
+    }
+    return candidates;
+}
+
+/**
+ * État de rapprochement PARTAGÉ entre tous les appels `attachEditableTextLayer`
+ * d'un même rendu d'aperçu (une page après l'autre, cf. `defaultRenderPdf`) —
+ * `cursor` avance STRICTEMENT (jamais de retour en arrière ni de relecture
+ * d'une page déjà peinte) : un champ dont la valeur s'étalerait sur PLUSIEURS
+ * PAGES (cas non observé — les solveurs fit-to-page de `document-builder.ts`
+ * bornent chaque usage à une page) resterait alors non éditable plutôt que
+ * de risquer un rapprochement erroné, cf. JSDoc de fichier.
+ */
+export interface EditMatchState {
+    anchors: OiPdfEditAnchor[];
+    candidates: Map<string, EditCandidate>;
+    cursor: { i: number };
+}
+
+/** Construit un `EditMatchState` frais pour un rendu d'aperçu complet — `defaultRenderPdf` en crée UN, réutilisé pour toutes les pages. */
+export function createEditMatchState(anchors: OiPdfEditAnchor[]): EditMatchState {
+    return { anchors, candidates: resolveEditCandidates(anchors), cursor: { i: 0 } };
 }
 
 /** Éditeur actif (au plus un à la fois — un clic ailleurs/Échap le referme avant d'en ouvrir un autre). */
@@ -193,17 +249,56 @@ function openEditor(
     if (editor instanceof HTMLInputElement) editor.select();
 }
 
+/** Pose la zone cliquable `.pdf-edit-hit` sur le rectangle (repère PAGE, pt PDF → px CSS) couvert par `item`. */
+function placeHitZone(
+    item: TextFragment,
+    viewport: PageViewport,
+    dpr: number,
+    candidate: EditCandidate,
+    pageNumber: number,
+    overlay: HTMLElement,
+    regenerate: () => Promise<void>,
+): void {
+    // JUSTIFICATION as : `TextItem.transform`/`PageViewport.convertToViewportPoint`
+    // sont typés `Array<any>`/`any[]` côté pdf.js (stubs JSDoc non affinés) —
+    // toujours des tuples numériques à l'exécution (API pdf.js documentée).
+    const transform = item.transform as number[];
+    const x0 = transform[4] ?? 0;
+    const y0 = transform[5] ?? 0;
+    const p1 = viewport.convertToViewportPoint(x0, y0) as [number, number];
+    const p2 = viewport.convertToViewportPoint(x0 + item.width, y0 + item.height) as [number, number];
+    const left = Math.min(p1[0], p2[0]) / dpr;
+    const top = Math.min(p1[1], p2[1]) / dpr;
+    const width = Math.abs(p2[0] - p1[0]) / dpr;
+    const height = Math.abs(p2[1] - p1[1]) / dpr;
+    if (width <= 0 || height <= 0) return;
+
+    const hit = document.createElement('button');
+    hit.type = 'button';
+    hit.className = 'pdf-edit-hit';
+    hit.style.left = `${left}px`;
+    hit.style.top = `${top}px`;
+    hit.style.width = `${width}px`;
+    hit.style.height = `${height}px`;
+    hit.title = 'Corriger ce texte';
+    hit.setAttribute('aria-label', `Corriger « ${item.str.trim()} »`);
+    hit.addEventListener('click', (e) => {
+        e.stopPropagation();
+        openEditor(hit, candidate, overlay, pageNumber, regenerate);
+    });
+    overlay.appendChild(hit);
+}
+
 /**
- * Superpose une zone cliquable sur chaque fragment de texte de `page` dont la
- * valeur correspond, SANS AMBIGUÏTÉ, à exactement un champ candidat
- * (`candidates`, cf. `collectEditCandidates`). Position/taille calculées via
- * `viewport.convertToViewportPoint` (le MÊME `viewport`, à `scale * dpr`, que
- * celui passé à `page.render()` par `defaultRenderPdf`) puis ramenées en
- * pixels CSS (÷ `dpr`) — même repère que `.pdf-preview-page`/`data-scale`.
- * Tout ce qui ne correspond à AUCUN champ (titres, numéros de section,
- * libellés, texte dérivé/calculé) reste un `<span>`… non, un simple texte de
- * canvas : aucune zone n'y est posée, donc rien n'y est interactif — c'est le
- * cas par défaut, aucun code supplémentaire requis.
+ * Superpose une zone cliquable sur chaque fragment de texte de `page`
+ * reconnu comme faisant partie de la valeur d'un ancrage (`state.anchors`,
+ * cf. JSDoc de fichier pour l'algorithme d'alignement en flux). Position/
+ * taille calculées via `viewport.convertToViewportPoint` (le MÊME `viewport`,
+ * à `scale * dpr`, que celui passé à `page.render()` par `defaultRenderPdf`)
+ * puis ramenées en pixels CSS (÷ `dpr`) — même repère que
+ * `.pdf-preview-page`/`data-scale`. Tout ce qui ne correspond à AUCUN
+ * ancrage (titres, numéros de section, libellés, texte dérivé/calculé)
+ * reste un simple texte de canvas : aucune zone n'y est posée.
  */
 export async function attachEditableTextLayer(
     page: PDFPageProxy,
@@ -211,52 +306,71 @@ export async function attachEditableTextLayer(
     overlay: HTMLElement,
     viewport: PageViewport,
     dpr: number,
-    candidates: Map<string, EditCandidate[]>,
+    state: EditMatchState,
     regenerate: () => Promise<void>,
 ): Promise<void> {
-    if (candidates.size === 0) return;
+    if (state.candidates.size === 0 || state.cursor.i >= state.anchors.length) return;
     const pageNumber = Number(pageEl.dataset.pageNumber ?? '0');
     const textContent = await page.getTextContent();
+    const items = textContent.items as TextContentItem[];
 
-    for (const item of textContent.items as TextContentItem[]) {
+    /** Texte accumulé (normalisé) de la reconstruction EN COURS pour `state.anchors[state.cursor.i]` — vide = aucune reconstruction en cours. */
+    let matchedSoFar = '';
+    let matchedFragIdxs: number[] = [];
+
+    for (let idx = 0; idx < items.length; idx++) {
+        const item = items[idx];
+        if (item === undefined) continue;
+        if (state.cursor.i >= state.anchors.length) break;
         if (!('str' in item) || !item.str.trim()) continue;
-        const normalized = normalizeForMatch(item.str);
-        // Correspondance exacte d'abord ; repli sur le fragment débarrassé
-        // d'un connecteur de ponctuation collé en tête (cf. JSDoc
-        // `stripGluedLeadingConnector`) SEULEMENT si l'exacte échoue — ne
-        // relâche jamais l'exigence d'égalité totale sur le texte du champ.
-        const matches = candidates.get(normalized) ?? candidates.get(stripGluedLeadingConnector(normalized));
-        if (!matches || matches.length !== 1) continue;
-        const candidate = matches[0];
-        if (!candidate) continue;
 
-        // JUSTIFICATION as : `TextItem.transform`/`PageViewport.convertToViewportPoint`
-        // sont typés `Array<any>`/`any[]` côté pdf.js (stubs JSDoc non affinés) —
-        // toujours des tuples numériques à l'exécution (API pdf.js documentée).
-        const transform = item.transform as number[];
-        const x0 = transform[4] ?? 0;
-        const y0 = transform[5] ?? 0;
-        const p1 = viewport.convertToViewportPoint(x0, y0) as [number, number];
-        const p2 = viewport.convertToViewportPoint(x0 + item.width, y0 + item.height) as [number, number];
-        const left = Math.min(p1[0], p2[0]) / dpr;
-        const top = Math.min(p1[1], p2[1]) / dpr;
-        const width = Math.abs(p2[0] - p1[0]) / dpr;
-        const height = Math.abs(p2[1] - p1[1]) / dpr;
-        if (width <= 0 || height <= 0) continue;
+        // Ancrages sans candidat résolu (défensif — cf. JSDoc `resolveEditCandidates`) : jamais tentés, sautés sans consommer de fragment.
+        while (state.cursor.i < state.anchors.length && !state.candidates.has(anchorKey(state.anchors[state.cursor.i] as OiPdfEditAnchor))) {
+            state.cursor.i++;
+            matchedSoFar = '';
+            matchedFragIdxs = [];
+        }
+        if (state.cursor.i >= state.anchors.length) break;
 
-        const hit = document.createElement('button');
-        hit.type = 'button';
-        hit.className = 'pdf-edit-hit';
-        hit.style.left = `${left}px`;
-        hit.style.top = `${top}px`;
-        hit.style.width = `${width}px`;
-        hit.style.height = `${height}px`;
-        hit.title = 'Corriger ce texte';
-        hit.setAttribute('aria-label', `Corriger « ${item.str.trim()} »`);
-        hit.addEventListener('click', (e) => {
-            e.stopPropagation();
-            openEditor(hit, candidate, overlay, pageNumber, regenerate);
-        });
-        overlay.appendChild(hit);
+        const anchor = state.anchors[state.cursor.i] as OiPdfEditAnchor;
+        const target = normalizeForMatch(anchor.value);
+        const fragNorm = normalizeForMatch(item.str);
+
+        // Candidats de fragment à essayer, EXACT d'abord (cf. JSDoc `stripGluedLeadingConnector`) — le connecteur glué ne se produit qu'en TÊTE de valeur.
+        const fragCandidates = matchedSoFar === '' && fragNorm !== stripGluedLeadingConnector(fragNorm) ? [fragNorm, stripGluedLeadingConnector(fragNorm)] : [fragNorm];
+
+        let extended = false;
+        for (const frag of fragCandidates) {
+            const tentative = normalizeForMatch(matchedSoFar === '' ? frag : `${matchedSoFar} ${frag}`);
+            if (tentative === '' || !target.startsWith(tentative)) continue;
+            matchedSoFar = tentative;
+            matchedFragIdxs.push(idx);
+            extended = true;
+            if (matchedSoFar === target) {
+                const candidate = state.candidates.get(anchorKey(anchor));
+                if (candidate) {
+                    for (const fi of matchedFragIdxs) {
+                        const fragItem = items[fi];
+                        if (fragItem && 'str' in fragItem) placeHitZone(fragItem, viewport, dpr, candidate, pageNumber, overlay, regenerate);
+                    }
+                }
+                state.cursor.i++;
+                matchedSoFar = '';
+                matchedFragIdxs = [];
+            }
+            break;
+        }
+        if (extended) continue;
+
+        if (matchedSoFar !== '') {
+            // Interruption d'une reconstruction en cours : ABANDON (aucune zone
+            // partielle exposée, cf. JSDoc de fichier) — le curseur avance quand
+            // même, ce même fragment est retenté contre l'ancrage SUIVANT.
+            matchedSoFar = '';
+            matchedFragIdxs = [];
+            state.cursor.i++;
+            idx--;
+        }
+        // Sinon : fragment de chrome (titre/libellé/ponctuation) — ignoré, le curseur ne bouge pas.
     }
 }

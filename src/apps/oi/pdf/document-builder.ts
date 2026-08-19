@@ -55,6 +55,8 @@ import {
     LAYOUT_BORDERED,
     LAYOUT_NONE,
     pillRow,
+    registerPdfEditAnchor,
+    type PdfFieldAnchor,
 } from './blocks.js';
 import {
     documentFontPx,
@@ -82,6 +84,7 @@ import type {
     OiPatracMember,
     OiPatracRow,
     OiPdfCollectedData,
+    OiPdfEditAnchor,
     OiPhotoMeta,
     OiZmspcpBlock,
 } from '@shared/types/contracts.js';
@@ -178,6 +181,59 @@ interface BuildCtx {
      * document partiel/tronqué renvoyé à l'appelant.
      */
     fitErrors: OiPdfFitError[];
+    /**
+     * Index d'ancrage texte → champ source (mission « régression édition »,
+     * SPEC-2026-08-18-pdf-et-champs.md §2) — collecteur mutable, ADDITIF
+     * SEULEMENT (`blocks.ts::registerPdfEditAnchor`, `push` uniquement,
+     * jamais lu ni réordonné pendant la construction) : chaque helper/site
+     * d'appel qui émet une valeur `#oi-form` y ajoute une entrée, dans
+     * l'ORDRE D'ÉMISSION du document — `buildOiDocDefinition` l'expose au
+     * final sous `pdfEditAnchors`, `pdf-preview-edit.ts` le consomme dans ce
+     * MÊME ordre pour rapprocher les fragments RÉELS de pdf.js.
+     */
+    anchors: OiPdfEditAnchor[];
+}
+
+/* --------------------------------------------------------------------------
+ * Constructeurs de sélecteur d'ancrage (édition en place) — CHAÎNES SEULES,
+ * jamais une opération DOM (module PUR, cf. en-tête de fichier) : résolues
+ * côté navigateur par `pdf-preview-edit.ts` (`document.querySelectorAll`).
+ * Les identifiants injectés (`advId`/`blockId`/`hypId`) sont TOUJOURS générés
+ * par `formulaires.ts`/`articulation.ts` au format `<prefixe>_<timestamp>_
+ * <alea36>` (alphanumérique + `_` seulement, jamais de guillemet ni de
+ * caractère spécial CSS) — sûrs à interpoler tels quels dans un sélecteur
+ * d'attribut `[data-x="..."]`, aucun échappement requis.
+ * ------------------------------------------------------------------------ */
+
+/** Champ `#oi-form` simple, valeur libre (mission, no_go, situation_generale…) — sélecteur = l'`id` DOM du champ, IDENTIQUE à la clé `formData[id]` (`formulaires.ts::syncDomToStoreCore`). */
+function fieldAnchor(id: string): PdfFieldAnchor {
+    return { selector: `#oi-form #${id}` };
+}
+
+/** Champ `.adv-field[data-field]` d'une fiche adversaire (`formulaires.ts:501-555`) — `field` = la clé `OiAdversary` lue (`nom_adversaire`, `domicile_adversaire`…), IDENTIQUE à l'attribut `data-field` posé côté DOM. */
+function advFieldAnchor(advId: string, field: string): PdfFieldAnchor {
+    return { selector: `#oi-form .adversary-entry[data-adv-id="${advId}"] [data-field="${field}"]` };
+}
+
+/** Champ d'un bloc répété (MOICP/ZMSPCP/Effraction, `articulation.ts`) — `blockKind` = préfixe de classe CSS du bloc (`moicp`/`zmspcp`/`effrac`) ET, par convention `articulation.ts`, préfixe des classes de CHAQUE champ (`.moicp-mission`, `.zmspcp-zone`, `.effrac-porte`…). */
+function blockFieldAnchor(blockKind: 'moicp' | 'zmspcp' | 'effrac', blockId: string, fieldClass: string): PdfFieldAnchor {
+    return { selector: `#oi-form .${blockKind}-block[data-block-id="${blockId}"] .${blockKind}-${fieldClass}` };
+}
+
+/** Champ d'une liste à plat SANS identifiant propre (hypothèses, chronologie — `formulaires.ts:772-778`) — `index` désambiguïse entre les N éléments que `containerSelector` retourne, dans le MÊME ordre que `querySelectorAll` (ordre DOM = ordre de construction de `formData`, cf. sites d'appel). */
+function indexedFieldAnchor(containerSelector: string, index: number): PdfFieldAnchor {
+    return { selector: `#oi-form ${containerSelector}`, index };
+}
+
+/**
+ * `labelValue(label, strOr(formData[key]), p, opts)` + ancrage `fieldAnchor(key)`
+ * — raccourci pour le très grand nombre de champs `#oi-form` simples de
+ * niveau racine rendus tels quels (mission « régression édition »), tous de
+ * la même forme. N'introduit AUCUN comportement de rendu nouveau (`strOr`
+ * inchangé) — strictement le même texte qu'un `labelValue` non ancré.
+ */
+function fv(ctx: BuildCtx, label: string, key: string, opts?: { fontSize?: number; valueColor?: string; valueBold?: boolean }): Content {
+    return labelValue(label, strOr(ctx.formData[key]), ctx.p, opts, { anchors: ctx.anchors, ref: fieldAnchor(key) });
 }
 
 /* --------------------------------------------------------------------------
@@ -335,7 +391,13 @@ function cellGroupBox(cellName: string, trigrammes: string[], p: OiPdfPalette): 
  * libellé `H<i> :` en `p.danger` gras (port du libellé spec, distinct de la
  * couleur `textMuted` de `pdf-engine-v2.ts:1023` — la SPEC prime).
  */
-function hypothesisLine(index: number, text: string, p: OiPdfPalette): Content {
+function hypothesisLine(index: number, text: string, p: OiPdfPalette, anchors: OiPdfEditAnchor[]): Content {
+    // Édition en place : `formData.hypotheses` est une liste À PLAT sans
+    // identifiant propre — `indexedFieldAnchor` désambiguïse par RANG parmi
+    // les `.hypothese-input` du DOM, même ordre que `hypotheses.map` ci-dessus
+    // (identique à l'ordre de construction de `formData.hypotheses`,
+    // `formulaires.ts:778`).
+    registerPdfEditAnchor(anchors, indexedFieldAnchor('#hypotheses_container .hypothese-input', index), text);
     return {
         table: {
             widths: [4, '*'],
@@ -400,7 +462,105 @@ function coverCardFontPx(fields: string[], extraLines = 0): number {
 /* ==========================================================================
  * Section 1 — Page de garde « ORDRE INITIAL » (pdf-engine-v2.ts:816-855, §3.2 ligne 1).
  * ======================================================================== */
-function buildCover(ctx: BuildCtx): Content {
+
+/** Taille de police FIXE (indépendante de `coverFontPx`) du nom d'une entrée CIBLES(S) — port verbatim du rendu ci-dessous. */
+const CIBLES_NAME_FONT_PX = 13;
+/**
+ * Écart (pt) entre le bas du texte d'UNE entrée CIBLES(S) et le haut de la
+ * suivante — mesuré (`pdftotext -bbox`, `adv30-a4.pdf`, mission « carte
+ * CIBLES(S) qui disparaît ») : filet `canvas` + marge basse `[0,0,0,6]` du
+ * bloc (rendu ci-dessous). N'est PAS un simple `+6` : la mesure réelle
+ * (52,2 pt de pas entre deux noms consécutifs au palier plancher 8 px)
+ * confirme ~12 pt une fois nom+détail soustraits.
+ */
+const CIBLES_ENTRY_GAP_PT = 12;
+/**
+ * Distance (pt) entre le haut de la zone de contenu de page 1 et le haut de
+ * la ligne `h3('1. SITUATION GLOBALE')`/`h3('CIBLES(S)')` du `grid2` —
+ * mesurée (`pdftotext -bbox`) : fixe, indépendante du format (`marginsPt`
+ * identiques A4/16:9, `pageGeometry`) et du volume de texte (déterminée par
+ * `h1('ORDRE INITIAL', {boxed:true})` fontSize 36 fixe + marges
+ * `[0, mm(35), 0, mm(15)]` ci-dessous, elles-mêmes fixes).
+ */
+const CIBLES_GRID_ROW_TOP_PT = 260.5;
+
+/** Nom/détail affichés d'UNE cible — PARTAGÉ entre le rendu (`renderCiblesEntry`) et son coût (`ciblesEntryPt`) : une seule source, jamais deux calculs divergents. */
+function ciblesEntryText(adv: OiAdversary): { nom: string; detail: string } {
+    const nom = strOr(adv.nom_adversaire, 'Inconnu');
+    const detail = [strOr(adv.stature_adversaire, ''), strOr(adv.ethnie_adversaire, '')].filter((v) => v !== '').join(' ');
+    return { nom, detail };
+}
+
+/** Coût (pt) d'UNE entrée CIBLES(S) (nom `CIBLES_NAME_FONT_PX` fixe + détail au palier `detailFontPx`) dans une colonne `columnWidthPt`. */
+function ciblesEntryPt(adv: OiAdversary, detailFontPx: number, columnWidthPt: number): number {
+    const { nom, detail } = ciblesEntryText(adv);
+    const namePt = textLinePt(nom, CIBLES_NAME_FONT_PX, columnWidthPt);
+    const detailPt = detail !== '' ? textLinePt(detail, detailFontPx, columnWidthPt) : 0;
+    return namePt + detailPt + CIBLES_ENTRY_GAP_PT;
+}
+
+/** Coût (pt) d'un SOUS-ENSEMBLE d'entrées CIBLES(S) empilées — somme des coûts individuels moins UN écart de fin (`CIBLES_ENTRY_GAP_PT` sépare deux entrées, la DERNIÈRE d'une page n'en a pas besoin après elle). */
+function ciblesRegionCostPt(subset: OiAdversary[], detailFontPx: number, columnWidthPt: number): number {
+    if (subset.length === 0) {
+        return 0;
+    }
+    return subset.reduce((sum, adv) => sum + ciblesEntryPt(adv, detailFontPx, columnWidthPt), 0) - CIBLES_ENTRY_GAP_PT;
+}
+
+/** Rendu d'UNE entrée CIBLES(S) — port verbatim (nom/détail/filet séparateur/marge) du rendu historique, factorisé pour être partagé par la page 1 (`grid2`) et les pages « CIBLES(S) — <plage> » de débordement. */
+function renderCiblesEntry(adv: OiAdversary, p: OiPdfPalette): Content {
+    const { nom, detail } = ciblesEntryText(adv);
+    return {
+        stack: [
+            { text: nom, bold: true, color: p.accent, fontSize: CIBLES_NAME_FONT_PX },
+            ...(detail !== '' ? [{ text: detail, color: p.muted, bold: true } as Content] : []),
+            { canvas: [{ type: 'line', x1: 0, y1: 6, x2: mm(55), y2: 6, lineWidth: 0.5, lineColor: p.border }] },
+        ],
+        margin: [0, 0, 0, 6],
+    };
+}
+
+/** Étiquette de plage « 3-4 »/« 3 » d'un sous-groupe de cibles CONTIGU au sein de l'ensemble complet — même idiome que `hypRangeLabel` (identité d'objet, groupes = slices de l'array d'origine). */
+function ciblesRangeLabel(group: OiAdversary[], all: OiAdversary[]): string {
+    const first = all.indexOf(group[0] as OiAdversary) + 1;
+    const last = all.indexOf(group[group.length - 1] as OiAdversary) + 1;
+    return first === last ? `${first}` : `${first}-${last}`;
+}
+
+/**
+ * `packHypotheses` empaquette en GLOUTON (remplit une page au maximum avant
+ * de passer à la suivante) : le tout DERNIER groupe hérite mécaniquement du
+ * reliquat, parfois UNE SEULE entrée alors que les pages précédentes en
+ * portent 6 (ex. 15 cibles pleine page → groupes 6/6/1, guardrail B1
+ * anti-page-orpheline FAIL sur la page à 1 entrée). Rééquilibre les DEUX
+ * DERNIERS groupes en une passe (jamais plus — reliquat borné par
+ * construction à < 1 page pleine, un seul rééquilibrage suffit toujours à
+ * l'éliminer) : fusionne puis coupe en deux moitiés d'effectif égal.
+ * Vérifie `costPt` sur les deux nouvelles moitiés AVANT de les retenir —
+ * direction sûre : un débordement (jamais observé en pratique, entrées
+ * CIBLES(S) de taille quasi uniforme) fait simplement conserver
+ * l'empaquetage glouton d'origine plutôt que d'introduire un dépassement.
+ */
+function rebalanceLastGroup<T>(groups: T[][], costPt: (subset: T[]) => number, budgetPt: number): T[][] {
+    if (groups.length < 2) {
+        return groups;
+    }
+    const last = groups[groups.length - 1] as T[];
+    const prev = groups[groups.length - 2] as T[];
+    if (last.length >= prev.length) {
+        return groups;
+    }
+    const combined = [...prev, ...last];
+    const half = Math.ceil(combined.length / 2);
+    const newPrev = combined.slice(0, half);
+    const newLast = combined.slice(half);
+    if (costPt(newPrev) > budgetPt || costPt(newLast) > budgetPt) {
+        return groups;
+    }
+    return [...groups.slice(0, -2), newPrev, newLast];
+}
+
+function buildCover(ctx: BuildCtx): Content[] {
     const { formData, p, geo } = ctx;
     const bgSrc = resolveBgSrc(ctx);
     const watermark: Content[] = bgSrc !== undefined ? [buildWatermark(bgSrc, ctx)] : [];
@@ -446,8 +606,14 @@ function buildCover(ctx: BuildCtx): Content {
     const situationCard = card(
         [
             h3('1. SITUATION GLOBALE', p),
-            labelValue('Situation générale', strOr(formData.situation_generale), p, { valueBold: true }),
-            labelValue('Situation particulière', strOr(formData.situation_particuliere), p, { valueBold: true }),
+            labelValue('Situation générale', strOr(formData.situation_generale), p, { valueBold: true }, {
+                anchors: ctx.anchors,
+                ref: fieldAnchor('situation_generale'),
+            }),
+            labelValue('Situation particulière', strOr(formData.situation_particuliere), p, { valueBold: true }, {
+                anchors: ctx.anchors,
+                ref: fieldAnchor('situation_particuliere'),
+            }),
         ],
         p,
         // Sécable (cf. JSDoc `card()`, blocks.ts) : filet de sécurité si même
@@ -458,38 +624,62 @@ function buildCover(ctx: BuildCtx): Content {
         { unbreakable: false },
     );
 
-    const ciblesBody: Content[] =
-        adversaries.length > 0
-            ? adversaries.map((adv): Content => {
-                  const nom = strOr(adv.nom_adversaire, 'Inconnu');
-                  const detail = [strOr(adv.stature_adversaire, ''), strOr(adv.ethnie_adversaire, '')]
-                      .filter((v) => v !== '')
-                      .join(' ');
-                  return {
-                      stack: [
-                          { text: nom, bold: true, color: p.accent, fontSize: 13 },
-                          ...(detail !== '' ? [{ text: detail, color: p.muted, bold: true } as Content] : []),
-                          {
-                              canvas: [{ type: 'line', x1: 0, y1: 6, x2: mm(55), y2: 6, lineWidth: 0.5, lineColor: p.border }],
-                          },
-                      ],
-                      margin: [0, 0, 0, 6],
-                  };
-              })
-            : [{ text: 'Aucune cible renseignée.', color: p.muted }];
-    // Blindage BLIND.A (audit « tout unbreakable a un filet ») : `ciblesCard`
-    // reste par défaut `unbreakable:true` (JUSTIFICATION, pas un correctif) —
-    // chaque entrée y est bornée à 2-3 lignes (nom/détail/filet), un volume
-    // qui ne peut réalistement pas dépasser une page entière ; la rendre
-    // sécable a été essayé et RETIRÉ : posée en `grid2` à côté de
-    // `situationCard` (elle-même sécable, filet ci-dessus), la rendre
-    // sécable AUSSI fait interférer ses fragments avec ceux de la colonne
-    // voisine sur plusieurs pages (`columns` pdfmake non synchronisées pour
-    // la pagination, même limite documentée que le défaut « carte esseulée »
-    // — constaté avec la fixture `adv-5-atcd40.json`, guardrail B1/B4 FAIL).
-    const ciblesCard = card([h3('CIBLES(S)', p), ...ciblesBody], p);
+    // CORRECTIF (carte CIBLES(S) qui disparaît, anomalie CRITIQUE) — l'ancien
+    // `ciblesCard` restait `unbreakable:true` par défaut (JUSTIFICATION
+    // fausse : « bornée à 2-3 lignes par entrée, ne peut réalistement pas
+    // dépasser une page » — mesure prouvée : dépassée dès 7-8 adversaires,
+    // pdfmake SUPPRIME alors la carte SANS AUCUNE erreur, page 2 restant
+    // blanche). Un simple `unbreakable:false` (comme `situationCard`) suffit
+    // à éliminer la disparition et la page blanche, mais laisse pdfmake
+    // couper le flux de caractères À N'IMPORTE QUEL ENDROIT (y compris EN
+    // PLEIN MILIEU d'une entrée, entre son nom et son détail) et peut semer
+    // une page de continuation quasi-VIDE (1 seule entrée orpheline, guardrail
+    // B1 anti-page-orpheline) — défaut mesuré à l'identique de celui qui avait
+    // fait RETIRER `unbreakable:false` lors d'une tentative antérieure
+    // (fixture `adv-5-atcd40.json`).
+    //
+    // Nouvelle mécanique, RÉUTILISE le paqueteur déjà éprouvé pour EXACTEMENT
+    // cette même classe de problème ailleurs dans ce module (`packHypotheses`,
+    // « une frontière légitime = un item, jamais coupé en son milieu ») :
+    // chaque ADVERSAIRE est une frontière légitime. La 1re page (grid2,
+    // demi-largeur, budget réduit par le titre `h1` au-dessus —
+    // `CIBLES_GRID_ROW_TOP_PT`, mesuré) reçoit autant d'entrées que son
+    // budget le permet, MÊME ZÉRO si `situationCard` occupe déjà toute la
+    // hauteur — jamais de carte esseulée. Le reste devient des pages
+    // « CIBLES(S) — <plage> » AUTONOMES pleine largeur (jamais « (SUITE) »,
+    // guardrail C1), MÊME titre distinct que `buildEffractionPages::hypRangeLabel`.
+    // `packHypotheses` ne peut renvoyer `null` que si une SEULE entrée, prise
+    // seule, ne tient pas sur une page dédiée pleine — pathologique pour une
+    // entrée de 2-3 lignes ; filet de repli conservé quand même (une seule
+    // carte insécable regroupant tout, JAMAIS de perte de cible).
+    const columnWidthPt = (geo.contentWidthPt - mm(6)) / 2;
+    const firstBudgetPt = Math.max(0, geo.contentHeightPt - CIBLES_GRID_ROW_TOP_PT - EFFRAC_H3_PT - EFFRAC_CARD_VPAD_PT - EFFRAC_FITS_SAFETY_PT);
+    const restBudgetPt = Math.max(0, geo.contentHeightPt - EFFRAC_H2_PT - EFFRAC_H3_PT - EFFRAC_CARD_VPAD_PT - EFFRAC_FITS_SAFETY_PT);
+    const regionCostPt = (subset: OiAdversary[]): number => ciblesRegionCostPt(subset, coverFontPx, columnWidthPt);
+    const ciblesGroups: OiAdversary[][] =
+        adversaries.length > 0 ? (packHypotheses(adversaries, regionCostPt, firstBudgetPt, restBudgetPt) ?? [adversaries]) : [[]];
 
-    return {
+    const ciblesFirstBody: Content[] =
+        adversaries.length > 0
+            ? ciblesGroups[0]?.map((adv) => renderCiblesEntry(adv, p)) ?? []
+            : [{ text: 'Aucune cible renseignée.', color: p.muted }];
+    const ciblesCard = card([h3('CIBLES(S)', p), ...ciblesFirstBody], p, { unbreakable: false });
+
+    // Rééquilibre les deux DERNIERS groupes de débordement (jamais le groupe
+    // 0, page 1/grid2 — colonne et budget distincts) : évite le reliquat
+    // « dernière page à 1 seule cible » du paqueteur glouton (cf. JSDoc
+    // `rebalanceLastGroup`, guardrail B1 anti-page-orpheline).
+    const overflowGroups = adversaries.length > 0 ? rebalanceLastGroup(ciblesGroups.slice(1), regionCostPt, restBudgetPt) : [];
+    const overflowPages: Content[] = overflowGroups.map((group) => ({
+        stack: [
+            h2(`CIBLES(S) — ${ciblesRangeLabel(group, adversaries)}`, p, geo.contentWidthPt),
+            card([h3('CIBLES(S)', p), ...group.map((adv) => renderCiblesEntry(adv, p))], p, { unbreakable: false }),
+        ],
+        fontSize: coverFontPx,
+        pageBreak: 'before',
+    }));
+
+    const coverPage: Content = {
         stack: [
             ...watermark,
             opCard,
@@ -497,6 +687,7 @@ function buildCover(ctx: BuildCtx): Content {
             { stack: [grid2([situationCard], [ciblesCard])], fontSize: coverFontPx },
         ],
     };
+    return [coverPage, ...overflowPages];
 }
 
 /**
@@ -629,10 +820,18 @@ function buildAdversaryFiche(ctx: BuildCtx, adv: OiAdversary, index: number): Co
     const vehiculesList = adv.vehicules_list.filter((v) => v.trim() !== '');
 
     const advTitle = `2.${index} FICHE ADVERSAIRE : ${nom}`;
+    // Nom affiché dans le bandeau de titre (`ficheAdversaireTitleBar`
+    // ci-dessous) — texte libre non typé (`str()`), ancré séparément : ce
+    // helper ne prend ni valeur ni référence isolée (`text` déjà composé),
+    // cf. JSDoc `registerPdfEditAnchor`. Repli `'Inconnu'` de `nom`
+    // délibérément NON ancré (`str(adv.nom_adversaire)` brut) — un champ
+    // vide n'a aucune valeur SAISIE à corriger.
+    registerPdfEditAnchor(ctx.anchors, advFieldAnchor(adv.id, 'nom_adversaire'), str(adv.nom_adversaire));
     const armesConnues = strOr(adv.armes_connues);
     const atcdText = strOr(adv.antecedents_adversaire);
     const atcdItems = splitAtcdBoundaries(atcdText);
     const hasAtcdBoundary = atcdItems.length > 1;
+    const atcdRef: PdfFieldAnchor = advFieldAnchor(adv.id, 'antecedents_adversaire');
 
     // Tableau bordé (référence B : `kvRow()`, print-view.ts:89-90/303-310, la
     // MÊME classe `.k` que toute la fiche), pas des lignes de texte nues (D4,
@@ -646,9 +845,36 @@ function buildAdversaryFiche(ctx: BuildCtx, adv: OiAdversary, index: number): Co
         ['Substances', strOr(adv.substances_adversaire)],
         ...(meList.length > 0 ? ([['Moyens Employés', meList.join(' / ')]] as Array<[string, string]>) : []),
     ];
-    const identityCard = card([h3('IDENTITÉ', p), kvTable(identityRows, p)], p, { unbreakable: false });
+    // Ancrage PAR LIGNE (même index que `identityRows`) — `null` pour
+    // « Naissance »/« Signalement » (DEUX champs source concaténés dans une
+    // seule valeur rendue, ex. `"1995-06-12 @ TESTVILLE"`) et « Moyens
+    // Employés » (agrégat `meList.join(' / ')` de PLUSIEURS `.me-input` —
+    // aucun élément DOM unique n'en porte la valeur complète) : catégories de
+    // contenu qui ne peuvent pas être ancrées de façon fiable à UN champ,
+    // restriction explicite (spec « restreins-la, dis-le ») plutôt que de
+    // risquer d'écrire une correction dans le mauvais champ.
+    const identityRefs: Array<PdfFieldAnchor | null> = [
+        null,
+        advFieldAnchor(adv.id, 'profession_adversaire'),
+        advFieldAnchor(adv.id, 'situation_familiale'),
+        null,
+        advFieldAnchor(adv.id, 'signes_particuliers'),
+        advFieldAnchor(adv.id, 'substances_adversaire'),
+        ...(meList.length > 0 ? [null] : []),
+    ];
+    const identityCard = card(
+        [h3('IDENTITÉ', p), kvTable(identityRows, p, { anchors: ctx.anchors, refs: identityRefs })],
+        p,
+        { unbreakable: false },
+    );
     const dangerHeaderCard = card(
-        [h3('DANGEROSITÉ', p, { color: p.danger }), labelValue('Armes Connues', armesConnues, p, { valueColor: p.danger, valueBold: true })],
+        [
+            h3('DANGEROSITÉ', p, { color: p.danger }),
+            labelValue('Armes Connues', armesConnues, p, { valueColor: p.danger, valueBold: true }, {
+                anchors: ctx.anchors,
+                ref: advFieldAnchor(adv.id, 'armes_connues'),
+            }),
+        ],
         p,
         { unbreakable: false },
     );
@@ -660,7 +886,10 @@ function buildAdversaryFiche(ctx: BuildCtx, adv: OiAdversary, index: number): Co
     const domicileValue = str(adv.domicile_adversaire).trim();
     const volumeEspritValue = [volumeList.join(', '), etatEspritList.join(', ')].filter((s) => s !== '').join(' | ');
     const localisationRows: Content[] = [
-        !isBlankOrDash(domicileValue) ? labelValue('Domicile', domicileValue, p) : null,
+        !isBlankOrDash(domicileValue)
+            ? labelValue('Domicile', domicileValue, p, undefined, { anchors: ctx.anchors, ref: advFieldAnchor(adv.id, 'domicile_adversaire') })
+            : null,
+        // `volumeEspritValue` : agrégat de 2 listes DOM (`volume_list`/`etat_esprit_list`) — non ancrable (cf. JSDoc `identityRefs`).
         !isBlankOrDash(volumeEspritValue) ? labelValue('Volume / Esprit', volumeEspritValue, p) : null,
     ].filter((c): c is Content => c !== null);
     const localisationCard: Content | null =
@@ -669,8 +898,11 @@ function buildAdversaryFiche(ctx: BuildCtx, adv: OiAdversary, index: number): Co
     const vehiculesValue = vehiculesList.join(' | ');
     const attitudeValue = str(adv.attitude_adversaire).trim();
     const mobiliteRows: Content[] = [
+        // `vehiculesValue` : agrégat `vehicules_list.join(' | ')` — non ancrable (cf. JSDoc `identityRefs`).
         !isBlankOrDash(vehiculesValue) ? labelValue('Véhicules / Plaques', vehiculesValue, p) : null,
-        !isBlankOrDash(attitudeValue) ? labelValue('Attitude Attendue', attitudeValue, p) : null,
+        !isBlankOrDash(attitudeValue)
+            ? labelValue('Attitude Attendue', attitudeValue, p, undefined, { anchors: ctx.anchors, ref: advFieldAnchor(adv.id, 'attitude_adversaire') })
+            : null,
     ].filter((c): c is Content => c !== null);
     const mobiliteCard: Content | null =
         mobiliteRows.length > 0 ? card([h3('MOBILITÉ', p), ...mobiliteRows], p, { unbreakable: false }) : null;
@@ -739,9 +971,15 @@ function buildAdversaryFiche(ctx: BuildCtx, adv: OiAdversary, index: number): Co
     // MÊME répartition `splitRoundRobin` que le coût ci-dessus).
     const atcdBody: Content[] = hasAtcdBoundary
         ? adversaryAtcdColumnCount(atcdItems.length) === 2
-            ? [grid2(dashItemList(splitRoundRobin(atcdItems, 2)[0] ?? [], p), dashItemList(splitRoundRobin(atcdItems, 2)[1] ?? [], p), mm(4))]
-            : dashItemList(atcdItems, p)
-        : [labelValue('Dangerosité / ATCD', atcdText, p)];
+            ? [
+                  grid2(
+                      dashItemList(splitRoundRobin(atcdItems, 2)[0] ?? [], p, { anchors: ctx.anchors, ref: atcdRef }),
+                      dashItemList(splitRoundRobin(atcdItems, 2)[1] ?? [], p, { anchors: ctx.anchors, ref: atcdRef }),
+                      mm(4),
+                  ),
+              ]
+            : dashItemList(atcdItems, p, { anchors: ctx.anchors, ref: atcdRef })
+        : [labelValue('Dangerosité / ATCD', atcdText, p, undefined, { anchors: ctx.anchors, ref: atcdRef })];
     const atcdCard = card([h3('ATCD', p, { color: p.danger }), ...atcdBody], p, { unbreakable: false });
 
     const leftColumn: Content[] = [
@@ -767,15 +1005,87 @@ function buildAdversaryFiche(ctx: BuildCtx, adv: OiAdversary, index: number): Co
 }
 
 /**
+ * Gap (pt) entre deux cartes empilées pleine largeur (`margin:[0,6,0,0]`,
+ * motif déjà utilisé partout dans ce fichier, ex. colonnes de la fiche
+ * adversaire) — mesure PARTAGÉE par le coût et le rendu de
+ * `buildAdversaryModesActionPage`/`buildCatPage` (repli continuation
+ * « (SUITE) » des deux, cf. `packCardsByBudget`).
+ */
+const STACKED_CARD_GAP_PT = 6;
+
+/**
+ * Empaquette des coûts (pt) déjà résolus À UN PALIER de police en 1+ groupes
+ * dont le total ne dépasse jamais `budgetPt` (correctif régressions
+ * débordement Modes d'action/CAT, directive Nico « une page = un contenu,
+ * aucun débordement, jamais, aucune page vide ») — chaque groupe devient une
+ * page « (SUITE) » AUTONOME (contrairement à `packHypotheses` ci-dessus,
+ * aucun budget n'est partagé avec un bloc voisin : les deux appelants de ce
+ * paquetage, `buildAdversaryModesActionPage`/`buildCatPage`, consacrent
+ * TOUTE page — 1re incluse — au même contenu, jamais à un bloc distinct).
+ * Frontière = item, jamais coupé en son milieu. Un item SEUL déjà plus grand
+ * que `budgetPt` (MA/champ de plusieurs milliers de caractères) reste
+ * néanmoins SEUL dans son groupe plutôt que de bloquer l'empaquetage — CE
+ * MODULE NE REFUSE JAMAIS pour ces deux pages (directive explicite : « ne
+ * refuse pas, ne tronque pas », à la différence de la fiche
+ * adversaire/ZMSPCP/MOICP/effraction qui, elles, refusent au palier
+ * plancher) : le nœud qui le porte reste `unbreakable:false` au rendu,
+ * pdfmake le laisse alors déborder NATURELLEMENT sur une/des page(s)
+ * suivante(s) SANS titre — seul recours accepté pour un champ unique trop
+ * long (« coupé entre deux pages, jamais rogné »).
+ */
+function packCardsByBudget(costs: number[], budgetPt: number): number[][] {
+    const groups: number[][] = [];
+    let current: number[] = [];
+    let currentCost = 0;
+    costs.forEach((cost, i) => {
+        const additional = current.length === 0 ? cost : cost + STACKED_CARD_GAP_PT;
+        if (current.length > 0 && currentCost + additional > budgetPt) {
+            groups.push(current);
+            current = [i];
+            currentCost = cost;
+        } else {
+            current.push(i);
+            currentCost += additional;
+        }
+    });
+    if (current.length > 0) {
+        groups.push(current);
+    }
+    return groups;
+}
+
+/** Coût (pt) d'UNE carte MA (h3 « MAn » + texte intégral, `cardWithTitlePt`) au palier `fontPx`, pleine largeur de page. */
+function maCardPt(ma: string, fontPx: number, contentWidthPt: number): number {
+    return cardWithTitlePt(textLinePt(str(ma), fontPx, contentWidthPt));
+}
+
+/**
  * Page « MODES D'ACTION — <nom> » (SPEC-2026-08-18-pdf-et-champs.md §3) — émise
  * immédiatement après la fiche de l'adversaire concerné, JAMAIS dans la fiche
  * elle-même (verrouillée à une page, refus de génération au-delà du palier
- * plancher 7 px, `buildAdversaryFiche` ci-dessus). Une carte par MA, texte
- * intégral, `unbreakable:false` explicite : la pagination suit le flux normal
- * pdfmake (aucune estimation de coût, aucun `ctx.fitErrors.push` — un texte
- * long déborde simplement sur la page suivante, jamais de refus).
+ * plancher 7 px, `buildAdversaryFiche` ci-dessus).
+ *
+ * CORRECTIF RÉGRESSION (directive Nico « une page = un contenu, aucun
+ * débordement, jamais ; aucune page vide ») : l'ancienne version rendait
+ * TOUJOURS au palier de police du document (`unbreakable:false` par carte,
+ * AUCUN essai de palier, AUCUNE pagination contrôlée) — un adversaire à
+ * plusieurs MA débordait alors sur autant de pages « fantômes » que
+ * nécessaire, sans titre. Nouvelle mécanique, MÊME patron que
+ * `buildAdversaryFiche`/`buildArticulationPage` (`fitUsageToPage`, theme.ts) :
+ * 1) essaie chaque palier 11→7 pour tenir la TOTALITÉ des cartes MA sur UNE
+ * SEULE page ; 2) si même le palier plancher ne suffit pas (cas limite —
+ * beaucoup de MA, ou un MA de plusieurs milliers de caractères), empaquette
+ * les cartes sur des pages « MODES D'ACTION — <nom> (SUITE) » AUTONOMES
+ * (`packCardsByBudget`, palier retenu = celui qui produit le MOINS de pages,
+ * même esprit que `buildEffractionPages::bestPacking`) plutôt que de refuser
+ * ou tronquer — un MA unique trop long pour tenir SEUL sur sa page (au
+ * palier plancher) reste rendu `unbreakable:false` : pdfmake le laisse alors
+ * déborder naturellement sur une page suivante sans titre, seul recours
+ * accepté (`ctx.fitErrors` n'est jamais alimenté par cette page).
+ *
  * `null` si `ma_list` est absente/vide ou ne contient que des entrées blanches
- * (adversaire enregistré avant l'ajout du champ, ou aucun MA saisi).
+ * (adversaire enregistré avant l'ajout du champ, ou aucun MA saisi) — aucune
+ * page émise dans ce cas (jamais de page vide).
  */
 function buildAdversaryModesActionPage(ctx: BuildCtx, adv: OiAdversary, nom: string): Content | null {
     const { p, geo } = ctx;
@@ -783,11 +1093,53 @@ function buildAdversaryModesActionPage(ctx: BuildCtx, adv: OiAdversary, nom: str
     if (maList.length === 0) {
         return null;
     }
-    const cards = maList.map((ma, i) =>
-        card([h3(`MA${i + 1}`, p), { text: str(ma), preserveLeadingSpaces: true }], p, { unbreakable: false }),
-    );
-    const spaced = cards.flatMap((c, i) => (i === 0 ? [c] : [{ text: '', margin: [0, 6, 0, 0] } as Content, c]));
-    return { stack: [h2(`MODES D'ACTION — ${nom}`, p, geo.contentWidthPt), ...spaced] };
+
+    // `fontSize` du palier retenu est posé sur le `stack` racine (hérité par
+    // ces cartes, aucune n'a de `fontSize` propre) — `renderCards` n'a donc
+    // pas besoin du palier en paramètre.
+    const renderCards = (indices: number[]): Content[] => {
+        const cards = indices.map((i) =>
+            card([h3(`MA${i + 1}`, p), { text: str(maList[i] as string), preserveLeadingSpaces: true }], p, { unbreakable: false }),
+        );
+        return cards.flatMap((c, i) => (i === 0 ? [c] : [{ text: '', margin: [0, STACKED_CARD_GAP_PT, 0, 0] } as Content, c]));
+    };
+
+    const availablePt = geo.contentHeightPt - EFFRAC_FITS_SAFETY_PT;
+    const allIndices = maList.map((_, i) => i);
+
+    // 1) UNE SEULE page, paliers 11→7 (mission P1, même solveur que la fiche adversaire).
+    const computeCostPt = (fontPx: number): number =>
+        EFFRAC_H2_PT + maList.reduce((sum, ma, i) => sum + maCardPt(ma, fontPx, geo.contentWidthPt) + (i > 0 ? STACKED_CARD_GAP_PT : 0), 0);
+    const fit = fitUsageToPage(computeCostPt, availablePt);
+    if ('fontPx' in fit) {
+        return { stack: [h2(`MODES D'ACTION — ${nom}`, p, geo.contentWidthPt), ...renderCards(allIndices)], fontSize: fit.fontPx };
+    }
+
+    // 2) Cas limite : pages « (SUITE) » autonomes, palier retenu = celui qui
+    // produit le MOINS de pages (à égalité, le plus lisible/premier
+    // rencontré l'emporte, `FIT_FONT_STEPS` trié décroissant).
+    const budgetPt = availablePt - EFFRAC_H2_PT;
+    let best: { groups: number[][]; fontPx: number } | null = null;
+    for (const fontPx of FIT_FONT_STEPS) {
+        const costs = maList.map((ma) => maCardPt(ma, fontPx, geo.contentWidthPt));
+        const groups = packCardsByBudget(costs, budgetPt);
+        if (best === null || groups.length < best.groups.length) {
+            best = { groups, fontPx };
+        }
+    }
+    const { groups, fontPx } = best as { groups: number[][]; fontPx: number };
+    return {
+        stack: groups.map((indices, idx): Content => {
+            if (idx === 0) {
+                return { stack: [h2(`MODES D'ACTION — ${nom}`, p, geo.contentWidthPt), ...renderCards(indices)], fontSize: fontPx };
+            }
+            return {
+                stack: [h2(`MODES D'ACTION — ${nom} (SUITE)`, p, geo.contentWidthPt), ...renderCards(indices)],
+                fontSize: fontPx,
+                pageBreak: 'before',
+            };
+        }),
+    };
 }
 
 /** Fiche adversaire + page « Modes d'action » + ses galeries « Photos annexes »/« Renfort possible » (pdf-engine-v2.ts:959-969). */
@@ -814,18 +1166,14 @@ function buildAdversaryPages(ctx: BuildCtx): Content[] {
  * Section 3 — « 3. ENVIRONNEMENT ET AMIS » (pdf-engine-v2.ts:972-996).
  * ======================================================================== */
 function buildEnvironnement(ctx: BuildCtx, num: () => number): Content {
-    const { formData, p, geo } = ctx;
+    const { p, geo } = ctx;
     const left = [
-        labelValue('Forces Amies / Concours', strOr(formData.amies), p),
-        labelValue('Terrain / Météo', strOr(formData.terrain_info), p),
-        labelValue('Éclairage', strOr(formData.eclairage), p),
-        labelValue('Lever du soleil', strOr(formData.lever_soleil), p),
+        fv(ctx, 'Forces Amies / Concours', 'amies'),
+        fv(ctx, 'Terrain / Météo', 'terrain_info'),
+        fv(ctx, 'Éclairage', 'eclairage'),
+        fv(ctx, 'Lever du soleil', 'lever_soleil'),
     ];
-    const right = [
-        labelValue('Population / Voisinage', strOr(formData.population), p),
-        labelValue('Faune / Animaux', strOr(formData.faune_animaux), p),
-        labelValue('Cadre Juridique', strOr(formData.cadre_juridique), p),
-    ];
+    const right = [fv(ctx, 'Population / Voisinage', 'population'), fv(ctx, 'Faune / Animaux', 'faune_animaux'), fv(ctx, 'Cadre Juridique', 'cadre_juridique')];
     // Blindage BLIND.A (audit « tout `unbreakable` restant a un filet ») :
     // champs texte libres non bornés (`amies`/`terrain_info`/…) — même filet
     // minimal `unbreakable:false` que `situationCard` (`buildCover`), jamais
@@ -836,8 +1184,8 @@ function buildEnvironnement(ctx: BuildCtx, num: () => number): Content {
             grid2([card(left, p, { unbreakable: false })], [card(right, p, { unbreakable: false })]),
             { text: '', margin: [0, 5, 0, 0] },
             grid2(
-                [card([labelValue('Accès Principal', strOr(formData.acces_principal), p)], p, { unbreakable: false })],
-                [card([labelValue('Cheminement Initial', strOr(formData.cheminement_initial), p)], p, { unbreakable: false })],
+                [card([fv(ctx, 'Accès Principal', 'acces_principal')], p, { unbreakable: false })],
+                [card([fv(ctx, 'Cheminement Initial', 'cheminement_initial')], p, { unbreakable: false })],
             ),
         ],
     };
@@ -865,6 +1213,10 @@ function missionBodyContent(ctx: BuildCtx, fontPx: number): Content {
     const { formData, p } = ctx;
     // Blindage BLIND.A : `missions_psig` est un champ texte libre non
     // borné — filet `unbreakable:false` (audit « tout unbreakable a un filet »).
+    // Ancrage direct (édition en place) : `accentCard` reçoit un `Content[]`
+    // déjà composé, aucune valeur/référence isolée à lui passer (cf. JSDoc
+    // `registerPdfEditAnchor`).
+    registerPdfEditAnchor(ctx.anchors, fieldAnchor('missions_psig'), strOr(formData.missions_psig));
     return accentCard(
         null,
         [{ text: strOr(formData.missions_psig), bold: true, fontSize: Math.round(fontPx * 1.6), preserveLeadingSpaces: true }],
@@ -878,6 +1230,16 @@ function missionBodyContent(ctx: BuildCtx, fontPx: number): Content {
 function executionBodyContent(ctx: BuildCtx, fontPx: number): Content[] {
     const { formData, p } = ctx;
     const events = formData.time_events ?? [];
+    // Édition en place — chronologie : liste À PLAT sans identifiant propre,
+    // même mécanique que `hypothesisLine` (`indexedFieldAnchor`, rang =
+    // ordre de construction de `formData.time_events`, `formulaires.ts:772-776`).
+    // `e.type` (repli `<select>`) N'EST PAS ancré (valeur contrainte, cf.
+    // JSDoc de fichier `pdf-preview-edit.ts` : un `<select>` n'est jamais un
+    // candidat d'édition en place).
+    events.forEach((e, i) => {
+        registerPdfEditAnchor(ctx.anchors, indexedFieldAnchor('#time_events_container .time-item .time-hour-input', i), e.hour);
+        registerPdfEditAnchor(ctx.anchors, indexedFieldAnchor('#time_events_container .time-item .time-description-input', i), e.description);
+    });
     const chronoRows: TableCell[][] =
         events.length > 0
             ? events.map((e): TableCell[] => [
@@ -910,7 +1272,7 @@ function executionBodyContent(ctx: BuildCtx, fontPx: number): Content[] {
 
     const hypotheses = formData.hypotheses ?? [];
     const hypBody: Content[] =
-        hypotheses.length > 0 ? hypotheses.map((h, i) => hypothesisLine(i, h, p)) : [{ text: '-', color: p.muted }];
+        hypotheses.length > 0 ? hypotheses.map((h, i) => hypothesisLine(i, h, p, ctx.anchors)) : [{ text: '-', color: p.muted }];
     // Blindage BLIND.A : `formData.hypotheses` (liste libre, MÊME classe de
     // risque que la conduite à tenir ZMSPCP/MOICP, matrice-rupture.md §2/§3)
     // — filet `unbreakable:false`.
@@ -918,9 +1280,9 @@ function executionBodyContent(ctx: BuildCtx, fontPx: number): Content[] {
 
     return [
         grid2(
-            [labelValue("Date d'exécution", strOr(formData.date_execution), p)],
+            [fv(ctx, "Date d'exécution", 'date_execution')],
             [
-                labelValue('Heure H', strOr(formData.heure_execution), p, {
+                fv(ctx, 'Heure H', 'heure_execution', {
                     fontSize: Math.round(fontPx * 1.2),
                     valueColor: p.accent,
                     valueBold: true,
@@ -928,7 +1290,7 @@ function executionBodyContent(ctx: BuildCtx, fontPx: number): Content[] {
             ],
         ),
         { text: '', margin: [0, 4, 0, 0] },
-        labelValue('Idée de Manœuvre / Action', strOr(formData.action_body_text), p),
+        fv(ctx, 'Idée de Manœuvre / Action', 'action_body_text'),
         { text: '', margin: [0, 4, 0, 0] },
         grid2([chronoCard], [hypCard]),
     ];
@@ -1081,7 +1443,7 @@ function buildArticulationOverview(ctx: BuildCtx, num: () => number): Content {
             h3('Ordre de Pénétration', p),
             penetration.length > 0 ? pillRow(penetration, p, { numbered: true }) : { text: '-' },
             { text: '', margin: [0, 6, 0, 0] },
-            labelValue('PLACE DU CHEF', strOr(formData.place_chef), p, { valueColor: p.accent }),
+            fv(ctx, 'PLACE DU CHEF', 'place_chef', { valueColor: p.accent }),
         ],
         p,
         { unbreakable: false },
@@ -1193,7 +1555,15 @@ export function splitAtcdBoundaries(text: string): string[] {
  * SUPPRIMÉ par pdfmake — jamais appliqué ici à un bloc de la taille d'une
  * page, seulement à chaque item pris isolément).
  */
-function dashItemList(items: string[], p: OiPdfPalette): Content[] {
+function dashItemList(
+    items: string[],
+    p: OiPdfPalette,
+    /** Édition en place (mission « régression édition ») — UN ancrage PAR ITEM, tous sur le MÊME `ref` (ils résolvent au même `<textarea>` source) : un clic sur N'IMPORTE QUELLE ligne ouvre l'éditeur avec la valeur COMPLÈTE du champ (lue live sur le DOM, jamais reconstruite depuis les items), cf. JSDoc `pdf-preview-edit.ts`. */
+    edit?: { anchors: OiPdfEditAnchor[]; ref: PdfFieldAnchor },
+): Content[] {
+    if (edit) {
+        items.forEach((item) => registerPdfEditAnchor(edit.anchors, edit.ref, item));
+    }
     return items.map(
         (item, i): Content => ({
             // Blindage BLIND.A #2 (`text-utils.ts`) : c'est ICI, un item `unbreakable`
@@ -1268,18 +1638,21 @@ function buildArticulationPage(
     opts: {
         title: string;
         sectionLabel: string;
-        coreFields: Array<[string, string]>;
+        /** Édition en place : 3e élément = ancrage du champ (`null` si non ancrable — aucun cas à ce jour), cf. `blockFieldAnchor`. */
+        coreFields: Array<[string, string, PdfFieldAnchor | null]>;
         catLabel: string;
         catText: string;
+        catRef: PdfFieldAnchor;
         groups: Array<[string, string[]]>;
         cellsContent: Content[];
         placeChef: string;
+        placeChefRef: PdfFieldAnchor;
         /** Libellé du champ Place du Chef — diffère entre MOICP/ZMSPCP (§4.3 SPEC-2026-08-18-pdf-et-champs.md). */
         placeChefLabel: string;
     },
 ): Content {
     const { p, geo } = ctx;
-    const { title, sectionLabel, coreFields, catLabel, catText, groups, cellsContent, placeChef, placeChefLabel } = opts;
+    const { title, sectionLabel, coreFields, catLabel, catText, catRef, groups, cellsContent, placeChef, placeChefRef, placeChefLabel } = opts;
     const catItems = splitAtDashBoundaries(catText || '-');
     const hasBoundary = catItems.length > 1;
     const columnWidthPt = (geo.contentWidthPt - mm(6)) / 2;
@@ -1305,9 +1678,19 @@ function buildArticulationPage(
     }
     const fontPx = 'fontPx' in fit ? fit.fontPx : FIT_FONT_FLOOR;
 
-    const catNode: Content[] = hasBoundary ? [fieldLabel(catLabel, p), ...dashItemList(catItems, p)] : [labelValue(catLabel, catText, p)];
-    const left: Content[] = [h3(sectionLabel, p), ...coreFields.map(([label, value]) => labelValue(label, value, p)), ...catNode];
-    const right: Content[] = [h3('Composition par Cellule', p), ...cellsContent, labelValue(placeChefLabel, placeChef, p)];
+    const catNode: Content[] = hasBoundary
+        ? [fieldLabel(catLabel, p), ...dashItemList(catItems, p, { anchors: ctx.anchors, ref: catRef })]
+        : [labelValue(catLabel, catText, p, undefined, { anchors: ctx.anchors, ref: catRef })];
+    const left: Content[] = [
+        h3(sectionLabel, p),
+        ...coreFields.map(([label, value, ref]) => labelValue(label, value, p, undefined, ref ? { anchors: ctx.anchors, ref } : undefined)),
+        ...catNode,
+    ];
+    const right: Content[] = [
+        h3('Composition par Cellule', p),
+        ...cellsContent,
+        labelValue(placeChefLabel, placeChef, p, undefined, { anchors: ctx.anchors, ref: placeChefRef }),
+    ];
 
     // Correctif revue (2026-08-10, point 2) : le titre reste COLLÉ à sa règle
     // — le contenu démarre juste dessous, l'espace résiduel (bloc peu
@@ -1327,16 +1710,18 @@ function buildZmspcpPage(ctx: BuildCtx, block: OiZmspcpBlock, memberToCell: Map<
         title: `Articulation : ZMSPCP - ${block.title || '-'}`,
         sectionLabel: 'ZMSPCP',
         coreFields: [
-            ['Z zone', block.zone || '-'],
-            ['M mission', block.mission || '-'],
-            ['S secteur', block.secteur || '-'],
-            ['P points particuliers', block.points_particuliers || '-'],
+            ['Z zone', block.zone || '-', blockFieldAnchor('zmspcp', block.id, 'zone')],
+            ['M mission', block.mission || '-', blockFieldAnchor('zmspcp', block.id, 'mission')],
+            ['S secteur', block.secteur || '-', blockFieldAnchor('zmspcp', block.id, 'secteur')],
+            ['P points particuliers', block.points_particuliers || '-', blockFieldAnchor('zmspcp', block.id, 'pp')],
         ],
         catLabel: 'C conduite à tenir',
         catText: block.cat || '-',
+        catRef: blockFieldAnchor('zmspcp', block.id, 'cat'),
         groups,
         cellsContent,
         placeChef: block.place_chef || '-',
+        placeChefRef: blockFieldAnchor('zmspcp', block.id, 'place-chef'),
         placeChefLabel: 'Place du chef AO',
     });
 }
@@ -1350,16 +1735,18 @@ function buildMoicpPage(ctx: BuildCtx, block: OiMoicpBlock, memberToCell: Map<st
         title: `Articulation : MOICP - ${block.title || '-'}`,
         sectionLabel: 'MOICP',
         coreFields: [
-            ['M mission', block.mission || '-'],
-            ['O objectif', block.objectif || '-'],
-            ['I itinéraire', block.itineraire || '-'],
-            ['P points particuliers', block.points_particuliers || '-'],
+            ['M mission', block.mission || '-', blockFieldAnchor('moicp', block.id, 'mission')],
+            ['O objectif', block.objectif || '-', blockFieldAnchor('moicp', block.id, 'objectif')],
+            ['I itinéraire', block.itineraire || '-', blockFieldAnchor('moicp', block.id, 'itineraire')],
+            ['P points particuliers', block.points_particuliers || '-', blockFieldAnchor('moicp', block.id, 'pp')],
         ],
         catLabel: 'C conduite à tenir',
         catText: block.cat || '-',
+        catRef: blockFieldAnchor('moicp', block.id, 'cat'),
         groups,
         cellsContent,
         placeChef: block.place_chef || '-',
+        placeChefRef: blockFieldAnchor('moicp', block.id, 'place-chef'),
         placeChefLabel: 'Place du chef inter',
     });
 }
@@ -1447,7 +1834,11 @@ function isEffractionMeasureBlank(v: string | undefined): boolean {
  * rester seule si l'autre est entièrement vide) ; le filet pointillé
  * (`canvas`) n'est posé QUE s'il sépare deux groupes non vides.
  */
-function effractionMeasuresBody(block: OiEffractionBlock, p: OiPdfPalette, rightColWidthPt: number): Content[] {
+function effractionMeasuresBody(ctx: BuildCtx, block: OiEffractionBlock, rightColWidthPt: number): Content[] {
+    const { p } = ctx;
+    /** Édition en place — `labelValue(label, value, p, undefined, edit)` pour une mesure d'effraction (`fieldClass` = suffixe DOM `.effrac-<fieldClass>`, cf. `blockFieldAnchor`). */
+    const mv = (label: string, value: string, fieldClass: string): Content =>
+        labelValue(label, value, p, undefined, { anchors: ctx.anchors, ref: blockFieldAnchor('effrac', block.id, fieldClass) });
     const allBlank = [
         block.porte,
         block.structure,
@@ -1468,31 +1859,31 @@ function effractionMeasuresBody(block: OiEffractionBlock, p: OiPdfPalette, right
 
     // Champ fantôme #3 (`porte`, `OrderHtmlArticulation.kt:279`) : 1re ligne,
     // AVANT Structure — même ordre que strategica (`champs-fantomes.md` #2).
-    const typePorte: Content[] = !isEffractionMeasureBlank(block.porte) ? [labelValue('Type de Porte', block.porte, p)] : [];
+    const typePorte: Content[] = !isEffractionMeasureBlank(block.porte) ? [mv('Type de Porte', block.porte, 'porte')] : [];
 
     const leftItems: Content[] = [
-        !isEffractionMeasureBlank(block.structure) ? labelValue('Structure', block.structure, p) : null,
-        !isEffractionMeasureBlank(block.serrurerie) ? labelValue('Serrurerie', block.serrurerie, p) : null,
-        !isEffractionMeasureBlank(block.environnement) ? labelValue('Environnement', block.environnement, p) : null,
+        !isEffractionMeasureBlank(block.structure) ? mv('Structure', block.structure, 'structure') : null,
+        !isEffractionMeasureBlank(block.serrurerie) ? mv('Serrurerie', block.serrurerie, 'serrurerie') : null,
+        !isEffractionMeasureBlank(block.environnement) ? mv('Environnement', block.environnement, 'environnement') : null,
     ].filter((c): c is Content => c !== null);
     const rightItems: Content[] = [
-        !isEffractionMeasureBlank(block.bati_a_bati) ? labelValue('Bâti à Bâti', `${block.bati_a_bati} mm`, p) : null,
-        !isEffractionMeasureBlank(block.dormant_a_dormant) ? labelValue('Dormant à Dormant', `${block.dormant_a_dormant} mm`, p) : null,
-        !isEffractionMeasureBlank(block.prof_linteaux) ? labelValue('Prof. Linteaux', `${block.prof_linteaux} mm`, p) : null,
+        !isEffractionMeasureBlank(block.bati_a_bati) ? mv('Bâti à Bâti', `${block.bati_a_bati} mm`, 'bati-bati') : null,
+        !isEffractionMeasureBlank(block.dormant_a_dormant) ? mv('Dormant à Dormant', `${block.dormant_a_dormant} mm`, 'dormant-dormant') : null,
+        !isEffractionMeasureBlank(block.prof_linteaux) ? mv('Prof. Linteaux', `${block.prof_linteaux} mm`, 'prof-linteaux') : null,
     ].filter((c): c is Content => c !== null);
     const gridTop: Content[] = leftItems.length > 0 || rightItems.length > 0 ? [grid2(leftItems, rightItems)] : [];
 
-    const hPorteItem: Content[] = !isEffractionMeasureBlank(block.h_porte) ? [labelValue('H. Porte', block.h_porte, p)] : [];
-    const hMarcheItem: Content[] = !isEffractionMeasureBlank(block.h_marche) ? [labelValue('H. Marche', block.h_marche, p)] : [];
+    const hPorteItem: Content[] = !isEffractionMeasureBlank(block.h_porte) ? [mv('H. Porte', block.h_porte, 'h-porte')] : [];
+    const hMarcheItem: Content[] = !isEffractionMeasureBlank(block.h_marche) ? [mv('H. Marche', block.h_marche, 'h-marche')] : [];
     const gridH: Content[] = hPorteItem.length > 0 || hMarcheItem.length > 0 ? [grid2(hPorteItem, hMarcheItem)] : [];
 
     // Champ fantôme #3 (`prof_marche`/`prof_moulure`, `OrderHtmlArticulation.kt:289-290`)
     // — dernières lignes des mesures, même ordre que strategica.
-    const profMarcheItem: Content[] = !isEffractionMeasureBlank(block.prof_marche) ? [labelValue('Prof. Marche', `${block.prof_marche} mm`, p)] : [];
-    const profBatiItem: Content[] = !isEffractionMeasureBlank(block.prof_bati) ? [labelValue('Prof. Bâti', block.prof_bati, p)] : [];
+    const profMarcheItem: Content[] = !isEffractionMeasureBlank(block.prof_marche) ? [mv('Prof. Marche', `${block.prof_marche} mm`, 'prof-marche')] : [];
+    const profBatiItem: Content[] = !isEffractionMeasureBlank(block.prof_bati) ? [mv('Prof. Bâti', block.prof_bati, 'prof-bati')] : [];
     const gridProf: Content[] = profMarcheItem.length > 0 || profBatiItem.length > 0 ? [grid2(profMarcheItem, profBatiItem)] : [];
 
-    const profMoulure: Content[] = !isEffractionMeasureBlank(block.prof_moulure) ? [labelValue('Prof. Moulure', `${block.prof_moulure} mm`, p)] : [];
+    const profMoulure: Content[] = !isEffractionMeasureBlank(block.prof_moulure) ? [mv('Prof. Moulure', `${block.prof_moulure} mm`, 'prof-moulure')] : [];
 
     const before = [...typePorte, ...gridTop];
     const after = [...gridH, ...gridProf, ...profMoulure];
@@ -2075,8 +2466,11 @@ function buildEffractionPages(ctx: BuildCtx, block: OiEffractionBlock): Content[
     // sûre : jamais sous-évaluée).
     const photoBandPt = doorSrc !== undefined ? mm(topHMm) + galleryToolsReservePt(tools.length > 0 ? tools : ['PORTE'], mm(70)) : 0;
 
-    const missionLine = labelValue('Mission', block.mission || '-', p);
-    const specs = card(effractionMeasuresBody(block, p, rightColWidthPt), p, { unbreakable: false });
+    const missionLine = labelValue('Mission', block.mission || '-', p, undefined, {
+        anchors: ctx.anchors,
+        ref: blockFieldAnchor('effrac', block.id, 'mission'),
+    });
+    const specs = card(effractionMeasuresBody(ctx, block, rightColWidthPt), p, { unbreakable: false });
     const head: Content =
         doorSrc !== undefined
             ? {
@@ -2227,6 +2621,27 @@ function buildEffractionPages(ctx: BuildCtx, block: OiEffractionBlock): Content[
  * `pdf-engine-v2.ts:1059-1189` : `for i < max(moicp, zmspcp, effrac)`, ordre
  * interne ZMSPCP → MOICP → EFFRACTION (§3.4 règle 4). Photos « Baptême
  * Terrain » avant chaque page ZMSPCP, « Emplacement AO » après (§3.4 règle 3).
+ *
+ * CORRECTIF (rupture « premier bloc sans saut de page ») : le SEUL appelant
+ * (`OI_PDF_SECTIONS['articulation'].build`) compose TOUJOURS ce résultat
+ * `...spread` juste après `buildArticulationOverview(ctx, num)`, jamais en
+ * tête de document — ce sous-bloc n'est donc JAMAIS la « toute première
+ * page » au sens de `pushPage`/`pushPages` (module-level, convention
+ * document ENTIER). Utiliser ces deux helpers module-level ici serait donc
+ * FAUX : leur test `acc.length === 0`, évalué sur cet `acc` LOCAL à la
+ * fonction, prend systématiquement le tout premier push de la boucle pour la
+ * page 1 du document et lui RETIRE son `pageBreak:'before'` — quel que soit
+ * le contenu qui le déclenche (page ZMSPCP/MOICP/effraction elle-même
+ * quand aucune photo de galerie ne précède, ou la première page de galerie
+ * sinon) — cause exacte de « S SECTEUR »/« P POINTS PARTICULIERS » écrasés
+ * sous `buildArticulationOverview` en 16:9. Contrat local ci-dessous, calqué
+ * sur `galleryPages()`/`buildEffractionPages` (bloc auto-cohérent composé au
+ * milieu du document) mais SANS le cas particulier « premier élément » —
+ * ici la toute première page du sous-bloc porte ELLE AUSSI son propre
+ * `pageBreak:'before'`, inconditionnellement ; les pages SUIVANTES d'un
+ * même appel `galleryPages()`/`buildEffractionPages()` le portent déjà
+ * elles-mêmes (contrat d'origine, inchangé) — poussées telles quelles pour
+ * ne jamais doubler le saut (page blanche).
  */
 function buildArticulationBlocksLoop(ctx: BuildCtx): Content[] {
     const { formData, photosBase64, dynamicPhotos, p, geo } = ctx;
@@ -2236,33 +2651,55 @@ function buildArticulationBlocksLoop(ctx: BuildCtx): Content[] {
     const maxBlocks = Math.max(moicpBlocks.length, zmspcpBlocks.length, effracBlocks.length);
     const memberToCell = buildMemberToCellMap(formData.patracdvr_rows ?? []);
     const acc: Content[] = [];
+    const pushArticPage = (node: Content): void => {
+        acc.push({ stack: [node], pageBreak: 'before' });
+    };
+    const pushArticPages = (nodes: Content[]): void => {
+        nodes.forEach((node, i) => (i === 0 ? pushArticPage(node) : acc.push(node)));
+    };
 
     for (let i = 0; i < maxBlocks; i++) {
         const zmspcp = zmspcpBlocks[i];
         if (zmspcp) {
             const bapteme = dynamicPhotos[`photo_bapteme_${zmspcp.id}`] ?? [];
-            pushPages(acc, galleryPages(`Baptême Terrain — ${zmspcp.title || '-'}`, bapteme, photosBase64, p, geo));
-            pushPage(acc, buildZmspcpPage(ctx, zmspcp, memberToCell));
+            pushArticPages(galleryPages(`Baptême Terrain — ${zmspcp.title || '-'}`, bapteme, photosBase64, p, geo));
+            pushArticPage(buildZmspcpPage(ctx, zmspcp, memberToCell));
             const emplAo = dynamicPhotos[`photo_empl_ao_${zmspcp.id}`] ?? [];
-            pushPages(acc, galleryPages(`ZMSPCP : ${zmspcp.title || '-'} (Emplacement AO)`, emplAo, photosBase64, p, geo));
+            pushArticPages(galleryPages(`ZMSPCP : ${zmspcp.title || '-'} (Emplacement AO)`, emplAo, photosBase64, p, geo));
         }
 
         const moicp = moicpBlocks[i];
         if (moicp) {
-            pushPage(acc, buildMoicpPage(ctx, moicp, memberToCell));
+            pushArticPage(buildMoicpPage(ctx, moicp, memberToCell));
             const ext = dynamicPhotos[`photo_itin_ext_${moicp.id}`] ?? [];
             const int_ = dynamicPhotos[`photo_itin_int_${moicp.id}`] ?? [];
-            pushPages(acc, galleryPages(`MOICP : ${moicp.title || '-'}`, [...ext, ...int_], photosBase64, p, geo));
+            pushArticPages(galleryPages(`MOICP : ${moicp.title || '-'}`, [...ext, ...int_], photosBase64, p, geo));
         }
 
         const effrac = effracBlocks[i];
         if (effrac) {
-            pushPages(acc, buildEffractionPages(ctx, effrac));
+            pushArticPages(buildEffractionPages(ctx, effrac));
             const photos = dynamicPhotos[`photo_effrac_${effrac.id}`] ?? [];
-            pushPages(acc, galleryPages(`Effraction : ${effrac.title || '-'}`, photos, photosBase64, p, geo));
+            pushArticPages(galleryPages(`Effraction : ${effrac.title || '-'}`, photos, photosBase64, p, geo));
         }
     }
     return acc;
+}
+
+/**
+ * Coût (pt) d'UNE `accentCard` À TITRE (blocks.ts) au palier `fontPx`, dans
+ * une colonne de `columnWidthPt` — port du même modèle physique que
+ * `cardWithTitlePt`/`textLinePt` (ci-dessus), calibré sur la géométrie
+ * PROPRE à `accentCard` (conteneur interne `margin:[8,6,6,6]`, `LAYOUT_NONE`
+ * — 6 pt de marge haute + 6 pt basse, JAMAIS de padding de table, à la
+ * différence de `card()`/`cardWithTitlePt`) : libellé (toujours présent sur
+ * les 5 cartes de `buildCatPage`) + sa marge basse 4 pt + corps + 12 pt de
+ * marge verticale fixe.
+ */
+const CAT_CARD_TITLE_GAP_PT = 4;
+const CAT_CARD_VPAD_PT = 12;
+function accentCardPt(title: string, text: string, fontPx: number, columnWidthPt: number): number {
+    return textLinePt(title, fontPx, columnWidthPt) + CAT_CARD_TITLE_GAP_PT + textLinePt(text, fontPx, columnWidthPt) + CAT_CARD_VPAD_PT;
 }
 
 /**
@@ -2271,6 +2708,25 @@ function buildArticulationBlocksLoop(ctx: BuildCtx): Content[] {
  * TOUS vides (§3.4 règle 1, condition exacte `:1195`, étendue aux deux
  * nouveaux champs §4 SPEC-2026-08-18-pdf-et-champs.md pour éviter qu'un OI ne
  * portant QUE l'un d'eux perde silencieusement la section).
+ *
+ * CORRECTIF RÉGRESSION (directive Nico « une page = un contenu, aucun
+ * débordement, jamais ; aucune page vide ») : l'ajout des cartes UDA/Place
+ * du Chef de Dispo (§4.1/§4.2) a fait déborder la page — AUCUN essai de
+ * palier de police n'existait (`unbreakable:false` partout, même défaut que
+ * `buildAdversaryModesActionPage` avant son propre correctif). Nouvelle
+ * mécanique :
+ * 1) essaie de tenir la disposition VALIDÉE (ligne 1 CAT/NO-GO, ligne 2
+ *    UDA/Place du chef — si renseignés, Liaison en pied) sur UNE SEULE page
+ *    aux paliers 11→7 (`fitUsageToPage`, MÊME patron que
+ *    `buildArticulationPage`) ;
+ * 2) SEULEMENT si même le palier plancher ne suffit pas (cas limite — les 5
+ *    champs remplis au maximum), abandonne la disposition en grille (elle
+ *    suppose systématiquement DEUX cartes côte à côte, jamais scindable
+ *    proprement par carte) au profit d'un empilement PLEINE LARGEUR paginé
+ *    sur des pages « (SUITE) » autonomes (même mécanique que
+ *    `buildAdversaryModesActionPage`, `packCardsByBudget`) — jamais de
+ *    refus, jamais de troncature (`ctx.fitErrors` n'est jamais alimenté par
+ *    cette page, directive explicite).
  */
 function buildCatPage(ctx: BuildCtx, num: () => number): Content | null {
     const { formData, p, geo } = ctx;
@@ -2288,13 +2744,35 @@ function buildCatPage(ctx: BuildCtx, num: () => number): Content | null {
 
     // Blindage BLIND.A : `cat_generales`/`no_go`/`cat_liaison`/`uda`/
     // `place_chef_dispo` sont des champs texte libres non bornés — filet
-    // `unbreakable:false` (audit « tout unbreakable a un filet »).
+    // `unbreakable:false` (audit « tout unbreakable a un filet »). Cartes
+    // construites une seule fois : réutilisées TELLES QUELLES par les deux
+    // dispositions (grille §1, empilement §2) — jamais reconstruites par
+    // palier (elles n'ont pas de `fontSize` propre, elles héritent de celui
+    // posé sur le `stack` racine choisi par le solveur).
+    // Ancrage direct (édition en place) : `accentCard` reçoit un `Content[]`
+    // déjà composé, aucune valeur/référence isolée à lui passer (cf. JSDoc
+    // `registerPdfEditAnchor`).
+    registerPdfEditAnchor(ctx.anchors, fieldAnchor('cat_generales'), strOr(cat));
+    registerPdfEditAnchor(ctx.anchors, fieldAnchor('no_go'), strOr(nogo));
+    registerPdfEditAnchor(ctx.anchors, fieldAnchor('uda'), strOr(uda));
+    registerPdfEditAnchor(ctx.anchors, fieldAnchor('place_chef_dispo'), strOr(placeChefDispo));
+    registerPdfEditAnchor(ctx.anchors, fieldAnchor('cat_liaison'), strOr(liaison));
+    const catCard = accentCard('CAT Générales', [{ text: strOr(cat), preserveLeadingSpaces: true }], p, 'accent', { unbreakable: false });
+    const nogoCard = accentCard(
+        'Conditions de Désengagement (NO-GO)',
+        [{ text: strOr(nogo), color: p.danger, bold: true, preserveLeadingSpaces: true }],
+        p,
+        'danger',
+        { unbreakable: false },
+    );
     const udaCard: Content | null = uda
         ? accentCard('UDA', [{ text: strOr(uda), preserveLeadingSpaces: true }], p, 'uda', { unbreakable: false })
         : null;
     const placeChefDispoCard: Content | null = placeChefDispo
         ? accentCard('Place du Chef de Dispo', [{ text: strOr(placeChefDispo) }], p, 'accent', { unbreakable: false })
         : null;
+    const liaisonCard = accentCard('Liaison', [{ text: strOr(liaison), preserveLeadingSpaces: true }], p, 'warning', { unbreakable: false });
+
     // UDA et Place du chef de dispo (§4.1/§4.2) sont rendus APRÈS le bloc
     // NO-GO : nouvelle ligne grid2 sous la ligne CAT Générales/NO-GO existante
     // (préserve ce pairage historique plutôt que d'y insérer l'UDA), les deux
@@ -2309,25 +2787,81 @@ function buildCatPage(ctx: BuildCtx, num: () => number): Content | null {
         extraRow = placeChefDispoCard;
     }
 
+    const title = `${sectionNum}. CONDUITES À TENIR GÉNÉRALES`;
+    const catColWidthPt = (geo.contentWidthPt - mm(6)) / 2;
+    const availablePt = geo.contentHeightPt - EFFRAC_FITS_SAFETY_PT;
+
+    // 1) Disposition VALIDÉE (grille), paliers 11→7.
+    const computeGridCostPt = (fontPx: number): number => {
+        const row1Pt = Math.max(
+            accentCardPt('CAT Générales', strOr(cat), fontPx, catColWidthPt),
+            accentCardPt('Conditions de Désengagement (NO-GO)', strOr(nogo), fontPx, catColWidthPt),
+        );
+        const row2Pt =
+            udaCard && placeChefDispoCard
+                ? Math.max(
+                      accentCardPt('UDA', strOr(uda), fontPx, catColWidthPt),
+                      accentCardPt('Place du Chef de Dispo', strOr(placeChefDispo), fontPx, catColWidthPt),
+                  )
+                : udaCard
+                  ? accentCardPt('UDA', strOr(uda), fontPx, geo.contentWidthPt)
+                  : placeChefDispoCard
+                    ? accentCardPt('Place du Chef de Dispo', strOr(placeChefDispo), fontPx, geo.contentWidthPt)
+                    : 0;
+        const row3Pt = accentCardPt('Liaison', strOr(liaison), fontPx, geo.contentWidthPt);
+        return EFFRAC_H2_PT + row1Pt + (extraRow !== null ? STACKED_CARD_GAP_PT + row2Pt : 0) + STACKED_CARD_GAP_PT + row3Pt;
+    };
+    const gridFit = fitUsageToPage(computeGridCostPt, availablePt);
+    if ('fontPx' in gridFit) {
+        return {
+            stack: [
+                h2(title, p, geo.contentWidthPt),
+                grid2([catCard], [nogoCard]),
+                ...(extraRow !== null ? [{ text: '', margin: [0, STACKED_CARD_GAP_PT, 0, 0] } as Content, extraRow] : []),
+                { text: '', margin: [0, STACKED_CARD_GAP_PT, 0, 0] },
+                liaisonCard,
+            ],
+            fontSize: gridFit.fontPx,
+        };
+    }
+
+    // 2) Cas limite : grille abandonnée, empilement pleine largeur paginé sur
+    // des pages « (SUITE) » — palier retenu = celui qui produit le MOINS de
+    // pages (à égalité, le plus lisible/premier rencontré l'emporte,
+    // `FIT_FONT_STEPS` trié décroissant), même mécanique que
+    // `buildAdversaryModesActionPage`.
+    const slots: Array<{ title: string; text: string; node: Content }> = [
+        { title: 'CAT Générales', text: strOr(cat), node: catCard },
+        { title: 'Conditions de Désengagement (NO-GO)', text: strOr(nogo), node: nogoCard },
+        ...(udaCard ? [{ title: 'UDA', text: strOr(uda), node: udaCard }] : []),
+        ...(placeChefDispoCard ? [{ title: 'Place du Chef de Dispo', text: strOr(placeChefDispo), node: placeChefDispoCard }] : []),
+        { title: 'Liaison', text: strOr(liaison), node: liaisonCard },
+    ];
+    const renderSlots = (indices: number[]): Content[] => {
+        const nodes = indices.map((i) => (slots[i] as (typeof slots)[number]).node);
+        return nodes.flatMap((n, i) => (i === 0 ? [n] : [{ text: '', margin: [0, STACKED_CARD_GAP_PT, 0, 0] } as Content, n]));
+    };
+    const budgetPt = availablePt - EFFRAC_H2_PT;
+    let best: { groups: number[][]; fontPx: number } | null = null;
+    for (const fontPx of FIT_FONT_STEPS) {
+        const costs = slots.map((s) => accentCardPt(s.title, s.text, fontPx, geo.contentWidthPt));
+        const groups = packCardsByBudget(costs, budgetPt);
+        if (best === null || groups.length < best.groups.length) {
+            best = { groups, fontPx };
+        }
+    }
+    const { groups, fontPx } = best as { groups: number[][]; fontPx: number };
     return {
-        stack: [
-            h2(`${sectionNum}. CONDUITES À TENIR GÉNÉRALES`, p, geo.contentWidthPt),
-            grid2(
-                [accentCard('CAT Générales', [{ text: strOr(cat), preserveLeadingSpaces: true }], p, 'accent', { unbreakable: false })],
-                [
-                    accentCard(
-                        'Conditions de Désengagement (NO-GO)',
-                        [{ text: strOr(nogo), color: p.danger, bold: true, preserveLeadingSpaces: true }],
-                        p,
-                        'danger',
-                        { unbreakable: false },
-                    ),
-                ],
-            ),
-            ...(extraRow !== null ? [{ text: '', margin: [0, 6, 0, 0] } as Content, extraRow] : []),
-            { text: '', margin: [0, 6, 0, 0] },
-            accentCard('Liaison', [{ text: strOr(liaison), preserveLeadingSpaces: true }], p, 'warning', { unbreakable: false }),
-        ],
+        stack: groups.map((indices, idx): Content => {
+            if (idx === 0) {
+                return { stack: [h2(title, p, geo.contentWidthPt), ...renderSlots(indices)], fontSize: fontPx };
+            }
+            return {
+                stack: [h2(`${title} (SUITE)`, p, geo.contentWidthPt), ...renderSlots(indices)],
+                fontSize: fontPx,
+                pageBreak: 'before',
+            };
+        }),
     };
 }
 
@@ -2738,7 +3272,22 @@ export function resolveOiPdfSectionOrder(persisted?: string[] | undefined): stri
  * `pdf-engine-v2.ts:608-1304` (`generateHTML`) — structure/replis/omissions
  * identiques, langage visuel `blocks.ts`/`theme.ts` (strategica).
  */
-export function buildOiDocDefinition(data: OiPdfCollectedData, opts: { format: OiPdfFormat }): TDocumentDefinitions {
+/**
+ * `TDocumentDefinitions` ADDITIVEMENT enrichi de `pdfEditAnchors` (édition en
+ * place, mission « régression édition ») — sur-ensemble STRICT du type
+ * attendu par `engine-v3.ts::buildOiPdfBlob`/`pdfMake.createPdf` (assignable
+ * à `TDocumentDefinitions` sans changement côté appelant, propriété EXTRA
+ * simplement ignorée par pdfmake) : évite d'exposer un second point d'entrée
+ * dupliquant toute la construction de `ctx`/`pages` (`engine-v3.ts` est HORS
+ * périmètre de cette mission) — `pdf-engine-v2.ts` appelle CETTE MÊME
+ * fonction séparément (side-effect-free, résultat PDF jeté) pour récupérer
+ * `pdfEditAnchors` avant de peindre l'aperçu.
+ */
+export interface OiPdfDocDefinitionWithAnchors extends TDocumentDefinitions {
+    pdfEditAnchors: OiPdfEditAnchor[];
+}
+
+export function buildOiDocDefinition(data: OiPdfCollectedData, opts: { format: OiPdfFormat }): OiPdfDocDefinitionWithAnchors {
     const { formData, isDark } = data;
     const p = palette(isDark);
     const geo = pageGeometry(opts.format);
@@ -2752,6 +3301,7 @@ export function buildOiDocDefinition(data: OiPdfCollectedData, opts: { format: O
     const { photoRefs: photosBase64, images } = internPhotoImages(data.photosBase64);
 
     const fitErrors: OiPdfFitError[] = [];
+    const anchors: OiPdfEditAnchor[] = [];
     const ctx: BuildCtx = {
         formData,
         photosBase64,
@@ -2761,12 +3311,17 @@ export function buildOiDocDefinition(data: OiPdfCollectedData, opts: { format: O
         is169: opts.format === '16:9',
         baseFontSize,
         fitErrors,
+        anchors,
     };
 
     const pages: Content[] = [];
     // Page de garde : verrouillée en première position, HORS registre —
     // jamais numérotée, jamais réordonnée (cf. JSDoc `OI_PDF_SECTIONS`).
-    pushPage(pages, buildCover(ctx));
+    // `buildCover` renvoie désormais 1..N pages (couverture + pages « CIBLES(S)
+    // — <plage> » de débordement au-delà du seuil de la page 1, cf. sa JSDoc) —
+    // `pushPages` (même contrat que `galleryPages()`) pose le saut de page sur
+    // la 1re SEULEMENT, les suivantes portent déjà le leur.
+    pushPages(pages, buildCover(ctx));
     // Baseline 3 : slots 1 (garde) et 2 (adversaires, numérotation fixe
     // « 2.<index> » hors compteur) réservés — cf. JSDoc `OI_PDF_SECTIONS`.
     const num = makeSectionNumberer(3);
@@ -2807,5 +3362,10 @@ export function buildOiDocDefinition(data: OiPdfCollectedData, opts: { format: O
         background: (_currentPage: number, pageSize: ContextPageSize): Content => ({
             canvas: [{ type: 'rect', x: 0, y: 0, w: pageSize.width, h: pageSize.height, color: p.bg, lineWidth: 0 }],
         }),
+        // Édition en place (mission « régression édition ») — cf. JSDoc
+        // `OiPdfDocDefinitionWithAnchors`. Ordre d'émission PRÉSERVÉ tel quel
+        // (`ctx.anchors`, jamais trié/dédupliqué ici) : `pdf-preview-edit.ts`
+        // en dépend pour désambiguïser les valeurs partagées par 2+ champs.
+        pdfEditAnchors: anchors,
     };
 }
