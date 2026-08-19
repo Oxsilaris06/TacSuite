@@ -72,6 +72,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { dbManager, Store } from '@oi/init.js';
 import { PDFEngineV2 } from '@oi/pdf-engine-v2.js';
+import { OiPdfFitRefusalError } from '@oi/pdf/theme.js';
 import type { OiPdfCollectedData } from '@shared/types/contracts.js';
 
 // R2-T2b : `alert()` natif → `toast` (`@shared/feedback.js`) mocké plutôt que
@@ -345,6 +346,64 @@ describe('openPreview', () => {
         const errorEl = content.querySelector('.pdf-preview-error');
         expect(errorEl).not.toBeNull();
         expect(errorEl?.textContent).toContain('Télécharger le PDF');
+    });
+
+    // Non-régression (mission « effondrement pagination », mesuré : une
+    // session d'aperçu enchaînant plusieurs corrections en place — clic sur un
+    // texte → édition → validation → régénération, plusieurs fois de suite —
+    // finit par faire dépasser une page-usage à contrat dur (fiche
+    // adversaire/ZMSPCP/MOICP/effraction, `OiPdfFitRefusalError`) : reproduit
+    // via 25 corrections successives réelles, ATCD d'une fiche adversaire
+    // (chaque correction repart de la valeur COURANTE COMPLÈTE, donc
+    // s'allonge cumulativement) — le nombre de pages du document
+    // s'effondrait de 15 à 0 (`.pdf-preview-page` disparaissait entièrement,
+    // remplacé par un message d'erreur générique, plus aucune zone éditable
+    // pour corriger le champ fautif). AVANT correctif : cette régénération en
+    // échec vidait `presentationContent` de façon SYNCHRONE dès son
+    // déclenchement, perdant les pages du DERNIER aperçu réussi avant même de
+    // savoir si la nouvelle génération allait aboutir. APRÈS correctif : un
+    // échec de régénération (refus fit-to-page ou toute autre erreur) laisse
+    // le dernier aperçu réussi INTACT à l'écran — jamais de collapse à 0 page
+    // tant qu'un rendu précédent existe.
+    it("un échec de régénération (OiPdfFitRefusalError, ex. correction en place qui fait dépasser une fiche adversaire) NE VIDE PAS le dernier aperçu réussi — pas d'effondrement du nombre de pages", async () => {
+        const { content } = buildPresentationDom();
+        vi.spyOn(console, 'error').mockImplementation(() => {});
+
+        // 1) Premier aperçu : réussit, 4 pages rendues (état d'une session
+        // d'édition qui a déjà accumulé plusieurs corrections valides).
+        await PDFEngineV2.openPreview({
+            collect: () => Promise.resolve(makeCollectedData()),
+            buildBlob: () => Promise.resolve(makeFakeBlob()),
+            renderPdf: makeFakeRenderPdf(4),
+        });
+        expect(content.querySelectorAll('.pdf-preview-page')).toHaveLength(4);
+
+        // 2) Une correction de trop (ex. ATCD qui dépasse maintenant la fiche
+        // adversaire, même au palier plancher) : buildBlob échoue avec le
+        // refus de génération explicite du solveur fit-to-page.
+        await PDFEngineV2.openPreview({
+            collect: () => Promise.resolve(makeCollectedData()),
+            buildBlob: () => Promise.reject(new OiPdfFitRefusalError([
+                { section: 'Fiche Adversaire 1 : DUPONT', details: 'ATCD trop longs', excessRatio: 0.02 },
+            ])),
+        });
+
+        // Les 4 pages du DERNIER aperçu réussi sont toujours là — aucun
+        // effondrement, aucun message d'erreur générique qui les remplacerait.
+        expect(content.querySelectorAll('.pdf-preview-page')).toHaveLength(4);
+        expect(content.querySelector('.pdf-preview-error')).toBeNull();
+        // L'utilisateur est notifié (message SPÉCIFIQUE du refus, pas le
+        // générique) — via toast, sans détruire l'aperçu affiché.
+        expect(toastSpy).toHaveBeenCalledWith(expect.stringContaining('Fiche Adversaire 1'), { kind: 'error' });
+
+        // 3) Une régénération qui réussit ENSUITE (champ raccourci) retrouve
+        // normalement un rendu propre — la voie de récupération reste intacte.
+        await PDFEngineV2.openPreview({
+            collect: () => Promise.resolve(makeCollectedData()),
+            buildBlob: () => Promise.resolve(makeFakeBlob()),
+            renderPdf: makeFakeRenderPdf(3),
+        });
+        expect(content.querySelectorAll('.pdf-preview-page')).toHaveLength(3);
     });
 
     it('annule le rendu PRÉCÉDENT (isCancelled devient true) quand un nouvel aperçu est généré avant qu\'il ne se termine', async () => {

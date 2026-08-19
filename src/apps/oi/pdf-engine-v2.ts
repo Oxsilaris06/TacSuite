@@ -42,7 +42,7 @@ import type {
 } from '@shared/types/contracts.js';
 import { createAnnotatedImageBlob } from '@oi/dessin.js';
 import { dbManager, Store } from '@oi/init.js';
-import type { OiPdfFormat } from '@oi/pdf/theme.js';
+import { OiPdfFitRefusalError, type OiPdfFormat } from '@oi/pdf/theme.js';
 import { attachEditableTextLayer, createEditMatchState, type EditMatchStats } from '@oi/pdf-preview-edit.js';
 import { toast } from '@shared/feedback.js';
 
@@ -284,8 +284,32 @@ async function runOpenPreview(deps?: OiPdfBuildDeps): Promise<void> {
         if (statusText) statusText.textContent = msg;
     };
 
-    presentationContent.innerHTML = '';
+    // CORRECTIF (mission « effondrement pagination ») — mesuré : une session
+    // d'aperçu enchaînant plusieurs corrections en place finit, tôt ou tard,
+    // par faire dépasser une page-usage à contrat dur (fiche adversaire/
+    // ZMSPCP/MOICP/effraction, cf. JSDoc `OiPdfFitRefusalError`) — l'éditeur
+    // en place PRÉ-REMPLIT TOUJOURS avec la valeur COURANTE COMPLÈTE (cf.
+    // JSDoc `pdf-preview-edit.ts::openEditor`), donc une suite de « petites »
+    // corrections successives sur le MÊME champ l'allonge cumulativement
+    // jusqu'au refus. L'ancien code vidait `presentationContent` de façon
+    // SYNCHRONE ici, AVANT même de savoir si la régénération allait
+    // réussir : un refus (ou tout autre échec) transformait alors les N pages
+    // déjà rendues (résultat de la session d'édition précédente, PARFAITEMENT
+    // valides) en un message d'erreur générique — 0 page, aucun moyen de
+    // corriger le champ fautif depuis l'aperçu (ses zones éditables avaient
+    // disparu avec lui). Le vidage est désormais REPOUSSÉ après la
+    // construction RÉUSSIE du blob (cf. plus bas) : un échec de régénération
+    // laisse maintenant le DERNIER aperçu réussi visible et cliquable —
+    // aucun effondrement, aucune perte de la voie de correction.
     if (loader) loader.style.display = 'flex';
+    // `true` dès que CETTE génération a elle-même remplacé le contenu de
+    // `presentationContent` (cf. plus bas) — distingue « le dernier aperçu
+    // réussi est encore affiché, à préserver » de « cette génération a déjà
+    // détruit ce dernier aperçu réussi pour le sien, qui a ensuite échoué en
+    // cours de rendu (`renderPdf`) » : dans ce second cas il n'y a plus rien
+    // à préserver, le message d'erreur générique doit reprendre sa place
+    // habituelle (comportement inchangé pour un échec de `renderPdf`).
+    let contentReplaced = false;
 
     try {
         updateStatus('Collecte des données…');
@@ -303,8 +327,13 @@ async function runOpenPreview(deps?: OiPdfBuildDeps): Promise<void> {
 
         const pagesContainer = document.createElement('div');
         pagesContainer.className = 'pdf-preview-pages';
+        // Vidage différé jusqu'ICI (cf. commentaire ci-dessus) : le blob est
+        // construit avec succès, la bascule vers le nouveau contenu est donc
+        // sûre — jamais un `presentationContent` vidé pour un aperçu qui
+        // n'aboutira peut-être pas.
         presentationContent.innerHTML = '';
         presentationContent.appendChild(pagesContainer);
+        contentReplaced = true;
 
         updateStatus('Rendu des pages…');
         const renderPdf = deps?.renderPdf ?? defaultRenderPdf;
@@ -327,9 +356,27 @@ async function runOpenPreview(deps?: OiPdfBuildDeps): Promise<void> {
     } catch (error) {
         console.error('Preview Error:', error);
         if (!isCancelled()) {
-            presentationContent.innerHTML =
-                '<div class="pdf-preview-error">Erreur lors de la génération de l\'aperçu. ' +
-                'Utilisez le bouton « Télécharger le PDF » ci-dessous.</div>';
+            // Message SPÉCIFIQUE pour un refus explicite (`OiPdfFitRefusalError`,
+            // même message que `downloadOiPdfV3`/`engine-v3.ts` — une seule
+            // vérité) : liste déjà la/les section(s) en cause et invite à les
+            // raccourcir, contrairement au message générique ci-dessous.
+            const message = error instanceof OiPdfFitRefusalError
+                ? error.message
+                : "Erreur lors de la génération de l'aperçu.";
+            toast(message, { kind: 'error' });
+            // Rien à perdre SEULEMENT si aucun aperçu précédent n'est affiché
+            // (tout premier essai en échec) OU si CETTE génération a déjà
+            // détruit ce dernier aperçu réussi (`contentReplaced`, échec en
+            // cours de `renderPdf` après un `buildBlob` réussi) : sinon (cf.
+            // commentaire en tête de fonction) le dernier rendu réussi reste
+            // affiché tel quel, la correction fautive n'a plus qu'à être
+            // annulée/raccourcie depuis ses propres zones éditables, toujours
+            // en place.
+            if (contentReplaced || presentationContent.childElementCount === 0) {
+                presentationContent.innerHTML =
+                    '<div class="pdf-preview-error">Erreur lors de la génération de l\'aperçu. ' +
+                    'Utilisez le bouton « Télécharger le PDF » ci-dessous.</div>';
+            }
         }
     } finally {
         if (!isCancelled() && loader) loader.style.display = 'none';
