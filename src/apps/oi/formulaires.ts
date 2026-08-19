@@ -498,7 +498,7 @@ function addAdversary(data: OiAdversary | null = null): void {
                 <div class="adv-section-head"><span class="material-symbols-outlined">badge</span><h4>Identité</h4></div>
                 <div class="oi-fields-grid">
                     <label for="nom_adv_${id}">Nom / Prénom&nbsp;:</label>
-                    <input type="text" id="nom_adv_${id}" name="nom_adv_${id}" class="adv-field" data-field="nom_adversaire" placeholder="Nom et prénom" value="${nameValSafe}" oninput="updateAdvTitle('${id}', this.value); syncDomToStore()">
+                    <input type="text" id="nom_adv_${id}" name="nom_adv_${id}" class="adv-field" data-field="nom_adversaire" placeholder="Nom et prénom" maxlength="200" value="${nameValSafe}" oninput="updateAdvTitle('${id}', this.value); syncDomToStore()">
 
                     <label for="naissance_adv_${id}">Naissance&nbsp;:</label>
                     <div class="adv-duo">

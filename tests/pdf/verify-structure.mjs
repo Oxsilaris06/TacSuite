@@ -83,20 +83,34 @@ import { existsSync, readFileSync, statSync } from 'node:fs';
 // RENUMÉROTATION CONTINUE (SPEC-2026-08-18-pdf-et-champs.md §2/§5/§6, chantier
 // registre de sections `document-builder.ts::OI_PDF_SECTIONS`) : le doublon
 // historique « 7. » (ARTICULATION/PATRACDVR) a été corrigé — la numérotation
-// est désormais dérivée de l'ordre effectif des sections, PATRACDVR devient
-// « 9. ». La section « 6. LOGISTIQUE & TRANSPORTS » a été renommée
-// « TRANSPORT » (plus aucune mention de « logistique ») et déplacée juste
-// après ENVIRONNEMENT (« 4. » dans l'ordre par défaut).
+// est désormais DÉRIVÉE de l'ordre effectif des sections PRÉSENTES
+// (`makeSectionNumberer`/`resolveOiPdfSectionOrder`, document-builder.ts) :
+// une section omise (TRANSPORT sans photo, CAT/PATRACDVR sans donnée) ne
+// consomme JAMAIS de numéro, donc les sections suivantes REMONTENT d'un rang
+// — ex. sans TRANSPORT, MISSION porte « 4. » et non « 5. ». `numbered: true`
+// marque les 7 marqueurs dont le PRÉFIXE numérique est ainsi DYNAMIQUE
+// (ENVIRONNEMENT/TRANSPORT/MISSION/EXÉCUTION/ARTICULATION/CAT/PATRACDVR,
+// baseline 3 — slots 1 « garde » et 2 « 2.<index> adversaires, hors compteur
+// partagé » réservés avant elle, cf. JSDoc `OI_PDF_SECTIONS`) : leur `text`
+// GARDE le numéro CANONIQUE (cas où RIEN n'est omis, donc 3..9 consécutifs —
+// aussi la forme utilisée par les tests unitaires) mais `assertA3_sectionOrder`
+// ci-dessous ignore ce préfixe littéral pour matcher `\d+\. <suffixe>` et
+// valide à la place que les numéros RÉELLEMENT trouvés sont consécutifs sans
+// trou ni doublon, dans l'ordre du registre — pas qu'un libellé numéroté figé
+// est présent verbatim. Les autres marqueurs numérotés (« 1. SITUATION
+// GLOBALE », « 2.1 FICHE ADVERSAIRE ») restent HORS de ce compteur partagé
+// (numéro fixe posé par `buildCover`/`buildAdversaryFiche`, jamais dérivé) —
+// non marqués `numbered`, comparés verbatim comme avant.
 export const MARKERS = [
   { n: 1, text: 'ORDRE INITIAL', conditional: false },
   { n: 2, text: '1. SITUATION GLOBALE', conditional: false },
   { n: 3, text: 'CIBLES(S)', conditional: false },
   { n: 4, text: '2.1 FICHE ADVERSAIRE', conditional: true },
-  { n: 5, text: '3. ENVIRONNEMENT ET AMIS', conditional: false },
-  { n: 6, text: '4. TRANSPORT', conditional: true },
-  { n: 7, text: "5. MISSION DE L'UNITÉ", conditional: false },
-  { n: 8, text: '6. EXÉCUTION', conditional: false },
-  { n: 9, text: '7. ARTICULATION & ORDRES DE MOUVEMENT', conditional: false },
+  { n: 5, text: '3. ENVIRONNEMENT ET AMIS', conditional: false, numbered: true },
+  { n: 6, text: '4. TRANSPORT', conditional: true, numbered: true },
+  { n: 7, text: "5. MISSION DE L'UNITÉ", conditional: false, numbered: true },
+  { n: 8, text: '6. EXÉCUTION', conditional: false, numbered: true },
+  { n: 9, text: '7. ARTICULATION & ORDRES DE MOUVEMENT', conditional: false, numbered: true },
   // PDF.INTEG (mission d'intégration, vérifiée contre un PDF réel généré par
   // downloadOiPdfV3()) — CORRECTIF de casse par rapport à SPEC-PDF-V3.md §7
   // (qui recopiait la casse SOURCE du gabarit `pdf-engine-v2.ts`, où
@@ -117,10 +131,43 @@ export const MARKERS = [
   { n: 10, text: 'ARTICULATION : ZMSPCP', conditional: true },
   { n: 11, text: 'ARTICULATION : MOICP', conditional: true },
   { n: 12, text: 'ARTICULATION : EFFRACTION', conditional: true },
-  { n: 13, text: '8. CONDUITES À TENIR GÉNÉRALES', conditional: true },
-  { n: 14, text: '9. RÉCAPITULATIF PATRACDVR', conditional: false },
+  { n: 13, text: '8. CONDUITES À TENIR GÉNÉRALES', conditional: true, numbered: true },
+  // #14 PATRACDVR corrigé à `conditional: true` (balayage 2026-08-19,
+  // `document-builder.ts::buildPatracPage:3434` retourne `null` si
+  // `allRows.length === 0`, SANS consommer de numéro — exactement comme
+  // CAT ci-dessus) : marquée à tort `false` jusqu'ici, sans conséquence
+  // observée en CI (les 4 fixtures de ce dépôt ont toutes ≥ 1 ligne
+  // PATRACDVR) mais faisait échouer À TORT `--lenient` sur toute fixture
+  // future à `patracdvr_rows` vide — même défaut de fond que #6 TRANSPORT.
+  { n: 14, text: '9. RÉCAPITULATIF PATRACDVR', conditional: true, numbered: true },
   { n: 15, text: 'AVEZ-VOUS DES QUESTIONS ?', conditional: false },
 ];
+
+// Baseline du compteur PARTAGÉ des sections DÉRIVÉES (`makeSectionNumberer(3)`,
+// document-builder.ts) — slots 1 (garde, non numérotée) et 2 (adversaires,
+// numérotation fixe « 2.<index> » hors compteur) réservés avant que les
+// sections `numbered: true` ci-dessus ne commencent à 3, quel que soit
+// l'ordre/la présence des AUTRES sections (cf. JSDoc `OI_PDF_SECTIONS`).
+const NUMBERED_SECTION_BASELINE = 3;
+
+/** Échappe les métacaractères regex d'une chaîne LITTÉRALE (aucun des `text` `numbered` ci-dessus n'en contient aujourd'hui — défensif, coût nul). */
+function escapeRegExp(s) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * Suffixe NU (sans le préfixe numérique CANONIQUE) d'un marqueur
+ * `numbered: true` — ex. `'9. RÉCAPITULATIF PATRACDVR'` → `'RÉCAPITULATIF
+ * PATRACDVR'`. Réutilisé par `assertA3_sectionOrder` (recherche `\d+\.
+ * <suffixe>`) ET `assertB2_noVerticalWordSplit` (localisation de la page
+ * PATRACDVR par simple `.includes()` du suffixe, insensible au numéro
+ * RÉELLEMENT porté — même défaut de fond que #6 TRANSPORT sinon : un
+ * `.includes()` du texte CANONIQUE complet échoue dès que TRANSPORT est
+ * omis et décale PATRACDVR de « 9. » à « 8. »).
+ */
+function numberedMarkerSuffix(m) {
+  return normalize(m.text).replace(/^\d+\.\s*/, '');
+}
 
 const REQUIRED_BINARIES = ['pdfinfo', 'pdftotext', 'pdffonts', 'pdfimages'];
 const POPPLER_PACKAGE_HINT = 'poppler-utils';
@@ -378,8 +425,18 @@ export function assertA2_realText(text) {
 export function assertA3_sectionOrder(text, { lenient }) {
   const norm = normalize(text);
   const results = MARKERS.map((m) => {
+    if (m.numbered) {
+      // Marqueur à préfixe numérique DYNAMIQUE (cf. commentaire `numbered`
+      // au point de définition de `MARKERS`) : `m.text` porte le numéro
+      // CANONIQUE (cas où rien n'est omis) — on l'en dépouille pour matcher
+      // `\d+\. <suffixe>` quel que soit le numéro RÉELLEMENT porté par le PDF,
+      // et on capture ce numéro pour la vérification de continuité ci-dessous.
+      const re = new RegExp(`(\\d+)\\.\\s+${escapeRegExp(numberedMarkerSuffix(m))}`);
+      const match = re.exec(norm);
+      return { ...m, idx: match ? match.index : -1, found: match !== null, num: match ? Number(match[1]) : null };
+    }
     const idx = norm.indexOf(normalize(m.text));
-    return { ...m, idx, found: idx !== -1 };
+    return { ...m, idx, found: idx !== -1, num: null };
   });
 
   // En mode strict, TOUT marqueur manquant fait échouer. En mode lenient,
@@ -405,10 +462,29 @@ export function assertA3_sectionOrder(text, { lenient }) {
     prev = r;
   }
 
+  // Continuité de la numérotation DÉRIVÉE (§6 SPEC-2026-08-18-pdf-et-champs.md,
+  // `makeSectionNumberer`/`resolveOiPdfSectionOrder`, document-builder.ts) :
+  // parmi les marqueurs `numbered` PRÉSENTS, les numéros RÉELLEMENT portés
+  // doivent être CONSÉCUTIFS sans trou ni doublon en partant de
+  // `NUMBERED_SECTION_BASELINE` — reflète le contrat réel (une section omise
+  // ne consomme pas de numéro) sans figer PAR AVANCE quelle section précise
+  // est absente, contrairement à l'ancienne liste de libellés numérotés figés
+  // qui supposait TRANSPORT toujours présent.
+  let expectedNum = NUMBERED_SECTION_BASELINE;
+  for (const r of present.filter((r) => r.numbered)) {
+    if (r.num !== expectedNum) {
+      return {
+        ok: false,
+        detail: `numérotation rompue : #${r.n} « ${r.text} » porte le numéro ${r.num}, attendu ${expectedNum} (numérotation continue dérivée de l'ordre des sections présentes, cf. makeSectionNumberer)`,
+      };
+    }
+    expectedNum += 1;
+  }
+
   const skipNote = skipped.length > 0 ? ` — SKIP (conditionnel(s) absent(s)) : ${skipped.map((r) => `#${r.n}`).join(', ')}` : '';
   return {
     ok: true,
-    detail: `${present.length}/${MARKERS.length} marqueurs présents, index strictement croissant${skipNote}`,
+    detail: `${present.length}/${MARKERS.length} marqueurs présents, index strictement croissant, numérotation dérivée continue${skipNote}`,
   };
 }
 
@@ -680,10 +756,15 @@ function lineTokens(line) {
  */
 export function assertB2_noVerticalWordSplit(text) {
   const pages = splitPages(text);
-  const patracMarker = MARKERS[13]; // '9. RÉCAPITULATIF PATRACDVR' (renumérotation continue, SPEC-2026-08-18-pdf-et-champs.md §6)
+  const patracMarker = MARKERS[13]; // '9. RÉCAPITULATIF PATRACDVR' (numéro CANONIQUE — dynamique en vrai, cf. `numberedMarkerSuffix`)
   const finalMarker = MARKERS[14]; // 'AVEZ-VOUS DES QUESTIONS ?'
   const normPages = pages.map((p) => normalize(p));
-  const startIdx = normPages.findIndex((p) => p.includes(normalize(patracMarker.text)));
+  // `.includes()` du SUFFIXE seul (pas `patracMarker.text` entier) : le
+  // numéro canonique « 9. » ne tient QUE si aucune section dérivée n'est
+  // omise en amont (TRANSPORT/CAT) — un `.includes()` du texte complet
+  // manquerait la page dès que PATRACDVR décale, ex. « 8. RÉCAPITULATIF
+  // PATRACDVR » sans TRANSPORT (§6 SPEC-2026-08-18-pdf-et-champs.md).
+  const startIdx = normPages.findIndex((p) => p.includes(numberedMarkerSuffix(patracMarker)));
   if (startIdx === -1) {
     return { ok: true, skip: true, detail: 'SKIP — aucun tableau PATRACDVR dans ce document, assertion non applicable' };
   }
@@ -1150,7 +1231,23 @@ const FIXTURE_INTEGRITY_MIN_LEN = 12;
 // (`fonctions`/`gpbs`/… — cf. `formulaires.ts`), jamais une valeur SAISIE —
 // seule la valeur CHOISIE (dans les champs `fonction`/`gpb`… des membres
 // PATRACDVR) est rendue dans le PDF ; le catalogue complet ne l'est jamais.
-const FIXTURE_INTEGRITY_SKIP_KEYS = new Set(['id', 'annotations', 'tools', 'title', 'options']);
+// `cartography` exclue (défaut C5 constaté sur l'archive OI réelle, balayage
+// 2026-08-19) : `formData.cartography` (vue/pins/tracés du canvas carto,
+// `OiCartographyState`) n'apparaît NULLE PART dans `document-builder.ts`/
+// `blocks.ts` (grep vérifié) — la carte n'est PAS un objet du PDF, c'est un
+// objet graphique de l'app OI, capturée en IMAGE bitmap SEULEMENT sur action
+// explicite de l'utilisateur (`carto/capture.ts`), jamais son état structuré.
+// Exiger la présence verbatim des libellés de pins (ex. « Rassemblement »,
+// « GHI · Chef de bord ») dans le texte du PDF est donc une exigence sur des
+// données qui n'y sont, par contrat, jamais rendues — pas une troncature.
+// Balayage des AUTRES clés top-level de `formData` sur cette même archive
+// (`quick_edit_dir_input`/`quick_edit_trigramme_input`, les échos plats par
+// widget `<champ>_adv_<id>`/`dyn_<id>`/`hyp_<id>`/`*_event_<id>`/
+// `ma_ma_adv_<id>`/`me_me_adv_<id>`) : toutes dupliquent verbatim une valeur
+// ATTEINTE PAR AILLEURS via un champ structuré RÉELLEMENT rendu
+// (`adversaries[]`, `time_events[]`, `hypotheses[]`, `patracdvr_rows[]`…) —
+// aucune n'a fait échouer C5, aucune autre clé n'a donc été ajoutée ici.
+const FIXTURE_INTEGRITY_SKIP_KEYS = new Set(['id', 'annotations', 'tools', 'title', 'options', 'cartography']);
 
 /**
  * Parcourt récursivement `formData` (fixture `{ formData, photosBase64?,

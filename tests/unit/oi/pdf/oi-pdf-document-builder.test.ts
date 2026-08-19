@@ -1459,6 +1459,138 @@ describe('buildOiDocDefinition — page unique fiche adversaire, ATCD dense, fit
 });
 
 // ===========================================================================
+// Défaut HAUTE (mesure PDF réelle, 2026-08-19, archive OI réelle,
+// `nom_adversaire` porté à 25 600 caractères) : le TITRE d'un usage à
+// contrat dur (fiche adversaire « 2.<i> FICHE ADVERSAIRE : <nom> », mais
+// aussi tout `h2()` de page embarquant un texte utilisateur non borné —
+// bloc ZMSPCP/MOICP/EFFRACTION, « MODES D'ACTION — <nom> ») n'était JAMAIS
+// mesuré par le modèle de coût du solveur fit-to-page (constante FIXE
+// `ADV_TITLE_BAR_PT`/`EFFRAC_H2_PT`, 1 seule ligne supposée) : un nom/titre
+// démesuré faisait déborder le bandeau lui-même hors du modèle prévu — la
+// génération réussissait alors À TORT (silence), laissant le contenu
+// déborder sur plusieurs pages jusqu'à une page de queue orpheline VIDE.
+// AVANT correctif, ce test échouait : `buildOiDocDefinition` ne levait
+// JAMAIS `OiPdfFitRefusalError` pour un nom de 25 600 caractères.
+// ===========================================================================
+describe('buildOiDocDefinition — titre à texte utilisateur non borné (défaut « page de queue vide », mesure 2026-08-19)', () => {
+    function minimalAdversary(nom: string): OiAdversary {
+        return {
+            id: 'adv1',
+            nom_adversaire: nom,
+            armes_connues: '-',
+            me_list: [],
+            etat_esprit_list: [],
+            volume_list: [],
+            vehicules_list: [],
+        };
+    }
+
+    it('un nom d’adversaire RÉALISTE (100 caractères) tient sur une page unique, aucune régression', () => {
+        const nom = 'DUPONT '.repeat(14).trim().slice(0, 100);
+        const json = JSON.stringify(buildOiDocDefinition(collect({ adversaries: [minimalAdversary(nom)] }), { format: 'a4' }));
+        expect((json.match(/FICHE ADVERSAIRE : /g) ?? []).length).toBe(1);
+        expect(json).toContain(nom);
+    });
+
+    it.each(['a4', '16:9'] as const)(
+        'un nom d’adversaire DÉLIBÉRÉMENT surdimensionné (25 600 caractères, reproduction archive réelle) REFUSE la génération — jamais de débordement silencieux sur des pages orphelines (%s)',
+        (format) => {
+            const nom = 'DUPONT Jean-Baptiste Alexandre '.repeat(900);
+            expect(nom.length).toBeGreaterThan(25000);
+            const data = collect({ adversaries: [minimalAdversary(nom)] });
+
+            let caught: unknown;
+            try {
+                buildOiDocDefinition(data, { format });
+            } catch (err) {
+                caught = err;
+            }
+            expect(caught, `OiPdfFitRefusalError attendue (${format})`).toBeInstanceOf(OiPdfFitRefusalError);
+            const refusal = caught as OiPdfFitRefusalError;
+            expect(refusal.fitErrors.some((e) => /Fiche Adversaire/.test(e.section)), `fitErrors doit citer la Fiche Adversaire (${format})`).toBe(
+                true,
+            );
+        },
+    );
+
+    it('un titre de bloc ZMSPCP DÉLIBÉRÉMENT surdimensionné (20 000 caractères) REFUSE la génération — même trou que la fiche adversaire, traité de façon homogène', () => {
+        const hugeTitle = 'GROUPE ALPHA '.repeat(1600);
+        expect(hugeTitle.length).toBeGreaterThan(20000);
+        const zmspcpBlocks: OiZmspcpBlock[] = [
+            { id: 'z1', title: hugeTitle, zone: '-', mission: '-', secteur: '-', points_particuliers: '-', cat: '-', place_chef: '-', members: [] },
+        ];
+        let caught: unknown;
+        try {
+            buildOiDocDefinition(collect({ zmspcp_blocks: zmspcpBlocks }), { format: 'a4' });
+        } catch (err) {
+            caught = err;
+        }
+        expect(caught).toBeInstanceOf(OiPdfFitRefusalError);
+        expect((caught as OiPdfFitRefusalError).fitErrors.some((e) => /ZMSPCP/.test(e.section))).toBe(true);
+    });
+
+    it('un titre de bloc MOICP DÉLIBÉRÉMENT surdimensionné (20 000 caractères) REFUSE la génération — même trou que la fiche adversaire, traité de façon homogène', () => {
+        const hugeTitle = 'GROUPE INDIA '.repeat(1600);
+        const moicpBlocks: OiMoicpBlock[] = [
+            { id: 'm1', title: hugeTitle, mission: '-', objectif: '-', itineraire: '-', points_particuliers: '-', cat: '-', place_chef: '-', members: [] },
+        ];
+        let caught: unknown;
+        try {
+            buildOiDocDefinition(collect({ moicp_blocks: moicpBlocks }), { format: 'a4' });
+        } catch (err) {
+            caught = err;
+        }
+        expect(caught).toBeInstanceOf(OiPdfFitRefusalError);
+        expect((caught as OiPdfFitRefusalError).fitErrors.some((e) => /MOICP/.test(e.section))).toBe(true);
+    });
+
+    it('un titre de bloc EFFRACTION DÉLIBÉRÉMENT surdimensionné (20 000 caractères) REFUSE la génération — même trou que la fiche adversaire, traité de façon homogène', () => {
+        const hugeTitle = 'PORTE ALPHA '.repeat(1700);
+        const effractionBlocks: OiEffractionBlock[] = [
+            {
+                id: 'e1', title: hugeTitle, mission: '-', porte: '-', structure: '-', serrurerie: '-',
+                environnement: '-', bati_a_bati: '-', dormant_a_dormant: '-', prof_linteaux: '-', prof_bati: '-',
+                h_porte: '-', h_marche: '-', prof_marche: '-', prof_moulure: '-', members: [],
+                hypotheses: [{ id: 'h1', title: 'H1', desc: '-', effrac: '-', degag: '-', assaut: '-' }],
+            },
+        ];
+        let caught: unknown;
+        try {
+            buildOiDocDefinition(collect({ effraction_blocks: effractionBlocks }), { format: 'a4' });
+        } catch (err) {
+            caught = err;
+        }
+        expect(caught).toBeInstanceOf(OiPdfFitRefusalError);
+        expect((caught as OiPdfFitRefusalError).fitErrors.some((e) => /EFFRACTION/.test(e.section))).toBe(true);
+    });
+
+    it('un adversaire au nom DÉLIBÉRÉMENT surdimensionné (20 000 caractères, avec au moins un MA) : la page « MODES D’ACTION — <nom> », qui NE REFUSE JAMAIS (contrat propre, cf. `packCardsByBudget`), ne remonte AUCUNE entrée `fitErrors` — seule la fiche adversaire (contrat dur) refuse, jamais une propagation vers cette page-là', () => {
+        const nom = 'DUPONT Jean-Baptiste Alexandre '.repeat(700);
+        expect(nom.length).toBeGreaterThan(20000);
+        const adv: OiAdversary = {
+            id: 'adv1',
+            nom_adversaire: nom,
+            armes_connues: '-',
+            me_list: [],
+            etat_esprit_list: [],
+            volume_list: [],
+            vehicules_list: [],
+            ma_list: ['Action MA1 de test.'],
+        };
+        let caught: unknown;
+        try {
+            buildOiDocDefinition(collect({ adversaries: [adv] }), { format: 'a4' });
+        } catch (err) {
+            caught = err;
+        }
+        expect(caught).toBeInstanceOf(OiPdfFitRefusalError);
+        const refusal = caught as OiPdfFitRefusalError;
+        expect(refusal.fitErrors.some((e) => /Fiche Adversaire/.test(e.section))).toBe(true);
+        expect(refusal.fitErrors.some((e) => /MODES D.ACTION/.test(e.section))).toBe(false);
+    });
+});
+
+// ===========================================================================
 // Correctif Nico 2026-08-10 — fiche adversaire : la photo d'identité et les
 // libellés `kvTable` à 2 mots (« Situation familiale », « Signes
 // particuliers ») n'étaient pas (ou mal) comptés par le modèle de coût du
@@ -1966,6 +2098,77 @@ describe('buildOiDocDefinition — anomalie A : repli « Mission + Exécution »
         const execIdx = content.findIndex((page) => JSON.stringify(page).includes('EXÉCUTION'));
         expect(missionIdx).toBeGreaterThanOrEqual(0);
         expect(execIdx).toBe(missionIdx);
+    });
+});
+
+// ===========================================================================
+// Défaut MOYENNE (mesure PDF réelle, 2026-08-19, `long-case.json` en 16:9) :
+// même quand MISSION+EXÉCUTION fusionnent (ou qu'EXÉCUTION obtient sa propre
+// page dédiée), la table Chronologie/les Hypothèses d'ensemble n'avaient
+// AUCUN repli de pagination titrée au-delà du palier plancher — l'ancien
+// code laissait pdfmake déborder NATURELLEMENT (`unbreakable:false`, sans
+// budget) sur autant de pages que nécessaire, chacune ne portant QUE l'en-
+// tête de tableau répété (« Heure »/« Événement »), SANS AUCUN TITRE —
+// rompant le principe « une page porte son titre » que CIBLES(S)/
+// PATRACDVR/ARTICULATION/ENVIRONNEMENT respectent déjà. AVANT correctif, le
+// test ci-dessous échouait : `content` ne contenait alors qu'UN SEUL élément
+// « EXÉCUTION » (jamais de page « — CHRONOLOGIE <plage> » distincte), la
+// scission réelle ne se manifestant qu'au RENDU pdfmake (invisible à ce
+// niveau JSON pur, cf. `tests/pdf/generate-from-fixture.mjs` pour la preuve
+// bout-en-bout sur PDF réel).
+// ===========================================================================
+describe('buildOiDocDefinition — pagination titrée de secours EXÉCUTION (défaut « page de continuation sans titre », mesure 2026-08-19)', () => {
+    function heavyChronoFormData(eventCount: number): OiFormData {
+        return {
+            date_execution: '2026-08-19',
+            heure_execution: 'H+2',
+            action_body_text: 'Action de test pour la pagination de secours de la chronologie.',
+            time_events: Array.from({ length: eventCount }, (_, i) => ({
+                hour: `0${i % 10}:00`,
+                type: 'ÉVÉNEMENT',
+                description: `Evenement numero ${i + 1} de la chronologie previsionnelle.`,
+            })),
+            hypotheses: ['Hypothese unique de test.'],
+        };
+    }
+
+    it.each(['a4', '16:9'] as const)(
+        'chronologie TRÈS volumineuse (60 événements, ne tient sur aucune page dédiée même au palier plancher) : CHAQUE page de continuation porte un titre distinct autoportant « N. EXÉCUTION — CHRONOLOGIE <plage> », jamais de page nue (en-tête de tableau seul) — aucun événement perdu (%s)',
+        (format) => {
+            const formData = heavyChronoFormData(60);
+            const dd = buildOiDocDefinition(collect(formData), { format });
+            const content = dd.content as Content[];
+            const json = JSON.stringify(dd);
+
+            expect(json).not.toContain('(SUITE)');
+            expect(json).not.toContain('(suite)');
+
+            // Le mécanisme de pagination de secours (`buildExecutionOverflowPages`)
+            // a bien produit AU MOINS une page de continuation titrée distincte.
+            const chronoContinuationPages = content.filter((page) => /EXÉCUTION — CHRONOLOGIE ÉVÉNEMENTS/.test(JSON.stringify(page)));
+            expect(chronoContinuationPages.length, `au moins une page « — CHRONOLOGIE <plage> » attendue (${format})`).toBeGreaterThan(0);
+
+            // Aucune perte : les 60 événements restent intégralement présents.
+            for (let i = 1; i <= 60; i++) {
+                expect(json, `événement ${i} doit apparaître intégralement (${format})`).toContain(`Evenement numero ${i} de`);
+            }
+        },
+    );
+
+    it('volumétrie nominale (5 événements, comme `long-case.json`) : reste fusionnée avec MISSION sur une seule page, pas de régression du cas courant (16:9, marge verticale la plus stricte)', () => {
+        const formData = heavyChronoFormData(5);
+        const dd = buildOiDocDefinition(collect(formData), { format: '16:9' });
+        const content = dd.content as Content[];
+        const json = JSON.stringify(dd);
+
+        expect(json).not.toContain('CHRONOLOGIE ÉVÉNEMENTS');
+        const missionIdx = content.findIndex((page) => JSON.stringify(page).includes("MISSION DE L'UNITÉ"));
+        const execIdx = content.findIndex((page) => JSON.stringify(page).includes('EXÉCUTION'));
+        expect(missionIdx).toBeGreaterThanOrEqual(0);
+        expect(execIdx, 'MISSION et EXÉCUTION doivent rester fusionnées à ce volume nominal').toBe(missionIdx);
+        for (let i = 1; i <= 5; i++) {
+            expect(json).toContain(`Evenement numero ${i} de`);
+        }
     });
 });
 

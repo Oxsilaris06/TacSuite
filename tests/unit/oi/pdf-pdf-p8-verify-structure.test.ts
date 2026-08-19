@@ -63,11 +63,11 @@ describe('MARKERS (SPEC-PDF-V3.md §7, liste des 15 marqueurs)', () => {
         );
     });
 
-    it('les indices conditionnels sont exactement 4, 6, 10, 11, 12, 13 (renumérotation continue, SPEC-2026-08-18-pdf-et-champs.md §6 — TRANSPORT en #6)', () => {
+    it('les indices conditionnels sont exactement 4, 6, 10, 11, 12, 13, 14 (renumérotation continue, SPEC-2026-08-18-pdf-et-champs.md §6 — TRANSPORT en #6, PATRACDVR en #14 alignée sur `buildPatracPage` qui omet la section si `patracdvr_rows` est vide)', () => {
         const conditionalIndices = MARKERS.filter((m: { conditional: boolean }) => m.conditional).map(
             (m: { n: number }) => m.n
         );
-        expect(conditionalIndices).toEqual([4, 6, 10, 11, 12, 13]);
+        expect(conditionalIndices).toEqual([4, 6, 10, 11, 12, 13, 14]);
     });
 
     it('le doublon historique « 7. » a disparu : #9 ARTICULATION reste « 7. », #14 PATRACDVR devient « 9. » (fix §6)', () => {
@@ -332,6 +332,49 @@ describe('assertA3_sectionOrder()', () => {
         const r = assertA3_sectionOrder(text, { lenient: false });
         expect(r.ok).toBe(true);
     });
+
+    // Défaut 1 (balayage 2026-08-19) : `document-builder.ts::makeSectionNumberer`
+    // applique une renumérotation CONTINUE dérivée de l'ordre effectif — une
+    // section omise (TRANSPORT sans photo, CAT/PATRACDVR sans donnée) ne
+    // consomme pas de numéro, donc les sections suivantes REMONTENT d'un rang.
+    // Les 2 tests ci-dessous simulent un texte pdftotext RÉALISTE (numéros
+    // DÉCALÉS, pas les numéros canoniques de `buildFullText()`), ce que
+    // l'ancienne liste figée de libellés numérotés ne pouvait pas valider.
+    it('PASS : TRANSPORT (#6) omis et sections suivantes décalées d\'un rang (5.→4., 6.→5., 7.→6., 8.→7., 9.→8., renumérotation continue attendue)', () => {
+        const text = [
+            'ORDRE INITIAL',
+            '1. SITUATION GLOBALE',
+            'CIBLES(S)',
+            '3. ENVIRONNEMENT ET AMIS',
+            "4. MISSION DE L'UNITÉ",
+            '5. EXÉCUTION',
+            '6. ARTICULATION & ORDRES DE MOUVEMENT',
+            '7. CONDUITES À TENIR GÉNÉRALES',
+            '8. RÉCAPITULATIF PATRACDVR',
+            'AVEZ-VOUS DES QUESTIONS ?',
+        ].join('\n\n');
+        const r = assertA3_sectionOrder(text, { lenient: true });
+        expect(r.ok).toBe(true);
+        expect(r.detail).toMatch(/numérotation dérivée continue/);
+    });
+
+    it('FAIL : TRANSPORT omis mais MISSION reste à "5." (trou de numérotation, ancien bug reproduit) — numérotation rompue détectée', () => {
+        const text = [
+            'ORDRE INITIAL',
+            '1. SITUATION GLOBALE',
+            'CIBLES(S)',
+            '3. ENVIRONNEMENT ET AMIS',
+            "5. MISSION DE L'UNITÉ", // devrait être « 4. » — TRANSPORT (#6) est absent
+            '6. EXÉCUTION',
+            '7. ARTICULATION & ORDRES DE MOUVEMENT',
+            '8. CONDUITES À TENIR GÉNÉRALES',
+            '9. RÉCAPITULATIF PATRACDVR',
+            'AVEZ-VOUS DES QUESTIONS ?',
+        ].join('\n\n');
+        const r = assertA3_sectionOrder(text, { lenient: true });
+        expect(r.ok).toBe(false);
+        expect(r.detail).toMatch(/numérotation rompue/);
+    });
 });
 
 // ===========================================================================
@@ -525,6 +568,20 @@ describe('assertB2_noVerticalWordSplit()', () => {
     it('PASS : aucun mot cassé dans la section PATRACDVR', () => {
         const text = `9. RÉCAPITULATIF PATRACDVR\nSHARAN complet\nAVEZ-VOUS DES QUESTIONS ?`;
         expect(assertB2_noVerticalWordSplit(text).ok).toBe(true);
+    });
+
+    // Défaut 1 (balayage 2026-08-19) : PATRACDVR ne porte « 9. » que si RIEN
+    // n'est omis en amont — sans TRANSPORT il devient « 8. » (renumérotation
+    // continue, document-builder.ts::makeSectionNumberer). `numberedMarkerSuffix`
+    // doit donc localiser la section par SUFFIXE, pas par le texte canonique
+    // complet, sous peine de SKIP à tort (la garde anti-césure ne tournerait
+    // alors plus jamais sur ce cas, pourtant réel — ex. long-case.json).
+    it('FAIL : localise la section PATRACDVR même renumérotée "8." (TRANSPORT omis) et détecte le mot cassé', () => {
+        const text = `8. RÉCAPITULATIF PATRACDVR\nSHARA\nN reste\nAVEZ-VOUS DES QUESTIONS ?`;
+        const r = assertB2_noVerticalWordSplit(text);
+        expect(r.ok).toBe(false);
+        expect(r.skip).toBeFalsy();
+        expect(r.detail).toMatch(/SHARAN/);
     });
 });
 
