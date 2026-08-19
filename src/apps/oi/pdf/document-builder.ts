@@ -214,14 +214,47 @@ function advFieldAnchor(advId: string, field: string): PdfFieldAnchor {
     return { selector: `#oi-form .adversary-entry[data-adv-id="${advId}"] [data-field="${field}"]` };
 }
 
-/** Champ d'un bloc répété (MOICP/ZMSPCP/Effraction, `articulation.ts`) — `blockKind` = préfixe de classe CSS du bloc (`moicp`/`zmspcp`/`effrac`) ET, par convention `articulation.ts`, préfixe des classes de CHAQUE champ (`.moicp-mission`, `.zmspcp-zone`, `.effrac-porte`…). */
+/**
+ * Champ d'un bloc répété (MOICP/ZMSPCP/Effraction, `articulation.ts`) —
+ * `blockKind` préfixe les classes de CHAQUE champ (`.moicp-mission`,
+ * `.zmspcp-zone`, `.effrac-porte`…) ET, pour MOICP/ZMSPCP SEULEMENT, la
+ * classe du CONTENEUR de bloc (`.moicp-block`/`.zmspcp-block`,
+ * `articulation.ts:125`/`:226`). Le conteneur Effraction déroge à cette
+ * convention : `articulation.ts:943` lui donne la classe `.effraction-block`
+ * (mot complet), jamais `.effrac-block` — un préfixe unique pour les deux ne
+ * matchait donc AUCUN élément DOM pour AUCUN champ Effraction (sélecteur
+ * toujours vide, `resolveEditCandidates` sans candidat), constat mesure
+ * navigateur réelle (page EFFRACTION : 100 fragments de texte, 0 zone
+ * éditable posée, alors que les ancres étaient bien enregistrées).
+ */
 function blockFieldAnchor(blockKind: 'moicp' | 'zmspcp' | 'effrac', blockId: string, fieldClass: string): PdfFieldAnchor {
-    return { selector: `#oi-form .${blockKind}-block[data-block-id="${blockId}"] .${blockKind}-${fieldClass}` };
+    const wrapperClass = blockKind === 'effrac' ? 'effraction-block' : `${blockKind}-block`;
+    return { selector: `#oi-form .${wrapperClass}[data-block-id="${blockId}"] .${blockKind}-${fieldClass}` };
 }
 
 /** Champ d'une liste à plat SANS identifiant propre (hypothèses, chronologie — `formulaires.ts:772-778`) — `index` désambiguïse entre les N éléments que `containerSelector` retourne, dans le MÊME ordre que `querySelectorAll` (ordre DOM = ordre de construction de `formData`, cf. sites d'appel). */
 function indexedFieldAnchor(containerSelector: string, index: number): PdfFieldAnchor {
     return { selector: `#oi-form ${containerSelector}`, index };
+}
+
+/**
+ * Champ d'une liste répétée PROPRE À une fiche adversaire (Modes d'action,
+ * `formulaires.ts:742` — `advData.ma_list = […].map(i => i.value).filter(Boolean)`)
+ * — combine le scope `advFieldAnchor` (un seul adversaire, potentiellement
+ * plusieurs sur le document) et l'index `indexedFieldAnchor` (plusieurs MA par
+ * adversaire). `.filter(Boolean)` À LA SAUVEGARDE COMPACTE `ma_list` (un MA
+ * vidé de son texte, mais dont le `<textarea>` n'a pas été retiré via le
+ * bouton de suppression, disparaît du tableau SANS décaler les DOM suivants)
+ * — un index brut sur `.ma-container .ma-input` désynchroniserait alors
+ * `maList[i]` de son `<textarea>` réel dès qu'un MA intermédiaire est vidé
+ * sans être supprimé. `:not(:placeholder-shown)` (pseudo-classe CSS4 native,
+ * jamais de filtrage ad hoc côté `pdf-preview-edit.ts`) exclut du
+ * `querySelectorAll` tout `<textarea>` actuellement VIDE (montrant son
+ * `placeholder`, cf. `formulaires.ts:338`) — restaure la correspondance 1:1
+ * avec `ma_list`, qui exclut les mêmes éléments par construction.
+ */
+function advIndexedFieldAnchor(advId: string, containerSelector: string, index: number): PdfFieldAnchor {
+    return { selector: `#oi-form .adversary-entry[data-adv-id="${advId}"] ${containerSelector}`, index };
 }
 
 /**
@@ -1164,10 +1197,18 @@ function buildAdversaryModesActionPage(ctx: BuildCtx, adv: OiAdversary, nom: str
     // `fontSize` du palier retenu est posé sur le `stack` racine (hérité par
     // ces cartes, aucune n'a de `fontSize` propre) — `renderCards` n'a donc
     // pas besoin du palier en paramètre.
+    // Édition en place (mission « tout le texte modifiable ») — MA rendu via
+    // un nœud `{ text }` brut (jamais `labelValue`/`kvTable`), l'ancre est
+    // donc posée EXPLICITEMENT ici, cf. JSDoc `advIndexedFieldAnchor`.
+    // `renderCards` peut être appelée plusieurs fois (pagination
+    // `packCardsByBudget`, cas limite) mais chaque `i` n'est couvert que par
+    // UN SEUL appel (groupes disjoints) — aucun double enregistrement.
     const renderCards = (indices: number[]): Content[] => {
-        const cards = indices.map((i) =>
-            card([h3(`MA${i + 1}`, p), { text: str(maList[i] as string), preserveLeadingSpaces: true }], p, { unbreakable: false }),
-        );
+        const cards = indices.map((i) => {
+            const value = str(maList[i] as string);
+            registerPdfEditAnchor(ctx.anchors, advIndexedFieldAnchor(adv.id, '.ma-container .ma-input:not(:placeholder-shown)', i), value);
+            return card([h3(`MA${i + 1}`, p), { text: value, preserveLeadingSpaces: true }], p, { unbreakable: false });
+        });
         return cards.flatMap((c, i) => (i === 0 ? [c] : [{ text: '', margin: [0, STACKED_CARD_GAP_PT, 0, 0] } as Content, c]));
     };
 
@@ -1962,12 +2003,22 @@ function buildArticulationPage(
     }
     const fontPx = 'fontPx' in fit ? fit.fontPx : FIT_FONT_FLOOR;
 
+    // Ordre d'ENREGISTREMENT des ancrages aligné sur l'ordre RÉEL de rendu
+    // (mesure navigateur réelle, page ZMSPCP/MOICP : Z/M/S/P puis C, jamais
+    // l'inverse) — `coreFieldsNode` DOIT donc être calculé (et ses ancres
+    // enregistrées via `labelValue`) AVANT `catNode`, qui suivait
+    // auparavant `left` en position mais était construit en PREMIER (`const`
+    // évalué avant `coreFields.map`), décalant son ancre de ~4-5 rangs devant
+    // Z/M/S/P dans l'index — seule la fenêtre `WINDOW_AHEAD` de
+    // `pdf-preview-edit.ts` absorbait ce décalage jusqu'ici. Pur
+    // réordonnancement : `left` prend exactement le même contenu final.
+    const coreFieldsNode: Content[] = coreFields.map(([label, value, ref]) => labelValue(label, value, p, undefined, ref ? { anchors: ctx.anchors, ref } : undefined));
     const catNode: Content[] = hasBoundary
         ? [fieldLabel(catLabel, p), ...dashItemList(catItems, p, { anchors: ctx.anchors, ref: catRef })]
         : [labelValue(catLabel, catText, p, undefined, { anchors: ctx.anchors, ref: catRef })];
     const left: Content[] = [
         h3(sectionLabel, p),
-        ...coreFields.map(([label, value, ref]) => labelValue(label, value, p, undefined, ref ? { anchors: ctx.anchors, ref } : undefined)),
+        ...coreFieldsNode,
         ...catNode,
     ];
     const right: Content[] = [
