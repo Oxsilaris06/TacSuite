@@ -1953,6 +1953,42 @@ describe('buildOiDocDefinition — RÉGRESSION anomalie #1 : carte CIBLES(S) de 
         expect(json).not.toContain('(suite)');
         expect(json).toMatch(/CIBLES\(S\) — \d+(-\d+)?/);
     });
+
+    /**
+     * RÉGRESSION guardrail B1 (mesure `tests/pdf/verify-structure.mjs`,
+     * fixture `tests/pdf/fixtures/blind-a-combined-stress.json`, A4, 5
+     * adversaires) : le paqueteur glouton `packHypotheses` fait hériter le
+     * DERNIER groupe de débordement d'UN SEUL adversaire (page « CIBLES(S)
+     * — 5 » orpheline, 77 caractères non blancs — sous le seuil 120 de B1)
+     * quand le groupe 0 (page 1, grid2) absorbe tout le reste. Le rééquilibrage
+     * `rebalanceLastGroup` (JSDoc ci-dessus, guardrail préexistant) ne peut
+     * RIEN ici : son slice exclut structurellement le groupe 0, et il n'y a
+     * qu'UN SEUL groupe de débordement (pas de « groupe précédent » au sein
+     * du débordement pour piocher). Le correctif rééquilibre la frontière
+     * groupe 0 ↔ débordement elle-même — ce test vérifie sa signature
+     * structurelle directement observable au niveau JSON (sans rendu PDF
+     * réel) : plus AUCUNE page « CIBLES(S) — <N> » (plage à un seul numéro,
+     * jamais une plage « <N>-<M> ») n'apparaît, quel que soit le nombre
+     * total d'adversaires (2 à 30, un seul adversaire ne produit jamais de
+     * débordement) — un débordement à 1 seule cible serait TOUJOURS
+     * signalé par un tel titre à numéro unique.
+     */
+    it.each([2, 3, 4, 5, 6, 7, 8, 9, 10, 15, 30])(
+        '%d adversaire(s) : aucune page « CIBLES(S) — <N> » à un seul numéro (débordement à 1 seule cible), A4 et 16:9',
+        (count) => {
+            for (const format of ['a4', '16:9'] as const) {
+                const dd = buildOiDocDefinition(collect({ adversaries: makeAdversaries(count) }), { format });
+                const json = JSON.stringify(dd);
+                const overflowTitles = json.match(/CIBLES\(S\) — \d+(-\d+)?/g) ?? [];
+                const singleEntryTitles = overflowTitles.filter((title) => !/-\d+/.test(title));
+
+                expect(
+                    singleEntryTitles,
+                    `aucune page de débordement à 1 seule cible attendue (${count} adv., ${format}) — titres : ${JSON.stringify(overflowTitles)}`,
+                ).toHaveLength(0);
+            }
+        },
+    );
 });
 
 // ===========================================================================

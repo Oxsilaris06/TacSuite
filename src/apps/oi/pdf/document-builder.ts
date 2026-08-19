@@ -854,17 +854,55 @@ function buildCover(ctx: BuildCtx): Content[] {
     const ciblesGroups: OiAdversary[][] =
         adversaries.length > 0 ? (packHypotheses(adversaries, regionCostPt, firstBudgetPt, restBudgetPt) ?? [adversaries]) : [[]];
 
+    // Rééquilibre les deux DERNIERS groupes de débordement entre eux (jamais
+    // le groupe 0, page 1/grid2 — colonne et budget distincts, exclus par le
+    // `.slice(1)` ci-dessous) : évite le reliquat « dernière page à 1 seule
+    // cible » du paqueteur glouton (cf. JSDoc `rebalanceLastGroup`, guardrail
+    // B1 anti-page-orpheline).
+    let ciblesFirstGroup: OiAdversary[] = ciblesGroups[0] ?? [];
+    let overflowGroups: OiAdversary[][] =
+        adversaries.length > 0 ? rebalanceLastGroup(ciblesGroups.slice(1), regionCostPt, restBudgetPt) : [];
+
+    // `rebalanceLastGroup` ne peut RIEN quand il ne reste qu'UN SEUL groupe
+    // de débordement (`groups.length < 2` en son sein) : son slice exclut
+    // structurellement le groupe 0, il n'a alors aucun « groupe précédent »
+    // au sein du débordement pour piocher. C'est PRÉCISÉMENT le cas mesuré
+    // (fixture `blind-a-combined-stress.json`, A4, 5 adversaires → groupe 0
+    // = 4, débordement = 1 seule cible, page « CIBLES(S) — 5 » orpheline
+    // sous le seuil B1). Rééquilibre alors la frontière groupe 0 ↔
+    // débordement — budgets et colonnes distincts (`firstBudgetPt`/
+    // `columnWidthPt` demi-page CONTRAINTE pour la page 1, `restBudgetPt`
+    // pleine page LARGE pour le débordement), donc pas un simple appel à
+    // `rebalanceLastGroup` (budget UNIQUE, partage 50/50). Ne garde sur la
+    // page 1 que le STRICT MINIMUM (1 cible — jamais 0 : la page 1 ne doit
+    // jamais afficher un encart « CIBLES(S) » vide tant que des cibles
+    // existent, cf. test « sans aucun adversaire... ») et bascule tout le
+    // reste sur le débordement, dont le budget est mesuré bien plus
+    // généreux que la colonne demi-page de la page 1 — mesuré déterminant :
+    // à 4-5 cibles, un partage à parts égales (2/2 ou 3/2) laisse encore le
+    // débordement sous le seuil B1 (108 car.), quand maximiser sa part (1
+    // page 1 / 3-4 débordement) l'en fait sortir. Ne retient le
+    // rééquilibrage que si les DEUX coûts tiennent dans leur budget
+    // respectif (direction sûre : sinon conserve l'empaquetage glouton
+    // d'origine, jamais de débordement introduit).
+    if (overflowGroups.length === 1) {
+        const onlyOverflow = overflowGroups[0] as OiAdversary[];
+        const combined = [...ciblesFirstGroup, ...onlyOverflow];
+        if (combined.length >= 2) {
+            const newFirst = combined.slice(0, 1);
+            const newOverflow = combined.slice(1);
+            if (regionCostPt(newFirst) <= firstBudgetPt && regionCostPt(newOverflow) <= restBudgetPt) {
+                ciblesFirstGroup = newFirst;
+                overflowGroups = [newOverflow];
+            }
+        }
+    }
+
     const ciblesFirstBody: Content[] =
         adversaries.length > 0
-            ? ciblesGroups[0]?.map((adv) => renderCiblesEntry(adv, p)) ?? []
+            ? ciblesFirstGroup.map((adv) => renderCiblesEntry(adv, p))
             : [{ text: 'Aucune cible renseignée.', color: p.muted }];
     const ciblesCard = card([h3('CIBLES(S)', p), ...ciblesFirstBody], p, { unbreakable: false });
-
-    // Rééquilibre les deux DERNIERS groupes de débordement (jamais le groupe
-    // 0, page 1/grid2 — colonne et budget distincts) : évite le reliquat
-    // « dernière page à 1 seule cible » du paqueteur glouton (cf. JSDoc
-    // `rebalanceLastGroup`, guardrail B1 anti-page-orpheline).
-    const overflowGroups = adversaries.length > 0 ? rebalanceLastGroup(ciblesGroups.slice(1), regionCostPt, restBudgetPt) : [];
     const overflowPages: Content[] = overflowGroups.map((group) => ({
         stack: [
             h2(`CIBLES(S) — ${ciblesRangeLabel(group, adversaries)}`, p, geo.contentWidthPt),
