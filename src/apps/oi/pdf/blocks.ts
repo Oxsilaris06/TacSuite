@@ -41,6 +41,10 @@ export interface PdfFieldAnchor {
     selector: string;
     /** Défaut 0 — cf. `OiPdfEditAnchor.index`. */
     index?: number;
+    /** Transmis tel quel à `OiPdfEditAnchor.kind` — cf. sa JSDoc (`contracts.ts`). */
+    kind?: 'field' | 'dataset';
+    /** Transmis tel quel à `OiPdfEditAnchor.datasetKey` — requis si `kind === 'dataset'`. */
+    datasetKey?: string;
 }
 
 /**
@@ -61,7 +65,13 @@ export function registerPdfEditAnchor(anchors: OiPdfEditAnchor[] | undefined, re
     if (!anchors || !ref) return;
     const v = value.trim();
     if (v === '' || v === '-') return;
-    anchors.push({ selector: ref.selector, index: ref.index ?? 0, value });
+    // `exactOptionalPropertyTypes` : `kind`/`datasetKey` ne sont ajoutés QUE
+    // s'ils sont réellement définis sur `ref` (jamais une propriété présente
+    // valant explicitement `undefined`, que le type cible n'accepte pas).
+    const anchor: OiPdfEditAnchor = { selector: ref.selector, index: ref.index ?? 0, value };
+    if (ref.kind !== undefined) anchor.kind = ref.kind;
+    if (ref.datasetKey !== undefined) anchor.datasetKey = ref.datasetKey;
+    anchors.push(anchor);
 }
 
 // --- Layouts de table génériques (géométrie seule, cf. en-tête de fichier). ---

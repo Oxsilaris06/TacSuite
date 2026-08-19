@@ -131,6 +131,58 @@
  * couvre un ensemble de choix fermé, un `<select>` n'a pas de `pattern`) et
  * romprait la cohérence avec le reste du formulaire pour un gain marginal
  * (ces champs sont courts, déjà corrigibles depuis le formulaire lui-même).
+ *
+ * SECOND CHEMIN D'ÉCRITURE — `dataset` (mission « tout le texte modifiable »,
+ * 2026-08-19) : deux sections restaient ENTIÈREMENT non éditables — la « Vue
+ * d'ensemble de l'articulation » (Rame VL / Colonne de Progression / Ordre
+ * de Pénétration, `document-builder.ts::buildArticulationOverview`) et le
+ * « Récapitulatif PATRACDVR » (`buildPatracPage`) — parce que leur texte ne
+ * vit dans AUCUN `<input>`/`<textarea>` : il vient du `dataset` de pastilles/
+ * boutons réordonnables (`.patracdvr-member-btn`, `.patracdvr-vehicle-row`,
+ * `.rame-vl-chip`, `.order-chip` — cf. `patrac.ts`/`articulation.ts`). Modèle
+ * de données réel étudié (`patrac.ts::addPatracdvrMember` pose le dataset à
+ * la création ; `formulaires.ts::syncDomToStoreCore` le sérialise TEL QUEL
+ * dans `Store.state.formData.patracdvr_rows[].members[]`/`patracdvr_unassigned`,
+ * `OiPatracMember` — cf. `contracts.ts` ; les 3 listes d'ordre ne sont que des
+ * RÉORDONNANCEMENTS de ces mêmes trigrammes/noms, régénérées par
+ * `articulation.ts::refreshArticulationFromPatracdvr`) : le texte affiché s'y
+ * partage en 2 catégories —
+ *
+ *   - CHAMPS LIBRES (texte non contraint) : `trigramme`, `dir` (membre),
+ *     `vehicleName` (véhicule) — DÉJÀ éditables ailleurs dans l'app (panneau
+ *     Édition Rapide, renommage véhicule), sans validation de forme. Ce sont
+ *     les SEULS couverts par ce second chemin.
+ *   - PASTILLES À CHOIX FERMÉ : `fonction`/`cellule`/`principales`/
+ *     `secondaires`/`afis`/`grenades`/`equipement`/`equipement2`/`tenue`/
+ *     `gpb` — MÊME catégorie que la décision `<select>` ci-dessus (énumération
+ *     contrainte côté formulaire, panneau Édition Rapide) : jamais ancrées
+ *     (`document-builder.ts`), donc jamais candidates ici. La colonne
+ *     `EQPT/GREN.` du récapitulatif (`patracEqptText`) reste elle aussi
+ *     exclue : c'est un JOIN de 5 champs distincts en une seule chaîne
+ *     rendue, même catégorie que les valeurs agrégées déjà exclues (§ PÉRIMÈTRE
+ *     EXACT ci-dessus).
+ *
+ * `OiPdfEditAnchor.kind` (défaut `'field'`, absent) distingue les 2 chemins ;
+ * `kind: 'dataset'` porte en plus `datasetKey` (la clé `dataset` visée).
+ * `resolveEditCandidates` résout alors un `EditCandidate` DISCRIMINÉ par
+ * `kind` (`{kind:'field', el: <input>|<textarea>}` vs `{kind:'dataset', el:
+ * HTMLElement, datasetKey}`) ; `commitEdit` distribue vers `commitFieldEdit`
+ * (inchangée) ou `commitDatasetEdit` (nouvelle) selon ce discriminant — cf.
+ * leurs JSDoc respectives pour les garde-fous propres à chaque chemin. Les 2
+ * chemins PARTAGENT la garde « vidage refusé » (`EMPTYING_REJECTED_MESSAGE`)
+ * et la séquence post-écriture (`syncDomToStoreImmediate` + `regenerate` +
+ * retour en vue) ; `commitDatasetEdit` réutilise `window.updateMemberButtonVisuals`/
+ * `window.updateArticulationDisplay` (résolus par `window`, MÊME garde
+ * `typeof` que partout dans ce paquet, RÈGLE D'OR — cf. JSDoc `patrac.ts`)
+ * plutôt que de réimplémenter les effets de bord du panneau Édition Rapide.
+ *
+ * AMBIGUÏTÉ D'IDENTITÉ (sûreté) : `trigramme`/`vehicleName` servent aussi de
+ * CLÉ DE SÉLECTEUR (`.patracdvr-member-btn[data-trigramme="X"]`) — un
+ * trigramme/nom de véhicule DUPLIQUÉ dans le document rendrait ce sélecteur
+ * ambigu (plusieurs éléments DOM potentiels). `document-builder.ts`
+ * (`countPatracTrigrammes`/`countPatracVehicleNames`) refuse alors d'ANCRER
+ * TOUT champ concerné par cette valeur — sous-couverture délibérée, jamais un
+ * pari sur QUEL élément dupliqué corriger.
  */
 import { syncDomToStoreImmediate } from '@oi/formulaires.js';
 import type { OiPdfEditAnchor } from '@shared/types/contracts.js';
@@ -143,9 +195,15 @@ type TextContentItem = Awaited<ReturnType<PDFPageProxy['getTextContent']>>['item
  * qu'un marqueur de structure et n'a aucune géométrie). */
 type TextFragment = Extract<TextContentItem, { transform: unknown }>;
 
-export interface EditCandidate {
-    el: HTMLInputElement | HTMLTextAreaElement;
-}
+/**
+ * Discriminé par `kind` (mission « tout le texte modifiable ») — `'field'`
+ * (chemin d'origine) : cible un `<input>`/`<textarea>`, écrit via `.value`.
+ * `'dataset'` (nouveau) : cible un élément DOM quelconque (pastille/bouton
+ * PATRACDVR), écrit via `.dataset[datasetKey]` — cf. JSDoc de fichier.
+ */
+export type EditCandidate =
+    | { kind: 'field'; el: HTMLInputElement | HTMLTextAreaElement }
+    | { kind: 'dataset'; el: HTMLElement; datasetKey: string };
 
 /** Normalisation de comparaison — U+00AD (soft hyphen, `text-utils.ts::breakLongTokens`, invisible au rendu/à l'extraction) retiré, espaces multiples réduits. `getTextContent()` remplace déjà tout blanc par U+0020 (JSDoc pdf.js), donc `\s+` suffit ici. */
 function normalizeForMatch(s: string): string {
@@ -189,24 +247,50 @@ function matchableTarget(value: string): string {
     return stripGluedLeadingConnector(normalizeForMatch(value));
 }
 
-/** Clé stable d'un ancrage — sélecteur + rang (2 ancrages du MÊME champ, ex. 2 items `dashItemList`, partagent la MÊME clé : un seul `EditCandidate` résolu, réutilisé). */
-function anchorKey(a: Pick<OiPdfEditAnchor, 'selector' | 'index'>): string {
-    return `${a.selector}::${a.index}`;
+/**
+ * Clé stable d'un ancrage — sélecteur + rang + `datasetKey` (2 ancrages du
+ * MÊME champ, ex. 2 items `dashItemList`, partagent la MÊME clé : un seul
+ * `EditCandidate` résolu, réutilisé). `datasetKey` INCLUS dans la clé depuis
+ * la mission « tout le texte modifiable » — RÉGRESSION mesurée en navigateur
+ * réel (Chromium, campagne PATRACDVR) sans lui : un ancrage `kind:'field'`
+ * identifie TOUJOURS son champ par le SÉLECTEUR seul (chaque champ `#oi-form`
+ * a sa PROPRE classe/attribut, ex. `.moicp-mission` vs `.moicp-objectif` —
+ * `selector` seul suffit à les distinguer), mais un ancrage `kind:'dataset'`
+ * identifie l'ÉLÉMENT par IDENTITÉ (trigramme/nom de véhicule) et le CHAMP
+ * séparément par `datasetKey` — DEUX ancrages `dataset` du MÊME élément
+ * (`trigramme` et `dir` d'UN MÊME `.patracdvr-member-btn`) partagent alors le
+ * MÊME sélecteur ET le même rang par défaut (0), donc l'ANCIENNE clé
+ * (sélecteur+rang seuls) les confondait en UNE SEULE entrée de
+ * `EditMatchState.candidates` — celle du PREMIER ancrage enregistré pour cet
+ * élément (`trigramme`, émis avant `dir` dans `patracRowCells`) gagnait
+ * TOUJOURS, y compris pour les zones cliquables résolues plus tard contre
+ * l'ancrage `dir` : cliquer le texte DIR ouvrait alors l'éditeur DU
+ * TRIGRAMME — une correction pouvait atterrir dans le MAUVAIS champ malgré
+ * un clic pourtant correctement positionné. `datasetKey` (vide pour un
+ * ancrage `field`, valeur constante dans ce cas — n'introduit AUCUNE
+ * collision nouvelle entre ancrages `field`) désambiguïse désormais les deux.
+ */
+function anchorKey(a: Pick<OiPdfEditAnchor, 'selector' | 'index' | 'datasetKey'>): string {
+    return `${a.selector}::${a.index}::${a.datasetKey ?? ''}`;
 }
 
 /**
  * Résout CHAQUE ancrage vers son élément DOM source (`document.
  * querySelectorAll(selector)[index]`) — `#oi-form` scope déjà tous les
  * sélecteurs construits par `document-builder.ts` (`fieldAnchor`/
- * `advFieldAnchor`/`blockFieldAnchor`/`indexedFieldAnchor`). Seuls
- * `HTMLInputElement`/`HTMLTextAreaElement` sont retenus (filet — un
- * sélecteur ne devrait jamais désigner autre chose en pratique, ex. un
- * `<select>` n'est jamais la cible d'un ancrage émis par `document-
- * builder.ts`) ; un sélecteur introuvable/invalide est silencieusement omis
- * (l'ancrage correspondant ne produira alors aucune zone cliquable — repli
- * sûr, jamais une exception qui interromprait tout le rendu de l'aperçu).
- * Un `querySelectorAll` par sélecteur DISTINCT (mise en cache) : un champ
- * répété (hypothèses, MA…) partage le MÊME sélecteur pour tous ses rangs.
+ * `advFieldAnchor`/`blockFieldAnchor`/`indexedFieldAnchor`/
+ * `patracMemberDatasetAnchor`/`patracVehicleDatasetAnchor`). Un ancrage
+ * `kind !== 'dataset'` (défaut `'field'`) ne retient que
+ * `HTMLInputElement`/`HTMLTextAreaElement` (filet — un sélecteur `'field'` ne
+ * devrait jamais désigner autre chose en pratique, ex. un `<select>` n'est
+ * jamais la cible d'un tel ancrage) ; un ancrage `kind === 'dataset'` retient
+ * tout `HTMLElement` porteur d'un `datasetKey` déclaré (pastille/bouton
+ * PATRACDVR, cf. JSDoc de fichier). Un sélecteur introuvable/invalide est
+ * silencieusement omis dans les deux cas (l'ancrage correspondant ne
+ * produira alors aucune zone cliquable — repli sûr, jamais une exception qui
+ * interromprait tout le rendu de l'aperçu). Un `querySelectorAll` par
+ * sélecteur DISTINCT (mise en cache) : un champ répété (hypothèses, MA…)
+ * partage le MÊME sélecteur pour tous ses rangs.
  */
 export function resolveEditCandidates(anchors: OiPdfEditAnchor[]): Map<string, EditCandidate> {
     const candidates = new Map<string, EditCandidate>();
@@ -224,8 +308,10 @@ export function resolveEditCandidates(anchors: OiPdfEditAnchor[]): Map<string, E
             bySelector.set(a.selector, list);
         }
         const el = list[a.index];
-        if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
-            candidates.set(key, { el });
+        if (a.kind === 'dataset') {
+            if (el instanceof HTMLElement && a.datasetKey) candidates.set(key, { kind: 'dataset', el, datasetKey: a.datasetKey });
+        } else if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
+            candidates.set(key, { kind: 'field', el });
         }
     }
     return candidates;
@@ -403,15 +489,20 @@ function rejectionMessage(el: HTMLInputElement | HTMLTextAreaElement, attempted:
  * Aucune écriture n'est donc jamais destructrice, y compris pour un type/une
  * contrainte non anticipée ici (filet générique, pas un `switch` par type).
  *
- * EXPORTÉE pour test unitaire DIRECT (`tests/unit/oi/oi-pdf-preview-edit.
- * test.ts`) — exercer la garde 1 pour une chaîne EFFECTIVEMENT hors format
- * (pas déjà vidée) nécessite d'appeler cette fonction directement avec le
- * champ SOURCE réel comme cible : le cycle `openEditor`/blur, une fois
- * `applyFieldConstraints` posé, n'expose plus JAMAIS une telle chaîne à
- * `commitEdit` pour `type="time"`/`"date"` (garde 2 ci-dessus, seule garde
- * exercée par ce chemin pour ces 2 types).
+ * EXPORTÉE (via `commitEdit` ci-dessous) pour test unitaire DIRECT
+ * (`tests/unit/oi/oi-pdf-preview-edit.test.ts`) — exercer la garde 1 pour une
+ * chaîne EFFECTIVEMENT hors format (pas déjà vidée) nécessite d'appeler
+ * cette fonction directement avec le champ SOURCE réel comme cible : le
+ * cycle `openEditor`/blur, une fois `applyFieldConstraints` posé, n'expose
+ * plus JAMAIS une telle chaîne à `commitFieldEdit` pour `type="time"`/`"date"`
+ * (garde 2 ci-dessus, seule garde exercée par ce chemin pour ces 2 types).
  */
-export function commitEdit(candidate: EditCandidate, newValue: string, pageNumber: number, regenerate: () => Promise<void>): { ok: true } | { ok: false; message: string } {
+function commitFieldEdit(
+    candidate: Extract<EditCandidate, { kind: 'field' }>,
+    newValue: string,
+    pageNumber: number,
+    regenerate: () => Promise<void>,
+): { ok: true } | { ok: false; message: string } {
     const el = candidate.el;
     if (el.value === newValue) return { ok: true };
     const previousValue = el.value;
@@ -430,6 +521,74 @@ export function commitEdit(candidate: EditCandidate, newValue: string, pageNumbe
         document.querySelector(`.pdf-preview-page[data-page-number="${pageNumber}"]`)?.scrollIntoView?.({ block: 'start' });
     });
     return { ok: true };
+}
+
+/**
+ * Normalisation propre à chaque clé `dataset` PATRACDVR éditable — MÊME
+ * transformation que le chemin d'édition EXISTANT (panneau Édition Rapide/
+ * renommage véhicule, `patrac.ts`) : trigramme toujours MAJUSCULE
+ * (`saveQuickEditChanges`/écouteur `input`), nom de véhicule toujours
+ * `trim()` (`renameVehicle`), DIR écrit tel quel (aucune des 2 UI existantes
+ * ne le transforme). Garantit qu'une correction faite DEPUIS L'APERÇU
+ * produit exactement la même valeur stockée qu'une correction faite depuis
+ * le formulaire — jamais un 2e format parallèle pour la même donnée.
+ */
+function normalizeDatasetValue(datasetKey: string, value: string): string {
+    if (datasetKey === 'trigramme') return value.toUpperCase();
+    if (datasetKey === 'vehicleName') return value.trim();
+    return value;
+}
+
+/**
+ * Écrit la correction — chemin `dataset` (mission « tout le texte
+ * modifiable », cf. JSDoc de fichier § SECOND CHEMIN D'ÉCRITURE). Symétrique
+ * de `commitFieldEdit` : MÊME garde « vidage refusé »
+ * (`EMPTYING_REJECTED_MESSAGE`), MÊME séquence post-écriture
+ * (`syncDomToStoreImmediate` + `regenerate` + retour en vue) — PAS de garde
+ * « sanitisation silencieuse » (garde 1 de `commitFieldEdit`) : un attribut
+ * `data-*` n'a AUCUNE contrainte de format côté plateforme (contrairement à
+ * `type="date"`/`"time"`), `el.dataset[key] = v` stocke TOUJOURS exactement
+ * `v`, jamais assainie par le navigateur.
+ *
+ * Effets de bord MIROIR du chemin d'édition live plutôt que réimplémentés :
+ * `.vehicle-name` (véhicule) mis à jour directement (même effet que
+ * `renameVehicle`) ; `window.updateMemberButtonVisuals` (membre — repeint le
+ * libellé du bouton) et, dans tous les cas, `window.updateArticulationDisplay`
+ * (régénère les 3 listes d'ordre ET la composition MOICP/ZMSPCP/Effraction
+ * depuis le PATRACDVR canonique, cf. `articulation.ts::refreshArticulationFromPatracdvr`)
+ * — résolus par `window`, MÊME garde `typeof` que partout ailleurs dans ce
+ * paquet (RÈGLE D'OR, cf. JSDoc `patrac.ts`).
+ */
+function commitDatasetEdit(
+    candidate: Extract<EditCandidate, { kind: 'dataset' }>,
+    newValue: string,
+    pageNumber: number,
+    regenerate: () => Promise<void>,
+): { ok: true } | { ok: false; message: string } {
+    const { el, datasetKey } = candidate;
+    const previousValue = el.dataset[datasetKey] ?? '';
+    const normalized = normalizeDatasetValue(datasetKey, newValue);
+    if (previousValue === normalized) return { ok: true };
+    if (previousValue !== '' && normalized === '') return { ok: false, message: EMPTYING_REJECTED_MESSAGE }; // même garde que commitFieldEdit.
+    el.dataset[datasetKey] = normalized;
+    if (datasetKey === 'vehicleName') {
+        const nameEl = el.querySelector<HTMLElement>('.vehicle-name');
+        if (nameEl) nameEl.textContent = normalized;
+    } else if (typeof window.updateMemberButtonVisuals === 'function') {
+        window.updateMemberButtonVisuals(el);
+    }
+    if (typeof window.updateArticulationDisplay === 'function') window.updateArticulationDisplay();
+    syncDomToStoreImmediate();
+    void regenerate().then(() => {
+        document.querySelector(`.pdf-preview-page[data-page-number="${pageNumber}"]`)?.scrollIntoView?.({ block: 'start' });
+    });
+    return { ok: true };
+}
+
+/** Distribue vers `commitFieldEdit` ou `commitDatasetEdit` selon `candidate.kind` — cf. JSDoc de fichier § SECOND CHEMIN D'ÉCRITURE pour ce qui distingue les deux. */
+export function commitEdit(candidate: EditCandidate, newValue: string, pageNumber: number, regenerate: () => Promise<void>): { ok: true } | { ok: false; message: string } {
+    if (candidate.kind === 'dataset') return commitDatasetEdit(candidate, newValue, pageNumber, regenerate);
+    return commitFieldEdit(candidate, newValue, pageNumber, regenerate);
 }
 
 /**
@@ -460,13 +619,17 @@ function applyFieldConstraints(editor: HTMLInputElement | HTMLTextAreaElement, s
 /**
  * Ouvre le champ d'édition au-dessus du fragment cliqué — `<textarea>` si le
  * champ source en est un (spec §2 point 3), `<input>` du MÊME `type`/mêmes
- * contraintes sinon (`applyFieldConstraints`, spec §2 point 2). Entrée valide
- * SEULEMENT pour un `<input>` (une `<textarea>` doit pouvoir recevoir un
- * retour à la ligne saisi) ; Échap annule dans les deux cas ; la perte de
- * focus tente toujours la validation (`commitEdit`) — un refus affiche un
- * message (`showEditRejection`) SANS écrire ni fermer l'éditeur autrement
- * que normalement (cf. JSDoc `commitEdit` : le champ source n'est jamais
- * touché par une valeur refusée).
+ * contraintes sinon (`applyFieldConstraints`, spec §2 point 2) pour un
+ * candidat `kind:'field'` ; toujours un `<input>` texte SANS contrainte
+ * reflétée pour un candidat `kind:'dataset'` (aucun des 3 champs `dataset`
+ * couverts — trigramme/dir/vehicleName — n'est multi-ligne ni contraint,
+ * cf. JSDoc de fichier). Entrée valide SEULEMENT pour un `<input>` (une
+ * `<textarea>` doit pouvoir recevoir un retour à la ligne saisi) ; Échap
+ * annule dans les deux cas ; la perte de focus tente toujours la validation
+ * (`commitEdit`) — un refus affiche un message (`showEditRejection`) SANS
+ * écrire ni fermer l'éditeur autrement que normalement (cf. JSDoc
+ * `commitEdit` : le champ source n'est jamais touché par une valeur
+ * refusée).
  */
 function openEditor(
     hit: HTMLButtonElement,
@@ -477,11 +640,15 @@ function openEditor(
 ): void {
     closeActiveEditor();
     closeActiveError();
-    const isTextarea = candidate.el.tagName === 'TEXTAREA';
+    const isTextarea = candidate.kind === 'field' && candidate.el.tagName === 'TEXTAREA';
     const editor = document.createElement(isTextarea ? 'textarea' : 'input');
     editor.className = 'pdf-edit-input';
-    applyFieldConstraints(editor, candidate.el);
-    editor.value = candidate.el.value;
+    if (candidate.kind === 'field') {
+        applyFieldConstraints(editor, candidate.el);
+        editor.value = candidate.el.value;
+    } else {
+        editor.value = candidate.el.dataset[candidate.datasetKey] ?? '';
+    }
 
     const hitWidthPx = parseFloat(hit.style.width) || 60;
     const hitHeightPx = parseFloat(hit.style.height) || 14;
