@@ -56,6 +56,18 @@
  *      fausse reconstruction par simple coïncidence de préfixe. Un fragment
  *      dont le texte ÉGALE la valeur ENTIÈRE d'un ancrage reste accepté quelle
  *      que soit sa longueur (correspondance certaine, pas un pari).
+ *   4. BUDGET DE RECONSTRUCTION (`PENDING_MATCH_BUDGET`, mission « tout le
+ *      texte modifiable », cas mesuré : un champ MA réel portant un texte
+ *      répété sans espace, ambigu entre plusieurs ancrages quasi identiques)
+ *      — une reconstruction `pendingCandidates` encore en lice après
+ *      `PENDING_MATCH_BUDGET` fragments est ABANDONNÉE EN BLOC (tous ses
+ *      candidats, aucune zone) : sans ce plafond, une ambiguïté qui reste
+ *      `productive` indéfiniment (chaque fragment supplémentaire prolonge
+ *      encore la tentative sans jamais atteindre un match complet)
+ *      échappe à la garantie 2 (jamais « infructueuse ») et consomme alors
+ *      TOUT LE RESTE du document — la tête n'avance donc plus jamais au-delà,
+ *      constaté : la couverture de sections entières situées APRÈS
+ *      s'effondre silencieusement.
  *
  * PIED DE PAGE (`buildFooter`, `document-builder.ts`) jamais candidat : ses
  * fragments sont identifiés par POSITION VERTICALE (repère PDF, origine bas-
@@ -214,6 +226,8 @@ export interface EditMatchStats {
     budgetDrops: number;
     interruptDrops: number;
     ambiguousSkips: number;
+    /** Reconstructions abandonnées par dépassement de `PENDING_MATCH_BUDGET` (garantie 4) — valeur répétée/ambiguë ne convergeant jamais vers un match complet. */
+    runawayDrops: number;
 }
 
 /**
@@ -257,7 +271,7 @@ export function createEditMatchState(anchors: OiPdfEditAnchor[]): EditMatchState
         settled,
         resolvedFlags: anchors.map(() => false),
         staleSinceHeadAdvance: 0,
-        stats: { anchorsResolved: 0, hitZonesPlaced: 0, fragmentsSeen: 0, footerSkipped: 0, budgetDrops: 0, interruptDrops: 0, ambiguousSkips: 0 },
+        stats: { anchorsResolved: 0, hitZonesPlaced: 0, fragmentsSeen: 0, footerSkipped: 0, budgetDrops: 0, interruptDrops: 0, ambiguousSkips: 0, runawayDrops: 0 },
     };
 }
 
@@ -415,6 +429,28 @@ const WINDOW_AHEAD = 12;
  * fragments observée plutôt qu'une constante.
  */
 const STALE_FRAGMENT_BUDGET = 60;
+
+/**
+ * Garantie 4 (ajoutée mission « tout le texte modifiable », cas mesuré :
+ * champ `ma_list` d'une fiche adversaire réelle portant un texte collé sans
+ * espace, ex. « Très hostile forces de l'ordreTrès hostile forces de
+ * l'ordre… » répété une douzaine de fois) — budget de fragments qu'UNE
+ * reconstruction en cours (`pendingFragIdxs`) peut consommer avant abandon
+ * FORCÉ de tous ses candidats. Distinct de `STALE_FRAGMENT_BUDGET` (qui ne
+ * compte que les fragments INFRUCTUEUX) : une reconstruction ambiguë entre
+ * plusieurs valeurs quasi identiques reste `productive === true` fragment
+ * après fragment (chaque mot du groupe répété étend encore la tentative)
+ * SANS jamais atteindre un match complet ni redevenir non-productive — la
+ * garantie 2 ne s'applique donc jamais à ce cas, et SANS ce plafond la
+ * reconstruction continue de consommer TOUT LE RESTE du document (constaté :
+ * 305 → 156 zones posées, pages 4 à 13 retombées à 0 après l'ajout de
+ * l'ancrage MA sur cette fiche réelle) au lieu de se limiter aux quelques
+ * ancrages concernés. `ponytail:` seuil empirique généreux (une page réelle
+ * ne dépasse pas ~150 fragments au total, cf. mesure — un champ isolé, même
+ * long, en consomme nettement moins) ; upgrade si mesure future : proportionnel
+ * à la densité de fragments observée, même esprit que `STALE_FRAGMENT_BUDGET`.
+ */
+const PENDING_MATCH_BUDGET = 150;
 
 /**
  * Longueur normalisée minimale pour qu'un fragment AMORCE une reconstruction
@@ -582,6 +618,19 @@ export async function attachEditableTextLayer(
             advanceHead(state);
             return true;
         }
+        // Garantie 4 (JSDoc `PENDING_MATCH_BUDGET`) : une reconstruction encore
+        // ambiguë après un nombre DÉRAISONNABLE de fragments n'atteindra
+        // vraisemblablement jamais de match complet (valeur répétée sans
+        // frontière nette) — abandon de TOUS les candidats en lice plutôt que
+        // de continuer à consommer indéfiniment les fragments du reste du
+        // document (aucune zone pour ces quelques ancrages, mais les suivants
+        // restent atteignables).
+        if (fragIdxs.length > PENDING_MATCH_BUDGET) {
+            state.stats.runawayDrops++;
+            for (const c of list) dropAnchor(state, c.index);
+            advanceHead(state);
+            return true;
+        }
         pendingCandidates = list;
         pendingFragIdxs = fragIdxs;
         return false;
@@ -609,14 +658,31 @@ export async function attachEditableTextLayer(
             if (survivors.length === 0) {
                 // Interruption. Un SEUL candidat en lice (association déjà certaine avant ce
                 // fragment) : ABANDON définitif (aucune zone partielle, cf. JSDoc de fichier).
-                // PLUSIEURS candidats encore en lice (hypothèses non départagées) : aucun n'a
-                // jamais été confirmé — on les relâche SANS les régler, une association future
-                // (même mot réutilisé ailleurs, ex. « Depart » réapparaît pour un AUTRE
-                // événement) reste possible. Ce même fragment est retenté ci-dessous contre la
-                // fenêtre d'ancrages COURANTE.
+                // PLUSIEURS candidats encore en lice (hypothèses non départagées) : si
+                // EXACTEMENT UN d'entre eux avait déjà atteint sa cible COMPLÈTE juste avant
+                // l'interruption (cas mesuré : `attitude_adversaire` = « Très hostile forces
+                // de l'ordre », préfixe EXACT d'un MA bien plus long répété sur la même
+                // fiche — les deux restaient en lice, `allIdentical` faux, tant qu'un mot de
+                // plus pouvait encore départager) — cette interruption CONFIRME qu'aucun
+                // frère ne pouvait plus s'étendre, la complétion devient donc certaine
+                // (résolution différée, jamais un pari : un seul candidat a atteint sa cible
+                // EXACTE, tous les autres restaient strictement incomplets). Sans ce
+                // rattrapage, le candidat complet était simplement relâché SANS jamais être
+                // réglé — la tête restait bloquée dessus jusqu'à épuisement du budget
+                // (`STALE_FRAGMENT_BUDGET`), page après page (constaté : 305 → 156 zones
+                // après l'ajout de l'ancrage MA sur cette fiche réelle, cf. `PENDING_MATCH_BUDGET`).
+                // Aucun candidat complet (ou plusieurs, cas non observé sans `allIdentical`) :
+                // aucun n'a jamais été confirmé — on les relâche SANS les régler, une
+                // association future (même mot réutilisé ailleurs, ex. « Depart » réapparaît
+                // pour un AUTRE événement) reste possible. Ce même fragment est retenté
+                // ci-dessous contre la fenêtre d'ancrages COURANTE.
+                const completed = pendingCandidates.filter((c) => c.matched === matchableTarget((state.anchors[c.index] as OiPdfEditAnchor).value));
                 if (pendingCandidates.length === 1) {
                     state.stats.interruptDrops++;
                     dropAnchor(state, (pendingCandidates[0] as { index: number }).index);
+                    advanceHead(state);
+                } else if (completed.length === 1) {
+                    resolveAnchor(state, (completed[0] as { index: number }).index, pendingFragIdxs, items, viewport, dpr, pageNumber, overlay, regenerate);
                     advanceHead(state);
                 }
                 pendingCandidates = [];
