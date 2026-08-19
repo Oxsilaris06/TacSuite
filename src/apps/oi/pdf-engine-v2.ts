@@ -43,8 +43,21 @@ import type {
 import { createAnnotatedImageBlob } from '@oi/dessin.js';
 import { dbManager, Store } from '@oi/init.js';
 import type { OiPdfFormat } from '@oi/pdf/theme.js';
-import { attachEditableTextLayer, createEditMatchState } from '@oi/pdf-preview-edit.js';
+import { attachEditableTextLayer, createEditMatchState, type EditMatchStats } from '@oi/pdf-preview-edit.js';
 import { toast } from '@shared/feedback.js';
+
+// Mission « robustesse alignement » (édition en place, cf. JSDoc `pdf-preview-
+// edit.ts`) — hook de mesure, JAMAIS lu par le code applicatif : posé après
+// CHAQUE rendu d'aperçu réel (jamais en test, même précédent que
+// `defaultRenderPdf`/`attachEditableTextLayer`) pour que la couverture
+// (ancrages résolus/enregistrés, zones/fragments) reste vérifiable depuis la
+// console SANS instrumentation ad hoc à chaque campagne de mesure. Même
+// convention que `window.__capturedLogs` (`OiInlineGlobals`, `contracts.ts`).
+declare global {
+    interface Window {
+        __oiPdfEditDebug?: { anchorsTotal: number; stats: EditMatchStats; anchorsDiag?: { selector: string; index: number; value: string; settled: boolean; resolved: boolean }[] };
+    }
+}
 
 // pdf_engine_v2.js:14-16 — Parse JSON tolérant : retourne le fallback si la
 // donnée est corrompue. Générique ajouté pour le typage (aucun changement de
@@ -210,6 +223,11 @@ async function defaultRenderPdf(blob: Blob, container: HTMLElement, progress: Oi
             progress.onProgress(pageNumber, total);
             if (pageNumber < total) await yieldToMain();
         }
+        window.__oiPdfEditDebug = {
+            anchorsTotal: editAnchors.length,
+            stats: editMatchState.stats,
+            anchorsDiag: editAnchors.map((a, i) => ({ selector: a.selector, index: a.index, value: a.value.slice(0, 40), settled: editMatchState.settled[i] ?? false, resolved: editMatchState.resolvedFlags[i] ?? false })),
+        };
     } finally {
         void loadingTask.destroy();
     }
