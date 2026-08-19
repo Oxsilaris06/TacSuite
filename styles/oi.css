@@ -3422,6 +3422,45 @@ body.up-kb-open .up-kb-aware {
             box-shadow: 0 2px 8px rgba(59,130,246,0.4);
         }
 
+        /* Bandeau compact >=768px : le mobile garde l'empilement plein-
+           largeur ci-dessus (cibles tactiles WCAG 2.5.5), mais sur un écran
+           assez large pour une rangée, ce même empilement de boutons
+           tactiles (54px de haut chacun) bouffait ~35% de la hauteur de la
+           modale au détriment de l'aperçu (mesuré : 353px de bandeau sur
+           900/1080px de haut). Rangée à boutons taille-de-contenu — mêmes
+           ids/libellés/icônes/aria, rien de supprimé ni renommé. */
+        @media (min-width: 768px) {
+            .modal-actions-pdf {
+                flex-direction: row;
+                flex-wrap: wrap;
+                align-items: center;
+                gap: var(--space-2);
+                padding: var(--space-2) var(--space-3);
+            }
+
+            .modal-actions-pdf button {
+                width: auto;
+            }
+
+            .modal-actions-pdf .wizard-nav-btn {
+                flex-grow: 0;
+                min-height: 0;
+                padding: 8px 16px;
+                font-size: 0.85em;
+            }
+
+            .pdf-format-toggle {
+                width: auto;
+            }
+
+            /* Fermer se détache du groupe d'actions — accessible au même
+               titre que les autres, mais pas mis en avant comme Télécharger
+               (action principale de cette modale). */
+            #closePresentationModalBtn {
+                margin-inline-start: auto;
+            }
+        }
+
         /* ==========================================================================
    PANNEAU « ORDRE DES SECTIONS » (SPEC-2026-08-18-pdf-et-champs.md §2)
    Colonne latérale repliable, ne recouvre JAMAIS l'aperçu : desktop = ligne

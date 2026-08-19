@@ -24,7 +24,45 @@ import type { Content, CustomTableLayout, TableCell } from 'pdfmake/interfaces';
 
 import { mm, pageGeometry, photoPageGalleryHeightMm, type OiPdfPalette } from './theme.js';
 import { breakLongTokens } from './text-utils.js';
-import type { OiPhotoMeta } from '@shared/types/contracts.js';
+import type { OiPdfEditAnchor, OiPhotoMeta } from '@shared/types/contracts.js';
+
+// --- Édition en place depuis l'aperçu PDF (index d'ancrage, mission ---------
+// « régression édition »/SPEC-2026-08-18-pdf-et-champs.md §2) --------------
+
+/**
+ * Référence d'ancrage qu'un SITE D'APPEL fournit à `labelValue`/`kvTable`
+ * (et, dans `document-builder.ts`, à `dashItemList`/aux call-sites directs
+ * `accentCard`) pour désigner le champ `#oi-form` SOURCE d'une valeur émise —
+ * `document-builder.ts` construit ces sélecteurs (helpers `fieldAnchor`/
+ * `advFieldAnchor`/`blockFieldAnchor`/`indexedFieldAnchor`), CE FICHIER reste
+ * agnostique de leur forme exacte (simple chaîne CSS + rang optionnel).
+ */
+export interface PdfFieldAnchor {
+    selector: string;
+    /** Défaut 0 — cf. `OiPdfEditAnchor.index`. */
+    index?: number;
+}
+
+/**
+ * Enregistre une valeur émise dans l'index d'ancrage `anchors` (porté par
+ * `BuildCtx.anchors`, `document-builder.ts`) — SEUL point d'écriture de cet
+ * index, appelé par `labelValue`/`kvTable` ci-dessous ET directement par les
+ * quelques sites de `document-builder.ts` dont le texte ne transite par
+ * aucun des deux (ex. `accentCard`, dont le corps est un `Content[]`
+ * arbitraire construit par l'appelant — aucune valeur unique à intercepter).
+ * No-op si `anchors`/`ref` est absent (opt-in : la plupart des call-sites de
+ * ce module ne portent aucune donnée `#oi-form`, titres/libellés/valeurs
+ * dérivées) OU si `value` est vide/repli `'-'` — même définition « valeur
+ * vide » que `document-builder.ts::isBlankOrDash` (un tiret seul n'est
+ * jamais une donnée SAISIE, seulement un repli d'affichage : l'ancrer
+ * n'apporterait aucune correction utile et gonflerait l'index pour rien).
+ */
+export function registerPdfEditAnchor(anchors: OiPdfEditAnchor[] | undefined, ref: PdfFieldAnchor | null | undefined, value: string): void {
+    if (!anchors || !ref) return;
+    const v = value.trim();
+    if (v === '' || v === '-') return;
+    anchors.push({ selector: ref.selector, index: ref.index ?? 0, value });
+}
 
 // --- Layouts de table génériques (géométrie seule, cf. en-tête de fichier). ---
 
@@ -195,7 +233,10 @@ export function labelValue(
     value: string,
     p: OiPdfPalette,
     opts?: { fontSize?: number; valueColor?: string; valueBold?: boolean },
+    /** Édition en place (mission « régression édition ») — cf. `registerPdfEditAnchor`. Omis : `value` n'est pas ancrée (titre/libellé fixe ou valeur dérivée). */
+    edit?: { anchors: OiPdfEditAnchor[]; ref: PdfFieldAnchor },
 ): Content {
+    if (edit) registerPdfEditAnchor(edit.anchors, edit.ref, value);
     return {
         text: [
             { text: `${label.toUpperCase()} : `, bold: true, color: p.accent },
@@ -706,7 +747,15 @@ export function badgeRow(items: string[], p: OiPdfPalette, opts?: { perRow?: num
  * `value` traverse `breakLongTokens()` (blindage BLIND.A #2) — `label` est
  * toujours un libellé métier fixe, jamais une donnée du Store.
  */
-export function kvTable(rows: Array<[string, string]>, p: OiPdfPalette): Content {
+export function kvTable(
+    rows: Array<[string, string]>,
+    p: OiPdfPalette,
+    /** Édition en place, UNE entrée par ligne de `rows` (même index), `null` pour une ligne non ancrable (ex. deux champs source concaténés dans une même valeur — cf. JSDoc `document-builder.ts::buildAdversaryFiche`). */
+    edit?: { anchors: OiPdfEditAnchor[]; refs: ReadonlyArray<PdfFieldAnchor | null> },
+): Content {
+    if (edit) {
+        rows.forEach(([, value], i) => registerPdfEditAnchor(edit.anchors, edit.refs[i] ?? null, value));
+    }
     return {
         table: {
             widths: ['30%', '*'],
@@ -909,8 +958,17 @@ export function galleryPages(
     // (typographie fine, `fontSize:9`) + sa marge `[0,5,0,0]` — le filet
     // `unbreakable` de `figure()` ci-dessus couvre le cas résiduel d'une
     // légende encore plus longue.
+    //
+    // Bug PDF-GALLERY-16-9 : `photoPageGalleryHeightMm` prenait auparavant
+    // un `landscape: boolean` figé à `true`, IDENTIQUE en A4 et en 16:9 —
+    // alors que `geo.contentHeightPt` (déjà calculé par l'appelant pour LE
+    // format demandé) diffère de 56,3 pt entre les deux (541,42 pt en A4,
+    // 485,15 pt en 16:9). Le budget photo était donc dimensionné pour l'A4
+    // et débordait systématiquement en 16:9 (page blanche + page orpheline
+    // sans titre). Dérivé maintenant de `geo.contentHeightPt`, correct par
+    // construction dans les deux formats.
     const GALLERY_CAPTION_RESERVE_PT = mm(10);
-    const baseGalleryHeightPt = mm(photoPageGalleryHeightMm(true)) - GALLERY_CAPTION_RESERVE_PT;
+    const baseGalleryHeightPt = mm(photoPageGalleryHeightMm(geo.contentHeightPt)) - GALLERY_CAPTION_RESERVE_PT;
 
     const pages: Content[] = resolved.map(({ meta, dataUrl }, pageIndex) => {
         // Mission R6 : interdiction ABSOLUE de « (SUITE) » (garde inverse C1,

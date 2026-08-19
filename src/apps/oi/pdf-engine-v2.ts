@@ -37,12 +37,13 @@ import type {
     OiAnnotation,
     OiFormData,
     OiPdfCollectedData,
+    OiPdfEditAnchor,
     PdfEngineV2Contract,
 } from '@shared/types/contracts.js';
 import { createAnnotatedImageBlob } from '@oi/dessin.js';
 import { dbManager, Store } from '@oi/init.js';
 import type { OiPdfFormat } from '@oi/pdf/theme.js';
-import { attachEditableTextLayer, collectEditCandidates } from '@oi/pdf-preview-edit.js';
+import { attachEditableTextLayer, createEditMatchState } from '@oi/pdf-preview-edit.js';
 import { toast } from '@shared/feedback.js';
 
 // pdf_engine_v2.js:14-16 — Parse JSON tolérant : retourne le fallback si la
@@ -79,7 +80,11 @@ interface OiPdfRenderProgress {
 interface OiPdfBuildDeps {
     collect?: () => Promise<OiPdfCollectedData>;
     buildBlob?: (data: OiPdfCollectedData, opts: { format: OiPdfFormat }) => Promise<Blob>;
-    renderPdf?: (blob: Blob, container: HTMLElement, progress: OiPdfRenderProgress) => Promise<void>;
+    /** `editAnchors` (mission « régression édition ») : n'existe QUE dans le
+     * chemin réel (`defaultRenderPdf`) — jamais consommé par les faux
+     * `renderPdf` de test (même précédent que `blob`/`container`, cf. JSDoc
+     * `defaultRenderPdf`). */
+    renderPdf?: (blob: Blob, container: HTMLElement, progress: OiPdfRenderProgress, editAnchors: OiPdfEditAnchor[]) => Promise<void>;
 }
 
 /** Import dynamique de `buildOiPdfBlob` — isole `pdfmake`/`document-builder.ts`
@@ -88,6 +93,32 @@ interface OiPdfBuildDeps {
 async function defaultBuildBlob(data: OiPdfCollectedData, opts: { format: OiPdfFormat }): Promise<Blob> {
     const { buildOiPdfBlob } = await import('@oi/pdf/engine-v3.js');
     return buildOiPdfBlob(data, opts);
+}
+
+/**
+ * Index d'ancrage texte → champ (édition en place, mission « régression
+ * édition ») — `engine-v3.ts::buildOiPdfBlob` ne renvoie qu'un `Blob` (aucun
+ * canal pour en extraire l'index construit PENDANT sa composition interne du
+ * document, et `engine-v3.ts` est HORS PÉRIMÈTRE de cette mission) : ce
+ * helper appelle donc SÉPARÉMENT `document-builder.ts::buildOiDocDefinition`
+ * (fonction PURE, déterministe — aucun changement de rendu, le résultat PDF
+ * est jeté, seul `.pdfEditAnchors` est retenu) sur les MÊMES données. Coût
+ * CPU redondant assumé (négligeable face à `pdfMake.createPdf().getBlob()`/
+ * la normalisation photo qui dominent le temps de génération réel) — jamais
+ * de photos NORMALISÉES nécessaires ici (l'existence d'une photo, jamais son
+ * encodage, influence le texte émis). Défensif : toute erreur (y compris
+ * `OiPdfFitRefusalError`, déjà remontée par le chemin `buildBlob` réel juste
+ * après) replie sur `[]` — l'édition en place devient simplement
+ * indisponible pour ce rendu, jamais un aperçu cassé.
+ */
+async function defaultBuildEditAnchors(data: OiPdfCollectedData, opts: { format: OiPdfFormat }): Promise<OiPdfEditAnchor[]> {
+    try {
+        const { buildOiDocDefinition } = await import('@oi/pdf/document-builder.js');
+        return buildOiDocDefinition(data, opts).pdfEditAnchors;
+    } catch (e) {
+        console.warn('[PDF] Index d\'ancrage pour l\'édition en place indisponible :', e);
+        return [];
+    }
 }
 
 function currentPdfFormat(): OiPdfFormat {
@@ -115,12 +146,13 @@ function yieldToMain(): Promise<void> {
  * pixel-CSS). Un `.pdf-preview-page-overlay` (`position: absolute; inset: 0;
  * pointer-events: none`) y est superposé ; `attachEditableTextLayer`
  * (`pdf-preview-edit.ts`, SPEC-2026-08-18-pdf-et-champs.md §2) y ajoute, par
- * page, une zone cliquable pour chaque fragment de texte pdf.js reliable
- * SANS AMBIGUÏTÉ à un champ du formulaire — chaque zone garde
+ * page, une zone cliquable pour chaque fragment de texte pdf.js rapproché,
+ * dans l'ORDRE D'ÉMISSION du document (`editAnchors`, cf. `defaultBuildEditAnchors`
+ * ci-dessus), d'un champ du formulaire — chaque zone garde
  * `pointer-events: auto` sur elle-même, l'overlay reste transparent aux
  * clics partout ailleurs.
  */
-async function defaultRenderPdf(blob: Blob, container: HTMLElement, progress: OiPdfRenderProgress): Promise<void> {
+async function defaultRenderPdf(blob: Blob, container: HTMLElement, progress: OiPdfRenderProgress, editAnchors: OiPdfEditAnchor[]): Promise<void> {
     const pdfjsLib = await import('pdfjs-dist');
     const workerUrl = (await import('pdfjs-dist/build/pdf.worker.min.mjs?url')).default;
     pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl;
@@ -136,9 +168,11 @@ async function defaultRenderPdf(blob: Blob, container: HTMLElement, progress: Oi
         // un nouvel `openPreview()` (rouvre l'aperçu à la largeur courante).
         const availableWidth = container.clientWidth || 800;
         const dpr = window.devicePixelRatio || 1;
-        // Scan UNE fois pour tout le document : les champs du formulaire ne
-        // changent pas pendant qu'on peint les pages (cf. JSDoc `pdf-preview-edit.ts`).
-        const editCandidates = collectEditCandidates();
+        // Résolution UNE fois pour tout le document — les champs du formulaire
+        // ne changent pas pendant qu'on peint les pages (cf. JSDoc
+        // `pdf-preview-edit.ts`) ; `editMatchState.cursor` avance ensuite au
+        // fil des pages, dans `attachEditableTextLayer`.
+        const editMatchState = createEditMatchState(editAnchors);
 
         for (let pageNumber = 1; pageNumber <= total; pageNumber++) {
             if (progress.isCancelled()) return;
@@ -171,7 +205,7 @@ async function defaultRenderPdf(blob: Blob, container: HTMLElement, progress: Oi
             // Régénère l'aperçu complet après correction (§2 point 5 SPEC) — pas
             // de `deps` : ce chemin n'existe QUE dans la vraie implémentation
             // pdf.js (jamais en test, cf. JSDoc de fichier), toujours le flux réel.
-            await attachEditableTextLayer(page, pageEl, overlay, viewport, dpr, editCandidates, () => runOpenPreview());
+            await attachEditableTextLayer(page, pageEl, overlay, viewport, dpr, editMatchState, () => runOpenPreview());
 
             progress.onProgress(pageNumber, total);
             if (pageNumber < total) await yieldToMain();
@@ -256,10 +290,22 @@ async function runOpenPreview(deps?: OiPdfBuildDeps): Promise<void> {
 
         updateStatus('Rendu des pages…');
         const renderPdf = deps?.renderPdf ?? defaultRenderPdf;
-        await renderPdf(blob, pagesContainer, {
-            onProgress: (page, total) => updateStatus(`Rendu des pages… (${page}/${total})`),
-            isCancelled,
-        });
+        // Édition en place (mission « régression édition ») — jamais via
+        // `deps` : ce chemin n'existe QUE dans la vraie implémentation pdf.js
+        // (jamais en test, cf. JSDoc `defaultRenderPdf`), toujours calculé sur
+        // le flux réel. `[]` si `deps.renderPdf` (couture de test) est fourni
+        // — aucun besoin de payer `buildOiDocDefinition()` une 2e fois dans la
+        // suite unitaire, qui n'exerce jamais `attachEditableTextLayer`.
+        const editAnchors = deps?.renderPdf ? [] : await defaultBuildEditAnchors(data, { format });
+        await renderPdf(
+            blob,
+            pagesContainer,
+            {
+                onProgress: (page, total) => updateStatus(`Rendu des pages… (${page}/${total})`),
+                isCancelled,
+            },
+            editAnchors,
+        );
     } catch (error) {
         console.error('Preview Error:', error);
         if (!isCancelled()) {

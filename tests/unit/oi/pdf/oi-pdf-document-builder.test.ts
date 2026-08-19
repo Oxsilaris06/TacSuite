@@ -47,6 +47,7 @@ import {
 import { SOFT_HYPHEN } from '@oi/pdf/text-utils.js';
 import { PDF_DARK, PDF_LIGHT } from '@oi/pdf/theme.js';
 import type {
+    OiAdversary,
     OiEffractionBlock,
     OiEffractionHypothesis,
     OiFormData,
@@ -310,6 +311,74 @@ describe('buildOiDocDefinition — finalisation (§4 SPEC-2026-08-18-pdf-et-cham
 
         expect(json).toContain('PLACE DU CHEF INTER : ');
         expect(json).toContain('PLACE DU CHEF AO : ');
+    });
+
+    // -----------------------------------------------------------------------
+    // RÉGRESSION (directive Nico « une page = un contenu, aucun débordement,
+    // jamais ») — l'ajout des cartes UDA/Place du Chef de Dispo (§4.1/§4.2)
+    // au-dessus a fait déborder « 7. CONDUITES À TENIR GÉNÉRALES » sur une
+    // page orpheline sans titre (reproduit sur données réelles,
+    // /home/nico/Bureau/OI-Archive-ANONYME.oi.zip : le champ Liaison finissait
+    // scindé, sa dernière ligne seule sur une page quasi vide). Avant le
+    // correctif, cette page ne portait AUCUN essai de palier de police
+    // (`unbreakable:false` partout, jamais de `fontSize` explicite).
+    // -----------------------------------------------------------------------
+    it('RÉGRESSION — 5 champs à volumétrie réaliste (même ordre de grandeur que la donnée réelle ayant révélé le bug) : UNE SEULE page, aucun « (SUITE) » (A4 et 16:9)', () => {
+        for (const format of ['a4', '16:9'] as const) {
+            const formData = makeRichFormData();
+            formData.cat_generales =
+                '- Si rébellion, user du strict niveau de force nécessaire\n- Si retranché, alerter en mesure de se ré-articuler\n- Si tente de fuir, alerter en mesure de jalonner/interpeller\n- UDA : Article L435-1 du CSI + légitime défense';
+            formData.no_go = '- Armes a feu';
+            formData.uda = 'Article L435-1 du CSI + légitime défense';
+            formData.place_chef_dispo = 'Ici';
+            formData.cat_liaison = 'TOM: \nDIR: 4471\nGestuelle et visuelle entre les éléments INDIA';
+            const json = JSON.stringify(buildOiDocDefinition(collect(formData), { format }));
+
+            expect(json, `pas de « (SUITE) » à ce volume réaliste (${format})`).not.toContain('(SUITE)');
+            expect(json).toContain('Gestuelle et visuelle entre les éléments INDIA');
+            expect(json).toContain('Article L435-1 du CSI + légitime défense');
+            expect((json.match(/CONDUITES À TENIR GÉNÉRALES/g) ?? []).length, `une seule occurrence du titre (${format})`).toBe(1);
+        }
+    });
+
+    it('RÉGRESSION — les 5 champs remplis au maximum : jamais de refus, jamais tronqué, continuation propre sur des pages « (SUITE) » si la grille ne tient plus (A4 et 16:9)', () => {
+        const longField = (n: number): string =>
+            Array.from(
+                { length: n },
+                (_, i) => `- Point de conduite a tenir numero ${i} avec des details operationnels suffisamment longs pour peser sur la mise en page.`,
+            ).join('\n');
+        for (const format of ['a4', '16:9'] as const) {
+            const formData = makeRichFormData();
+            formData.cat_generales = longField(18);
+            formData.no_go = longField(10);
+            formData.uda = 'Article L435-1 du CSI. '.repeat(60);
+            formData.place_chef_dispo =
+                "Poste de commandement mobile stationne a l'angle nord-est de la rue principale, visible depuis l'ensemble du dispositif. ".repeat(8);
+            formData.cat_liaison = longField(14);
+            const json = JSON.stringify(buildOiDocDefinition(collect(formData), { format }));
+
+            // `.toContain()` ligne par ligne (jamais le texte multi-ligne
+            // intégral) : `JSON.stringify` échappe les retours à la ligne
+            // saisis (`\n` réel → `\n` littéral 2 caractères dans le JSON),
+            // comparer directement le texte brut contenant de VRAIS retours
+            // à la ligne échouerait donc à tort — même précédent que le test
+            // ATCD ci-dessus (`ATCD ${i} :`, jamais le champ complet).
+            for (const line of (formData.cat_generales as string).split('\n')) {
+                expect(json, `CAT Générales intégral, non tronqué (${format})`).toContain(line);
+            }
+            for (const line of (formData.no_go as string).split('\n')) {
+                expect(json, `NO-GO intégral, non tronqué (${format})`).toContain(line);
+            }
+            expect(json, `UDA intégral, non tronqué (${format})`).toContain(formData.uda as string);
+            expect(json, `Place du Chef de Dispo intégral, non tronqué (${format})`).toContain(formData.place_chef_dispo as string);
+            for (const line of (formData.cat_liaison as string).split('\n')) {
+                expect(json, `Liaison intégral, non tronqué (${format})`).toContain(line);
+            }
+            // À ce volume, même le palier plancher ne tient plus en grille :
+            // la continuation « (SUITE) » doit avoir pris le relais (avant le
+            // correctif, ce marqueur n'existait jamais pour cette page).
+            expect(json, `continuation « (SUITE) » attendue à ce volume (${format})`).toContain('(SUITE)');
+        }
     });
 });
 
@@ -715,6 +784,49 @@ describe("buildOiDocDefinition — fiche adversaire, page dédiée « Modes d'ac
 
         const blank = JSON.stringify(buildOiDocDefinition(collect(advFormDataWithMa(['', '   '])), { format: 'a4' }));
         expect(blank).not.toContain("MODES D'ACTION");
+    });
+
+    it('un MA unique court : UNE SEULE page, palier de police 11 (nominal), aucun « (SUITE) »', () => {
+        const json = JSON.stringify(buildOiDocDefinition(collect(advFormDataWithMa(['Fuite par le toit'])), { format: 'a4' }));
+        expect(json).toContain('"text":"MA1"');
+        expect(json).toContain('Fuite par le toit');
+        expect(json).not.toContain('(SUITE)');
+        expect((json.match(/MODES D'ACTION — DUPONT/g) ?? []).length).toBe(1);
+    });
+
+    it("RÉGRESSION — 10 MA : jamais de refus, empaquetés sur des pages « (SUITE) » autonomes, AUCUN texte perdu (A4 et 16:9)", () => {
+        const maList = Array.from(
+            { length: 10 },
+            (_, i) => `Mode d'action numero ${i}: comportement possible face a l'intervention, a surveiller de pres.`,
+        );
+        for (const format of ['a4', '16:9'] as const) {
+            const json = JSON.stringify(buildOiDocDefinition(collect(advFormDataWithMa(maList)), { format }));
+            for (let i = 1; i <= 10; i++) {
+                expect(json, `MA${i} doit apparaître (${format})`).toContain(`"text":"MA${i}"`);
+            }
+            for (const ma of maList) {
+                expect(json, `texte intégral du MA doit apparaître (${format})`).toContain(ma);
+            }
+            // Avant le correctif, cette page débordait SILENCIEUSEMENT sur des
+            // pages sans titre (aucune pagination contrôlée) : ce marqueur
+            // n'existait alors JAMAIS — sa présence prouve que la continuation
+            // « (SUITE) » a bien pris le relais plutôt qu'un débordement muet.
+            expect(json, `continuation « (SUITE) » attendue à ce volume (${format})`).toContain('(SUITE)');
+        }
+    });
+
+    it("RÉGRESSION — 1 MA de plusieurs milliers de caractères : jamais de refus, jamais tronqué, jamais de « (SUITE) » inutile (un seul MA reste un seul groupe)", () => {
+        const hugeMa = "Hostile aux forces de l'ordre, susceptible de se retrancher ou de fuir. ".repeat(130); // ~9500 caractères
+        for (const format of ['a4', '16:9'] as const) {
+            const json = JSON.stringify(buildOiDocDefinition(collect(advFormDataWithMa([hugeMa])), { format }));
+            expect(json, `texte intégral (non tronqué) du MA doit apparaître (${format})`).toContain(hugeMa);
+            // Un seul MA = une seule frontière légitime = un seul groupe : même
+            // s'il déborde une page à lui seul (`unbreakable:false` le laisse
+            // alors couler naturellement sur la/les page(s) suivante(s)), il
+            // n'y a jamais de 2e page « MODES D'ACTION… » à titrer.
+            expect(json, `pas de « (SUITE) » pour un MA unique (${format})`).not.toContain('(SUITE)');
+            expect((json.match(/MODES D'ACTION — DUPONT/g) ?? []).length, `un seul titre « MODES D'ACTION » (${format})`).toBe(1);
+        }
     });
 });
 
@@ -1501,5 +1613,180 @@ describe('internPhotoImages — D4 : internement/déduplication des images (poid
         const { photoRefs, images } = internPhotoImages({ vide: '', a: PX });
         expect(photoRefs.vide).toBe('');
         expect(images).toEqual({ a: PX });
+    });
+});
+
+// ===========================================================================
+// RÉGRESSION (campagne de mesure, 2 pertes de données silencieuses) —
+// anomalie CRITIQUE #1 : la carte CIBLES(S) de la page de garde disparaît
+// (`ciblesCard` restait `unbreakable:true` par défaut, pdfmake supprime
+// SILENCIEUSEMENT un bloc insécable qui excède une page) au-delà d'un petit
+// nombre d'adversaires — page 2 restant blanche. Couvre 1/5/8/15/30
+// adversaires, A4 et 16:9 (mêmes seuils que la campagne de mesure).
+// ===========================================================================
+describe('buildOiDocDefinition — RÉGRESSION anomalie #1 : carte CIBLES(S) de la page de garde', () => {
+    function makeAdversaries(count: number): OiAdversary[] {
+        return Array.from({ length: count }, (_, i) => ({
+            id: `adv${i + 1}`,
+            nom_adversaire: `CIBLE ${String(i + 1).padStart(2, '0')} REGRESSION`,
+            stature_adversaire: '1m80',
+            ethnie_adversaire: 'Test',
+            me_list: [],
+            etat_esprit_list: [],
+            volume_list: [],
+            vehicules_list: [],
+        }));
+    }
+
+    /**
+     * `buildOiDocDefinition` ne fait QUE construire la `TDocumentDefinitions`
+     * (arbre déclaratif pdfmake) — la disparition d'un bloc `unbreakable:true`
+     * trop grand est un comportement du MOTEUR DE MISE EN PAGE de pdfmake, à
+     * l'exécution (`pdfMake.createPdf(...)`), invisible sur ce seul arbre : le
+     * JSON contient TOUJOURS les N entrées, que le rendu réel les affiche ou
+     * les supprime silencieusement. Un test `toContain('CIBLE 30')` ne peut
+     * donc JAMAIS détecter l'anomalie #1 (vérifié : il passe même SANS le
+     * correctif) — la preuve rendu réel est apportée séparément
+     * (`tests/pdf/generate-from-fixture.mjs` + `pdftotext`/`verify-structure.mjs`,
+     * cf. rapport de mission). Ce que CE test unitaire peut et doit vérifier
+     * directement, c'est la CAUSE structurelle : plus aucun `card()` portant
+     * « CIBLES(S) » ne doit rester `unbreakable:true` (`blocks.ts::card`,
+     * défaut historique qui faisait disparaître la carte).
+     */
+    function collectUnbreakableCardsContaining(node: unknown, needle: string, found: boolean[]): void {
+        if (node === null || typeof node !== 'object') {
+            return;
+        }
+        if (Array.isArray(node)) {
+            node.forEach((child) => collectUnbreakableCardsContaining(child, needle, found));
+            return;
+        }
+        const obj = node as Record<string, unknown>;
+        if ('unbreakable' in obj && 'table' in obj && JSON.stringify(obj).includes(needle)) {
+            found.push(obj.unbreakable === true);
+        }
+        for (const key of Object.keys(obj)) {
+            collectUnbreakableCardsContaining(obj[key], needle, found);
+        }
+    }
+
+    it.each([1, 5, 8, 15, 30])(
+        '%d adversaire(s) : la carte CIBLES(S) est TOUJOURS présente, chaque cible nommée apparaît, jamais de page top-level vide (A4 et 16:9)',
+        (count) => {
+            for (const format of ['a4', '16:9'] as const) {
+                const dd = buildOiDocDefinition(collect({ adversaries: makeAdversaries(count) }), { format });
+                const json = JSON.stringify(dd);
+
+                expect(json, `« CIBLES(S) » doit apparaître (${count} adv., ${format})`).toContain('CIBLES(S)');
+                for (let i = 1; i <= count; i++) {
+                    expect(json, `cible ${i} doit apparaître (${count} adv., ${format})`).toContain(
+                        `CIBLE ${String(i).padStart(2, '0')} REGRESSION`,
+                    );
+                }
+                // Aucune page top-level SANS AUCUN texte (`text`/labelValue) —
+                // reproduction directe du défaut mesuré (page 2 100 % blanche
+                // à 30 adversaires, avant correctif).
+                const content = dd.content as Content[];
+                content.forEach((page, idx) => {
+                    const pageJson = JSON.stringify(page);
+                    expect(pageJson.length, `page top-level ${idx} ne doit jamais être vide (${count} adv., ${format})`).toBeGreaterThan(0);
+                    expect(/"text"/.test(pageJson), `page top-level ${idx} doit porter du texte (${count} adv., ${format})`).toBe(true);
+                });
+
+                // La CAUSE de l'anomalie #1 : aucun `card()` contenant « CIBLES(S) »
+                // ne doit rester `unbreakable:true` (cf. JSDoc `collectUnbreakableCardsContaining`).
+                const unbreakableFlags: boolean[] = [];
+                collectUnbreakableCardsContaining(dd.content, 'CIBLES(S)', unbreakableFlags);
+                expect(unbreakableFlags.length, `au moins une carte CIBLES(S) attendue (${count} adv., ${format})`).toBeGreaterThan(0);
+                expect(
+                    unbreakableFlags.some(Boolean),
+                    `aucune carte CIBLES(S) ne doit être unbreakable:true (${count} adv., ${format})`,
+                ).toBe(false);
+            }
+        },
+    );
+
+    it("au-delà du seuil de la page 1, le débordement va sur des pages « CIBLES(S) — <plage> » AUTONOMES, JAMAIS « (SUITE) » (guardrail C1)", () => {
+        const dd = buildOiDocDefinition(collect({ adversaries: makeAdversaries(30) }), { format: 'a4' });
+        const json = JSON.stringify(dd);
+
+        expect(json).not.toContain('(SUITE)');
+        expect(json).not.toContain('(suite)');
+        expect(json).toMatch(/CIBLES\(S\) — \d+(-\d+)?/);
+    });
+});
+
+// ===========================================================================
+// RÉGRESSION (campagne de mesure, 2 pertes de données silencieuses) —
+// anomalie CRITIQUE #2 : le premier bloc ZMSPCP/MOICP/EFFRACTION d'un OI
+// perd son saut de page (`buildArticulationBlocksLoop` accumulait dans un
+// `acc` LOCAL, `pushPage`/`pushPages` y appliquaient la convention « saute la
+// page SAUF le tout premier élément » — évaluée sur CET `acc`, pas sur le
+// document entier) : il atterrit sur la MÊME page physique que
+// `buildArticulationOverview`, faisant déborder son propre contenu
+// (« S SECTEUR »/« P POINTS PARTICULIERS » en 16:9) hors du PDF. Reproduit
+// tel quel sur l'archive réelle (aucun cas limite requis).
+// ===========================================================================
+describe('buildOiDocDefinition — RÉGRESSION anomalie #2 : 1er bloc articulation sans saut de page', () => {
+    it.each(['a4', '16:9'] as const)(
+        "sans AUCUNE photo de galerie précédente, la page ZMSPCP porte SON PROPRE `pageBreak:'before'` — jamais glissée sur la page de « 7. ARTICULATION » (%s)",
+        (format) => {
+            const zmspcpBlocks: OiZmspcpBlock[] = [
+                {
+                    id: 'z1', title: 'ALPHA', zone: '-', mission: '-',
+                    secteur: 'S SECTEUR TEST UNIQUE', points_particuliers: 'P POINTS TEST UNIQUE',
+                    cat: '-', place_chef: '-', members: [],
+                },
+            ];
+            const dd = buildOiDocDefinition(collect({ zmspcp_blocks: zmspcpBlocks }), { format });
+            const content = dd.content as Content[];
+
+            const overviewIdx = content.findIndex((page) => JSON.stringify(page).includes('ARTICULATION & ORDRES DE MOUVEMENT'));
+            const zmspcpIdx = content.findIndex((page) => JSON.stringify(page).includes('ARTICULATION : ZMSPCP'));
+            expect(overviewIdx, `page « 7. ARTICULATION » introuvable (${format})`).toBeGreaterThanOrEqual(0);
+            expect(zmspcpIdx, `page ZMSPCP introuvable (${format})`).toBeGreaterThanOrEqual(0);
+            expect(zmspcpIdx, `ZMSPCP doit être une page top-level DISTINCTE de l'overview (${format})`).not.toBe(overviewIdx);
+
+            const zmspcpPage = content[zmspcpIdx] as { pageBreak?: string };
+            expect(zmspcpPage.pageBreak, `la page ZMSPCP doit porter SON PROPRE pageBreak:'before' (${format})`).toBe('before');
+
+            // Le contenu complet du bloc (jamais tronqué/glissé plus loin) est
+            // bien sur CETTE MÊME page.
+            const zmspcpJson = JSON.stringify(zmspcpPage);
+            expect(zmspcpJson, `« S SECTEUR » doit apparaître sur la page ZMSPCP (${format})`).toContain('S SECTEUR TEST UNIQUE');
+            expect(zmspcpJson, `« P POINTS PARTICULIERS » doit apparaître sur la page ZMSPCP (${format})`).toContain(
+                'P POINTS TEST UNIQUE',
+            );
+        },
+    );
+
+    it("AVEC une photo « Baptême Terrain » précédente, la 1re page de galerie porte AUSSI SON PROPRE saut de page — jamais glissée sur la page de « 7. ARTICULATION » (vérifie le second bout : pas de double saut/page blanche)", () => {
+        const zmspcpBlocks: OiZmspcpBlock[] = [
+            { id: 'z1', title: 'ALPHA', zone: '-', mission: '-', secteur: '-', points_particuliers: '-', cat: '-', place_chef: '-', members: [] },
+        ];
+        const formData: OiFormData = {
+            zmspcp_blocks: zmspcpBlocks,
+            dynamic_photos: { photo_bapteme_z1: [makePhotoMeta('baptphoto')] },
+        };
+        const photosBase64 = { baptphoto: 'data:image/jpeg;base64,QkFQVFBIT1RP' };
+        const dd = buildOiDocDefinition(collect(formData, photosBase64), { format: 'a4' });
+        const content = dd.content as Content[];
+
+        const overviewIdx = content.findIndex((page) => JSON.stringify(page).includes('ARTICULATION & ORDRES DE MOUVEMENT'));
+        const galleryIdx = content.findIndex((page) => JSON.stringify(page).includes('"image":"baptphoto"'));
+        expect(overviewIdx).toBeGreaterThanOrEqual(0);
+        expect(galleryIdx).toBeGreaterThanOrEqual(0);
+        expect(galleryIdx).not.toBe(overviewIdx);
+
+        const galleryPage = content[galleryIdx] as { pageBreak?: string };
+        expect(galleryPage.pageBreak, "la 1re page de galerie doit porter SON PROPRE pageBreak:'before'").toBe('before');
+
+        // Pas de double saut : aucune page top-level vide entre l'overview et
+        // la page ZMSPCP qui suit la galerie.
+        const zmspcpIdx = content.findIndex((page) => JSON.stringify(page).includes('ARTICULATION : ZMSPCP'));
+        expect(zmspcpIdx).toBeGreaterThan(galleryIdx);
+        for (let i = overviewIdx; i <= zmspcpIdx; i++) {
+            expect(JSON.stringify(content[i]).length, `page top-level ${i} ne doit jamais être vide`).toBeGreaterThan(2);
+        }
     });
 });
