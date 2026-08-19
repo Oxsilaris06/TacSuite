@@ -55,7 +55,7 @@ export default defineConfig({
           'index.html',
           'pctac/index.html',
           'oi/index.html',
-          'assets/**/*.{js,css}',
+          'assets/**/*.{js,mjs,css}',
           'manifest.webmanifest',
           'favicon.ico',
           '*.png',
@@ -65,9 +65,15 @@ export default defineConfig({
         // Le nouveau moteur PDF vectoriel embarque pdfmake (~1,4 Mo brut) et le VFS des
         // polices Oswald/JetBrains Mono en base64 (~415 Ko) dans des chunks JavaScript
         // dedies (import dynamique). Ces chunks sont deja couverts par le motif
-        // 'assets/**/*.{js,css}'. La limite Workbox par defaut de 2 Mio par fichier est
-        // relevee pour garantir qu'ils entrent bien dans le precache — sans quoi la
-        // generation de PDF hors ligne serait silencieusement cassee.
+        // 'assets/**/*.{js,mjs,css}'. Le worker pdf.js (aperçu PDF intégré,
+        // SPEC-2026-08-18-pdf-et-champs.md §1) est importé via `?url` — Vite le copie
+        // TEL QUEL en .mjs dans assets/ (pas de bundling/minification par Vite, pdf.js
+        // livre deja sa propre version minifiee `pdf.worker.min.mjs`, ~1,3 Mo) : sans
+        // l'extension `mjs` dans ce motif, ce fichier resterait hors precache et
+        // l'apercu casserait au premier chargement hors ligne. La limite Workbox par
+        // defaut de 2 Mio par fichier est relevee pour garantir qu'il entre, comme les
+        // chunks pdfmake — sans quoi la generation/l'apercu PDF hors ligne seraient
+        // silencieusement casses.
         // Taille reelle mesuree du plus gros chunk (phase build actuelle) : ~1,4 Mo.
         maximumFileSizeToCacheInBytes: 3 * 1024 * 1024,
       },
