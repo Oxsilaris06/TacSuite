@@ -110,7 +110,7 @@ describe('resolveEditCandidates', () => {
         const missionEl = addField(form, 'mission', 'ABC');
         const candidates = resolveEditCandidates([anchor('#mission', 'ABC')]);
         expect(candidates.size).toBe(1);
-        expect(candidates.get('#mission::0')?.el).toBe(missionEl);
+        expect(candidates.get('#mission::0::')?.el).toBe(missionEl);
     });
 
     it("un ancrage sans champ correspondant (sélecteur introuvable) ne produit aucun candidat", () => {
@@ -152,13 +152,83 @@ describe('resolveEditCandidates', () => {
 
         const candidates = resolveEditCandidates([anchor('.dash-item', 'A', 0), anchor('.dash-item', 'B', 1)]);
         expect(candidates.size).toBe(2);
-        expect(candidates.get('.dash-item::0')?.el).toBe(el0);
-        expect(candidates.get('.dash-item::1')?.el).toBe(el1);
+        expect(candidates.get('.dash-item::0::')?.el).toBe(el0);
+        expect(candidates.get('.dash-item::1::')?.el).toBe(el1);
     });
 
     it('aucun ancrage : Map vide', () => {
         buildForm();
         expect(resolveEditCandidates([]).size).toBe(0);
+    });
+
+    // -- Second chemin d'écriture : ancrages `kind: 'dataset'` (mission
+    // « tout le texte modifiable », JSDoc de fichier § SECOND CHEMIN
+    // D'ÉCRITURE) — pastilles/boutons PATRACDVR, ni <input> ni <textarea>.
+
+    it("un ancrage kind='dataset' dont l'élément source existe dans le DOM produit un candidat DATASET (pas field), quel que soit le tag DOM", () => {
+        const form = buildForm();
+        const btn = document.createElement('button');
+        btn.className = 'patracdvr-member-btn';
+        btn.dataset.trigramme = 'ABC';
+        form.appendChild(btn);
+
+        const candidates = resolveEditCandidates([{ selector: '.patracdvr-member-btn', index: 0, value: 'ABC', kind: 'dataset', datasetKey: 'trigramme' }]);
+
+        expect(candidates.size).toBe(1);
+        const candidate = candidates.get('.patracdvr-member-btn::0::trigramme');
+        expect(candidate?.kind).toBe('dataset');
+        expect(candidate?.el).toBe(btn);
+        expect(candidate?.kind === 'dataset' && candidate.datasetKey).toBe('trigramme');
+    });
+
+    it("un ancrage kind='dataset' SANS datasetKey (émission fautive, ne devrait jamais se produire en pratique) ne produit aucun candidat — repli sûr", () => {
+        const form = buildForm();
+        const btn = document.createElement('button');
+        btn.className = 'patracdvr-member-btn';
+        form.appendChild(btn);
+
+        const candidates = resolveEditCandidates([{ selector: '.patracdvr-member-btn', index: 0, value: 'ABC', kind: 'dataset' }]);
+        expect(candidates.size).toBe(0);
+    });
+
+    it("un ancrage kind='field' (défaut) ciblant le MÊME bouton (ni input ni textarea) reste exclu — la distinction 'dataset' est bien nécessaire, pas un simple assouplissement du filtre existant", () => {
+        const form = buildForm();
+        const btn = document.createElement('button');
+        btn.className = 'patracdvr-member-btn';
+        btn.dataset.trigramme = 'ABC';
+        form.appendChild(btn);
+
+        expect(resolveEditCandidates([anchor('.patracdvr-member-btn', 'ABC')]).size).toBe(0);
+    });
+
+    it("RÉGRESSION (mesure navigateur RÉEL, campagne PATRACDVR) — 2 ancrages 'dataset' du MÊME élément (même sélecteur, même rang par défaut 0) mais de datasetKey DIFFÉRENT (trigramme/dir) résolvent CHACUN vers son PROPRE candidat, jamais un seul partagé : `anchorKey` doit désambiguïser par `datasetKey`, pas seulement sélecteur+rang", () => {
+        const form = buildForm();
+        const btn = document.createElement('button');
+        btn.className = 'patracdvr-member-btn';
+        btn.dataset.trigramme = 'GHI';
+        btn.dataset.dir = 'PSIG ANTIBES';
+        form.appendChild(btn);
+
+        // Même sélecteur, même rang (0, implicite) — SEUL le datasetKey diffère,
+        // exactement le cas réel `patracMemberDatasetAnchor('GHI', 'trigramme', …)`
+        // vs `patracMemberDatasetAnchor('GHI', 'dir', …)` (document-builder.ts).
+        const candidates = resolveEditCandidates([
+            { selector: '.patracdvr-member-btn', index: 0, value: 'GHI', kind: 'dataset', datasetKey: 'trigramme' },
+            { selector: '.patracdvr-member-btn', index: 0, value: 'PSIG ANTIBES', kind: 'dataset', datasetKey: 'dir' },
+        ]);
+
+        // AVANT LE CORRECTIF : size === 1 (les 2 ancrages collisionnaient sur
+        // la MÊME clé sélecteur+rang, le 1er — trigramme — écrasait le 2e).
+        expect(candidates.size).toBe(2);
+        const trigCandidate = candidates.get('.patracdvr-member-btn::0::trigramme');
+        const dirCandidate = candidates.get('.patracdvr-member-btn::0::dir');
+        expect(trigCandidate?.kind === 'dataset' && trigCandidate.datasetKey).toBe('trigramme');
+        expect(dirCandidate?.kind === 'dataset' && dirCandidate.datasetKey).toBe('dir');
+        // Les 2 candidats visent bien le MÊME élément DOM (c'est la donnée du
+        // champ, pas l'élément, qui doit être distinguée) — la distinction
+        // porte uniquement sur `datasetKey`.
+        expect(trigCandidate?.el).toBe(btn);
+        expect(dirCandidate?.el).toBe(btn);
     });
 });
 
@@ -431,7 +501,7 @@ describe('attachEditableTextLayer', () => {
         const leverEl = addField(form, 'lever_soleil', '06:45', 'input', 'time');
         const regenerate = vi.fn(async () => {});
 
-        const result = commitEdit({ el: leverEl }, '25:99', 1, regenerate); // heure hors bornes — un navigateur/jsdom la rejette en assainissant `.value` à ""
+        const result = commitEdit({ kind: 'field', el: leverEl }, '25:99', 1, regenerate); // heure hors bornes — un navigateur/jsdom la rejette en assainissant `.value` à ""
 
         expect(result.ok).toBe(false);
         expect(leverEl.value).toBe('06:45'); // JAMAIS vidé — le cœur de la régression (bug reproduit : l'ancien code écrivait sans garde)
@@ -446,7 +516,7 @@ describe('attachEditableTextLayer', () => {
         const dateEl = addField(form, 'date_op', '2026-08-19', 'input', 'date');
         const regenerate = vi.fn(async () => {});
 
-        const result = commitEdit({ el: dateEl }, '19/08/2026', 1, regenerate); // format FR, pas ISO — invalide pour type="date"
+        const result = commitEdit({ kind: 'field', el: dateEl }, '19/08/2026', 1, regenerate); // format FR, pas ISO — invalide pour type="date"
 
         expect(result.ok).toBe(false);
         expect(dateEl.value).toBe('2026-08-19');
@@ -700,5 +770,185 @@ describe('attachEditableTextLayer', () => {
         expect(state.stats.hitZonesPlaced).toBe(2); // 2 fragments absorbés pour ce seul ancrage
         expect(state.stats.fragmentsSeen).toBe(3); // les 3 fragments non vides, y compris le titre non apparié
         expect(overlay.querySelectorAll('.pdf-edit-hit')).toHaveLength(state.stats.hitZonesPlaced);
+    });
+});
+
+// ===========================================================================
+// Second chemin d'écriture — `commitEdit` / candidats `kind: 'dataset'`
+// (mission « tout le texte modifiable », JSDoc de fichier § SECOND CHEMIN
+// D'ÉCRITURE) : pastilles/boutons PATRACDVR, valeur portée par `dataset`,
+// aucun `<input>`/`<textarea>` source. Même style de test DIRECT que les
+// gardes `commitEdit` (chemin `field`) ci-dessus (`commitEdit exportée pour
+// test unitaire direct`).
+// ===========================================================================
+describe("commitEdit — chemin dataset (pastilles/boutons PATRACDVR)", () => {
+    function patracMemberEl(trigramme: string, dir = ''): HTMLElement {
+        const btn = document.createElement('button');
+        btn.className = 'patracdvr-member-btn';
+        btn.dataset.trigramme = trigramme;
+        btn.dataset.dir = dir;
+        document.body.appendChild(btn);
+        return btn;
+    }
+
+    function vehicleRowEl(name: string): HTMLElement {
+        const row = document.createElement('div');
+        row.className = 'patracdvr-vehicle-row';
+        row.dataset.vehicleName = name;
+        const nameEl = document.createElement('span');
+        nameEl.className = 'vehicle-name';
+        nameEl.textContent = name;
+        row.appendChild(nameEl);
+        document.body.appendChild(row);
+        return row;
+    }
+
+    it('trigramme : écrit dans le dataset EN MAJUSCULE (même normalisation que le panneau Édition Rapide), repeint le bouton, régénère la composition articulation, synchronise et régénère le PDF', () => {
+        const btn = patracMemberEl('abc');
+        const visuals = vi.fn();
+        const articulation = vi.fn();
+        window.updateMemberButtonVisuals = visuals;
+        window.updateArticulationDisplay = articulation;
+        const regenerate = vi.fn(async () => {});
+
+        const result = commitEdit({ kind: 'dataset', el: btn, datasetKey: 'trigramme' }, 'xyz', 1, regenerate);
+
+        expect(result.ok).toBe(true);
+        expect(btn.dataset.trigramme).toBe('XYZ');
+        expect(visuals).toHaveBeenCalledWith(btn);
+        expect(articulation).toHaveBeenCalledTimes(1);
+        expect(syncSpy).toHaveBeenCalledTimes(1);
+        expect(regenerate).toHaveBeenCalledTimes(1);
+    });
+
+    it('dir : écrit dans le dataset SANS normalisation (aucune des 2 UI existantes ne transforme ce champ)', () => {
+        const btn = patracMemberEl('ABC', '');
+        window.updateMemberButtonVisuals = vi.fn();
+        window.updateArticulationDisplay = vi.fn();
+        const regenerate = vi.fn(async () => {});
+
+        const result = commitEdit({ kind: 'dataset', el: btn, datasetKey: 'dir' }, 'G3', 1, regenerate);
+
+        expect(result.ok).toBe(true);
+        expect(btn.dataset.dir).toBe('G3');
+    });
+
+    it("vehicleName : écrit dans le dataset AVEC trim() (même normalisation que renameVehicle) ET met à jour le texte affiché '.vehicle-name' — même effet que le renommage live, sans réimplémenter updateMemberButtonVisuals (non pertinent pour un véhicule)", () => {
+        const row = vehicleRowEl('KODIAQ');
+        const visuals = vi.fn();
+        window.updateMemberButtonVisuals = visuals;
+        window.updateArticulationDisplay = vi.fn();
+        const regenerate = vi.fn(async () => {});
+
+        const result = commitEdit({ kind: 'dataset', el: row, datasetKey: 'vehicleName' }, '  SHARAN  ', 1, regenerate);
+
+        expect(result.ok).toBe(true);
+        expect(row.dataset.vehicleName).toBe('SHARAN');
+        expect(row.querySelector('.vehicle-name')?.textContent).toBe('SHARAN');
+        expect(visuals).not.toHaveBeenCalled(); // pas un membre — n'a rien à voir avec le bouton PAX
+    });
+
+    it('REFUS — transition non-vide vers vide : MÊME garde que le chemin field (EMPTYING_REJECTED_MESSAGE), aucune synchronisation ni régénération', () => {
+        const btn = patracMemberEl('ABC');
+        const regenerate = vi.fn(async () => {});
+
+        const result = commitEdit({ kind: 'dataset', el: btn, datasetKey: 'trigramme' }, '', 1, regenerate);
+
+        expect(result.ok).toBe(false);
+        expect(btn.dataset.trigramme).toBe('ABC'); // jamais vidé
+        expect(regenerate).not.toHaveBeenCalled();
+        expect(syncSpy).not.toHaveBeenCalled();
+        if (result.ok) throw new Error('unreachable');
+        expect(result.message).toContain('viderait');
+    });
+
+    it('aucun changement réel (valeur normalisée identique à la précédente, ex. casse différente sur un trigramme) : ok, mais AUCUN effet de bord déclenché — même contrat fast-path que le chemin field', () => {
+        const btn = patracMemberEl('ABC');
+        const visuals = vi.fn();
+        window.updateMemberButtonVisuals = visuals;
+        const regenerate = vi.fn(async () => {});
+
+        const result = commitEdit({ kind: 'dataset', el: btn, datasetKey: 'trigramme' }, 'abc', 1, regenerate);
+
+        expect(result.ok).toBe(true);
+        expect(visuals).not.toHaveBeenCalled();
+        expect(regenerate).not.toHaveBeenCalled();
+        expect(syncSpy).not.toHaveBeenCalled();
+    });
+
+    it("le cycle complet clic→édition→blur sur une pastille PATRACDVR (fragment pdf.js = trigramme) écrit dans le dataset ET régénère l'aperçu — preuve end-to-end du 2e chemin d'écriture", async () => {
+        const btn = patracMemberEl('ABC');
+        window.updateMemberButtonVisuals = vi.fn();
+        window.updateArticulationDisplay = vi.fn();
+        Element.prototype.scrollIntoView = vi.fn();
+        const state = createEditMatchState([{ selector: '.patracdvr-member-btn', index: 0, value: 'ABC', kind: 'dataset', datasetKey: 'trigramme' }]);
+        const { pageEl, overlay } = buildPageEl(1);
+        const page = fakePage([{ str: 'ABC', transform: [1, 0, 0, 1, 10, 50], width: 30, height: 12 }]);
+        const regenerate = vi.fn(async () => {});
+
+        await attachEditableTextLayer(page, pageEl, overlay, fakeViewport(), 1, state, regenerate);
+        const hit = overlay.querySelector<HTMLButtonElement>('.pdf-edit-hit');
+        if (!hit) throw new Error('zone cliquable absente');
+        hit.click();
+
+        const editor = overlay.querySelector<HTMLInputElement>('.pdf-edit-input');
+        if (!editor) throw new Error('éditeur absent');
+        expect(editor.value).toBe('ABC'); // préempli avec la valeur COURANTE du dataset (pas un <select>, un <input> texte plein)
+
+        editor.value = 'xyz';
+        editor.dispatchEvent(new Event('blur'));
+
+        expect(btn.dataset.trigramme).toBe('XYZ');
+        expect(syncSpy).toHaveBeenCalledTimes(1);
+        expect(regenerate).toHaveBeenCalledTimes(1);
+        expect(overlay.querySelector('.pdf-edit-input')).toBeNull();
+    });
+
+    it("RÉGRESSION end-to-end (mesure navigateur RÉEL, campagne PATRACDVR — cas exact mesuré : trigramme 'GHI' + dir 'PSIG ANTIBES' du MÊME membre) — cliquer le fragment DIR ouvre l'éditeur DIR (jamais le trigramme), et réciproquement, même si les 2 ancrages partagent sélecteur et rang", async () => {
+        const btn = patracMemberEl('GHI', 'PSIG ANTIBES');
+        window.updateMemberButtonVisuals = vi.fn();
+        window.updateArticulationDisplay = vi.fn();
+        const state = createEditMatchState([
+            { selector: '.patracdvr-member-btn', index: 0, value: 'GHI', kind: 'dataset', datasetKey: 'trigramme' },
+            { selector: '.patracdvr-member-btn', index: 0, value: 'PSIG ANTIBES', kind: 'dataset', datasetKey: 'dir' },
+        ]);
+        const { pageEl, overlay } = buildPageEl(1);
+        // Reproduit le découpage RÉEL observé (pdf.js, page PATRACDVR) : le
+        // trigramme est UN fragment, la valeur DIR est scindée en 2 (« PSIG »
+        // puis « ANTIBES ») — cf. capture navigateur réel, frag-dump page 14.
+        const page = fakePage([
+            { str: 'GHI', transform: [1, 0, 0, 1, 10, 50], width: 20, height: 12 },
+            { str: 'PSIG', transform: [1, 0, 0, 1, 200, 50], width: 30, height: 12 },
+            { str: 'ANTIBES', transform: [1, 0, 0, 1, 240, 50], width: 40, height: 12 },
+        ]);
+        const regenerate = vi.fn(async () => {});
+
+        await attachEditableTextLayer(page, pageEl, overlay, fakeViewport(), 1, state, regenerate);
+        expect(state.stats.anchorsResolved).toBe(2); // trigramme ET dir, tous deux résolus (pas une seule entrée partagée)
+
+        const hits = overlay.querySelectorAll<HTMLButtonElement>('.pdf-edit-hit');
+        expect(hits).toHaveLength(3); // 1 (GHI) + 2 (PSIG, ANTIBES — même champ dir)
+
+        const dirHit = Array.from(hits).find((h) => h.getAttribute('aria-label')?.includes('ANTIBES'));
+        if (!dirHit) throw new Error('zone DIR (ANTIBES) absente');
+        dirHit.click();
+        const dirEditor = overlay.querySelector<HTMLInputElement>('.pdf-edit-input');
+        if (!dirEditor) throw new Error('éditeur DIR absent');
+        expect(dirEditor.value).toBe('PSIG ANTIBES'); // JAMAIS 'GHI' — cf. régression mesurée
+        dirEditor.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+        dirEditor.dispatchEvent(new Event('blur'));
+
+        const trigHit = Array.from(hits).find((h) => h.getAttribute('aria-label')?.includes('GHI'));
+        if (!trigHit) throw new Error('zone trigramme (GHI) absente');
+        trigHit.click();
+        const trigEditor = overlay.querySelector<HTMLInputElement>('.pdf-edit-input');
+        if (!trigEditor) throw new Error('éditeur trigramme absent');
+        expect(trigEditor.value).toBe('GHI'); // JAMAIS 'PSIG ANTIBES'
+        trigEditor.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+        trigEditor.dispatchEvent(new Event('blur'));
+
+        expect(btn.dataset.trigramme).toBe('GHI'); // rien commité (Échap dans les 2 cas) — champ toujours intact
+        expect(btn.dataset.dir).toBe('PSIG ANTIBES');
+        expect(regenerate).not.toHaveBeenCalled();
     });
 });

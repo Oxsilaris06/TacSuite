@@ -434,6 +434,101 @@ describe('buildOiDocDefinition — PATRACDVR, colonne DIR conditionnelle', () =>
 });
 
 // ===========================================================================
+// Édition en place — chemin `dataset` (mission « tout le texte modifiable »,
+// 2026-08-19) : Récapitulatif PATRACDVR (p.14) et Vue d'ensemble de
+// l'articulation (p.8) ne provenaient d'AUCUN `<input>`/`<textarea>` — texte
+// porté par le `dataset` de pastilles/boutons réordonnables. Cf. JSDoc
+// `pdf-preview-edit.ts` § SECOND CHEMIN D'ÉCRITURE et `patracMemberDatasetAnchor`/
+// `patracVehicleDatasetAnchor` (`document-builder.ts`).
+// ===========================================================================
+describe("buildOiDocDefinition — édition en place PATRACDVR (chemin dataset, mission « tout le texte modifiable »)", () => {
+    function memberFixture(overrides: Partial<OiPatracMember> = {}): OiPatracMember {
+        return {
+            trigramme: 'ABC', fonction: 'Chef', cellule: 'AO1', principales: 'UMP9',
+            secondaires: 'PSA', afis: 'PIE', grenades: 'Sans', equipement: 'Sans',
+            equipement2: 'Sans', tenue: 'Sans', gpb: 'Sans', dir: 'G1',
+            ...overrides,
+        };
+    }
+
+    it('récapitulatif PATRACDVR : ancre VL/PAX/DIR (kind dataset, sélecteur par identité) — CELLULE/FONCTION/PPALE/SEC./AFIS/EQPT-GREN. JAMAIS ancrées (pastilles à choix fermé ou valeur agrégée)', () => {
+        const formData: OiFormData = { patracdvr_rows: [{ vehicle: 'VL1', members: [memberFixture()] }] };
+        const dd = buildOiDocDefinition(collect(formData), { format: 'a4' });
+        const datasetAnchors = dd.pdfEditAnchors.filter((a) => a.kind === 'dataset');
+
+        const vlAnchor = datasetAnchors.find((a) => a.datasetKey === 'vehicleName');
+        const trigAnchor = datasetAnchors.find((a) => a.datasetKey === 'trigramme' && a.value === 'ABC');
+        const dirAnchor = datasetAnchors.find((a) => a.datasetKey === 'dir');
+
+        expect(vlAnchor?.selector).toBe('#oi-form .patracdvr-vehicle-row[data-vehicle-name="VL1"]');
+        expect(trigAnchor?.selector).toBe('#oi-form .patracdvr-member-btn[data-trigramme="ABC"]');
+        expect(dirAnchor?.selector).toBe('#oi-form .patracdvr-member-btn[data-trigramme="ABC"]');
+        expect(dirAnchor?.value).toBe('G1');
+
+        // Aucune valeur des colonnes à choix fermé (pastilles) n'atterrit dans
+        // UN ancrage — même exclusion que la décision <select> (JSDoc
+        // pdf-preview-edit.ts) — ni la colonne agrégée EQPT/GREN.
+        expect(dd.pdfEditAnchors.some((a) => a.value === 'AO1')).toBe(false); // cellule
+        expect(dd.pdfEditAnchors.some((a) => a.value === 'Chef')).toBe(false); // fonction
+        expect(dd.pdfEditAnchors.some((a) => a.value === 'UMP9')).toBe(false); // principales
+        expect(dd.pdfEditAnchors.some((a) => a.value === 'PSA')).toBe(false); // secondaires
+        expect(dd.pdfEditAnchors.some((a) => a.value === 'PIE')).toBe(false); // afis
+    });
+
+    it("2 membres de trigramme IDENTIQUE (anomalie : renommage manuel sans garde d'unicité) : sélecteur `[data-trigramme=...]` AMBIGU, AUCUN ancrage trigramme/dir enregistré pour ce trigramme (sous-couverture délibérée, jamais un pari sur l'élément dupliqué)", () => {
+        const formData: OiFormData = {
+            patracdvr_rows: [
+                { vehicle: 'VL1', members: [memberFixture({ trigramme: 'DUP', dir: 'G1' })] },
+                { vehicle: 'VL2', members: [memberFixture({ trigramme: 'DUP', dir: 'G2' })] },
+            ],
+        };
+        const dd = buildOiDocDefinition(collect(formData), { format: 'a4' });
+        const datasetAnchors = dd.pdfEditAnchors.filter((a) => a.kind === 'dataset');
+
+        expect(datasetAnchors.some((a) => a.datasetKey === 'trigramme')).toBe(false);
+        expect(datasetAnchors.some((a) => a.datasetKey === 'dir')).toBe(false);
+        // Les 2 véhicules restent, eux, uniques (noms distincts) : toujours ancrés.
+        expect(datasetAnchors.filter((a) => a.datasetKey === 'vehicleName')).toHaveLength(2);
+    });
+
+    it('2 véhicules de nom IDENTIQUE : sélecteur `[data-vehicle-name=...]` AMBIGU, AUCUN ancrage VL enregistré pour ce nom', () => {
+        const formData: OiFormData = {
+            patracdvr_rows: [
+                { vehicle: 'DUPVL', members: [memberFixture({ trigramme: 'AAA' })] },
+                { vehicle: 'DUPVL', members: [memberFixture({ trigramme: 'BBB' })] },
+            ],
+        };
+        const dd = buildOiDocDefinition(collect(formData), { format: 'a4' });
+        const datasetAnchors = dd.pdfEditAnchors.filter((a) => a.kind === 'dataset');
+
+        expect(datasetAnchors.some((a) => a.datasetKey === 'vehicleName')).toBe(false);
+        // Les 2 trigrammes restent, eux, uniques : toujours ancrés.
+        expect(datasetAnchors.filter((a) => a.datasetKey === 'trigramme')).toHaveLength(2);
+    });
+
+    it("vue d'ensemble de l'articulation (p.8) : les 3 listes d'ordre (Rame VL, Colonne Progression, Ordre Pénétration) ancrent chaque pastille sur son véhicule/membre canonique — même sélecteur que le récapitulatif PATRACDVR (identité partagée)", () => {
+        const formData: OiFormData = {
+            patracdvr_rows: [{ vehicle: 'KODIAQ', members: [memberFixture({ trigramme: 'IND' })] }],
+            rame_vl_order: ['KODIAQ'],
+            colonne_progression_order: ['IND'],
+            ordre_penetration_order: ['IND'],
+        };
+        const dd = buildOiDocDefinition(collect(formData), { format: 'a4' });
+        const datasetAnchors = dd.pdfEditAnchors.filter((a) => a.kind === 'dataset');
+
+        const vlAnchors = datasetAnchors.filter((a) => a.datasetKey === 'vehicleName' && a.value === 'KODIAQ');
+        const trigAnchors = datasetAnchors.filter((a) => a.datasetKey === 'trigramme' && a.value === 'IND');
+
+        // 1 pour le récap PATRACDVR + 1 pour la pastille Rame VL = 2 ; idem
+        // trigramme (récap PATRACDVR + colonne + pénétration = 3).
+        expect(vlAnchors.length).toBeGreaterThanOrEqual(2);
+        expect(trigAnchors.length).toBeGreaterThanOrEqual(3);
+        for (const a of vlAnchors) expect(a.selector).toBe('#oi-form .patracdvr-vehicle-row[data-vehicle-name="KODIAQ"]');
+        for (const a of trigAnchors) expect(a.selector).toBe('#oi-form .patracdvr-member-btn[data-trigramme="IND"]');
+    });
+});
+
+// ===========================================================================
 // Ordre des photos (SPEC-PDF-V3.md §3.4 règle 3).
 // ===========================================================================
 describe('buildOiDocDefinition — ordre des photos', () => {

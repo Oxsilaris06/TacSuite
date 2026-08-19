@@ -258,6 +258,82 @@ function advIndexedFieldAnchor(advId: string, containerSelector: string, index: 
 }
 
 /**
+ * Échappement minimal d'une valeur insérée dans un sélecteur d'attribut CSS
+ * `[attr="..."]` — seuls `\` et `"` casseraient la chaîne déjà quotée
+ * (`CSS.escape` échappe un IDENTIFIANT/NOM DE CLASSE entier, pas une valeur
+ * DÉJÀ entre guillemets : outil inadapté ici). Nécessaire pour `trigramme`/
+ * `vehicleName` (contrairement à `advId`/`blockId`, toujours alphanumériques
+ * machine, cf. JSDoc `advFieldAnchor`) : ce sont des CHAMPS LIBRES, déjà
+ * éditables tels quels par l'utilisateur (panneau Édition Rapide / renommage
+ * véhicule) AVANT ce chantier.
+ */
+function escAttr(v: string): string {
+    return v.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+}
+
+/**
+ * Occurrences de chaque trigramme PATRACDVR dans le document ENTIER
+ * (véhicules affectés + non affectés, mission « tout le texte modifiable »)
+ * — un trigramme dupliqué (anomalie rare : renommage manuel via le panneau
+ * Édition Rapide, SANS garde d'unicité contrairement à la CRÉATION,
+ * `addManualMember`/`addCellBatch`, `patrac.ts`) rend `[data-trigramme="X"]`
+ * AMBIGU (plusieurs boutons DOM potentiels). `patracMemberDatasetAnchor`
+ * ci-dessous refuse alors d'ancrer TOUT champ de CE trigramme plutôt que de
+ * risquer d'écrire dans le mauvais membre — même philosophie que la garde
+ * d'ambiguïté de `pdf-preview-edit.ts` (« mieux vaut sous-couvrir qu'écrire
+ * dans le mauvais champ »).
+ */
+function countPatracTrigrammes(formData: OiFormData): Map<string, number> {
+    const counts = new Map<string, number>();
+    const bump = (t: string): void => {
+        if (t) counts.set(t, (counts.get(t) ?? 0) + 1);
+    };
+    for (const row of formData.patracdvr_rows ?? []) for (const m of row.members) bump(m.trigramme);
+    for (const m of formData.patracdvr_unassigned ?? []) bump(m.trigramme);
+    return counts;
+}
+
+/** Occurrences de chaque nom de véhicule PATRACDVR — même garde d'ambiguïté que `countPatracTrigrammes` (`addManualVehicle` ne contraint pas non plus l'unicité). */
+function countPatracVehicleNames(formData: OiFormData): Map<string, number> {
+    const counts = new Map<string, number>();
+    for (const row of formData.patracdvr_rows ?? []) if (row.vehicle) counts.set(row.vehicle, (counts.get(row.vehicle) ?? 0) + 1);
+    return counts;
+}
+
+/**
+ * Ancrage `dataset` (mission « tout le texte modifiable ») d'un membre
+ * PATRACDVR — désigne le `.patracdvr-member-btn` source par TRIGRAMME
+ * (identité visible, même motif que `articulation.ts:386`), `datasetKey`
+ * la clé de son `dataset` réellement affichée à cet endroit (`'trigramme'`
+ * pour la colonne PAX/les pastilles Colonne-Progression/Ordre-Pénétration,
+ * `'dir'` pour la colonne DIR du récapitulatif). `null` si le trigramme est
+ * vide OU non unique dans le document (cf. `countPatracTrigrammes`) — dans
+ * les deux cas, `registerPdfEditAnchor` no-op silencieusement (repli sûr).
+ * SEULS ces 2 champs sont couverts : `fonction`/`cellule`/`principales`/
+ * `secondaires`/`afis`/`grenades`/`equipement`/`equipement2`/`tenue`/`gpb`
+ * restent des pastilles à CHOIX FERMÉ (panneau Édition Rapide), même
+ * catégorie que la décision `<select>` documentée en tête de
+ * `pdf-preview-edit.ts` — une saisie libre y romprait la cohérence avec
+ * l'énumération contrainte, jamais couverte ici.
+ */
+function patracMemberDatasetAnchor(trigramme: string, datasetKey: 'trigramme' | 'dir', trigUniq: Map<string, number>): PdfFieldAnchor | null {
+    if (!trigramme || (trigUniq.get(trigramme) ?? 0) !== 1) return null;
+    return { selector: `#oi-form .patracdvr-member-btn[data-trigramme="${escAttr(trigramme)}"]`, kind: 'dataset', datasetKey };
+}
+
+/**
+ * Ancrage `dataset` d'un véhicule PATRACDVR — désigne la `.patracdvr-vehicle-row`
+ * source par NOM (identité visible), `datasetKey` toujours `'vehicleName'`
+ * (seule valeur libre du véhicule). `null` si le nom est vide OU non unique
+ * dans le document (cf. `countPatracVehicleNames`) — même repli sûr que
+ * `patracMemberDatasetAnchor`.
+ */
+function patracVehicleDatasetAnchor(vehicleName: string, vehicleUniq: Map<string, number>): PdfFieldAnchor | null {
+    if (!vehicleName || (vehicleUniq.get(vehicleName) ?? 0) !== 1) return null;
+    return { selector: `#oi-form .patracdvr-vehicle-row[data-vehicle-name="${escAttr(vehicleName)}"]`, kind: 'dataset', datasetKey: 'vehicleName' };
+}
+
+/**
  * `labelValue(label, strOr(formData[key]), p, opts)` + ancrage `fieldAnchor(key)`
  * — raccourci pour le très grand nombre de champs `#oi-form` simples de
  * niveau racine rendus tels quels (mission « régression édition »), tous de
@@ -408,6 +484,29 @@ function regroupByCellOrdered(trigrammes: string[], memberToCell: Map<string, st
  * Kotlin). Fond PLEIN `p.cardAlt` (D5) + trigrammes en pastille CONTOUR
  * `pillRow` (même primitive que « Ordre Rame VL »), jamais en badge plein
  * (D6) — `pdfv3-design-fix/DEFAUTS.md`.
+ */
+/**
+ * PAS d'édition en place ici — décision DÉLIBÉRÉE (mission « tout le texte
+ * modifiable »), pas un oubli. Mesure navigateur réelle : ancrer aussi CE
+ * texte (trigrammes de la « Composition par Cellule », MOICP/ZMSPCP) au
+ * MÊME mécanisme que `buildArticulationOverview` semblait initialement
+ * corriger une collision (texte identique non ancré interceptant à tort un
+ * ancrage lointain du récapitulatif PATRACDVR, cf. JSDoc `pdf-preview-edit.ts`
+ * § SECOND CHEMIN D'ÉCRITURE) — mais AUGMENTE en réalité le volume total
+ * d'ancrages `dataset` répartis sur les pages ZMSPCP/MOICP (9-13, chacune
+ * pouvant lister PLUSIEURS cellules), ce qui a fait déborder
+ * `STALE_FRAGMENT_BUDGET`/`WINDOW_AHEAD` avant d'atteindre le récapitulatif
+ * : CONSTATÉ, mesure réelle — anchorsResolved 120→99, hitZonesPlaced
+ * 394→336, la page RÉCAPITULATIF PATRACDVR ENTIÈRE retombant à 0 zone
+ * (régression bien pire que le défaut ponctuel corrigé). Le VRAI risque de
+ * sûreté (une zone DIR ouvrant l'éditeur TRIGRAMME) était en fait résolu
+ * SÉPARÉMENT par `anchorKey` (`pdf-preview-edit.ts`, inclusion de
+ * `datasetKey`) — cette collision de valeur restante (une zone « GHI »
+ * pouvant apparaître sur une page ZMSPCP/MOICP au lieu du récapitulatif)
+ * reste bénigne : elle pointe TOUJOURS vers le BON candidat (même élément,
+ * même `datasetKey`), seule sa POSITION visuelle diffère de l'attendu —
+ * jamais un risque d'écriture au mauvais endroit. Revert délibéré au profit
+ * de la couverture mesurée la plus large et la plus sûre.
  */
 function cellGroupBox(cellName: string, trigrammes: string[], p: OiPdfPalette): Content {
     return {
@@ -1693,11 +1792,25 @@ function transportPhotos(dynamicPhotos: Record<string, OiPhotoMeta[]>): OiPhotoM
  * n'a de `fontSize` propre, héritent de celui posé sur le `stack` racine).
  * ======================================================================== */
 function buildArticulationOverview(ctx: BuildCtx, num: () => number): Content {
-    const { formData, p, geo } = ctx;
+    const { formData, p, geo, anchors } = ctx;
     const rameVl = formData.rame_vl_order ?? [];
     const colonne = formData.colonne_progression_order ?? [];
     const penetration = formData.ordre_penetration_order ?? [];
     const placeChef = strOr(formData.place_chef);
+
+    // Édition en place (mission « tout le texte modifiable ») — chaque
+    // pastille des 3 listes affiche soit un NOM DE VÉHICULE (Rame VL) soit un
+    // TRIGRAMME (Colonne/Pénétration), tous deux des CHAMPS LIBRES déjà
+    // éditables ailleurs dans le formulaire (renommage véhicule, panneau
+    // Édition Rapide) — cf. JSDoc `patracVehicleDatasetAnchor`/
+    // `patracMemberDatasetAnchor`. Enregistré AVANT `pillRow` (même motif que
+    // `dashItemList` : un ancrage par item de la liste rendue, tous résolvant
+    // au MÊME élément DOM canonique).
+    const vehicleUniq = countPatracVehicleNames(formData);
+    const trigUniq = countPatracTrigrammes(formData);
+    rameVl.forEach((name) => registerPdfEditAnchor(anchors, patracVehicleDatasetAnchor(name, vehicleUniq), name));
+    colonne.forEach((trig) => registerPdfEditAnchor(anchors, patracMemberDatasetAnchor(trig, 'trigramme', trigUniq), trig));
+    penetration.forEach((trig) => registerPdfEditAnchor(anchors, patracMemberDatasetAnchor(trig, 'trigramme', trigUniq), trig));
 
     // Blindage BLIND.A : les 3 listes de pastilles sont non bornées (filet
     // `unbreakable:false`, audit « tout unbreakable a un filet »).
@@ -3210,8 +3323,30 @@ function patracEqptText(m: OiPatracMember): string {
     return [m.equipement, m.equipement2, m.grenades, m.tenue, m.gpb].filter((v) => v && v !== 'Sans').join(', ') || '-';
 }
 
-/** Cellules d'UNE rangée du tableau PATRACDVR — extrait pour être partagé par toutes les pages de continuation à titre distinct (`buildPatracPage`, anomalie E ; jamais « (SUITE) », garde C1). */
-function patracRowCells(r: { vehicle: string; m: OiPatracMember }, hasDir: boolean, p: OiPdfPalette): TableCell[] {
+/**
+ * Cellules d'UNE rangée du tableau PATRACDVR — extrait pour être partagé par
+ * toutes les pages de continuation à titre distinct (`buildPatracPage`,
+ * anomalie E ; jamais « (SUITE) », garde C1).
+ *
+ * `edit` (mission « tout le texte modifiable ») ancre les 3 SEULES colonnes
+ * libres — VL, PAX (trigramme), DIR : `CELLULE`/`FONCTION`/`PPALE`/`SEC.`/
+ * `AFIS` restent des pastilles à choix fermé (jamais ancrées, cf. JSDoc
+ * `patracMemberDatasetAnchor`) et `EQPT/GREN.` (`patracEqptText`) reste
+ * exclue car AGRÉGEANT 5 champs distincts en une seule chaîne jointe — même
+ * catégorie que les valeurs composées déjà exclues ailleurs (cf. JSDoc
+ * `pdf-preview-edit.ts`, « PÉRIMÈTRE EXACT »).
+ */
+function patracRowCells(
+    r: { vehicle: string; m: OiPatracMember },
+    hasDir: boolean,
+    p: OiPdfPalette,
+    edit?: { anchors: OiPdfEditAnchor[]; vehicleUniq: Map<string, number>; trigUniq: Map<string, number> },
+): TableCell[] {
+    if (edit) {
+        registerPdfEditAnchor(edit.anchors, patracVehicleDatasetAnchor(r.vehicle, edit.vehicleUniq), r.vehicle);
+        registerPdfEditAnchor(edit.anchors, patracMemberDatasetAnchor(r.m.trigramme, 'trigramme', edit.trigUniq), r.m.trigramme);
+        if (hasDir) registerPdfEditAnchor(edit.anchors, patracMemberDatasetAnchor(r.m.trigramme, 'dir', edit.trigUniq), r.m.dir);
+    }
     const cells: TableCell[] = [
         { text: r.vehicle, bold: true, fillColor: r.vehicle ? p.headerRow : undefined, alignment: 'center', noWrap: true, borderColor: cellBorder(p) },
         { text: r.m.trigramme || '-', bold: true, alignment: 'center', noWrap: true, borderColor: cellBorder(p) },
@@ -3288,7 +3423,7 @@ function patracRangeLabel(indices: number[]): string {
  * règle Nico « une page = un contenu »), aucune ligne omise ni tronquée.
  */
 function buildPatracPage(ctx: BuildCtx, num: () => number): Content | null {
-    const { formData, p, geo } = ctx;
+    const { formData, p, geo, anchors } = ctx;
     const rows = formData.patracdvr_rows ?? [];
     const allRows: Array<{ vehicle: string; m: OiPatracMember }> = [];
     for (const row of rows) {
@@ -3325,8 +3460,10 @@ function buildPatracPage(ctx: BuildCtx, num: () => number): Content | null {
         alignment: 'center',
         borderColor: cellBorder(p),
     }));
+    // Édition en place (mission « tout le texte modifiable ») — cf. JSDoc `patracRowCells`.
+    const editCtx = { anchors, vehicleUniq: countPatracVehicleNames(formData), trigUniq: countPatracTrigrammes(formData) };
     const renderTable = (subset: Array<{ vehicle: string; m: OiPatracMember }>): Content => ({
-        table: { widths, headerRows: 1, body: [headerRow, ...subset.map((r) => patracRowCells(r, hasDir, p))] },
+        table: { widths, headerRows: 1, body: [headerRow, ...subset.map((r) => patracRowCells(r, hasDir, p, editCtx))] },
         layout: LAYOUT_BORDERED,
     });
 

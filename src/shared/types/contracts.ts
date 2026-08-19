@@ -1087,6 +1087,18 @@ export interface OiPdfEditAnchor {
     index: number;
     /** Texte ATTENDU (brut, non normalisé) — permet de reconstituer, fragment pdf.js après fragment, une valeur repliée sur plusieurs lignes. */
     value: string;
+    /**
+     * `'field'` (défaut, absent) : la cible est un `<input>`/`<textarea>`,
+     * écriture via `.value` (mécanisme d'origine). `'dataset'` (mission
+     * « tout le texte modifiable ») : la cible est un élément DOM quelconque
+     * PORTEUR DE DONNÉES via son `dataset` (ex. `.patracdvr-member-btn`,
+     * `.patracdvr-vehicle-row` — pastilles/boutons réordonnables, PAS des
+     * champs de formulaire classiques), écriture via `.dataset[datasetKey]`
+     * — cf. `pdf-preview-edit.ts::commitDatasetEdit`.
+     */
+    kind?: 'field' | 'dataset';
+    /** Requis si `kind === 'dataset'` — nom de la clé `dataset` (camelCase, ex. `'trigramme'`, `'dir'`, `'vehicleName'`) portant la valeur affichée. */
+    datasetKey?: string;
 }
 
 // R4-a (D2, « une seule voie d'output PDF ») : `options` (config html2canvas/
