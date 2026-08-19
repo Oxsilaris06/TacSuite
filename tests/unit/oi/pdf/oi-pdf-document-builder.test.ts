@@ -52,6 +52,7 @@ import type {
     OiEffractionHypothesis,
     OiFormData,
     OiMoicpBlock,
+    OiPatracMember,
     OiPatracRow,
     OiPdfCollectedData,
     OiPhotoMeta,
@@ -341,7 +342,7 @@ describe('buildOiDocDefinition — finalisation (§4 SPEC-2026-08-18-pdf-et-cham
         }
     });
 
-    it('RÉGRESSION — les 5 champs remplis au maximum : jamais de refus, jamais tronqué, continuation propre sur des pages « (SUITE) » si la grille ne tient plus (A4 et 16:9)', () => {
+    it('RÉGRESSION — les 5 champs remplis au maximum : jamais de refus, jamais tronqué, continuation propre sur des pages à titre distinct (jamais « (SUITE) », garde C1) si la grille ne tient plus (A4 et 16:9)', () => {
         const longField = (n: number): string =>
             Array.from(
                 { length: n },
@@ -375,9 +376,16 @@ describe('buildOiDocDefinition — finalisation (§4 SPEC-2026-08-18-pdf-et-cham
                 expect(json, `Liaison intégral, non tronqué (${format})`).toContain(line);
             }
             // À ce volume, même le palier plancher ne tient plus en grille :
-            // la continuation « (SUITE) » doit avoir pris le relais (avant le
-            // correctif, ce marqueur n'existait jamais pour cette page).
-            expect(json, `continuation « (SUITE) » attendue à ce volume (${format})`).toContain('(SUITE)');
+            // une page de continuation à titre distinct doit avoir pris le
+            // relais (avant le correctif, aucune pagination contrôlée
+            // n'existait pour cette page) — jamais « (SUITE) » (garde C1),
+            // le titre plage de rubriques (`slotRangeLabel`) en fait foi.
+            expect(json, `pas de « (SUITE) » (${format})`).not.toContain('(SUITE)');
+            const titleOccurrences = (json.match(/CONDUITES À TENIR GÉNÉRALES/g) ?? []).length;
+            expect(titleOccurrences, `au moins 2 pages CAT à ce volume (${format})`).toBeGreaterThan(1);
+            expect(json, `titre de continuation à plage de rubriques distincte (${format})`).toMatch(
+                /CONDUITES À TENIR GÉNÉRALES — .+/,
+            );
         }
     });
 });
@@ -794,7 +802,7 @@ describe("buildOiDocDefinition — fiche adversaire, page dédiée « Modes d'ac
         expect((json.match(/MODES D'ACTION — DUPONT/g) ?? []).length).toBe(1);
     });
 
-    it("RÉGRESSION — 10 MA : jamais de refus, empaquetés sur des pages « (SUITE) » autonomes, AUCUN texte perdu (A4 et 16:9)", () => {
+    it("RÉGRESSION — 10 MA : jamais de refus, empaquetés sur des pages à titre distinct (jamais « (SUITE) », garde C1) autonomes, AUCUN texte perdu (A4 et 16:9)", () => {
         const maList = Array.from(
             { length: 10 },
             (_, i) => `Mode d'action numero ${i}: comportement possible face a l'intervention, a surveiller de pres.`,
@@ -808,10 +816,14 @@ describe("buildOiDocDefinition — fiche adversaire, page dédiée « Modes d'ac
                 expect(json, `texte intégral du MA doit apparaître (${format})`).toContain(ma);
             }
             // Avant le correctif, cette page débordait SILENCIEUSEMENT sur des
-            // pages sans titre (aucune pagination contrôlée) : ce marqueur
-            // n'existait alors JAMAIS — sa présence prouve que la continuation
-            // « (SUITE) » a bien pris le relais plutôt qu'un débordement muet.
-            expect(json, `continuation « (SUITE) » attendue à ce volume (${format})`).toContain('(SUITE)');
+            // pages sans titre (aucune pagination contrôlée) : la présence
+            // d'une page « MODES D'ACTION — DUPONT — MA<plage> » distincte
+            // (jamais « (SUITE) », garde C1) prouve que la continuation a
+            // bien pris le relais plutôt qu'un débordement muet.
+            expect(json, `pas de « (SUITE) » (${format})`).not.toContain('(SUITE)');
+            const titleOccurrences = (json.match(/MODES D'ACTION — DUPONT/g) ?? []).length;
+            expect(titleOccurrences, `au moins 2 pages MODES D'ACTION à ce volume (${format})`).toBeGreaterThan(1);
+            expect(json, `titre de continuation à plage MA distincte (${format})`).toMatch(/MODES D'ACTION — DUPONT — MA\d+( À MA\d+)?/);
         }
     });
 
@@ -1789,4 +1801,265 @@ describe('buildOiDocDefinition — RÉGRESSION anomalie #2 : 1er bloc articulati
             expect(JSON.stringify(content[i]).length, `page top-level ${i} ne doit jamais être vide`).toBeGreaterThan(2);
         }
     });
+});
+
+// ===========================================================================
+// Campagne de mesure 2026-08-18 — 5 anomalies restantes (directive Nico
+// « une page = un contenu ; aucun débordement ; aucune page vide »).
+// ===========================================================================
+
+// ---------------------------------------------------------------------------
+// Anomalie A — le repli « Mission + Exécution » ne séparait pas les pages :
+// `buildExecution()` ne portait aucun `pageBreak` propre (EXÉCUTION
+// s'enchaînait sans saut derrière MISSION), et ni MISSION ni EXÉCUTION
+// n'essayaient de palier de police avant ce repli (`unbreakable:false` sans
+// budget).
+// ---------------------------------------------------------------------------
+describe('buildOiDocDefinition — anomalie A : repli « Mission + Exécution » (campagne 2026-08-18)', () => {
+    function heavyMissionExecutionFormData(): OiFormData {
+        return {
+            missions_psig: 'Mission de reconnaissance et de neutralisation du groupe cible localise au 12 rue de la Republique.',
+            date_execution: '2026-08-18',
+            heure_execution: 'H+2',
+            action_body_text: 'Progression discrete puis assaut coordonne sur objectif principal, appui feu en couverture laterale.',
+            time_events: Array.from({ length: 24 }, (_, i) => ({
+                hour: `0${i % 10}:00`,
+                type: 'ÉVÉNEMENT',
+                description: `Point de synchronisation numero ${i} avec des details operationnels suffisamment longs pour peser lourdement sur la mise en page du tableau chronologique complet.`,
+            })),
+            hypotheses: Array.from(
+                { length: 16 },
+                (_, i) => `Hypothese numero ${i} avec un developpement suffisamment long pour peser sur la mise en page generale du document complet.`,
+            ),
+        };
+    }
+
+    it.each(['a4', '16:9'] as const)(
+        'RÉGRESSION — chronologie + hypothèses volumineuses (aucun palier ne fait tenir la fusion) : EXÉCUTION est une page top-level DISTINCTE portant SON PROPRE pageBreak, aucune donnée perdue (%s)',
+        (format) => {
+            const formData = heavyMissionExecutionFormData();
+            const dd = buildOiDocDefinition(collect(formData), { format });
+            const content = dd.content as Content[];
+            const json = JSON.stringify(dd);
+
+            const missionIdx = content.findIndex((page) => JSON.stringify(page).includes("MISSION DE L'UNITÉ"));
+            const execIdx = content.findIndex((page) => JSON.stringify(page).includes('EXÉCUTION'));
+            expect(missionIdx, `page MISSION introuvable (${format})`).toBeGreaterThanOrEqual(0);
+            expect(execIdx, `page EXÉCUTION introuvable (${format})`).toBeGreaterThanOrEqual(0);
+            expect(execIdx, `EXÉCUTION doit être une page top-level DISTINCTE de MISSION à ce volume (${format})`).not.toBe(missionIdx);
+
+            const execPage = content[execIdx] as { pageBreak?: string };
+            expect(execPage.pageBreak, `EXÉCUTION doit porter SON PROPRE pageBreak:'before' (${format})`).toBe('before');
+
+            // Aucune perte : chaque description d'événement et chaque hypothèse
+            // reste intégralement présente (jamais tronquée par le repli).
+            for (const e of formData.time_events as Array<{ description: string }>) {
+                expect(json, `description « ${e.description.slice(0, 20)}… » intégrale (${format})`).toContain(e.description);
+            }
+            for (const h of formData.hypotheses as string[]) {
+                expect(json, `hypothèse « ${h.slice(0, 20)}… » intégrale (${format})`).toContain(h);
+            }
+        },
+    );
+
+    it('volumétrie nominale (fixture riche standard) : MISSION et EXÉCUTION restent fusionnées sur UNE SEULE page (pas de régression du cas courant)', () => {
+        const formData = makeRichFormData();
+        const dd = buildOiDocDefinition(collect(formData), { format: 'a4' });
+        const content = dd.content as Content[];
+
+        const missionIdx = content.findIndex((page) => JSON.stringify(page).includes("MISSION DE L'UNITÉ"));
+        const execIdx = content.findIndex((page) => JSON.stringify(page).includes('EXÉCUTION'));
+        expect(missionIdx).toBeGreaterThanOrEqual(0);
+        expect(execIdx).toBe(missionIdx);
+    });
+});
+
+// ---------------------------------------------------------------------------
+// Anomalie B — l'ordre d'ENREGISTREMENT des ancrages d'édition de
+// `executionBodyContent` divergeait de l'ordre d'AFFICHAGE du tableau
+// `Content` retourné (chronologie/hypothèses enregistrées AVANT date/heure/
+// action, alors qu'elles s'affichent APRÈS) — désynchronise le curseur de la
+// couche d'édition de l'aperçu (`pdf-preview-edit.ts`).
+// ---------------------------------------------------------------------------
+describe("buildOiDocDefinition — anomalie B : ordre des ancrages d'édition EXÉCUTION (campagne 2026-08-18)", () => {
+    it("les ancrages sont enregistrés dans l'ORDRE D'AFFICHAGE (date/heure d'exécution, action, PUIS chronologie/hypothèses) — jamais l'ordre de construction interne", () => {
+        const formData: OiFormData = {
+            date_execution: '2026-08-18',
+            heure_execution: 'H+2',
+            action_body_text: 'Action test',
+            time_events: [{ hour: '08:00', type: 'DÉPART', description: 'PC' }],
+            hypotheses: ['Hypothese test'],
+        };
+        const dd = buildOiDocDefinition(collect(formData), { format: 'a4' });
+        const anchors = dd.pdfEditAnchors;
+
+        const idxOf = (pred: (a: (typeof anchors)[number]) => boolean): number => anchors.findIndex(pred);
+        const dateIdx = idxOf((a) => a.selector === '#oi-form #date_execution');
+        const heureIdx = idxOf((a) => a.selector === '#oi-form #heure_execution');
+        const actionIdx = idxOf((a) => a.selector === '#oi-form #action_body_text');
+        const timeIdx = idxOf((a) => a.selector.includes('time-hour-input'));
+        const hypIdx = idxOf((a) => a.selector.includes('hypothese-input'));
+
+        expect(dateIdx, 'date_execution ancré').toBeGreaterThanOrEqual(0);
+        expect(heureIdx, 'heure_execution ancré').toBeGreaterThanOrEqual(0);
+        expect(actionIdx, 'action_body_text ancré').toBeGreaterThanOrEqual(0);
+        expect(timeIdx, 'chronologie ancrée').toBeGreaterThanOrEqual(0);
+        expect(hypIdx, 'hypothèses ancrées').toBeGreaterThanOrEqual(0);
+
+        expect(dateIdx, `date_execution avant la chronologie (ordre d'affichage)`).toBeLessThan(timeIdx);
+        expect(heureIdx, `heure_execution avant la chronologie (ordre d'affichage)`).toBeLessThan(timeIdx);
+        expect(actionIdx, `action_body_text avant la chronologie (ordre d'affichage)`).toBeLessThan(timeIdx);
+        expect(dateIdx, `date_execution avant les hypothèses (ordre d'affichage)`).toBeLessThan(hypIdx);
+        expect(heureIdx, `heure_execution avant les hypothèses (ordre d'affichage)`).toBeLessThan(hypIdx);
+        expect(actionIdx, `action_body_text avant les hypothèses (ordre d'affichage)`).toBeLessThan(hypIdx);
+    });
+});
+
+// ---------------------------------------------------------------------------
+// Anomalie C — « Environnement et amis » n'essayait jamais de palier de
+// police ni de budget réel (`unbreakable:false` partout, section TOUJOURS
+// rendue) : des champs longs produisaient des pages orphelines sans titre.
+// ---------------------------------------------------------------------------
+describe('buildOiDocDefinition — anomalie C : « Environnement et amis » bornée (campagne 2026-08-18)', () => {
+    it.each(['a4', '16:9'] as const)('volumétrie réaliste : UNE SEULE page, aucun « (SUITE) », aucune perte (%s)', (format) => {
+        const formData: OiFormData = {
+            amies: 'Groupe GIGN en soutien a 500m, unite K9 en reserve, helicoptere de la gendarmerie en observation aerienne.',
+            terrain_info: 'Zone pavillonnaire dense, meteo degagee, vent faible de secteur nord-ouest, visibilite bonne.',
+            population: 'Quartier residentiel calme, peu de riverains presents en soiree, ecole a proximite immediate.',
+            cadre_juridique: 'Flagrant delit, mandat de perquisition en cours de validite, autorisation du magistrat obtenue.',
+        };
+        const json = JSON.stringify(buildOiDocDefinition(collect(formData), { format }));
+        expect(json, `pas de « (SUITE) » à ce volume réaliste (${format})`).not.toContain('(SUITE)');
+        expect(json, `amies intégral (${format})`).toContain(formData.amies as string);
+        expect(json, `cadre_juridique intégral (${format})`).toContain(formData.cadre_juridique as string);
+    });
+
+    it.each(['a4', '16:9'] as const)(
+        'RÉGRESSION — champs remplis au maximum : jamais de refus, jamais tronqué, continuation propre sur des pages à titre distinct (jamais « (SUITE) », garde C1) (%s)',
+        (format) => {
+            const longField = (n: number): string => 'Detail operationnel suffisamment long pour peser sur la mise en page complete. '.repeat(n);
+            const formData: OiFormData = {
+                amies: longField(40),
+                terrain_info: longField(40),
+                population: longField(40),
+                cadre_juridique: longField(40),
+            };
+            const json = JSON.stringify(buildOiDocDefinition(collect(formData), { format }));
+            expect(json, `pas de « (SUITE) » (${format})`).not.toContain('(SUITE)');
+            const titleOccurrences = (json.match(/ENVIRONNEMENT ET AMIS/g) ?? []).length;
+            expect(titleOccurrences, `au moins 2 pages ENVIRONNEMENT à ce volume (${format})`).toBeGreaterThan(1);
+            expect(json, `titre de continuation à plage de rubriques distincte (${format})`).toMatch(/ENVIRONNEMENT ET AMIS — .+/);
+            expect(json, `amies intégral, non tronqué (${format})`).toContain(formData.amies as string);
+            expect(json, `terrain_info intégral, non tronqué (${format})`).toContain(formData.terrain_info as string);
+            expect(json, `population intégral, non tronqué (${format})`).toContain(formData.population as string);
+            expect(json, `cadre_juridique intégral, non tronqué (${format})`).toContain(formData.cadre_juridique as string);
+        },
+    );
+});
+
+// ---------------------------------------------------------------------------
+// Anomalie D — les 3 listes de pastilles d'articulation (`pillRow`) n'étaient
+// jamais bornées : `rame_vl_order`/`colonne_progression_order`/
+// `ordre_penetration_order` longues produisaient une page orpheline.
+// ---------------------------------------------------------------------------
+describe("buildOiDocDefinition — anomalie D : listes d'articulation bornées (campagne 2026-08-18)", () => {
+    it.each(['a4', '16:9'] as const)('volumétrie réaliste (8 éléments par liste) : UNE SEULE page, aucun « (SUITE) » (%s)', (format) => {
+        const formData: OiFormData = {
+            rame_vl_order: Array.from({ length: 8 }, (_, i) => `VL${i + 1}`),
+            colonne_progression_order: Array.from({ length: 8 }, (_, i) => `C${i + 1}`),
+            ordre_penetration_order: Array.from({ length: 8 }, (_, i) => `P${i + 1}`),
+            place_chef: 'PC mobile',
+        };
+        const json = JSON.stringify(buildOiDocDefinition(collect(formData), { format }));
+        expect(json, `pas de « (SUITE) » à ce volume réaliste (${format})`).not.toContain('(SUITE)');
+        expect(json).toContain('VL8');
+        expect(json).toContain('P8');
+    });
+
+    it.each(['a4', '16:9'] as const)(
+        'RÉGRESSION — 40 éléments par liste : jamais de refus, jamais tronqué, continuation propre sur des pages à titre distinct (jamais « (SUITE) », garde C1), aucun élément perdu (%s)',
+        (format) => {
+            const formData: OiFormData = {
+                rame_vl_order: Array.from({ length: 40 }, (_, i) => `VL${i + 1}`),
+                colonne_progression_order: Array.from({ length: 40 }, (_, i) => `C${i + 1}`),
+                ordre_penetration_order: Array.from({ length: 40 }, (_, i) => `P${i + 1}`),
+                place_chef: 'PC mobile',
+            };
+            const json = JSON.stringify(buildOiDocDefinition(collect(formData), { format }));
+            expect(json, `pas de « (SUITE) » (${format})`).not.toContain('(SUITE)');
+            const titleOccurrences = (json.match(/ARTICULATION & ORDRES DE MOUVEMENT/g) ?? []).length;
+            expect(titleOccurrences, `au moins 2 pages ARTICULATION à ce volume (${format})`).toBeGreaterThan(1);
+            expect(json, `titre de continuation à plage de rubriques distincte (${format})`).toMatch(
+                /ARTICULATION & ORDRES DE MOUVEMENT — .+/,
+            );
+            expect(json, `VL40 présent, non perdu (${format})`).toContain('VL40');
+            expect(json, `C40 présent, non perdu (${format})`).toContain('C40');
+            expect(json, `P40 présent, non perdu (${format})`).toContain('P40');
+        },
+    );
+});
+
+// ---------------------------------------------------------------------------
+// Anomalie E — le tableau PATRACDVR (`patracFontPx`) réduisait la police par
+// paliers de NOMBRE DE LIGNES sans jamais calculer de budget de hauteur réel
+// : une unité volumineuse s'étalait sur plusieurs pages PHYSIQUES sans
+// qu'aucune ne porte le titre « RÉCAPITULATIF PATRACDVR ».
+// ---------------------------------------------------------------------------
+describe('buildOiDocDefinition — anomalie E : tableau PATRACDVR, budget de hauteur réel (campagne 2026-08-18)', () => {
+    function patracMember(i: number): OiPatracMember {
+        return {
+            trigramme: `M${i}`,
+            fonction: 'Op',
+            cellule: `AO${i % 4}`,
+            principales: 'UMP9',
+            secondaires: 'PSA',
+            afis: 'PIE',
+            grenades: 'Sans',
+            equipement: 'Sans',
+            equipement2: 'Sans',
+            tenue: 'Sans',
+            gpb: 'Sans',
+            dir: '',
+        };
+    }
+
+    it.each(['a4', '16:9'] as const)('volumétrie réaliste (10 membres) : UNE SEULE page, une seule occurrence du titre (%s)', (format) => {
+        const formData: OiFormData = {
+            patracdvr_rows: [{ vehicle: 'VL1', members: Array.from({ length: 10 }, (_, i) => patracMember(i)) }],
+        };
+        const json = JSON.stringify(buildOiDocDefinition(collect(formData), { format }));
+        expect(json, `pas de « (SUITE) » à ce volume réaliste (${format})`).not.toContain('(SUITE)');
+        expect((json.match(/RÉCAPITULATIF PATRACDVR/g) ?? []).length, `une seule occurrence du titre (${format})`).toBe(1);
+        expect(json).toContain('"text":"M9"');
+    });
+
+    it.each(['a4', '16:9'] as const)(
+        'RÉGRESSION — 60 membres : jamais de refus, jamais tronqué, CHAQUE page porte son titre distinct (« — MEMBRES <plage> » à partir de la 2e, jamais « (SUITE) », garde C1), aucun membre perdu (%s)',
+        (format) => {
+            const formData: OiFormData = {
+                patracdvr_rows: [{ vehicle: 'VL1', members: Array.from({ length: 60 }, (_, i) => patracMember(i)) }],
+            };
+            const json = JSON.stringify(buildOiDocDefinition(collect(formData), { format }));
+
+            // Aucun membre perdu.
+            for (let i = 0; i < 60; i++) {
+                expect(json, `trigramme M${i} présent (${format})`).toContain(`"text":"M${i}"`);
+            }
+
+            // Plusieurs occurrences du titre — une par page, jamais de page sans
+            // titre — et AU MOINS autant de tables `headerRows:1` que de pages
+            // PATRACDVR (chacune répète l'en-tête de colonnes ; le document
+            // porte aussi d'autres tables `headerRows:1` par ailleurs, ex. la
+            // chronologie d'EXÉCUTION — d'où l'inégalité plutôt qu'une égalité
+            // stricte).
+            const titleOccurrences = (json.match(/RÉCAPITULATIF PATRACDVR/g) ?? []).length;
+            expect(titleOccurrences, `au moins 2 pages PATRACDVR à ce volume (${format})`).toBeGreaterThan(1);
+            expect(json, `pas de « (SUITE) » (${format})`).not.toContain('(SUITE)');
+            expect(json, `titre de continuation à plage de membres distincte (${format})`).toMatch(
+                /RÉCAPITULATIF PATRACDVR — MEMBRES? \d+(-\d+)?/,
+            );
+            const headerRowsOccurrences = (json.match(/"headerRows":1/g) ?? []).length;
+            expect(headerRowsOccurrences, `chaque page PATRACDVR répète l'en-tête de colonnes (${format})`).toBeGreaterThanOrEqual(titleOccurrences);
+        },
+    );
 });

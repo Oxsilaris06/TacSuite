@@ -63,7 +63,6 @@ import {
     mm,
     pageGeometry,
     palette,
-    patracFontPx,
     estimateCharsPerLine,
     estimateWrappedLines,
     fitUsageToPage,
@@ -291,6 +290,22 @@ function textLinePt(text: string, fontPx: number, columnWidthPt: number): number
 /** Hauteur (pt) d'une carte (`card()`, blocks.ts) dont le CORPS (hors h3) coûte `bodyPt` — h3 + corps + paddings verticaux. */
 function cardWithTitlePt(bodyPt: number): number {
     return EFFRAC_H3_PT + bodyPt + EFFRAC_CARD_VPAD_PT;
+}
+
+/**
+ * Hauteur (pt) d'une grille de pilules (`pillRow`/`pillGrid`, blocks.ts) au
+ * palier `fontPx` — `pillGrid` empile un nombre FIXE de 4 pilules par
+ * rangée, INDÉPENDANT de la largeur de colonne (chaque rangée = une ligne de
+ * table `LAYOUT_PILL`, paddings verticaux 2+2 pt, cf. sa JSDoc `blocks.ts`) :
+ * coût = nombre de rangées × (avance de ligne + paddings). `itemCount === 0`
+ * : une seule ligne de secours (`{ text: '-' }`). Réutilisé par
+ * `buildArticulationOverview` (anomalie D).
+ */
+function pillGridPt(itemCount: number, fontPx: number): number {
+    if (itemCount === 0) {
+        return effracLinePt(fontPx);
+    }
+    return Math.ceil(itemCount / 4) * (effracLinePt(fontPx) + 4);
 }
 
 /** Fond/filigrane — port de `pdf-engine-v2.ts:772-776`. */
@@ -1008,20 +1023,44 @@ function buildAdversaryFiche(ctx: BuildCtx, adv: OiAdversary, index: number): Co
  * Gap (pt) entre deux cartes empilées pleine largeur (`margin:[0,6,0,0]`,
  * motif déjà utilisé partout dans ce fichier, ex. colonnes de la fiche
  * adversaire) — mesure PARTAGÉE par le coût et le rendu de
- * `buildAdversaryModesActionPage`/`buildCatPage` (repli continuation
- * « (SUITE) » des deux, cf. `packCardsByBudget`).
+ * `buildAdversaryModesActionPage`/`buildCatPage` (repli continuation à titre
+ * distinct des deux, jamais « (SUITE) », cf. `packCardsByBudget`).
  */
 const STACKED_CARD_GAP_PT = 6;
+
+/**
+ * Gap (pt) entre deux RANGÉES de grille empilées (`margin:[0,5,0,0]`, motif
+ * déjà utilisé par « ENVIRONNEMENT ET AMIS »/« ARTICULATION & ORDRES DE
+ * MOUVEMENT » avant leur correctif budget réel, anomalies C/D) — mesure
+ * PARTAGÉE par le coût et le rendu de `buildEnvironnement`/
+ * `buildArticulationOverview`, jamais recalculée différemment entre les deux.
+ */
+const GRID_ROW_GAP_PT = 5;
+
+/**
+ * Coût (pt) d'UNE carte `card()` SANS titre `h3` (juste des lignes
+ * `LABEL : valeur`, `fv()`/`labelValue`) au palier `fontPx`, dans une colonne
+ * de `columnWidthPt` — paddings verticaux `card()` (`EFFRAC_CARD_VPAD_PT`),
+ * AUCUN `h3` (à la différence de `cardWithTitlePt`, réservé aux cartes à
+ * titre). Réutilisé par `buildEnvironnement` (anomalie C) et
+ * `buildArticulationOverview` (PLACE DU CHEF, anomalie D).
+ */
+function fieldsCardPt(fields: ReadonlyArray<readonly [string, string]>, fontPx: number, columnWidthPt: number): number {
+    const bodyPt = fields.reduce((sum, [label, value]) => sum + textLinePt(`${label} : ${value}`, fontPx, columnWidthPt), 0);
+    return bodyPt + EFFRAC_CARD_VPAD_PT;
+}
 
 /**
  * Empaquette des coûts (pt) déjà résolus À UN PALIER de police en 1+ groupes
  * dont le total ne dépasse jamais `budgetPt` (correctif régressions
  * débordement Modes d'action/CAT, directive Nico « une page = un contenu,
  * aucun débordement, jamais, aucune page vide ») — chaque groupe devient une
- * page « (SUITE) » AUTONOME (contrairement à `packHypotheses` ci-dessus,
- * aucun budget n'est partagé avec un bloc voisin : les deux appelants de ce
- * paquetage, `buildAdversaryModesActionPage`/`buildCatPage`, consacrent
- * TOUTE page — 1re incluse — au même contenu, jamais à un bloc distinct).
+ * page de continuation AUTONOME à titre distinct (jamais « (SUITE) », garde
+ * C1 ; cf. `maRangeLabel`/`slotRangeLabel` pour la fabrique de ces titres) —
+ * contrairement à `packHypotheses` ci-dessus, aucun budget n'est partagé
+ * avec un bloc voisin : les deux appelants de ce paquetage,
+ * `buildAdversaryModesActionPage`/`buildCatPage`, consacrent TOUTE page —
+ * 1re incluse — au même contenu, jamais à un bloc distinct.
  * Frontière = item, jamais coupé en son milieu. Un item SEUL déjà plus grand
  * que `budgetPt` (MA/champ de plusieurs milliers de caractères) reste
  * néanmoins SEUL dans son groupe plutôt que de bloquer l'empaquetage — CE
@@ -1054,9 +1093,36 @@ function packCardsByBudget(costs: number[], budgetPt: number): number[][] {
     return groups;
 }
 
+/**
+ * Étiquette de plage de rubriques « <premier libellé> À <dernier libellé> »/
+ * « <libellé> » d'un groupe d'indices CONTIGU produit par `packCardsByBudget`
+ * — titre autonome de page de continuation (jamais « (SUITE) », garde C1),
+ * même esprit que `ciblesRangeLabel`/`hypRangeLabel` mais par LIBELLÉ : les
+ * rubriques empaquetées ici (ENVIRONNEMENT, CAT, ARTICULATION) sont
+ * hétérogènes, sans ordre numérique naturel pour le lecteur — le nom de la
+ * rubrique rend la page autoportante, pas son rang.
+ */
+function slotRangeLabel(indices: number[], labels: readonly string[]): string {
+    const first = labels[indices[0] as number] as string;
+    const last = labels[indices[indices.length - 1] as number] as string;
+    return first === last ? first : `${first} À ${last}`;
+}
+
 /** Coût (pt) d'UNE carte MA (h3 « MAn » + texte intégral, `cardWithTitlePt`) au palier `fontPx`, pleine largeur de page. */
 function maCardPt(ma: string, fontPx: number, contentWidthPt: number): number {
     return cardWithTitlePt(textLinePt(str(ma), fontPx, contentWidthPt));
+}
+
+/**
+ * Étiquette de plage « MA3 À MA5 »/« MA3 » (1-based, même numérotation que
+ * les cartes `h3` rendues, `renderCards`) d'un groupe d'indices CONTIGU de
+ * `packCardsByBudget` — titre autonome de page de continuation (jamais
+ * « (SUITE) », garde C1).
+ */
+function maRangeLabel(indices: number[]): string {
+    const first = (indices[0] as number) + 1;
+    const last = (indices[indices.length - 1] as number) + 1;
+    return first === last ? `MA${first}` : `MA${first} À MA${last}`;
 }
 
 /**
@@ -1075,7 +1141,8 @@ function maCardPt(ma: string, fontPx: number, contentWidthPt: number): number {
  * 1) essaie chaque palier 11→7 pour tenir la TOTALITÉ des cartes MA sur UNE
  * SEULE page ; 2) si même le palier plancher ne suffit pas (cas limite —
  * beaucoup de MA, ou un MA de plusieurs milliers de caractères), empaquette
- * les cartes sur des pages « MODES D'ACTION — <nom> (SUITE) » AUTONOMES
+ * les cartes sur des pages « MODES D'ACTION — <nom> — MA<plage> » AUTONOMES
+ * à titre distinct (jamais « (SUITE) », garde C1 ; `maRangeLabel`)
  * (`packCardsByBudget`, palier retenu = celui qui produit le MOINS de pages,
  * même esprit que `buildEffractionPages::bestPacking`) plutôt que de refuser
  * ou tronquer — un MA unique trop long pour tenir SEUL sur sa page (au
@@ -1115,9 +1182,10 @@ function buildAdversaryModesActionPage(ctx: BuildCtx, adv: OiAdversary, nom: str
         return { stack: [h2(`MODES D'ACTION — ${nom}`, p, geo.contentWidthPt), ...renderCards(allIndices)], fontSize: fit.fontPx };
     }
 
-    // 2) Cas limite : pages « (SUITE) » autonomes, palier retenu = celui qui
-    // produit le MOINS de pages (à égalité, le plus lisible/premier
-    // rencontré l'emporte, `FIT_FONT_STEPS` trié décroissant).
+    // 2) Cas limite : pages de continuation à titre distinct (jamais
+    // « (SUITE) », garde C1), palier retenu = celui qui produit le MOINS de
+    // pages (à égalité, le plus lisible/premier rencontré l'emporte,
+    // `FIT_FONT_STEPS` trié décroissant).
     const budgetPt = availablePt - EFFRAC_H2_PT;
     let best: { groups: number[][]; fontPx: number } | null = null;
     for (const fontPx of FIT_FONT_STEPS) {
@@ -1134,7 +1202,7 @@ function buildAdversaryModesActionPage(ctx: BuildCtx, adv: OiAdversary, nom: str
                 return { stack: [h2(`MODES D'ACTION — ${nom}`, p, geo.contentWidthPt), ...renderCards(indices)], fontSize: fontPx };
             }
             return {
-                stack: [h2(`MODES D'ACTION — ${nom} (SUITE)`, p, geo.contentWidthPt), ...renderCards(indices)],
+                stack: [h2(`MODES D'ACTION — ${nom} — ${maRangeLabel(indices)}`, p, geo.contentWidthPt), ...renderCards(indices)],
                 fontSize: fontPx,
                 pageBreak: 'before',
             };
@@ -1164,30 +1232,106 @@ function buildAdversaryPages(ctx: BuildCtx): Content[] {
 
 /* ==========================================================================
  * Section 3 — « 3. ENVIRONNEMENT ET AMIS » (pdf-engine-v2.ts:972-996).
+ *
+ * CORRECTIF ANOMALIE C (campagne de mesure 2026-08-18, directive Nico « une
+ * page = un contenu, aucun débordement, jamais ; aucune page vide ») :
+ * l'ancienne version rendait TOUJOURS au palier de police du document,
+ * `unbreakable:false` sur chaque carte SANS AUCUN essai de palier ni budget
+ * réel — mesuré : `amies`/`terrain_info`/`population`/`cadre_juridique`
+ * longs ⇒ 9 pages orphelines sans titre. Même mécanique que
+ * `buildCatPage`/`buildAdversaryModesActionPage` (`fitUsageToPage`,
+ * `packCardsByBudget`) : 1) essaie la disposition VALIDÉE (grille 2 colonnes)
+ * aux paliers 11→7 ; 2) SEULEMENT si même le palier plancher ne suffit pas,
+ * abandonne la grille au profit d'un empilement PLEINE LARGEUR (une carte par
+ * champ) paginé sur des pages « <titre> — <plage de rubriques> » autonomes
+ * (jamais « (SUITE) », garde C1 ; `slotRangeLabel`) — jamais de refus,
+ * jamais de troncature (section toujours rendue, `ctx.fitErrors` jamais
+ * alimenté par cette page).
  * ======================================================================== */
+const ENV_FIELD_SLOTS: ReadonlyArray<readonly [string, string]> = [
+    ['Forces Amies / Concours', 'amies'],
+    ['Terrain / Météo', 'terrain_info'],
+    ['Éclairage', 'eclairage'],
+    ['Lever du soleil', 'lever_soleil'],
+    ['Population / Voisinage', 'population'],
+    ['Faune / Animaux', 'faune_animaux'],
+    ['Cadre Juridique', 'cadre_juridique'],
+    ['Accès Principal', 'acces_principal'],
+    ['Cheminement Initial', 'cheminement_initial'],
+] as const;
+
 function buildEnvironnement(ctx: BuildCtx, num: () => number): Content {
-    const { p, geo } = ctx;
-    const left = [
-        fv(ctx, 'Forces Amies / Concours', 'amies'),
-        fv(ctx, 'Terrain / Météo', 'terrain_info'),
-        fv(ctx, 'Éclairage', 'eclairage'),
-        fv(ctx, 'Lever du soleil', 'lever_soleil'),
-    ];
-    const right = [fv(ctx, 'Population / Voisinage', 'population'), fv(ctx, 'Faune / Animaux', 'faune_animaux'), fv(ctx, 'Cadre Juridique', 'cadre_juridique')];
-    // Blindage BLIND.A (audit « tout `unbreakable` restant a un filet ») :
-    // champs texte libres non bornés (`amies`/`terrain_info`/…) — même filet
-    // minimal `unbreakable:false` que `situationCard` (`buildCover`), jamais
-    // de perte silencieuse si l'un d'eux dépasse la page.
+    const { formData, p, geo } = ctx;
+    const sectionNum = num();
+    const title = `${sectionNum}. ENVIRONNEMENT ET AMIS`;
+    const columnWidthPt = (geo.contentWidthPt - mm(6)) / 2;
+    const availablePt = geo.contentHeightPt - EFFRAC_FITS_SAFETY_PT;
+
+    const leftKeys = ENV_FIELD_SLOTS.slice(0, 4);
+    const rightKeys = ENV_FIELD_SLOTS.slice(4, 7);
+    const accesKeys = ENV_FIELD_SLOTS.slice(7, 8);
+    const cheminKeys = ENV_FIELD_SLOTS.slice(8, 9);
+    const textFieldsOf = (keys: ReadonlyArray<readonly [string, string]>): Array<[string, string]> =>
+        keys.map(([label, key]): [string, string] => [label, strOr(formData[key])]);
+
+    // 1) Disposition VALIDÉE (grille 2 colonnes), paliers 11→7 — couvre
+    // l'immense majorité des cas réels (champs courts).
+    const computeGridCostPt = (fontPx: number): number => {
+        const row1Pt = Math.max(fieldsCardPt(textFieldsOf(leftKeys), fontPx, columnWidthPt), fieldsCardPt(textFieldsOf(rightKeys), fontPx, columnWidthPt));
+        const row2Pt = Math.max(fieldsCardPt(textFieldsOf(accesKeys), fontPx, columnWidthPt), fieldsCardPt(textFieldsOf(cheminKeys), fontPx, columnWidthPt));
+        return EFFRAC_H2_PT + row1Pt + GRID_ROW_GAP_PT + row2Pt;
+    };
+    const gridFit = fitUsageToPage(computeGridCostPt, availablePt);
+    if ('fontPx' in gridFit) {
+        // Blindage BLIND.A (audit « tout `unbreakable` restant a un filet ») :
+        // champs texte libres non bornés (`amies`/`terrain_info`/…) — même
+        // filet minimal `unbreakable:false` que `situationCard` (`buildCover`),
+        // jamais de perte silencieuse si l'un d'eux dépasse malgré tout la page.
+        const left = leftKeys.map(([label, key]) => fv(ctx, label, key));
+        const right = rightKeys.map(([label, key]) => fv(ctx, label, key));
+        const acces = accesKeys.map(([label, key]) => fv(ctx, label, key));
+        const chemin = cheminKeys.map(([label, key]) => fv(ctx, label, key));
+        return {
+            stack: [
+                h2(title, p, geo.contentWidthPt),
+                grid2([card(left, p, { unbreakable: false })], [card(right, p, { unbreakable: false })]),
+                { text: '', margin: [0, GRID_ROW_GAP_PT, 0, 0] },
+                grid2([card(acces, p, { unbreakable: false })], [card(chemin, p, { unbreakable: false })]),
+            ],
+            fontSize: gridFit.fontPx,
+        };
+    }
+
+    // 2) Cas limite : grille abandonnée, une carte PLEINE LARGEUR par champ,
+    // empaquetées par budget de hauteur réel sur des pages à titre distinct
+    // (jamais « (SUITE) », garde C1) autonomes — même mécanique que
+    // `buildCatPage`/`buildAdversaryModesActionPage`.
+    const budgetPt = availablePt - EFFRAC_H2_PT;
+    let best: { groups: number[][]; fontPx: number } | null = null;
+    for (const fontPx of FIT_FONT_STEPS) {
+        const costs = ENV_FIELD_SLOTS.map(([label, key]) => fieldsCardPt([[label, strOr(formData[key])]], fontPx, geo.contentWidthPt));
+        const groups = packCardsByBudget(costs, budgetPt);
+        if (best === null || groups.length < best.groups.length) {
+            best = { groups, fontPx };
+        }
+    }
+    const { groups, fontPx } = best as { groups: number[][]; fontPx: number };
+    const fieldNodes = ENV_FIELD_SLOTS.map(([label, key]) => card([fv(ctx, label, key)], p, { unbreakable: false }));
+    const renderSlots = (indices: number[]): Content[] => {
+        const nodes = indices.map((i) => fieldNodes[i] as Content);
+        return nodes.flatMap((n, i) => (i === 0 ? [n] : [{ text: '', margin: [0, STACKED_CARD_GAP_PT, 0, 0] } as Content, n]));
+    };
     return {
-        stack: [
-            h2(`${num()}. ENVIRONNEMENT ET AMIS`, p, geo.contentWidthPt),
-            grid2([card(left, p, { unbreakable: false })], [card(right, p, { unbreakable: false })]),
-            { text: '', margin: [0, 5, 0, 0] },
-            grid2(
-                [card([fv(ctx, 'Accès Principal', 'acces_principal')], p, { unbreakable: false })],
-                [card([fv(ctx, 'Cheminement Initial', 'cheminement_initial')], p, { unbreakable: false })],
-            ),
-        ],
+        stack: groups.map((indices, idx): Content => {
+            if (idx === 0) {
+                return { stack: [h2(title, p, geo.contentWidthPt), ...renderSlots(indices)], fontSize: fontPx };
+            }
+            const label = slotRangeLabel(
+                indices,
+                ENV_FIELD_SLOTS.map(([fieldLabel]) => fieldLabel),
+            );
+            return { stack: [h2(`${title} — ${label}`, p, geo.contentWidthPt), ...renderSlots(indices)], fontSize: fontPx, pageBreak: 'before' };
+        }),
     };
 }
 
@@ -1203,9 +1347,20 @@ function buildEnvironnement(ctx: BuildCtx, num: () => number): Content {
  * couple dépasse la page à ce palier, le solveur fit-to-page (`fitUsageToPage`,
  * même mécanique que les usages P1) tente les paliers 11→7 ; si MÊME le
  * palier plancher ne suffit pas, repli NATUREL sur les 2 pages historiques
- * séparées (`buildMission`/`buildExecution`, rendu INCHANGÉ) — jamais un
- * refus, cette paire n'est pas un « usage » à contrat dur comme la fiche
- * adversaire/ZMSPCP/MOICP/effraction.
+ * séparées (`buildMission`/`buildExecution`) — jamais un refus, cette paire
+ * n'est pas un « usage » à contrat dur comme la fiche adversaire/ZMSPCP/MOICP/
+ * effraction.
+ *
+ * CORRECTIF ANOMALIE A (campagne de mesure 2026-08-18) : ce repli était
+ * cassé sur deux points — (1) `buildExecution()` ne portait aucun
+ * `pageBreak` propre, EXÉCUTION s'enchaînait donc SANS saut derrière MISSION
+ * (seul `pushPages` pose le saut sur le PREMIER élément du tableau retourné,
+ * jamais les suivants — même contrat que `galleryPages()`, cf. JSDoc
+ * `pushPages`) ; (2) `buildMission`/`buildExecution` rendaient leur corps
+ * inconditionnellement au palier nominal du document, `unbreakable:false`
+ * SANS aucun budget — désormais chacune est protégée par son propre
+ * `fitUsageToPage` (11→7, `missionPagePt`/`executionPagePt`), toujours sans
+ * jamais refuser.
  * ======================================================================== */
 
 /** Corps de « 4. MISSION DE L'UNITÉ » (sans le `h2`) — `fontPx` paramétrable pour le rendu fusionné (`buildMissionExecutionPages`) comme pour le repli standalone (`buildMission`, `baseFontSize`). */
@@ -1226,9 +1381,39 @@ function missionBodyContent(ctx: BuildCtx, fontPx: number): Content {
     );
 }
 
-/** Corps de « 5. EXÉCUTION » (sans le `h2`) — `fontPx` paramétrable, cf. JSDoc `missionBodyContent`. */
+/**
+ * Corps de « 5. EXÉCUTION » (sans le `h2`) — `fontPx` paramétrable, cf. JSDoc
+ * `missionBodyContent`.
+ *
+ * ANOMALIE B (campagne de mesure 2026-08-18) : l'ORDRE D'ENREGISTREMENT des
+ * ancrages d'édition (`registerPdfEditAnchor`, `ctx.anchors`) DOIT suivre
+ * L'ORDRE D'AFFICHAGE du tableau `Content` retourné ci-dessous — jamais
+ * l'ordre de CONSTRUCTION des variables locales. `pdf-preview-edit.ts`
+ * aligne ses ancrages sur les fragments de texte RÉELS (pdf.js) dans l'ordre
+ * d'APPARITION visuelle ; un décalage désynchronise son curseur (34/74
+ * ancrages perdus, ZMSPCP/MOICP/Effraction/CAT). Le tableau retourné affiche
+ * D'ABORD date/heure d'exécution + action, PUIS la chronologie/les
+ * hypothèses — les champs `fv(...)` de date/heure/action sont donc construits
+ * (et leurs ancrages enregistrés) EN PREMIER ci-dessous, avant la chronologie
+ * (`events.forEach`) et les hypothèses (`hypothesisLine`), même si ces
+ * dernières restent affectées à des `const` utilisées plus bas dans le
+ * fichier — seul l'ORDRE D'APPEL compte, `registerPdfEditAnchor` étant un
+ * simple `push` synchrone (cf. JSDoc `BuildCtx.anchors`).
+ */
 function executionBodyContent(ctx: BuildCtx, fontPx: number): Content[] {
     const { formData, p } = ctx;
+
+    // Affichés EN PREMIER (cf. JSDoc ci-dessus) : construits ici, avant la
+    // chronologie/les hypothèses, pour que leurs ancrages s'enregistrent
+    // dans l'ordre d'affichage.
+    const dateExecutionField = fv(ctx, "Date d'exécution", 'date_execution');
+    const heureExecutionField = fv(ctx, 'Heure H', 'heure_execution', {
+        fontSize: Math.round(fontPx * 1.2),
+        valueColor: p.accent,
+        valueBold: true,
+    });
+    const actionField = fv(ctx, 'Idée de Manœuvre / Action', 'action_body_text');
+
     const events = formData.time_events ?? [];
     // Édition en place — chronologie : liste À PLAT sans identifiant propre,
     // même mécanique que `hypothesisLine` (`indexedFieldAnchor`, rang =
@@ -1279,57 +1464,38 @@ function executionBodyContent(ctx: BuildCtx, fontPx: number): Content[] {
     const hypCard = card([h3("Hypothèses d'ensemble", p), ...hypBody], p, { unbreakable: false });
 
     return [
-        grid2(
-            [fv(ctx, "Date d'exécution", 'date_execution')],
-            [
-                fv(ctx, 'Heure H', 'heure_execution', {
-                    fontSize: Math.round(fontPx * 1.2),
-                    valueColor: p.accent,
-                    valueBold: true,
-                }),
-            ],
-        ),
+        grid2([dateExecutionField], [heureExecutionField]),
         { text: '', margin: [0, 4, 0, 0] },
-        fv(ctx, 'Idée de Manœuvre / Action', 'action_body_text'),
+        actionField,
         { text: '', margin: [0, 4, 0, 0] },
         grid2([chronoCard], [hypCard]),
     ];
 }
 
-/** Page standalone « <N>. MISSION DE L'UNITÉ » — repli historique (rendu INCHANGÉ) si la fusion avec « EXÉCUTION » ne tient sur aucun palier. `num` déjà résolu par l'appelant (`buildMissionExecutionPages`), jamais recalculé ici. */
-function buildMission(ctx: BuildCtx, num: number): Content {
-    const { p, geo, baseFontSize } = ctx;
-    return { stack: [h2(`${num}. MISSION DE L'UNITÉ`, p, geo.contentWidthPt), missionBodyContent(ctx, baseFontSize)] };
-}
-
-/** Page standalone « <N>. EXÉCUTION » — repli historique, cf. JSDoc `buildMission`. */
-function buildExecution(ctx: BuildCtx, num: number): Content {
-    const { p, geo, baseFontSize } = ctx;
-    return { stack: [h2(`${num}. EXÉCUTION`, p, geo.contentWidthPt), ...executionBodyContent(ctx, baseFontSize)] };
-}
-
 /**
- * Coût (pt) du couple MISSION+EXÉCUTION fusionné au palier `fontPx» —
- * modèle physique partagé (mêmes primitives que les solveurs fit-to-page P1 :
- * `effracLinePt`/`textLinePt`/`cardWithTitlePt`). Chaque ENTRÉE de la
- * Chronologie/des Hypothèses est mesurée INDIVIDUELLEMENT (lignes réellement
- * enroulées dans sa colonne, `textLinePt` — jamais une estimation moyenne à 1
- * ligne/entrée) : correctif revue (2026-08-10) — une estimation grossière
- * « 1 ligne par entrée » sous-évaluait la table Chronologie/Hypothèses dès
- * que leurs textes s'enroulent sur 2+ lignes, ce qui laissait `long-case.json`
- * fusionner PUIS déborder silencieusement sur une page 2 non voulue (titre
- * « 5. EXÉCUTION » en bas de page 1, table Chronologie tronquée en plein
- * milieu SANS marqueur — exactement le défaut que la mission P1 combat).
+ * Coût (pt) de « <N>. MISSION DE L'UNITÉ » SEULE (h2 + corps) au palier
+ * `fontPx` — factorisé hors de `missionExecutionCostPt` pour être réutilisé
+ * TEL QUEL par `buildMission` (repli standalone, anomalie A) : même modèle
+ * physique, jamais recalculé différemment entre le rendu fusionné et le
+ * rendu séparé.
  */
-function missionExecutionCostPt(ctx: BuildCtx, fontPx: number): number {
+function missionPagePt(ctx: BuildCtx, fontPx: number): number {
     const { formData, geo } = ctx;
-    const line = effracLinePt(fontPx);
-    const halfColumnWidthPt = (geo.contentWidthPt - mm(6)) / 2;
-
     const missionFontPx = Math.round(fontPx * 1.6);
     const missionCpl = estimateCharsPerLine(missionFontPx, geo.contentWidthPt - 16);
     const missionPt = wrappedLinesWithNewlines(strOr(formData.missions_psig), missionCpl) * effracLinePt(missionFontPx) + 12;
-    const mission4Pt = EFFRAC_H2_PT + missionPt;
+    return EFFRAC_H2_PT + missionPt;
+}
+
+/**
+ * Coût (pt) de « <N>. EXÉCUTION » SEULE (h2 + corps) au palier `fontPx» —
+ * factorisé hors de `missionExecutionCostPt`, cf. JSDoc `missionPagePt`
+ * (réutilisé TEL QUEL par `buildExecution`, anomalie A).
+ */
+function executionPagePt(ctx: BuildCtx, fontPx: number): number {
+    const { formData, geo } = ctx;
+    const line = effracLinePt(fontPx);
+    const halfColumnWidthPt = (geo.contentWidthPt - mm(6)) / 2;
 
     const actionPt = textLinePt(`Idée de Manœuvre / Action : ${strOr(formData.action_body_text)}`, fontPx, geo.contentWidthPt);
 
@@ -1350,9 +1516,54 @@ function missionExecutionCostPt(ctx: BuildCtx, fontPx: number): number {
             : line;
     const hypPt = cardWithTitlePt(hypRowsPt);
 
-    const exec5Pt = EFFRAC_H2_PT + line + 4 + actionPt + 4 + Math.max(chronoPt, hypPt);
+    return EFFRAC_H2_PT + line + 4 + actionPt + 4 + Math.max(chronoPt, hypPt);
+}
 
-    return mission4Pt + 20 /* séparateur */ + exec5Pt;
+/**
+ * Page standalone « <N>. MISSION DE L'UNITÉ » — repli si la fusion avec
+ * « EXÉCUTION » ne tient sur aucun palier (`buildMissionExecutionPages`).
+ * `num` déjà résolu par l'appelant, jamais recalculé ici.
+ *
+ * CORRECTIF ANOMALIE A (campagne de mesure 2026-08-18) : protégée par le
+ * MÊME solveur `fitUsageToPage` (paliers 11→7) que ZMSPCP/MOICP, plutôt que
+ * rendue inconditionnellement au palier nominal du document — cette page
+ * n'est PAS un usage à contrat dur (JSDoc `buildMissionExecutionPages`) :
+ * si même le palier plancher déborde (cas limite non observé en pratique, le
+ * corps de MISSION tient toujours largement), `ctx.fitErrors` n'est JAMAIS
+ * alimenté ici — rendue au plancher, jamais de refus pour ce couple.
+ */
+function buildMission(ctx: BuildCtx, num: number): Content {
+    const { p, geo } = ctx;
+    const fit = fitUsageToPage((fontPx) => missionPagePt(ctx, fontPx), geo.contentHeightPt - EFFRAC_FITS_SAFETY_PT);
+    const fontPx = 'fontPx' in fit ? fit.fontPx : FIT_FONT_FLOOR;
+    return { stack: [h2(`${num}. MISSION DE L'UNITÉ`, p, geo.contentWidthPt), missionBodyContent(ctx, fontPx)], fontSize: fontPx };
+}
+
+/** Page standalone « <N>. EXÉCUTION » — repli, cf. JSDoc `buildMission` (même protection fit-to-page, anomalie A, jamais de refus). */
+function buildExecution(ctx: BuildCtx, num: number): Content {
+    const { p, geo } = ctx;
+    const fit = fitUsageToPage((fontPx) => executionPagePt(ctx, fontPx), geo.contentHeightPt - EFFRAC_FITS_SAFETY_PT);
+    const fontPx = 'fontPx' in fit ? fit.fontPx : FIT_FONT_FLOOR;
+    return { stack: [h2(`${num}. EXÉCUTION`, p, geo.contentWidthPt), ...executionBodyContent(ctx, fontPx)], fontSize: fontPx };
+}
+
+/**
+ * Coût (pt) du couple MISSION+EXÉCUTION fusionné au palier `fontPx» —
+ * modèle physique partagé (mêmes primitives que les solveurs fit-to-page P1 :
+ * `effracLinePt`/`textLinePt`/`cardWithTitlePt`), somme de `missionPagePt`/
+ * `executionPagePt` (ci-dessus) + le séparateur visuel entre les deux titres.
+ * Chaque ENTRÉE de la Chronologie/des Hypothèses est mesurée INDIVIDUELLEMENT
+ * (lignes réellement enroulées dans sa colonne, `textLinePt` — jamais une
+ * estimation moyenne à 1 ligne/entrée) : correctif revue (2026-08-10) — une
+ * estimation grossière « 1 ligne par entrée » sous-évaluait la table
+ * Chronologie/Hypothèses dès que leurs textes s'enroulent sur 2+ lignes, ce
+ * qui laissait `long-case.json` fusionner PUIS déborder silencieusement sur
+ * une page 2 non voulue (titre « 5. EXÉCUTION » en bas de page 1, table
+ * Chronologie tronquée en plein milieu SANS marqueur — exactement le défaut
+ * que la mission P1 combat).
+ */
+function missionExecutionCostPt(ctx: BuildCtx, fontPx: number): number {
+    return missionPagePt(ctx, fontPx) + 20 /* séparateur */ + executionPagePt(ctx, fontPx);
 }
 
 /**
@@ -1364,9 +1575,17 @@ function missionExecutionCostPt(ctx: BuildCtx, fontPx: number): number {
  * marge de sécurité (`EFFRAC_FITS_SAFETY_PT`) que les solveurs P1, appliquée
  * ICI AUSSI au palier nominal (jamais un « ça passe tout juste » qui déborde
  * réellement sous pdfmake). En dernier recours (même le palier plancher
- * déborde), repli NATUREL sur les 2 pages historiques SÉPARÉES, rendues à
- * leur police normale — jamais de refus pour ce couple (à la différence des
- * usages P1 stricts fiche adversaire/ZMSPCP/MOICP/effraction).
+ * déborde), repli NATUREL sur les 2 pages historiques SÉPARÉES (`buildMission`/
+ * `buildExecution`, chacune protégée par son propre `fitUsageToPage`) — jamais
+ * de refus pour ce couple (à la différence des usages P1 stricts fiche
+ * adversaire/ZMSPCP/MOICP/effraction).
+ *
+ * ANOMALIE A (campagne de mesure 2026-08-18) : le tableau retourné par ce
+ * repli DOIT porter le même contrat que `pushPages`/`galleryPages` — seul le
+ * PREMIER élément (MISSION) reçoit son saut de page de l'appelant
+ * (`pushPages`, `buildOiDocDefinition`), le SECOND (EXÉCUTION) doit porter le
+ * SIEN lui-même, sous peine de s'enchaîner sans saut derrière MISSION puis de
+ * déborder sur une page sans titre.
  */
 function buildMissionExecutionPages(ctx: BuildCtx, num: () => number): Content[] {
     const { p, geo, baseFontSize } = ctx;
@@ -1402,7 +1621,11 @@ function buildMissionExecutionPages(ctx: BuildCtx, num: () => number): Content[]
     }
 
     // Repli naturel (jamais un refus) : les 2 pages historiques séparées.
-    return [buildMission(ctx, missionNum), buildExecution(ctx, execNum)];
+    // EXÉCUTION porte SON PROPRE `pageBreak:'before'` (même contrat que
+    // `pushPage`) — sans ce wrapper, `pushPages` (appelant) ne le pose que
+    // sur MISSION (1er élément), EXÉCUTION s'enchaînait alors SANS saut
+    // derrière MISSION puis débordait sur une page sans titre (anomalie A).
+    return [buildMission(ctx, missionNum), { stack: [buildExecution(ctx, execNum)], pageBreak: 'before' }];
 }
 
 /** Photos de la section « TRANSPORT » (pdf-engine-v2.ts:1032-1039) : PR avant domicile, ordre conservé (§3.4 règle 3). Titre NU et numéro portés par le registre de sections (`OI_PDF_SECTIONS`, §5/§6 SPEC-2026-08-18-pdf-et-champs.md) — plus aucune mention de « logistique ». */
@@ -1416,12 +1639,24 @@ function transportPhotos(dynamicPhotos: Record<string, OiPhotoMeta[]>): OiPhotoM
 /* ==========================================================================
  * Section 7 — « 7. ARTICULATION & ORDRES DE MOUVEMENT » (pdf-engine-v2.ts:1042-1057).
  * Toujours rendue (jamais omise dans la source).
+ *
+ * CORRECTIF ANOMALIE D (campagne de mesure 2026-08-18, directive Nico « une
+ * page = un contenu, aucun débordement, jamais ; aucune page vide ») :
+ * `rame_vl_order`/`colonne_progression_order`/`ordre_penetration_order`
+ * rendus en `pillRow` dans des cartes `unbreakable:false` SANS AUCUNE
+ * limite — mesuré : 40 éléments par liste ⇒ 1 page orpheline. Même mécanique
+ * que `buildCatPage`/`buildEnvironnement` (`fitUsageToPage`,
+ * `packCardsByBudget`) : les 3 cartes sont construites UNE SEULE FOIS
+ * (l'ancrage `place_chef` y est enregistré) puis réutilisées TELLES QUELLES
+ * par la disposition retenue — jamais reconstruites par palier (aucune
+ * n'a de `fontSize` propre, héritent de celui posé sur le `stack` racine).
  * ======================================================================== */
 function buildArticulationOverview(ctx: BuildCtx, num: () => number): Content {
     const { formData, p, geo } = ctx;
     const rameVl = formData.rame_vl_order ?? [];
     const colonne = formData.colonne_progression_order ?? [];
     const penetration = formData.ordre_penetration_order ?? [];
+    const placeChef = strOr(formData.place_chef);
 
     // Blindage BLIND.A : les 3 listes de pastilles sont non bornées (filet
     // `unbreakable:false`, audit « tout unbreakable a un filet »).
@@ -1449,13 +1684,62 @@ function buildArticulationOverview(ctx: BuildCtx, num: () => number): Content {
         { unbreakable: false },
     );
 
+    const sectionNum = num();
+    const title = `${sectionNum}. ARTICULATION & ORDRES DE MOUVEMENT`;
+    const availablePt = geo.contentHeightPt - EFFRAC_FITS_SAFETY_PT;
+    const penetrationPt = (fontPx: number): number =>
+        EFFRAC_H3_PT +
+        pillGridPt(penetration.length, fontPx) +
+        6 +
+        textLinePt(`PLACE DU CHEF : ${placeChef}`, fontPx, geo.contentWidthPt) +
+        EFFRAC_CARD_VPAD_PT;
+
+    // 1) Disposition VALIDÉE (grille), paliers 11→7.
+    const computeGridCostPt = (fontPx: number): number => {
+        const row1Pt = Math.max(cardWithTitlePt(pillGridPt(rameVl.length, fontPx)), cardWithTitlePt(pillGridPt(colonne.length, fontPx)));
+        return EFFRAC_H2_PT + row1Pt + GRID_ROW_GAP_PT + penetrationPt(fontPx);
+    };
+    const gridFit = fitUsageToPage(computeGridCostPt, availablePt);
+    if ('fontPx' in gridFit) {
+        return {
+            stack: [
+                h2(title, p, geo.contentWidthPt),
+                grid2([rameCard], [colonneCard]),
+                { text: '', margin: [0, GRID_ROW_GAP_PT, 0, 0] },
+                penetrationCard,
+            ],
+            fontSize: gridFit.fontPx,
+        };
+    }
+
+    // 2) Cas limite (listes très longues) : grille abandonnée, empilement
+    // pleine largeur paginé sur des pages « <titre> — <plage de rubriques> »
+    // (jamais « (SUITE) », garde C1 ; `slotRangeLabel`) — même mécanique que
+    // `buildCatPage`/`buildAdversaryModesActionPage` (`packCardsByBudget`).
+    const slotLabels = ['Ordre Rame VL', 'Colonne Progression', 'Ordre de Pénétration'] as const;
+    const slots: Content[] = [rameCard, colonneCard, penetrationCard];
+    const budgetPt = availablePt - EFFRAC_H2_PT;
+    let best: { groups: number[][]; fontPx: number } | null = null;
+    for (const fontPx of FIT_FONT_STEPS) {
+        const costs = [cardWithTitlePt(pillGridPt(rameVl.length, fontPx)), cardWithTitlePt(pillGridPt(colonne.length, fontPx)), penetrationPt(fontPx)];
+        const groups = packCardsByBudget(costs, budgetPt);
+        if (best === null || groups.length < best.groups.length) {
+            best = { groups, fontPx };
+        }
+    }
+    const { groups, fontPx } = best as { groups: number[][]; fontPx: number };
+    const renderSlots = (indices: number[]): Content[] => {
+        const nodes = indices.map((i) => slots[i] as Content);
+        return nodes.flatMap((n, i) => (i === 0 ? [n] : [{ text: '', margin: [0, STACKED_CARD_GAP_PT, 0, 0] } as Content, n]));
+    };
     return {
-        stack: [
-            h2(`${num()}. ARTICULATION & ORDRES DE MOUVEMENT`, p, geo.contentWidthPt),
-            grid2([rameCard], [colonneCard]),
-            { text: '', margin: [0, 5, 0, 0] },
-            penetrationCard,
-        ],
+        stack: groups.map((indices, idx): Content => {
+            if (idx === 0) {
+                return { stack: [h2(title, p, geo.contentWidthPt), ...renderSlots(indices)], fontSize: fontPx };
+            }
+            const label = slotRangeLabel(indices, slotLabels);
+            return { stack: [h2(`${title} — ${label}`, p, geo.contentWidthPt), ...renderSlots(indices)], fontSize: fontPx, pageBreak: 'before' };
+        }),
     };
 }
 
@@ -2723,7 +3007,8 @@ function accentCardPt(title: string, text: string, fontPx: number, columnWidthPt
  *    champs remplis au maximum), abandonne la disposition en grille (elle
  *    suppose systématiquement DEUX cartes côte à côte, jamais scindable
  *    proprement par carte) au profit d'un empilement PLEINE LARGEUR paginé
- *    sur des pages « (SUITE) » autonomes (même mécanique que
+ *    sur des pages « <titre> — <plage de rubriques> » autonomes (jamais
+ *    « (SUITE) », garde C1 ; `slotRangeLabel`, même mécanique que
  *    `buildAdversaryModesActionPage`, `packCardsByBudget`) — jamais de
  *    refus, jamais de troncature (`ctx.fitErrors` n'est jamais alimenté par
  *    cette page, directive explicite).
@@ -2826,10 +3111,10 @@ function buildCatPage(ctx: BuildCtx, num: () => number): Content | null {
     }
 
     // 2) Cas limite : grille abandonnée, empilement pleine largeur paginé sur
-    // des pages « (SUITE) » — palier retenu = celui qui produit le MOINS de
-    // pages (à égalité, le plus lisible/premier rencontré l'emporte,
-    // `FIT_FONT_STEPS` trié décroissant), même mécanique que
-    // `buildAdversaryModesActionPage`.
+    // des pages à titre distinct (jamais « (SUITE) », garde C1) — palier
+    // retenu = celui qui produit le MOINS de pages (à égalité, le plus
+    // lisible/premier rencontré l'emporte, `FIT_FONT_STEPS` trié
+    // décroissant), même mécanique que `buildAdversaryModesActionPage`.
     const slots: Array<{ title: string; text: string; node: Content }> = [
         { title: 'CAT Générales', text: strOr(cat), node: catCard },
         { title: 'Conditions de Désengagement (NO-GO)', text: strOr(nogo), node: nogoCard },
@@ -2856,8 +3141,12 @@ function buildCatPage(ctx: BuildCtx, num: () => number): Content | null {
             if (idx === 0) {
                 return { stack: [h2(title, p, geo.contentWidthPt), ...renderSlots(indices)], fontSize: fontPx };
             }
+            const label = slotRangeLabel(
+                indices,
+                slots.map((s) => s.title),
+            );
             return {
-                stack: [h2(`${title} (SUITE)`, p, geo.contentWidthPt), ...renderSlots(indices)],
+                stack: [h2(`${title} — ${label}`, p, geo.contentWidthPt), ...renderSlots(indices)],
                 fontSize: fontPx,
                 pageBreak: 'before',
             };
@@ -2865,13 +3154,87 @@ function buildCatPage(ctx: BuildCtx, num: () => number): Content | null {
     };
 }
 
+/** Texte combiné de la colonne EQPT/GREN. (`join`) — extrait pour être mesuré (coût pt) ET rendu par le MÊME code (`buildPatracPage`, anomalie E). */
+function patracEqptText(m: OiPatracMember): string {
+    return [m.equipement, m.equipement2, m.grenades, m.tenue, m.gpb].filter((v) => v && v !== 'Sans').join(', ') || '-';
+}
+
+/** Cellules d'UNE rangée du tableau PATRACDVR — extrait pour être partagé par toutes les pages de continuation à titre distinct (`buildPatracPage`, anomalie E ; jamais « (SUITE) », garde C1). */
+function patracRowCells(r: { vehicle: string; m: OiPatracMember }, hasDir: boolean, p: OiPdfPalette): TableCell[] {
+    const cells: TableCell[] = [
+        { text: r.vehicle, bold: true, fillColor: r.vehicle ? p.headerRow : undefined, alignment: 'center', noWrap: true, borderColor: cellBorder(p) },
+        { text: r.m.trigramme || '-', bold: true, alignment: 'center', noWrap: true, borderColor: cellBorder(p) },
+        { text: r.m.cellule || '-', alignment: 'center', noWrap: true, borderColor: cellBorder(p) },
+        { text: r.m.fonction || '-', alignment: 'center', noWrap: true, borderColor: cellBorder(p) },
+        { text: r.m.principales || '-', alignment: 'center', noWrap: true, borderColor: cellBorder(p) },
+        { text: r.m.secondaires || '-', alignment: 'center', noWrap: true, borderColor: cellBorder(p) },
+        { text: r.m.afis || '-', alignment: 'center', noWrap: true, borderColor: cellBorder(p) },
+        { text: patracEqptText(r.m), fontSize: 8, alignment: 'center', borderColor: cellBorder(p) },
+    ];
+    if (hasDir) {
+        cells.push({ text: r.m.dir || '', bold: true, alignment: 'center', noWrap: true, borderColor: cellBorder(p) });
+    }
+    return cells;
+}
+
+/**
+ * Coût (pt) d'UNE rangée du tableau PATRACDVR au palier `fontPx` — modèle
+ * physique partagé (`EFFRAC_ROW_VPAD_PT`, `effracLinePt`). Les colonnes
+ * « code court » sont `noWrap` (toujours 1 ligne, cf. JSDoc `buildPatracPage`) ;
+ * seule EQPT/GREN. peut s'envelopper, à une taille FIXE 8 px (`patracRowCells`,
+ * indépendante de `fontPx`) — la rangée prend donc la hauteur du plus grand
+ * des deux. `eqptColWidthPt` reste une approximation (largeur RÉELLE de la
+ * colonne `*` inconnue avant la mise en page pdfmake, les autres colonnes
+ * étant `auto`) — direction SÛRE (sous-estimer la largeur, comme
+ * `EFFRAC_FITS_SAFETY_PT`) plutôt qu'un calcul exact hors de portée d'un
+ * module PUR sans pdfmake en valeur.
+ */
+function patracRowPt(fontPx: number, eqptText: string, eqptColWidthPt: number): number {
+    const eqptLines = wrappedLinesWithNewlines(eqptText, estimateCharsPerLine(8, eqptColWidthPt));
+    const linePt = Math.max(effracLinePt(fontPx), eqptLines * effracLinePt(8));
+    return linePt + EFFRAC_ROW_VPAD_PT;
+}
+
+/** Coût (pt) de la rangée d'en-tête (libellés courts, toujours 1 ligne, au palier `fontPx`). */
+function patracHeaderRowPt(fontPx: number): number {
+    return effracLinePt(fontPx) + EFFRAC_ROW_VPAD_PT;
+}
+
+/**
+ * Étiquette de plage « MEMBRES 21-40 »/« MEMBRE 21 » (1-based, position dans
+ * le tableau aplati `allRows`) d'un groupe d'indices CONTIGU de
+ * `packCardsByBudget` — titre autonome de page de continuation du tableau
+ * PATRACDVR (jamais « (SUITE) », garde C1).
+ */
+function patracRangeLabel(indices: number[]): string {
+    const first = (indices[0] as number) + 1;
+    const last = (indices[indices.length - 1] as number) + 1;
+    return first === last ? `MEMBRE ${first}` : `MEMBRES ${first}-${last}`;
+}
+
 /**
  * Section 10 — « 7. RÉCAPITULATIF PATRACDVR » (pdf-engine-v2.ts:1219-1280),
- * OMISE si aucun membre (§3.4 règle 1, condition `:1224`). UNE seule table
- * `headerRows:1` (POINT DE VIGILANCE §1 — pagination manuelle `MAX_MEMBERS_PER_PAGE`
- * et suffixe `(Partie n)` supprimés, écart assumé E3). Nos 8/9 colonnes
+ * OMISE si aucun membre (§3.4 règle 1, condition `:1224`). Nos 8/9 colonnes
  * (PAS les 12 de strategica) ; colonne DIR seulement si ≥1 membre a un `dir`
  * non vide (`:1227`).
+ *
+ * CORRECTIF ANOMALIE E (campagne de mesure 2026-08-18) : `patracFontPx`
+ * réduisait la police par PALIERS DE NOMBRE DE LIGNES sans jamais calculer
+ * de budget de hauteur réel — mesuré : 60 membres ⇒ table sur 3 pages
+ * physiques, AUCUNE ne portant le titre (seul `headerRows:1` faisait filet).
+ * Stratégie retenue : MULTI-PAGE ASSUMÉ plutôt qu'un budget de hauteur à
+ * police dégressive sur une page unique — à ~22 pt/rangée même au palier
+ * plancher 7 px, une seule page ne peut physiquement contenir qu'environ
+ * 20-22 rangées (A4) avant de heurter `contentHeightPt` (541/485 pt),
+ * largement en-deçà d'unités réelles de plusieurs dizaines de membres.
+ * 1) essaie D'ABORD la table ENTIÈRE sur UNE SEULE page, paliers 11→7
+ * (`fitUsageToPage`, remplace `patracFontPx`) — couvre les unités réalistes ;
+ * 2) SEULEMENT si même le palier plancher ne suffit pas, pagine par budget
+ * de hauteur réel (`packCardsByBudget`, réserve la place de l'en-tête —
+ * répété sur CHAQUE page, `headerRows:1` par table) sur des pages
+ * « RÉCAPITULATIF PATRACDVR — MEMBRES <plage> » (`patracRangeLabel`) —
+ * chaque page porte SON TITRE distinct (jamais « (SUITE) », garde C1 ;
+ * règle Nico « une page = un contenu »), aucune ligne omise ni tronquée.
  */
 function buildPatracPage(ctx: BuildCtx, num: () => number): Content | null {
     const { formData, p, geo } = ctx;
@@ -2888,6 +3251,7 @@ function buildPatracPage(ctx: BuildCtx, num: () => number): Content | null {
     // Numéro consommé ICI seulement — jamais dans le repli `null` ci-dessus
     // (§6 SPEC-2026-08-18-pdf-et-champs.md, section omise = pas de numéro).
     const sectionNum = num();
+    const title = `${sectionNum}. RÉCAPITULATIF PATRACDVR`;
 
     const hasDir = allRows.some((r) => r.m.dir.trim() !== '');
     // Largeurs adaptées (modèle pagination v2, mission PG.IMPL point 5 — banc
@@ -2910,33 +3274,51 @@ function buildPatracPage(ctx: BuildCtx, num: () => number): Content | null {
         alignment: 'center',
         borderColor: cellBorder(p),
     }));
-
-    const bodyRows: TableCell[][] = allRows.map(({ vehicle, m }) => {
-        const eqpt = [m.equipement, m.equipement2, m.grenades, m.tenue, m.gpb].filter((v) => v && v !== 'Sans').join(', ') || '-';
-        const cells: TableCell[] = [
-            { text: vehicle, bold: true, fillColor: vehicle ? p.headerRow : undefined, alignment: 'center', noWrap: true, borderColor: cellBorder(p) },
-            { text: m.trigramme || '-', bold: true, alignment: 'center', noWrap: true, borderColor: cellBorder(p) },
-            { text: m.cellule || '-', alignment: 'center', noWrap: true, borderColor: cellBorder(p) },
-            { text: m.fonction || '-', alignment: 'center', noWrap: true, borderColor: cellBorder(p) },
-            { text: m.principales || '-', alignment: 'center', noWrap: true, borderColor: cellBorder(p) },
-            { text: m.secondaires || '-', alignment: 'center', noWrap: true, borderColor: cellBorder(p) },
-            { text: m.afis || '-', alignment: 'center', noWrap: true, borderColor: cellBorder(p) },
-            { text: eqpt, fontSize: 8, alignment: 'center', borderColor: cellBorder(p) },
-        ];
-        if (hasDir) {
-            cells.push({ text: m.dir || '', bold: true, alignment: 'center', noWrap: true, borderColor: cellBorder(p) });
-        }
-        return cells;
+    const renderTable = (subset: Array<{ vehicle: string; m: OiPatracMember }>): Content => ({
+        table: { widths, headerRows: 1, body: [headerRow, ...subset.map((r) => patracRowCells(r, hasDir, p))] },
+        layout: LAYOUT_BORDERED,
     });
 
-    const table: Content = {
-        table: { widths, headerRows: 1, body: [headerRow, ...bodyRows] },
-        layout: LAYOUT_BORDERED,
-    };
+    // Approximation SÛRE (direction : sous-estimer) de la largeur réelle de la
+    // seule colonne à largeur `*`, cf. JSDoc `patracRowPt`.
+    const eqptColWidthPt = geo.contentWidthPt * 0.3;
+    const availablePt = geo.contentHeightPt - EFFRAC_FITS_SAFETY_PT;
 
+    // 1) UNE SEULE page, paliers 11→7 (budget de hauteur réel).
+    const computeCostPt = (fontPx: number): number =>
+        EFFRAC_H2_PT +
+        patracHeaderRowPt(fontPx) +
+        allRows.reduce((sum, r) => sum + patracRowPt(fontPx, patracEqptText(r.m), eqptColWidthPt), 0);
+    const fit = fitUsageToPage(computeCostPt, availablePt);
+    if ('fontPx' in fit) {
+        return { stack: [h2(title, p, geo.contentWidthPt), renderTable(allRows)], fontSize: fit.fontPx };
+    }
+
+    // 2) Multi-page assumé (cf. JSDoc de fonction) : chaque page répète l'en-tête
+    // de colonnes ET porte son titre — jamais de refus, jamais de perte de ligne.
+    const budgetPt = availablePt - EFFRAC_H2_PT;
+    let best: { groups: number[][]; fontPx: number } | null = null;
+    for (const fontPx of FIT_FONT_STEPS) {
+        const rowBudgetPt = budgetPt - patracHeaderRowPt(fontPx);
+        const costs = allRows.map((r) => patracRowPt(fontPx, patracEqptText(r.m), eqptColWidthPt));
+        const groups = packCardsByBudget(costs, rowBudgetPt);
+        if (best === null || groups.length < best.groups.length) {
+            best = { groups, fontPx };
+        }
+    }
+    const { groups, fontPx } = best as { groups: number[][]; fontPx: number };
     return {
-        stack: [h2(`${sectionNum}. RÉCAPITULATIF PATRACDVR`, p, geo.contentWidthPt), table],
-        fontSize: patracFontPx(allRows.length),
+        stack: groups.map((indices, idx): Content => {
+            const subset = indices.map((i) => allRows[i] as (typeof allRows)[number]);
+            if (idx === 0) {
+                return { stack: [h2(title, p, geo.contentWidthPt), renderTable(subset)], fontSize: fontPx };
+            }
+            return {
+                stack: [h2(`${title} — ${patracRangeLabel(indices)}`, p, geo.contentWidthPt), renderTable(subset)],
+                fontSize: fontPx,
+                pageBreak: 'before',
+            };
+        }),
     };
 }
 

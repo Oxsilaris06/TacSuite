@@ -4,10 +4,16 @@
  *
  * RÉÉCRIT (2026-08-19) contre la NOUVELLE API — index d'ancrage émis à la
  * génération (`OiPdfEditAnchor`, `@shared/types/contracts.ts`) au lieu de
- * l'ancien rapprochement par ÉGALITÉ DE VALEUR ENTIÈRE. Cf. JSDoc de fichier
- * `pdf-preview-edit.ts` pour l'algorithme d'alignement en flux (curseur
- * partagé, reconstruction fragment par fragment, abandon sans zone
- * partielle).
+ * l'ancien rapprochement par ÉGALITÉ DE VALEUR ENTIÈRE.
+ *
+ * ÉVOLUÉ (mission « robustesse alignement », même jour) — l'alignement en
+ * flux à curseur STRICTEMENT séquentiel figeait DÉFINITIVEMENT dès qu'un
+ * ancrage divergeait de l'ordre d'affichage (perte de TOUS les ancrages
+ * suivants, mesuré en navigateur réel : 52,7 % de couverture). Cf. JSDoc de
+ * fichier `pdf-preview-edit.ts` pour les 3 garanties retenues (fenêtre
+ * bornée, budget d'abandon borné, seuil de plausibilité d'amorçage) et
+ * l'exclusion du pied de page par position — les nouveaux tests ci-dessous
+ * couvrent CES garanties spécifiquement, en plus des cas déjà couverts.
  *
  * `syncDomToStoreImmediate` (`@oi/formulaires.js`) MOCKÉ — la reconstruction
  * complète de `Store.state.formData` depuis `#oi-form` est déjà couverte par
@@ -16,11 +22,17 @@
  *
  * pdf.js (`PDFPageProxy`/`PageViewport`) n'est jamais exécuté sous jsdom
  * (même précédent que `defaultRenderPdf`, `oi-pdf-engine-v2.test.ts`) : de
- * simples objets DUCK-TYPÉS (`getTextContent`/`convertToViewportPoint`)
- * tiennent lieu de doubles, castés via `unknown` (comportement RÉEL de ces
- * classes non nécessaire ici — seule leur FORME utilisée par
+ * simples objets DUCK-TYPÉS (`getTextContent`/`convertToViewportPoint`/
+ * `viewBox`) tiennent lieu de doubles, castés via `unknown` (comportement
+ * RÉEL de ces classes non nécessaire ici — seule leur FORME utilisée par
  * `attachEditableTextLayer` compte). `convertToViewportPoint` identité
  * (dpr=1 dans tous les tests) rend les bbox attendues triviales à calculer.
+ * `viewBox` par défaut `[0, 0, 400, 150]` (repère PDF brut, cf. JSDoc
+ * `isFooterFragment`) : la zone de pied de page est un seuil ABSOLU
+ * (`FOOTER_ZONE_PT` = 34 pt depuis le bas, indépendant de la hauteur de
+ * page) — tous les fragments « corps » des tests ci-dessous sont à `y ≥ 50`,
+ * hors zone de pied de page par construction ; le test dédié au pied de page
+ * utilise volontairement `y = 5` (< 34) pour y entrer.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -46,8 +58,10 @@ function fakePage(items: FakeTextItem[]): PDFPageProxy {
     } as unknown as PDFPageProxy;
 }
 
-function fakeViewport(): PageViewport {
+/** `viewBox` par défaut `[0, 0, 400, 150]` — cf. en-tête de fichier pour le calcul de la zone de pied de page qui en découle. */
+function fakeViewport(viewBox: [number, number, number, number] = [0, 0, 400, 150]): PageViewport {
     return {
+        viewBox,
         convertToViewportPoint: (x: number, y: number): [number, number] => [x, y],
     } as unknown as PageViewport;
 }
@@ -173,14 +187,14 @@ describe('attachEditableTextLayer', () => {
         addField(form, 'mission', 'ABC');
         const state = createEditMatchState([anchor('#mission', 'ABC')]);
         const { pageEl, overlay } = buildPageEl(1);
-        const page = fakePage([{ str: 'ABC', transform: [1, 0, 0, 1, 10, 20], width: 30, height: 12 }]);
+        const page = fakePage([{ str: 'ABC', transform: [1, 0, 0, 1, 10, 50], width: 30, height: 12 }]);
 
         await attachEditableTextLayer(page, pageEl, overlay, fakeViewport(), 1, state, vi.fn(async () => {}));
 
         const hits = overlay.querySelectorAll<HTMLButtonElement>('.pdf-edit-hit');
         expect(hits).toHaveLength(1);
         expect(hits[0]?.style.left).toBe('10px');
-        expect(hits[0]?.style.top).toBe('20px');
+        expect(hits[0]?.style.top).toBe('50px');
         expect(hits[0]?.style.width).toBe('30px');
         expect(hits[0]?.style.height).toBe('12px');
         expect(state.cursor.i).toBe(1); // ancrage consommé, curseur avancé
@@ -192,8 +206,8 @@ describe('attachEditableTextLayer', () => {
         const state = createEditMatchState([anchor('#mission', 'Ligne un Ligne deux')]);
         const { pageEl, overlay } = buildPageEl(1);
         const page = fakePage([
-            { str: 'Ligne un', transform: [1, 0, 0, 1, 10, 20], width: 30, height: 12 },
-            { str: 'Ligne deux', transform: [1, 0, 0, 1, 10, 34], width: 40, height: 12 },
+            { str: 'Ligne un', transform: [1, 0, 0, 1, 10, 50], width: 30, height: 12 },
+            { str: 'Ligne deux', transform: [1, 0, 0, 1, 10, 64], width: 40, height: 12 },
         ]);
 
         await attachEditableTextLayer(page, pageEl, overlay, fakeViewport(), 1, state, vi.fn(async () => {}));
@@ -215,7 +229,7 @@ describe('attachEditableTextLayer', () => {
         const { pageEl, overlay } = buildPageEl(1);
         const page = fakePage([
             { str: 'Titre de section', transform: [1, 0, 0, 1, 0, 0], width: 100, height: 10 },
-            { str: 'ABC', transform: [1, 0, 0, 1, 10, 20], width: 30, height: 12 },
+            { str: 'ABC', transform: [1, 0, 0, 1, 10, 50], width: 30, height: 12 },
         ]);
 
         await attachEditableTextLayer(page, pageEl, overlay, fakeViewport(), 1, state, vi.fn(async () => {}));
@@ -230,7 +244,7 @@ describe('attachEditableTextLayer', () => {
         addField(form, 'situation', 'SITGEN-42');
         const state = createEditMatchState([anchor('#situation', 'SITGEN-42')]);
         const { pageEl, overlay } = buildPageEl(1);
-        const page = fakePage([{ str: ': SITGEN-42', transform: [1, 0, 0, 1, 10, 20], width: 50, height: 12 }]);
+        const page = fakePage([{ str: ': SITGEN-42', transform: [1, 0, 0, 1, 10, 50], width: 50, height: 12 }]);
 
         await attachEditableTextLayer(page, pageEl, overlay, fakeViewport(), 1, state, vi.fn(async () => {}));
 
@@ -245,8 +259,8 @@ describe('attachEditableTextLayer', () => {
         const state = createEditMatchState([anchor('#mission', 'AB CD'), anchor('#suite', 'XYZ')]);
         const { pageEl, overlay } = buildPageEl(1);
         const page = fakePage([
-            { str: 'AB', transform: [1, 0, 0, 1, 10, 20], width: 20, height: 12 }, // amorce une reconstruction pour #mission…
-            { str: 'XYZ', transform: [1, 0, 0, 1, 40, 20], width: 20, height: 12 }, // … interrompue ici, puis retentée contre #suite
+            { str: 'AB', transform: [1, 0, 0, 1, 10, 50], width: 20, height: 12 }, // amorce une reconstruction pour #mission…
+            { str: 'XYZ', transform: [1, 0, 0, 1, 40, 50], width: 20, height: 12 }, // … interrompue ici, puis retentée contre #suite
         ]);
 
         await attachEditableTextLayer(page, pageEl, overlay, fakeViewport(), 1, state, vi.fn(async () => {}));
@@ -263,7 +277,7 @@ describe('attachEditableTextLayer', () => {
         // '#ghost' n'existe dans aucun DOM : resolveEditCandidates ne lui associe aucun candidat.
         const state = createEditMatchState([anchor('#ghost', 'ABC'), anchor('#mission', 'ABC')]);
         const { pageEl, overlay } = buildPageEl(1);
-        const page = fakePage([{ str: 'ABC', transform: [1, 0, 0, 1, 10, 20], width: 30, height: 12 }]);
+        const page = fakePage([{ str: 'ABC', transform: [1, 0, 0, 1, 10, 50], width: 30, height: 12 }]);
 
         await attachEditableTextLayer(page, pageEl, overlay, fakeViewport(), 1, state, vi.fn(async () => {}));
 
@@ -277,7 +291,7 @@ describe('attachEditableTextLayer', () => {
         const state = createEditMatchState([anchor('#mission', 'ABC')]);
         const { pageEl, overlay } = buildPageEl(1);
         const page = fakePage([
-            { str: 'ABC', transform: [1, 0, 0, 1, 10, 20], width: 30, height: 12 },
+            { str: 'ABC', transform: [1, 0, 0, 1, 10, 50], width: 30, height: 12 },
             { str: 'Pied de page hors ancrage', transform: [1, 0, 0, 1, 0, 100], width: 100, height: 10 },
         ]);
 
@@ -289,7 +303,7 @@ describe('attachEditableTextLayer', () => {
         buildForm(); // aucun champ inséré : #mission introuvable
         const state = createEditMatchState([anchor('#mission', 'ABC')]);
         const { pageEl, overlay } = buildPageEl(1);
-        const page = fakePage([{ str: 'ABC', transform: [1, 0, 0, 1, 10, 20], width: 30, height: 12 }]);
+        const page = fakePage([{ str: 'ABC', transform: [1, 0, 0, 1, 10, 50], width: 30, height: 12 }]);
 
         await attachEditableTextLayer(page, pageEl, overlay, fakeViewport(), 1, state, vi.fn());
 
@@ -300,7 +314,7 @@ describe('attachEditableTextLayer', () => {
     it('ancrages vides : ne pose aucune zone et évite un scan DOM inutile', async () => {
         const state = createEditMatchState([]);
         const { pageEl, overlay } = buildPageEl(1);
-        const page = fakePage([{ str: 'ABC', transform: [1, 0, 0, 1, 10, 20], width: 30, height: 12 }]);
+        const page = fakePage([{ str: 'ABC', transform: [1, 0, 0, 1, 10, 50], width: 30, height: 12 }]);
 
         await attachEditableTextLayer(page, pageEl, overlay, fakeViewport(), 1, state, vi.fn());
 
@@ -318,7 +332,7 @@ describe('attachEditableTextLayer', () => {
         // même un no-op) — même précédent que `oi-patrac.test.ts`.
         Element.prototype.scrollIntoView = vi.fn();
         const { pageEl, overlay } = buildPageEl(1);
-        const page = fakePage([{ str: 'ABC', transform: [1, 0, 0, 1, 10, 20], width: 30, height: 12 }]);
+        const page = fakePage([{ str: 'ABC', transform: [1, 0, 0, 1, 10, 50], width: 30, height: 12 }]);
         const regenerate = vi.fn(async () => {});
 
         await attachEditableTextLayer(page, pageEl, overlay, fakeViewport(), 1, state, regenerate);
@@ -347,7 +361,7 @@ describe('attachEditableTextLayer', () => {
         const missionEl = addField(form, 'mission', 'ABC');
         const state = createEditMatchState([anchor('#mission', 'ABC')]);
         const { pageEl, overlay } = buildPageEl(1);
-        const page = fakePage([{ str: 'ABC', transform: [1, 0, 0, 1, 10, 20], width: 30, height: 12 }]);
+        const page = fakePage([{ str: 'ABC', transform: [1, 0, 0, 1, 10, 50], width: 30, height: 12 }]);
         const regenerate = vi.fn(async () => {});
 
         await attachEditableTextLayer(page, pageEl, overlay, fakeViewport(), 1, state, regenerate);
@@ -369,11 +383,155 @@ describe('attachEditableTextLayer', () => {
         addField(form, 'uda', 'Texte long', 'textarea');
         const state = createEditMatchState([anchor('#uda', 'Texte long')]);
         const { pageEl, overlay } = buildPageEl(1);
-        const page = fakePage([{ str: 'Texte long', transform: [1, 0, 0, 1, 10, 20], width: 60, height: 12 }]);
+        const page = fakePage([{ str: 'Texte long', transform: [1, 0, 0, 1, 10, 50], width: 60, height: 12 }]);
 
         await attachEditableTextLayer(page, pageEl, overlay, fakeViewport(), 1, state, vi.fn(async () => {}));
         overlay.querySelector<HTMLButtonElement>('.pdf-edit-hit')?.click();
 
         expect(overlay.querySelector('.pdf-edit-input')?.tagName).toBe('TEXTAREA');
+    });
+
+    // -- Robustesse de l'alignement (mission « robustesse alignement ») -----
+    // Les 3 garanties de JSDoc `attachEditableTextLayer` : fenêtre bornée
+    // (réordonnancement local toléré), budget d'abandon borné (jamais de gel
+    // définitif), seuil de plausibilité (pas d'amorçage sur un jeton trop
+    // court) — plus l'exclusion du pied de page par position et la sûreté
+    // en cas d'ambiguïté.
+
+    it("un réordonnancement LOCAL de quelques ancrages (cas réel : executionBodyContent) est toléré par la fenêtre en avant — les 3 ancrages sont résolus malgré l'inversion des 2 premiers", async () => {
+        const form = buildForm();
+        addField(form, 'a', 'AAA');
+        addField(form, 'b', 'BBB');
+        addField(form, 'c', 'CCC');
+        const state = createEditMatchState([anchor('#a', 'AAA'), anchor('#b', 'BBB'), anchor('#c', 'CCC')]);
+        const { pageEl, overlay } = buildPageEl(1);
+        // Affiché B, A, C — #a et #b enregistrés dans l'ordre inverse de leur affichage.
+        const page = fakePage([
+            { str: 'BBB', transform: [1, 0, 0, 1, 10, 50], width: 30, height: 12 },
+            { str: 'AAA', transform: [1, 0, 0, 1, 10, 70], width: 30, height: 12 },
+            { str: 'CCC', transform: [1, 0, 0, 1, 10, 90], width: 30, height: 12 },
+        ]);
+
+        await attachEditableTextLayer(page, pageEl, overlay, fakeViewport(), 1, state, vi.fn(async () => {}));
+
+        expect(overlay.querySelectorAll('.pdf-edit-hit')).toHaveLength(3);
+        expect(state.cursor.i).toBe(3);
+        expect(state.stats.anchorsResolved).toBe(3);
+    });
+
+    it("un ancrage dont le texte n'apparaît JAMAIS sur la page est abandonné après un budget de fragments infructueux borné — JAMAIS de gel définitif, l'ancrage suivant reste atteignable", async () => {
+        const form = buildForm();
+        addField(form, 'introuvable', 'INTROUVABLE-XYZ');
+        addField(form, 'suivant', 'SUIVANT-OK');
+        const state = createEditMatchState([anchor('#introuvable', 'INTROUVABLE-XYZ'), anchor('#suivant', 'SUIVANT-OK')]);
+        const { pageEl, overlay } = buildPageEl(1);
+        // 65 fragments de chrome, sans rapport avec aucun ancrage — dépasse largement le budget interne (borné, cf. JSDoc de fichier).
+        const filler = Array.from({ length: 65 }, (_, i) => ({
+            str: `chrome-${i}`,
+            transform: [1, 0, 0, 1, 10, 50 + i] as number[],
+            width: 30,
+            height: 10,
+        }));
+        const page = fakePage([...filler, { str: 'SUIVANT-OK', transform: [1, 0, 0, 1, 10, 300], width: 40, height: 12 }]);
+
+        await attachEditableTextLayer(page, pageEl, overlay, fakeViewport(), 1, state, vi.fn(async () => {}));
+
+        const hits = overlay.querySelectorAll<HTMLButtonElement>('.pdf-edit-hit');
+        expect(hits).toHaveLength(1); // #introuvable jamais résolu — mais #suivant SI (aucune perte en cascade)
+        expect(hits[0]?.getAttribute('aria-label')).toContain('SUIVANT-OK');
+        expect(state.cursor.i).toBe(2); // les 2 ancrages réglés (le 1er abandonné, pas de gel)
+        expect(state.stats.anchorsResolved).toBe(1);
+    });
+
+    it("un jeton isolé trop court (ex. « 2 ») ne peut pas amorcer faussement une reconstruction par simple coïncidence de préfixe", async () => {
+        const form = buildForm();
+        addField(form, 'date_execution', '2026-09-14');
+        const state = createEditMatchState([anchor('#date_execution', '2026-09-14')]);
+        const { pageEl, overlay } = buildPageEl(1);
+        const page = fakePage([
+            { str: '2', transform: [1, 0, 0, 1, 10, 50], width: 8, height: 12 }, // jeton isolé non ancré, préfixe coïncident de la vraie valeur
+            { str: '2026-09-14', transform: [1, 0, 0, 1, 30, 50], width: 60, height: 12 }, // la vraie valeur, plus loin
+        ]);
+
+        await attachEditableTextLayer(page, pageEl, overlay, fakeViewport(), 1, state, vi.fn(async () => {}));
+
+        const hits = overlay.querySelectorAll<HTMLButtonElement>('.pdf-edit-hit');
+        expect(hits).toHaveLength(1); // le « 2 » isolé n'a pas amorcé/consommé de reconstruction
+        expect(hits[0]?.style.left).toBe('30px'); // celle du fragment complet, pas du jeton
+        expect(state.cursor.i).toBe(1);
+    });
+
+    it('un fragment plausible pour PLUSIEURS ancrages de valeurs DIFFÉRENTES (préfixe commun) est ignoré — ambigu, aucune zone posée pour aucun des deux, sans corrompre les ancrages suivants', async () => {
+        const form = buildForm();
+        addField(form, 'p', 'PSIG GILETTE');
+        addField(form, 'q', 'PSIG ALPHA');
+        const state = createEditMatchState([anchor('#p', 'PSIG GILETTE'), anchor('#q', 'PSIG ALPHA')]);
+        const { pageEl, overlay } = buildPageEl(1);
+        const page = fakePage([
+            { str: 'PSIG', transform: [1, 0, 0, 1, 10, 50], width: 20, height: 12 }, // préfixe commun aux 2 ancrages : ambigu
+            { str: 'PSIG ALPHA', transform: [1, 0, 0, 1, 40, 50], width: 50, height: 12 }, // #q entier en un seul fragment, sans ambiguïté
+        ]);
+
+        await attachEditableTextLayer(page, pageEl, overlay, fakeViewport(), 1, state, vi.fn(async () => {}));
+
+        const hits = overlay.querySelectorAll<HTMLButtonElement>('.pdf-edit-hit');
+        expect(hits).toHaveLength(1);
+        expect(hits[0]?.getAttribute('aria-label')).toContain('PSIG ALPHA');
+    });
+
+    it('deux ancrages adjacents de valeur IDENTIQUE (ex. deux « OUI ») ne sont PAS traités comme ambigus — le rendu est indiscernable quel que soit celui choisi, les deux se résolvent', async () => {
+        const form = buildForm();
+        addField(form, 'flag1', 'OUI');
+        addField(form, 'flag2', 'OUI');
+        const state = createEditMatchState([anchor('#flag1', 'OUI'), anchor('#flag2', 'OUI')]);
+        const { pageEl, overlay } = buildPageEl(1);
+        const page = fakePage([
+            { str: 'OUI', transform: [1, 0, 0, 1, 10, 50], width: 20, height: 12 },
+            { str: 'OUI', transform: [1, 0, 0, 1, 10, 70], width: 20, height: 12 },
+        ]);
+
+        await attachEditableTextLayer(page, pageEl, overlay, fakeViewport(), 1, state, vi.fn(async () => {}));
+
+        expect(overlay.querySelectorAll('.pdf-edit-hit')).toHaveLength(2);
+        expect(state.cursor.i).toBe(2);
+    });
+
+    it('un fragment situé dans la marge basse (pied de page, position verticale) ne consomme JAMAIS un ancrage — même si son texte prolongerait la valeur attendue', async () => {
+        const form = buildForm();
+        addField(form, 'amies', 'PSIG GILETTE');
+        const state = createEditMatchState([anchor('#amies', 'PSIG GILETTE')]);
+        const { pageEl, overlay } = buildPageEl(1);
+        // Seuil de pied de page ABSOLU (FOOTER_ZONE_PT), indépendant de la hauteur de page — le viewport par défaut suffit.
+        const viewport = fakeViewport();
+        const page = fakePage([
+            { str: 'PSIG GILETTE', transform: [1, 0, 0, 1, 10, 5], width: 60, height: 10 }, // pied de page (y=5 < FOOTER_ZONE_PT=34)
+            { str: 'PSIG GILETTE', transform: [1, 0, 0, 1, 10, 90], width: 60, height: 10 }, // corps
+        ]);
+
+        await attachEditableTextLayer(page, pageEl, overlay, viewport, 1, state, vi.fn(async () => {}));
+
+        const hits = overlay.querySelectorAll<HTMLButtonElement>('.pdf-edit-hit');
+        expect(hits).toHaveLength(1);
+        expect(hits[0]?.style.top).toBe('90px'); // jamais celle du pied de page
+        expect(state.cursor.i).toBe(1);
+    });
+
+    it('`state.stats` compte ancrages résolus, zones posées et fragments vus — mesure de couverture exploitable sans changer la signature', async () => {
+        const form = buildForm();
+        addField(form, 'mission', 'Ligne un Ligne deux');
+        const state = createEditMatchState([anchor('#mission', 'Ligne un Ligne deux')]);
+        const { pageEl, overlay } = buildPageEl(1);
+        const page = fakePage([
+            { str: 'Titre', transform: [1, 0, 0, 1, 10, 90], width: 30, height: 10 },
+            { str: 'Ligne un', transform: [1, 0, 0, 1, 10, 50], width: 30, height: 12 },
+            { str: 'Ligne deux', transform: [1, 0, 0, 1, 10, 64], width: 40, height: 12 },
+        ]);
+
+        await attachEditableTextLayer(page, pageEl, overlay, fakeViewport(), 1, state, vi.fn(async () => {}));
+
+        expect(state.stats.anchorsResolved).toBe(1);
+        expect(state.stats.hitZonesPlaced).toBe(2); // 2 fragments absorbés pour ce seul ancrage
+        expect(state.stats.fragmentsSeen).toBe(3); // les 3 fragments non vides, y compris le titre non apparié
+        expect(overlay.querySelectorAll('.pdf-edit-hit')).toHaveLength(state.stats.hitZonesPlaced);
     });
 });
