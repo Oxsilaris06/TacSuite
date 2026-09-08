@@ -13,7 +13,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { circlePolygon, geoEdgeNorth, rectPolygon } from '../../../src/shared/geo-shapes.js';
+import { circlePolygon, geoEdgeNorth, labelAnchorForLine, nearestTOnPath, pathLength, pointAlongPath, rectPolygon } from '../../../src/shared/geo-shapes.js';
 import type { LngLatTuple } from '../../../src/shared/geo-shapes.js';
 
 describe('geo-shapes.ts — rectPolygon — 5 points fermés', () => {
@@ -126,3 +126,89 @@ function haversineMeters(a: LngLatTuple, b: LngLatTuple): number {
     const h = Math.sin(dPhi / 2) ** 2 + Math.cos(phi1) * Math.cos(phi2) * Math.sin(dLam / 2) ** 2;
     return R * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
 }
+
+// ============================================================
+// Rail de label : abscisse curviligne le long d'une polyligne
+// ============================================================
+describe('geo-shapes.ts — pathLength / pointAlongPath / nearestTOnPath', () => {
+    // Ligne brisée en L : deux segments de longueurs volontairement inégales,
+    // pour que « milieu de la longueur » et « milieu de la corde » diffèrent.
+    const L: LngLatTuple[] = [[0, 0], [0, 0.02], [0.01, 0.02]];
+
+    it('pathLength somme les segments, pas la corde', () => {
+        const parcouru = pathLength(L);
+        const corde = haversineMeters([0, 0], [0.01, 0.02]);
+        expect(parcouru).toBeGreaterThan(corde);
+        expect(parcouru).toBeCloseTo(haversineMeters(L[0] as LngLatTuple, L[1] as LngLatTuple)
+            + haversineMeters(L[1] as LngLatTuple, L[2] as LngLatTuple), 6);
+    });
+
+    it('pathLength vaut 0 pour moins de deux points', () => {
+        expect(pathLength([])).toBe(0);
+        expect(pathLength([[1, 2]])).toBe(0);
+    });
+
+    it('pointAlongPath : t=0 donne le premier point, t=1 le dernier', () => {
+        expect(pointAlongPath(L, 0)).toEqual([0, 0]);
+        const fin = pointAlongPath(L, 1);
+        expect(fin[0]).toBeCloseTo(0.01, 10);
+        expect(fin[1]).toBeCloseTo(0.02, 10);
+    });
+
+    it('pointAlongPath borne t hors de [0,1] au lieu d\'extrapoler', () => {
+        expect(pointAlongPath(L, -5)).toEqual(pointAlongPath(L, 0));
+        expect(pointAlongPath(L, 42)).toEqual(pointAlongPath(L, 1));
+    });
+
+    it('pointAlongPath : le point à mi-longueur est SUR le tracé, pas sur la corde', () => {
+        const p = pointAlongPath(L, 0.5);
+        // Le tracé monte en lng=0 puis part vers l'est à lat=0.02 : tout point
+        // du tracé a soit lng=0, soit lat=0.02. Le milieu de la corde
+        // ([0.005, 0.01]) ne vérifie ni l'un ni l'autre.
+        const surLeTrace = Math.abs(p[0] - 0) < 1e-9 || Math.abs(p[1] - 0.02) < 1e-9;
+        expect(surLeTrace).toBe(true);
+        expect(p).not.toEqual([0.005, 0.01]);
+    });
+
+    it('pointAlongPath : polyligne dégénérée (points confondus) renvoie le premier point', () => {
+        expect(pointAlongPath([[3, 4], [3, 4]], 0.7)).toEqual([3, 4]);
+    });
+
+    it('nearestTOnPath est la réciproque de pointAlongPath', () => {
+        for (const t of [0, 0.15, 0.5, 0.83, 1]) {
+            const p = pointAlongPath(L, t);
+            expect(nearestTOnPath(L, p)).toBeCloseTo(t, 3);
+        }
+    });
+
+    it('nearestTOnPath projette un point HORS du tracé sur le tracé', () => {
+        // Très au nord du coude : se projette près de la jonction (t ≈ 2/3
+        // ici, le 1er segment faisant deux fois la longueur du second).
+        const t = nearestTOnPath(L, [0, 0.05]);
+        expect(t).toBeGreaterThan(0.5);
+        expect(t).toBeLessThanOrEqual(1);
+    });
+
+    it('nearestTOnPath borne toujours son résultat dans [0,1]', () => {
+        expect(nearestTOnPath(L, [-9, -9])).toBeGreaterThanOrEqual(0);
+        expect(nearestTOnPath(L, [9, 9])).toBeLessThanOrEqual(1);
+        expect(nearestTOnPath([[1, 1]], [5, 5])).toBe(0);
+    });
+});
+
+describe('geo-shapes.ts — labelAnchorForLine — compatibilité ascendante', () => {
+    const L: LngLatTuple[] = [[0, 0], [0, 0.02], [0.01, 0.02]];
+
+    it('SANS labelT : milieu de la corde premier↔dernier, comportement historique', () => {
+        expect(labelAnchorForLine(L, undefined)).toEqual([0.005, 0.01]);
+    });
+
+    it('AVEC labelT : abscisse curviligne, donc un point du tracé', () => {
+        expect(labelAnchorForLine(L, 0.5)).toEqual(pointAlongPath(L, 0.5));
+        expect(labelAnchorForLine(L, 0)).toEqual([0, 0]);
+    });
+
+    it('polyligne à un seul point : le labelT est ignoré, pas de division par zéro', () => {
+        expect(labelAnchorForLine([[2, 3]], 0.5)).toEqual([2, 3]);
+    });
+});

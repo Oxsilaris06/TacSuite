@@ -12,7 +12,7 @@
  * (lecture seule).
  */
 
-import { circlePolygon as sharedCirclePolygon, geoEdgeNorth as sharedGeoEdgeNorth, rectPolygon as sharedRectPolygon } from '@shared/geo-shapes.js';
+import { circlePolygon as sharedCirclePolygon, geoEdgeNorth as sharedGeoEdgeNorth, labelAnchorForLine, rectPolygon as sharedRectPolygon } from '@shared/geo-shapes.js';
 
 import type { LngLatObj, LngLatTuple, PlanShape } from './types.js';
 
@@ -157,8 +157,11 @@ export function shapeCentroid(s: PlanShape): LngLatTuple {
 // planMap.js:4722-4741 (méthode _shapeAnchor)
 export function shapeAnchor(s: PlanShape): LngLatObj | null {
     if (s.type === 'line') {
-        const a = coordAt(s, 0), b = coordAt(s, shapeCoords(s).length - 1);
-        return { lng: (a[0] + b[0]) / 2, lat: (a[1] + b[1]) / 2 };
+        // `labelT` absent → milieu de la corde premier↔dernier point, exactement
+        // comme avant. Présent → abscisse curviligne le long du tracé, ce qui
+        // suit aussi un cheminement à main levée revenu sur lui-même.
+        const p = labelAnchorForLine(shapeCoords(s), s.labelT);
+        return { lng: p[0], lat: p[1] };
     }
     if (s.type === 'rectangle') {
         const coords = shapeCoords(s);

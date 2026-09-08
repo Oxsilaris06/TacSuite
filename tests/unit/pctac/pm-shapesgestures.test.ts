@@ -481,3 +481,115 @@ describe('_startHandleGesture (planMap.js:3284-3395)', () => {
         expect(assertNonNull(map).dragPan.disable).not.toHaveBeenCalled();
     });
 });
+
+// ============================================================
+// Poignées du NOM d'une forme : rail le long du tracé + rotation
+// ============================================================
+describe('_shapeHandles — poignées de label', () => {
+    it("sans nom : aucune poignée de label, la liste reste celle d'avant", () => {
+        const line = makeShape({ id: 'l1', type: 'line', coords: [[0, 0], [0, 1]] });
+        expect(ShapesGesturesMethods._shapeHandles(line).map(h => h.role)).toEqual(['endpoint', 'endpoint']);
+    });
+
+    it("ligne nommée : ajoute 'label' (rail) et 'labelrot' (rotation)", () => {
+        const line = makeShape({ id: 'l1', type: 'line', coords: [[0, 0], [0, 1]], text: 'Axe A' });
+        const handles = ShapesGesturesMethods._shapeHandles(line);
+        expect(handles.map(h => h.role)).toEqual(['endpoint', 'endpoint', 'label', 'labelrot']);
+        // Posées sur le label, donc au milieu de la corde tant que labelT est absent.
+        expect(handles[2]?.lngLat).toEqual({ lng: 0, lat: 0.5 });
+        // Décalage pixel aligné sur le marker de texte d'une ligne (-18).
+        expect(handles[2]?.offset).toEqual([0, -18]);
+        expect(handles[3]?.offset).toEqual([34, -18]);
+    });
+
+    it('ligne nommée avec labelT : la poignée suit le rail, pas la corde', () => {
+        const coords: LngLatTuple[] = [[0, 0], [0, 0.02], [0.01, 0.02]];
+        const line = makeShape({ id: 'l1', type: 'line', coords, text: 'Axe A', labelT: 1 });
+        const handles = ShapesGesturesMethods._shapeHandles(line);
+        const label = assertNonNull(handles.find(h => h.role === 'label'));
+        expect(label.lngLat.lng).toBeCloseTo(0.01, 10);
+        expect(label.lngLat.lat).toBeCloseTo(0.02, 10);
+    });
+
+    it("rectangle nommé : rotation seulement, PAS de rail (le nom reste au centre)", () => {
+        const rect = makeShape({ id: 'r1', type: 'rectangle', coords: RECT_COORDS, text: 'ZRA' });
+        const handles = ShapesGesturesMethods._shapeHandles(rect);
+        expect(handles.map(h => h.role)).toEqual(['corner', 'corner', 'corner', 'corner', 'labelrot']);
+        expect(handles[4]?.lngLat).toEqual({ lng: 0.5, lat: 0.5 });
+        // offsetY nul hors ligne : le marker de texte d'un rectangle n'est pas décalé.
+        expect(handles[4]?.offset).toEqual([34, 0]);
+    });
+
+    it('cercle nommé : rotation seulement, ancrée sur le centre', () => {
+        const circle = makeShape({ id: 'c1', type: 'circle', center: [3, 4], edge: [3, 5], text: 'Périmètre' });
+        const handles = ShapesGesturesMethods._shapeHandles(circle);
+        expect(handles.map(h => h.role)).toEqual(['edge', 'move', 'labelrot']);
+        expect(handles[2]?.lngLat).toEqual({ lng: 3, lat: 4 });
+    });
+
+    it("ligne dégénérée à un seul point : pas de rail (rien à parcourir), rotation conservée", () => {
+        const line = makeShape({ id: 'l1', type: 'line', coords: [[1, 2]], text: 'X' });
+        expect(ShapesGesturesMethods._shapeHandles(line).map(h => h.role))
+            .toEqual(['endpoint', 'endpoint', 'labelrot']);
+    });
+
+    it("texte LIBRE : aucune poignée de label — c'est un texte, pas le nom d'un dessin", () => {
+        // Verrou de non-régression pour OI : `type:'text'` y est le seul type de
+        // forme portant du texte, donc cette exclusion garantit que la carte OI
+        // ne voit apparaître aucune poignée nouvelle.
+        const text = makeShape({ id: 't1', type: 'text', coords: [[5, 6]], text: 'Cible' });
+        expect(ShapesGesturesMethods._shapeHandles(text).map(h => h.role)).toEqual(['textresize']);
+    });
+});
+
+describe("_startHandleGesture — rôles 'label' et 'labelrot'", () => {
+    it("'label' : écrit labelT et ne touche PAS aux coordonnées de la forme", () => {
+        const coords: LngLatTuple[] = [[0, 0], [0, 0.02], [0.01, 0.02]];
+        const line = makeShape({ id: 'l1', type: 'line', coords, text: 'Axe A' });
+        const { fake, map } = makeFakeThis({ shapes: [line], selectedShapeId: 'l1' });
+        const m = assertNonNull(map);
+
+        ShapesGesturesMethods._startHandleGesture.call(fake, 'l1', 'label', 0, { lng: 0, lat: 0.01 }, new Event('pointerdown'));
+        const onMove = assertNonNull(m.on.mock.calls.find(c => c[0] === 'mousemove'))[1] as (e: unknown) => void;
+        // Doigt posé près du DÉBUT du premier segment.
+        onMove({ lngLat: { lng: 0, lat: 0.005 } });
+
+        const updated = assertNonNull(fake._loadShapes().find(s => s.id === 'l1'));
+        expect(typeof updated.labelT).toBe('number');
+        expect(updated.labelT).toBeGreaterThan(0);
+        expect(updated.labelT).toBeLessThan(0.5);
+        // Le rail déplace le NOM, jamais le tracé.
+        expect(updated.coords).toEqual(coords);
+    });
+
+    it("'labelrot' : écrit un angle normalisé dans [0,360)", () => {
+        const line = makeShape({ id: 'l1', type: 'line', coords: [[0, 0], [0, 1]], text: 'Axe A' });
+        const { fake, map } = makeFakeThis({ shapes: [line], selectedShapeId: 'l1' });
+        const m = assertNonNull(map);
+
+        ShapesGesturesMethods._startHandleGesture.call(fake, 'l1', 'labelrot', 0, { lng: 0, lat: 0.5 }, new Event('pointerdown'));
+        const onMove = assertNonNull(m.on.mock.calls.find(c => c[0] === 'mousemove'))[1] as (e: unknown) => void;
+
+        // Le faux `project` fait x = lng*100, y = lat*100 : l'ancrage du label
+        // (milieu de corde [0, 0.5]) tombe en {x:0, y:50}, décalé de -18 px pour
+        // une ligne → {x:0, y:32}. Un doigt droit en dessous vaut 90°.
+        onMove({ lngLat: { lng: 0, lat: 0.5 }, point: { x: 0, y: 32 + 34 } });
+        expect(assertNonNull(fake._loadShapes().find(s => s.id === 'l1')).labelRot).toBe(90);
+
+        // Droit au-dessus : -90° ramené à 270°, jamais de valeur négative.
+        onMove({ lngLat: { lng: 0, lat: 0.5 }, point: { x: 0, y: 32 - 34 } });
+        expect(assertNonNull(fake._loadShapes().find(s => s.id === 'l1')).labelRot).toBe(270);
+    });
+
+    it("'labelrot' sur une forme sans nom : ne fait rien (pas d'ancrage de label)", () => {
+        const line = makeShape({ id: 'l1', type: 'line', coords: [[0, 0], [0, 1]] });
+        const { fake, map } = makeFakeThis({ shapes: [line], selectedShapeId: 'l1' });
+        const m = assertNonNull(map);
+
+        ShapesGesturesMethods._startHandleGesture.call(fake, 'l1', 'labelrot', 0, { lng: 0, lat: 0.5 }, new Event('pointerdown'));
+        const onMove = assertNonNull(m.on.mock.calls.find(c => c[0] === 'mousemove'))[1] as (e: unknown) => void;
+        onMove({ lngLat: { lng: 0, lat: 0.5 }, point: { x: 10, y: 10 } });
+
+        expect(assertNonNull(fake._loadShapes().find(s => s.id === 'l1')).labelRot).toBeUndefined();
+    });
+});

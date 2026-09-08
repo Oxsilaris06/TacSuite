@@ -407,12 +407,26 @@ export const ShapesRenderMethods = {
                 maxW = 240; maxH = 120;
             }
 
+            // Le marker porte un conteneur NU, le texte vit dans un enfant.
+            // Raison : la capture qui alimente le PDF remet `transform: 'none'`
+            // sur chaque `.maplibregl-marker` pour aplatir sa position
+            // (capture.ts, durcissement contre les markers amputés). En
+            // descendant la rotation d'un cran, elle survit à la capture sans
+            // qu'on touche à ce durcissement.
+            const wrap = document.createElement('div');
+            // INVARIANT MARKER (§5.1) : ni `position:` ni `inset:` ici — c'est
+            // MapLibre qui place l'élément.
+            wrap.style.cssText = 'display: inline-block; pointer-events: none;';
+
             const div = document.createElement('div');
             div.className = 'plan-shape-text';
             div.textContent = s.text || '';
             const col = s.textColor || s.color || '#fff';
             const fontSize = Math.max(9, Math.min(72, s.fontSize || 13));
+            const labelRot = Number(s.labelRot) || 0;
             div.style.cssText = `
+                transform: rotate(${labelRot}deg);
+                transform-origin: center center;
                 color: ${col};
                 text-shadow:
                     0 0 3px rgba(0,0,0,0.95),
@@ -459,8 +473,10 @@ export const ShapesRenderMethods = {
             // Fallback pour vieux iOS sans Pointer Events
             div.addEventListener('touchstart', onTextPointerDown, { passive: false });
 
+            wrap.appendChild(div);
+
             const m = new maplibregl.Marker({
-                element: div, anchor: 'center', offset: [0, offsetY],
+                element: wrap, anchor: 'center', offset: [0, offsetY],
             }).setLngLat([anchor.lng, anchor.lat]).addTo(map);
             this._textMarkers.push(m);
             this._textMarkersById[s.id] = m;

@@ -476,6 +476,37 @@ describe('_renderShapeTexts (planMap.js:4769-4853)', () => {
         expect(el?.style.position).toBe('');
         expect(el?.style.getPropertyValue('inset')).toBe('');
     });
+
+    it("l'élément du marker est un conteneur NU ; le texte est un enfant .plan-shape-text", () => {
+        const shape = makeShape({ id: 's1', type: 'line', coords: [[2, 48], [3, 49]], text: 'Axe A' });
+        const { fake } = makeFakeThis({ shapes: [shape] });
+        fake._renderShapeTexts();
+        const el = fake._textMarkers[0]?.getElement();
+        // Le conteneur ne porte PAS la classe : c'est lui que la capture PDF
+        // aplatit (transform:'none' sur .maplibregl-marker), le texte doit être
+        // un cran plus bas pour que sa rotation survive.
+        expect(el?.classList.contains('plan-shape-text')).toBe(false);
+        expect(el?.querySelector('.plan-shape-text')).not.toBeNull();
+        expect(el?.querySelector('.plan-shape-text')?.textContent).toBe('Axe A');
+    });
+
+    it("labelRot : la rotation est portée par l'enfant, jamais par l'élément du marker", () => {
+        const shape = makeShape({ id: 's1', type: 'line', coords: [[2, 48], [3, 49]], text: 'Axe A', labelRot: 45 });
+        const { fake } = makeFakeThis({ shapes: [shape] });
+        fake._renderShapeTexts();
+        const el = fake._textMarkers[0]?.getElement();
+        const inner = el?.querySelector('.plan-shape-text') as HTMLElement | null;
+        expect(inner?.style.transform).toBe('rotate(45deg)');
+        expect(el?.style.transform).toBe('');
+    });
+
+    it('labelRot absent : rotation nulle, aucun changement visuel pour les formes déjà enregistrées', () => {
+        const shape = makeShape({ id: 's1', type: 'line', coords: [[2, 48], [3, 49]], text: 'Axe A' });
+        const { fake } = makeFakeThis({ shapes: [shape] });
+        fake._renderShapeTexts();
+        const inner = fake._textMarkers[0]?.getElement().querySelector('.plan-shape-text') as HTMLElement | null;
+        expect(inner?.style.transform).toBe('rotate(0deg)');
+    });
 });
 
 // ============================================================
