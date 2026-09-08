@@ -37,17 +37,26 @@
  * carte : JAMAIS de `position:`/`inset:` inline sur leur élément.
  */
 
-import { circlePolygon, rectPolygon } from './geo-shapes.js';
+import { circlePolygon, labelAnchorForLine, nearestTOnPath, rectPolygon } from './geo-shapes.js';
 import type { LngLatTuple } from './geo-shapes.js';
 
 /** Point {lng,lat} — forme utilisée par MapLibre et par les callbacks app. */
 export interface ShapeGestureLngLat { lng: number; lat: number }
 
-/** Rôle d'une poignée de manipulation (planMap.js:3203-3231). */
-export type ShapeHandleRole = 'move' | 'corner' | 'edge' | 'endpoint' | 'textresize';
+/** Rôle d'une poignée de manipulation (planMap.js:3203-3231).
+ *  `label` / `labelrot` : déplacement du nom le long du tracé et rotation. */
+export type ShapeHandleRole = 'move' | 'corner' | 'edge' | 'endpoint' | 'textresize' | 'label' | 'labelrot';
 
-/** Poignée calculée : où la rendre, quel curseur, quel geste au drag. */
-export interface ShapeHandleSpec { role: ShapeHandleRole; index: number; lngLat: ShapeGestureLngLat; cursor: string }
+/** Poignée calculée : où la rendre, quel curseur, quel geste au drag.
+ *  `offset` : décalage pixel du marker, quand la poignée ne doit pas être
+ *  posée exactement sur son `lngLat` (poignées de label, textresize). */
+export interface ShapeHandleSpec {
+    role: ShapeHandleRole;
+    index: number;
+    lngLat: ShapeGestureLngLat;
+    cursor: string;
+    offset?: [number, number] | undefined;
+}
 
 /**
  * Sous-ensemble POJO d'une forme persistée, suffisant pour la machine à
@@ -62,6 +71,12 @@ export interface ShapeGestureShape {
     edge?: LngLatTuple | undefined;
     fontSize?: number | undefined;
     locked?: boolean | undefined;
+    /** Nom de la forme — sa présence conditionne les poignées de label. */
+    text?: string | undefined;
+    /** Abscisse curviligne (0..1) du label le long du tracé. `line` seulement. */
+    labelT?: number | undefined;
+    /** Rotation du label en degrés. Absent = 0. */
+    labelRot?: number | undefined;
 }
 
 /**
@@ -374,6 +389,43 @@ export function startPinchGesture<S extends ShapeGestureShape, M>(deps: ShapeGes
 /**
  * Calcule, pour chaque type de forme, la liste des poignées à rendre. PURE.
  */
+/**
+ * Ancrage du LABEL d'une forme, en coordonnées carte. Même calcul que le rendu
+ * du texte côté app (`shapeAnchor`) : les poignées se posent donc exactement
+ * sur le nom affiché. Renvoie `null` si la forme n'a pas de nom.
+ */
+export function labelAnchorOf(s: ShapeGestureShape): LngLatTuple | null {
+    if (!s.text) return null;
+    // `type: 'text'` est un texte LIBRE, pas le NOM d'un dessin : il garde sa
+    // seule poignée `textresize`. Cette exclusion garde aussi OI strictement
+    // inchangé — c'est le seul type de forme qui y porte du texte
+    // (`_renderShapeTexts`, oi/carto/text.ts), donc aucune poignée de label
+    // n'y apparaît.
+    if (s.type === 'text') return null;
+    const coords = shapeCoords(s);
+    if (s.type === 'line') return labelAnchorForLine(coords, s.labelT);
+    if (s.type === 'rectangle') {
+        if (!coords.length) return null;
+        const lngs = coords.map(c => c[0]);
+        const lats = coords.map(c => c[1]);
+        return [(Math.min(...lngs) + Math.max(...lngs)) / 2, (Math.min(...lats) + Math.max(...lats)) / 2];
+    }
+    if (s.type === 'circle') {
+        const c = s.center || coords[0];
+        return c ? [c[0], c[1]] : null;
+    }
+    return null;
+}
+
+/**
+ * Décalage pixel du marker de texte, par type de forme. Doit rester aligné sur
+ * `_renderShapeTexts` (shapes-render.ts) pour que les poignées tombent sur le
+ * label et non à côté.
+ */
+export function labelPixelOffsetY(type: string): number {
+    return type === 'line' ? -18 : 0;
+}
+
 // planMap.js:3198-3231 (ex `_shapeHandles`)
 export function shapeHandles(s: ShapeGestureShape): ShapeHandleSpec[] {
     const handles: ShapeHandleSpec[] = [];
@@ -407,6 +459,21 @@ export function shapeHandles(s: ShapeGestureShape): ShapeHandleSpec[] {
         const c = coordAt(s, 0);
         handles.push({ role: 'textresize', index: 0, lngLat: { lng: c[0], lat: c[1] }, cursor: 'nwse-resize' });
     }
+
+    // Poignées du NOM de la forme — seulement si elle en porte un.
+    // `label` (rail le long du tracé) n'a de sens que pour une polyligne ;
+    // sur un rectangle ou un cercle le nom reste au centre, seule la
+    // rotation est offerte.
+    const labelAnchor = labelAnchorOf(s);
+    if (labelAnchor) {
+        const dy = labelPixelOffsetY(s.type);
+        const ll = { lng: labelAnchor[0], lat: labelAnchor[1] };
+        if (s.type === 'line' && shapeCoords(s).length > 1) {
+            handles.push({ role: 'label', index: 0, lngLat: ll, cursor: 'move', offset: [0, dy] });
+        }
+        handles.push({ role: 'labelrot', index: 0, lngLat: ll, cursor: 'grab', offset: [34, dy] });
+    }
+
     return handles;
 }
 
@@ -430,15 +497,16 @@ export function renderShapeHandles<S extends ShapeGestureShape, M>(deps: ShapeGe
     for (const h of handles) {
         const el = document.createElement('div');
         const isMove = h.role === 'move';
+        const isLabel = h.role === 'label' || h.role === 'labelrot';
         const size = isMove ? 14 : 16;
         // INVARIANT MARKER (SPEC-PLANMAP-SPLIT §5.1) : NI `position:` NI
         // `inset:` inline ici — l'élément est porté par un Marker carte,
         // qui le positionne lui-même via `transform`.
         el.style.cssText = `
             width: ${size}px; height: ${size}px;
-            background: ${isMove ? '#3b82f6' : '#ffffff'};
-            border: 2px solid ${isMove ? '#ffffff' : '#3b82f6'};
-            border-radius: ${h.role === 'edge' || isMove ? '50%' : '3px'};
+            background: ${isMove ? '#3b82f6' : (isLabel ? '#f59e0b' : '#ffffff')};
+            border: 2px solid ${isMove ? '#ffffff' : (isLabel ? '#ffffff' : '#3b82f6')};
+            border-radius: ${h.role === 'edge' || isMove || isLabel ? '50%' : '3px'};
             box-shadow: 0 1px 4px rgba(0,0,0,0.45);
             cursor: ${h.cursor};
             pointer-events: auto;
@@ -447,10 +515,14 @@ export function renderShapeHandles<S extends ShapeGestureShape, M>(deps: ShapeGe
             -webkit-user-select: none;
         `;
         // offset bottom-right pour la poignée textresize
-        let offset: [number, number] | undefined;
+        let offset: [number, number] | undefined = h.offset;
         if (h.role === 'textresize') {
             el.title = 'Glisser pour ajuster la taille du texte';
             offset = [60, 30];
+        } else if (h.role === 'label') {
+            el.title = 'Glisser pour déplacer le nom le long du tracé';
+        } else if (h.role === 'labelrot') {
+            el.title = 'Glisser pour faire tourner le nom';
         }
         const m = deps.createHandleMarker(el, h.lngLat, offset);
         const shapeId = s.id;
@@ -481,6 +553,8 @@ export function renderShapeHandles<S extends ShapeGestureShape, M>(deps: ShapeGe
  *   - edge (circle)    : pivot = centre, rayon redimensionné
  *   - move (circle ctr): translation de toute la forme
  *   - textresize       : ajuste shape.fontSize selon le delta px du pointeur
+ *   - label            : fait glisser le nom le long du tracé (labelT 0..1)
+ *   - labelrot         : fait tourner le nom autour de son ancrage (labelRot, degrés)
  */
 // planMap.js:3284-3395 (ex `_startHandleGesture` — le paramètre `originalEvent`,
 // jamais lu dans le corps d'origine, reste sur l'adaptateur app)
@@ -563,6 +637,21 @@ export function startHandleGesture<S extends ShapeGestureShape, M>(
             // ~1px souris = ~0.4pt de police, plage 9-72
             const base = original.fontSize || 13;
             tb.fontSize = Math.max(9, Math.min(72, Math.round(base + dy * 0.4)));
+        } else if (role === 'label') {
+            // Rail : on projette le doigt sur le tracé et on garde l'abscisse
+            // curviligne. Les coordonnées de la forme ne bougent PAS.
+            const coords = shapeCoords(original);
+            if (coords.length > 1) tb.labelT = nearestTOnPath(coords, curArr);
+        } else if (role === 'labelrot') {
+            const px = extractPx(ev);
+            if (!px) return;
+            const anchor = labelAnchorOf(original);
+            if (!anchor) return;
+            const ap = map.project({ lng: anchor[0], lat: anchor[1] });
+            // La poignée démarre à +34 px à droite de l'ancrage : l'angle vaut
+            // donc 0° au début du geste, et suit ensuite le doigt.
+            const deg = Math.atan2(px.y - (ap.y + labelPixelOffsetY(original.type)), px.x - ap.x) * 180 / Math.PI;
+            tb.labelRot = Math.round(((deg % 360) + 360) % 360);
         }
         deps.saveShapes(list2);
         deps.renderShapes();

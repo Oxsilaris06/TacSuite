@@ -91,6 +91,14 @@ export interface PlanShape {
     text?: string | undefined;
     textColor?: string | undefined;
     fontSize?: number | undefined;
+    /**
+     * Position du NOM le long du tracé, en abscisse curviligne 0..1.
+     * `line` uniquement. ABSENT = comportement historique (milieu de la corde
+     * premier↔dernier point) : aucune migration des formes déjà enregistrées.
+     */
+    labelT?: number | undefined;
+    /** Rotation du NOM en degrés (0..359). Absent = 0. */
+    labelRot?: number | undefined;
     strokeWidth?: number | undefined;
     locked?: boolean | undefined;
     showDiameter?: boolean | undefined;
@@ -127,8 +135,15 @@ export interface ResolvedPin { label: string; color: string; kind: string }
 export interface ShapeLockEntry { marker: Marker; el: HTMLElement; locked: boolean }
 
 /** Poignée de manipulation (planMap.js:3203-3231). */
-export type HandleRole = 'move' | 'corner' | 'edge' | 'endpoint' | 'textresize';
-export interface ShapeHandle { role: HandleRole; index: number; lngLat: LngLatObj; cursor: string }
+export type HandleRole = 'move' | 'corner' | 'edge' | 'endpoint' | 'textresize' | 'label' | 'labelrot';
+export interface ShapeHandle {
+    role: HandleRole;
+    index: number;
+    lngLat: LngLatObj;
+    cursor: string;
+    /** Décalage pixel du marker (poignées de label, textresize). */
+    offset?: [number, number] | undefined;
+}
 
 /** Emprise géographique d'une AOI / de la France. */
 export interface GeoBBox { west: number; south: number; east: number; north: number }

@@ -283,6 +283,27 @@ describe('geo.ts — shapeAnchor (planMap.js:4722-4741)', () => {
         const s: PlanShape = { id: '1', type: 'measure' };
         expect(shapeAnchor(s)).toBeNull();
     });
+
+    it('labelT absent sur une ligne : milieu de la CORDE, comportement historique intact', () => {
+        // Ligne brisée revenant vers l'ouest : la corde et le tracé divergent.
+        const line: PlanShape = { id: 'l', type: 'line', coords: [[0, 0], [0, 2], [1, 2]] };
+        expect(shapeAnchor(line)).toEqual({ lng: 0.5, lat: 1 });
+    });
+
+    it('labelT présent : le point suit le TRACÉ, pas la corde', () => {
+        const line: PlanShape = { id: 'l', type: 'line', coords: [[0, 0], [0, 2], [1, 2]], labelT: 0 };
+        expect(shapeAnchor(line)).toEqual({ lng: 0, lat: 0 });
+
+        const fin: PlanShape = { ...line, labelT: 1 };
+        const p = shapeAnchor(fin);
+        expect(p?.lng).toBeCloseTo(1, 10);
+        expect(p?.lat).toBeCloseTo(2, 10);
+    });
+
+    it('labelT est ignoré hors des lignes : un rectangle nommé garde son centre', () => {
+        const rect: PlanShape = { id: 'r', type: 'rectangle', coords: rectPolygon([0, 0], [2, 4]), labelT: 0.9 };
+        expect(shapeAnchor(rect)).toEqual({ lng: 1, lat: 2 });
+    });
 });
 
 describe('geo.ts — measureTotalMeters (planMap.js:2343-2349)', () => {
