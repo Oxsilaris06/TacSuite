@@ -510,6 +510,85 @@ describe('_handleDrawUp (planMap.js:2199-2248)', () => {
     });
 });
 
+describe("outil 'straight' — ligne droite (deux points, type de forme 'line')", () => {
+    it("commit : deux points exactement, même si des points ont été accumulés pendant le glissement", () => {
+        const map = makeFakeMap();
+        const state = makeFakeState(map);
+        state.drawTool = 'straight';
+        // _handleDrawDown amorce toujours `points`, y compris pour la ligne droite ;
+        // la branche 'straight' doit l'ignorer et ne garder que départ et arrivée.
+        state.drawState = {
+            start: [2.30, 48.80],
+            current: [2.31, 48.81],
+            points: [[2.30, 48.80], [2.303, 48.803], [2.307, 48.807]],
+        };
+        const finishSpy = vi.spyOn(state, '_finishShape').mockImplementation(() => {});
+
+        state._handleDrawUp({ lngLat: { lng: 2.31, lat: 48.81 } });
+
+        expect(finishSpy).toHaveBeenCalledTimes(1);
+        const shape = finishSpy.mock.calls[0]?.[0] as PlanShape;
+        // Nouvel OUTIL, pas nouveau TYPE : l'aval (rendu, poignées, centroïde,
+        // capture) continue de voir une forme 'line'.
+        expect(shape.type).toBe('line');
+        expect(shape.coords).toEqual([[2.30, 48.80], [2.31, 48.81]]);
+        expect(shape.color).toBe(state.drawColor);
+    });
+
+    it("l'échappatoire du tracé libre ne s'applique pas : un clic sans glissement n'est pas committé", () => {
+        const map = makeFakeMap();
+        const state = makeFakeState(map);
+        state.drawTool = 'straight';
+        // Plus de 2 points ET start≈end : côté 'line' cela committerait (cheminement
+        // revenu sur lui-même). Côté 'straight', ce n'est qu'un clic, donc rien.
+        state.drawState = {
+            start: [2.30, 48.80],
+            current: [2.30, 48.80],
+            points: [[2.30, 48.80], [2.3005, 48.8005], [2.30, 48.80]],
+        };
+        const finishSpy = vi.spyOn(state, '_finishShape');
+
+        state._handleDrawUp({ lngLat: { lng: 2.30, lat: 48.80 } });
+
+        expect(finishSpy).not.toHaveBeenCalled();
+        expect(state.drawState).toBeNull();
+    });
+
+    it("aperçu : relie toujours le départ au curseur, sans accumuler de points", () => {
+        const map = makeFakeMap();
+        const state = makeFakeState(map);
+        state.drawTool = 'straight';
+        state.drawState = { start: [2.30, 48.80], current: [2.30, 48.80] };
+        const previewSpy = vi.spyOn(state, '_renderPreview').mockImplementation(() => {});
+
+        state._handleDrawMove({ lngLat: { lng: 2.31, lat: 48.81 } });
+        state._handleDrawMove({ lngLat: { lng: 2.32, lat: 48.82 } });
+
+        expect(state.drawState?.points).toBeUndefined();
+        // `_renderPreview` reçoit un `Feature<Geometry>` : `Geometry` couvre aussi
+        // `GeometryCollection`, sans `coordinates`. Passage par `unknown` pour lire
+        // la LineString effectivement construite par la branche 'straight'.
+        const last = previewSpy.mock.calls[previewSpy.mock.calls.length - 1]?.[0] as unknown as {
+            geometry: { type: string; coordinates: LngLatTuple[] };
+        };
+        expect(last.geometry.type).toBe('LineString');
+        expect(last.geometry.coordinates).toEqual([[2.30, 48.80], [2.32, 48.82]]);
+    });
+
+    it("mode précision mobile : activé pour 'straight' (contrairement au trait à main levée)", () => {
+        const map = makeFakeMap();
+        const state = makeFakeState(map);
+        // `'ontouchstart' in window` est vrai par défaut sous jsdom (cf. le test
+        // « outil de tracé classique » plus haut) : `isMobile` vaut donc true sans
+        // rien simuler, et seul l'outil départage les deux cas.
+        state._setTool('straight');
+        expect(state.drawPrecisionMode).toBe(true);
+
+        state._setTool('line');
+        expect(state.drawPrecisionMode).toBe(false);
+    });
+});
+
 describe('_finishShape (planMap.js:2250-2264)', () => {
     it('persiste la forme, réinitialise l\'outil et sélectionne la forme créée', () => {
         const state = makeFakeState(null);

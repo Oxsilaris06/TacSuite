@@ -256,6 +256,14 @@ export const DrawToolsMethods = {
                 geometry: { type: 'LineString', coordinates: pts.length > 1 ? pts : [drawState.start, cursor] },
                 properties: { color: this.drawColor }
             });
+        } else if (this.drawTool === 'straight') {
+            // Ligne droite : aucun point accumulé, l'aperçu relie toujours le point de
+            // départ au curseur. `drawState.points` (posé par _handleDrawDown) est ignoré.
+            this._renderPreview({
+                type: 'Feature',
+                geometry: { type: 'LineString', coordinates: [drawState.start, cursor] },
+                properties: { color: this.drawColor }
+            });
         } else if (this.drawTool === 'rectangle') {
             this._renderPreview({
                 type: 'Feature',
@@ -361,6 +369,15 @@ export const DrawToolsMethods = {
                 type: 'line',
                 color: this.drawColor,
                 coords: pts
+            });
+        } else if (this.drawTool === 'straight') {
+            // Même `type: 'line'` que le tracé à main levée : le rendu, les poignées,
+            // le centroïde et la capture traitent indifféremment 2 ou N points.
+            this._finishShape({
+                id: 'shape_' + Date.now(),
+                type: 'line',
+                color: this.drawColor,
+                coords: [start, end]
             });
         } else if (this.drawTool === 'rectangle') {
             this._finishShape({
