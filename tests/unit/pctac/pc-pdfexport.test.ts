@@ -100,6 +100,26 @@ describe('sanitizeWinAnsi (P2.CONV)', () => {
     expect(sanitizeWinAnsi(null)).toBe('');
     expect(sanitizeWinAnsi(undefined)).toBe('');
   });
+
+  it('convertit tabulation, saut de ligne et retour chariot en espace — la sortie est mesurable par pdf-lib', async () => {
+    const { sanitizeWinAnsi } = await import('@pctac/pdf-export.js');
+    const { PDFDocument, StandardFonts } = await import('pdf-lib');
+
+    // Régression : les champs multilignes (Remarques, Action) partent dans
+    // wrapText -> font.widthOfTextAtSize(), qui encode chaque code point en
+    // WinAnsi SANS le nettoyage que drawText applique (lineSplit + cleanText).
+    // Un '\n' conservé y déclenchait « WinAnsi cannot encode "\n" (0x000a) »
+    // et faisait échouer l'export PDF entier.
+    const out = sanitizeWinAnsi('ligne1\nligne2\r\nligne3\tfin');
+    expect(out).toBe('ligne1 ligne2  ligne3 fin');
+    expect(/[\t\n\r]/.test(out)).toBe(false);
+
+    const doc = await PDFDocument.create();
+    const font = await doc.embedFont(StandardFonts.Helvetica);
+    expect(() => font.widthOfTextAtSize(out, 9)).not.toThrow();
+    // La chaîne brute, elle, jette bien : le test échouerait sans la conversion.
+    expect(() => font.widthOfTextAtSize('ligne1\nligne2', 9)).toThrow(/WinAnsi cannot encode/);
+  });
 });
 
 describe('cloneA4 (P2.CONV)', () => {

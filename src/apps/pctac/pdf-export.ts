@@ -119,8 +119,17 @@ export function sanitizeWinAnsi(s: unknown): string {
             continue;
         }
         const code = ch.codePointAt(0) ?? -1;
-        // ASCII imprimable + retour/saut acceptés tels quels
-        if (code === 0x09 || code === 0x0A || code === 0x0D || (code >= 0x20 && code <= 0x7E)) {
+        // Tabulation / saut de ligne / retour chariot -> espace.
+        // pdf-lib les tolère dans drawText (lineSplit + cleanText) mais PAS dans
+        // widthOfTextAtSize, qui encode chaque code point en WinAnsi sans nettoyage
+        // et jette « WinAnsi cannot encode "\n" (0x000a) ». Les champs multilignes
+        // (Remarques, Action) passent par wrapText -> widthOfTextAtSize.
+        if (code === 0x09 || code === 0x0A || code === 0x0D) {
+            out += ' ';
+            continue;
+        }
+        // ASCII imprimable accepté tel quel
+        if (code >= 0x20 && code <= 0x7E) {
             out += ch;
             continue;
         }
