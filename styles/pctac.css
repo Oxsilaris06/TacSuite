@@ -1350,13 +1350,38 @@ body.up-kb-open .up-kb-aware {
             gap: var(--tac-space-2);
         }
 
-        /* U24 — tiroir « Plus » : mêmes FABs, empilés sous le bouton. */
+        /* U24 — tiroir « Plus » : mêmes FABs, empilés verticalement.
+           FENÊTRÉ : la carte n'occupe qu'une partie de la page ; empilés SOUS le
+           bouton « Plus », les trois boutons débordaient du bas de la carte
+           (mesuré : 26 px en 900×600). Ils forment donc une SECONDE COLONNE, à
+           gauche du rail et alignée sur son premier FAB (la loupe).
+           Le rail est le bloc conteneur (`position: absolute`) : `top: 0` cale
+           sur le haut de la loupe, et `right: calc(100% + gouttière)` place la
+           colonne juste à gauche du rail — exprimé en pourcentage de la largeur
+           du rail, donc valable tel quel quand les FABs passent à 46 px sous
+           768 px. Aucune valeur en dur à maintenir en double. */
         #plan_more_tools {
+            position: absolute;
+            top: 0;
+            right: calc(100% + var(--tac-space-2));
             display: flex;
             flex-direction: column;
             gap: var(--tac-space-2);
         }
         #plan_more_tools[hidden] { display: none; }
+
+        /* PLEIN ÉCRAN : inchangé. La hauteur ne manque plus, le tiroir reprend
+           sa place dans le flux, sous le bouton « Plus ».
+           Deux règles SÉPARÉES et non une liste à virgules : un sélecteur
+           inconnu du navigateur invaliderait tout le bloc, y compris la
+           variante qu'il sait interpréter. */
+        :fullscreen #plan_more_tools {
+            position: static;
+        }
+
+        :-webkit-full-screen #plan_more_tools {
+            position: static;
+        }
 
         .plan-tool-fab {
             width: 50px;
