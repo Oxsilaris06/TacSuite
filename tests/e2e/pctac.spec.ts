@@ -1298,3 +1298,122 @@ test('traces GPX — import, masquage, persistance et suppression', async ({ pag
   await expect.soft(page.locator('.plan-gpx-empty')).toHaveCount(1);
   expect.soft(JSON.parse(await page.evaluate(() => localStorage.getItem('pcTacGpxIndex')) ?? '[]')).toEqual([]);
 });
+
+// ============================================================================
+// Dessin : outil ligne droite, puis rail et rotation du nom de la forme.
+// Ces deux comportements dépendent d'un glissement réel sur la carte et de la
+// position effective des poignées à l'écran — impossibles à couvrir en test
+// unitaire, où la projection est simulée.
+// ============================================================================
+
+test('ligne droite + nom déplaçable le long du tracé et rotatif', async ({ page }) => {
+  await page.goto('/pctac/', { waitUntil: 'domcontentloaded' });
+  await page.waitForTimeout(1000);
+  await page.evaluate(() => { (window as unknown as { UI?: { switchMainView?: (v: string) => void } }).UI?.switchMainView?.('view-plan'); });
+  await page.waitForTimeout(2500);
+
+  const shapes = (): Promise<Array<Record<string, unknown>>> =>
+    page.evaluate(() => JSON.parse(localStorage.getItem('pcTacPlanShapes') ?? '[]'));
+  const canvas = await page.locator('.maplibregl-canvas').first().boundingBox();
+  if (!canvas) throw new Error('canvas carte introuvable');
+  const at = (dx: number, dy: number): { x: number; y: number } => ({ x: canvas.x + dx, y: canvas.y + dy });
+
+  await page.locator('#plan_btn_draw').click();
+  await page.waitForTimeout(300);
+  await expect.soft(page.locator('.plan-draw-btn[data-tool="line"]')).toHaveAttribute('title', 'Tracer un trait à main levée');
+
+  // Glissement volontairement COURBE : une main levée y accumulerait des points
+  // intermédiaires, la ligne droite ne doit garder que départ et arrivée.
+  await page.locator('.plan-draw-btn[data-tool="straight"]').click();
+  await page.waitForTimeout(200);
+  const start = at(300, 300);
+  await page.mouse.move(start.x, start.y);
+  await page.mouse.down();
+  for (const [dx, dy] of [[340, 280], [380, 290], [420, 330], [460, 400]] as const) {
+    const p = at(dx, dy);
+    await page.mouse.move(p.x, p.y);
+    await page.waitForTimeout(30);
+  }
+  await page.mouse.up();
+  await page.waitForTimeout(500);
+
+  const drawn = (await shapes()).at(-1);
+  expect.soft(drawn?.type).toBe('line');
+  expect.soft((drawn?.coords as unknown[])?.length).toBe(2);
+
+  // Nommer la forme fait apparaître les deux poignées de label.
+  const id = String(drawn?.id);
+  const coordsBefore = JSON.stringify(drawn?.coords);
+  await page.evaluate((sid: string) => {
+    const list = JSON.parse(localStorage.getItem('pcTacPlanShapes') ?? '[]') as Array<{ id: string; text?: string }>;
+    const s = list.find((x) => x.id === sid);
+    if (s) s.text = 'AXE ALPHA';
+    localStorage.setItem('pcTacPlanShapes', JSON.stringify(list));
+    const pm = (window as unknown as { PlanMap: { _renderShapes(): void; _selectShape(id: string): void } }).PlanMap;
+    pm._renderShapes();
+    pm._selectShape(sid);
+  }, id);
+  await page.waitForTimeout(600);
+
+  const rail = page.locator('.maplibregl-marker[title*="le long du"]');
+  const rot = page.locator('.maplibregl-marker[title*="tourner le nom"]');
+  await expect.soft(rail).toHaveCount(1);
+  await expect.soft(rot).toHaveCount(1);
+
+  // La poignée de rail doit être RÉELLEMENT cliquable : posée sur le nom, elle
+  // serait interceptée par le texte, qui a son propre geste de déplacement.
+  const railBox = await rail.boundingBox();
+  if (!railBox) throw new Error('poignée de rail sans boîte');
+  const rx = railBox.x + railBox.width / 2;
+  const ry = railBox.y + railBox.height / 2;
+  const topMost = await page.evaluate((pt: { x: number; y: number }) =>
+    document.elementFromPoint(pt.x, pt.y)?.closest('.maplibregl-marker')?.getAttribute('title') ?? 'rien',
+    { x: rx, y: ry });
+  expect.soft(topMost).toContain('le long du tracé');
+
+  // Glisser le rail jusqu'au premier point du tracé.
+  const firstPoint = await page.evaluate((sid: string) => {
+    const list = JSON.parse(localStorage.getItem('pcTacPlanShapes') ?? '[]') as Array<{ id: string; coords: [number, number][] }>;
+    const s = list.find((x) => x.id === sid);
+    const pm = (window as unknown as { PlanMap: { map: { project(ll: { lng: number; lat: number }): { x: number; y: number }; getCanvas(): HTMLCanvasElement } } }).PlanMap;
+    const c = s?.coords[0] ?? [0, 0];
+    const pt = pm.map.project({ lng: c[0], lat: c[1] });
+    const r = pm.map.getCanvas().getBoundingClientRect();
+    return { x: pt.x + r.left, y: pt.y + r.top };
+  }, id);
+  await page.mouse.move(rx, ry);
+  await page.mouse.down();
+  await page.mouse.move(firstPoint.x, firstPoint.y, { steps: 8 });
+  await page.mouse.up();
+  await page.waitForTimeout(500);
+
+  let updated = (await shapes()).find((s) => s.id === id);
+  expect.soft(typeof updated?.labelT).toBe('number');
+  expect.soft(updated?.labelT as number).toBeLessThan(0.25);
+  // Le rail déplace le NOM, jamais le tracé.
+  expect.soft(JSON.stringify(updated?.coords)).toBe(coordsBefore);
+
+  const rotBox = await rot.boundingBox();
+  if (!rotBox) throw new Error('poignée de rotation sans boîte');
+  await page.mouse.move(rotBox.x + rotBox.width / 2, rotBox.y + rotBox.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(rotBox.x + rotBox.width / 2, rotBox.y + 80, { steps: 8 });
+  await page.mouse.up();
+  await page.waitForTimeout(500);
+
+  updated = (await shapes()).find((s) => s.id === id);
+  expect.soft(updated?.labelRot as number).toBeGreaterThanOrEqual(0);
+  expect.soft(updated?.labelRot as number).toBeLessThan(360);
+
+  const transform = (): Promise<string | undefined> => page.evaluate(() =>
+    (document.querySelector('.maplibregl-marker .plan-shape-text') as HTMLElement | null)?.style.transform);
+  const applied = await transform();
+  expect.soft(applied).toMatch(/^rotate\(\d+deg\)$/);
+  expect.soft(applied).not.toBe('rotate(0deg)');
+
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForTimeout(1000);
+  await page.evaluate(() => { (window as unknown as { UI?: { switchMainView?: (v: string) => void } }).UI?.switchMainView?.('view-plan'); });
+  await page.waitForTimeout(2500);
+  expect.soft(await transform()).toBe(applied);
+});

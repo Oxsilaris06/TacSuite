@@ -468,8 +468,12 @@ export function shapeHandles(s: ShapeGestureShape): ShapeHandleSpec[] {
     if (labelAnchor) {
         const dy = labelPixelOffsetY(s.type);
         const ll = { lng: labelAnchor[0], lat: labelAnchor[1] };
+        // Décalées de part et d'autre du label, JAMAIS dessus : le texte a
+        // `pointer-events: auto` et son propre geste de déplacement, il
+        // intercepterait l'appui et la poignée serait inatteignable.
+        // Rail à gauche, rotation à droite, nom au milieu.
         if (s.type === 'line' && shapeCoords(s).length > 1) {
-            handles.push({ role: 'label', index: 0, lngLat: ll, cursor: 'move', offset: [0, dy] });
+            handles.push({ role: 'label', index: 0, lngLat: ll, cursor: 'move', offset: [-34, dy] });
         }
         handles.push({ role: 'labelrot', index: 0, lngLat: ll, cursor: 'grab', offset: [34, dy] });
     }
