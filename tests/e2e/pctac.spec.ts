@@ -1417,3 +1417,89 @@ test('ligne droite + nom déplaçable le long du tracé et rotatif', async ({ pa
   await page.waitForTimeout(2500);
   expect.soft(await transform()).toBe(applied);
 });
+
+// ============================================================================
+// Tiroir « Plus » : seconde colonne à gauche du rail en fenêtré, inchangé en
+// plein écran. Fenêtré, la carte n'occupe qu'une partie de la page et les trois
+// boutons empilés sous le bouton « Plus » débordaient du bas (mesuré : 26 px en
+// 900x600). Piloté par `:fullscreen` en CSS, donc seul un vrai passage en plein
+// écran le vérifie — hors de portée d'un test unitaire.
+// ============================================================================
+
+test('tiroir « Plus » — seconde colonne alignée sur la loupe en fenêtré', async ({ page }) => {
+  await page.setViewportSize({ width: 900, height: 600 });
+  await page.goto('/pctac/', { waitUntil: 'domcontentloaded' });
+  await page.waitForTimeout(900);
+  await page.evaluate(() => { (window as unknown as { UI?: { switchMainView?: (v: string) => void } }).UI?.switchMainView?.('view-plan'); });
+  await page.waitForTimeout(2200);
+
+  interface DrawerGeometry {
+    cols: number;
+    rows: number;
+    offsetFromMagnifier: number;
+    leftOfRail: boolean;
+    gutter: number;
+    belowMoreButton: number;
+    overflow: number;
+  }
+
+  /** Géométrie du tiroir ouvert, souris écartée : le `:hover` d'un FAB le met
+   *  à l'échelle 1.08 et fausserait les positions au pixel. */
+  const readDrawer = async (): Promise<DrawerGeometry> => {
+    await page.locator('#plan_btn_more').click({ force: true });
+    await page.waitForTimeout(250);
+    await page.mouse.move(5, 5);
+    await page.waitForTimeout(250);
+    return page.evaluate(() => {
+      // `getBoundingClientRect()` renvoie un DOMRect dont les propriétés vivent
+      // sur le prototype : les recopier explicitement, un spread ne prend rien.
+      const box = (el: Element): { x: number; y: number; top: number; left: number; right: number; bottom: number } => {
+        const r = el.getBoundingClientRect();
+        return {
+          x: Math.round(r.x), y: Math.round(r.y), top: Math.round(r.top),
+          left: Math.round(r.left), right: Math.round(r.right), bottom: Math.round(r.bottom),
+        };
+      };
+      const magnifier = box(document.getElementById('plan_btn_search') as Element);
+      const more = box(document.getElementById('plan_btn_more') as Element);
+      const drawer = Array.from(document.getElementById('plan_more_tools')?.children ?? []).map(box);
+      const toolbar = box(document.getElementById('plan_unified_toolbar') as Element);
+      const map = box(document.querySelector('.maplibregl-map') as Element);
+      const first = drawer[0] ?? magnifier;
+      const lowest = Math.max(toolbar.bottom, ...drawer.map((d) => d.bottom));
+      return {
+        cols: new Set(drawer.map((d) => d.x)).size,
+        rows: new Set(drawer.map((d) => d.y)).size,
+        offsetFromMagnifier: first.top - magnifier.top,
+        leftOfRail: first.right <= magnifier.left,
+        gutter: magnifier.left - first.right,
+        belowMoreButton: first.top - more.bottom,
+        overflow: lowest - map.bottom,
+      };
+    });
+  };
+
+  const windowed = await readDrawer();
+  // Une seule colonne verticale de trois boutons…
+  expect.soft(windowed.cols).toBe(1);
+  expect.soft(windowed.rows).toBe(3);
+  // …à gauche du rail, avec la gouttière habituelle…
+  expect.soft(windowed.leftOfRail).toBe(true);
+  expect.soft(windowed.gutter).toBe(8);
+  // …et démarrant exactement au niveau de la loupe, le premier FAB du rail.
+  expect.soft(windowed.offsetFromMagnifier).toBe(0);
+  // La barre ne déborde plus sous la carte (+26 px avant correctif).
+  expect.soft(windowed.overflow).toBeLessThan(0);
+
+  await page.locator('#plan_btn_more').click({ force: true });
+  await page.waitForTimeout(150);
+  await page.locator('#plan_btn_fullscreen').click({ force: true });
+  await page.waitForTimeout(900);
+
+  // Plein écran : comportement d'origine, empilé sous le bouton « Plus ».
+  const fullscreen = await readDrawer();
+  expect.soft(fullscreen.cols).toBe(1);
+  expect.soft(fullscreen.rows).toBe(3);
+  expect.soft(fullscreen.belowMoreButton).toBe(8);
+  expect.soft(fullscreen.offsetFromMagnifier).toBeGreaterThan(0);
+});
