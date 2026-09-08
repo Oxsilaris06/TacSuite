@@ -73,6 +73,7 @@ export const PIN_ICONS: PctacPinIcon[] = [
     { id: 'videocam', label: 'Caméra', cat: 'Obs', tags: ['camera', 'video', 'surveillance', 'cctv', 'videosurveillance'] },
     { id: 'photo_camera', label: 'Photo', cat: 'Obs', tags: ['photo', 'appareil', 'cliche'] },
     { id: 'visibility', label: 'Observation', cat: 'Obs', tags: ['observation', 'vue', 'watch', 'spotter', 'jumelles', 'obs', 'surveillance', 'vigie', 'planque'] },
+    { id: 'person_pin_circle', label: 'Dernière position connue', cat: 'Obs', tags: ['derniere position', 'derniere position connue', 'dpc', 'last known', 'perdu de vue', 'contact perdu', 'position'] },
 
     // --- Véhicules ---
     { id: 'directions_car', label: 'Voiture', cat: 'Véhicule', tags: ['voiture', 'vl', 'car', 'vehicule', 'vehicule leger'] },
@@ -90,5 +91,7 @@ export const PIN_ICONS: PctacPinIcon[] = [
     { id: 'dvr', label: 'PC opérationnel', cat: 'Lieu', tags: ['pc', 'poste', 'commandement', 'pc op', 'pc tac', 'pco'] },
     { id: 'door_front', label: 'Accès / Porte', cat: 'Lieu', tags: ['porte', 'entree', 'acces', 'door'] },
     { id: 'fence', label: 'Clôture', cat: 'Lieu', tags: ['cloture', 'barriere', 'fence', 'grille'] },
+    { id: 'local_parking', label: 'Parking', cat: 'Lieu', tags: ['parking', 'stationnement', 'garer', 'aire de stationnement', 'stationner'] },
+    { id: 'groups', label: 'Point de rassemblement des forces', cat: 'Lieu', tags: ['rassemblement', 'point de rassemblement', 'regroupement', 'prf', 'ralliement', 'forces'] },
     { id: 'flag', label: 'Repère', cat: 'Lieu', tags: ['repere', 'flag', 'marker', 'drapeau'] },
 ];
