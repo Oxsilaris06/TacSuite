@@ -82,6 +82,19 @@ Vérification finale : typecheck 0, lint 0, vitest 1857/1857, visuel 60 états 0
   - légende supprimée (décision Nico : code couleur libre).
 - Gate : typecheck 0, lint 0, vitest 1896/1896. Commit local c7e9ab7 — NON poussé.
 
+### 2026-09-08 (carte PC-Tac : 4 évolutions + 2 correctifs)
+
+Chemin architectural suivi : analyse parallèle du socle carto, questions arbitrées avec Nico, design validé section par section, puis six tranches committées séparément. Périmètre arbitré : **PC-Tac uniquement** (OI a déjà la ligne droite et n'a pas de nom de forme à déplacer) ; les 3 icônes atterrissent aussi dans OI par ricochet, la banque `src/shared/pin-icons.ts` étant commune.
+
+- **Icônes** (6814879) : `PIN_ICONS` 51 → 54 (`person_pin_circle` Dernière position connue, `local_parking` Parking, `groups` Point de rassemblement des forces) ; `OI_ICON_CATALOG` 27 → 29 (`groups` y figurait déjà). Voie catalogue avec `kind:'generic'`, pas de nouveau kind métier.
+- **Ligne droite** (59caa61) : nouvel outil `straight`, MÊME type de forme `line` à deux points. Bouton `data-tool` dans le dock — aucun JavaScript de câblage, `_bindDrawUi` branche automatiquement. Le trait existant devient explicitement « à main levée ».
+- **Nom de dessin déplaçable et rotatif** (cc8185f, 68ad1a8) : champs optionnels `labelT` (abscisse curviligne 0..1) et `labelRot`. `labelT` absent = milieu de la corde, comportement historique au mot près, donc aucune migration. Le rail suit la LONGUEUR PARCOURUE, ce qui corrige au passage un cheminement à main levée dont le nom tombait hors du tracé. Rail réservé aux polylignes, rotation pour tout. Poignées décalées de part et d'autre du nom : posées dessus, le texte interceptait l'appui. Le marker porte un conteneur nu et le texte descend d'un cran, pour que la rotation survive au `transform:'none'` de la capture PDF sans toucher à ce durcissement.
+- **Import GPX** (cdcae2f) : panneau dédié dans le tiroir « Plus ». Zéro dépendance, `DOMParser`. Coordonnées en IndexedDB (magasin `gpx`, base pcTacImages v2), index léger en localStorage — jamais dans `pcTacPlanShapes`, que la pile d'annulation recopie en entier. Couches GL insérées sous `plan-shapes-fill`, donc capturées gratuitement dans le PDF.
+- **Modale RESET COMPLET** (64b5d64) : titre noir en thème sombre (1,11:1) et « ANNULER » blanc sur blanc en clair (1,01:1). Racine : depuis la migration R2-T1 vers `<dialog>` natif, la feuille UA impose `color: CanvasText` à l'élément et `.modal` ne déclarait aucun `color` ; et `.add-btn` pose `color: white` que les classes de variante ne défaisaient pas. Correctifs à la racine, les 7 modales et les 7 boutons Annuler réparés d'un coup. Nouveau token `--danger-fill` pour les fonds d'action destructrice (`--danger-red` ne tient que 3,4:1 avec du blanc en sombre).
+- **Coordonnées fantômes Tchap** (146ed1c) : aucune borne d'âge sur les positions réhydratées depuis IndexedDB, et `sweepStates` exempte les marqueurs `stale` à vie. Après une fermeture d'onglet sans Stop, `cfg.connected` reste vrai et le curseur `since` persisté fait passer la reprise en mode incrémental, sans la purge du sync initial. Constante `STALE_MAX_MS` (30 min) appliquée à la lecture disque ET au balayage. **Seul réglage, à calibrer avec l'opérationnel.**
+
+Gate : typecheck 0, lint 0, vitest 2158/2158, Playwright pctac 35/35 (chromium-desktop). Vérifications navigateur mesurées, pas déduites : contrastes de la modale dans les deux thèmes, parcours GPX complet (import, masquage, rechargement, suppression), ligne droite et poignées de label.
+
 ## Dérogations actées
 
 - **AA boutons remplis, thème sombre** (2026-08-09, décision Nico) : `--accent-fill` sombre rétabli à `#4f8dff` (`--tac-blue-500`) — le correctif #2563eb changeait le bleu de l'interface. Ratio blanc/#4f8dff = 3.19:1, sous le seuil AA 4.5:1. Alternative conforme proposée (texte encre sombre sur #4f8dff, 6.6:1) — en attente de décision, non appliquée.
