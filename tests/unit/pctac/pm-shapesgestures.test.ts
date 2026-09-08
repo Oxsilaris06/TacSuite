@@ -497,8 +497,10 @@ describe('_shapeHandles — poignées de label', () => {
         expect(handles.map(h => h.role)).toEqual(['endpoint', 'endpoint', 'label', 'labelrot']);
         // Posées sur le label, donc au milieu de la corde tant que labelT est absent.
         expect(handles[2]?.lngLat).toEqual({ lng: 0, lat: 0.5 });
-        // Décalage pixel aligné sur le marker de texte d'une ligne (-18).
-        expect(handles[2]?.offset).toEqual([0, -18]);
+        // Décalage vertical aligné sur le marker de texte d'une ligne (-18), et
+        // décalage horizontal de part et d'autre du nom : posées DESSUS, elles
+        // seraient interceptées par le texte, qui a son propre geste.
+        expect(handles[2]?.offset).toEqual([-34, -18]);
         expect(handles[3]?.offset).toEqual([34, -18]);
     });
 
