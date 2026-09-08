@@ -24,7 +24,7 @@ import { SafeMethods, createPlanMapState } from '../../../src/apps/pctac/planmap
 import type { PlanMapInternal } from '../../../src/apps/pctac/planmap/types.js';
 
 describe('state.ts — createPlanMapState() (planMap.js:301-328 + ad hoc §3.2)', () => {
-    it('retourne exactement les 60 clés attendues, avec les bonnes valeurs initiales', () => {
+    it('retourne exactement les 62 clés attendues, avec les bonnes valeurs initiales', () => {
         const s = createPlanMapState();
 
         // Décompte exhaustif : 27 (littéral, planMap.js:302-328 — vérifié par lecture
@@ -33,7 +33,8 @@ describe('state.ts — createPlanMapState() (planMap.js:301-328 + ad hoc §3.2)'
         // comptage du document, signalé au gate, source de vérité = planMap.js)
         // + 28 (ad hoc, §3.2) + 2 (AOI_MIN_Z/MAX_Z) + 1 (`persistence`, mission
         // R3-c, hors littéral `planMap.js` — cf. commentaire de
-        // `PlanMapState.persistence`, types.ts) = 58.
+        // `PlanMapState.persistence`, types.ts) = 58, + 2 (`_gpxTracks` /
+        // `_gpxCoords`, traces GPX importées) = 60.
         expect(Object.keys(s).sort()).toEqual(
             [
                 // 28 propriétés du littéral (planMap.js:302-328)
@@ -62,6 +63,8 @@ describe('state.ts — createPlanMapState() (planMap.js:301-328 + ad hoc §3.2)'
                 '_drawingDiameterMarker',
                 '_locked',
                 '_measureState',
+                '_gpxTracks',
+                '_gpxCoords',
                 '_measureLabelMarkers',
                 '_committedMeasureMarkers',
                 // 28 propriétés ad hoc
@@ -103,7 +106,7 @@ describe('state.ts — createPlanMapState() (planMap.js:301-328 + ad hoc §3.2)'
                 'contoursOn',
             ].sort(),
         );
-        expect(Object.keys(s)).toHaveLength(60);
+        expect(Object.keys(s)).toHaveLength(62);
     });
 
     it('`persistence` : adapter fonctionnel posé par défaut (mission R3-c) — round-trip pins/shapes via localStorage', () => {

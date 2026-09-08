@@ -145,6 +145,9 @@ export const MapCoreMethods = {
             // pour choisir l'opacité, il doit donc déjà être restauré.
             this._initTopoLayers();
             this._initLidar();
+            // Traces GPX : APRÈS `_initDrawingLayers`, pour que la couche de
+            // dessin existe et que les traces s'insèrent en dessous.
+            this._loadGpxTracks().catch(() => { /* best-effort : pas de trace au boot */ });
         });
 
         this._renderPins();

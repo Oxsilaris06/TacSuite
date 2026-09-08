@@ -11,7 +11,16 @@ import type { ImageStoreContract } from '@shared/types/contracts.js';
 
 const DB_NAME = 'pcTacImages';
 const STORE = 'images';
-const VERSION = 1;
+/** Magasin des traces GPX importées (coordonnées brutes, une entrée par trace).
+ *  Voisin du magasin d'images dans la MÊME base : réutilise l'ouverture et la
+ *  discipline de transaction ci-dessous plutôt que d'en recopier une seconde.
+ *  L'index léger (nom, couleur, visibilité) vit en localStorage, comme pour les
+ *  zones hors-ligne (`pcTacAoiIndex`) : petit index d'un côté, gros volume de
+ *  l'autre. */
+const GPX_STORE = 'gpx';
+/** 1 → 2 : ajout du magasin `gpx`. `onupgradeneeded` crée chaque magasin
+ *  manquant indépendamment, donc une base existante est simplement complétée. */
+const VERSION = 2;
 const MIGRATION_FLAG = 'pcTacIdbMigratedV1';
 
 let dbPromise: Promise<IDBDatabase> | null = null;
@@ -30,6 +39,9 @@ function openDb(): Promise<IDBDatabase> {
         const db = (event.target as IDBOpenDBRequest).result;
         if (!db.objectStoreNames.contains(STORE)) {
           db.createObjectStore(STORE);
+        }
+        if (!db.objectStoreNames.contains(GPX_STORE)) {
+          db.createObjectStore(GPX_STORE);
         }
       };
       req.onsuccess = (): void => {
@@ -54,12 +66,13 @@ function openDb(): Promise<IDBDatabase> {
 function withStore(
   mode: IDBTransactionMode,
   fn: (store: IDBObjectStore) => unknown,
+  storeName: string = STORE,
 ): Promise<void> {
   return openDb().then(
     (db) =>
       new Promise<void>((resolve, reject) => {
-        const tx = db.transaction(STORE, mode);
-        const store = tx.objectStore(STORE);
+        const tx = db.transaction(storeName, mode);
+        const store = tx.objectStore(storeName);
         try {
           fn(store);
         } catch (e) {
@@ -266,6 +279,47 @@ export const ImageStore: ImageStoreContract = {
       }
       return i;
     });
+  },
+};
+
+/**
+ * Stockage des traces GPX importées. Une entrée par trace : la liste des
+ * segments, chacun une suite de couples [lng, lat].
+ *
+ * Volontairement SÉPARÉ de `pcTacPlanShapes` : une trace de randonnée compte
+ * couramment plusieurs milliers de points, et le bucket des formes est copié
+ * intégralement dans la pile d'annulation (50 états) puis réécrit à chaque
+ * glissement de forme. Y verser une trace ferait ramer tout le dessin.
+ */
+export const GpxStore = {
+  /** Enregistre les segments d'une trace. No-op si l'id ou les segments manquent. */
+  async put(id: string, segments: ReadonlyArray<ReadonlyArray<[number, number]>>): Promise<void> {
+    if (!id || !segments || !segments.length) return;
+    await withStore('readwrite', (store) => store.put(segments, id), GPX_STORE);
+  },
+
+  /** Segments d'une trace, ou `null` si l'id est absent. Ne jette jamais. */
+  async get(id: string): Promise<Array<Array<[number, number]>> | null> {
+    if (!id) return null;
+    let out: Array<Array<[number, number]>> | null = null;
+    try {
+      await withStore('readonly', (store) => {
+        const req = store.get(id);
+        req.onsuccess = (): void => {
+          const v = req.result as unknown;
+          out = Array.isArray(v) ? (v as Array<Array<[number, number]>>) : null;
+        };
+      }, GPX_STORE);
+    } catch {
+      return null;
+    }
+    return out;
+  },
+
+  /** Retire définitivement une trace. */
+  async delete(id: string): Promise<void> {
+    if (!id) return;
+    await withStore('readwrite', (store) => store.delete(id), GPX_STORE);
   },
 };
 

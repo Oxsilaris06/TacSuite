@@ -339,6 +339,9 @@
                         <button type="button" id="plan_btn_aoi" class="plan-tool-fab" title="Télécharger la carte d'une zone (hors-ligne)" aria-label="Télécharger la carte d'une zone hors ligne">
                             <span class="material-symbols-outlined">sim_card_download</span>
                         </button>
+                        <button type="button" id="plan_btn_gpx" class="plan-tool-fab" title="Traces GPX importées" aria-label="Gérer les traces GPX superposées à la carte" aria-expanded="false" aria-controls="plan_gpx_panel">
+                            <span class="material-symbols-outlined">route</span>
+                        </button>
                     </div>
                 </div>
 
@@ -385,6 +388,18 @@
                             <span class="plan-layers-label">Relief 3D</span>
                         </div>
                     </div>
+                </div>
+
+                <!-- Panneau Traces GPX (ouvert via le FAB du tiroir « Plus ») : import de
+                     fichiers .gpx, puis afficher/masquer/supprimer trace par trace. -->
+                <div id="plan_gpx_panel">
+                    <p class="plan-layers-section-title">Traces GPX</p>
+                    <div id="plan_gpx_list"></div>
+                    <button type="button" id="plan_gpx_import" class="plan-gpx-import">
+                        <span class="material-symbols-outlined">upload_file</span>
+                        Importer un .gpx
+                    </button>
+                    <input type="file" id="plan_gpx_file" accept=".gpx,application/gpx+xml" multiple hidden>
                 </div>
 
                 <!-- Dock dessin réductible (ouvert via le FAB Dessin) -->

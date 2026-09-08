@@ -319,6 +319,22 @@ export const FRANCE_BBOX: GeoBBox = { west: -5.6, south: 41.1, east: 9.8, north:
 // Clé de l'index des AOI confirmées (Persist) : remplace le flag binaire.
 // planMap.js:128
 export const AOI_INDEX_KEY = 'pcTacAoiIndex';
+
+/* ─── Traces GPX importées ──────────────────────────────────────────────────
+ * Index léger en localStorage (nom, couleur, visibilité), coordonnées en
+ * IndexedDB via `GpxStore` — même partage que les zones hors-ligne
+ * (`AOI_INDEX_KEY` ici, tuiles en Cache Storage). */
+
+/** Index des traces GPX : `PlanGpxTrack[]` sans les coordonnées. */
+export const GPX_INDEX_KEY = 'pcTacGpxIndex';
+/** Source GeoJSON unique portant toutes les traces VISIBLES. */
+export const GPX_SRC = 'plan-gpx-src';
+/** Liseré blanc, sous la ligne colorée : lisibilité sur imagerie satellite. */
+export const GPX_CASING_LAYER = 'plan-gpx-casing';
+/** Ligne colorée de la trace. */
+export const GPX_LINE_LAYER = 'plan-gpx-line';
+/** Couleurs attribuées cycliquement aux traces importées. */
+export const GPX_COLORS: readonly string[] = ['#a855f7', '#06b6d4', '#f59e0b', '#22c55e', '#ec4899', '#3b82f6'];
 // Garde-fou : nombre max de tuiles d'une AOI (évite d'exploser le volume / le WAF).
 // planMap.js:130
 export const AOI_MAX_TILES = 60000;

@@ -1220,3 +1220,81 @@ for (const theme of ['dark', 'light'] as const) {
     expect.soft(contrastRatio(measured.confirmColor, measured.confirmBg)).toBeGreaterThanOrEqual(4.5);
   });
 }
+
+// ============================================================================
+// Traces GPX — parcours complet : import, visibilité, persistance, suppression.
+// Le câblage (FAB dans le tiroir « Plus », sélecteur de fichier, délégation des
+// actions de ligne) et la persistance IndexedDB ne sont pas atteignables en
+// test unitaire : c'est le seul endroit où ils sont vérifiés pour de vrai.
+// ============================================================================
+
+test('traces GPX — import, masquage, persistance et suppression', async ({ page }) => {
+  const openPlan = async (): Promise<void> => {
+    await page.evaluate(() => { (window as unknown as { UI?: { switchMainView?: (v: string) => void } }).UI?.switchMainView?.('view-plan'); });
+    await page.waitForTimeout(2500);
+  };
+  const openGpxPanel = async (): Promise<void> => {
+    await page.locator('#plan_btn_more').click();
+    await page.waitForTimeout(250);
+    await page.locator('#plan_btn_gpx').click();
+    await page.waitForTimeout(350);
+  };
+  /** Nombre de features publiées sur la source GL des traces. */
+  const featureCount = (): Promise<number> => page.evaluate(() => {
+    const src = (window as unknown as { PlanMap?: { map?: { getSource(id: string): unknown } } })
+      .PlanMap?.map?.getSource('plan-gpx-src') as { _data?: { features?: unknown[] } } | undefined;
+    return src?._data?.features?.length ?? -1;
+  });
+
+  await page.goto('/pctac/', { waitUntil: 'domcontentloaded' });
+  await page.waitForTimeout(1200);
+  await openPlan();
+  await openGpxPanel();
+
+  await expect.soft(page.locator('#plan_gpx_panel')).toHaveClass(/open/);
+  await expect.soft(page.locator('.plan-gpx-empty')).toContainText('Aucune trace');
+
+  await page.locator('#plan_gpx_file').setInputFiles('tests/e2e/fixtures/reconnaissance-sud.gpx');
+  await page.waitForTimeout(1200);
+
+  await expect.soft(page.locator('.plan-gpx-row')).toHaveCount(1);
+  // Le nom de la TRACE l'emporte sur celui des métadonnées du fichier.
+  await expect.soft(page.locator('.plan-gpx-name')).toHaveText('Reconnaissance Sud');
+  expect.soft(await featureCount()).toBe(1);
+
+  // Une trace importée passe SOUS les dessins de l'opérateur, jamais par-dessus.
+  const order = await page.evaluate(() => {
+    const map = (window as unknown as { PlanMap: { map: { getStyle(): { layers: Array<{ id: string }> } } } }).PlanMap.map;
+    const ids = map.getStyle().layers.map((l) => l.id);
+    return { gpx: ids.indexOf('plan-gpx-line'), shapes: ids.indexOf('plan-shapes-fill') };
+  });
+  expect.soft(order.gpx).toBeGreaterThanOrEqual(0);
+  expect.soft(order.gpx).toBeLessThan(order.shapes);
+
+  // Masquer retire de la carte sans supprimer, et NE FERME PAS le panneau : la
+  // liste est re-rendue dans le handler, donc la cible du clic est détachée
+  // avant que l'écoute « clic extérieur » du document ne l'examine.
+  await page.locator('[data-gpx-act="toggle"]').click();
+  await page.waitForTimeout(400);
+  expect.soft(await featureCount()).toBe(0);
+  await expect.soft(page.locator('#plan_gpx_panel')).toHaveClass(/open/);
+  await expect.soft(page.locator('.plan-gpx-row')).toHaveCount(1);
+
+  await page.locator('[data-gpx-act="toggle"]').click();
+  await page.waitForTimeout(400);
+  expect.soft(await featureCount()).toBe(1);
+
+  // Persistance réelle : index localStorage + coordonnées IndexedDB.
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForTimeout(1200);
+  await openPlan();
+  expect.soft(await featureCount()).toBe(1);
+  await openGpxPanel();
+  await expect.soft(page.locator('.plan-gpx-name')).toHaveText('Reconnaissance Sud');
+
+  await page.locator('[data-gpx-act="remove"]').click();
+  await page.waitForTimeout(700);
+  expect.soft(await featureCount()).toBe(0);
+  await expect.soft(page.locator('.plan-gpx-empty')).toHaveCount(1);
+  expect.soft(JSON.parse(await page.evaluate(() => localStorage.getItem('pcTacGpxIndex')) ?? '[]')).toEqual([]);
+});

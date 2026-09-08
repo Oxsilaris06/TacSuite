@@ -51,6 +51,8 @@ export function createPlanMapState(): PlanMapState {
         _drawingDiameterMarker: null,  // label live pendant le tracé d'un cercle
         _locked: false,          // verrou global : fige la position des pings ET dessins
         _measureState: null,     // état de la mesure en cours {vertices, cursor, reticle}
+        _gpxTracks: [],          // traces GPX importées (métadonnées ; coords en IndexedDB)
+        _gpxCoords: {},          // id de trace -> segments, chargés depuis IndexedDB
         _measureLabelMarkers: [],     // labels HTML live de la mesure en cours
         _committedMeasureMarkers: [], // labels HTML des mesures persistées
 

@@ -106,6 +106,19 @@ export interface PlanShape {
     /** `measure-rings` uniquement. */ rings?: PlanRing[] | undefined;
 }
 
+/**
+ * Trace GPX importée — MÉTADONNÉES SEULEMENT, persistées sous `pcTacGpxIndex`.
+ * Les coordonnées vivent en IndexedDB (`GpxStore`) : une trace de randonnée
+ * compte couramment plusieurs milliers de points, et le bucket des formes est
+ * recopié dans la pile d'annulation à chaque modification.
+ */
+export interface PlanGpxTrack {
+    id: string;
+    name: string;
+    color: string;
+    visible: boolean;
+}
+
 /** Vue caméra persistée sous `pcTacPlanView` (planMap.js:459-469). */
 export interface PlanView {
     center: LngLatTuple;
@@ -286,6 +299,10 @@ export interface PlanMapState {
     _drawingDiameterMarker: Marker | null;
     _locked: boolean;
     _measureState: MeasureState | null;
+    /** Traces GPX importées (métadonnées). Vide tant que rien n'est importé. */
+    _gpxTracks: PlanGpxTrack[];
+    /** Coordonnées des traces, chargées depuis IndexedDB. Jamais persisté ici. */
+    _gpxCoords: Record<string, LngLatTuple[][]>;
     _measureLabelMarkers: Marker[];
     _committedMeasureMarkers: Marker[];
 
@@ -523,4 +540,15 @@ export interface PlanMapInternal extends PlanMapState, PlanMapContract {
     _confirmAoi(bbox: GeoBBox): Promise<void>;
     _runAoiDownload(bbox: GeoBBox, minZ: number, maxZ: number, templates: readonly TileTemplate[], estTotal: number): Promise<void>;
     _createAoiProgressBar(estTotal: number): AoiProgressUi;
+
+    /* --- gpx.ts (8) --- */
+    _ensureGpxLayers(): boolean;
+    _renderGpxLayers(): void;
+    _renderGpxList(): void;
+    _toggleGpxPanel(force?: boolean): void;
+    _importGpxFiles(files: readonly File[]): Promise<void>;
+    _toggleGpxTrack(id: string): void;
+    _removeGpxTrack(id: string): void;
+    _fitGpxTracks(): void;
+    _loadGpxTracks(): Promise<void>;
 }

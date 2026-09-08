@@ -75,6 +75,18 @@ function closeMoreDrawer(): void {
     if (btnMore) btnMore.setAttribute('aria-expanded', 'false');
 }
 
+/** Ferme le panneau « Traces GPX » (#plan_gpx_panel) s'il est ouvert. Même
+ *  logique que `closeMoreDrawer` : les panneaux flottants de la carte
+ *  s'excluent mutuellement, jamais deux superposés. */
+function closeGpxPanel(): void {
+    const panel = document.getElementById('plan_gpx_panel');
+    const btn = document.getElementById('plan_btn_gpx');
+    if (!panel || !panel.classList.contains('open')) return;
+    panel.classList.remove('open');
+    btn?.setAttribute('aria-expanded', 'false');
+    btn?.classList.remove('active');
+}
+
 /** Ferme le panneau « Calques » (#plan_layers_panel) s'il est ouvert. Même
  *  logique que `closeMoreDrawer` (exclusion mutuelle des panneaux). */
 function closeLayersPanel(): void {
@@ -124,18 +136,59 @@ export const ChromeMethods = {
             btnLayers.setAttribute('aria-expanded', String(open));
         };
 
+        // Panneau « Traces GPX » — même mécanique, avec en plus le sélecteur de
+        // fichier et la délégation des actions par ligne (afficher / supprimer).
+        const btnGpx = document.getElementById('plan_btn_gpx');
+        if (btnGpx) btnGpx.onclick = () => {
+            const panel = document.getElementById('plan_gpx_panel');
+            const open = !panel?.classList.contains('open');
+            if (open) { closeLayersPanel(); closeMoreDrawer(); this._toggleSearchPanel(false); }
+            this._toggleGpxPanel(open);
+        };
+
+        const gpxImport = document.getElementById('plan_gpx_import');
+        const gpxFile = document.getElementById('plan_gpx_file');
+        if (gpxImport && gpxFile instanceof HTMLInputElement) {
+            gpxImport.onclick = () => { gpxFile.value = ''; gpxFile.click(); };
+            gpxFile.onchange = () => {
+                const files = Array.from(gpxFile.files ?? []);
+                if (files.length) this._importGpxFiles(files).catch(() => { /* déjà signalé à l'utilisateur */ });
+            };
+        }
+
+        // Délégation : une seule écoute pour toutes les lignes, y compris celles
+        // rendues plus tard par `_renderGpxList`.
+        const gpxList = document.getElementById('plan_gpx_list');
+        if (gpxList) gpxList.onclick = (e) => {
+            const btn = (e.target as Element | null)?.closest('[data-gpx-act]');
+            if (!(btn instanceof HTMLElement)) return;
+            // Indispensable : les deux actions re-rendent la liste, donc la cible
+            // du clic est DÉTACHÉE avant que l'écoute « clic extérieur » posée sur
+            // `document` ne l'examine. Sans cet arrêt, `panel.contains(target)`
+            // serait faux et le panneau se refermerait à chaque bascule.
+            e.stopPropagation();
+            const id = btn.closest<HTMLElement>('[data-gpx-id]')?.dataset.gpxId;
+            if (!id) return;
+            if (btn.dataset.gpxAct === 'toggle') this._toggleGpxTrack(id);
+            else if (btn.dataset.gpxAct === 'remove') this._removeGpxTrack(id);
+        };
+
         // Fermeture au clic extérieur : tiroir « Plus » et panneau « Calques ».
         if ((btnMore && moreTools) || (btnLayers && layersPanel)) {
             document.addEventListener('click', (e) => {
                 const t = e.target as Node;
                 if (moreTools && !moreTools.hidden && btnMore && !moreTools.contains(t) && !btnMore.contains(t)) closeMoreDrawer();
                 if (layersPanel && layersPanel.classList.contains('open') && btnLayers && !layersPanel.contains(t) && !btnLayers.contains(t)) closeLayersPanel();
+                const gpxPanel = document.getElementById('plan_gpx_panel');
+                if (gpxPanel && gpxPanel.classList.contains('open') && btnGpx && !gpxPanel.contains(t) && !btnGpx.contains(t)) closeGpxPanel();
             });
-            // Échap : ferme le tiroir « Plus » ou le panneau « Calques » si ouvert.
+            // Échap : ferme le tiroir « Plus », le panneau « Calques » ou le
+            // panneau « Traces GPX » si l'un d'eux est ouvert.
             document.addEventListener('keydown', (e) => {
                 if (e.key !== 'Escape') return;
                 if (moreTools && !moreTools.hidden) closeMoreDrawer();
                 else if (layersPanel && layersPanel.classList.contains('open')) closeLayersPanel();
+                else closeGpxPanel();
             });
         }
 
