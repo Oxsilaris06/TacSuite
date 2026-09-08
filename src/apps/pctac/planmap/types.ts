@@ -239,7 +239,10 @@ export interface PlanMapState {
     pendingFreePin: { label: string; color: string; kind: string; icon: string } | null;
     searchMarker: Marker | null;
     initialized: boolean;
-    drawTool: 'line' | 'rectangle' | 'circle' | 'text' | 'measure' | null;
+    // `line` = trait à main levée (accumulation de points), `straight` = ligne droite
+    // (deux points). Les deux produisent une forme `type: 'line'` : c'est un outil de
+    // saisie différent, pas un nouveau type de forme.
+    drawTool: 'line' | 'straight' | 'rectangle' | 'circle' | 'text' | 'measure' | null;
     drawColor: string;
     drawState: { start: LngLatTuple; current: LngLatTuple; points?: LngLatTuple[] } | null;
     drawPreviewLayerIds: string[];
