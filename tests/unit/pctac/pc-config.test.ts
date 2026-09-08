@@ -103,10 +103,12 @@ describe('config.ts — QR_BATCH_SIZE / LONG_PRESS_DELAY (config.js:60-61)', () 
 });
 
 describe('config.ts — PIN_ICONS (config.js:74-152)', () => {
-    it('contient 51 entrées (doublon Surveillance/Observation fusionné, décision Nico 2026-08-17)', () => {
+    it('contient 54 entrées (doublon Surveillance/Observation fusionné, décision Nico 2026-08-17)', () => {
         // NB : 52 entrées à l'origine ; `remove_red_eye` (Surveillance) a été
-        // fusionné dans `visibility` (Observation) — doublon supprimé.
-        expect(PIN_ICONS).toHaveLength(51);
+        // fusionné dans `visibility` (Observation) — doublon supprimé (51).
+        // +3 : person_pin_circle (Dernière position connue), local_parking (Parking),
+        // groups (Point de rassemblement des forces).
+        expect(PIN_ICONS).toHaveLength(54);
     });
 
     it('a des ids uniques', () => {

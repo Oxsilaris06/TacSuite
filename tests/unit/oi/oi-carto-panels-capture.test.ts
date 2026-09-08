@@ -508,14 +508,15 @@ describe('_openPinIconPanel (oi_cartographie.js:1054-1081)', () => {
         expect(() => state._openPinIconPanel('missing')).not.toThrow();
     });
 
-    it('construit une grille avec les 27 icônes du catalogue', () => {
+    it('construit une grille avec les 29 icônes du catalogue', () => {
         const state = makePanelsState({ map: makeFakeMap(), pins: [makePin({ id: 'p1' })] });
 
         state._openPinIconPanel('p1');
 
         expect(state._inlinePanel).not.toBeNull();
         const cells = state._inlinePanel?.querySelectorAll('.oi-ic') ?? [];
-        expect(cells.length).toBe(27);
+        // 27 d'origine, +2 : local_parking, person_pin_circle.
+        expect(cells.length).toBe(29);
     });
 
     it('un clic sur une icône : met à jour pin.icon, sauvegarde, re-rend, ferme le panneau', () => {
