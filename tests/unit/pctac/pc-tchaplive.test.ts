@@ -20,6 +20,22 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+/** Marqueurs créés par le module, tous tests confondus (vidé en beforeEach). */
+const createdMarkers: Array<{ lngLat: [number, number] | null; removed: boolean }> = [];
+
+vi.mock('maplibre-gl', () => {
+  class FakeMarker {
+    private readonly rec = { lngLat: null as [number, number] | null, removed: false };
+    constructor() { createdMarkers.push(this.rec); }
+    setLngLat(ll: [number, number]): this { this.rec.lngLat = ll; return this; }
+    addTo(): this { return this; }
+    remove(): this { this.rec.removed = true; return this; }
+    getElement(): HTMLElement { return document.createElement('div'); }
+  }
+  class FakeLngLatBounds { extend(): this { return this; } }
+  return { default: { Marker: FakeMarker, LngLatBounds: FakeLngLatBounds } };
+});
+
 const LS_KEY = 'pcTacTchapLive';
 const HS = 'https://matrix.example.org';
 const ROOM = '!room:example.org';
@@ -80,7 +96,7 @@ interface FakePut {
   value: unknown;
 }
 
-function makeFakeIndexedDb(): { factory: IDBFactory; puts: FakePut[] } {
+function makeFakeIndexedDb(seed: Array<{ key: string; value: unknown }> = []): { factory: IDBFactory; puts: FakePut[] } {
   const puts: FakePut[] = [];
   const storeNames = new Set<string>();
 
@@ -108,12 +124,27 @@ function makeFakeIndexedDb(): { factory: IDBFactory; puts: FakePut[] } {
           return {} as IDBRequest;
         },
         openCursor: (): IDBRequest => {
-          const req: { onsuccess: (() => void) | null; onerror: (() => void) | null; result: null } = {
+          // Chaîne de curseur minimale conforme à `loadAllState` : chaque
+          // `continue()` republie `onsuccess` avec l'entrée suivante, puis
+          // `result: null` termine l'itération.
+          let i = 0;
+          const req: { onsuccess: (() => void) | null; onerror: (() => void) | null; result: unknown } = {
             onsuccess: null,
             onerror: null,
             result: null,
           };
-          queueMicrotask(() => req.onsuccess?.());
+          const step = (): void => {
+            const entry = seed[i];
+            req.result = entry
+              ? { key: entry.key, value: entry.value, continue: () => { i++; queueMicrotask(step); } }
+              : null;
+            req.onsuccess?.();
+            // `tlWithStore` ne résout QUE sur `tx.oncomplete` : sans ce signal
+            // de fin de transaction, `loadAllState` resterait en attente et
+            // aucune réhydratation ne serait jamais observable.
+            if (!entry) queueMicrotask(() => tx.oncomplete?.());
+          };
+          queueMicrotask(step);
           return req as unknown as IDBRequest;
         },
       };
@@ -155,6 +186,7 @@ beforeEach(() => {
   vi.resetModules();
   localStorage.clear();
   document.body.innerHTML = '';
+  createdMarkers.length = 0;
   delete (window as unknown as { PlanMap?: unknown }).PlanMap;
 });
 
@@ -346,5 +378,154 @@ describe('TchapLive — rafraîchissement token OIDC (P2.CONV)', () => {
 
     TchapLive.stop(true);
     await startPromise;
+  });
+});
+
+/* ─── 6. Péremption des « dernières positions connues » ─────────────────── */
+
+const STALE_MAX_MS = 30 * 60 * 1000;
+
+/** Carte factice suffisante pour getMap()/wireMapListeners/rehydrateMarker. */
+function stubPlanMap(): void {
+  const map = {
+    on: vi.fn(),
+    flyTo: vi.fn(),
+    fitBounds: vi.fn(),
+    getSource: vi.fn(),
+    getLayer: vi.fn(),
+    addSource: vi.fn(),
+    addLayer: vi.fn(),
+    project: vi.fn(() => ({ x: 0, y: 0 })),
+    getCanvas: vi.fn(() => ({ style: {} })),
+  };
+  (window as unknown as { PlanMap?: unknown }).PlanMap = { initialized: true, init: vi.fn(), map };
+}
+
+/** Session laissée « connectée » : exactement l'état après fermeture d'onglet sans Stop. */
+function seedConnectedSession(): void {
+  // `wireUI` sort immédiatement sans #tl_toggle (tchap-live.ts:1246) : le
+  // panneau doit exister pour que la réhydratation au boot soit atteinte.
+  document.body.innerHTML = '<button id="tl_toggle"></button><div id="tl_panel"></div><div id="tl_log"></div>';
+  localStorage.setItem(LS_KEY, JSON.stringify({
+    hs: HS, token: '', room: ROOM, assign: {}, mode: 'manual', connected: true,
+  }));
+}
+
+function persistedRecord(sender: string, ageMs: number): { key: string; value: unknown } {
+  return {
+    key: sender,
+    value: {
+      lat: 48.8566, lon: 2.3522,
+      ts: Date.now() - ageMs,
+      trail: [[2.3522, 48.8566]],
+      fonction: null, name: null, room: ROOM,
+      savedAt: Date.now() - ageMs,
+    },
+  };
+}
+
+describe('TchapLive — péremption des positions réhydratées', () => {
+  it("ne réaffiche PAS une position plus vieille que le plafond, mais réaffiche une position fraîche", async () => {
+    // Symptôme corrigé : après une fermeture d'onglet sans Stop, `connected`
+    // reste vrai et l'enregistrement IndexedDB survit. Au boot suivant,
+    // rehydrateFromDisk reposait un marqueur gris QUEL QUE SOIT son âge —
+    // d'où des coordonnées fantômes de plusieurs jours sur la carte.
+    seedConnectedSession();
+    stubPlanMap();
+    const { factory } = makeFakeIndexedDb([
+      persistedRecord('@fantome:example.org', 3 * 24 * 60 * 60 * 1000), // 3 jours
+      persistedRecord('@fraiche:example.org', 60 * 1000),               // 1 minute
+    ]);
+    vi.stubGlobal('indexedDB', factory);
+    vi.stubGlobal('fetch', (async (_i: RequestInfo | URL, init: RequestInit | undefined) =>
+      hangingResponse(init)) as unknown as typeof fetch);
+
+    // L'import déclenche wireUI() (auto-câblage du module), donc la
+    // réhydratation au boot — le chemin exact du symptôme.
+    await import('@pctac/tchap-live.js');
+    await flushMicrotasks(60);
+
+    // Un seul marqueur posé : la position fraîche. Le fantôme est écarté.
+    expect(createdMarkers).toHaveLength(1);
+    expect(createdMarkers[0]?.lngLat).toEqual([2.3522, 48.8566]);
+  });
+
+  it('écarte les DEUX enregistrements quand ils sont tous périmés (aucun marqueur du tout)', async () => {
+    seedConnectedSession();
+    stubPlanMap();
+    const { factory } = makeFakeIndexedDb([
+      persistedRecord('@a:example.org', STALE_MAX_MS + 60 * 1000),
+      persistedRecord('@b:example.org', 5 * 60 * 60 * 1000),
+    ]);
+    vi.stubGlobal('indexedDB', factory);
+    vi.stubGlobal('fetch', (async (_i: RequestInfo | URL, init: RequestInit | undefined) =>
+      hangingResponse(init)) as unknown as typeof fetch);
+
+    await import('@pctac/tchap-live.js');
+    await flushMicrotasks(60);
+
+    expect(createdMarkers).toHaveLength(0);
+  });
+
+  it("juste SOUS le plafond : la position est bien réaffichée (le plafond ne mord pas trop tôt)", async () => {
+    seedConnectedSession();
+    stubPlanMap();
+    const { factory } = makeFakeIndexedDb([
+      persistedRecord('@limite:example.org', STALE_MAX_MS - 60 * 1000),
+    ]);
+    vi.stubGlobal('indexedDB', factory);
+    vi.stubGlobal('fetch', (async (_i: RequestInfo | URL, init: RequestInit | undefined) =>
+      hangingResponse(init)) as unknown as typeof fetch);
+
+    await import('@pctac/tchap-live.js');
+    await flushMicrotasks(60);
+
+    expect(createdMarkers).toHaveLength(1);
+  });
+
+  it("un marqueur réhydraté qui franchit le plafond À L'ÉCRAN finit par être retiré", async () => {
+    // Sans plafond dans sweepStates, une position réhydratée juste sous le
+    // seuil resterait affichée à vie : `stale` est exempté du balayage « lost ».
+    vi.useFakeTimers();
+    try {
+      seedConnectedSession();
+      // Session reprise avec un curseur persisté : `processSync` tourne alors en
+      // mode incrémental (initial=false), donc SANS sa purge des « lost ». C'est
+      // exactement le scénario du symptôme — après un simple rafraîchissement,
+      // rien ne nettoie plus les fantômes.
+      localStorage.setItem(LS_KEY, JSON.stringify({
+        hs: HS, token: 'tok-1', room: ROOM, assign: {}, mode: 'manual', connected: true,
+      }));
+      localStorage.setItem('pcTacTchapLiveSince', 'batch-0');
+      // `startManual` relit la config depuis le DOM (`saveCfg`) : sans ces
+      // champs, hs/token/room repartent vides et la session ne démarre pas —
+      // donc pas de `startSweep()`, donc rien à observer.
+      document.body.insertAdjacentHTML('beforeend',
+        `<input id="tl_hs" value="${HS}"><input id="tl_token" value="tok-1"><input id="tl_room" value="${ROOM}">`);
+      stubPlanMap();
+      const { factory } = makeFakeIndexedDb([
+        persistedRecord('@limite:example.org', STALE_MAX_MS - 60 * 1000),
+      ]);
+      vi.stubGlobal('indexedDB', factory);
+      vi.stubGlobal('fetch', (async (input: RequestInfo | URL, init: RequestInit | undefined) => {
+        const url = String(input);
+        if (url.includes('/account/whoami')) return jsonResponse({ user_id: '@tester:example.org' });
+        if (url.includes('since=batch-0')) return jsonResponse({ next_batch: 'batch-1', rooms: {} });
+        return hangingResponse(init);
+      }) as unknown as typeof fetch);
+
+      await import('@pctac/tchap-live.js');
+      await vi.advanceTimersByTimeAsync(0);
+      await flushMicrotasks(60);
+      expect(createdMarkers).toHaveLength(1);
+      expect(createdMarkers[0]?.removed).toBe(false);
+
+      // Le balayage tourne toutes les 5 s ; on franchit le plafond.
+      await vi.advanceTimersByTimeAsync(3 * 60 * 1000);
+
+      expect(createdMarkers[0]?.removed).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

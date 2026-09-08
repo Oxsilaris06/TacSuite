@@ -200,6 +200,14 @@ const FB_LOST_MS = 360 * 1000;
 const ANIM_MS = 900;
 const DECLUTTER_PX = 30;
 const TRAIL_MAX = 80;
+// Péremption d'une « dernière position connue ». Au-delà, la position n'est plus
+// tactiquement exploitable : on ne la réaffiche pas au démarrage, et on retire
+// le marqueur déjà posé qui franchit le seuil. Sans ce plafond, un partage
+// Tchap laissé ouvert repeuplait la carte de fantômes à chaque ouverture, sans
+// aucune date de péremption — l'enregistrement IndexedDB survit à la fermeture
+// d'onglet, et `stale` est exempté du balayage « lost ».
+// SEUL RÉGLAGE du correctif : à calibrer avec l'opérationnel.
+const STALE_MAX_MS = 30 * 60 * 1000;
 
 const STATE_COLORS: Record<TlState, string> = {
   new: 'var(--inter-blue, #4f8dff)',
@@ -579,6 +587,14 @@ function removeMember(sender: string): void {
 // dernière position connue, pas du live. Devient live au 1er upsert reçu.
 function rehydrateMarker(sender: string, rec: TlPersistedRec | undefined): boolean {
   if (!rec || !Number.isFinite(rec.lat) || !Number.isFinite(rec.lon)) return false;
+  // Position périmée : jamais réaffichée. Seul entonnoir par lequel un
+  // enregistrement disque devient un marqueur, donc ce garde ferme les DEUX
+  // chemins de résurrection — la réhydratation au démarrage (drapeau
+  // `cfg.connected` resté vrai après une fermeture d'onglet) et le
+  // ré-armement de `rehydratePending` par `stop(false)`. L'enregistrement
+  // IndexedDB, lui, est conservé : si l'opérateur réémet, `upsert` le repasse
+  // en live normalement.
+  if (Date.now() - (rec.ts || rec.savedAt || 0) > STALE_MAX_MS) return false;
   const map = getMap();
   if (!map || typeof maplibregl === 'undefined') return false;
   if (members.has(sender)) return false;
@@ -1200,7 +1216,12 @@ function sweepStates(): void {
     if (!m.marker) continue;
     // Les positions RÉHYDRATÉES (stale, dernière connue hors-ligne) ne sont jamais
     // balayées « lost » : elles redeviennent éligibles dès la 1re trame live.
-    if (m.stale) { applyVisual(s, m); continue; }
+    // Elles ont en revanche un PLAFOND D'ÂGE — sans lui, une position
+    // réhydratée juste sous le seuil resterait affichée à vie. Le `continue`
+    // est conservé : le retirer les ferait tomber dans `computeState` et
+    // disparaître au bout de FB_LOST_MS (6 min), ce qui détruirait
+    // l'affichage hors-ligne voulu.
+    if (m.stale) { if (now - (m.ts || 0) > STALE_MAX_MS) removeMember(s); else applyVisual(s, m); continue; }
     if (computeState(m, now) === 'lost') removeMember(s); else applyVisual(s, m);
   }
   if (members.size) scheduleRenderOps();
