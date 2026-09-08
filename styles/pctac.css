@@ -1554,6 +1554,121 @@ body.up-kb-open .up-kb-aware {
             color: var(--text-main);
         }
 
+        /* Panneau Traces GPX — même gabarit que #plan_layers_panel (position,
+           fond, exclusion mutuelle par la classe .open). */
+        #plan_gpx_panel {
+            position: absolute;
+            top: 10px;
+            right: 70px;
+            z-index: var(--z-panel);
+            display: none;
+            flex-direction: column;
+            gap: var(--tac-space-2);
+            width: 250px;
+            max-width: calc(100% - 90px);
+            max-height: calc(100% - 20px);
+            overflow-y: auto;
+            background: var(--bg-glass-heavy);
+            backdrop-filter: blur(10px);
+            border: 1px solid var(--border-glass);
+            border-radius: var(--radius-sm);
+            padding: 10px;
+            box-shadow: var(--shadow-panel-float);
+        }
+
+        #plan_gpx_panel.open {
+            display: flex;
+        }
+
+        #plan_gpx_list {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .plan-gpx-empty {
+            margin: 0;
+            font-family: var(--font-ui);
+            font-size: 0.8em;
+            color: var(--text-muted);
+        }
+
+        .plan-gpx-row {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .plan-gpx-dot {
+            flex: 0 0 auto;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            border: 1px solid var(--border-glass);
+        }
+
+        /* Le nom prend la place restante et se tronque : une trace au nom long
+           ne doit pas repousser les deux boutons hors du panneau. */
+        .plan-gpx-name {
+            flex: 1 1 auto;
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            font-family: var(--font-ui);
+            font-size: 0.85em;
+            color: var(--text-main);
+        }
+
+        .plan-gpx-btn {
+            flex: 0 0 auto;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 28px;
+            height: 28px;
+            padding: 0;
+            border: 1px solid var(--border-glass);
+            border-radius: var(--radius-sm);
+            background: var(--bg-input);
+            color: var(--text-main);
+            cursor: pointer;
+            transition: background var(--transition-quick);
+        }
+
+        .plan-gpx-btn:hover {
+            background: var(--bg-glass);
+        }
+
+        .plan-gpx-btn .material-symbols-outlined {
+            font-size: 18px;
+        }
+
+        .plan-gpx-import {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            padding: 7px;
+            border: 1px solid var(--border-glass);
+            border-radius: var(--radius-sm);
+            background: var(--bg-input);
+            color: var(--text-main);
+            font-family: var(--font-ui);
+            font-size: 0.85em;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background var(--transition-quick);
+        }
+
+        .plan-gpx-import:hover {
+            background: var(--bg-glass);
+        }
+
+        .plan-gpx-import .material-symbols-outlined {
+            font-size: 18px;
+        }
+
         @media (max-width: 768px) {
             /* Sur mobile, la carte prend plus de hauteur utile */
             #plan_legend {
@@ -1589,6 +1704,12 @@ body.up-kb-open .up-kb-aware {
 
             /* Le libellé le plus long (« Ombrage LiDAR HD ») tenait sur deux lignes
                à 190px : lignes resserrées pour garder une ligne par réglage. */
+            #plan_gpx_panel {
+                right: 60px;
+                width: 214px;
+                max-height: 55%;
+            }
+
             .plan-layers-row {
                 gap: 8px;
             }

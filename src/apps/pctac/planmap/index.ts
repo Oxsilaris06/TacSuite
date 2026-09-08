@@ -25,6 +25,7 @@ import { ChromeMethods } from './chrome.js';
 import { DrawLayersMethods } from './draw-layers.js';
 import { DrawToolsMethods } from './draw-tools.js';
 import { GeoMethods } from './geo.js';
+import { GpxMethods } from './gpx.js';
 import { MapCoreMethods } from './map-core.js';
 import { MeasureMethods } from './measure.js';
 import { PanelsMethods } from './panels.js';
@@ -60,6 +61,7 @@ export const PlanMap: PlanMapInternal = {
     ...TextModalMethods,
     ...CaptureMethods,
     ...AoiMethods,
+    ...GpxMethods,
 };
 
 // planMap.js:5596 — VERBATIM : la façade est posée au SCOPE MODULE.
