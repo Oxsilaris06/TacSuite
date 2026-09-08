@@ -230,6 +230,12 @@ body.up-kb-open .up-kb-aware {
 
             /* Statuts — contrat inter-apps : inter≡accent, ao≡success, civil≡ambre */
             --danger-red: var(--tac-red-500);
+            /* Fond d'un bouton d'action DESTRUCTRICE plein, texte blanc dessus.
+               Volontairement distinct de --danger-red : en thème sombre celui-ci
+               vaut #f0556a, sur lequel du blanc ne fait que 3,4:1 — sous le seuil
+               AA. #c8344a tient 5,2:1 dans les deux thèmes, d'où une seule
+               déclaration ici, héritée par le thème clair. */
+            --danger-fill: var(--tac-red-650);
             /* ROUGE = adversaire / dangers / armes */
             --civil-yellow: var(--tac-amber-500);
             /* AMBRE = otages / civils */
@@ -1133,6 +1139,11 @@ body.up-kb-open .up-kb-aware {
             margin: 0;
             width: 95%;
             max-width: 500px;
+            /* Depuis la migration R2-T1 vers <dialog> natif, la feuille UA applique
+               `dialog { color: CanvasText }` À L'ÉLÉMENT, ce qui bat l'héritage
+               depuis body : sans cette ligne les titres de modale ressortaient en
+               NOIR sur fond sombre. Même correctif que styles/oi.css (`dialog`). */
+            color: var(--text-main);
             background: var(--bg-glass-heavy);
             background-image: var(--metal-sheen);
             border: 1px solid var(--border-glass);
@@ -2038,12 +2049,19 @@ body.light-mode .pctac-liens-btn-row--wa:hover { background: #bee9ce; box-shadow
 .pctac-create-pax-actions { display: flex; gap: 12px; margin-top: 10px; }
 .pctac-btn-flex-2-45 { flex: 2; height: 45px; }
 .material-symbols-outlined.pctac-icon-20-mid-mr5 { font-size: 20px; vertical-align: middle; margin-right: 5px; }
-.pctac-btn-flex-1-input-45 { flex: 1; background: var(--bg-input); height: 45px; }
+/* Confirmation d'action destructrice — mêmes conventions que le socle
+   `confirmDialog({ danger: true })` (src/shared/feedback.ts) : titre et action
+   destructrice en rouge, annulation en bouton neutre bordé.
+   ⚠ `.add-btn` (plus haut) pose `color: white` ; les classes ci-dessous ne
+   défaisaient que le `background`, d'où un « ANNULER » blanc sur blanc en thème
+   clair. Elles doivent donc TOUJOURS redéclarer `color` avec leur fond. */
+.pctac-btn-flex-1-input-45 { flex: 1; background: var(--bg-input); color: var(--text-main); border: 1px solid var(--border-glass); height: 45px; }
 .material-symbols-outlined.pctac-icon-danger-mid { vertical-align: middle; color: var(--danger-red); }
 .pctac-reset-warning-text { margin: 15px 0; font-size: 0.9em; color: var(--text-muted); }
 .pctac-actions-row-gap10 { display: flex; gap: 10px; }
-.pctac-btn-danger-bg { background: var(--danger-red); }
-.pctac-btn-bg-input { background: var(--bg-input); }
+.pctac-btn-danger-bg { background: var(--danger-fill); color: #fff; border: 1px solid var(--danger-fill); }
+.pctac-btn-bg-input { background: var(--bg-input); color: var(--text-main); border: 1px solid var(--border-glass); }
+#resetModalTitle { color: var(--danger-red); }
 
 .pctac-row-edit { grid-template-columns: 1fr 3fr; margin-top: 15px; }
 .pctac-mt-12 { margin-top: 12px; }

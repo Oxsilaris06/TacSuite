@@ -1133,3 +1133,90 @@ test.describe('PC-Tac — Checklist fonctionnelle (docs/recon-pctac.md §6)', ()
     expect.soft(swRegistered).toBe(true); // API dispo dans le navigateur ; l'enregistrement effectif est P4.A.
   });
 });
+
+// ============================================================================
+// Confirmation d'action destructrice — lisibilité dans les DEUX thèmes.
+//
+// Deux régressions mesurées avant correctif, sur `#resetModal` :
+//   - thème SOMBRE, titre « RESET COMPLET » en rgb(0,0,0) sur rgba(16,16,19)
+//     soit ~1,1:1. Cause : depuis la migration vers <dialog> natif, la feuille
+//     UA applique `dialog { color: CanvasText }` À L'ÉLÉMENT, ce qui bat
+//     l'héritage depuis body — et `.modal` ne déclarait aucun `color`.
+//   - thème CLAIR, bouton « ANNULER » en rgb(255,255,255) sur rgba(255,255,255)
+//     soit ~1,0:1. Cause : `.add-btn` pose `color: white` et les classes de
+//     variante ne défaisaient que le `background`.
+// Le gate visuel ne pouvait rien voir : ses états ne couvrent que la carto OI
+// et capturent tous en thème sombre.
+// ============================================================================
+
+/** Luminance relative WCAG d'une couleur sérialisée `rgb()` / `rgba()`. */
+function relativeLuminance(serialized: string): number {
+  const parts = serialized.match(/[\d.]+/g);
+  if (!parts) throw new Error(`couleur illisible : ${serialized}`);
+  const channel = (v: number): number => {
+    const c = v / 255;
+    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  };
+  return 0.2126 * channel(Number(parts[0])) + 0.7152 * channel(Number(parts[1])) + 0.0722 * channel(Number(parts[2]));
+}
+
+function contrastRatio(a: string, b: string): number {
+  const [hi, lo] = [relativeLuminance(a), relativeLuminance(b)].sort((x, y) => y - x) as [number, number];
+  return (hi + 0.05) / (lo + 0.05);
+}
+
+for (const theme of ['dark', 'light'] as const) {
+  test(`modale RESET COMPLET — contraste AA en thème ${theme}`, async ({ page }) => {
+    await page.addInitScript((t: string) => { localStorage.setItem('theme', t); }, theme);
+    await page.goto('/pctac/', { waitUntil: 'domcontentloaded' });
+    await expect(page.locator('body')).toHaveClass(theme === 'dark' ? /dark-mode/ : /light-mode/, { timeout: 3000 });
+
+    const measured = await page.evaluate(() => {
+      const dialog = document.getElementById('resetModal') as HTMLDialogElement | null;
+      if (!dialog) throw new Error('#resetModal absent');
+      if (!dialog.open) dialog.showModal();
+      // Remonte jusqu'au premier fond réellement opaque : les boutons de la
+      // modale sont peints sur des fonds semi-transparents.
+      const opaqueBackdrop = (start: Element | null): string => {
+        let el: Element | null = start;
+        while (el) {
+          const bg = getComputedStyle(el).backgroundColor;
+          if (bg && bg !== 'rgba(0, 0, 0, 0)' && !/,\s*0\)$/.test(bg)) return bg;
+          el = el.parentElement;
+        }
+        return 'rgb(255, 255, 255)';
+      };
+      const title = document.getElementById('resetModalTitle');
+      const cancel = document.getElementById('cancelResetBtn');
+      const confirm = document.getElementById('confirmResetBtn');
+      if (!title || !cancel || !confirm) throw new Error('éléments de la modale absents');
+      return {
+        dialogBg: getComputedStyle(dialog).backgroundColor,
+        titleColor: getComputedStyle(title).color,
+        cancelColor: getComputedStyle(cancel).color,
+        cancelBg: opaqueBackdrop(cancel),
+        confirmColor: getComputedStyle(confirm).color,
+        confirmBg: opaqueBackdrop(confirm),
+      };
+    });
+
+    // Le titre d'une confirmation destructrice est ROUGE, jamais la couleur de
+    // texte courante — et surtout jamais le noir de la feuille UA.
+    const dangerRed = await page.evaluate(() => {
+      const probe = document.createElement('div');
+      probe.style.color = getComputedStyle(document.body).getPropertyValue('--danger-red').trim();
+      document.body.appendChild(probe);
+      const c = getComputedStyle(probe).color;
+      probe.remove();
+      return c;
+    });
+    expect.soft(measured.titleColor).toBe(dangerRed);
+    expect.soft(contrastRatio(measured.titleColor, measured.dialogBg)).toBeGreaterThanOrEqual(4.5);
+
+    // « ANNULER » : c'est l'issue SÛRE, elle doit être la plus lisible.
+    expect.soft(contrastRatio(measured.cancelColor, measured.cancelBg)).toBeGreaterThanOrEqual(4.5);
+
+    // « CONFIRMER LE RESET » : action destructrice, fond plein, texte blanc.
+    expect.soft(contrastRatio(measured.confirmColor, measured.confirmBg)).toBeGreaterThanOrEqual(4.5);
+  });
+}
