@@ -116,6 +116,14 @@ Gate : typecheck 0, lint 0, vitest 2212/2212, Playwright pctac 37/37, gate visue
 
 **Second piège** : ne JAMAIS lancer le gate visuel et une suite Playwright en parallèle. Un seul serveur de développement les sert, et `playwright.config.ts` fige `workers: 1` précisément pour cette raison (contention non bornée, commentaire de la config).
 
+### 2026-09-10 (tutoriel, documentation, thème des sous-menus)
+
+- **Sous-menus GPX accordés au thème** : `_openInlinePanel` peint son conteneur en dur, en sombre, par style INLINE — style historique des roues posées sur la carte. Les contenus GPX étant écrits avec les variables de thème, un titre en `--text-muted` (encre sombre) tombait en thème clair sur ce fond quasi noir : **3,04:1 mesuré**. Correctif ciblé, les trois propriétés reposées en variables sur les quatre sous-menus GPX ; aucun autre panneau inline touché. Test E2E dans les deux thèmes, prouvé échouant sans le correctif.
+- **Tutoriel** (`src/apps/pctac/tuto-data.ts`) : 7 → 8 chapitres, 61 → 72 étapes. Nouveau chapitre « Traces GPX » (10 étapes : ouverture du panneau, import, lecture de la liste, actions par trace, par jour, barre d'actions, coloration en lot, réglages de tri et de journée opérationnelle, timelapse, archive). Chapitre Dessin : outil « Tracer une ligne droite », renommage verbatim du trait en « Tracer un trait à main levée », nouvelle étape sur le nom déplaçable et rotatif. Catalogue d'icônes : les trois nouvelles entrées. Archive : le dossier `gpx/`.
+- **Documentation** : `docs/SPEC-PLANMAP-SPLIT.md` gagne `gpx.ts` et `gpx-play.ts` au tableau des sous-modules, avec une note disant que le contrôle des 189 membres reste figé sur le périmètre du PORTAGE — ces deux modules sont des ajouts postérieurs, absents de l'original. `README.md` mentionne les traces GPX et le rejeu timelapse.
+
+Gate : typecheck 0, lint 0, vitest 2212/2212, Playwright pctac 39/39, gate visuel inchangé (tous les états de carte à 0,000 %, les 7 échecs mesurés à l'identique avec et sans les modifications).
+
 ## Dérogations actées
 
 - **AA boutons remplis, thème sombre** (2026-08-09, décision Nico) : `--accent-fill` sombre rétabli à `#4f8dff` (`--tac-blue-500`) — le correctif #2563eb changeait le bleu de l'interface. Ratio blanc/#4f8dff = 3.19:1, sous le seuil AA 4.5:1. Alternative conforme proposée (texte encre sombre sur #4f8dff, 6.6:1) — en attente de décision, non appliquée.

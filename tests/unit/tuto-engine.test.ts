@@ -752,7 +752,7 @@ describe('intégration avec les jeux de données réels (P1.A4)', () => {
     expect(document.querySelector('.ptuto-step-title')?.textContent).toBeTruthy();
   });
 
-  it('monte les données PC-Tac (61 steps — chapitres Tableau de bord supprimés, Goal.md §8 ; +2 étapes couches IGN ; +1 étape panneau Calques)', async () => {
+  it('monte les données PC-Tac (72 steps — chapitres Tableau de bord supprimés, Goal.md §8 ; +2 étapes couches IGN ; +1 étape panneau Calques ; +1 étape nom de dessin déplaçable ; +1 chapitre Traces GPX de 10 étapes)', async () => {
     const { pctacTutoData } = await import('@pctac/tuto-data');
     const PocheTuto = await freshPocheTuto();
     const instance = PocheTuto.mount({
@@ -760,8 +760,8 @@ describe('intégration avec les jeux de données réels (P1.A4)', () => {
       appName: 'PC-Tac',
       data: pctacTutoData,
     })!;
-    expect(instance.chapters).toHaveLength(7);
-    expect(instance.flat).toHaveLength(61);
+    expect(instance.chapters).toHaveLength(8);
+    expect(instance.flat).toHaveLength(72);
     instance.open();
     expect(document.querySelector('.ptuto-step-title')?.textContent).toBeTruthy();
   });
