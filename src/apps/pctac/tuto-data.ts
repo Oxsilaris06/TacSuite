@@ -292,11 +292,14 @@ export const pctacTutoData: TutoData = {
         },
         {
           title: "Choisir une icone dans le Catalogue",
-          body: "Le segment \"Catalogue\" (icone apps) de la roue de creation ouvre un panneau de choix d'icone plus complet, avec un champ de filtre (placeholder \"Filtrer (police, pompier, drogue…)\") pour retrouver rapidement un symbole. La couleur du type reste appliquee.",
+          body: "Le segment \"Catalogue\" (icone apps) de la roue de creation ouvre un panneau de choix d'icone plus complet, avec un champ de filtre (placeholder \"Filtrer (police, pompier, drogue…)\") pour retrouver rapidement un symbole. La couleur du type reste appliquee. Le catalogue comprend notamment \"Derniere position connue\" (categorie Obs), \"Parking\" et \"Point de rassemblement des forces\" (categorie Lieu).",
           selector: null,
           terms: [
             "Catalogue",
-            "Filtrer (police, pompier, drogue…)"
+            "Filtrer (police, pompier, drogue…)",
+            "Dernière position connue",
+            "Parking",
+            "Point de rassemblement des forces"
           ],
           tip: null
         },
@@ -389,16 +392,17 @@ export const pctacTutoData: TutoData = {
         },
         {
           title: "Choisir un outil de trace",
-          body: "Dans le dock, choisis l'outil voulu : 'Tracer un trait', 'Tracer un rectangle', 'Tracer un cercle', 'Texte libre (clic sur la carte)' ou 'Mesurer distance / azimut'. L'outil selectionne se colore avec la couleur active. Re-cliquer sur l'outil actif le desactive.",
+          body: "Dans le dock, choisis l'outil voulu : 'Tracer un trait a main levee', 'Tracer une ligne droite', 'Tracer un rectangle', 'Tracer un cercle', 'Texte libre (clic sur la carte)' ou 'Mesurer distance / azimut'. L'outil selectionne se colore avec la couleur active. Re-cliquer sur l'outil actif le desactive.",
           terms: [
-            "Tracer un trait",
+            "Tracer un trait à main levée",
+            "Tracer une ligne droite",
             "Tracer un rectangle",
             "Tracer un cercle",
             "Texte libre (clic sur la carte)",
             "Mesurer distance / azimut"
           ],
           selector: "#plan_draw_dock",
-          tip: "L'outil trait se dessine au doigt en cheminement libre ; rectangle et cercle se tracent par un glisser du coin/centre vers l'exterieur."
+          tip: "Le trait a main levee suit le doigt en cheminement libre ; la ligne droite joint deux points par un simple glisser, comme le rectangle et le cercle."
         },
         {
           title: "Choisir la couleur du trace",
@@ -422,7 +426,7 @@ export const pctacTutoData: TutoData = {
             "Annuler"
           ],
           selector: "#plan_draw_precision_controls",
-          tip: "L'outil trait n'utilise pas le mode precision : il se dessine au doigt en continu."
+          tip: "L'outil trait a main levee n'utilise pas le mode precision : il se dessine au doigt en continu. La ligne droite, elle, en beneficie comme le rectangle et le cercle."
         },
         {
           title: "Ajouter et annoter du texte",
@@ -465,6 +469,16 @@ export const pctacTutoData: TutoData = {
           ],
           selector: null,
           tip: "Un glisser (>6 px) demarrant sur une forme la deplace directement au lieu d'ouvrir le menu."
+        },
+        {
+          title: "Deplacer et faire tourner le nom d'un dessin",
+          body: "Quand un dessin porte un texte, sa selection fait apparaitre deux poignees de part et d'autre du nom : 'Glisser pour deplacer le nom le long du trace' fait coulisser le nom comme sur un rail (au centre pour un rectangle ou un cercle), et 'Glisser pour faire tourner le nom' le pivote sur 360 degres. Les deux reglages sont conserves avec le dessin.",
+          terms: [
+            "Glisser pour déplacer le nom le long du tracé",
+            "Glisser pour faire tourner le nom"
+          ],
+          selector: null,
+          tip: "Utile pour poser un nom le long d'un axe de progression sans qu'il chevauche le trace, ou pour l'aligner sur une route."
         },
         {
           title: "Annuler, retablir et tout effacer",
@@ -545,6 +559,138 @@ export const pctacTutoData: TutoData = {
           ],
           selector: "#plan_btn_3d",
           tip: "La vue 3D reste calee sur la zone visee : la camera est epinglee pendant le chargement du relief."
+        }
+      ]
+    },
+    {
+      id: "traces-gpx",
+      icon: "route",
+      title: "Traces GPX",
+      summary: "Importer des traces .gpx, les grouper par journee operationnelle, les colorer en lot et les rejouer en timelapse.",
+      steps: [
+        {
+          title: "Ouvrir le panneau des traces",
+          body: "Dans la barre d'outils de la carte, le FAB 'Plus d'outils (capture, zone hors-ligne)' deploie un tiroir ou se trouve le bouton 'Traces GPX importees' (icone 'route'). Il ouvre le panneau 'Traces GPX', qui liste tout ce qui est superpose a la carte.",
+          terms: [
+            "Plus d'outils (capture, zone hors-ligne)",
+            "Traces GPX importées",
+            "Traces GPX"
+          ],
+          selector: "#plan_btn_gpx",
+          tip: "Hors plein ecran, le tiroir s'ouvre en seconde colonne a gauche de la barre d'outils ; en plein ecran il reste dans la colonne unique."
+        },
+        {
+          title: "Importer un ou plusieurs fichiers .gpx",
+          body: "Le bouton 'Importer un .gpx' ouvre un selecteur de fichiers qui accepte plusieurs traces d'un coup (rando OsmAnd, reconnaissance terrain). Chaque trace importee apparait dans la liste avec une couleur distincte, et la carte se recadre sur l'ensemble des traces visibles.",
+          terms: [
+            "Importer un .gpx",
+            "Aucune trace importée."
+          ],
+          selector: "#plan_gpx_import",
+          tip: "Les traces sont dessinees SOUS les dessins de l'operateur : une trace importee ne masque jamais une annotation. Elles apparaissent aussi dans la capture et dans le PDF."
+        },
+        {
+          title: "Lire la liste : jours, heures et compteur",
+          body: "Les traces sont regroupees par journee operationnelle. L'en-tete de chaque groupe donne le jour, un compteur 'affichees/total' et un bouton 'Replier'/'Deplier' ce jour. Chaque ligne affiche le nom de la trace et son heure de debut ; une trace dont le fichier ne porte aucun horodatage est marquee 'non datee' et regroupee sous 'Sans horodatage'.",
+          terms: [
+            "Replier",
+            "Déplier",
+            "non datée",
+            "Sans horodatage"
+          ],
+          selector: "#plan_gpx_list",
+          tip: "Une trace non datee reste affichable et colorable, mais aucune fonction de temps (tri, decoupage en jours, timelapse) ne l'atteint. Reimporter le fichier d'origine recupere ses heures."
+        },
+        {
+          title: "Agir sur une trace",
+          body: "Sur chaque ligne : la pastille de couleur ouvre 'Changer la couleur de cette trace', l'oeil bascule 'Masquer cette trace' / 'Afficher cette trace', et la corbeille declenche 'Supprimer cette trace' apres la confirmation 'Supprimer la trace importee ? Cette action est irreversible.'.",
+          terms: [
+            "Changer la couleur de cette trace",
+            "Masquer cette trace",
+            "Afficher cette trace",
+            "Supprimer cette trace",
+            "Supprimer"
+          ],
+          selector: "#plan_gpx_list",
+          tip: null
+        },
+        {
+          title: "Agir sur un jour entier",
+          body: "Le bouton 'Actions sur ce jour' (icone more_horiz, dans l'en-tete du groupe) ouvre un sous-menu : 'Masquer ce jour' / 'Afficher ce jour', 'Colorer ce jour' et 'Supprimer ce jour'. La suppression demande confirmation et compte les traces concernees.",
+          terms: [
+            "Actions sur ce jour",
+            "Masquer ce jour",
+            "Afficher ce jour",
+            "Colorer ce jour",
+            "Supprimer ce jour"
+          ],
+          selector: null,
+          tip: "Ces sous-menus sont transitoires : un clic hors du menu, ou la touche Echap, les referme sans rien changer."
+        },
+        {
+          title: "La barre d'actions du panneau",
+          body: "En haut du panneau, cinq boutons agissent sur l'ensemble : 'Masquer toutes les traces' (qui devient 'Afficher toutes les traces' quand tout est masque), 'Colorer les traces', 'Supprimer toutes les traces', 'Rejouer les traces (timelapse)' et 'Tri et decoupage des jours'.",
+          terms: [
+            "Masquer toutes les traces",
+            "Afficher toutes les traces",
+            "Colorer les traces",
+            "Supprimer toutes les traces",
+            "Rejouer les traces (timelapse)",
+            "Tri et découpage des jours"
+          ],
+          selector: "#plan_gpx_all",
+          tip: null
+        },
+        {
+          title: "Colorer plusieurs traces d'un coup",
+          body: "Le bouton palette ouvre le sous-menu 'Colorer les traces'. 'Une couleur par jour' attribue automatiquement une teinte distincte a chaque journee operationnelle ; sous 'Toutes de la meme couleur', une pastille applique la meme couleur a toutes les traces.",
+          terms: [
+            "Colorer les traces",
+            "Une couleur par jour",
+            "Toutes de la même couleur"
+          ],
+          selector: "#plan_gpx_color",
+          tip: "Colorer par jour est le reglage le plus lisible quand plusieurs equipes ont patrouille sur plusieurs jours."
+        },
+        {
+          title: "Regler le tri et le debut de la journee",
+          body: "Le bouton 'Tri et decoupage des jours' ouvre deux reglages. Sous 'Ordre de la liste', une bascule alterne 'Plus recentes d'abord' et 'Plus anciennes d'abord'. Sous 'Debut de la journee operationnelle', un champ en heures decide ou la journee bascule : 'Une intervention de nuit reste entiere dans le meme jour. Mettre 0 pour retrouver le jour civil.'.",
+          terms: [
+            "Tri et découpage des jours",
+            "Ordre de la liste",
+            "Plus récentes d'abord",
+            "Plus anciennes d'abord",
+            "Début de la journée opérationnelle",
+            "Une intervention de nuit reste entière dans le même jour. Mettre 0 pour retrouver le jour civil."
+          ],
+          selector: "#plan_gpx_settings",
+          tip: "Le decoupage vaut 6 h par defaut : une intervention commencee a 22 h et terminee a 3 h du matin reste un seul jour au lieu d'etre coupee a minuit."
+        },
+        {
+          title: "Rejouer les traces en timelapse",
+          body: "Le bouton 'Rejouer les traces (timelapse)' ouvre une barre de lecture au pied de la carte : 'Lecture / pause', un curseur de position, une horloge, 'Changer la vitesse' (x0.5, x1, x2, x4), 'Basculer entre temps reel et progression' et 'Fermer la lecture'. Les traces se dessinent progressivement, une tete de lecture marquant la position de chacune.",
+          terms: [
+            "Rejouer les traces (timelapse)",
+            "Lecture / pause",
+            "Changer la vitesse",
+            "Basculer entre temps réel et progression",
+            "Fermer la lecture",
+            "Temps réel",
+            "Progression"
+          ],
+          selector: "#plan_gpx_player",
+          tip: "En 'Temps reel', toutes les traces partagent une meme horloge : deux patrouilles eloignees dans le temps laissent donc du temps mort, c'est la chronologie reelle. En 'Progression', chaque trace se dessine sur la meme duree, pour comparer des itineraires."
+        },
+        {
+          title: "Les traces voyagent dans l'archive",
+          body: "L'export d'archive .pctac.zip embarque un dossier 'gpx/' avec une entree par trace. A l'import, les traces de l'archive FUSIONNENT avec celles deja presentes : rien n'est efface, et une trace de meme identifiant est remplacee par la version de l'archive. Le bouton 'Reinitialiser toutes les donnees' supprime aussi les traces importees.",
+          terms: [
+            "Exporter une archive .pctac.zip (données + photos)",
+            "Importer une archive .pctac.zip",
+            "Réinitialiser toutes les données"
+          ],
+          selector: null,
+          tip: "La fusion ne detruit jamais : si une trace importee est en trop, elle se supprime ligne par ligne, par jour ou d'un bloc depuis le panneau."
         }
       ]
     },
@@ -717,12 +863,13 @@ export const pctacTutoData: TutoData = {
         },
         {
           title: "Connaître le contenu de l'archive",
-          body: "L'archive .pctac.zip renferme « manifest.json » (identité « PC TAC », version, date de création), « data.json » (toutes les collections : logs, adversaires, otages, forces amies, photos, intervenants/Pax, points et dessins du plan, board) et un dossier « images/ » avec une entrée par photo. À l'import, ce manifeste est vérifié pour refuser toute archive d'une autre application.",
+          body: "L'archive .pctac.zip renferme « manifest.json » (identité « PC TAC », version, date de création), « data.json » (toutes les collections : logs, adversaires, otages, forces amies, photos, intervenants/Pax, points et dessins du plan, board), un dossier « images/ » avec une entrée par photo et un dossier « gpx/ » avec une entrée par trace importée. À l'import, ce manifeste est vérifié pour refuser toute archive d'une autre application.",
           selector: null,
           terms: [
             "manifest.json",
             "data.json",
             "images/",
+            "gpx/",
             "PC TAC"
           ],
           tip: "Une archive dont le manifeste indique une autre application (ex. « OI ») est refusée sans modifier vos données."

@@ -150,9 +150,19 @@ Tous sous `src/apps/pctac/planmap/`.
 | 18 | `capture.ts` | `CaptureMethods` | 2 | — | **Chaîne `captureToDataUrl` — PORT QUASI VERBATIM** + téléchargement PNG | `./types.js` |
 | 19 | `aoi.ts` | `AoiMethods` | 5 | 2 | Zone d'opération hors-ligne : cadrage, estimation, quota, téléchargement, barre de progression | `./types.js`, `./constants.js`, `./tiles.js`, `./geo.js` |
 | 20 | `legacy.ts` | `LegacyMethods` | 10 | — | **Code mort interne** conservé verbatim (cluster « transform » + 2 orphelins) — §7 | `./types.js` |
-| 21 | `index.ts` | `PlanMap` (+ `default`) | — | — | Réassemblage + pose de `window.PlanMap` | tous précédents |
+| 21 | `gpx.ts` | 7 fonctions pures + `GpxMethods` | 21 | 2 | **Hors portage.** Traces GPX importées : analyse XML native, index localStorage + coordonnées IndexedDB, panneau groupé par journée opérationnelle, actions en lot et sous-menus transitoires | `./types.js`, `./constants.js`, `@pctac/image-store.js` (`GpxStore`), `@shared/persist.js`, `@shared/feedback.js` |
+| 22 | `gpx-play.ts` | 4 fonctions pures + `GpxPlayMethods` | 12 | — | **Hors portage.** Rejeu animé (timelapse) des traces : une couche par trace, révélation par `line-gradient`, deux modes d'horloge (temps réel / progression) | `./types.js`, `./constants.js` |
+| 23 | `index.ts` | `PlanMap` (+ `default`) | — | — | Réassemblage + pose de `window.PlanMap` | tous précédents |
 
 **Contrôle** : 1+12+15+9+8+15+3+16+15+12+15+7+7+7+2+5+10 = **159 méthodes**.28 (state) + 2 (aoi) = **30 propriétés**. Total **189**. ✔
+
+> **Note (évolutions postérieures au portage).** Le contrôle ci-dessus porte
+> sur le PÉRIMÈTRE DU PORTAGE et reste figé : c'est lui qui prouve qu'aucun
+> membre de `planMap.js` n'a été perdu. Les modules `gpx.ts` (21 méthodes,
+> 2 propriétés) et `gpx-play.ts` (12 méthodes) sont des fonctionnalités
+> AJOUTÉES ensuite, absentes de l'original ; ils suivent les mêmes règles de
+> découpage (§1.2 : aucun import d'un autre sous-module de méthodes, seul
+> `index.ts` assemble) mais n'entrent pas dans ce décompte.
 ---
 
 ## 3. `types.ts` — modèle de données (paquet `pm-types`, VAGUE 1)

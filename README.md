@@ -9,7 +9,8 @@ Générateur d'Ordre Initial, à partir prototypes vanilla JS de
 - **Portail** (`/`) — page de garde : accès aux deux applications, thème
  clair/sombre, indicateur en ligne/hors ligne.
 - **PC-Tac** (`/pctac/`) — poste de commandement tactique : main courante,
- cartographie MapLibre (dessin, mesure, zones hors-ligne), plan d'action,
+ cartographie MapLibre (dessin, mesure, zones hors-ligne, traces GPX
+ importées avec rejeu timelapse), plan d'action,
  géolocalisation d'équipe (Tchap), export PDF, archive `.pctac.zip`.
 - **Générateur d'OI** (`/oi/`) — assistant pas à pas de rédaction d'Ordre
  Initial : cartographie, PATRACDVR, génération et export document
