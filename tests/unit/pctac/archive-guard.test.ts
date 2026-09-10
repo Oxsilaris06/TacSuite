@@ -24,9 +24,19 @@ import { ADVERSARIES_KEY } from '@pctac/config.js';
 // que pc-archive.test.ts).
 const imageStoreState = vi.hoisted(() => ({ store: new Map<string, string>() }));
 
+const gpxState = new Map<string, unknown>();
+
 vi.mock('@pctac/image-store.js', () => {
   const { store } = imageStoreState;
   return {
+    // Magasin des traces GPX : l'archive l'utilise depuis l'ajout du dossier
+    // `gpx/`. Sans lui, l'export et l'import jettent sur `undefined.get`.
+    GpxStore: {
+      async put(id: string, track: unknown): Promise<void> { if (id) gpxState.set(id, track); },
+      async get(id: string): Promise<unknown> { return id && gpxState.has(id) ? gpxState.get(id) : null; },
+      async delete(id: string): Promise<void> { gpxState.delete(id); },
+      async clear(): Promise<void> { gpxState.clear(); },
+    },
     ImageStore: {
       async put(id: string, dataUrl: string): Promise<void> { if (id && dataUrl) store.set(id, dataUrl); },
       async get(id: string): Promise<string | null> { return store.has(id) ? (store.get(id) ?? null) : null; },
