@@ -1222,6 +1222,54 @@ for (const theme of ['dark', 'light'] as const) {
 }
 
 // ============================================================================
+// Sous-menus GPX — lisibilité dans les DEUX thèmes.
+//
+// `_openInlinePanel` peint son conteneur en dur, en sombre, par style INLINE :
+// c'est le style historique des roues posées sur la carte. Les contenus GPX
+// sont écrits avec les variables de thème, si bien qu'en thème clair un titre
+// en `--text-muted` (encre sombre) tombait sur ce fond quasi noir. Le gate
+// visuel ne peut rien voir : ses états ne couvrent pas ces sous-menus.
+// ============================================================================
+
+for (const theme of ['dark', 'light'] as const) {
+  test(`sous-menus GPX — contraste AA en thème ${theme}`, async ({ page }) => {
+    await page.addInitScript((t: string) => { localStorage.setItem('theme', t); }, theme);
+    await page.goto('/pctac/', { waitUntil: 'domcontentloaded' });
+    await expect(page.locator('body')).toHaveClass(theme === 'dark' ? /dark-mode/ : /light-mode/, { timeout: 3000 });
+    await page.evaluate(() => { (window as unknown as { UI?: { switchMainView?: (v: string) => void } }).UI?.switchMainView?.('view-plan'); });
+    await page.waitForTimeout(2500);
+
+    await page.locator('#plan_btn_more').click();
+    await page.waitForTimeout(250);
+    await page.locator('#plan_btn_gpx').click();
+    await page.waitForTimeout(350);
+    // Le sous-menu de réglages reste ouvrable sans aucune trace importée.
+    await page.locator('#plan_gpx_settings').click();
+    await page.waitForTimeout(400);
+
+    const measured = await page.evaluate(() => {
+      const panel = document.querySelector('.plan-inline-panel');
+      if (!panel) throw new Error('sous-menu GPX absent');
+      const title = panel.querySelector('.plan-gpx-menu-title');
+      const hint = panel.querySelector('.plan-gpx-menu-hint');
+      const btn = panel.querySelector('.plan-gpx-menu-btn');
+      if (!title || !hint || !btn) throw new Error('contenu du sous-menu absent');
+      return {
+        panelBg: getComputedStyle(panel).backgroundColor,
+        titleColor: getComputedStyle(title).color,
+        hintColor: getComputedStyle(hint).color,
+        btnColor: getComputedStyle(btn).color,
+        btnBg: getComputedStyle(btn).backgroundColor,
+      };
+    });
+
+    expect.soft(contrastRatio(measured.titleColor, measured.panelBg)).toBeGreaterThanOrEqual(4.5);
+    expect.soft(contrastRatio(measured.hintColor, measured.panelBg)).toBeGreaterThanOrEqual(4.5);
+    expect.soft(contrastRatio(measured.btnColor, measured.btnBg)).toBeGreaterThanOrEqual(4.5);
+  });
+}
+
+// ============================================================================
 // Traces GPX — parcours complet : import, visibilité, persistance, suppression.
 // Le câblage (FAB dans le tiroir « Plus », sélecteur de fichier, délégation des
 // actions de ligne) et la persistance IndexedDB ne sont pas atteignables en

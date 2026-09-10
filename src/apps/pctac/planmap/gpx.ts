@@ -330,6 +330,25 @@ export function groupByDay(
     return out;
 }
 
+/**
+ * Accorde un sous-menu GPX au thème de la page.
+ *
+ * `_openInlinePanel` peint son conteneur en dur, en sombre, par style INLINE
+ * (`rgba(20,24,32,0.96)`, texte blanc) : c'est le style historique des roues
+ * posées sur la carte. Les contenus GPX, eux, sont écrits avec les variables
+ * de thème, si bien qu'en thème clair un titre en `--text-muted` (encre
+ * sombre) tombait sur ce fond quasi noir — illisible.
+ *
+ * On repose donc les trois propriétés concernées, en variables : un style
+ * inline ne peut être battu par une règle de classe, mais il peut être
+ * réécrit. Les autres panneaux inline du dépôt ne sont pas touchés.
+ */
+function themePanel(el: HTMLElement): void {
+    el.style.background = 'var(--bg-glass-heavy)';
+    el.style.color = 'var(--text-main)';
+    el.style.borderColor = 'var(--border-glass)';
+}
+
 export const GpxMethods = {
     /**
      * Crée (une seule fois) la source et les deux couches de traces.
@@ -666,7 +685,7 @@ export const GpxMethods = {
                 });
             },
         });
-        void el;
+        themePanel(el);
     },
 
     /** Sous-menu transitoire : actions portant sur un jour opérationnel. */
@@ -674,7 +693,7 @@ export const GpxMethods = {
         const boundary = gpxDayBoundary();
         const list = this._gpxTracks.filter((t) => dayOf(t, boundary) === day);
         const anyVisible = list.some((t) => t.visible);
-        this._openInlinePanel(null, `
+        const el = this._openInlinePanel(null, `
             <p class="plan-gpx-menu-title">${escHtml(dayLabel(day))} — ${list.length} trace${list.length > 1 ? 's' : ''}</p>
             <div class="plan-gpx-menu-actions">
                 <button type="button" class="plan-gpx-menu-btn" data-act="vis">
@@ -701,11 +720,12 @@ export const GpxMethods = {
                 on('del', () => { this._closeInlinePanel(); void this._removeGpxDay(day); });
             },
         });
+        themePanel(el);
     },
 
     /** Sous-menu transitoire : colorer, en une couleur ou une par jour. */
     _openGpxColorAllMenu(this: PlanMapInternal): void {
-        this._openInlinePanel(null, `
+        const el = this._openInlinePanel(null, `
             <p class="plan-gpx-menu-title">Colorer les traces</p>
             <div class="plan-gpx-menu-actions">
                 <button type="button" class="plan-gpx-menu-btn" data-act="byday">
@@ -727,13 +747,14 @@ export const GpxMethods = {
                 });
             },
         });
+        themePanel(el);
     },
 
     /** Sous-menu transitoire : réglages de tri et de découpage du jour. */
     _openGpxSettingsMenu(this: PlanMapInternal): void {
         const boundary = gpxDayBoundary();
         const recent = newestFirst();
-        this._openInlinePanel(null, `
+        const el = this._openInlinePanel(null, `
             <p class="plan-gpx-menu-title">Ordre de la liste</p>
             <div class="plan-gpx-menu-actions">
                 <button type="button" class="plan-gpx-menu-btn" data-act="sort">
@@ -763,6 +784,7 @@ export const GpxMethods = {
                 };
             },
         });
+        themePanel(el);
     },
 
     /** Recadre la carte sur l'ensemble des traces visibles. */
