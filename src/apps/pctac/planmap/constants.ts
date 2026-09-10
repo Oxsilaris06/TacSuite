@@ -344,6 +344,9 @@ export const GPX_COLORS: readonly string[] = ['#a855f7', '#06b6d4', '#f59e0b', '
  */
 export const GPX_DAY_BOUNDARY_KEY = 'pcTacGpxDayBoundary';
 export const GPX_DAY_BOUNDARY_DEFAULT = 6;
+
+/** Ordre de tri de la liste : `true` (défaut) = les plus récentes en premier. */
+export const GPX_SORT_KEY = 'pcTacGpxNewestFirst';
 // Garde-fou : nombre max de tuiles d'une AOI (évite d'exploser le volume / le WAF).
 // planMap.js:130
 export const AOI_MAX_TILES = 60000;

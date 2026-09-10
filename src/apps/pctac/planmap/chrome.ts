@@ -156,21 +156,37 @@ export const ChromeMethods = {
             };
         }
 
-        // Délégation : une seule écoute pour toutes les lignes, y compris celles
-        // rendues plus tard par `_renderGpxList`.
+        // Barre d'actions du panneau. Chacune ouvre un SOUS-MENU TRANSITOIRE
+        // plutôt qu'une barre permanente : le tronc du panneau reste lisible.
+        const gpxAll = document.getElementById('plan_gpx_all');
+        if (gpxAll) gpxAll.onclick = (e) => { e.stopPropagation(); this._setAllGpxVisible(); };
+        const gpxColor = document.getElementById('plan_gpx_color');
+        if (gpxColor) gpxColor.onclick = (e) => { e.stopPropagation(); this._openGpxColorAllMenu(); };
+        const gpxDelete = document.getElementById('plan_gpx_delete');
+        if (gpxDelete) gpxDelete.onclick = (e) => { e.stopPropagation(); void this._removeAllGpxTracks(); };
+        const gpxSettings = document.getElementById('plan_gpx_settings');
+        if (gpxSettings) gpxSettings.onclick = (e) => { e.stopPropagation(); this._openGpxSettingsMenu(); };
+
+        // Délégation : une seule écoute pour toutes les lignes et tous les
+        // en-têtes de jour, y compris ceux rendus plus tard par `_renderGpxList`.
         const gpxList = document.getElementById('plan_gpx_list');
         if (gpxList) gpxList.onclick = (e) => {
             const btn = (e.target as Element | null)?.closest('[data-gpx-act]');
             if (!(btn instanceof HTMLElement)) return;
-            // Indispensable : les deux actions re-rendent la liste, donc la cible
-            // du clic est DÉTACHÉE avant que l'écoute « clic extérieur » posée sur
+            // Indispensable : ces actions re-rendent la liste, donc la cible du
+            // clic est DÉTACHÉE avant que l'écoute « clic extérieur » posée sur
             // `document` ne l'examine. Sans cet arrêt, `panel.contains(target)`
-            // serait faux et le panneau se refermerait à chaque bascule.
+            // serait faux et le panneau se refermerait à chaque action.
             e.stopPropagation();
+            const act = btn.dataset.gpxAct;
+            const day = btn.closest<HTMLElement>('[data-gpx-day]')?.dataset.gpxDay;
+            if (act === 'fold') { if (day !== undefined) this._toggleGpxDayFold(day); return; }
+            if (act === 'daymenu') { if (day !== undefined) this._openGpxDayMenu(day); return; }
             const id = btn.closest<HTMLElement>('[data-gpx-id]')?.dataset.gpxId;
             if (!id) return;
-            if (btn.dataset.gpxAct === 'toggle') this._toggleGpxTrack(id);
-            else if (btn.dataset.gpxAct === 'remove') this._removeGpxTrack(id);
+            if (act === 'toggle') this._toggleGpxTrack(id);
+            else if (act === 'remove') this._removeGpxTrack(id);
+            else if (act === 'color') this._openGpxColorMenu({ id });
         };
 
         // Fermeture au clic extérieur : tiroir « Plus » et panneau « Calques ».

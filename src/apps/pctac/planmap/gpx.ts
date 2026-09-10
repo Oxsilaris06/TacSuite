@@ -34,6 +34,7 @@
 import maplibregl from 'maplibre-gl';
 
 import { GpxStore } from '@pctac/image-store.js';
+import { confirmDialog } from '@shared/feedback.js';
 import { Persist } from '@shared/persist.js';
 
 import {
@@ -43,6 +44,7 @@ import {
     GPX_DAY_BOUNDARY_KEY,
     GPX_INDEX_KEY,
     GPX_LINE_LAYER,
+    GPX_SORT_KEY,
     GPX_SRC,
 } from './constants.js';
 import type { GpxSegments, GpxTimes, GpxTrackData, LngLatTuple, PlanGpxTrack, PlanMapInternal } from './types.js';
@@ -167,6 +169,90 @@ function saveIndex(list: readonly PlanGpxTrack[]): void {
 function escHtml(s: string): string {
     return s.replace(/[&<>"']/g, (c) =>
         ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c] ?? c);
+}
+
+/**
+ * Jours repliés dans le panneau. AU SCOPE MODULE et non dans l'état de la
+ * carte : c'est du confort d'affichage, qui n'a pas à survivre au rechargement
+ * ni à figurer dans l'état persisté.
+ */
+const foldedDays = new Set<string>();
+
+/** Ordre de tri retenu, persisté. `true` = les plus récentes en premier. */
+function newestFirst(): boolean {
+    return Persist.get<boolean | null>(GPX_SORT_KEY, {
+        validator: (v): v is boolean => typeof v === 'boolean',
+        fallback: null,
+    }) !== false;
+}
+
+/** Jour opérationnel d'une trace, chaîne vide si elle n'est pas datée. */
+function dayOf(t: PlanGpxTrack, boundaryHour: number): string {
+    return typeof t.startedAt === 'number' ? operationalDayKey(t.startedAt, boundaryHour) : '';
+}
+
+/**
+ * Tri chronologique. Les traces non datées gardent leur ordre d'import et
+ * restent en queue : aucune date ne permet de les placer parmi les autres.
+ */
+export function sortTracks(tracks: readonly PlanGpxTrack[]): PlanGpxTrack[] {
+    const recent = newestFirst();
+    const dated = tracks.filter((t) => typeof t.startedAt === 'number');
+    const undated = tracks.filter((t) => typeof t.startedAt !== 'number');
+    dated.sort((a, b) => {
+        const d = (a.startedAt ?? 0) - (b.startedAt ?? 0);
+        return recent ? -d : d;
+    });
+    return [...dated, ...undated];
+}
+
+/** Libellé lisible d'un jour `AAAA-MM-JJ`. Chaîne vide = traces non datées. */
+export function dayLabel(day: string): string {
+    if (!day) return 'Sans horodatage';
+    const [y, m, d] = day.split('-').map(Number);
+    if (!y || !m || !d) return day;
+    return new Date(y, m - 1, d).toLocaleDateString('fr-FR', {
+        weekday: 'short', day: 'numeric', month: 'short',
+    });
+}
+
+/** Heure de début d'une trace, en heures et minutes locales. Vide si non datée. */
+function startLabel(t: PlanGpxTrack): string {
+    if (typeof t.startedAt !== 'number') return '';
+    return new Date(t.startedAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+}
+
+/** Une ligne de trace dans la liste. */
+function rowHtml(t: PlanGpxTrack): string {
+    const heure = startLabel(t);
+    const undated = heure === '';
+    return `
+        <div class="plan-gpx-row" data-gpx-id="${escHtml(t.id)}">
+            <button type="button" class="plan-gpx-dot" data-gpx-act="color"
+                    style="background:${escHtml(t.color)}"
+                    title="Changer la couleur de cette trace"
+                    aria-label="Changer la couleur de la trace ${escHtml(t.name)}"></button>
+            <span class="plan-gpx-name" title="${escHtml(t.name)}">${escHtml(t.name)}</span>
+            ${undated
+                ? '<span class="plan-gpx-undated" title="Trace sans horodatage : elle reste affichable, mais les fonctions de temps ne l\'atteignent pas. Réimporte le fichier d\'origine pour récupérer ses heures.">non datée</span>'
+                : `<span class="plan-gpx-hour">${escHtml(heure)}</span>`}
+            <button type="button" class="plan-gpx-btn" data-gpx-act="toggle"
+                    title="${t.visible ? 'Masquer' : 'Afficher'} cette trace"
+                    aria-label="${t.visible ? 'Masquer' : 'Afficher'} la trace ${escHtml(t.name)}">
+                <span class="material-symbols-outlined">${t.visible ? 'visibility' : 'visibility_off'}</span>
+            </button>
+            <button type="button" class="plan-gpx-btn" data-gpx-act="remove"
+                    title="Supprimer cette trace" aria-label="Supprimer la trace ${escHtml(t.name)}">
+                <span class="material-symbols-outlined">delete</span>
+            </button>
+        </div>`;
+}
+
+/** Grille de pastilles de couleur, contenu d'un sous-menu transitoire. */
+function swatchesHtml(): string {
+    return `<div class="plan-gpx-swatches">${GPX_COLORS.map((c) => `
+        <button type="button" class="plan-gpx-swatch" data-gpx-color="${escHtml(c)}"
+                style="background:${escHtml(c)}" title="${escHtml(c)}" aria-label="Couleur ${escHtml(c)}"></button>`).join('')}</div>`;
 }
 
 /**
@@ -311,28 +397,174 @@ export const GpxMethods = {
         }
     },
 
-    /** Redessine la liste du panneau : une ligne par trace. */
+    /**
+     * Redessine la liste : les traces groupées par jour opérationnel, sous des
+     * en-têtes repliables. Le tronc du panneau reste léger — chaque action de
+     * groupe ouvre un sous-menu transitoire, jamais une barre permanente.
+     */
     _renderGpxList(this: PlanMapInternal): void {
         const box = document.getElementById('plan_gpx_list');
         if (!box) return;
         if (!this._gpxTracks.length) {
             box.innerHTML = '<p class="plan-gpx-empty">Aucune trace importée.</p>';
+            this._refreshGpxActions();
             return;
         }
-        box.innerHTML = this._gpxTracks.map((t) => `
-            <div class="plan-gpx-row" data-gpx-id="${escHtml(t.id)}">
-                <span class="plan-gpx-dot" style="background:${escHtml(t.color)}"></span>
-                <span class="plan-gpx-name" title="${escHtml(t.name)}">${escHtml(t.name)}</span>
-                <button type="button" class="plan-gpx-btn" data-gpx-act="toggle"
-                        title="${t.visible ? 'Masquer' : 'Afficher'} cette trace"
-                        aria-label="${t.visible ? 'Masquer' : 'Afficher'} la trace ${escHtml(t.name)}">
-                    <span class="material-symbols-outlined">${t.visible ? 'visibility' : 'visibility_off'}</span>
-                </button>
-                <button type="button" class="plan-gpx-btn" data-gpx-act="remove"
-                        title="Supprimer cette trace" aria-label="Supprimer la trace ${escHtml(t.name)}">
-                    <span class="material-symbols-outlined">delete</span>
-                </button>
-            </div>`).join('');
+        const groups = groupByDay(sortTracks(this._gpxTracks), gpxDayBoundary());
+        box.innerHTML = groups.map((g) => {
+            const folded = foldedDays.has(g.day);
+            const shown = g.tracks.filter((t) => t.visible).length;
+            return `
+            <div class="plan-gpx-group" data-gpx-day="${escHtml(g.day)}">
+                <div class="plan-gpx-day">
+                    <button type="button" class="plan-gpx-fold" data-gpx-act="fold"
+                            aria-expanded="${folded ? 'false' : 'true'}"
+                            title="${folded ? 'Déplier' : 'Replier'} ce jour">
+                        <span class="material-symbols-outlined">${folded ? 'chevron_right' : 'expand_more'}</span>
+                        <span class="plan-gpx-day-label">${escHtml(dayLabel(g.day))}</span>
+                    </button>
+                    <span class="plan-gpx-day-count">${shown}/${g.tracks.length}</span>
+                    <button type="button" class="plan-gpx-btn" data-gpx-act="daymenu"
+                            title="Actions sur ce jour" aria-label="Actions sur ${escHtml(dayLabel(g.day))}">
+                        <span class="material-symbols-outlined">more_horiz</span>
+                    </button>
+                </div>
+                <div class="plan-gpx-day-body"${folded ? ' hidden' : ''}>
+                    ${g.tracks.map((t) => rowHtml(t)).join('')}
+                </div>
+            </div>`;
+        }).join('');
+        this._refreshGpxActions();
+    },
+
+    /** Met l'icône du bouton « tout afficher / tout masquer » à l'état courant. */
+    _refreshGpxActions(this: PlanMapInternal): void {
+        const btn = document.getElementById('plan_gpx_all');
+        if (!btn) return;
+        const any = this._gpxTracks.some((t) => t.visible);
+        const icon = btn.querySelector('.material-symbols-outlined');
+        if (icon) icon.textContent = any ? 'visibility' : 'visibility_off';
+        btn.title = any ? 'Masquer toutes les traces' : 'Afficher toutes les traces';
+        btn.setAttribute('aria-label', btn.title);
+        btn.toggleAttribute('disabled', this._gpxTracks.length === 0);
+    },
+
+    /** Replie ou déplie un jour. L'état ne survit pas au rechargement, c'est du confort. */
+    _toggleGpxDayFold(this: PlanMapInternal, day: string): void {
+        if (foldedDays.has(day)) foldedDays.delete(day); else foldedDays.add(day);
+        this._renderGpxList();
+    },
+
+    /**
+     * Affiche ou masque tout d'un coup. Sans argument, bascule : si au moins une
+     * trace est visible on masque tout, sinon on affiche tout.
+     */
+    _setAllGpxVisible(this: PlanMapInternal, visible?: boolean): void {
+        if (!this._gpxTracks.length) return;
+        const target = typeof visible === 'boolean' ? visible : !this._gpxTracks.some((t) => t.visible);
+        for (const t of this._gpxTracks) t.visible = target;
+        saveIndex(this._gpxTracks);
+        this._renderGpxLayers();
+        this._renderGpxList();
+    },
+
+    /** Affiche ou masque toutes les traces d'un jour opérationnel. */
+    _setGpxDayVisible(this: PlanMapInternal, day: string, visible: boolean): void {
+        const boundary = gpxDayBoundary();
+        let touched = false;
+        for (const t of this._gpxTracks) {
+            if (dayOf(t, boundary) !== day) continue;
+            t.visible = visible;
+            touched = true;
+        }
+        if (!touched) return;
+        saveIndex(this._gpxTracks);
+        this._renderGpxLayers();
+        this._renderGpxList();
+    },
+
+    /** Applique une couleur à une trace, ou à toutes celles d'un jour. */
+    _setGpxColor(this: PlanMapInternal, target: { id?: string; day?: string }, color: string): void {
+        const boundary = gpxDayBoundary();
+        let touched = false;
+        for (const t of this._gpxTracks) {
+            const match = target.id !== undefined ? t.id === target.id
+                : target.day !== undefined ? dayOf(t, boundary) === target.day
+                : true;
+            if (!match) continue;
+            t.color = color;
+            touched = true;
+        }
+        if (!touched) return;
+        saveIndex(this._gpxTracks);
+        this._renderGpxLayers();
+        this._renderGpxList();
+    },
+
+    /**
+     * Redonne à chaque jour sa propre couleur, prise dans la palette.
+     * Au-delà de six jours la palette recycle : deux jours éloignés peuvent
+     * partager une couleur. C'est assumé — l'en-tête de jour lève l'ambiguïté.
+     */
+    _colorGpxByDay(this: PlanMapInternal): void {
+        const groups = groupByDay(this._gpxTracks, gpxDayBoundary());
+        let i = 0;
+        for (const g of groups) {
+            const color = GPX_COLORS[i % GPX_COLORS.length] ?? '#a855f7';
+            for (const t of g.tracks) t.color = color;
+            i++;
+        }
+        saveIndex(this._gpxTracks);
+        this._renderGpxLayers();
+        this._renderGpxList();
+    },
+
+    /** Supprime toutes les traces, après confirmation destructrice. */
+    async _removeAllGpxTracks(this: PlanMapInternal): Promise<void> {
+        const n = this._gpxTracks.length;
+        if (!n) return;
+        const ok = await confirmDialog({
+            message: n === 1
+                ? 'Supprimer la trace importée ? Cette action est irréversible.'
+                : `Supprimer les ${n} traces importées ? Cette action est irréversible.`,
+            confirmLabel: 'Supprimer',
+            danger: true,
+        });
+        if (!ok) return;
+        const ids = this._gpxTracks.map((t) => t.id);
+        this._gpxTracks = [];
+        for (const id of ids) {
+            Reflect.deleteProperty(this._gpxCoords, id);
+            GpxStore.delete(id).catch(() => { /* best-effort : jamais réaffichée */ });
+        }
+        saveIndex(this._gpxTracks);
+        this._renderGpxLayers();
+        this._renderGpxList();
+    },
+
+    /** Supprime toutes les traces d'un jour opérationnel, après confirmation. */
+    async _removeGpxDay(this: PlanMapInternal, day: string): Promise<void> {
+        const boundary = gpxDayBoundary();
+        const doomed = this._gpxTracks.filter((t) => dayOf(t, boundary) === day);
+        if (!doomed.length) return;
+        const label = day === '' ? 'non datées' : `du ${dayLabel(day)}`;
+        const ok = await confirmDialog({
+            message: doomed.length === 1
+                ? `Supprimer la trace ${label} ? Cette action est irréversible.`
+                : `Supprimer les ${doomed.length} traces ${label} ? Cette action est irréversible.`,
+            confirmLabel: 'Supprimer',
+            danger: true,
+        });
+        if (!ok) return;
+        const ids = new Set(doomed.map((t) => t.id));
+        this._gpxTracks = this._gpxTracks.filter((t) => !ids.has(t.id));
+        for (const id of ids) {
+            Reflect.deleteProperty(this._gpxCoords, id);
+            GpxStore.delete(id).catch(() => { /* best-effort */ });
+        }
+        saveIndex(this._gpxTracks);
+        this._renderGpxLayers();
+        this._renderGpxList();
     },
 
     /** Ouvre/ferme le panneau GPX (même mécanique que le panneau Calques). */
@@ -408,6 +640,129 @@ export const GpxMethods = {
         GpxStore.delete(id).catch(() => { /* best-effort : l'entrée devient orpheline, jamais affichée */ });
         this._renderGpxLayers();
         this._renderGpxList();
+    },
+
+    /**
+     * Sous-menu transitoire : couleur d'une trace, ou d'un jour entier.
+     * Réutilise `_openInlinePanel`, le mécanisme de panneau éphémère du dépôt :
+     * il gère déjà la fermeture au clic extérieur, la touche Échap et le
+     * nettoyage des écoutes. Rien à réinventer.
+     */
+    _openGpxColorMenu(this: PlanMapInternal, target: { id?: string; day?: string }): void {
+        const titre = target.day !== undefined
+            ? `Couleur du ${dayLabel(target.day)}`
+            : 'Couleur de la trace';
+        const el = this._openInlinePanel(null, `
+            <p class="plan-gpx-menu-title">${escHtml(titre)}</p>
+            ${swatchesHtml()}`, {
+            centerScreen: true,
+            onMount: (root: HTMLElement) => {
+                root.querySelectorAll<HTMLElement>('[data-gpx-color]').forEach((b) => {
+                    b.onclick = () => {
+                        const c = b.dataset.gpxColor;
+                        if (c) this._setGpxColor(target, c);
+                        this._closeInlinePanel();
+                    };
+                });
+            },
+        });
+        void el;
+    },
+
+    /** Sous-menu transitoire : actions portant sur un jour opérationnel. */
+    _openGpxDayMenu(this: PlanMapInternal, day: string): void {
+        const boundary = gpxDayBoundary();
+        const list = this._gpxTracks.filter((t) => dayOf(t, boundary) === day);
+        const anyVisible = list.some((t) => t.visible);
+        this._openInlinePanel(null, `
+            <p class="plan-gpx-menu-title">${escHtml(dayLabel(day))} — ${list.length} trace${list.length > 1 ? 's' : ''}</p>
+            <div class="plan-gpx-menu-actions">
+                <button type="button" class="plan-gpx-menu-btn" data-act="vis">
+                    <span class="material-symbols-outlined">${anyVisible ? 'visibility_off' : 'visibility'}</span>
+                    ${anyVisible ? 'Masquer ce jour' : 'Afficher ce jour'}
+                </button>
+                <button type="button" class="plan-gpx-menu-btn" data-act="color">
+                    <span class="material-symbols-outlined">palette</span> Colorer ce jour
+                </button>
+                <button type="button" class="plan-gpx-menu-btn plan-gpx-menu-btn--danger" data-act="del">
+                    <span class="material-symbols-outlined">delete</span> Supprimer ce jour
+                </button>
+            </div>`, {
+            centerScreen: true,
+            onMount: (root: HTMLElement) => {
+                const on = (act: string, fn: () => void): void => {
+                    const b = root.querySelector<HTMLElement>(`[data-act="${act}"]`);
+                    if (b) b.onclick = fn;
+                };
+                on('vis', () => { this._closeInlinePanel(); this._setGpxDayVisible(day, !anyVisible); });
+                // Le sous-menu de couleur remplace celui-ci : `_openInlinePanel`
+                // ferme le précédent de lui-même.
+                on('color', () => { this._openGpxColorMenu({ day }); });
+                on('del', () => { this._closeInlinePanel(); void this._removeGpxDay(day); });
+            },
+        });
+    },
+
+    /** Sous-menu transitoire : colorer, en une couleur ou une par jour. */
+    _openGpxColorAllMenu(this: PlanMapInternal): void {
+        this._openInlinePanel(null, `
+            <p class="plan-gpx-menu-title">Colorer les traces</p>
+            <div class="plan-gpx-menu-actions">
+                <button type="button" class="plan-gpx-menu-btn" data-act="byday">
+                    <span class="material-symbols-outlined">calendar_month</span> Une couleur par jour
+                </button>
+            </div>
+            <p class="plan-gpx-menu-title">Toutes de la même couleur</p>
+            ${swatchesHtml()}`, {
+            centerScreen: true,
+            onMount: (root: HTMLElement) => {
+                const byDay = root.querySelector<HTMLElement>('[data-act="byday"]');
+                if (byDay) byDay.onclick = () => { this._closeInlinePanel(); this._colorGpxByDay(); };
+                root.querySelectorAll<HTMLElement>('[data-gpx-color]').forEach((b) => {
+                    b.onclick = () => {
+                        const c = b.dataset.gpxColor;
+                        this._closeInlinePanel();
+                        if (c) this._setGpxColor({}, c);
+                    };
+                });
+            },
+        });
+    },
+
+    /** Sous-menu transitoire : réglages de tri et de découpage du jour. */
+    _openGpxSettingsMenu(this: PlanMapInternal): void {
+        const boundary = gpxDayBoundary();
+        const recent = newestFirst();
+        this._openInlinePanel(null, `
+            <p class="plan-gpx-menu-title">Ordre de la liste</p>
+            <div class="plan-gpx-menu-actions">
+                <button type="button" class="plan-gpx-menu-btn" data-act="sort">
+                    <span class="material-symbols-outlined">${recent ? 'arrow_downward' : 'arrow_upward'}</span>
+                    ${recent ? 'Plus récentes d\'abord' : 'Plus anciennes d\'abord'}
+                </button>
+            </div>
+            <p class="plan-gpx-menu-title">Début de la journée opérationnelle</p>
+            <p class="plan-gpx-menu-hint">Une intervention de nuit reste entière dans le même jour. Mettre 0 pour retrouver le jour civil.</p>
+            <div class="plan-gpx-menu-actions">
+                <input type="number" id="plan_gpx_boundary" min="0" max="23" step="1" value="${boundary}"
+                       class="plan-gpx-boundary" aria-label="Heure de début de la journée opérationnelle">
+            </div>`, {
+            centerScreen: true,
+            onMount: (root: HTMLElement) => {
+                const sort = root.querySelector<HTMLElement>('[data-act="sort"]');
+                if (sort) sort.onclick = () => {
+                    Persist.set(GPX_SORT_KEY, !recent);
+                    this._closeInlinePanel();
+                    this._renderGpxList();
+                };
+                const inp = root.querySelector<HTMLInputElement>('#plan_gpx_boundary');
+                if (inp) inp.onchange = () => {
+                    const h = Math.max(0, Math.min(23, Math.floor(Number(inp.value) || 0)));
+                    Persist.set(GPX_DAY_BOUNDARY_KEY, h);
+                    this._renderGpxList();
+                };
+            },
+        });
     },
 
     /** Recadre la carte sur l'ensemble des traces visibles. */

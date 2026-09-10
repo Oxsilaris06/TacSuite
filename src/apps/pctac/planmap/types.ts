@@ -565,14 +565,26 @@ export interface PlanMapInternal extends PlanMapState, PlanMapContract {
     _runAoiDownload(bbox: GeoBBox, minZ: number, maxZ: number, templates: readonly TileTemplate[], estTotal: number): Promise<void>;
     _createAoiProgressBar(estTotal: number): AoiProgressUi;
 
-    /* --- gpx.ts (8) --- */
+    /* --- gpx.ts --- */
     _ensureGpxLayers(): boolean;
     _renderGpxLayers(): void;
     _renderGpxList(): void;
+    _refreshGpxActions(): void;
     _toggleGpxPanel(force?: boolean): void;
     _importGpxFiles(files: readonly File[]): Promise<void>;
     _toggleGpxTrack(id: string): void;
     _removeGpxTrack(id: string): void;
     _fitGpxTracks(): void;
     _loadGpxTracks(): Promise<void>;
+    _toggleGpxDayFold(day: string): void;
+    _setAllGpxVisible(visible?: boolean): void;
+    _setGpxDayVisible(day: string, visible: boolean): void;
+    _setGpxColor(target: { id?: string; day?: string }, color: string): void;
+    _colorGpxByDay(): void;
+    _removeAllGpxTracks(): Promise<void>;
+    _removeGpxDay(day: string): Promise<void>;
+    _openGpxColorMenu(target: { id?: string; day?: string }): void;
+    _openGpxDayMenu(day: string): void;
+    _openGpxColorAllMenu(): void;
+    _openGpxSettingsMenu(): void;
 }

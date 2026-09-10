@@ -1611,6 +1611,192 @@ body.up-kb-open .up-kb-aware {
             gap: 4px;
         }
 
+        /* En-tête du panneau : titre + barre d'actions groupées. Chaque action
+           ouvre un sous-menu transitoire, jamais une seconde barre permanente. */
+        .plan-gpx-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 6px;
+        }
+
+        .plan-gpx-head .plan-layers-section-title {
+            margin: 0;
+        }
+
+        .plan-gpx-actions {
+            display: flex;
+            gap: 4px;
+        }
+
+        .plan-gpx-btn[disabled] {
+            opacity: 0.4;
+            cursor: default;
+        }
+
+        /* Groupe de jour : en-tête repliable + corps. */
+        .plan-gpx-group {
+            display: flex;
+            flex-direction: column;
+            gap: 3px;
+        }
+
+        .plan-gpx-day {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            margin-top: 4px;
+        }
+
+        .plan-gpx-fold {
+            flex: 1 1 auto;
+            min-width: 0;
+            display: flex;
+            align-items: center;
+            gap: 2px;
+            padding: 2px 0;
+            border: none;
+            background: transparent;
+            color: var(--text-muted);
+            font-family: var(--font-ui);
+            font-size: 0.75em;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.4px;
+            cursor: pointer;
+        }
+
+        .plan-gpx-fold .material-symbols-outlined {
+            font-size: 16px;
+        }
+
+        .plan-gpx-day-label {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .plan-gpx-day-count {
+            flex: 0 0 auto;
+            font-family: var(--font-ui);
+            font-size: 0.7em;
+            color: var(--text-muted);
+        }
+
+        .plan-gpx-day-body {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            padding-left: 6px;
+        }
+
+        /* La pastille de couleur devient cliquable : elle ouvre le sous-menu
+           de couleur de la trace. Elle garde exactement sa taille d'avant. */
+        button.plan-gpx-dot {
+            padding: 0;
+            cursor: pointer;
+        }
+
+        .plan-gpx-hour,
+        .plan-gpx-undated {
+            flex: 0 0 auto;
+            font-family: var(--font-ui);
+            font-size: 0.72em;
+            color: var(--text-muted);
+        }
+
+        .plan-gpx-undated {
+            font-style: italic;
+            cursor: help;
+        }
+
+        /* Sous-menus transitoires : contenus rendus dans .plan-inline-panel. */
+        .plan-gpx-menu-title {
+            margin: 0 0 6px;
+            font-family: var(--font-ui);
+            font-size: 0.72em;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--text-muted);
+        }
+
+        .plan-gpx-menu-title:not(:first-child) {
+            margin-top: 12px;
+        }
+
+        .plan-gpx-menu-hint {
+            margin: -2px 0 8px;
+            font-family: var(--font-ui);
+            font-size: 0.75em;
+            color: var(--text-muted);
+        }
+
+        .plan-gpx-menu-actions {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .plan-gpx-menu-btn {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 10px;
+            border: 1px solid var(--border-glass);
+            border-radius: var(--radius-sm);
+            background: var(--bg-input);
+            color: var(--text-main);
+            font-family: var(--font-ui);
+            font-size: 0.85em;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background var(--transition-quick);
+        }
+
+        .plan-gpx-menu-btn:hover {
+            background: var(--bg-glass);
+        }
+
+        .plan-gpx-menu-btn .material-symbols-outlined {
+            font-size: 18px;
+        }
+
+        /* Action destructrice : mêmes conventions que confirmDialog danger. */
+        .plan-gpx-menu-btn--danger {
+            color: var(--danger-red);
+            border-color: color-mix(in srgb, var(--danger-red) 40%, var(--border-glass));
+        }
+
+        .plan-gpx-swatches {
+            display: grid;
+            grid-template-columns: repeat(6, 1fr);
+            gap: 6px;
+        }
+
+        .plan-gpx-swatch {
+            aspect-ratio: 1;
+            border: 2px solid var(--border-glass);
+            border-radius: 50%;
+            cursor: pointer;
+            transition: transform var(--transition-quick);
+        }
+
+        .plan-gpx-swatch:hover {
+            transform: scale(1.15);
+        }
+
+        .plan-gpx-boundary {
+            width: 100%;
+            padding: 7px 9px;
+            border: 1px solid var(--border-glass);
+            border-radius: var(--radius-sm);
+            background: var(--bg-input);
+            color: var(--text-main);
+            font-family: var(--font-ui);
+            font-size: 0.9em;
+        }
+
         .plan-gpx-empty {
             margin: 0;
             font-family: var(--font-ui);
