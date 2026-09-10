@@ -393,7 +393,23 @@
                 <!-- Panneau Traces GPX (ouvert via le FAB du tiroir « Plus ») : import de
                      fichiers .gpx, puis afficher/masquer/supprimer trace par trace. -->
                 <div id="plan_gpx_panel">
-                    <p class="plan-layers-section-title">Traces GPX</p>
+                    <div class="plan-gpx-head">
+                        <p class="plan-layers-section-title">Traces GPX</p>
+                        <div class="plan-gpx-actions">
+                            <button type="button" id="plan_gpx_all" class="plan-gpx-btn" title="Masquer toutes les traces" aria-label="Masquer toutes les traces">
+                                <span class="material-symbols-outlined">visibility</span>
+                            </button>
+                            <button type="button" id="plan_gpx_color" class="plan-gpx-btn" title="Colorer les traces" aria-label="Colorer les traces">
+                                <span class="material-symbols-outlined">palette</span>
+                            </button>
+                            <button type="button" id="plan_gpx_delete" class="plan-gpx-btn" title="Supprimer toutes les traces" aria-label="Supprimer toutes les traces">
+                                <span class="material-symbols-outlined">delete_sweep</span>
+                            </button>
+                            <button type="button" id="plan_gpx_settings" class="plan-gpx-btn" title="Tri et découpage des jours" aria-label="Réglages de tri et de découpage des jours">
+                                <span class="material-symbols-outlined">tune</span>
+                            </button>
+                        </div>
+                    </div>
                     <div id="plan_gpx_list"></div>
                     <button type="button" id="plan_gpx_import" class="plan-gpx-import">
                         <span class="material-symbols-outlined">upload_file</span>

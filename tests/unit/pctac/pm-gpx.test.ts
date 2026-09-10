@@ -10,7 +10,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { GPX_CASING_LAYER, GPX_INDEX_KEY, GPX_LINE_LAYER, GPX_SRC } from '../../../src/apps/pctac/planmap/constants.js';
-import { GpxMethods, groupByDay, operationalDayKey, parseGpx, trackTimeBounds } from '../../../src/apps/pctac/planmap/gpx.js';
+import { GpxMethods, groupByDay, operationalDayKey, parseGpx, sortTracks, trackTimeBounds } from '../../../src/apps/pctac/planmap/gpx.js';
 import { createPlanMapState } from '../../../src/apps/pctac/planmap/state.js';
 import type { GpxTrackData, LngLatTuple, PlanGpxTrack, PlanMapInternal } from '../../../src/apps/pctac/planmap/types.js';
 
@@ -25,6 +25,13 @@ vi.mock('@pctac/image-store.js', () => ({
         delete: async (id: string): Promise<void> => { gpxDisk.delete(id); },
         clear: async (): Promise<void> => { gpxDisk.clear(); },
     },
+}));
+
+/** Réponse de la confirmation destructrice, pilotée par chaque test. */
+let confirmAnswer = true;
+vi.mock('@shared/feedback.js', () => ({
+    confirmDialog: async (): Promise<boolean> => confirmAnswer,
+    toast: (): void => {},
 }));
 
 vi.mock('maplibre-gl', () => {
@@ -85,6 +92,7 @@ beforeEach(() => {
     gpxDisk.clear();
     localStorage.clear();
     document.body.innerHTML = '';
+    confirmAnswer = true;
 });
 
 // ============================================================
@@ -475,7 +483,8 @@ describe('_renderGpxList / _toggleGpxPanel', () => {
         const row = document.querySelector<HTMLElement>('.plan-gpx-row');
         expect(row?.dataset.gpxId).toBe('t1');
         expect(row?.querySelector('.plan-gpx-name')?.textContent).toBe('Boucle');
-        expect(row?.querySelectorAll('[data-gpx-act]')).toHaveLength(2);
+        // Pastille de couleur, œil, corbeille : trois actions par ligne.
+        expect(row?.querySelectorAll('[data-gpx-act]')).toHaveLength(3);
         // Œil ouvert quand la trace est visible, barré sinon.
         expect(row?.querySelector('[data-gpx-act="toggle"] .material-symbols-outlined')?.textContent).toBe('visibility');
     });
@@ -556,5 +565,144 @@ describe('operationalDayKey / groupByDay', () => {
 
     it('groupByDay : liste vide donne aucun groupe', () => {
         expect(groupByDay([], 6)).toEqual([]);
+    });
+});
+
+// ============================================================
+// Actions groupées, coloration, tri
+// ============================================================
+describe('actions groupées', () => {
+    const local = (d: number, h: number): number => new Date(2026, 8, d, h).getTime();
+
+    function withTracks(): PlanMapInternal {
+        const fake = makeFakeThis(makeFakeMap(['plan-shapes-fill']));
+        document.body.innerHTML = '<button id="plan_gpx_all"><span class="material-symbols-outlined"></span></button><div id="plan_gpx_list"></div>';
+        fake._gpxTracks = [
+            { id: 'a', name: 'A', color: '#111', visible: true, startedAt: local(8, 10), endedAt: local(8, 11) },
+            { id: 'b', name: 'B', color: '#222', visible: true, startedAt: local(9, 10), endedAt: local(9, 11) },
+            { id: 'c', name: 'C', color: '#333', visible: true, startedAt: null, endedAt: null },
+        ];
+        for (const t of fake._gpxTracks) {
+            fake._gpxCoords[t.id] = { coords: [[[1, 1], [2, 2]]], times: null };
+            gpxDisk.set(t.id, { coords: [[[1, 1], [2, 2]]], times: null });
+        }
+        return fake;
+    }
+
+    it('tout masquer puis tout afficher, en une bascule', () => {
+        const fake = withTracks();
+        fake._setAllGpxVisible();
+        expect(fake._gpxTracks.every((t) => !t.visible)).toBe(true);
+        fake._setAllGpxVisible();
+        expect(fake._gpxTracks.every((t) => t.visible)).toBe(true);
+    });
+
+    it("masquer un jour ne touche pas les autres, ni les traces non datées", () => {
+        const fake = withTracks();
+        fake._setGpxDayVisible('2026-09-08', false);
+        expect(fake._gpxTracks.find((t) => t.id === 'a')?.visible).toBe(false);
+        expect(fake._gpxTracks.find((t) => t.id === 'b')?.visible).toBe(true);
+        expect(fake._gpxTracks.find((t) => t.id === 'c')?.visible).toBe(true);
+    });
+
+    it('colorer un jour ne repeint que ce jour', () => {
+        const fake = withTracks();
+        fake._setGpxColor({ day: '2026-09-09' }, '#abcdef');
+        expect(fake._gpxTracks.find((t) => t.id === 'b')?.color).toBe('#abcdef');
+        expect(fake._gpxTracks.find((t) => t.id === 'a')?.color).toBe('#111');
+    });
+
+    it('colorer une trace précise', () => {
+        const fake = withTracks();
+        fake._setGpxColor({ id: 'a' }, '#ff0000');
+        expect(fake._gpxTracks.find((t) => t.id === 'a')?.color).toBe('#ff0000');
+        expect(fake._gpxTracks.find((t) => t.id === 'b')?.color).toBe('#222');
+    });
+
+    it('une couleur par jour : deux jours distincts reçoivent deux couleurs', () => {
+        const fake = withTracks();
+        fake._colorGpxByDay();
+        const a = fake._gpxTracks.find((t) => t.id === 'a')?.color;
+        const b = fake._gpxTracks.find((t) => t.id === 'b')?.color;
+        const c = fake._gpxTracks.find((t) => t.id === 'c')?.color;
+        expect(a).not.toBe(b);
+        // Les non datées forment leur propre groupe, donc leur propre couleur.
+        expect(c).not.toBe(a);
+    });
+
+    it('supprimer tout : confirmé, la liste et le disque sont vidés', async () => {
+        const fake = withTracks();
+        await fake._removeAllGpxTracks();
+        expect(fake._gpxTracks).toHaveLength(0);
+        expect(gpxDisk.size).toBe(0);
+        expect(JSON.parse(localStorage.getItem(GPX_INDEX_KEY) ?? '[]')).toEqual([]);
+    });
+
+    it('supprimer tout : REFUSÉ, rien ne bouge', async () => {
+        confirmAnswer = false;
+        const fake = withTracks();
+        await fake._removeAllGpxTracks();
+        expect(fake._gpxTracks).toHaveLength(3);
+        expect(gpxDisk.size).toBe(3);
+    });
+
+    it("supprimer un jour n'emporte que ce jour", async () => {
+        const fake = withTracks();
+        await fake._removeGpxDay('2026-09-08');
+        expect(fake._gpxTracks.map((t) => t.id)).toEqual(['b', 'c']);
+        expect(gpxDisk.has('a')).toBe(false);
+        expect(gpxDisk.has('b')).toBe(true);
+    });
+
+    it('supprimer le groupe des non datées, désigné par la clé vide', async () => {
+        const fake = withTracks();
+        await fake._removeGpxDay('');
+        expect(fake._gpxTracks.map((t) => t.id)).toEqual(['a', 'b']);
+    });
+
+    it('la liste est rendue par jour, avec en-têtes repliables', () => {
+        const fake = withTracks();
+        fake._renderGpxList();
+        const groups = document.querySelectorAll('.plan-gpx-group');
+        expect(groups).toHaveLength(3);
+        // Ordre par défaut : les plus récentes d'abord, non datées en dernier.
+        expect(Array.from(groups).map((g) => (g as HTMLElement).dataset.gpxDay))
+            .toEqual(['2026-09-09', '2026-09-08', '']);
+        expect(document.querySelectorAll('[data-gpx-act="daymenu"]')).toHaveLength(3);
+    });
+
+    it('replier un jour masque son corps sans perdre la trace', () => {
+        const fake = withTracks();
+        fake._renderGpxList();
+        fake._toggleGpxDayFold('2026-09-08');
+        const body = document.querySelector<HTMLElement>('[data-gpx-day="2026-09-08"] .plan-gpx-day-body');
+        expect(body?.hidden).toBe(true);
+        expect(fake._gpxTracks).toHaveLength(3);
+    });
+
+    it("une trace non datée est signalée dans la liste, pas cachée", () => {
+        const fake = withTracks();
+        fake._renderGpxList();
+        const row = document.querySelector('[data-gpx-id="c"]');
+        expect(row).not.toBeNull();
+        expect(row?.querySelector('.plan-gpx-undated')).not.toBeNull();
+        expect(row?.querySelector('.plan-gpx-hour')).toBeNull();
+    });
+});
+
+describe('sortTracks', () => {
+    const at = (d: number): number => new Date(2026, 8, d).getTime();
+    const T = (id: string, startedAt: number | null): PlanGpxTrack =>
+        ({ id, name: id, color: '#000', visible: true, startedAt });
+
+    it('par défaut : plus récentes en premier, non datées en queue', () => {
+        const out = sortTracks([T('vieille', at(1)), T('sans', null), T('recente', at(9))]);
+        expect(out.map((t) => t.id)).toEqual(['recente', 'vieille', 'sans']);
+    });
+
+    it("ordre inversé quand le réglage le demande", () => {
+        localStorage.setItem('pcTacGpxNewestFirst', JSON.stringify(false));
+        const out = sortTracks([T('recente', at(9)), T('vieille', at(1))]);
+        expect(out.map((t) => t.id)).toEqual(['vieille', 'recente']);
     });
 });
