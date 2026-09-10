@@ -10,19 +10,20 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { GPX_CASING_LAYER, GPX_INDEX_KEY, GPX_LINE_LAYER, GPX_SRC } from '../../../src/apps/pctac/planmap/constants.js';
-import { GpxMethods, parseGpx } from '../../../src/apps/pctac/planmap/gpx.js';
+import { GpxMethods, groupByDay, operationalDayKey, parseGpx, trackTimeBounds } from '../../../src/apps/pctac/planmap/gpx.js';
 import { createPlanMapState } from '../../../src/apps/pctac/planmap/state.js';
-import type { LngLatTuple, PlanGpxTrack, PlanMapInternal } from '../../../src/apps/pctac/planmap/types.js';
+import type { GpxTrackData, LngLatTuple, PlanGpxTrack, PlanMapInternal } from '../../../src/apps/pctac/planmap/types.js';
 
 /** Contenu du magasin GPX simulé, réinitialisé à chaque test. */
-const gpxDisk = new Map<string, LngLatTuple[][]>();
+const gpxDisk = new Map<string, GpxTrackData>();
 
 vi.mock('@pctac/image-store.js', () => ({
     ImageStore: {},
     GpxStore: {
-        put: async (id: string, segs: LngLatTuple[][]): Promise<void> => { gpxDisk.set(id, segs); },
-        get: async (id: string): Promise<LngLatTuple[][] | null> => gpxDisk.get(id) ?? null,
+        put: async (id: string, track: GpxTrackData): Promise<void> => { gpxDisk.set(id, track); },
+        get: async (id: string): Promise<GpxTrackData | null> => gpxDisk.get(id) ?? null,
         delete: async (id: string): Promise<void> => { gpxDisk.delete(id); },
+        clear: async (): Promise<void> => { gpxDisk.clear(); },
     },
 }));
 
@@ -146,6 +147,76 @@ describe('parseGpx', () => {
 });
 
 // ============================================================
+// parseGpx — horodatage des points
+// ============================================================
+describe('parseGpx — horodatage', () => {
+    const DATE = `<gpx><trk><trkseg>
+        <trkpt lat="44.10" lon="5.20"><time>2026-09-08T06:00:00Z</time></trkpt>
+        <trkpt lat="44.11" lon="5.21"><time>2026-09-08T06:01:00Z</time></trkpt>
+    </trkseg></trk></gpx>`;
+
+    it('lit <time> et le rend en millisecondes epoch, aligné sur les coordonnées', () => {
+        const parsed = parseGpx(DATE);
+        expect(parsed?.times).toEqual([[Date.parse('2026-09-08T06:00:00Z'), Date.parse('2026-09-08T06:01:00Z')]]);
+        expect(parsed?.times?.[0]).toHaveLength(parsed?.segments[0]?.length ?? -1);
+    });
+
+    it('trou dans les temps : le point garde sa place, son temps vaut null', () => {
+        const parsed = parseGpx(`<gpx><trk><trkseg>
+            <trkpt lat="1" lon="2"><time>2026-09-08T06:00:00Z</time></trkpt>
+            <trkpt lat="3" lon="4"/>
+            <trkpt lat="5" lon="6"><time>2026-09-08T06:02:00Z</time></trkpt>
+        </trkseg></trk></gpx>`);
+        expect(parsed?.segments[0]).toHaveLength(3);
+        expect(parsed?.times?.[0]?.[1]).toBeNull();
+        expect(parsed?.times?.[0]?.[0]).toBe(Date.parse('2026-09-08T06:00:00Z'));
+        expect(parsed?.times?.[0]?.[2]).toBe(Date.parse('2026-09-08T06:02:00Z'));
+    });
+
+    it('un point REJETÉ ne laisse ni coordonnée ni temps : les deux tableaux restent alignés', () => {
+        const parsed = parseGpx(`<gpx><trk><trkseg>
+            <trkpt lat="1" lon="2"><time>2026-09-08T06:00:00Z</time></trkpt>
+            <trkpt lat="999" lon="4"><time>2026-09-08T06:01:00Z</time></trkpt>
+            <trkpt lat="5" lon="6"><time>2026-09-08T06:02:00Z</time></trkpt>
+        </trkseg></trk></gpx>`);
+        expect(parsed?.segments[0]).toHaveLength(2);
+        expect(parsed?.times?.[0]).toHaveLength(2);
+        // Le temps du point hors bornes a disparu avec lui, pas décalé sur le suivant.
+        expect(parsed?.times?.[0]?.[1]).toBe(Date.parse('2026-09-08T06:02:00Z'));
+    });
+
+    it('aucun point daté : times vaut null, la trace est marquée non datée', () => {
+        expect(parseGpx(GPX_TRACK)?.times).toBeNull();
+    });
+
+    it('<time> illisible : traité comme absent, jamais NaN', () => {
+        const parsed = parseGpx(`<gpx><trk><trkseg>
+            <trkpt lat="1" lon="2"><time>pas une date</time></trkpt>
+            <trkpt lat="3" lon="4"><time>2026-09-08T06:00:00Z</time></trkpt>
+        </trkseg></trk></gpx>`);
+        expect(parsed?.times?.[0]?.[0]).toBeNull();
+        expect(parsed?.times?.[0]?.[1]).toBe(Date.parse('2026-09-08T06:00:00Z'));
+    });
+
+    it('un itinéraire <rte> n a par nature aucun temps', () => {
+        const parsed = parseGpx('<gpx><rte><rtept lat="1" lon="2"/><rtept lat="3" lon="4"/></rte></gpx>');
+        expect(parsed?.times).toBeNull();
+    });
+});
+
+describe('trackTimeBounds', () => {
+    it('rend le premier et le dernier temps non nuls, tous segments confondus', () => {
+        expect(trackTimeBounds([[10, null, 30], [null, 5], [40]]))
+            .toEqual({ startedAt: 5, endedAt: 40 });
+    });
+
+    it('trace non datée : les deux bornes sont nulles', () => {
+        expect(trackTimeBounds(null)).toEqual({ startedAt: null, endedAt: null });
+        expect(trackTimeBounds([[null, null]])).toEqual({ startedAt: null, endedAt: null });
+    });
+});
+
+// ============================================================
 // Couches carte
 // ============================================================
 describe('_ensureGpxLayers', () => {
@@ -191,8 +262,8 @@ describe('_renderGpxLayers', () => {
             { id: 'b', name: 'B', color: '#06b6d4', visible: false },
         ];
         fake._gpxCoords = {
-            a: [[[1, 1], [2, 2]], [[3, 3], [4, 4]]],
-            b: [[[9, 9], [8, 8]]],
+            a: { coords: [[[1, 1], [2, 2]], [[3, 3], [4, 4]]], times: null },
+            b: { coords: [[[9, 9], [8, 8]]], times: null },
         };
 
         fake._renderGpxLayers();
@@ -206,7 +277,7 @@ describe('_renderGpxLayers', () => {
         const map = makeFakeMap();
         const fake = makeFakeThis(map);
         fake._gpxTracks = [{ id: 'a', name: 'A', color: '#fff', visible: true }];
-        fake._gpxCoords = { a: [[[1, 1]], [[2, 2], [3, 3]]] };
+        fake._gpxCoords = { a: { coords: [[[1, 1]], [[2, 2], [3, 3]]], times: null } };
 
         fake._renderGpxLayers();
 
@@ -239,11 +310,11 @@ describe('_importGpxFiles', () => {
         // Coordonnées en IndexedDB, index seul en localStorage : jamais dans
         // pcTacPlanShapes, que la pile d'annulation recopie en entier.
         const id = fake._gpxTracks[0]?.id ?? '';
-        expect(gpxDisk.get(id)).toHaveLength(2);
+        expect(gpxDisk.get(id)?.coords).toHaveLength(2);
         expect(localStorage.getItem('pcTacPlanShapes')).toBeNull();
         const index = JSON.parse(localStorage.getItem(GPX_INDEX_KEY) ?? '[]') as PlanGpxTrack[];
         expect(index).toHaveLength(1);
-        expect(Object.keys(index[0] ?? {}).sort()).toEqual(['color', 'id', 'name', 'visible']);
+        expect(Object.keys(index[0] ?? {}).sort()).toEqual(['color', 'endedAt', 'id', 'name', 'startedAt', 'visible']);
         expect(map.data.features).toHaveLength(2);
     });
 
@@ -336,7 +407,7 @@ describe('_toggleGpxTrack / _removeGpxTrack', () => {
 // ============================================================
 describe('_loadGpxTracks', () => {
     it("recharge les traces persistées et les republie sur la carte", async () => {
-        gpxDisk.set('t1', [[[1, 1], [2, 2]]]);
+        gpxDisk.set('t1', { coords: [[[1, 1], [2, 2]]], times: null });
         localStorage.setItem(GPX_INDEX_KEY, JSON.stringify(
             [{ id: 't1', name: 'Trace 1', color: '#a855f7', visible: true }]));
         const map = makeFakeMap(['plan-shapes-fill']);
@@ -345,12 +416,12 @@ describe('_loadGpxTracks', () => {
         await fake._loadGpxTracks();
 
         expect(fake._gpxTracks).toHaveLength(1);
-        expect(fake._gpxCoords['t1']).toEqual([[[1, 1], [2, 2]]]);
+        expect(fake._gpxCoords['t1']?.coords).toEqual([[[1, 1], [2, 2]]]);
         expect(map.data.features).toHaveLength(1);
     });
 
     it("écarte une entrée d'index dont les coordonnées ont disparu, et réécrit l'index", async () => {
-        gpxDisk.set('t1', [[[1, 1], [2, 2]]]);
+        gpxDisk.set('t1', { coords: [[[1, 1], [2, 2]]], times: null });
         localStorage.setItem(GPX_INDEX_KEY, JSON.stringify([
             { id: 't1', name: 'Trace 1', color: '#a855f7', visible: true },
             { id: 'orphelin', name: 'Perdue', color: '#06b6d4', visible: true },
@@ -371,7 +442,7 @@ describe('_loadGpxTracks', () => {
     });
 
     it('conserve une trace enregistrée comme masquée', async () => {
-        gpxDisk.set('t1', [[[1, 1], [2, 2]]]);
+        gpxDisk.set('t1', { coords: [[[1, 1], [2, 2]]], times: null });
         localStorage.setItem(GPX_INDEX_KEY, JSON.stringify(
             [{ id: 't1', name: 'Trace 1', color: '#a855f7', visible: false }]));
         const map = makeFakeMap();
@@ -445,5 +516,45 @@ describe('_renderGpxList / _toggleGpxPanel', () => {
     it('sans panneau dans le DOM : ne jette pas', () => {
         expect(() => makeFakeThis(null)._toggleGpxPanel()).not.toThrow();
         expect(() => makeFakeThis(null)._renderGpxList()).not.toThrow();
+    });
+});
+
+// ============================================================
+// Journée opérationnelle
+// ============================================================
+describe('operationalDayKey / groupByDay', () => {
+    /** Instant local, pour raisonner en heures locales comme le fait le code. */
+    const local = (y: number, m: number, d: number, h: number, min = 0): number =>
+        new Date(y, m - 1, d, h, min).getTime();
+
+    it('bascule à 6h : une opération de nuit reste dans le jour de la VEILLE', () => {
+        // 23h le 8, puis 2h du matin le 9 : même engagement, même jour opérationnel.
+        expect(operationalDayKey(local(2026, 9, 8, 23, 30), 6)).toBe('2026-09-08');
+        expect(operationalDayKey(local(2026, 9, 9, 2, 15), 6)).toBe('2026-09-08');
+        // 7h le 9 : la bascule est passée, nouveau jour.
+        expect(operationalDayKey(local(2026, 9, 9, 7, 0), 6)).toBe('2026-09-09');
+    });
+
+    it('bascule à 0h : on retrouve exactement le jour civil', () => {
+        expect(operationalDayKey(local(2026, 9, 8, 23, 30), 0)).toBe('2026-09-08');
+        expect(operationalDayKey(local(2026, 9, 9, 2, 15), 0)).toBe('2026-09-09');
+    });
+
+    it('groupByDay : du plus récent au plus ancien, les non datées en dernier', () => {
+        const tracks: PlanGpxTrack[] = [
+            { id: 'a', name: 'A', color: '#000', visible: true, startedAt: local(2026, 9, 8, 10) },
+            { id: 'b', name: 'B', color: '#000', visible: true, startedAt: local(2026, 9, 9, 10) },
+            { id: 'c', name: 'C', color: '#000', visible: true, startedAt: null },
+            { id: 'd', name: 'D', color: '#000', visible: true, startedAt: local(2026, 9, 8, 14) },
+        ];
+        const groups = groupByDay(tracks, 6);
+        expect(groups.map((g) => g.day)).toEqual(['2026-09-09', '2026-09-08', '']);
+        expect(groups[1]?.tracks.map((t) => t.id)).toEqual(['a', 'd']);
+        // Les traces sans date forment leur propre groupe, jamais mélangées.
+        expect(groups[2]?.tracks.map((t) => t.id)).toEqual(['c']);
+    });
+
+    it('groupByDay : liste vide donne aucun groupe', () => {
+        expect(groupByDay([], 6)).toEqual([]);
     });
 });

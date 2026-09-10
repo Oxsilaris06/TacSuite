@@ -4,11 +4,11 @@
   <trk>
     <name>Reconnaissance Sud</name>
     <trkseg>
-      <trkpt lat="48.8566" lon="2.3522"/>
-      <trkpt lat="48.8580" lon="2.3550"/>
+      <trkpt lat="48.8566" lon="2.3522"><time>2026-09-08T07:00:00Z</time></trkpt>
+      <trkpt lat="48.8580" lon="2.3550"><time>2026-09-08T07:05:00Z</time></trkpt>
       <trkpt lat="48.8600" lon="2.3600"/>
-      <trkpt lat="48.8620" lon="2.3580"/>
-      <trkpt lat="48.8650" lon="2.3520"/>
+      <trkpt lat="48.8620" lon="2.3580"><time>2026-09-08T07:15:00Z</time></trkpt>
+      <trkpt lat="48.8650" lon="2.3520"><time>2026-09-08T07:20:00Z</time></trkpt>
     </trkseg>
   </trk>
 </gpx>

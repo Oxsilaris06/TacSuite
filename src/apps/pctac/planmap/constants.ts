@@ -335,6 +335,15 @@ export const GPX_CASING_LAYER = 'plan-gpx-casing';
 export const GPX_LINE_LAYER = 'plan-gpx-line';
 /** Couleurs attribuées cycliquement aux traces importées. */
 export const GPX_COLORS: readonly string[] = ['#a855f7', '#06b6d4', '#f59e0b', '#22c55e', '#ec4899', '#3b82f6'];
+
+/**
+ * Heure de bascule de la « journée opérationnelle », en heures locales.
+ * 6 par défaut : une intervention de nuit reste ainsi ENTIÈRE dans le même
+ * jour, alors qu'un découpage à minuit la couperait en deux au milieu.
+ * Poser 0 redonne le jour civil.
+ */
+export const GPX_DAY_BOUNDARY_KEY = 'pcTacGpxDayBoundary';
+export const GPX_DAY_BOUNDARY_DEFAULT = 6;
 // Garde-fou : nombre max de tuiles d'une AOI (évite d'exploser le volume / le WAF).
 // planMap.js:130
 export const AOI_MAX_TILES = 60000;

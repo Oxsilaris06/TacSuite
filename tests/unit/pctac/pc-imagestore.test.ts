@@ -156,3 +156,113 @@ describe('ImageStore (P2.CONV)', () => {
     expect(typeof ImageStore.hydrate).toBe('function');
   });
 });
+
+/* ─── GpxStore : enveloppe versionnée et lecture des traces anciennes ────── */
+
+/**
+ * Double IndexedDB minimal, avec un contenu pré-chargé par magasin. Reproduit
+ * juste ce dont `withStore` a besoin : résolution différée APRÈS affectation
+ * des handlers, et `tx.oncomplete` qui porte la résolution.
+ */
+function makeIdbWithContent(content: Record<string, unknown>): {
+  factory: unknown;
+  written: Map<string, unknown>;
+} {
+  const written = new Map<string, unknown>();
+  const storeNames = new Set<string>();
+  const db = {
+    objectStoreNames: { contains: (n: string) => storeNames.has(n) },
+    createObjectStore: (n: string) => { storeNames.add(n); },
+    transaction: () => {
+      const tx: { oncomplete: (() => void) | null; onerror: (() => void) | null; onabort: (() => void) | null } =
+        { oncomplete: null, onerror: null, onabort: null };
+      const store = {
+        put: (value: unknown, key: string) => { written.set(key, value); queueMicrotask(() => tx.oncomplete?.()); return {}; },
+        get: (key: string) => {
+          const req: { onsuccess: (() => void) | null; result: unknown } = { onsuccess: null, result: content[key] };
+          queueMicrotask(() => { req.onsuccess?.(); tx.oncomplete?.(); });
+          return req;
+        },
+        delete: () => { queueMicrotask(() => tx.oncomplete?.()); return {}; },
+        clear: () => { written.clear(); queueMicrotask(() => tx.oncomplete?.()); return {}; },
+      };
+      return {
+        objectStore: () => store,
+        set oncomplete(f: (() => void) | null) { tx.oncomplete = f; }, get oncomplete() { return tx.oncomplete; },
+        set onerror(f: (() => void) | null) { tx.onerror = f; }, get onerror() { return tx.onerror; },
+        set onabort(f: (() => void) | null) { tx.onabort = f; }, get onabort() { return tx.onabort; },
+      };
+    },
+  };
+  const factory = {
+    open: () => {
+      const req: { result: unknown; onupgradeneeded: (() => void) | null; onsuccess: (() => void) | null; onerror: (() => void) | null } =
+        { result: db, onupgradeneeded: null, onsuccess: null, onerror: null };
+      // `openDb` lit `event.target.result` : le handler DOIT recevoir un
+      // évènement porteur de la requête, sinon il jette sur `undefined.target`.
+      queueMicrotask(() => {
+        (req.onupgradeneeded as ((e: unknown) => void) | null)?.({ target: req });
+        req.onsuccess?.();
+      });
+      return req;
+    },
+  };
+  return { factory, written };
+}
+
+describe('GpxStore — enveloppe versionnée', () => {
+  it("relit une trace ANCIENNE, écrite en tableau nu, comme une trace sans temps", async () => {
+    // Régression de perte de données : avant l'enveloppe, changer la forme
+    // faisait renvoyer null pour ces traces, qui étaient ensuite retirées
+    // silencieusement de l'index au démarrage suivant.
+    const legacy = [[[2.35, 48.85], [2.36, 48.86]]];
+    const { factory } = makeIdbWithContent({ ancienne: legacy });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (globalThis as any).indexedDB = factory;
+
+    const { GpxStore } = await import('@pctac/image-store.js');
+    const out = await GpxStore.get('ancienne');
+
+    expect(out).not.toBeNull();
+    expect(out?.coords).toEqual(legacy);
+    expect(out?.times).toBeNull();
+  });
+
+  it('relit une trace NOUVELLE avec ses temps', async () => {
+    const rec = { v: 2, coords: [[[1, 2], [3, 4]]], times: [[1000, null]] };
+    const { factory } = makeIdbWithContent({ recente: rec });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (globalThis as any).indexedDB = factory;
+
+    const { GpxStore } = await import('@pctac/image-store.js');
+    const out = await GpxStore.get('recente');
+
+    expect(out?.coords).toEqual(rec.coords);
+    expect(out?.times).toEqual([[1000, null]]);
+  });
+
+  it("écrit toujours l'enveloppe versionnée, jamais le tableau nu", async () => {
+    const { factory, written } = makeIdbWithContent({});
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (globalThis as any).indexedDB = factory;
+
+    const { GpxStore } = await import('@pctac/image-store.js');
+    await GpxStore.put('t1', { coords: [[[1, 2], [3, 4]]], times: null });
+
+    const rec = written.get('t1') as { v: number; coords: unknown; times: unknown };
+    expect(rec.v).toBe(2);
+    expect(rec.coords).toEqual([[[1, 2], [3, 4]]]);
+    expect(rec.times).toBeNull();
+  });
+
+  it('entrée absente ou corrompue : renvoie null sans jeter', async () => {
+    const { factory } = makeIdbWithContent({ casse: { v: 2, pasDeCoords: true } });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (globalThis as any).indexedDB = factory;
+
+    const { GpxStore } = await import('@pctac/image-store.js');
+    await expect(GpxStore.get('inconnue')).resolves.toBeNull();
+    await expect(GpxStore.get('casse')).resolves.toBeNull();
+    await expect(GpxStore.get('')).resolves.toBeNull();
+  });
+});
