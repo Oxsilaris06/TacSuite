@@ -347,6 +347,20 @@ export const GPX_DAY_BOUNDARY_DEFAULT = 6;
 
 /** Ordre de tri de la liste : `true` (défaut) = les plus récentes en premier. */
 export const GPX_SORT_KEY = 'pcTacGpxNewestFirst';
+
+/**
+ * Source dédiée au rejeu animé. SÉPARÉE de `GPX_SRC` pour deux raisons :
+ * elle porte `lineMetrics`, indispensable à `line-progress`, et ses features
+ * raboutent les tronçons d'une trace en une seule ligne, la progression étant
+ * mesurée par feature.
+ */
+export const GPX_PLAY_SRC = 'plan-gpx-play-src';
+
+/**
+ * Vitesses de lecture proposées. Elles DIVISENT la durée de rejeu : à ×4 la
+ * lecture complète dure quatre fois moins longtemps.
+ */
+export const GPX_PLAY_SPEEDS: readonly number[] = [0.5, 1, 2, 4];
 // Garde-fou : nombre max de tuiles d'une AOI (évite d'exploser le volume / le WAF).
 // planMap.js:130
 export const AOI_MAX_TILES = 60000;

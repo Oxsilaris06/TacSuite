@@ -1503,3 +1503,122 @@ test('tiroir « Plus » — seconde colonne alignée sur la loupe en fenêtré',
   expect.soft(fullscreen.belowMoreButton).toBe(8);
   expect.soft(fullscreen.offsetFromMagnifier).toBeGreaterThan(0);
 });
+
+// ============================================================================
+// Traces GPX : horodatage, groupement par jour, actions groupées et timelapse.
+// Le rejeu dépend de WebGL et de `line-gradient` : rien de tout cela n'existe
+// sous jsdom, c'est le seul endroit où il est vérifié pour de vrai.
+// ============================================================================
+
+test('traces GPX — groupement par jour, actions groupées et timelapse', async ({ page }) => {
+  const openGpxPanel = async (): Promise<void> => {
+    const open = await page.locator('#plan_gpx_panel').evaluate((el) => el.classList.contains('open'));
+    if (open) return;
+    await page.locator('#plan_btn_more').click();
+    await page.waitForTimeout(250);
+    await page.locator('#plan_btn_gpx').click();
+    await page.waitForTimeout(350);
+  };
+  const featureCount = (): Promise<number> => page.evaluate(() => {
+    const src = (window as unknown as { PlanMap?: { map?: { getSource(id: string): unknown } } })
+      .PlanMap?.map?.getSource('plan-gpx-src') as { _data?: { features?: unknown[] } } | undefined;
+    return src?._data?.features?.length ?? -1;
+  });
+  const playLayers = (): Promise<string[]> => page.evaluate(() => {
+    const map = (window as unknown as { PlanMap: { map: { getStyle(): { layers: Array<{ id: string }> } } } }).PlanMap.map;
+    return map.getStyle().layers.map((l) => l.id).filter((id) => id.startsWith('plan-gpx-play-'));
+  });
+
+  await page.goto('/pctac/', { waitUntil: 'domcontentloaded' });
+  await page.waitForTimeout(1000);
+
+  // La barre de lecture ne doit PAS être visible avant toute lecture : une
+  // règle d'auteur `display: flex` sur un identifiant bat le `[hidden]` du
+  // navigateur, il faut la neutraliser explicitement.
+  await expect.soft(page.locator('#plan_gpx_player')).toBeHidden();
+
+  await page.evaluate(() => { (window as unknown as { UI?: { switchMainView?: (v: string) => void } }).UI?.switchMainView?.('view-plan'); });
+  await page.waitForTimeout(2500);
+  await openGpxPanel();
+
+  // Deux traces du MÊME engagement, qui se chevauchent dans le temps.
+  await page.locator('#plan_gpx_file').setInputFiles([
+    'tests/e2e/fixtures/reconnaissance-sud.gpx',
+    'tests/e2e/fixtures/appui-sud.gpx',
+  ]);
+  await page.waitForTimeout(1500);
+
+  await expect.soft(page.locator('.plan-gpx-row')).toHaveCount(2);
+  // Même jour opérationnel : un seul groupe.
+  await expect.soft(page.locator('.plan-gpx-group')).toHaveCount(1);
+  await expect.soft(page.locator('.plan-gpx-hour')).toHaveCount(2);
+
+  // L'horodatage lu dans le fichier est bien persisté dans l'index.
+  const index = await page.evaluate(() => JSON.parse(localStorage.getItem('pcTacGpxIndex') ?? '[]') as Array<{ startedAt?: number }>);
+  expect.soft(typeof index[0]?.startedAt).toBe('number');
+
+  // Tout masquer, puis tout réafficher.
+  await page.locator('#plan_gpx_all').click();
+  await page.waitForTimeout(400);
+  expect.soft(await featureCount()).toBe(0);
+  await page.locator('#plan_gpx_all').click();
+  await page.waitForTimeout(400);
+  expect.soft(await featureCount()).toBe(2);
+
+  // Sous-menu transitoire de couleur.
+  await page.locator('#plan_gpx_color').click();
+  await page.waitForTimeout(400);
+  await expect.soft(page.locator('.plan-inline-panel [data-act="byday"]')).toHaveCount(1);
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(300);
+
+  // --- Timelapse ---
+  await openGpxPanel();
+  await page.locator('#plan_gpx_play').click();
+  await page.waitForTimeout(600);
+
+  await expect.soft(page.locator('#plan_gpx_player')).toBeVisible();
+  // Une couche par trace : le dégradé écrase line-color et refuse les
+  // expressions pilotées par la donnée, la couleur vit donc dans l'expression.
+  const layers = await playLayers();
+  expect.soft(layers).toHaveLength(2);
+  // L'affichage normal est masqué le temps du rejeu, pour la même raison.
+  expect.soft(await page.evaluate(() => (window as unknown as { PlanMap: { map: { getLayoutProperty(l: string, p: string): unknown } } })
+    .PlanMap.map.getLayoutProperty('plan-gpx-line', 'visibility'))).toBe('none');
+  await expect.soft(page.locator('#plan_gpx_mode')).toHaveText('Temps réel');
+  await expect.soft(page.locator('.plan-gpx-head-marker')).toHaveCount(2);
+
+  const gradients = (): Promise<string[]> => page.evaluate((ids: string[]) => ids.map((id) =>
+    JSON.stringify((window as unknown as { PlanMap: { map: { getPaintProperty(l: string, p: string): unknown } } })
+      .PlanMap.map.getPaintProperty(id, 'line-gradient'))), layers);
+
+  const before = await gradients();
+  const clockBefore = await page.locator('#plan_gpx_clock').textContent();
+  await page.waitForTimeout(2500);
+  const after = await gradients();
+  const clockAfter = await page.locator('#plan_gpx_clock').textContent();
+
+  // Les deux traces se chevauchant, les deux dégradés doivent progresser.
+  expect.soft(before.every((g, i) => g !== after[i])).toBe(true);
+  expect.soft(clockBefore).not.toBe(clockAfter);
+
+  // Faire glisser le curseur met la lecture en pause.
+  await page.locator('#plan_gpx_seek').fill('900');
+  await page.waitForTimeout(400);
+  await expect.soft(page.locator('#plan_gpx_playpause .material-symbols-outlined')).toHaveText('play_arrow');
+
+  // Bascule vers la progression normalisée : l'horloge devient un pourcentage.
+  await page.locator('#plan_gpx_mode').click();
+  await page.waitForTimeout(400);
+  await expect.soft(page.locator('#plan_gpx_mode')).toHaveText('Progression');
+  await expect.soft(page.locator('#plan_gpx_clock')).toContainText('%');
+
+  // L'arrêt démonte tout et rend l'affichage normal.
+  await page.locator('#plan_gpx_close').click();
+  await page.waitForTimeout(600);
+  await expect.soft(page.locator('#plan_gpx_player')).toBeHidden();
+  expect.soft(await playLayers()).toHaveLength(0);
+  await expect.soft(page.locator('.plan-gpx-head-marker')).toHaveCount(0);
+  expect.soft(await page.evaluate(() => (window as unknown as { PlanMap: { map: { getLayoutProperty(l: string, p: string): unknown } } })
+    .PlanMap.map.getLayoutProperty('plan-gpx-line', 'visibility'))).toBe('visible');
+});
