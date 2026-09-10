@@ -117,6 +117,30 @@ export interface PlanGpxTrack {
     name: string;
     color: string;
     visible: boolean;
+    /**
+     * Premier et dernier horodatage de la trace, en millisecondes epoch.
+     * Conservés DANS L'INDEX pour trier, grouper et filtrer sans avoir à
+     * charger les coordonnées depuis IndexedDB.
+     * `null` = trace non datée : elle reste affichable et manipulable, mais
+     * sort de toutes les fonctions temporelles.
+     */
+    startedAt?: number | null | undefined;
+    endedAt?: number | null | undefined;
+}
+
+/** Segments d'une trace : une polyligne par tronçon, en couples [lng, lat]. */
+export type GpxSegments = LngLatTuple[][];
+
+/**
+ * Horodatage par point, ALIGNÉ index par index sur les coordonnées.
+ * `null` sur un point = ce point précis n'était pas daté dans le fichier.
+ */
+export type GpxTimes = (number | null)[][];
+
+/** Contenu d'une trace en mémoire. `times: null` = trace entièrement non datée. */
+export interface GpxTrackData {
+    coords: GpxSegments;
+    times: GpxTimes | null;
 }
 
 /** Vue caméra persistée sous `pcTacPlanView` (planMap.js:459-469). */
@@ -301,8 +325,8 @@ export interface PlanMapState {
     _measureState: MeasureState | null;
     /** Traces GPX importées (métadonnées). Vide tant que rien n'est importé. */
     _gpxTracks: PlanGpxTrack[];
-    /** Coordonnées des traces, chargées depuis IndexedDB. Jamais persisté ici. */
-    _gpxCoords: Record<string, LngLatTuple[][]>;
+    /** Contenu des traces (coordonnées + temps), chargé depuis IndexedDB. Jamais persisté ici. */
+    _gpxCoords: Record<string, GpxTrackData>;
     _measureLabelMarkers: Marker[];
     _committedMeasureMarkers: Marker[];
 

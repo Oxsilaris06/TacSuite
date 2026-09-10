@@ -39,22 +39,26 @@ import { Persist } from '@shared/persist.js';
 import {
     GPX_CASING_LAYER,
     GPX_COLORS,
+    GPX_DAY_BOUNDARY_DEFAULT,
+    GPX_DAY_BOUNDARY_KEY,
     GPX_INDEX_KEY,
     GPX_LINE_LAYER,
     GPX_SRC,
 } from './constants.js';
-import type { LngLatTuple, PlanGpxTrack, PlanMapInternal } from './types.js';
+import type { GpxSegments, GpxTimes, GpxTrackData, LngLatTuple, PlanGpxTrack, PlanMapInternal } from './types.js';
+
+// Ré-export : les types de contenu vivent dans `types.js` (state.ts en dépend),
+// mais l'appelant naturel reste ce module.
+export type { GpxSegments, GpxTimes, GpxTrackData };
 
 /** Couche de dessin sous laquelle les traces sont insérées (jamais par-dessus). */
 const BELOW_LAYER = 'plan-shapes-fill';
 
-/** Segments d'une trace : une polyligne par `<trkseg>` / `<rte>`. */
-export type GpxSegments = LngLatTuple[][];
-
-/** Résultat d'un parsing : le nom déclaré dans le fichier, et les segments. */
+/** Résultat d'un parsing : le nom déclaré dans le fichier, et le contenu. */
 export interface ParsedGpx {
     name: string | null;
     segments: GpxSegments;
+    times: GpxTimes | null;
 }
 
 /**
@@ -78,8 +82,9 @@ export function parseGpx(text: string): ParsedGpx | null {
     // contenant un <parsererror>. C'est le seul signal d'échec disponible.
     if (doc.getElementsByTagName('parsererror').length > 0) return null;
 
-    const coordsOf = (nodes: HTMLCollectionOf<Element>): LngLatTuple[] => {
-        const out: LngLatTuple[] = [];
+    const coordsOf = (nodes: HTMLCollectionOf<Element>): { coords: LngLatTuple[]; times: (number | null)[] } => {
+        const coords: LngLatTuple[] = [];
+        const times: (number | null)[] = [];
         for (let i = 0; i < nodes.length; i++) {
             const el = nodes[i];
             if (!el) continue;
@@ -93,27 +98,40 @@ export function parseGpx(text: string): ParsedGpx | null {
             const lon = Number(rawLon);
             if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
             if (lat < -90 || lat > 90 || lon < -180 || lon > 180) continue;
-            out.push([lon, lat]);
+            // INVARIANT : coordonnée et temps poussés dans la MÊME itération, y
+            // compris quand le temps manque. Un point rejeté par les gardes
+            // ci-dessus ne produit ni l'un ni l'autre — les deux tableaux
+            // restent alignés index par index.
+            coords.push([lon, lat]);
+            const raw = el.getElementsByTagName('time')[0]?.textContent;
+            const ts = raw ? Date.parse(raw.trim()) : NaN;
+            times.push(Number.isFinite(ts) ? ts : null);
         }
-        return out;
+        return { coords, times };
     };
 
     const segments: GpxSegments = [];
+    const times: GpxTimes = [];
     for (const tag of ['trkseg', 'rte']) {
         const blocks = doc.getElementsByTagName(tag);
         for (let i = 0; i < blocks.length; i++) {
             const block = blocks[i];
             if (!block) continue;
             const pts = coordsOf(block.getElementsByTagName(tag === 'trkseg' ? 'trkpt' : 'rtept'));
-            if (pts.length >= 2) segments.push(pts);
+            if (pts.coords.length >= 2) { segments.push(pts.coords); times.push(pts.times); }
         }
     }
     // Repli : certains exports ne contiennent que des points isolés.
     if (!segments.length) {
         const wpts = coordsOf(doc.getElementsByTagName('wpt'));
-        if (wpts.length >= 2) segments.push(wpts);
+        if (wpts.coords.length >= 2) { segments.push(wpts.coords); times.push(wpts.times); }
     }
     if (!segments.length) return null;
+
+    // Aucun point daté du tout (cas d'un itinéraire `<rte>`, ou d'un export
+    // nettoyé) : on ne conserve pas un tableau de `null`, on marque la trace
+    // comme non datée. Le panneau et les fonctions temporelles s'en servent.
+    const dated = times.some((seg) => seg.some((t) => t !== null));
 
     // Le nom de la trace prime sur celui des métadonnées du fichier. Les
     // sélecteurs sont essayés DANS L'ORDRE : un sélecteur unique séparé par des
@@ -124,7 +142,7 @@ export function parseGpx(text: string): ParsedGpx | null {
         const found = doc.querySelector(sel)?.textContent?.trim();
         if (found) { name = found; break; }
     }
-    return { name, segments };
+    return { name, segments, times: dated ? times : null };
 }
 
 /** Nom de trace lisible : celui du fichier GPX, sinon le nom de fichier nu. */
@@ -149,6 +167,81 @@ function saveIndex(list: readonly PlanGpxTrack[]): void {
 function escHtml(s: string): string {
     return s.replace(/[&<>"']/g, (c) =>
         ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c] ?? c);
+}
+
+/**
+ * Premier et dernier horodatage NON NULS d'une trace, ou `null` si aucun point
+ * n'est daté. Ce sont ces deux bornes qui sont conservées dans l'index, pour
+ * trier et grouper sans relire les coordonnées depuis IndexedDB.
+ */
+export function trackTimeBounds(times: GpxTimes | null): { startedAt: number | null; endedAt: number | null } {
+    if (!times) return { startedAt: null, endedAt: null };
+    let min = Infinity;
+    let max = -Infinity;
+    for (const seg of times) {
+        for (const t of seg) {
+            if (t === null || !Number.isFinite(t)) continue;
+            if (t < min) min = t;
+            if (t > max) max = t;
+        }
+    }
+    if (min === Infinity) return { startedAt: null, endedAt: null };
+    return { startedAt: min, endedAt: max };
+}
+
+/**
+ * Clé du jour OPÉRATIONNEL auquel appartient un instant, au format AAAA-MM-JJ.
+ *
+ * La journée bascule à `boundaryHour` heures LOCALES, 6 h par défaut : une
+ * intervention de nuit reste entière dans le même jour au lieu d'être coupée
+ * en deux à minuit. Poser 0 redonne le jour civil.
+ *
+ * Le calcul se fait en heure locale, jamais en temps universel : les
+ * horodatages GPX sont universels, et raisonner dessus scinderait une
+ * opération nocturne à une ou deux heures du matin selon le fuseau.
+ */
+export function operationalDayKey(ts: number, boundaryHour: number): string {
+    const d = new Date(ts);
+    // Reculer d'autant d'heures que la bascule : tout ce qui précède l'heure
+    // de bascule bascule ainsi automatiquement sur la date de la veille.
+    d.setHours(d.getHours() - boundaryHour);
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+}
+
+/** Heure de bascule retenue par l'utilisateur, bornée à 0..23. */
+export function gpxDayBoundary(): number {
+    const raw = Persist.get<number | null>(GPX_DAY_BOUNDARY_KEY, {
+        validator: (v): v is number => typeof v === 'number' && Number.isFinite(v),
+        fallback: null,
+    });
+    if (raw === null || raw === undefined) return GPX_DAY_BOUNDARY_DEFAULT;
+    return Math.max(0, Math.min(23, Math.floor(raw)));
+}
+
+/**
+ * Regroupe les traces par jour opérationnel, du plus récent au plus ancien.
+ * Les traces NON DATÉES sont rassemblées à part, sous la clé vide : elles
+ * restent visibles et manipulables, mais aucune fonction temporelle ne les
+ * atteint — c'est volontaire, un filtre par date ne peut rien affirmer d'elles.
+ */
+export function groupByDay(
+    tracks: readonly PlanGpxTrack[],
+    boundaryHour: number,
+): Array<{ day: string; tracks: PlanGpxTrack[] }> {
+    const byDay = new Map<string, PlanGpxTrack[]>();
+    for (const t of tracks) {
+        const key = typeof t.startedAt === 'number' ? operationalDayKey(t.startedAt, boundaryHour) : '';
+        const list = byDay.get(key);
+        if (list) list.push(t); else byDay.set(key, [t]);
+    }
+    const dated = [...byDay.entries()].filter(([k]) => k !== '').sort((a, b) => b[0].localeCompare(a[0]));
+    const undated = byDay.get('');
+    const out = dated.map(([day, list]) => ({ day, tracks: list }));
+    if (undated) out.push({ day: '', tracks: undated });
+    return out;
 }
 
 export const GpxMethods = {
@@ -200,9 +293,9 @@ export const GpxMethods = {
         const features = [];
         for (const t of this._gpxTracks) {
             if (!t.visible) continue;
-            const segs = this._gpxCoords[t.id];
-            if (!segs || !segs.length) continue;
-            for (const seg of segs) {
+            const data = this._gpxCoords[t.id];
+            if (!data || !data.coords.length) continue;
+            for (const seg of data.coords) {
                 if (seg.length < 2) continue;
                 features.push({
                     type: 'Feature' as const,
@@ -275,10 +368,15 @@ export const GpxMethods = {
 
             const id = `gpx_${Date.now()}_${this._gpxTracks.length + added}`;
             const color = GPX_COLORS[(this._gpxTracks.length + added) % GPX_COLORS.length] ?? '#a855f7';
-            const track: PlanGpxTrack = { id, name: trackNameFrom(parsed, file.name), color, visible: true };
-            this._gpxCoords[id] = parsed.segments;
+            const bounds = trackTimeBounds(parsed.times);
+            const track: PlanGpxTrack = {
+                id, name: trackNameFrom(parsed, file.name), color, visible: true,
+                startedAt: bounds.startedAt, endedAt: bounds.endedAt,
+            };
+            const data: GpxTrackData = { coords: parsed.segments, times: parsed.times };
+            this._gpxCoords[id] = data;
             this._gpxTracks.push(track);
-            try { await GpxStore.put(id, parsed.segments); } catch { /* la trace reste en mémoire pour la séance */ }
+            try { await GpxStore.put(id, data); } catch { /* la trace reste en mémoire pour la séance */ }
             added++;
         }
         if (added) { saveIndex(this._gpxTracks); this._renderGpxLayers(); this._fitGpxTracks(); }
@@ -319,7 +417,7 @@ export const GpxMethods = {
         let bounds: maplibregl.LngLatBounds | null = null;
         for (const t of this._gpxTracks) {
             if (!t.visible) continue;
-            for (const seg of this._gpxCoords[t.id] ?? []) {
+            for (const seg of this._gpxCoords[t.id]?.coords ?? []) {
                 for (const c of seg) {
                     if (!bounds) bounds = new maplibregl.LngLatBounds(c, c);
                     else bounds.extend(c);
@@ -342,15 +440,22 @@ export const GpxMethods = {
         const kept: PlanGpxTrack[] = [];
         for (const t of index) {
             if (!t || typeof t.id !== 'string') continue;
-            let segs: GpxSegments | null = null;
-            try { segs = await GpxStore.get(t.id); } catch { segs = null; }
-            if (!segs || !segs.length) continue;
-            this._gpxCoords[t.id] = segs;
+            let data: GpxTrackData | null = null;
+            try { data = await GpxStore.get(t.id); } catch { data = null; }
+            if (!data || !data.coords.length) continue;
+            this._gpxCoords[t.id] = data;
+            // Les bornes sont RECALCULÉES depuis les temps réellement lus plutôt
+            // que reprises de l'index : une trace enregistrée avant l'ajout des
+            // horodatages n'en a pas, et une valeur d'index corrompue ne doit
+            // pas survivre au rechargement.
+            const bounds = trackTimeBounds(data.times);
             kept.push({
                 id: t.id,
                 name: String(t.name || 'Trace'),
                 color: String(t.color || GPX_COLORS[0]),
                 visible: t.visible !== false,
+                startedAt: bounds.startedAt,
+                endedAt: bounds.endedAt,
             });
         }
         this._gpxTracks = kept;

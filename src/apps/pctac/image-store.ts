@@ -282,32 +282,67 @@ export const ImageStore: ImageStoreContract = {
   },
 };
 
+/** Segments d'une trace : une polyligne par tronçon, en couples [lng, lat]. */
+export type GpxStoredSegments = Array<Array<[number, number]>>;
 /**
- * Stockage des traces GPX importées. Une entrée par trace : la liste des
- * segments, chacun une suite de couples [lng, lat].
+ * Horodatage par point, ALIGNÉ index par index sur les coordonnées.
+ * `null` sur un point = ce point précis n'était pas daté dans le fichier.
+ */
+export type GpxStoredTimes = Array<Array<number | null>>;
+/** Contenu d'une trace. `times: null` = trace entièrement non datée. */
+export interface GpxStoredTrack {
+  coords: GpxStoredSegments;
+  times: GpxStoredTimes | null;
+}
+
+/** Version de l'enveloppe écrite aujourd'hui. Avant elle : un tableau nu, sans temps. */
+const GPX_RECORD_VERSION = 2;
+
+/**
+ * Stockage des traces GPX importées. Une entrée par trace.
  *
  * Volontairement SÉPARÉ de `pcTacPlanShapes` : une trace de randonnée compte
  * couramment plusieurs milliers de points, et le bucket des formes est copié
  * intégralement dans la pile d'annulation (50 états) puis réécrit à chaque
  * glissement de forme. Y verser une trace ferait ramer tout le dessin.
+ *
+ * ENVELOPPE VERSIONNÉE. La première version écrivait le tableau de segments NU.
+ * `get` reconnaît les deux formes et rend toujours un `GpxStoredTrack` : sans
+ * cela, une trace importée avant l'ajout des horodatages serait lue comme
+ * absente, puis SILENCIEUSEMENT retirée de l'index au démarrage suivant.
+ * C'est une perte de données, pas une dégradation d'affichage.
  */
 export const GpxStore = {
-  /** Enregistre les segments d'une trace. No-op si l'id ou les segments manquent. */
-  async put(id: string, segments: ReadonlyArray<ReadonlyArray<[number, number]>>): Promise<void> {
-    if (!id || !segments || !segments.length) return;
-    await withStore('readwrite', (store) => store.put(segments, id), GPX_STORE);
+  /** Enregistre une trace. No-op si l'id ou les coordonnées manquent. */
+  async put(id: string, track: GpxStoredTrack): Promise<void> {
+    if (!id || !track || !Array.isArray(track.coords) || !track.coords.length) return;
+    const rec = { v: GPX_RECORD_VERSION, coords: track.coords, times: track.times ?? null };
+    await withStore('readwrite', (store) => store.put(rec, id), GPX_STORE);
   },
 
-  /** Segments d'une trace, ou `null` si l'id est absent. Ne jette jamais. */
-  async get(id: string): Promise<Array<Array<[number, number]>> | null> {
+  /** Contenu d'une trace, ou `null` si l'id est absent. Ne jette jamais. */
+  async get(id: string): Promise<GpxStoredTrack | null> {
     if (!id) return null;
-    let out: Array<Array<[number, number]>> | null = null;
+    let out: GpxStoredTrack | null = null;
     try {
       await withStore('readonly', (store) => {
         const req = store.get(id);
         req.onsuccess = (): void => {
           const v = req.result as unknown;
-          out = Array.isArray(v) ? (v as Array<Array<[number, number]>>) : null;
+          // Forme historique : le tableau de segments écrit tel quel, sans temps.
+          if (Array.isArray(v)) {
+            out = { coords: v as GpxStoredSegments, times: null };
+            return;
+          }
+          if (v && typeof v === 'object') {
+            const rec = v as { coords?: unknown; times?: unknown };
+            if (Array.isArray(rec.coords)) {
+              out = {
+                coords: rec.coords as GpxStoredSegments,
+                times: Array.isArray(rec.times) ? (rec.times as GpxStoredTimes) : null,
+              };
+            }
+          }
         };
       }, GPX_STORE);
     } catch {
@@ -320,6 +355,11 @@ export const GpxStore = {
   async delete(id: string): Promise<void> {
     if (!id) return;
     await withStore('readwrite', (store) => store.delete(id), GPX_STORE);
+  },
+
+  /** Vide le magasin des traces. Utilisé par la réinitialisation totale. */
+  async clear(): Promise<void> {
+    await withStore('readwrite', (store) => store.clear(), GPX_STORE);
   },
 };
 
