@@ -191,6 +191,11 @@ export const MapCoreMethods = {
         // Quand la vue passe de display:none → block, maplibre a besoin d'un resize
         setTimeout(() => this.map && this.map.resize(), 50);
         this._renderPins();
+        // `refresh()` signifie « la donnée sous-jacente a pu changer, relis-la ».
+        // Les traces GPX n'étaient chargées qu'au montage de la carte : après un
+        // import d'archive, l'index venait d'être réécrit sur le disque mais la
+        // mémoire gardait l'ancien, et la première action du panneau l'écrasait.
+        this._loadGpxTracks().catch(() => { /* best-effort, comme au montage */ });
     },
 
     // planMap.js:451-457

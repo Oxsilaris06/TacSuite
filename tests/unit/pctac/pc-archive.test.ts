@@ -34,9 +34,19 @@ const imageStoreState = vi.hoisted(() => ({
   failClearOnce: false,
 }));
 
+const gpxState = new Map<string, unknown>();
+
 vi.mock('@pctac/image-store.js', () => {
   const { store } = imageStoreState;
   return {
+    // Magasin des traces GPX : l'archive l'utilise depuis l'ajout du dossier
+    // `gpx/`. Sans lui, l'export et l'import jettent sur `undefined.get`.
+    GpxStore: {
+      async put(id: string, track: unknown): Promise<void> { if (id) gpxState.set(id, track); },
+      async get(id: string): Promise<unknown> { return id && gpxState.has(id) ? gpxState.get(id) : null; },
+      async delete(id: string): Promise<void> { gpxState.delete(id); },
+      async clear(): Promise<void> { gpxState.clear(); },
+    },
     ImageStore: {
       async put(id: string, dataUrl: string): Promise<void> {
         if (!id || !dataUrl) return;
@@ -85,7 +95,7 @@ vi.mock('@shared/feedback.js', () => ({
 }));
 
 // Imports APRÈS vi.mock (hissé de toute façon, mais garde l'ordre lisible).
-import { Archive } from '@pctac/archive.js';
+import { Archive, mergeGpxIndex } from '@pctac/archive.js';
 import { ImageStore } from '@pctac/image-store.js';
 import { Storage } from '@pctac/storage.js';
 
@@ -105,6 +115,8 @@ interface PctacZipOptions {
   data?: Record<string, string>;
   /** nom de fichier (sous `images/`) → contenu texte (dataURL brut, comme l'export). */
   images?: Record<string, string>;
+  /** nom de fichier (sous `gpx/`) → contenu JSON de la trace. */
+  gpx?: Record<string, string>;
 }
 
 /** Construit un `.pctac.zip` de test (même structure que Archive.exportZip). */
@@ -119,6 +131,14 @@ async function buildPctacZip(opts: PctacZipOptions = {}): Promise<File> {
     const folder = zip.folder('images');
     if (folder) {
       Object.entries(opts.images).forEach(([relName, content]) => {
+        folder.file(relName, content);
+      });
+    }
+  }
+  if (opts.gpx) {
+    const folder = zip.folder('gpx');
+    if (folder) {
+      Object.entries(opts.gpx).forEach(([relName, content]) => {
         folder.file(relName, content);
       });
     }
@@ -322,5 +342,85 @@ describe('importOiArchive — passerelle OI → PC-Tac (archive.js:279-456)', ()
     if (!added) return;
     expect(added.hasImage).toBe(true);
     expect(await ImageStore.get(added.id)).toBe('data:image/png;base64,' + Buffer.from('hello').toString('base64'));
+  });
+});
+
+// ============================================================================
+// Traces GPX dans l'archive — FUSION, jamais de remplacement.
+// ============================================================================
+
+describe('mergeGpxIndex — fusion de l\'index des traces', () => {
+  const local = JSON.stringify([{ id: 'a', name: 'Locale' }]);
+
+  it("archive ANCIENNE, sans traces : l'index local est rendu intact", () => {
+    // C'est le cas le plus important : une archive d'avant cette
+    // fonctionnalité ne doit pas faire disparaître les traces de l'opérateur.
+    expect(mergeGpxIndex(local, undefined)).toBe(local);
+    expect(mergeGpxIndex(local, '[]')).toBe(local);
+  });
+
+  it('archive avec des traces : les deux ensembles coexistent', () => {
+    const merged = JSON.parse(mergeGpxIndex(local, JSON.stringify([{ id: 'b', name: 'Archive' }])) ?? '[]') as Array<{ id: string }>;
+    expect(merged.map((t) => t.id).sort()).toEqual(['a', 'b']);
+  });
+
+  it("à id égal, l'entrée de l'archive gagne (ses coordonnées viennent d'être réécrites)", () => {
+    const merged = JSON.parse(mergeGpxIndex(local, JSON.stringify([{ id: 'a', name: 'Archive' }])) ?? '[]') as Array<{ name: string }>;
+    expect(merged).toHaveLength(1);
+    expect(merged[0]?.name).toBe('Archive');
+  });
+
+  it('index illisible d\'un côté ou de l\'autre : ne jette jamais', () => {
+    expect(() => mergeGpxIndex('pas du json', 'non plus')).not.toThrow();
+    expect(mergeGpxIndex(null, undefined)).toBeNull();
+    // Un index d'archive illisible équivaut à pas d'index : le local survit.
+    expect(mergeGpxIndex(local, '{ pas un tableau }')).toBe(local);
+  });
+});
+
+describe('importFile — traces GPX', () => {
+  it('restaure les coordonnées du dossier gpx/ et fusionne l\'index', async () => {
+    localStorage.setItem('pcTacGpxIndex', JSON.stringify([{ id: 'locale', name: 'Déjà là', color: '#fff', visible: true }]));
+    gpxState.set('locale', { coords: [[[1, 1], [2, 2]]], times: null });
+
+    const file = await buildPctacZip({
+      data: { pcTacGpxIndex: JSON.stringify([{ id: 'archivee', name: 'Depuis archive', color: '#000', visible: true }]) },
+      gpx: { 'archivee.json': JSON.stringify({ coords: [[[3, 3], [4, 4]]], times: [[1000, 2000]] }) },
+    });
+
+    const result = await Archive.importFile(file);
+    expect(result).toEqual({ ok: true });
+
+    // Les coordonnées de l'archive sont arrivées…
+    expect(gpxState.get('archivee')).toEqual({ coords: [[[3, 3], [4, 4]]], times: [[1000, 2000]] });
+    // …et la trace locale n'a PAS été effacée, contrairement aux images.
+    expect(gpxState.get('locale')).toEqual({ coords: [[[1, 1], [2, 2]]], times: null });
+
+    const index = JSON.parse(localStorage.getItem('pcTacGpxIndex') ?? '[]') as Array<{ id: string }>;
+    expect(index.map((t) => t.id).sort()).toEqual(['archivee', 'locale']);
+  });
+
+  it("archive ANCIENNE, sans dossier gpx : les traces locales survivent", async () => {
+    localStorage.setItem('pcTacGpxIndex', JSON.stringify([{ id: 'locale', name: 'Déjà là', color: '#fff', visible: true }]));
+    gpxState.set('locale', { coords: [[[1, 1], [2, 2]]], times: null });
+
+    const result = await Archive.importFile(await buildPctacZip({ data: {} }));
+    expect(result).toEqual({ ok: true });
+
+    expect(gpxState.get('locale')).toEqual({ coords: [[[1, 1], [2, 2]]], times: null });
+    const index = JSON.parse(localStorage.getItem('pcTacGpxIndex') ?? '[]') as Array<{ id: string }>;
+    expect(index.map((t) => t.id)).toEqual(['locale']);
+  });
+
+  it("une trace illisible dans le zip n'annule pas l'import du reste", async () => {
+    const file = await buildPctacZip({
+      data: { pcTacGpxIndex: JSON.stringify([{ id: 'bonne', name: 'B', color: '#000', visible: true }]) },
+      gpx: { 'bonne.json': JSON.stringify({ coords: [[[3, 3], [4, 4]]], times: null }), 'cassee.json': 'pas du json' },
+    });
+
+    const result = await Archive.importFile(file);
+    expect(result).toEqual({ ok: true });
+    expect(gpxState.get('bonne')).toBeDefined();
+    expect(gpxState.has('cassee')).toBe(false);
   });
 });

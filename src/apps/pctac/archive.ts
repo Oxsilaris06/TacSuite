@@ -26,8 +26,9 @@ import type {
     PctacLogEntry,
 } from '@shared/types/contracts.js';
 import { Storage } from '@pctac/storage.js';
-import { ImageStore } from '@pctac/image-store.js';
+import { GpxStore, ImageStore } from '@pctac/image-store.js';
 import { confirmDialog, toast } from '@shared/feedback.js';
+import { GPX_INDEX_KEY } from '@pctac/planmap/constants.js';
 import {
     LOCAL_STORAGE_KEY, TP_ASSOC_KEY,
     ADVERSARIES_KEY, HOSTAGES_KEY, FRIENDS_KEY, PHOTOS_KEY, CUSTOM_PAX_KEY,
@@ -123,7 +124,56 @@ const COLLECTION_KEYS = [
     // Verrou global du plan : clearAllData l'efface désormais — il doit voyager
     // dans l'archive (et être couvert par le snapshot de rollback).
     'pcTacPlanLocked',
+    // Index des traces GPX (nom, couleur, visibilité, bornes de temps). Les
+    // COORDONNÉES, elles, voyagent dans le dossier `gpx/` du zip, comme les
+    // images : elles pèsent trop pour localStorage.
+    // ⚠ Cette clé est volontairement ABSENTE de `Storage.clearAllData()` : un
+    // import ne doit jamais effacer les traces locales (décision Nico :
+    // fusion). Elle est en revanche effacée par la réinitialisation totale.
+    GPX_INDEX_KEY,
 ];
+
+/**
+ * Fusionne l'index des traces de l'archive avec celui déjà présent.
+ * JAMAIS de remplacement : une archive ancienne, sans traces, laisse les
+ * traces locales intactes ; une archive qui en contient les ajoute. À id égal,
+ * l'entrée de l'archive gagne, puisque ses coordonnées viennent d'être
+ * réécrites par-dessus.
+ * Ne jette jamais : un index illisible d'un côté ou de l'autre est ignoré.
+ */
+export function mergeGpxIndex(localRaw: string | null, archiveRaw: string | undefined): string | null {
+    const parse = (raw: string | null | undefined): Array<{ id?: unknown }> => {
+        if (!raw) return [];
+        try {
+            const v: unknown = JSON.parse(raw);
+            return Array.isArray(v) ? (v as Array<{ id?: unknown }>) : [];
+        } catch {
+            return [];
+        }
+    };
+    const local = parse(localRaw);
+    const fromArchive = parse(archiveRaw);
+    if (!fromArchive.length) return localRaw ?? null;
+
+    const byId = new Map<string, { id?: unknown }>();
+    for (const t of local) { if (t && typeof t.id === 'string') byId.set(t.id, t); }
+    for (const t of fromArchive) { if (t && typeof t.id === 'string') byId.set(t.id, t); }
+    return JSON.stringify([...byId.values()]);
+}
+
+/** Ids des traces déclarées dans l'index localStorage. Ne jette jamais. */
+function gpxTrackIds(): string[] {
+    try {
+        const raw = localStorage.getItem(GPX_INDEX_KEY);
+        if (!raw) return [];
+        const v: unknown = JSON.parse(raw);
+        if (!Array.isArray(v)) return [];
+        return v.map((t) => (t && typeof (t as { id?: unknown }).id === 'string' ? (t as { id: string }).id : ''))
+            .filter((id) => id !== '');
+    } catch {
+        return [];
+    }
+}
 
 export const Archive: ArchiveContract = {
     async exportZip(): Promise<void> {
@@ -172,6 +222,21 @@ export const Archive: ArchiveContract = {
                         if (dataUrl) imagesFolder.file(`${id}.txt`, dataUrl);
                     } catch {
                         console.warn('[Archive] image absente:', id);
+                    }
+                }
+            }
+
+            // 2 bis) Traces GPX : même mécanique que les images, les coordonnées
+            // vivant en IndexedDB. Les ids viennent de l'index localStorage,
+            // déjà embarqué dans data.json ci-dessus.
+            const gpxFolder = zip.folder('gpx');
+            if (gpxFolder) {
+                for (const id of gpxTrackIds()) {
+                    try {
+                        const track = await GpxStore.get(id);
+                        if (track) gpxFolder.file(`${id}.json`, JSON.stringify(track));
+                    } catch {
+                        console.warn('[Archive] trace GPX absente:', id);
                     }
                 }
             }
@@ -328,6 +393,49 @@ export const Archive: ArchiveContract = {
             console.warn('[Archive] certaines images non restaurées:', imgError);
             toast("Import terminé, mais certaines photos n'ont pas pu être restaurées (stockage). Les fiches sont intactes.", { kind: 'error' });
         }
+
+        // 3) Traces GPX — FUSION, jamais de remplacement (décision Nico). À la
+        // différence des images, on n'efface RIEN : une archive ancienne, sans
+        // traces, laisse les traces locales intactes. Une trace supprimée à
+        // tort n'est pas récupérable, alors qu'on peut toujours en supprimer
+        // une de trop.
+        let gpxError: unknown = null;
+        const gpxFolder = zip.folder('gpx');
+        if (gpxFolder) {
+            const tasks: Promise<void>[] = [];
+            gpxFolder.forEach((relPath, entry) => {
+                if (entry.dir) return;
+                const id = relPath.replace(/\.json$/, '');
+                tasks.push(
+                    entry.async('string')
+                        .then((raw) => {
+                            const track: unknown = JSON.parse(raw);
+                            if (!track || typeof track !== 'object') return;
+                            const t = track as { coords?: unknown; times?: unknown };
+                            if (!Array.isArray(t.coords)) return;
+                            return GpxStore.put(id, {
+                                coords: t.coords as Array<Array<[number, number]>>,
+                                times: Array.isArray(t.times) ? (t.times as Array<Array<number | null>>) : null,
+                            });
+                        })
+                        .catch((err: unknown) => { gpxError = err; })
+                );
+            });
+            await Promise.all(tasks);
+        }
+        // L'index est fusionné APRÈS l'écriture des coordonnées : une entrée
+        // d'index ne doit jamais désigner une trace dont le contenu manque.
+        try {
+            const merged = mergeGpxIndex(snapshot[GPX_INDEX_KEY] ?? null, dataJson[GPX_INDEX_KEY]);
+            if (merged !== null) localStorage.setItem(GPX_INDEX_KEY, merged);
+        } catch (e) {
+            gpxError = e;
+        }
+        if (gpxError) {
+            console.warn('[Archive] certaines traces GPX non restaurées:', gpxError);
+            toast("Import terminé, mais certaines traces GPX n'ont pas pu être restaurées. Le reste est intact.", { kind: 'error' });
+        }
+
         return { ok: true };
     },
 

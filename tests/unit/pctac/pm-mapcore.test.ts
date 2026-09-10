@@ -524,14 +524,19 @@ describe('smoke — méthodes restantes de map-core.ts', () => {
         expect(renderPins).not.toHaveBeenCalled();
     });
 
-    it('refresh() initialisé ⇒ resize (différé) + re-rendu des pings immédiat', () => {
+    it('refresh() initialisé ⇒ resize (différé) + re-rendu des pings et des traces GPX', () => {
         vi.useFakeTimers();
         const map = makeFakeMap();
         const renderPins = vi.fn();
-        const fake = makeFakeThis({ initialized: true, map, _renderPins: renderPins });
+        // `refresh()` relit aussi les traces GPX depuis IndexedDB : sans cela,
+        // après un import d'archive la mémoire gardait l'ancien index et la
+        // première action du panneau l'écrasait.
+        const loadGpx = vi.fn(() => Promise.resolve());
+        const fake = makeFakeThis({ initialized: true, map, _renderPins: renderPins, _loadGpxTracks: loadGpx });
 
         MapCoreMethods.refresh.call(fake);
         expect(renderPins).toHaveBeenCalledTimes(1);
+        expect(loadGpx).toHaveBeenCalledTimes(1);
         expect(map.resize).not.toHaveBeenCalled();
 
         vi.advanceTimersByTime(50);

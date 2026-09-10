@@ -78,7 +78,7 @@ import { LogManager } from '@pctac/log-manager.js';
 import { PdfExport } from '@pctac/pdf-export.js';
 import { showBusy, hideBusy } from '@pctac/busy.js';
 import { Utils } from '@pctac/utils.js';
-import { ImageStore } from '@pctac/image-store.js';
+import { GpxStore, ImageStore } from '@pctac/image-store.js';
 import '@pctac/planmap/index.js'; // expose window.PlanMap (utilisé par UI.switchMainView)
 import '@pctac/tchap-live.js'; // géoloc équipe live (Tchap) → marqueurs sur PlanMap — APRÈS planmap (lit window.PlanMap)
 // NB : dashboard.js (board relationnel) est VOLONTAIREMENT débranché — inefficace
@@ -95,7 +95,7 @@ import {
     DASHBOARD_KEY,
     hostageStatusFromBlessures,
 } from '@pctac/config.js';
-import { PINS_KEY } from '@pctac/planmap/constants.js';
+import { GPX_INDEX_KEY, PINS_KEY } from '@pctac/planmap/constants.js';
 
 /**
  * Point d'entrée principal du module PC TAC
@@ -515,6 +515,14 @@ document.addEventListener('DOMContentLoaded', async () => {
         confirmResetBtn.onclick = async () => {
             Storage.clearAllData();
             try { await ImageStore.clear(); } catch (e) { console.error('[PC TAC] clear IDB échec:', e); }
+            // Les traces GPX survivaient à la réinitialisation totale : ni
+            // `clearAllData` (liste de clés explicite) ni `ImageStore.clear`
+            // (magasin `images` seul) ne les connaissaient. Leur clé reste
+            // volontairement hors de `clearAllData`, pour qu'un IMPORT
+            // d'archive ne les efface pas ; c'est donc ici, et seulement ici,
+            // qu'on les supprime.
+            try { localStorage.removeItem(GPX_INDEX_KEY); } catch { /* stockage indisponible */ }
+            try { await GpxStore.clear(); } catch (e) { console.error('[PC TAC] clear traces GPX échec:', e); }
 
             // Reset des champs du formulaire principal
             ['lieu_input', 'remarques_input', 'heure_input'].forEach((id) => {
