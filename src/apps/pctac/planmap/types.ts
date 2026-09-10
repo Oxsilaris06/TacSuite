@@ -587,4 +587,18 @@ export interface PlanMapInternal extends PlanMapState, PlanMapContract {
     _openGpxDayMenu(day: string): void;
     _openGpxColorAllMenu(): void;
     _openGpxSettingsMenu(): void;
+
+    /* --- gpx-play.ts --- */
+    _isGpxPlaying(): boolean;
+    _startGpxPlayback(mode: 'real' | 'norm'): void;
+    _stopGpxPlayback(): void;
+    _resumeGpxPlayback(): void;
+    _pauseGpxPlayback(): void;
+    _toggleGpxPlayPause(): void;
+    _seekGpxPlayback(t: number): void;
+    _setGpxPlaySpeed(speed: number): void;
+    _setGpxPlayMode(mode: 'real' | 'norm'): void;
+    _renderGpxPlayFrame(): void;
+    _toggleGpxPlayer(show: boolean): void;
+    _refreshGpxPlayer(): void;
 }

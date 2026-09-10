@@ -52,7 +52,7 @@
 
 import maplibregl from 'maplibre-gl';
 
-import { escHtml } from './constants.js';
+import { escHtml, GPX_PLAY_SPEEDS } from './constants.js';
 import { showBusy, hideBusy } from '@pctac/busy.js';
 import type { PlanMapInternal } from './types.js';
 
@@ -166,6 +166,38 @@ export const ChromeMethods = {
         if (gpxDelete) gpxDelete.onclick = (e) => { e.stopPropagation(); void this._removeAllGpxTracks(); };
         const gpxSettings = document.getElementById('plan_gpx_settings');
         if (gpxSettings) gpxSettings.onclick = (e) => { e.stopPropagation(); this._openGpxSettingsMenu(); };
+        const gpxPlay = document.getElementById('plan_gpx_play');
+        if (gpxPlay) gpxPlay.onclick = (e) => {
+            e.stopPropagation();
+            // On démarre toujours en temps réel : le module retombe de lui-même
+            // sur la progression si aucune trace visible n'est datée.
+            if (this._isGpxPlaying()) this._stopGpxPlayback(); else this._startGpxPlayback('real');
+        };
+
+        // Barre de lecture : PERSISTANTE, donc câblée une fois pour toutes.
+        const playPause = document.getElementById('plan_gpx_playpause');
+        if (playPause) playPause.onclick = () => this._toggleGpxPlayPause();
+        const seek = document.getElementById('plan_gpx_seek');
+        if (seek instanceof HTMLInputElement) {
+            seek.oninput = () => {
+                // Faire glisser le curseur met en pause : sinon la lecture
+                // reprendrait la main et arracherait le curseur des doigts.
+                this._pauseGpxPlayback();
+                this._seekGpxPlayback(Number(seek.value) / 1000);
+            };
+        }
+        const speedBtn = document.getElementById('plan_gpx_speed');
+        if (speedBtn) speedBtn.onclick = () => {
+            const cur = Number((speedBtn.textContent ?? '×1').replace('×', '')) || 1;
+            const i = GPX_PLAY_SPEEDS.indexOf(cur);
+            this._setGpxPlaySpeed(GPX_PLAY_SPEEDS[(i + 1) % GPX_PLAY_SPEEDS.length] ?? 1);
+        };
+        const modeBtn = document.getElementById('plan_gpx_mode');
+        if (modeBtn) modeBtn.onclick = () => {
+            this._setGpxPlayMode(modeBtn.textContent?.trim() === 'Temps réel' ? 'norm' : 'real');
+        };
+        const closePlayer = document.getElementById('plan_gpx_close');
+        if (closePlayer) closePlayer.onclick = () => this._stopGpxPlayback();
 
         // Délégation : une seule écoute pour toutes les lignes et tous les
         // en-têtes de jour, y compris ceux rendus plus tard par `_renderGpxList`.

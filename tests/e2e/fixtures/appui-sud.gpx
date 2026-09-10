@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="OsmAnd" xmlns="http://www.topografix.com/GPX/1/1">
+  <trk>
+    <name>Appui Sud</name>
+    <trkseg>
+      <trkpt lat="48.8560" lon="2.3600"><time>2026-09-08T07:02:00Z</time></trkpt>
+      <trkpt lat="48.8575" lon="2.3640"><time>2026-09-08T07:08:00Z</time></trkpt>
+      <trkpt lat="48.8595" lon="2.3680"><time>2026-09-08T07:14:00Z</time></trkpt>
+      <trkpt lat="48.8630" lon="2.3660"><time>2026-09-08T07:19:00Z</time></trkpt>
+    </trkseg>
+  </trk>
+</gpx>

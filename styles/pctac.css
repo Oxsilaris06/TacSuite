@@ -1786,6 +1786,114 @@ body.up-kb-open .up-kb-aware {
             transform: scale(1.15);
         }
 
+        /* Barre de lecture du timelapse : PERSISTANTE en pied de carte, non
+           transitoire — on regarde la carte pendant que ça joue. */
+        #plan_gpx_player {
+            position: absolute;
+            left: 50%;
+            bottom: 14px;
+            transform: translateX(-50%);
+            z-index: var(--z-panel);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            width: min(560px, calc(100% - 28px));
+            padding: 8px 10px;
+            background: var(--bg-glass-heavy);
+            backdrop-filter: blur(10px);
+            border: 1px solid var(--border-glass);
+            border-radius: var(--radius-sm);
+            box-shadow: var(--shadow-panel-float);
+        }
+
+        /* INDISPENSABLE : une règle d'auteur `display: flex` sur un identifiant
+           bat la règle `[hidden] { display: none }` de la feuille du
+           navigateur, quelle que soit la spécificité — l'auteur l'emporte sur
+           l'agent utilisateur. Sans cette ligne la barre serait visible en
+           permanence, même avant toute lecture. Même piège que `.modal`. */
+        #plan_gpx_player[hidden] {
+            display: none;
+        }
+
+        .plan-gpx-player-btn {
+            flex: 0 0 auto;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 32px;
+            height: 32px;
+            padding: 0;
+            border: 1px solid var(--border-glass);
+            border-radius: var(--radius-sm);
+            background: var(--bg-input);
+            color: var(--text-main);
+            cursor: pointer;
+        }
+
+        .plan-gpx-player-btn .material-symbols-outlined {
+            font-size: 20px;
+        }
+
+        #plan_gpx_seek {
+            flex: 1 1 auto;
+            min-width: 0;
+            accent-color: var(--accent-fill);
+            cursor: pointer;
+        }
+
+        .plan-gpx-clock {
+            flex: 0 0 auto;
+            font-family: var(--font-mono, ui-monospace, monospace);
+            font-size: 0.78em;
+            color: var(--text-main);
+            white-space: nowrap;
+        }
+
+        .plan-gpx-player-tag {
+            flex: 0 0 auto;
+            padding: 5px 8px;
+            border: 1px solid var(--border-glass);
+            border-radius: var(--radius-sm);
+            background: var(--bg-input);
+            color: var(--text-main);
+            font-family: var(--font-ui);
+            font-size: 0.75em;
+            font-weight: 600;
+            white-space: nowrap;
+            cursor: pointer;
+        }
+
+        .plan-gpx-player-tag[disabled] {
+            opacity: 0.4;
+            cursor: default;
+        }
+
+        /* Tête de lecture : un point vif porté par un Marker, qui suit la
+           progression. C'est sur elle que l'œil lit la fluidité. */
+        .plan-gpx-head-marker {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            border: 2px solid #fff;
+            box-shadow: 0 0 8px rgba(0, 0, 0, 0.6);
+            transition: opacity var(--transition-quick);
+            pointer-events: none;
+        }
+
+        @media (max-width: 768px) {
+            /* Sur mobile, l'horloge et le mode passent à la ligne plutôt que de
+               comprimer le curseur jusqu'à l'inutilisable. */
+            #plan_gpx_player {
+                flex-wrap: wrap;
+                bottom: 10px;
+            }
+
+            #plan_gpx_seek {
+                order: 10;
+                flex-basis: 100%;
+            }
+        }
+
         .plan-gpx-boundary {
             width: 100%;
             padding: 7px 9px;

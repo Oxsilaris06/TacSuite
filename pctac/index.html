@@ -405,6 +405,9 @@
                             <button type="button" id="plan_gpx_delete" class="plan-gpx-btn" title="Supprimer toutes les traces" aria-label="Supprimer toutes les traces">
                                 <span class="material-symbols-outlined">delete_sweep</span>
                             </button>
+                            <button type="button" id="plan_gpx_play" class="plan-gpx-btn" title="Rejouer les traces (timelapse)" aria-label="Rejouer les traces en timelapse">
+                                <span class="material-symbols-outlined">play_circle</span>
+                            </button>
                             <button type="button" id="plan_gpx_settings" class="plan-gpx-btn" title="Tri et découpage des jours" aria-label="Réglages de tri et de découpage des jours">
                                 <span class="material-symbols-outlined">tune</span>
                             </button>
@@ -416,6 +419,22 @@
                         Importer un .gpx
                     </button>
                     <input type="file" id="plan_gpx_file" accept=".gpx,application/gpx+xml" multiple hidden>
+                </div>
+
+                <!-- Barre de lecture du timelapse GPX. VOLONTAIREMENT persistante et
+                     non transitoire : on regarde la carte pendant que ça joue, une
+                     barre qui se ferme au clic extérieur serait inutilisable. -->
+                <div id="plan_gpx_player" hidden>
+                    <button type="button" id="plan_gpx_playpause" class="plan-gpx-player-btn" title="Lecture / pause" aria-label="Lecture ou pause">
+                        <span class="material-symbols-outlined">pause</span>
+                    </button>
+                    <input type="range" id="plan_gpx_seek" min="0" max="1000" step="1" value="0" aria-label="Position dans la lecture">
+                    <span id="plan_gpx_clock" class="plan-gpx-clock"></span>
+                    <button type="button" id="plan_gpx_speed" class="plan-gpx-player-tag" title="Changer la vitesse" aria-label="Changer la vitesse de lecture">×1</button>
+                    <button type="button" id="plan_gpx_mode" class="plan-gpx-player-tag" title="Basculer entre temps réel et progression" aria-label="Basculer entre temps réel et progression">Temps réel</button>
+                    <button type="button" id="plan_gpx_close" class="plan-gpx-player-btn" title="Fermer la lecture" aria-label="Fermer la lecture">
+                        <span class="material-symbols-outlined">close</span>
+                    </button>
                 </div>
 
                 <!-- Dock dessin réductible (ouvert via le FAB Dessin) -->
