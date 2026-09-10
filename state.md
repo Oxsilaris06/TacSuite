@@ -95,6 +95,21 @@ Chemin architectural suivi : analyse parallèle du socle carto, questions arbitr
 
 Gate : typecheck 0, lint 0, vitest 2158/2158, Playwright pctac 35/35 (chromium-desktop). Vérifications navigateur mesurées, pas déduites : contrastes de la modale dans les deux thèmes, parcours GPX complet (import, masquage, rechargement, suppression), ligne droite et poignées de label.
 
+### 2026-09-10 (traces GPX : 4 évolutions)
+
+Arbitrages Nico : timelapse en DEUX modes (temps réel partagé et progression normalisée, en bascule) ; coloration par heure ABANDONNÉE, restent par jour et libre ; découpage du jour RÉGLABLE, 06h par défaut, 0 redonnant le jour civil ; traces non datées conservées et signalées, jamais supprimées silencieusement ; archive en FUSION, jamais d'effacement ; suppression groupée par jour plutôt que par heure ; pas de sélection libre, seulement des groupes prédéfinis ; panneau en sous-menus transitoires.
+
+Prototype jetable exécuté AVANT toute spec, mesuré dans le navigateur : `line-gradient` écrase `line-color` (une ligne rouge passe au bleu), refuse les expressions pilotées par la donnée, et 120 changements de dégradé coûtent 2 ms. C'est ce qui impose une couche par trace pendant la lecture.
+
+- **Horodatage** (e19ed13) : `<time>` lu par point, en structure PARALLÈLE aux coordonnées — la 3e composante d'une position GeoJSON signifie l'altitude et n'atteint jamais le style. Stockage en enveloppe versionnée reconnaissant le tableau nu de la version précédente : sans quoi une trace importée avant ce changement était lue comme absente puis retirée de l'index, une perte de données. Bornes de temps dans l'index, recalculées au chargement. Journée opérationnelle basculant à 06h locales.
+- **Archive** (5aa1b6a) : dossier `gpx/` dans le zip, comme `images/`. Fusion sans effacement. Deux défauts corrigés : `refresh()` ne rechargeait pas les traces (la première action du panneau écrasait l'index fraîchement importé), et la réinitialisation totale ne les supprimait pas.
+- **Panneau** (7a934af) : groupes de jour repliables, tri chronologique inversable, sous-menus transitoires sur le mécanisme `_openInlinePanel`. Actions : tout afficher/masquer, colorer (une couleur par jour ou une couleur unique), supprimer tout ou un jour, régler tri et bascule. Suppressions via la confirmation destructrice du socle.
+- **Timelapse** (9e6fedd) : géométrie posée une fois, révélation par `line-gradient`, tête de lecture en marqueur. Tronçons raboutés en une ligne (`line-progress` est par feature). Barre de lecture PERSISTANTE, pas transitoire. Pause à l'occultation de l'onglet. Défaut trouvé au navigateur : une règle d'auteur `display: flex` sur un identifiant bat le `[hidden]` du navigateur, la barre était visible en permanence.
+
+**Conséquence assumée du mode temps réel** : avec des traces éloignées dans le temps, l'essentiel de la lecture est du temps mort. C'est la chronologie honnête ; le mode progression couvre l'autre besoin.
+
+Gate : typecheck 0, lint 0, vitest 2212/2212, Playwright pctac 37/37, gate visuel 0,000 % sur les 4 états de carte. `tab-otages` et `tab-liens` échouent toujours, chiffres identiques avant/après (1426 px et 44924 px) — préexistants.
+
 ## Dérogations actées
 
 - **AA boutons remplis, thème sombre** (2026-08-09, décision Nico) : `--accent-fill` sombre rétabli à `#4f8dff` (`--tac-blue-500`) — le correctif #2563eb changeait le bleu de l'interface. Ratio blanc/#4f8dff = 3.19:1, sous le seuil AA 4.5:1. Alternative conforme proposée (texte encre sombre sur #4f8dff, 6.6:1) — en attente de décision, non appliquée.
