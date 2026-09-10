@@ -110,6 +110,12 @@ Prototype jetable exécuté AVANT toute spec, mesuré dans le navigateur : `line
 
 Gate : typecheck 0, lint 0, vitest 2212/2212, Playwright pctac 37/37, gate visuel 0,000 % sur les 4 états de carte. `tab-otages` et `tab-liens` échouent toujours, chiffres identiques avant/après (1426 px et 44924 px) — préexistants.
 
+**À TRAITER, indépendant de ce chantier** : `tests/e2e/oi.spec.ts` compte **17 échecs sur 35** (formulaire OI : puces d'étape en `step-error`, glisser-déposer PATRACDVR, quick-edit, mode batch, menu contextuel). Vérifié en repassant le dépôt à `5c0bfea` puis à `918b889` : **exactement 17 échecs / 18 réussites dans les trois cas**, donc antérieurs à toute la session du 2026-09-08 et du 2026-09-10. Personne ne les avait relevés jusqu'ici.
+
+**Piège de méthode à retenir** : le rapporteur `line` de Playwright imprime la LISTE des échecs juste avant les compteurs. Lire `tail` et n'y voir que « 18 passed » fait manquer la ligne « 17 failed » qui la précède. Toujours filtrer sur `^  [0-9]+ (passed|failed)`.
+
+**Second piège** : ne JAMAIS lancer le gate visuel et une suite Playwright en parallèle. Un seul serveur de développement les sert, et `playwright.config.ts` fige `workers: 1` précisément pour cette raison (contention non bornée, commentaire de la config).
+
 ## Dérogations actées
 
 - **AA boutons remplis, thème sombre** (2026-08-09, décision Nico) : `--accent-fill` sombre rétabli à `#4f8dff` (`--tac-blue-500`) — le correctif #2563eb changeait le bleu de l'interface. Ratio blanc/#4f8dff = 3.19:1, sous le seuil AA 4.5:1. Alternative conforme proposée (texte encre sombre sur #4f8dff, 6.6:1) — en attente de décision, non appliquée.
