@@ -373,7 +373,7 @@ export function confirmDialog(options: ConfirmDialogOptions): Promise<boolean> {
 }
 
 /* =========================================================================
- * promptDialog — remplaçant des `prompt()` natifs (U25, Goal.md)
+ * promptDialog — remplaçant des `prompt()` natifs
  * ========================================================================= */
 
 export interface PromptDialogOptions {

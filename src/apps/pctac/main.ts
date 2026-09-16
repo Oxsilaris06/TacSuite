@@ -2,9 +2,8 @@
  * main.ts — Point d'entrée PC-Tac (P2.D, câblage).
  * ===========================================================================
  * Port TypeScript de `modules/pctac/main.js` (GStart-main, 546 LOC) + du bloc
- * `<script>` inline de `pctac2.html:9-16`. Ordre imposé par
- * `docs/SPEC-PCTAC-CONVERSION.md` §5 — aucune étape fusionnée, réordonnée ni
- * « optimisée ».
+ * `<script>` inline de `pctac2.html:9-16`. Ordre d'origine préservé — aucune
+ * étape fusionnée, réordonnée ni « optimisée ».
  *
  * Écart DOM : AUCUN. Les 5 `onclick` statiques de `pctac/index.html` et les
  * handlers générés en `innerHTML` par `ui.ts` restent VERBATIM à ce stade
@@ -103,8 +102,8 @@ import { GPX_INDEX_KEY, PINS_KEY } from '@pctac/planmap/constants.js';
 
 document.addEventListener('DOMContentLoaded', async () => {
     // §5.3 étape 1 — Service Worker (PWA, offline-fallback).
-    // P4.B : SW reconstruit sur les assets buildés (docs/PLAN.md §6, Phase 4),
-    // cf. public/sw.ts + vite.config.ts (VitePWA/injectManifest).
+    // SW reconstruit sur les assets buildés : cf. public/sw.ts +
+    // vite.config.ts (VitePWA/injectManifest).
     registerServiceWorker('pctac');
 
     // §5.3 étape 2 — Migration des photos base64 vers IndexedDB (s'exécute une seule fois).

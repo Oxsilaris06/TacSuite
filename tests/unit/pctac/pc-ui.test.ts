@@ -2,8 +2,8 @@
  * pc-ui.test.ts — Tests unitaires de UI (P2.CONV).
  *
  * Port TypeScript testé : src/apps/pctac/ui.ts (UI: UIContract), port de
- * modules/pctac/ui.js (GStart-main, 890 LOC) — cf. docs/SPEC-PCTAC-CONVERSION.md
- * §9 (pièges ui.ts) et §3 (stratégie onclick — VERBATIM dans ce paquet).
+ * modules/pctac/ui.js (GStart-main, 890 LOC). Stratégie onclick VERBATIM dans
+ * ce paquet.
  *
  * Contexte : `@pctac/image-store.js` est mocké (IndexedDB absent sous jsdom,
  * SPEC-PCTAC-CONVERSION.md §8.4).

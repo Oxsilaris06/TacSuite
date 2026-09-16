@@ -20,9 +20,8 @@
  * n'a AUCUN glyphe pour U+200B (vérifié directement par fontkit,
  * `font.glyphForCodePoint(0x200B).id === 0`, càd `.notdef`) — pdfmake/
  * fontkit dessine donc le glyphe `.notdef` (carré ▯) à CHAQUE point de
- * coupure, y compris ceux qui ne tombent jamais en fin de ligne (preuve
- * `.tacsuite-prep/pdf-blindage/gate/png/full-iso-word60-06.png` et
- * `A-url-zoom-06.png`). Un balayage fontkit exhaustif des candidats
+ * coupure, y compris ceux qui ne tombent jamais en fin de ligne (constaté
+ * sur planche de rendu). Un balayage fontkit exhaustif des candidats
  * invisibles usuels (ZWSP U+200B, WORD JOINER U+2060, ZWNJ U+200C, THIN
  * SPACE U+2009, HAIR SPACE U+200A, NNBSP U+202F) montre qu'AUCUN n'est
  * mappé dans cette police (tous `.notdef`).

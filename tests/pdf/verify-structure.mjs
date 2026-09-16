@@ -5,8 +5,7 @@
  *
  * POURQUOI un protocole structurel et non un diff pixel : l'ancien moteur
  * (`pdf-engine-v2.ts`, html2canvas+jsPDF) produisait un PDF 100% rastérisé —
- * une seule image JPEG par page, aucun calque texte (constat n°1 de
- * `../../.tacsuite-prep/oi-reference/fingerprint.md`). La voie A produit un
+ * une seule image JPEG par page, aucun calque texte. La voie A produit un
  * PDF **vectoriel** : le rendu pixel change de nature (c'est l'OBJET du
  * chantier, pas un bug), donc un diff pixel/perceptuel de l'étalon
  * `oi-reference/reference.pdf` est structurellement inopérant pour la voie A
@@ -52,8 +51,7 @@
  * section resservait).
  *
  * Détail des 8 assertions A1-A8 et de leurs seuils : voir
- * `tests/pdf/README.md` et `docs/SPEC-PDF-V3.md` §7 (tableau « Assertions
- * exactes »). B1/B2/B5/B6/B9 (guardrail pagination CONSERVÉ/ADAPTÉ des
+ * `tests/pdf/README.md`. B1/B2/B5/B6/B9 (guardrail pagination CONSERVÉ/ADAPTÉ des
  * rounds PG.GUARD/PG.REFIX/GD.GUARDS — B3/B4/B7/B8/B10/B11 ont été RETIRÉES,
  * leur motif étant désormais couvert par les gardes de CONTRAT C1..C4 ci-
  * dessous, plus directement adaptées au nouveau layout) et C1..C5 (nouvelles
@@ -69,8 +67,7 @@ import { existsSync, readFileSync, statSync } from 'node:fs';
 // Les 15 marqueurs (ordre imposé, verbatim) — SPEC-PDF-V3.md §7, recopiés
 // caractère pour caractère depuis le bloc de code numéroté 1..15 de cette
 // section. Même liste, même esprit que :
-//   - `../../.tacsuite-prep/oi-reference/fingerprint.md` § « Ordre des
-//     sections » (empreinte OCR de l'étalon raster, 14 pages) ;
+//   - l'ordre des sections de l'étalon raster (14 pages) ;
 //   - `tests/unit/oi/oi-pdf-engine-v2.test.ts:343-359` (assertion HTML
 //     équivalente sur `PDFEngineV2.generateHTML()` — CE script est
 //     l'équivalent PDF-vectoriel-réel du même invariant : la structure du
@@ -123,7 +120,7 @@ export const MARKERS = [
   // PDF vectoriel est donc en capitales, comme les 8 autres marqueurs h2 de
   // cette liste (déjà tous en capitales à la SOURCE de `pdf-engine-v2.ts`,
   // ex. « 3. ENVIRONNEMENT ET AMIS »). Constaté par `pdftotext -layout` sur
-  // un PDF réel (recette `.tacsuite-prep/oi-reference/recipe.md`) :
+  // un PDF réel :
   // « ARTICULATION : ZMSPCP - … ». Les 3 marqueurs ci-dessous sont donc
   // alignés sur le texte RÉELLEMENT extractible, pas sur la casse source du
   // gabarit HTML (qui ne correspond plus à aucun texte réel depuis que la

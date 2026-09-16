@@ -1,11 +1,11 @@
 # SPEC-PLANMAP-SPLIT — découpage de `planMap.js` (P2.A0)
 
-> **Document opposable.** Source : `/home/nico/Bureau/Web/GStart-main/modules/pctac/planMap.js`
+> **Document opposable.** Source : `GStart-main/modules/pctac/planMap.js`
 > (5 596 LOC, **lu intégralement**, LECTURE SEULE). Cible :
 > `/home/nico/Bureau/Web/TacSuite/src/apps/pctac/planmap/`.
-> À lire conjointement avec `docs/SPEC-PCTAC-CONVERSION.md` (conventions communes,
+> À lire conjointement avec `docs/SPEC-CONTRATS.md` (conventions communes,
 > imports, `window.*`, ordre d'init), `docs/SPEC-CONTRATS.md` §2.1 (contrat
-> `PlanMapContract`) et `docs/PLAN.md` §4 (protocole zéro régression).
+> `PlanMapContract`).
 
 ---
 

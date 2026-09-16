@@ -3,7 +3,6 @@
  * ============================================================
  *
  * Port TypeScript de `modules/pctac/storage.js` (GStart-main, 117 LOC).
- * Cf. docs/SPEC-PCTAC-CONVERSION.md §1.1 et §9 (pièges).
  *
  * Toutes les lectures/écritures localStorage transitent par la couche `Persist`
  * (persist.ts) :

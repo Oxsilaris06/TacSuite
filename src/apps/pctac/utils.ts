@@ -3,7 +3,6 @@
  * ==========================================
  *
  * Port TypeScript de `modules/pctac/utils.js` (GStart-main, 52 LOC).
- * Cf. docs/SPEC-PCTAC-CONVERSION.md §1.1 et §9 (piège).
  */
 
 export const Utils = {

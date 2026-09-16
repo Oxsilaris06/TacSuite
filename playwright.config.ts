@@ -1,8 +1,7 @@
 import { defineConfig, devices } from '@playwright/test';
 
 // Pas de webServer automatique : le serveur dev (scripts/dev.sh, port 9678)
-// et le serveur de l'original (scripts/serve-original.sh, port 9679) sont
-// demarres manuellement / par les scripts dedies avant de lancer les tests.
+// est demarre manuellement / par les scripts dedies avant de lancer les tests.
 export default defineConfig({
   testDir: './tests/e2e',
   fullyParallel: true,

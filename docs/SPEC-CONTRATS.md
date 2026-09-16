@@ -2,7 +2,7 @@
 
 Document de référence pour toutes phases suivantes. Il recense contrats
 globaux DEUX applications, leur rôle, leurs consommateurs RÉELS (relevés
-par lecture code de `/home/nico/Bureau/Web/GStart-main`, en lecture seule),
+par lecture code de `GStart-main`, en lecture seule),
  stratégie de façade retenue pour portage TypeScript, et condition de
 retrait de chaque façade.
 

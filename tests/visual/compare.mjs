@@ -19,13 +19,12 @@
  *   node tests/visual/compare.mjs pctac --viewport=desktop   (par défaut : les deux)
  *
  * `oi-light` (P3B.E) : mêmes 9 états que `oi`, contre les baselines mode
- * CLAIR de l'ORIGINAL (`.tacsuite-prep/oi-baseline-light/`, intégrées dans
- * `tests/visual/baseline/oi-light/`, cf. README.md « Baselines mode clair »)
+ * CLAIR de l'ORIGINAL (intégrées dans `tests/visual/baseline/oi-light/`,
+ * cf. README.md « Baselines mode clair »)
  * — comble le trou de couverture Phase 0 (baselines `oi` toutes en mode
  * sombre, seul état par défaut de `4.html`). Bascule effectuée par clic
  * réel sur `#darkModeToggle` juste après le chargement (même mécanisme que
- * `.tacsuite-prep/capture-oi-light.mjs`, qui a produit ces baselines côté
- * ORIGINAL), avant d'exécuter les mêmes `run()` d'état que `oi`. Masques
+ * celui qui a produit ces baselines côté ORIGINAL), avant d'exécuter les mêmes `run()` d'état que `oi`. Masques
  * (`HEADER_MASK`/`PORTAL_LINK_MASK`) réutilisés tels quels : la bascule de
  * thème ne change que des couleurs, aucune propriété de layout (vérifié
  * dans `oi-baseline-light/README.md`).
@@ -134,8 +133,8 @@ const HEADER_MASK = {
   },
 };
 
-// P3B.E — `#portalLink` (retour au portail TacSuite, ajout pur P3B.C, cf.
-// docs/DECISIONS-DOM-ECARTS.md §6) : absent des baselines OI (Phase 0,
+// `#portalLink` (retour au portail TacSuite, ajout pur, ecart DOM assume) :
+// absent des baselines OI (Phase 0,
 // antérieures à cet ajout), visible dans TOUTES les captures OI car
 // `#dockMenu` y est déployé par défaut (contrairement à PC-Tac, où le dock
 // ship `collapsed` et où aucun état capturé ne l'ouvre — §6 documente que
@@ -486,8 +485,8 @@ async function captureState(page, app, entryUrl, state, viewportName, theme) {
   await page.goto(`${BASE_URL}${entryUrl}`, { waitUntil: 'load' });
   await page.waitForLoadState('networkidle', { timeout: 8000 }).catch(() => {});
   if (theme === 'light') {
-    // Bascule vers le mode clair par clic réel (même mécanisme que
-    // .tacsuite-prep/capture-oi-light.mjs) — l'app démarre en mode sombre
+    // Bascule vers le mode clair par clic réel (même mécanisme que la
+    // capture des baselines) — l'app démarre en mode sombre
     // par défaut (aucune classe 'light-mode'/`data-theme` au chargement
     // initial, cf. oi-baseline-light/README.md et `colorScheme:'dark'` posé
     // sur le contexte, cf. commentaire d'en-tête de fichier § portail).
@@ -640,7 +639,7 @@ async function run() {
     const page = await context.newPage();
     // Sans cette borne, une action (click) sur un element rendu inactionnable
     // par l'absence de cablage JS (P2.D non execute cote pctac au moment de
-    // ce run, cf. docs/CHECKLIST-PCTAC.md) attend le defaut librairie (30s)
+    // ce run) attend le defaut librairie (30s)
     // par etat/viewport avant d'echouer - on borne a 3s pour rester rapide.
     page.setDefaultTimeout(3000);
 

@@ -4,8 +4,8 @@ import JSZip from 'jszip';
 /**
  * P2.E1 — Tests E2E fonctionnels PC-Tac, contre http://127.0.0.1:9678/pctac/.
  *
- * Source des critères : docs/recon-pctac.md §6 (checklist fonctionnelle de
- * non-régression), point par point. Un `test()` par grande rubrique de la
+ * Source des critères : checklist fonctionnelle de non-régression, point par
+ * point. Un `test()` par grande rubrique de la
  * checklist ; chaque sous-point est une `step(nom, fn)` (helper ci-dessous,
  * enveloppe `test.step` + try/catch + `expect.soft`) : une exception dans une
  * étape (ex. clic sur un élément resté non interactif faute de câblage) est
@@ -16,12 +16,11 @@ import JSZip from 'jszip';
  * ÉTAT CONNU AU MOMENT DE L'ÉCRITURE (voir compte-rendu de la tâche P2.E1) :
  * `src/apps/pctac/main.ts` est encore le PLACEHOLDER de scaffold (P0.A1) — le
  * câblage réel (P2.D : délégation d'événements, `UI.initElements()`, montage
- * de `PlanMap`, `PocheTuto.mount()`, etc., cf. docs/SPEC-PCTAC-CONVERSION.md
- * §3 et §5) n'a PAS encore été exécuté. La quasi-totalité des tests
+ * de `PlanMap`, `PocheTuto.mount()`, etc.) n'a PAS encore été exécuté. La quasi-totalité des tests
  * comportementaux ci-dessous échouent donc pour UNE SEULE cause racine
  * commune (aucune vue ne réagit, aucun formulaire n'est intercepté, aucun
- * `window.*` n'est posé) — ce n'est PAS N régressions indépendantes, voir
- * docs/CHECKLIST-PCTAC.md pour le détail. Les assertions purement
+ * `window.*` n'est posé) — ce n'est PAS N régressions indépendantes. Les
+ * assertions purement
  * structurelles (DOM statique : présence des 7 onglets, hrefs des liens
  * externes de l'onglet Liens, items du dock, manifest PWA...) sont, elles,
  * indépendantes du câblage et restent vertes. Ces tests restent la cible
@@ -163,7 +162,7 @@ async function clickConfirmDialogOk(page: Page): Promise<void> {
   await page.locator('[data-tac-confirm="ok"]').click();
 }
 
-test.describe('PC-Tac — Checklist fonctionnelle (docs/recon-pctac.md §6)', () => {
+test.describe('PC-Tac — Checklist fonctionnelle', () => {
   test.beforeEach(async ({ page }) => {
     await gotoPctac(page);
   });
@@ -899,8 +898,8 @@ test.describe('PC-Tac — Checklist fonctionnelle (docs/recon-pctac.md §6)', ()
     });
     await step('connexion réelle (OAuth device-code / token) — HORS PÉRIMÈTRE E2E', async () => {
       // Nécessite un vrai compte ProConnect / token Tchap valide et un salon non
-      // chiffré réel : voir docs/CHECKLIST-PCTAC.md pour la méthode de
-      // vérification alternative (revue de code de src/apps/pctac/tchap-live.ts).
+      // chiffré réel : vérification alternative par revue de code de
+      // src/apps/pctac/tchap-live.ts.
       test.info().annotations.push({
         type: 'hors-e2e',
         description: 'Connexion Tchap réelle non testable en E2E — vérifiée par revue de code.',
@@ -996,7 +995,6 @@ test.describe('PC-Tac — Checklist fonctionnelle (docs/recon-pctac.md §6)', ()
     // visuel (tests/visual/compare.mjs) ne l'aurait jamais détecté : ses 20 états
     // capturent tous en dark-mode (défaut du DOM statique), aucune baseline claire.
     // Cette assertion ciblée comble ce trou de couverture sans capture d'écran.
-    // Détail : docs/DECISIONS-CSS.md §6.
     await step('cohérence --shadow-glow-accent en thème clair (P2.FIX reprise 1)', async () => {
       const vals = await page.evaluate(() => {
         const cs = getComputedStyle(document.body);
@@ -1124,8 +1122,8 @@ test.describe('PC-Tac — Checklist fonctionnelle (docs/recon-pctac.md §6)', ()
   });
 
   // ------------------------------------------------------------------
-  // PWA — hors périmètre de la Phase 2 (précache/service worker = P4.A,
-  // cf. docs/PLAN.md §6). On vérifie seulement ce qui est déjà attendu ici.
+  // PWA — précache/service worker hors périmètre ici. On vérifie seulement
+  // ce qui est déjà attendu.
   // ------------------------------------------------------------------
   test('PWA — manifest référencé (le service worker est un livrable de la Phase 4)', async ({ page }) => {
     await expect.soft(page.locator('link[rel="manifest"]')).toHaveAttribute('href', '/manifest.webmanifest');

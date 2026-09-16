@@ -58,7 +58,7 @@ import type {
 } from './types.js';
 
 /**
- * C5 (Goal.md §3) — journal auto des actions carte : trace la pose/suppression
+ * Journal auto des actions carte : trace la pose/suppression
  * d'un pin d'ENTITÉ dans la main courante. Fire-and-forget : la journalisation
  * ne doit JAMAIS casser le flux carte (try/catch silencieux + garde de contrat).
  */
@@ -185,7 +185,7 @@ export const PinsMethods = {
             text,
             pin.locked ? 1 : 0,
             this._locked ? 1 : 0,
-            // photo↔ping (Goal.md §4) : sans ce champ, la réconciliation ne
+            // photo↔ping : sans ce champ, la réconciliation ne
             // redessine jamais le pin après ajout/retrait de photo (branche no-op).
             pin.photoId || '',
         ].join('|');
@@ -305,7 +305,7 @@ export const PinsMethods = {
             this._makeLockBadge(locked, () => this._togglePinLock(pinId, false), 'corner'),
         );
 
-        // Badge photo (photo↔ping, Goal.md §4) : coin bas-gauche LIBRE (le cadenas
+        // Badge photo (photo↔ping) : coin bas-gauche LIBRE (le cadenas
         // occupe top/right). `position:absolute` sur le badge lui-même — INVARIANT 1 :
         // jamais de `position:`/`inset:` dans le cssText de pinWrap.
         if (pin.photoId) {

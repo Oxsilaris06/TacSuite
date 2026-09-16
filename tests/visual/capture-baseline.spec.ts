@@ -8,11 +8,8 @@ import { fileURLToPath } from 'node:url';
  *
  * But : capturer l'etat visuel de reference AVANT toute conversion TypeScript,
  * pour pouvoir diffuser ensuite le TacSuite porte contre ces PNG (seuil <= 0.1%
- * de pixels hors zones masquees, cf. PLAN-TACSUITE.md section 4).
+ * de pixels hors zones masquees).
  *
- * Sources de verite pour les selecteurs/checklists :
- *   - docs/recon-oi.md    (section 3 "DOM principal" + section 9 "Checklist")
- *   - docs/recon-pctac.md (section 1 "Structure DOM" + section 6 "Checklist")
  *
  * Zones a MASQUER dans les comparaisons FUTURES (documentees aussi dans README.md) :
  *   - PC-Tac  : canvas.maplibregl-canvas dans #plan_map (tuiles reseau non deterministes)

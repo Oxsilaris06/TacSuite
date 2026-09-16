@@ -2,9 +2,9 @@
 
 Ce dossier contient captures de référence de l'application **originale**
 (non portée), servie en lecture seule sur `http://127.0.0.1:9679`
-(`scripts/serve-original.sh`, source `/home/nico/Bureau/Web/GStart-main`).
-Elles servent de référence opposable pour diffs visuels phases
-suivantes portage TacSuite (Protocole zéro régression §3, `docs/PLAN.md`).
+(source : l'arborescence GStart-main servie localement).
+Elles servent de référence opposable pour les diffs visuels des phases
+suivantes du portage TacSuite (protocole zéro régression).
 
 Spec : `capture-baseline.spec.ts`
 Config Playwright dédiée : `playwright.config.ts` (scope local à ce dossier —
@@ -15,7 +15,7 @@ voir "Pourquoi config séparé" ci-dessous)
 Prérequis : serveur original doit tourner sur 9679.
 
 ```bash
-./scripts/serve-original.sh   # si pas déjà lancé
+# le serveur de reference doit ecouter sur 9679
 npx playwright test --config=tests/visual/playwright.config.ts
 ```
 
@@ -45,8 +45,8 @@ tests/visual/baseline/<app>/<etat>-<viewport>.png
 ## États capturés — Générateur d'OI (`4.html`)
 
  seul test parcourt séquentiellement wizard (pas de rechargement entre
-états — navigation SPA via puces barre de progression, cf.
-`docs/recon-oi.md` §3 et §9). Sélecteurs issus de `modules/navigation.js`
+états — navigation SPA via puces barre de progression). Sélecteurs issus de
+`modules/navigation.js`
 (`goToStep(n)`, sauts directs autorisés sans validation bloquante) et
 `modules/oi_cartographie.js` (`OICarto.open()`).
 
@@ -76,8 +76,7 @@ pas "onglets/sections principales") : `quickEditModal`,
 ## États capturés — PC-Tac (`pctac2.html`)
 
  seul test parcourt séquentiellement 7 onglets puis 3 panneaux/outils
-de l'onglet Plan (pas de rechargement — navigation SPA via `UI.switchMainView`,
-cf. `docs/recon-pctac.md` §1 et §6).
+de l'onglet Plan (pas de rechargement — navigation SPA via `UI.switchMainView`).
 
 | Fichier (`<etat>`) | Onglet / panneau | Sélecteur utilisé |
 |---|---|---|
@@ -121,8 +120,8 @@ ultérieurs (TacSuite porté vs baseline), masquer impérativement :
 |---|---|---|---|
 | PC-Tac | `tab-plan`, `tab-plan-panneau-*` | `canvas.maplibregl-canvas` dans `#plan_map` | Tuiles IGN/ESRI/OpenFreeMap chargées en réseau au moment test — rendu non déterministe (cache CDN, disponibilité tuile, angle de éclairage/saison couches satellite) |
 | OI | `cartography-modal` | `canvas.maplibregl-canvas` dans `#oi_carto_map` | Idem — cartographie OI (`oi_cartographie.js`), tuiles réseau |
-| PC-Tac | Tous états pctac (10 états / 20 captures — élément d'en-tête, présent sur toutes) | `#version-toggle-btn` | Élément supprimé portage (écart admis, cf. `docs/DECISIONS-DOM-ECARTS.md` §1), présent dans baseline (original) mais absent porté (TacSuite) |
-| OI | Tous états oi (9 états / 18 captures — élément d'en-tête, présent sur toutes) | `#beta-button` | Idem, cf. `docs/DECISIONS-DOM-ECARTS.md` §2 |
+| PC-Tac | Tous états pctac (10 états / 20 captures — élément d'en-tête, présent sur toutes) | `#version-toggle-btn` | Élément supprimé portage (écart admis), présent dans baseline (original) mais absent porté (TacSuite) |
+| OI | Tous états oi (9 états / 18 captures — élément d'en-tête, présent sur toutes) | `#beta-button` | Idem, écart admis |
 
 **Correction (P0.FIX reprise 2)** — phrase précédente de cette sectionaffirmait à tort que captures hors carte pouvaient être comparées
 « pixel à pixel sans masque ». C'est FAUX : états carte (`tab-plan*`,
@@ -137,7 +136,7 @@ absent porté. Son masque est donc également OBLIGATOIRE, sur 100 %
 
 `P3B.C` ajoute lien de retour vers portail TacSuite (`#portalLink`,
 icône `home`) dans docks PC-Tac et OI — absent originaux (aucun
-portail n'existait), cf. `docs/DECISIONS-DOM-ECARTS.md` §6. Analyse de
+portail n'existait) — écart DOM assumé. Analyse de
 l'impact sur `tests/visual/compare.mjs pctac` (seul gate visuel requis par
 cette mission) :
 
@@ -240,10 +239,9 @@ d'icône sur boutons 2-4) reste largement sous seuil de 0,1 %.
 ### Baselines mode clair OI (`oi-light`, P3B.E)
 
  18 baselines Phase 0 de `tests/visual/baseline/oi/` sont toutes en mode
-**sombre** (défaut de `4.html`, cf. `docs/DECISIONS-CSS.md` §6.3). trou de
+**sombre** (défaut de `4.html`). trou de
 couverture mode clair a été comblé en amont par capture sur l'ORIGINAL
-(`.tacsuite-prep/capture-oi-light.mjs` → `.tacsuite-prep/oi-baseline-light/`,
-18 PNG, mécanisme documenté dans son propre `README.md`) — intégré ici tel
+(18 PNG) — intégré ici tel
 quel dans `tests/visual/baseline/oi-light/` (mêmes 9 états × 2 viewports,
 mêmes noms de fichiers).
 
