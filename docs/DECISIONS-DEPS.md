@@ -18,7 +18,7 @@ puis verification croisee versions publiees sur registre npm.
 
  deux originaux chargent, au `<head>`, DEUX feuilles Google Fonts distantes
 (`pctac2.html:33-41`, `4.html:33-39`) : Material Symbols Outlined (icones) et
- trio Oswald/Inter/JetBrains Mono. `docs/PLAN.md` §2 impose "zero CDN a
+ trio Oswald/Inter/JetBrains Mono. La regle "zero CDN a
 l'execution" ; ces feuilles n'avaient pourtant pas ete reportees lors 
 scaffold initial (P0.A5), laissant `document.fonts` vide en dev. Corrige en
 auto-hebergeant paquets npm epingles sur MEMES familles/graisses que
@@ -46,7 +46,7 @@ tete de chaque fichier CSS.
  `4.html` : **zero appel**. Balise `<script>` chargee mais jamais invoquee.
 - `html2pdf.js@0.10.1` (cdnjs) - grep exhaustif (`html2pdf(`) : **zero appel**. Idem.
 
-Conformement a decision actee "Code mort exclu portage" (docs/PLAN.md §2), ces
+Conformement a la decision actee "Code mort exclu du portage", ces
 deux libs ne sont PAS ajoutees a `package.json`. A confirmer si futur agentdecouvre usage indirect (ex. appel dynamique) qui aurait echappe au grep statique.
 
 ## Alerte securite connue (npm audit) - non corrigee a dessein en P0.A1
@@ -56,7 +56,7 @@ transitive de `jspdf@2.5.1` (pinnee volontairement sur version CDN de l'original
 tableau ci-dessus). `npm audit fix --force` proposerait de monter `jspdf` a `4.2.1`
 (breaking change), ce qui casserait l'epinglage requis par mission P0.A1 et risquerait
  regression sur moteur PDF (`pdf_engine_v2.js`) avant meme d'avoir baseline de
-comparaison structurelle PDF (protocole §4.6 de `docs/PLAN.md`). **Decision : ne pas
+comparaison structurelle PDF. **Decision : ne pas
 toucher a version en Phase 0.** A traiter explicitement en Phase 3 (P3.A0/P3.D) 
 fois comparaison PDF de reference en place, en arbitrant entre patch cible de
 `dompurify` (resolutions/overrides npm) et montee de version controlee de `jspdf`.
@@ -68,7 +68,7 @@ Date : 2026-08-02, mission `PDF.INTEG` (integration finale chantier PDF v3).
  moteur de TELECHARGEMENT PDF raster de l'OI (`PDFEngineV2.downloadOiPdf()`,
 html2canvas + jsPDF, `src/apps/oi/pdf-engine-v2.ts`) a ete REMPLACE par
 `downloadOiPdfV3()` (`src/apps/oi/pdf/engine-v3.ts`), moteur vectoriel `pdfmake`
-(cf. `docs/SPEC-PDF-V3.md`). corps de l'ancienne methode a ete retire fichier ;
+corps de l'ancienne methode a ete retire fichier ;
 seuls `generateHTML`/`collectAllData`/`_fitPageToBudget` restent (aperçu HTML in-app
 et mode « Presenter ici », qui ne rasterisent jamais et n'ont jamais depend de
 jsPDF/html2canvas).

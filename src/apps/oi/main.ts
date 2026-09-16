@@ -6,11 +6,10 @@
  *   - L.43-111    : intercepteur de logs persistant (OiInlineGlobals)
  *   - L.4536-4814 : câblage DOMContentLoaded (~278 lignes, 18 étapes)
  *   - L.4795-4812 : window.setPdfFormat + restauration du format PDF
- * Ordre imposé par docs/SPEC-OI-CONVERSION.md §12 (aucune étape fusionnée,
- * réordonnée ni « optimisée » — même discipline que
- * src/apps/pctac/main.ts / docs/SPEC-PCTAC-CONVERSION.md §5).
+ * Ordre d'origine préservé (aucune étape fusionnée, réordonnée ni
+ * « optimisée » — même discipline que src/apps/pctac/main.ts).
  *
- * RÈGLE D'OR DU PORTAGE OI (SPEC-OI-CONVERSION.md §2.2) : main.ts est un
+ * RÈGLE D'OR DU PORTAGE OI : main.ts est un
  * CONSOMMATEUR de tous les modules OI, jamais consommé par eux — aucun risque
  * de cycle. Par fidélité et simplicité de vérification, ce fichier suit
  * NÉANMOINS la même discipline que les modules de la bibliothèque : tout
@@ -33,13 +32,12 @@
  *    dynamique verbatim ajouterait un DEUXIÈME `<link rel="manifest">`
  *    pointant vers un chemin relatif `manifest.json` inexistant dans
  *    l'arborescence Vite (404) : régression, pas fidélité. Seul le filet
- *    error/unhandledrejection (L.14-23) est repris ci-dessous. Documenté
- *    comme écart assumé dans `docs/DECISIONS-DOM-ECARTS.md`.
+ *    error/unhandledrejection (L.14-23) est repris ci-dessous. Écart assumé.
  * 2. Enregistrement Service Worker (4.html:4505-4507, HORS de la plage
  *    4536-4814 assignée mais partie du même point d'entrée) — même
  *    traitement que src/apps/pctac/main.ts §5.3 étape 1 : `registerServiceWorker`
- *    (module `@shared/register-sw.js`, P4.B) sur `sw.js` buildé par
- *    vite-plugin-pwa (cf. docs/PLAN.md §6 Phase 4 / public/sw.ts).
+ *    (module `@shared/register-sw.js`) sur `sw.js` buildé par
+ *    vite-plugin-pwa (cf. public/sw.ts).
  * 3. `window.open(...)` dans l'intercepteur de logs (4.html:105) : l'original
  *    déréférence `logWindow.document` sans vérifier `logWindow` (bloqueur de
  *    popup ⇒ TypeError non typé). Garde `if (logWindow)` ajoutée — adaptation
@@ -50,8 +48,8 @@
  *    à SPEC-PCTAC-CONVERSION.md §3.2) : posée ICI en trois listeners délégués
  *    (`click`, `input`, `change`) sur `document`, table `action → handler`
  *    définie ci-dessous. Portée : UNIQUEMENT les 63 attributs statiques de
- *    `oi/index.html` (37 onclick + 19 oninput + 7 onchange), cf.
- *    `docs/DECISIONS-DOM-ECARTS.md`. Les `onclick` GÉNÉRÉS en `innerHTML` par
+ *    `oi/index.html` (37 onclick + 19 oninput + 7 onchange). Les `onclick`
+ *    GÉNÉRÉS en `innerHTML` par
  *    formulaires.ts/patrac.ts/articulation.ts/medias.ts/dessin.ts restent
  *    VERBATIM (§12.4 : retrait différé, hors périmètre).
  * 5. Correctif `importSession` (SPEC-OI-CONVERSION.md §9, `window.isFormLoading
@@ -65,8 +63,7 @@
  *    est donc faite ICI), alors que `src/apps/pctac/main.ts` (§3.2 en tête)
  *    documente sa PROPRE délégation `data-action` comme différée au-delà de
  *    P2.D (5 onclick statiques encore présents dans `pctac/index.html`).
- *    Asymétrie de calendrier ASSUMÉE et documentée (pas d'alignement rétroactif
- *    de PC-Tac dans cette mission) — cf. `docs/DECISIONS-DOM-ECARTS.md`.
+ *    Asymétrie de calendrier ASSUMÉE (pas d'alignement rétroactif de PC-Tac).
  */
 
 // ── §12.1 étape 0 — Filet global d'erreurs, VERBATIM de 4.html:14-23. La
@@ -227,8 +224,7 @@ import '@oi/carto/index.js'; // pose window.OICarto + auto-câble #cartographyBt
  * §12.4 — Délégation `data-action` (décision identique à PC-Tac,
  * SPEC-PCTAC-CONVERSION.md §3.2). Trois listeners délégués sur `document`
  * (click / input / change), posés une fois, table `action → handler` ici.
- * Portée : les 63 attributs statiques retirés de `oi/index.html` — détail
- * exact dans `.tacsuite-prep/draft-oi-index-diff.md`.
+ * Portée : les 63 attributs statiques retirés de `oi/index.html`.
  * ─────────────────────────────────────────────────────────────────────────
  */
 

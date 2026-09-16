@@ -4,8 +4,8 @@
  * planMap.js:3745-4240. Écrit pour le portage `src/apps/pctac/planmap/panels.ts`
  * (P2.CONV, paquet `pm-panels`). Références `planMap.js:<ligne>` en commentaire.
  *
- * `this` FACTICE avec un faux `map` (jamais `new maplibregl.Map`, cf.
- * docs/SPEC-PCTAC-CONVERSION.md §8.4). `requestAnimationFrame` est mocké par
+ * `this` FACTICE avec un faux `map` (jamais `new maplibregl.Map`).
+ * `requestAnimationFrame` est mocké par
  * les fake timers de Vitest (précédent : tests/unit/pctac/pc-wheel.test.ts).
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -90,7 +90,7 @@ afterEach(() => {
     localStorage.clear();
 });
 
-describe('_openPinPhotoPanel / _openPinPhotoViewer (photo↔ping, Goal.md §4)', () => {
+describe('_openPinPhotoPanel / _openPinPhotoViewer (photo↔ping)', () => {
     beforeEach(() => {
         vi.useFakeTimers();
     });

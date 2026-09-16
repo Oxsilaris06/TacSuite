@@ -8,10 +8,10 @@
  * thème, plein écran, recherche.
  *
  * Contrat : UIContract (src/shared/types/contracts.ts:599-680)
- * Cf. docs/SPEC-PCTAC-CONVERSION.md §1.1, §3 (stratégie onclick), §4 (window.*
- * au scope module), §6 (accès localStorage directs conservés), §9 (pièges).
+ * Conventions : stratégie onclick conservée, `window.*` au scope module,
+ * accès localStorage directs conservés.
  *
- * POINT CRUCIAL (SPEC-PCTAC-CONVERSION.md §3.2) : les `onclick="..."` générés
+ * POINT CRUCIAL : les `onclick="..."` générés
  * en `innerHTML` NE CHANGENT PAS dans ce paquet — ils sont portés VERBATIM, et
  * les façades `window.UI` / `window.openEditModal` / `window.deleteLogEntry` /
  * `window.deleteCollectionItem` sont MAINTENUES. La migration vers

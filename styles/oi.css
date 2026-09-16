@@ -11,7 +11,7 @@
  * position de cascade (<link>, 4.html:27, avant le <style> inline) — sans cela la
  * page OI perdrait ce socle UI transverse (safe-area, :focus-visible, tap targets,
  * anti-hover mobile...) pendant toute la Phase 0/1. A la creation du fichier dedie
- * styles/ui-platform.css (P1.A5, cf. docs/PLAN.md section 3), cette duplication
+ * styles/ui-platform.css, cette duplication
  * devra etre retiree d'ici (et de styles/pctac.css) au profit d'un lien commun.
  *
  * Sources concatenees, dans l'ordre de chargement original de 4.html :
@@ -242,8 +242,8 @@ body.up-kb-open .up-kb-aware {
             /* Fond des surfaces remplies à texte blanc (boutons actifs/sélectionnés) —
                distinct de --accent-blue (bordures/focus/textes) car #4f8dff sur blanc
                ne fait que 3.19:1 (< 4.5:1 AA). #2563eb sur blanc = 5.17:1 (AA OK). */
-            /* Dérogation AA actée (state.md 2026-08-09) : Nico impose le bleu
-               d'origine #4f8dff en fond rempli malgré 3.19:1 avec texte blanc. */
+            /* Dérogation AA assumée : le bleu d'origine #4f8dff est conservé en
+               fond rempli malgré 3.19:1 avec texte blanc. */
             --accent-fill: var(--tac-blue-500);
 
             --moicp-zmspcp-purple: #7c6ce0;

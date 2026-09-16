@@ -72,7 +72,7 @@ TACSUITE_BASE=/TacSuite/ npm run build
 
  ancres de navigation inter-apps (`<a href>` portail et docks
 PC-Tac/OI) sont en chemins relatifs pour rester correctes quelle que soit
- base — voir `docs/DECISIONS-DOM-ECARTS.md`, point 11.
+ base.
 
 **Piège (P4.FIX, MINEUR R4)** : `vite.config.ts` relit `process.env.TACSUITE_BASE`
 à CHAQUE lancement config — variable doit donc être positionnée pour

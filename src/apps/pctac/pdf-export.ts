@@ -3,9 +3,8 @@
  * ============================================
  *
  * Port TypeScript de `modules/pctac/pdfExport.js` (GStart-main, 596 LOC).
- * Cf. docs/SPEC-PCTAC-CONVERSION.md §1.1, §1.3, §1.4, §2, §4, §8, §9.
  *
- * SUPPRESSION IMPOSÉE (spec §1.3, §4) : la section 7 « BOARD RELATIONNEL »
+ * SUPPRESSION IMPOSÉE : la section 7 « BOARD RELATIONNEL »
  * de l'original (pdfExport.js:503-538) est retirée. Elle lisait le global du
  * module « board relationnel », module mort (jamais importé, absent de
  * global.d.ts) : elle ne compilerait pas.

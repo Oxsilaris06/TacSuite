@@ -26,15 +26,11 @@ dépendance npm**. Il appelle directement binaires système `poppler-utils`
 **structurels** sur PDF de l'OI (nombre/dimensions de pages, volume detexte réel, ordre sections, polices embarquées, absence de
 rastérisation, poids fichier, présence données saisies).
 
-Contexte complet : `docs/SPEC-PDF-V3.md` §7 (« Protocole de non-régression
-STRUCTUREL ») et `../../.tacsuite-prep/etude-pdf-strategica.md`.
-
 ## Rôle — pourquoi PAS diff pixel
 
 L'ancien moteur (`src/apps/oi/pdf-engine-v2.ts`, html2canvas + jsPDF)
 produisait PDF **100 % rastérisé** : seule image JPEG par page,
-**aucun calque texte** (constat n°1 de`../../.tacsuite-prep/oi-reference/fingerprint.md`). voie A (pdfmake,
-`docs/SPEC-PDF-V3.md` §1-§3) produit à place PDF **vectoriel** — texte
+**aucun calque texte**. voie A (pdfmake) produit à place PDF **vectoriel** — texte
 réel sélectionnable, polices embarquées, images limitées aux vraies photos.
  rendu pixel change donc **de nature**, ce qui est l'**objet chantier**,
 pas régression.
@@ -100,8 +96,7 @@ $ echo $?
 
 ## 8 assertions
 
-Seuils littéraux — source : `docs/SPEC-PDF-V3.md` §7, tableau « Assertions
-exactes ».
+Seuils littéraux — tableau « Assertions exactes ».
 
 | Code | Assertion | Seuil |
 |---|---|---|
@@ -158,13 +153,10 @@ AUTONOMES, plus aucune continuation « (SUITE) » pour ces 4 usages. Toujours
 | **C4** | Cellule effraction = pages autonomes | (a) Spillover : contenu Hypothèses d'Effraction sans titre effraction sur la même page ⇒ FAIL. (b) Contiguïté : les plages « HYPOTHÈSES a-b » d'un même titre de base doivent être strictement croissantes et non chevauchantes (proxy texte de « aucune hypothèse scindée/dupliquée/omise »). |
 | **C5** | Anti-troncature ÉTENDUE | Si `--fixture=<json>` fourni : chaque chaîne texte libre ≥ 12 car. de `formData` (hors clés `id`/`annotations`/`tools`/`title`/`options`, jamais rendues verbatim) doit être retrouvée dans `pdftotext` — substring exact, ou à défaut couverture par SAC DE MOTS ≥ 90 % (repli anti-intercalation de colonnes `grid2()`, cf. JSDoc `assertC5_fixtureIntegrity`). Sans `--fixture`, SKIP. |
 
-### B7 (corrigée) et B9-B11 — mission GD.GUARDS, protocole de contre-épreuve (historique, gardes retirées depuis par P4)
+### B7 (corrigée) et B9-B11 — protocole de contre-épreuve (historique, gardes retirées depuis)
 
-Source : `../../.tacsuite-prep/pdf-goal-final/SPEC-PDF-DEFINITIF.md` §7
-(gardes écrites et contre-éprouvées AVANT correctifs D1-D4 — garde
-qui ne FAIL pas sur PDF fautif ne prouve rien). Preuves détaillées :
-`../../.tacsuite-prep/pdf-goal-final/gardes-preuves.md` (hors repo, PDF
-fautif contenant données opérationnelles réelles).
+Gardes écrites et contre-éprouvées AVANT les correctifs D1-D4 : une garde
+qui ne FAIL pas sur un PDF fautif ne prouve rien.
 
 - **B7 corrigée** : version d'origine cherchait LIGNE `Hypothese N` —
  libellé de REPLI qui n'existe que si l'utilisateur n'a pas nommé ses
@@ -188,9 +180,8 @@ fautif contenant données opérationnelles réelles).
 
 ## 15 marqueurs (ordre imposé)
 
-Verbatim `docs/SPEC-PDF-V3.md` §7 — même liste que
-`../../.tacsuite-prep/oi-reference/fingerprint.md` § « Ordre sections »
-(empreinte OCR de l'étalon raster) et `tests/unit/oi/oi-pdf-engine-v2.test.ts:343-359`
+Même liste que l'ordre des sections de l'étalon raster et que
+`tests/unit/oi/oi-pdf-engine-v2.test.ts:343-359`
 (assertion HTML équivalente sur `PDFEngineV2.generateHTML()`).
 
 ```
@@ -211,8 +202,8 @@ Verbatim `docs/SPEC-PDF-V3.md` §7 — même liste que
 15. AVEZ-VOUS DES QUESTIONS ?
 ```
 
-Marqueurs conditionnels (4, 8, 10, 11, 12, 13) : jeu de rejeu
-`../../.tacsuite-prep/oi-reference/recipe-data.json` produit tous — mode
+Marqueurs conditionnels (4, 8, 10, 11, 12, 13) : le jeu de rejeu complet les
+produit tous — mode
 strict (défaut) donc satisfaisable sans `--lenient` sur ce jeu de données.
 `--lenient` existe pour jeux de données **partiels** (ex. aucun
 adversaire saisi ⇒ marqueur #4 légitimement absent).
@@ -261,7 +252,7 @@ dans `verify-structure.mjs`).
 
 ## Écarts visuels ASSUMÉS (à ne pas confondre avec régressions)
 
-Recopiés de `docs/SPEC-PDF-V3.md` §7. Si contrôle visuel manuel révèle
+Si contrôle visuel manuel révèle
 l' de ces écarts, **ce n'est pas bug** :
 
 | Réf | Écart | Justification |
@@ -292,7 +283,7 @@ gardes ne sont **pas** exemptées, leur verdict est l'attendu) :
 Commande exécutée (mission P8, vérification obligatoire) :
 
 ```bash
-node tests/pdf/verify-structure.mjs ../../.tacsuite-prep/oi-reference/reference.pdf --photos=14
+node tests/pdf/verify-structure.mjs <reference.pdf> --photos=14
 ```
 
 `--photos=14` désactive limite simple de comptage de A6 (14 = nombre de
@@ -326,8 +317,8 @@ couvrant 99,8 % de sa surface (A6, signature html2canvas+jsPDF), et poids
 de 2,53 Mo très supérieur au 1 Mio attendu d' PDF vectoriel sans photo
 (A7). **A8 est SKIP** (aucun `--sample` fourni dans cette commande). C'est
 précisément cet anti-pattern — texte absent, polices non vectorielles, 
-image plein cadre par page, poids conséquent — que moteur v3 (pdfmake,
-`docs/SPEC-PDF-V3.md` §1-§3) supprime ; PDF v3 conforme doit au contraire
+image plein cadre par page, poids conséquent — que moteur v3 (pdfmake)
+supprime ; PDF v3 conforme doit au contraire
 faire passer A1 à A6 (et A7 en l'absence de photos embarquées).
 
 ## Gate volumétrique CI (`volumetric-stress.json`, missions R4-b puis P4)

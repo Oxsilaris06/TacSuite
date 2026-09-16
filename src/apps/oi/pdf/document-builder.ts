@@ -2122,8 +2122,7 @@ function buildArticulationOverview(ctx: BuildCtx, num: () => number): Content {
  * Blocs d'articulation groupés par index (ZMSPCP[i] / MOICP[i] / EFFRAC[i])
  * (pdf-engine-v2.ts:1059-1189, §3.2 lignes 8a-8g, §3.4 règle 4).
  *
- * MODÈLE DE PAGINATION v2 (correctif PG.IMPL, docs/SPEC-PDF-V3.md § Pagination
- * v2) : constat terrain (banc `pdfmake-pagination-bench`, contre-épreuve
+ * MODÈLE DE PAGINATION v2 : constat terrain (banc `pdfmake-pagination-bench`, contre-épreuve
  * `tests/pdf/fixtures/long-case.json`) — un champ « C conduite à tenir » long
  * (liste à tirets) débordait de sa page SANS que `document-builder.ts` ne le
  * sache jamais : pdfmake le rompt alors n'importe où dans le flux de texte,

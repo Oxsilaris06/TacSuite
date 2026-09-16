@@ -1,8 +1,8 @@
-name: E2E (nightly)
+name: E2E (manuel)
 
+# Declenchement manuel uniquement : le cron nocturne a ete retire (il publiait
+# chaque nuit un rapport d'echec sans que personne ne le traite).
 on:
-  schedule:
-    - cron: '0 3 * * *'
   workflow_dispatch:
 
 jobs:

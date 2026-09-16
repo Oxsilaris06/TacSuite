@@ -14,9 +14,9 @@ import { defineConfig, devices } from '@playwright/test';
 // (desktop 1440x900, mobile 390x844) — memes noms de projet pour que le
 // libelle <viewport> dans les noms de fichiers baseline/ reste coherent.
 //
-// Prerequis : le serveur original doit tourner (scripts/serve-original.sh,
-// port 9679) — non demarre automatiquement ici (cf. convention du config
-// principal : demarrage manuel / scripts dedies).
+// Prerequis : le serveur de reference doit tourner sur le port 9679 — non
+// demarre automatiquement ici (cf. convention du config principal :
+// demarrage manuel / scripts dedies).
 export default defineConfig({
   testDir: '.',
   testMatch: '**/*.spec.ts',

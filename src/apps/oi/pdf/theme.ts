@@ -169,8 +169,7 @@ export function patracFontPx(rowCount: number): number {
 /**
  * Budget approximatif d'items « à tiret » (ex. conduite à tenir ZMSPCP/MOICP,
  * `\n- item`) tenant sur UNE page dédiée à un palier de police donné —
- * modèle de pagination v2 (docs/SPEC-PDF-V3.md § Pagination v2, correctif
- * PG.IMPL). Mesure grossière par NOMBRE D'ITEMS plutôt que par caractère :
+ * modèle de pagination v2. Mesure grossière par NOMBRE D'ITEMS plutôt que par caractère :
  * `document-builder.ts` reste un module PUR (zéro pdfmake en valeur, cf.
  * son en-tête) donc sans accès à la mesure réelle `pageSize:{height:Infinity}`
  * du banc (`pdfmake-pagination-bench` q5) — seule une heuristique est

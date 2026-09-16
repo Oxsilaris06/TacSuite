@@ -9,7 +9,7 @@
  * (:1001), `_openPinWheel` (:1009), `_openInlinePanel` (:1032),
  * `_openPinIconPanel` (:1054), `_openPinColorPanel` (:1083),
  * `_openPinRenamePanel` (:1109), `_toggleLabels` (:1147). Cf.
- * `docs/SPEC-OI-CONVERSION.md` §6.2/§6.3, `PAQUETS-OI.json`
+ *
  * (`oi-carto-panels-capture`).
  *
  * Adaptations de TYPAGE PUR (aucune restructuration de logique, règle commune

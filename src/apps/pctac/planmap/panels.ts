@@ -24,7 +24,7 @@ import { ImageStore } from '@pctac/image-store.js';
 import { ENTITY_COLORS, escHtml } from './constants.js';
 
 /**
- * Ouvre PhotoSwipe v5 sur UNE image pleine résolution (photo↔ping, Goal.md §4).
+ * Ouvre PhotoSwipe v5 sur UNE image pleine résolution (photo↔ping).
  * - Sort du fullscreen navigateur d'abord (PhotoSwipe monte son root dans <body>).
  * - PhotoSwipe exige width/height : l'Image est chargée pour les mesurer.
  * - Import dynamique (lib + CSS) : rien n'est payé tant qu'on n'ouvre pas.
@@ -665,7 +665,7 @@ export const PanelsMethods = {
      * Panneau de sélection d'une photo de la galerie (`pcTacPhotos`) pour un ping.
      * Calqué sur `_openIconCatalogPanelForEdit` (grille + centerScreen). Le panneau
      * est synchrone ; les vignettes sont hydratées en async dans `onMount` via
-     * `ImageStore.getMany` (photo↔ping, Goal.md §4).
+     * `ImageStore.getMany` (photo↔ping).
      */
     _openPinPhotoPanel(this: PlanMapInternal, pinId: string): void {
         const p = this._loadPins().find((x) => x.id === pinId);

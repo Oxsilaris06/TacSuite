@@ -2,8 +2,7 @@
  * Configuration et constantes globales pour PC TAC
  *
  * Port TypeScript verbatim de `modules/pctac/config.js` (GStart-main, 317 LOC,
- * aucun import). Cf. docs/SPEC-PCTAC-CONVERSION.md §1.1 (exports attendus) et
- * §9 (piège regex de diacritiques / PIN_ICONS verbatim).
+ * aucun import). Piège conservé : regex de diacritiques / PIN_ICONS verbatim.
  */
 import type {
     PctacNamedColor,

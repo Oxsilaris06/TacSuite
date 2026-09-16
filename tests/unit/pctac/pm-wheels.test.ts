@@ -4,8 +4,8 @@
  * `planmap/wheels.ts` (7 méthodes « ROUES CONTEXTUELLES », §4.12 de
  * docs/SPEC-PLANMAP-SPLIT.md). Références `planMap.js:<ligne>` en commentaire.
  *
- * `this` est TOUJOURS factice (jamais `new maplibregl.Map`, cf. §8.4 de
- * docs/SPEC-PCTAC-CONVERSION.md) : `makeFakeThis()` construit un objet
+ * `this` est TOUJOURS factice (jamais `new maplibregl.Map`) :
+ * `makeFakeThis()` construit un objet
  * combinant les 7 VRAIES méthodes de `WheelsMethods` (le groupe sous test —
  * leurs appels croisés `this._closeWheel()`, `this._otanColors()` doivent
  * s'exécuter pour de vrai) et des stubs `vi.fn()` pour les méthodes des

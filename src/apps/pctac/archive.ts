@@ -3,7 +3,6 @@
  * ============================================================================
  *
  * Port TypeScript de `modules/pctac/archive.js` (GStart-main, 459 LOC).
- * Cf. docs/SPEC-PCTAC-CONVERSION.md §1.1, §1.4, §2, §4, §6, §9 (« archive.ts »).
  *
  * PIÈGES CRITIQUES — ce module peut DÉTRUIRE les données de l'utilisateur :
  *  1. Validation du manifest AVANT toute modification (archive.js:129-147) :

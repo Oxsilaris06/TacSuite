@@ -3,12 +3,11 @@ import JSZip from 'jszip';
 
 /**
  * P3B.E — Tests E2E fonctionnels Générateur d'OI, contre
- * http://127.0.0.1:9678/oi/. Déposé depuis `.tacsuite-prep/draft-oi.spec.ts`
- * (relu/ajusté post-câblage P3B.C), à côté de tests/e2e/pctac.spec.ts dont ce
+ * http://127.0.0.1:9678/oi/. À côté de tests/e2e/pctac.spec.ts dont ce
  * fichier reprend le style, les helpers et les conventions à l'identique.
  *
- * Source des critères : docs/recon-oi.md **§9** « Checklist fonctionnelle de
- * non-régression — Générateur d'OI » (le brief de cette tâche référence un
+ * Source des critères : checklist fonctionnelle de non-régression du
+ * Générateur d'OI (le brief de cette tâche référence un
  * « §8 » ; §8 du document est en réalité « Autres éléments de GStart-main —
  * porter ou ignorer », §9 est la checklist point par point — voir
  * draft-oi-spec-notes.md §0). Un `test()` par grande rubrique, chaque
@@ -198,7 +197,7 @@ async function clickConfirmDialogOk(page: Page): Promise<void> {
 // `pctac.spec.ts` non affecté).
 test.use({ launchOptions: { channel: 'chromium' } });
 
-test.describe('OI — Checklist fonctionnelle (docs/recon-oi.md §9)', () => {
+test.describe('OI — Checklist fonctionnelle', () => {
   test.beforeEach(async ({ page }) => {
     // Handler global UNIQUE (voir justification ci-dessus) : un `prompt()`
     // consomme `pendingPromptValue` s'il est positionné (par `withPrompt()`,
@@ -1246,8 +1245,7 @@ test.describe('OI — Checklist fonctionnelle (docs/recon-oi.md §9)', () => {
     });
     await step('lien PC-Tac pointe vers ../pctac/ (SPEC-OI-CONVERSION §12.4 : pctac.html → /pctac/ ; relatif depuis P4.C, base GitHub Pages)', async () => {
       // Résolu : oi/index.html:663 portait href="/pctac/" (P3B.C, commit
-      // aa1f10f), converti en href="../pctac/" en P4.C (liens inter-apps
-      // relatifs, cf. docs/DECISIONS-DOM-ECARTS.md point 11).
+      // aa1f10f), converti en href="../pctac/" (liens inter-apps relatifs).
       await expect.soft(page.locator('#pctacLink')).toHaveAttribute('href', '../pctac/');
     });
     await step('réduire/agrandir le dock (toggleDock, persisté dockCollapsed)', async () => {
@@ -1287,8 +1285,7 @@ test.describe('OI — Checklist fonctionnelle (docs/recon-oi.md §9)', () => {
     // toucher aux 4 chemins protégés du portail racine (index.html,
     // styles/portal.css, src/apps/portal/, public/portal/ — hors périmètre
     // de ce fichier, jamais lus ni modifiés ici). Converti en `href="../"`
-    // en P4.C (liens inter-apps relatifs, cf. docs/DECISIONS-DOM-ECARTS.md
-    // point 11).
+    // en `href="../"` (liens inter-apps relatifs).
     await expect.soft(page.locator('#portalLink')).toBeAttached();
     await expect.soft(page.locator('#portalLink')).toHaveAttribute('href', '../');
   });
