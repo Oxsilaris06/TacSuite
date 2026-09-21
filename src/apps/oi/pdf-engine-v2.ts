@@ -166,8 +166,18 @@ function yieldToMain(): Promise<void> {
  * clics partout ailleurs.
  */
 async function defaultRenderPdf(blob: Blob, container: HTMLElement, progress: OiPdfRenderProgress, editAnchors: OiPdfEditAnchor[]): Promise<void> {
-    const pdfjsLib = await import('pdfjs-dist');
-    const workerUrl = (await import('pdfjs-dist/build/pdf.worker.min.mjs?url')).default;
+    // Build `legacy/` de pdf.js, PAS le build moderne (`pdfjs-dist` tout court) :
+    // ce dernier appelle `Promise.withResolvers` (27 sites) et `Object.hasOwn`
+    // SANS repli, APIs absentes de Firefox ESR 115 et de tout Chrome/Edge
+    // antérieur à la 119 — exactement le genre de navigateur figé par stratégie
+    // de groupe sur le parc Gendarmerie (SPEC §1). Le reste de TacSuite y
+    // survit (Vite transpile la SYNTAXE), mais pdf.js est copié verbatim :
+    // c'est le SEUL module qui exige des APIs runtime récentes, d'où un aperçu
+    // en échec alors que tout le reste fonctionne. Le build `legacy/` embarque
+    // les polyfills core-js correspondants pour +110 Ko au total (main +60 Ko,
+    // worker +50 Ko) — sous le plafond Workbox de 3 Mo/fichier.
+    const pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs');
+    const workerUrl = (await import('pdfjs-dist/legacy/build/pdf.worker.min.mjs?worker&url')).default;
     pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl;
 
     const data = new Uint8Array(await blob.arrayBuffer());
@@ -242,8 +252,79 @@ async function defaultRenderPdf(blob: Blob, container: HTMLElement, progress: Oi
 // regarde.
 let renderGeneration = 0;
 
+/** URL `blob:` du repli « lecteur PDF du navigateur » (niveau 2, cf.
+ * `showNativeViewerFallback`) actuellement affichée, à révoquer dès que
+ * l'aperçu est remplacé ou la modale fermée — sinon le blob (plusieurs Mo
+ * avec photos) reste retenu jusqu'au rechargement de la page. */
+let nativeFallbackUrl: string | null = null;
+
 function cancelPendingPreviewRender(): void {
     renderGeneration++;
+    if (nativeFallbackUrl) {
+        URL.revokeObjectURL(nativeFallbackUrl);
+        nativeFallbackUrl = null;
+    }
+}
+
+/**
+ * REPLI D'AFFICHAGE, NIVEAU 2 — le lecteur PDF du NAVIGATEUR.
+ *
+ * Le niveau 1 (pdf.js embarqué, `<canvas>`, `defaultRenderPdf`) reste le
+ * défaut : c'est le SEUL qui porte la correction des champs en place
+ * (`attachEditableTextLayer`) et le seul qui ne dépende de rien d'extérieur.
+ * Mais il charge pdf.js AU CLIC (import dynamique) et le fait tourner dans un
+ * Worker : sur un parc filtré, l'un comme l'autre peut être refusé, et
+ * l'utilisateur n'avait alors plus RIEN — juste un message d'erreur.
+ *
+ * Ce niveau 2 rattrape ce cas avec le lecteur que le navigateur embarque
+ * déjà : Firefox ESR intègre son propre pdf.js, présent sur TOUS les postes
+ * sans téléchargement ni worker ; Chrome/Edge ont PDFium. `<object>` (et non
+ * `<iframe>`) parce que c'est le seul élément qui AFFICHE SON CONTENU ENFANT
+ * quand le type ne peut pas être rendu : si la stratégie de groupe désactive
+ * aussi le lecteur natif, ou interdit la navigation vers `blob:`, le message
+ * de repli vers le téléchargement apparaît tout seul, au lieu d'un cadre
+ * blanc muet (l'impasse d'un `<iframe>`).
+ *
+ * Rend `false` si l'URL blob elle-même est impossible à créer (jsdom, ou
+ * `createObjectURL` neutralisé) : l'appelant retombe alors sur le message
+ * d'erreur textuel.
+ */
+function showNativeViewerFallback(container: HTMLElement, blob: Blob, cause: string): boolean {
+    let url: string;
+    try {
+        url = URL.createObjectURL(blob);
+    } catch {
+        return false;
+    }
+    if (nativeFallbackUrl) URL.revokeObjectURL(nativeFallbackUrl);
+    nativeFallbackUrl = url;
+
+    const wrapper = document.createElement('div');
+    wrapper.className = 'pdf-preview-fallback';
+
+    const note = document.createElement('p');
+    note.className = 'pdf-preview-fallback-note';
+    note.textContent =
+        "Aperçu intégré indisponible sur ce poste : le PDF est affiché par le lecteur du navigateur. "
+        + "La correction des champs directement sur l'aperçu n'existe pas dans ce mode.\n"
+        + `Cause technique : ${cause}`;
+
+    const viewer = document.createElement('object');
+    viewer.className = 'pdf-preview-fallback-object';
+    viewer.type = 'application/pdf';
+    viewer.data = url;
+    // Contenu ENFANT = ce que `<object>` affiche s'il ne sait pas rendre le
+    // type (lecteur natif désactivé par stratégie de groupe, `blob:` interdit).
+    const lastResort = document.createElement('div');
+    lastResort.className = 'pdf-preview-error';
+    lastResort.textContent =
+        "Le lecteur PDF du navigateur est lui aussi indisponible sur ce poste. "
+        + 'Utilisez le bouton « Télécharger le PDF » ci-dessous.';
+    viewer.appendChild(lastResort);
+
+    wrapper.append(note, viewer);
+    container.replaceChildren(wrapper);
+    return true;
 }
 
 /** Annule le rendu d'aperçu en cours à la fermeture de `#presentationModal`
@@ -274,8 +355,13 @@ async function runOpenPreview(deps?: OiPdfBuildDeps): Promise<void> {
     if (modal) ensurePreviewCloseCleanup(modal);
 
     // Toute génération PRÉCÉDENTE (rendu encore en cours) est supplantée :
-    // elle le constate à son prochain point de contrôle et s'arrête.
-    const generation = ++renderGeneration;
+    // elle le constate à son prochain point de contrôle et s'arrête. On passe
+    // par `cancelPendingPreviewRender()` plutôt que par un `++` direct pour que
+    // l'URL blob d'un éventuel repli « lecteur du navigateur » précédent soit
+    // révoquée ICI : sans ça, un aperçu qui REUSSIT après un repli laissait le
+    // blob (plusieurs Mo avec photos) retenu jusqu'à la fermeture de la modale.
+    cancelPendingPreviewRender();
+    const generation = renderGeneration;
     const isCancelled = (): boolean => generation !== renderGeneration;
 
     const loader = document.getElementById('pdfLoadingModal');
@@ -310,6 +396,11 @@ async function runOpenPreview(deps?: OiPdfBuildDeps): Promise<void> {
     // à préserver, le message d'erreur générique doit reprendre sa place
     // habituelle (comportement inchangé pour un échec de `renderPdf`).
     let contentReplaced = false;
+    // Blob PDF une fois CONSTRUIT : distingue « la génération a échoué, il n'y
+    // a rien à afficher » de « le PDF existe, seul son AFFICHAGE a échoué » —
+    // seul ce second cas peut basculer sur le lecteur du navigateur
+    // (`showNativeViewerFallback`).
+    let builtBlob: Blob | null = null;
 
     try {
         updateStatus('Collecte des données…');
@@ -322,6 +413,7 @@ async function runOpenPreview(deps?: OiPdfBuildDeps): Promise<void> {
         updateStatus('Composition du document…');
         const buildBlob = deps?.buildBlob ?? defaultBuildBlob;
         const blob = await buildBlob(data, { format });
+        builtBlob = blob;
 
         if (isCancelled()) return;
 
@@ -356,14 +448,15 @@ async function runOpenPreview(deps?: OiPdfBuildDeps): Promise<void> {
     } catch (error) {
         console.error('Preview Error:', error);
         if (!isCancelled()) {
-            // Message SPÉCIFIQUE pour un refus explicite (`OiPdfFitRefusalError`,
-            // même message que `downloadOiPdfV3`/`engine-v3.ts` — une seule
-            // vérité) : liste déjà la/les section(s) en cause et invite à les
-            // raccourcir, contrairement au message générique ci-dessous.
-            const message = error instanceof OiPdfFitRefusalError
-                ? error.message
-                : "Erreur lors de la génération de l'aperçu.";
-            toast(message, { kind: 'error' });
+            // Parc Gendarmerie verrouillé (SPEC §1) : DevTools y est
+            // généralement fermé par stratégie de groupe, et un message
+            // générique rendait la panne INDIAGNOSTICABLE à distance — toutes
+            // les causes possibles (worker pdf.js refusé, API navigateur
+            // absente, refus de pagination) produisaient le MÊME texte. La
+            // cause technique accompagne donc désormais chaque issue, en
+            // `textContent` et JAMAIS en `innerHTML` : elle vient d'une
+            // exception, pas d'une source de confiance.
+            const cause = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
             // Rien à perdre SEULEMENT si aucun aperçu précédent n'est affiché
             // (tout premier essai en échec) OU si CETTE génération a déjà
             // détruit ce dernier aperçu réussi (`contentReplaced`, échec en
@@ -372,10 +465,39 @@ async function runOpenPreview(deps?: OiPdfBuildDeps): Promise<void> {
             // affiché tel quel, la correction fautive n'a plus qu'à être
             // annulée/raccourcie depuis ses propres zones éditables, toujours
             // en place.
-            if (contentReplaced || presentationContent.childElementCount === 0) {
-                presentationContent.innerHTML =
-                    '<div class="pdf-preview-error">Erreur lors de la génération de l\'aperçu. ' +
-                    'Utilisez le bouton « Télécharger le PDF » ci-dessous.</div>';
+            const canReplace = contentReplaced || presentationContent.childElementCount === 0;
+            // NIVEAU 2 — cf. `showNativeViewerFallback`. Conditions cumulées :
+            // le PDF a été CONSTRUIT (sinon il n'y a rien à afficher) et
+            // l'échec n'est pas un refus de pagination (auquel cas c'est le
+            // message listant les sections fautives qu'il faut lire).
+            const felledBack = canReplace
+                && builtBlob !== null
+                && !(error instanceof OiPdfFitRefusalError)
+                && showNativeViewerFallback(presentationContent, builtBlob, cause);
+
+            if (felledBack) {
+                toast(
+                    "Aperçu intégré indisponible sur ce poste : le PDF est affiché par le lecteur du navigateur.",
+                    { kind: 'error' },
+                );
+            } else {
+                // Message SPÉCIFIQUE pour un refus explicite (`OiPdfFitRefusalError`,
+                // même message que `downloadOiPdfV3`/`engine-v3.ts` — une seule
+                // vérité) : liste déjà la/les section(s) en cause et invite à les
+                // raccourcir, contrairement au message générique ci-dessous.
+                const message = error instanceof OiPdfFitRefusalError
+                    ? error.message
+                    : "Erreur lors de la génération de l'aperçu.";
+                toast(message, { kind: 'error' });
+                if (canReplace) {
+                    const errorEl = document.createElement('div');
+                    errorEl.className = 'pdf-preview-error';
+                    errorEl.textContent =
+                        "Erreur lors de la génération de l'aperçu. "
+                        + 'Utilisez le bouton « Télécharger le PDF » ci-dessous.\n'
+                        + `Cause technique : ${cause}`;
+                    presentationContent.replaceChildren(errorEl);
+                }
             }
         }
     } finally {
