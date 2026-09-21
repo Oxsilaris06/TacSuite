@@ -348,6 +348,107 @@ describe('openPreview', () => {
         expect(errorEl?.textContent).toContain('Télécharger le PDF');
     });
 
+    it("bascule sur le lecteur PDF du navigateur (<object>) quand pdf.js échoue mais que le PDF existe", async () => {
+        const { content } = buildPresentationDom();
+        vi.spyOn(console, 'error').mockImplementation(() => {});
+        const revoked: string[] = [];
+        vi.stubGlobal('URL', Object.assign(Object.create(URL), {
+            createObjectURL: () => 'blob:fake-pdf',
+            revokeObjectURL: (u: string) => revoked.push(u),
+        }));
+
+        await PDFEngineV2.openPreview({
+            collect: () => Promise.resolve(makeCollectedData()),
+            buildBlob: () => Promise.resolve(makeFakeBlob()),
+            renderPdf: () => Promise.reject(new Error('worker pdf.js refusé')),
+        });
+
+        const viewer = content.querySelector('object.pdf-preview-fallback-object');
+        expect(viewer).not.toBeNull();
+        expect(viewer?.getAttribute('type')).toBe('application/pdf');
+        expect(viewer?.getAttribute('data')).toBe('blob:fake-pdf');
+        // Contenu enfant = dernier recours si le lecteur natif est lui aussi coupé.
+        expect(viewer?.querySelector('.pdf-preview-error')?.textContent).toContain('Télécharger le PDF');
+        // La cause reste lisible à l'écran.
+        expect(content.querySelector('.pdf-preview-fallback-note')?.textContent)
+            .toContain('worker pdf.js refusé');
+
+        // Fermeture de la modale : l'URL blob est révoquée (pas de fuite mémoire).
+        document.getElementById('presentationModal')?.dispatchEvent(new Event('close'));
+        expect(revoked).toContain('blob:fake-pdf');
+        vi.unstubAllGlobals();
+    });
+
+    it("révoque l'URL blob du repli dès qu'un aperçu suivant réussit", async () => {
+        buildPresentationDom();
+        vi.spyOn(console, 'error').mockImplementation(() => {});
+        const revoked: string[] = [];
+        vi.stubGlobal('URL', Object.assign(Object.create(URL), {
+            createObjectURL: () => 'blob:fake-pdf',
+            revokeObjectURL: (u: string) => revoked.push(u),
+        }));
+
+        // 1er aperçu : pdf.js échoue, repli sur le lecteur du navigateur.
+        await PDFEngineV2.openPreview({
+            collect: () => Promise.resolve(makeCollectedData()),
+            buildBlob: () => Promise.resolve(makeFakeBlob()),
+            renderPdf: () => Promise.reject(new Error('worker pdf.js refusé')),
+        });
+        expect(revoked).not.toContain('blob:fake-pdf');
+
+        // 2e aperçu, celui-ci RÉUSSIT : le blob du repli n'a plus de raison
+        // d'être retenu, même si la modale reste ouverte.
+        await PDFEngineV2.openPreview({
+            collect: () => Promise.resolve(makeCollectedData()),
+            buildBlob: () => Promise.resolve(makeFakeBlob()),
+            renderPdf: makeFakeRenderPdf(),
+        });
+        expect(revoked).toContain('blob:fake-pdf');
+        vi.unstubAllGlobals();
+    });
+
+    it("ne bascule PAS sur le lecteur du navigateur si le PDF n'a pas pu être construit", async () => {
+        const { content } = buildPresentationDom();
+        vi.spyOn(console, 'error').mockImplementation(() => {});
+        vi.stubGlobal('URL', Object.assign(Object.create(URL), {
+            createObjectURL: () => 'blob:fake-pdf',
+            revokeObjectURL: () => {},
+        }));
+
+        await PDFEngineV2.openPreview({
+            collect: () => Promise.resolve(makeCollectedData()),
+            buildBlob: () => Promise.reject(new Error('pdfmake KO')),
+        });
+
+        expect(content.querySelector('object.pdf-preview-fallback-object')).toBeNull();
+        expect(content.querySelector('.pdf-preview-error')?.textContent).toContain('pdfmake KO');
+        vi.unstubAllGlobals();
+    });
+
+    it("expose la cause technique quand MÊME le lecteur du navigateur est hors jeu (blob: interdit)", async () => {
+        const { content } = buildPresentationDom();
+        vi.spyOn(console, 'error').mockImplementation(() => {});
+        // Stratégie de groupe interdisant les URL `blob:` : `createObjectURL`
+        // lève, le niveau 2 est impossible, il ne reste que le texte — qui doit
+        // alors porter la cause, seul diagnostic disponible sur un parc sans console.
+        vi.stubGlobal('URL', Object.assign(Object.create(URL), {
+            createObjectURL: () => { throw new Error('blob: interdit'); },
+            revokeObjectURL: () => {},
+        }));
+
+        await PDFEngineV2.openPreview({
+            collect: () => Promise.resolve(makeCollectedData()),
+            buildBlob: () => Promise.resolve(makeFakeBlob()),
+            renderPdf: () => Promise.reject(new TypeError('Promise.withResolvers is not a function')),
+        });
+
+        expect(content.querySelector('object.pdf-preview-fallback-object')).toBeNull();
+        const errorEl = content.querySelector('.pdf-preview-error');
+        expect(errorEl?.textContent).toContain('Promise.withResolvers is not a function');
+        expect(errorEl?.textContent).toContain('Télécharger le PDF');
+        vi.unstubAllGlobals();
+    });
+
     // Non-régression (mission « effondrement pagination », mesuré : une
     // session d'aperçu enchaînant plusieurs corrections en place — clic sur un
     // texte → édition → validation → régénération, plusieurs fois de suite —

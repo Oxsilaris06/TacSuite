@@ -3363,10 +3363,45 @@ body.up-kb-open .up-kb-aware {
             box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
         }
 
+        /* Repli niveau 2 : lecteur PDF du navigateur (cf. pdf-engine-v2.ts,
+           showNativeViewerFallback). Le <object> doit remplir la zone de la
+           modale, sinon il se replie sur sa hauteur intrinseque (~150 px). */
+        .pdf-preview-fallback {
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+            min-height: 60vh;
+            gap: var(--space-2);
+        }
+
+        .pdf-preview-fallback-note {
+            margin: 0;
+            padding: var(--space-3);
+            font-size: 0.85em;
+            line-height: 1.4;
+            color: var(--text-muted);
+            background: var(--bg-interactive);
+            border-left: 3px solid var(--danger-red);
+            white-space: pre-line;
+            overflow-wrap: anywhere;
+        }
+
+        .pdf-preview-fallback-object {
+            flex: 1;
+            width: 100%;
+            min-height: 50vh;
+            border: 0;
+        }
+
         .pdf-preview-error {
             padding: var(--space-4);
             text-align: center;
             color: var(--danger-red);
+            /* La cause technique est ajoutee sur une 2e ligne (\n dans
+               textContent) et peut etre longue : on la rend lisible sans
+               debordement horizontal. */
+            white-space: pre-line;
+            overflow-wrap: anywhere;
         }
 
         /* La barre d'action fixée en bas */

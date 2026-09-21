@@ -112,6 +112,12 @@ window.addEventListener('unhandledrejection', (e) => {
     };
     const safeStringify = (a: unknown): string => {
         if (typeof a !== 'object' || a === null) return String(a);
+        // `JSON.stringify(new Error(...))` rend `{}` : name/message/stack ne
+        // sont pas énumérables. Sans ce cas, TOUT `console.error('…', e)`
+        // était journalisé `{}` — le bouton « Logs » (#log-button), seul
+        // moyen de diagnostic sur un parc où DevTools est fermé par
+        // stratégie de groupe, ne rapportait donc jamais la cause d'une panne.
+        if (a instanceof Error) return `${a.name}: ${a.message}${a.stack ? `\n${a.stack}` : ''}`;
         try { return JSON.stringify(a); } catch { return '[objet non sérialisable]'; }
     };
     const formatLog = (args: unknown[], type: string): void => {
