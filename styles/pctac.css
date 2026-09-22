@@ -813,11 +813,64 @@
             }
         }
 
-        /* Pointeur grossier etroit : les quatre libelles ne tiennent plus,
-           l'icone porte seule, le nom reste dans le title et l'aria. */
+        /* Sous 520 px, le menu deroulant natif remplace les quatre segments :
+           au pouce, une rangee d'icones se vise mal, et le menu systeme offre
+           des cibles larges. Le verre est porte par le select lui-meme, pas par
+           le conteneur — sinon les deux fonds se superposeraient. */
         @media (max-width: 520px) {
-            .mode-selector-label {
-                display: none;
+            .mode-selector {
+                display: flex;
+                align-items: center;
+                gap: var(--tac-space-1);
+                padding: var(--tac-zero);
+                background: none;
+                border: none;
+                border-radius: var(--tac-zero);
+            }
+
+            /* Un <option> ne peut pas porter d'icone : la situation active est
+               rappelee par cette pastille, a gauche du menu. */
+            .mode-selector-current {
+                flex: 0 0 auto;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                width: 34px;
+                height: 34px;
+                border-radius: var(--radius-full);
+                background: var(--accent-fill);
+                color: #fff;
+                font-size: 18px;
+            }
+
+            .mode-selector-select {
+                appearance: none;
+                flex: 1 1 auto;
+                min-width: var(--tac-zero);
+                min-height: 34px;
+                padding: var(--tac-space-1) var(--space-5) var(--tac-space-1) var(--space-3);
+                font-family: var(--font-ui);
+                font-size: 0.78em;
+                font-weight: 600;
+                color: var(--text-main);
+                background-color: var(--bg-glass);
+                border: 1px solid var(--border-glass);
+                border-radius: var(--radius-full);
+                backdrop-filter: blur(10px);
+                /* Chevron dessine en CSS (deux gradients), aucune image externe. */
+                background-image:
+                    linear-gradient(45deg, transparent 50%, currentColor 50%),
+                    linear-gradient(135deg, currentColor 50%, transparent 50%);
+                background-position:
+                    calc(100% - 18px) calc(50% - 2px),
+                    calc(100% - 13px) calc(50% - 2px);
+                background-size: 5px 5px, 5px 5px;
+                background-repeat: no-repeat;
+            }
+
+            .mode-selector-select option {
+                color: var(--text-main);
+                background: var(--bg-glass-heavy);
             }
         }
 

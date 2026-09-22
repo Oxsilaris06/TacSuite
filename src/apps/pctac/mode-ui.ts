@@ -298,16 +298,13 @@ export function syncSituationPaxChip(): void {
     else container.appendChild(btn);
 }
 
-/**
- * Construit le sélecteur dans `#modeSelector`. Sans cet élément (autre page,
- * gabarit réduit), la fonction ne fait rien : les situations restent pilotables
- * par `setMode()` et le vocabulaire s'applique quand même.
- */
-export function initModeSelector(): void {
-    const group = document.getElementById('modeSelector');
-    if (!group) return;
-    const active = currentModeId();
+/** Seuil tranché : sous 520 px (là où les libellés disparaissaient), le
+ *  sélecteur devient un menu déroulant natif. */
+const MOBILE_SELECTOR_MQ = '(max-width: 520px)';
 
+/** Rangée de boutons radio (bureau). Les quatre segments ont la même largeur,
+ *  la pastille active se déplace d'un simple `translateX`. */
+function buildRadioSelector(group: HTMLElement, active: PctacModeId): void {
     group.setAttribute('role', 'radiogroup');
     group.setAttribute('aria-label', 'Situation opérationnelle');
     group.innerHTML = `<span class="mode-selector-indicator" aria-hidden="true"></span>`
@@ -321,8 +318,61 @@ export function initModeSelector(): void {
                 <span class="mode-selector-label">${escapeAttr(mode.short)}</span>
             </button>`;
         }).join('');
-
     positionIndicator(group, PCTAC_MODE_ORDER.indexOf(active));
+}
+
+/**
+ * Menu déroulant natif (mobile). Un `<option>` n'accepte pas d'icône — les
+ * navigateurs l'ignorent — donc l'icône de la situation ACTIVE vit dans un
+ * `<span>` à gauche du `<select>`, rafraîchie au changement. Le `change`
+ * n'appelle que `setMode()` : un seul chemin de vérité, pas de seconde
+ * logique de sélection.
+ */
+function buildSelectSelector(group: HTMLElement, active: PctacModeId): void {
+    group.removeAttribute('role');
+    group.setAttribute('aria-label', 'Situation opérationnelle');
+    group.innerHTML = `<span class="mode-selector-current material-symbols-outlined" aria-hidden="true">${PCTAC_MODES[active].icon}</span>`
+        + `<select class="mode-selector-select" aria-label="Situation opérationnelle">`
+        + PCTAC_MODE_ORDER.map((id) => `<option value="${id}"${id === active ? ' selected' : ''}>${escapeAttr(PCTAC_MODES[id].label)}</option>`).join('')
+        + `</select>`;
+    const select = group.querySelector<HTMLSelectElement>('select');
+    const icon = group.querySelector<HTMLElement>('.mode-selector-current');
+    select?.addEventListener('change', () => {
+        const id = select.value as PctacModeId;
+        if (icon) icon.textContent = PCTAC_MODES[id].icon;
+        setMode(id);
+    });
+}
+
+/**
+ * Construit le sélecteur dans `#modeSelector`. Sans cet élément (autre page,
+ * gabarit réduit), la fonction ne fait rien : les situations restent pilotables
+ * par `setMode()` et le vocabulaire s'applique quand même.
+ *
+ * Un seul des deux rendus est présent dans le DOM à la fois, et la bascule se
+ * fait sur `matchMedia` : tourner le téléphone remplace le contenu au lieu
+ * d'empiler deux sélecteurs.
+ */
+export function initModeSelector(): void {
+    const group = document.getElementById('modeSelector');
+    if (!group) return;
+
+    const media = typeof window.matchMedia === 'function'
+        ? window.matchMedia(MOBILE_SELECTOR_MQ)
+        : null;
+    const render = (): void => {
+        if (media?.matches) buildSelectSelector(group, currentModeId());
+        else buildRadioSelector(group, currentModeId());
+    };
+    render();
+
+    // `matchMedia` absent (gabarit réduit) : on garde les boutons radio, état
+    // sûr au clavier et au lecteur d'écran.
+    if (media) {
+        const onMediaChange = (): void => render();
+        if (typeof media.addEventListener === 'function') media.addEventListener('change', onMediaChange);
+        else media.addListener?.(onMediaChange); // Safari ancien
+    }
 
     group.addEventListener('click', (e) => {
         const btn = (e.target as HTMLElement | null)?.closest<HTMLElement>('[data-mode-id]');
@@ -331,8 +381,10 @@ export function initModeSelector(): void {
     });
 
     // Navigation au clavier attendue d'un radiogroup : flèches pour changer,
-    // sans avoir à tabuler à travers les quatre options.
+    // sans avoir à tabuler à travers les quatre options. En menu déroulant,
+    // le `<select>` gère lui-même les flèches : on ne les lui vole pas.
     group.addEventListener('keydown', (e) => {
+        if (group.querySelector('.mode-selector-select')) return;
         const key = (e as KeyboardEvent).key;
         const delta = key === 'ArrowRight' || key === 'ArrowDown' ? 1
             : key === 'ArrowLeft' || key === 'ArrowUp' ? -1 : 0;
