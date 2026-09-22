@@ -107,6 +107,9 @@
                             autocomplete="off" class="pctac-input-lieu">
                         <datalist id="lieu_suggestions"></datalist>
                     </div>
+                    <!-- Lot B (constat 10) — suggestions « Nom Prénom » des otages
+                         pour les champs de lien adversaire. Saisie libre conservée. -->
+                    <datalist id="otages_suggestions"></datalist>
                     <div class="pctac-mt-15">
                         <label for="remarques_input">Remarques</label>
                         <textarea id="remarques_input" rows="2" placeholder="Saisir un compte-rendu..."></textarea>
@@ -176,7 +179,7 @@
                         <div><label for="adv_prenom">Prénom</label><input type="text" id="adv_prenom" placeholder="Prénom"></div>
                         <div><label for="adv_dob">D.N.</label><input type="text" id="adv_dob" placeholder="JJ/MM/AAAA"></div>
                         <div><label for="adv_lien" data-lex="adv.linkLabel">Lien Victimes</label><input type="text" id="adv_lien"
-                                placeholder="Lien avec otages"></div>
+                                list="otages_suggestions" data-lex-placeholder="adv.linkLabel" placeholder="Lien avec otages"></div>
                         <div><label for="adv_antecedents">Antécédents</label><input type="text" id="adv_antecedents"
                                 placeholder="Fichage, passif..."></div>
                         <div><label for="adv_attitude">Attitude</label><input type="text" id="adv_attitude"
@@ -290,14 +293,11 @@
                     <div><label for="photo_title">Titre</label><input type="text" id="photo_title" placeholder="Description courte"></div>
                     <div>
                         <label for="photo_category">Catégorie</label>
-                        <select id="photo_category">
-                            <option value="hostage">Otages</option>
-                            <option value="location">Lieu</option>
-                            <option value="trap">Piégeages</option>
-                            <option value="neutralized">Adversaire</option>
-                            <option value="target">VL target</option>
-                            <option value="all">Autres / Toutes</option>
-                        </select>
+                        <!-- Lot B — options alimentées par UI.refreshPhotoCategories()
+                             depuis PHOTO_CATEGORIES (source unique). Les value
+                             hostage/location/trap/neutralized/target/all sont
+                             stockées dans les fiches photo : jamais renommées. -->
+                        <select id="photo_category"></select>
                     </div>
                     <div>
                         <label>Fichier</label>
@@ -684,7 +684,7 @@
     <!-- Modale de réinitialisation -->
     <dialog class="modal" id="resetModal" aria-labelledby="resetModalTitle">
         <h3 id="resetModalTitle"><span class="material-symbols-outlined pctac-icon-danger-mid">warning</span> RESET COMPLET</h3>
-        <p class="pctac-reset-warning-text">Attention, toutes les données (logs,
+        <p class="pctac-reset-warning-text" data-lex="Attention, toutes les données (logs, {adv.plural}, {host.plural}, photos) seront définitivement supprimées. Cette action est irréversible.">Attention, toutes les données (logs,
             adversaires, otages, photos) seront définitivement supprimées. Cette action est irréversible.</p>
         <div class="pctac-actions-row-gap10">
             <button type="button" class="add-btn pctac-btn-danger-bg" id="confirmResetBtn">CONFIRMER LE
@@ -732,7 +732,7 @@
                 <div class="row-2"><div><label for="edit_adv_nom">Nom</label><input type="text" id="edit_adv_nom" placeholder="Nom" class="pctac-input-lg"></div>
                 <div><label for="edit_adv_prenom">Prénom</label><input type="text" id="edit_adv_prenom" placeholder="Prénom" class="pctac-input-lg"></div></div>
                 <div class="row-2"><div><label for="edit_adv_dob">D.N.</label><input type="text" id="edit_adv_dob" placeholder="JJ/MM/AAAA" class="pctac-input-lg"></div>
-                <div><label for="edit_adv_lien" data-lex="adv.linkLabel">Lien Victimes</label><input type="text" id="edit_adv_lien" placeholder="Lien avec otages" class="pctac-input-lg"></div></div>
+                <div><label for="edit_adv_lien" data-lex="adv.linkLabel">Lien Victimes</label><input type="text" id="edit_adv_lien" list="otages_suggestions" data-lex-placeholder="adv.linkLabel" placeholder="Lien avec otages" class="pctac-input-lg"></div></div>
                 <div><label for="edit_adv_antecedents">Antécédents</label><textarea id="edit_adv_antecedents" rows="2" placeholder="Fichage, passif..." class="pctac-textarea-lg"></textarea></div>
                 <div class="row-2"><div><label for="edit_adv_attitude">Attitude</label><input type="text" id="edit_adv_attitude" placeholder="Calme, nerveux..." class="pctac-input-lg"></div>
                 <div><label for="edit_adv_substance">Substance</label><input type="text" id="edit_adv_substance" placeholder="Alcool, stup..." class="pctac-input-lg"></div></div>
@@ -924,7 +924,7 @@
         </button>
 
         <!-- PASSERELLE OI → PC TAC : importe l'équipe + les adversaires depuis une archive .oi.zip -->
-        <button type="button" class="dock-menu-item" id="importOiDockBtn" title="Importer l'équipe et les adversaires depuis l'Ordre Initial (.oi.zip)" aria-label="Importer l'équipe et les adversaires depuis l'Ordre Initial (.oi.zip)">
+        <button type="button" class="dock-menu-item" id="importOiDockBtn" data-lex-title="Importer l'équipe et les {adv.plural} depuis l'Ordre Initial (.oi.zip)" data-lex-aria="Importer l'équipe et les {adv.plural} depuis l'Ordre Initial (.oi.zip)" title="Importer l'équipe et les adversaires depuis l'Ordre Initial (.oi.zip)" aria-label="Importer l'équipe et les adversaires depuis l'Ordre Initial (.oi.zip)">
             <span class="material-symbols-outlined pctac-icon-accent-fallback">move_to_inbox</span>
         </button>
 

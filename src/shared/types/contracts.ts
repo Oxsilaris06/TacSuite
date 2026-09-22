@@ -653,6 +653,10 @@ export interface UIContract {
     /** Coche la pastille `hex` et reporte la valeur dans l'input caché. */
     selectColorSwatch(hex: string, paletteId: string, hiddenInputId?: string): void;
     refreshLieuSuggestions(): void;
+    /** Lot B — suggestions « Nom Prénom » des otages pour les liens adversaire. */
+    refreshOtagesSuggestions(): void;
+    /** Lot B — (re)peuple le `<select>` de catégorie photo depuis `PHOTO_CATEGORIES`. */
+    refreshPhotoCategories(): void;
 
     /* --- tableau du journal --- */
     /** Ordre d'affichage du journal : false = chrono ASC (stockage), true = inversé (récent en tête). */

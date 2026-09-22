@@ -62,7 +62,7 @@
  * `contracts.ts` (interdit par la mission) ; à signaler au gate.
  */
 
-import type { PctacLogEntry, UIContract } from '@shared/types/contracts.js';
+import type { PctacLogEntry, PctacPhotoCategory, UIContract } from '@shared/types/contracts.js';
 import { PDF_PAX_COLORS, FREE_MODE_COLORS, LONG_PRESS_DELAY, PHOTO_CATEGORIES, ADV_STATUS, HOST_STATUS, hostageStatusFromBlessures } from '@pctac/config.js';
 import type { PctacStatusMeta } from '@pctac/config.js';
 import { Storage } from '@pctac/storage.js';
@@ -186,6 +186,19 @@ function populateLienSelect(sel: HTMLSelectElement | null, current: string): voi
 function formatDateFr(iso: string): string {
   const [y, m, d] = iso.split('-');
   return (d && m && y) ? `${d}/${m}/${y}` : iso;
+}
+
+/**
+ * Lot B (constats 7 et 9) — libellé d'une catégorie photo dérivé de la
+ * situation courante. Seuls « Otages » et « Adversaire » suivent le vocabulaire
+ * du mode ; les autres restent fixes. `PHOTO_CATEGORIES` demeure la source
+ * unique des `id` (valeurs stockées, jamais renommées).
+ */
+function photoCategoryLabel(cat: PctacPhotoCategory): string {
+  const mode = currentMode();
+  if (cat.id === 'hostage') return mode.host.plural;
+  if (cat.id === 'neutralized') return mode.adv.singular;
+  return cat.label;
 }
 
 /**
@@ -521,6 +534,7 @@ export const UI: UIContract = {
     this.renderLogTable(Storage.loadLogData());
     this.refreshLieuSuggestions();
     this.hideEditModal();
+    toast('Fiche mise à jour', { kind: 'success' }); // Lot B — constat 23
   },
 
   // ui.js:313-316
@@ -536,6 +550,38 @@ export const UI: UIContract = {
     if (!dl) return;
     const hist = LogManager.getLieuHistory();
     dl.innerHTML = hist.map((l) => `<option value="${l.replace(/"/g, '&quot;')}">`).join('');
+  },
+
+  /**
+   * Lot B (constat 10) — suggestions « Nom Prénom » des otages pour les champs
+   * de lien adversaire (`#adv_lien`, `#edit_adv_lien`). Même motif que
+   * `refreshLieuSuggestions` : le champ reste un `<input type="text">` libre, la
+   * datalist ne fait que proposer ; le stockage demeure du texte.
+   */
+  refreshOtagesSuggestions(): void {
+    const dl = document.getElementById('otages_suggestions');
+    if (!dl) return;
+    const host = Storage.loadCollection('pcTacHostages') || [];
+    dl.innerHTML = host
+      .map((h) => `${(h.nom as string | undefined) || ''} ${(h.prenom as string | undefined) || ''}`.trim())
+      .filter(Boolean)
+      .map((n) => `<option value="${esc(n)}">`)
+      .join('');
+  },
+
+  /**
+   * Lot B (constats 7 et 9) — alimente le `<select id="photo_category">` depuis
+   * `PHOTO_CATEGORIES` (source unique) au lieu des options figées du HTML. Les
+   * `value` restent strictement `hostage/location/trap/neutralized/target/all`
+   * (valeurs stockées dans les fiches photo). Le libellé suit la situation.
+   */
+  refreshPhotoCategories(): void {
+    const sel = document.getElementById('photo_category') as HTMLSelectElement | null;
+    if (!sel) return;
+    const previous = sel.value;
+    sel.innerHTML = PHOTO_CATEGORIES.map((cat) =>
+      `<option value="${cat.id}">${esc(photoCategoryLabel(cat))}</option>`).join('');
+    if (previous && PHOTO_CATEGORIES.some((c) => c.id === previous)) sel.value = previous;
   },
 
   // ui.js:326-336
@@ -728,6 +774,9 @@ export const UI: UIContract = {
     }
     // C8 — alimente le select « Lien Adversaire » du formulaire de création.
     populateLienSelect(document.getElementById('hostage_lien') as HTMLSelectElement | null, '');
+    // Lot B (constat 10) — suggestions du lien adversaire, rafraîchies à chaque
+    // rendu des otages (comme les lieux le sont à chaque entrée de journal).
+    this.refreshOtagesSuggestions();
     const tbody = document.getElementById('hostage-table-body');
     if (!tbody) return;
     if (raw.length === 0) {
@@ -826,6 +875,7 @@ export const UI: UIContract = {
     Storage.saveCollection('pcTacFriends', list);
     this.hideEditFriendModal();
     this.renderFriends();
+    toast('Fiche mise à jour', { kind: 'success' }); // Lot B — constat 23
   },
 
   /**
@@ -853,7 +903,7 @@ export const UI: UIContract = {
     if (filterContainer) {
       filterContainer.innerHTML = PHOTO_CATEGORIES.map((cat) => `
                 <button class="tab-btn ${filterCategory === cat.id ? 'active' : ''}" onclick="UI.renderPhotos('${cat.id}')" style="padding: 6px 12px; font-size: 0.8em; width: auto; flex-direction: row; min-height: unset;">
-                    <span>${cat.label}</span>
+                    <span>${esc(photoCategoryLabel(cat))}</span>
                 </button>
             `).join('');
     }
@@ -877,7 +927,7 @@ export const UI: UIContract = {
                         </div>
                     </div>
                     <div style="display: flex; justify-content: space-between; align-items: center;">
-                        <span style="font-size: 0.7em; color: var(--text-muted); text-transform: uppercase;">${(PHOTO_CATEGORIES.find((c) => c.id === item.category) || { label: 'Autre' }).label}</span>
+                        <span style="font-size: 0.7em; color: var(--text-muted); text-transform: uppercase;">${esc(photoCategoryLabel(PHOTO_CATEGORIES.find((c) => c.id === item.category) || { id: item.category as string, label: 'Autre' }))}</span>
                         ${(item.category === 'neutralized' || item.category === 'trap') ? `
                             <select onchange="UI.updateAdversaryStatus('${item.id}', this.value)" style="font-size: 0.7em; padding: 2px 20px 2px 5px; height: auto; min-height: unset; width: auto; background-position: right 2px center;">
                                 <option value="active" ${item.status === 'active' || !item.status ? 'selected' : ''}>Actif</option>
@@ -1215,6 +1265,7 @@ export const UI: UIContract = {
     this.renderLogTable(Storage.loadLogData());
     await this.renderAdversaries();
     if (fileInput) { fileInput.value = ''; delete fileInput.dataset.compressedBase64; }
+    toast('Fiche mise à jour', { kind: 'success' }); // Lot B — constat 23
   },
 
   // ui.js:808-830
@@ -1236,7 +1287,16 @@ export const UI: UIContract = {
     );
     // U16 — statut de la fiche dans la modale d'édition.
     const statusSel = document.getElementById('edit_host_status') as HTMLSelectElement | null;
-    if (statusSel) statusSel.value = String(item.status || 'ok');
+    if (statusSel) {
+      statusSel.value = String(item.status || 'ok');
+      // Lot B (constat 3) — nouvelle ouverture : le choix n'a pas encore été
+      // touché par l'opérateur, l'heuristique blessures→statut reste permise.
+      delete statusSel.dataset.userTouched;
+      if (!statusSel.dataset.boundTouched) {
+        statusSel.dataset.boundTouched = '1';
+        statusSel.addEventListener('change', () => { statusSel.dataset.userTouched = '1'; });
+      }
+    }
     const preview = document.getElementById('edit_host_preview') as HTMLElement;
     const existingPhoto = await ImageStore.get(id);
     preview.innerHTML = existingPhoto
@@ -1306,11 +1366,14 @@ export const UI: UIContract = {
     }
 
     Storage.saveCollection('pcTacHostages', list);
-    // U16 — statut : valeur du select, mais si les blessures ont changé,
-    // l'heuristique reprend la main (recalcul simple, pas de dialogue).
+    // U16 / Lot B (constat 3) — le choix humain prime : l'heuristique
+    // hostageStatusFromBlessures() ne reprend la main QUE si l'opérateur n'a pas
+    // touché au sélecteur de statut. S'il y a touché, sa valeur tient, même
+    // après modification des blessures.
     const statusSel = document.getElementById('edit_host_status') as HTMLSelectElement | null;
     let newStatus = (statusSel && statusSel.value) || String(host.status || 'ok');
-    if (((host.blessures as string | undefined) || '') !== oldBlessures) {
+    const userTouched = statusSel?.dataset.userTouched === '1';
+    if (!userTouched && ((host.blessures as string | undefined) || '') !== oldBlessures) {
       newStatus = hostageStatusFromBlessures(host.blessures);
     }
     setStatusOnFiche('pcTacHostages', id, newStatus);
@@ -1318,6 +1381,7 @@ export const UI: UIContract = {
     this.renderLogTable(Storage.loadLogData());
     await this.renderHostages();
     if (fileInput) { fileInput.value = ''; delete fileInput.dataset.compressedBase64; }
+    toast('Fiche mise à jour', { kind: 'success' }); // Lot B — constat 23
   },
 
 };

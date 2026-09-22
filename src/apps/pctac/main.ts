@@ -66,7 +66,7 @@ if (!window.PocheTuto || !window.PocheTuto.mount) {
             title: 'Tutoriel interactif — PC Tac',
             insertAfter: '#dockToggleBtn',
         },
-        data: pctacTutoData,
+        data: pctacTutoData(),
     });
 }
 
@@ -120,6 +120,9 @@ function renderCollectionModeBlocks(): void {
     const mode = currentMode();
     renderModeBlocks(document.getElementById('advModeBlocks'), mode.advBlocks, 'adv');
     renderModeBlocks(document.getElementById('hostageModeBlocks'), mode.hostBlocks, 'hostage');
+    // Lot B — la catégorie photo suit la situation (« Otages »/« Adversaire »).
+    // Repeuplée AVANT applyLexicon, qui en pose alors les libellés résolus.
+    UI.refreshPhotoCategories();
     applyLexicon();
 }
 
@@ -173,6 +176,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     const initialLogs = Storage.loadLogData();
     UI.renderLogTable(initialLogs);
     UI.refreshLieuSuggestions();
+    // Lot B (constat 10) — suggestions du lien adversaire disponibles dès
+    // l'ouverture, sans attendre un premier rendu de la vue Otages.
+    UI.refreshOtagesSuggestions();
 
     // §5.3 étape 8 — Initialiser les écouteurs d'onglets.
     document.querySelectorAll('.tab-btn').forEach((btnEl) => {
@@ -323,7 +329,17 @@ document.addEventListener('DOMContentLoaded', async () => {
                 });
 
                 // Au moins un champ texte/photo doit avoir une vraie valeur
-                if (values.some((v) => v && (typeof v !== 'string' || v.trim() !== ''))) {
+                if (!values.some((v) => v && (typeof v !== 'string' || v.trim() !== ''))) {
+                    // Lot B — une fiche ENTIÈREMENT vide est refusée, avec un
+                    // message : sans cette branche, le submit ne produisait rien.
+                    toast('Renseignez au moins un champ', { kind: 'error' });
+                    return;
+                }
+                // Lot B — anti double-soumission : le traitement est async
+                // (compression photo, IndexedDB) ; on verrouille le bouton.
+                const submitBtn = f.querySelector<HTMLButtonElement>('button[type="submit"]');
+                if (submitBtn) submitBtn.disabled = true;
+                try {
                     const itemId = Date.now().toString();
                     const mapped = cfg.map(values);
                     // Champs doctrinaux de la situation courante, posés À PLAT
@@ -411,6 +427,10 @@ document.addEventListener('DOMContentLoaded', async () => {
                     }
                     if (cfg.view === 'view-amis') UI.renderFriends();
                     toast('Fiche ajoutée', { kind: 'success' }); // U12
+                } finally {
+                    // Lot B — quoi qu'il arrive (succès ou exception), on rend
+                    // la main à l'opérateur : le bouton ne doit pas rester mort.
+                    if (submitBtn) submitBtn.disabled = false;
                 }
             });
         }
@@ -452,6 +472,9 @@ document.addEventListener('DOMContentLoaded', async () => {
             const file = fileInput.files?.[0];
             if (!title || !file) { toast('Titre et fichier requis', { kind: 'error' }); return; }
 
+            // Lot B — anti double-soumission, comme les fiches (compression async).
+            const submitBtn = UI.elements.photoForm?.querySelector<HTMLButtonElement>('button[type="submit"]');
+            if (submitBtn) submitBtn.disabled = true;
             try {
                 const compressedData = await Utils.compressImage(file, 1024, 1024, 0.7);
                 const photoId = Date.now().toString();
@@ -465,6 +488,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             } catch (err) {
                 console.error('Erreur de compression/sauvegarde:', err);
                 toast("Erreur lors de l'ajout de la photo.", { kind: 'error' });
+            } finally {
+                if (submitBtn) submitBtn.disabled = false;
             }
         });
     }
