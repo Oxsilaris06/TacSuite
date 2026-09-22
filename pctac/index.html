@@ -14,6 +14,7 @@
     <link rel="icon" href="/favicon-96x96.png" type="image/png" sizes="96x96">
     <link rel="apple-touch-icon" href="/apple-touch-icon.png">
     <link rel="stylesheet" href="/styles/tacsuite-tokens.css">
+    <link rel="stylesheet" href="/styles/ui-platform.css">
     <link rel="stylesheet" href="/styles/pctac.css">
 </head>
 
@@ -87,11 +88,11 @@
                         </div>
                         <div>
                             <label>Pax</label>
-                            <div class="pax-select" id="pax_select_container">
-                                <span class="pax-select-option" data-pax="Adversaire" data-lex="adv.paxChip">Adversaire</span>
-                                <span class="pax-select-option" data-pax="Otage" data-lex="host.paxChip">Otage</span>
-                                <span class="pax-select-option" data-pax="Inter">Inter</span>
-                                <span class="pax-select-option" data-pax="Oscar">Oscar</span>
+                            <div class="pax-select" id="pax_select_container" role="radiogroup" aria-label="Pax">
+                                <button type="button" role="radio" aria-checked="true" class="pax-select-option" data-pax="Adversaire" data-lex="adv.paxChip">Adversaire</button>
+                                <button type="button" role="radio" aria-checked="false" class="pax-select-option" data-pax="Otage" data-lex="host.paxChip">Otage</button>
+                                <button type="button" role="radio" aria-checked="false" class="pax-select-option" data-pax="Inter">Inter</button>
+                                <button type="button" role="radio" aria-checked="false" class="pax-select-option" data-pax="Oscar">Oscar</button>
                                 <button type="button" id="openCreatePaxBtn" class="pax-select-option pax-select-option--add" aria-label="Créer un nouvel intervenant">
                                     <span class="material-symbols-outlined">add</span>
                                 </button>
@@ -373,7 +374,7 @@
                      boutons déplacés tels quels depuis #plan_more_tools, mêmes ids/handlers. -->
                 <div id="plan_layers_panel">
                     <div class="plan-layers-section">
-                        <p class="plan-layers-section-title">Fond de carte</p>
+                        <p class="tac-layers-section-title">Fond de carte</p>
                         <div class="plan-layers-row">
                             <button type="button" id="plan_btn_topo" class="plan-tool-fab" title="Fond Plan IGN (carte topographique couleur)" aria-label="Basculer entre le fond imagerie satellite et le fond Plan IGN couleur">
                                 <span class="material-symbols-outlined">map</span>
@@ -382,7 +383,7 @@
                         </div>
                     </div>
                     <div class="plan-layers-section">
-                        <p class="plan-layers-section-title">Surimpressions</p>
+                        <p class="tac-layers-section-title">Surimpressions</p>
                         <div class="plan-layers-row">
                             <button type="button" id="plan_btn_lidar" class="plan-tool-fab" title="Ombrage LiDAR HD (relief sous la végétation)" aria-label="Basculer l'ombrage LiDAR HD : MNT, MNS, MNH ou aucun">
                                 <span class="material-symbols-outlined">landslide</span>
@@ -404,7 +405,7 @@
                         </div>
                     </div>
                     <div class="plan-layers-section">
-                        <p class="plan-layers-section-title">Vue</p>
+                        <p class="tac-layers-section-title">Vue</p>
                         <div class="plan-layers-row">
                             <button type="button" id="plan_btn_3d" class="plan-tool-fab" title="Basculer vue 2D / 3D relief" aria-label="Basculer entre vue 2D et 3D">
                                 <span class="material-symbols-outlined">deployed_code</span>
@@ -418,7 +419,7 @@
                      fichiers .gpx, puis afficher/masquer/supprimer trace par trace. -->
                 <div id="plan_gpx_panel">
                     <div class="plan-gpx-head">
-                        <p class="plan-layers-section-title">Traces GPX</p>
+                        <p class="tac-layers-section-title">Traces GPX</p>
                         <div class="plan-gpx-actions">
                             <button type="button" id="plan_gpx_all" class="plan-gpx-btn" title="Masquer toutes les traces" aria-label="Masquer toutes les traces">
                                 <span class="material-symbols-outlined">visibility</span>
@@ -649,7 +650,7 @@
     <!-- MODALS -->
 
     <dialog class="modal pctac-modal-scroll-90" id="createPaxModal" aria-labelledby="createPaxModalTitle">
-        <button onclick="UI.hideCreatePaxModal()" class="pctac-modal-close-btn" aria-label="Fermer la fenêtre de création d'intervenant">
+        <button onclick="UI.hideCreatePaxModal()" class="pctac-modal-close-btn up-tap-target" aria-label="Fermer la fenêtre de création d'intervenant">
             <span class="material-symbols-outlined pctac-icon-24">close</span>
         </button>
         <div class="pctac-create-pax-header">
@@ -856,22 +857,22 @@
             <div>
                 <label class="pctac-muted-sm">Couleur du texte</label>
                 <div id="plan_text_color_palette" class="pctac-text-color-row">
-                    <button type="button" class="plan-text-color" data-color="#ffffff" aria-label="Choisir la couleur blanche" style="width: 28px; height: 28px; border-radius: 50%; background: #ffffff; border: 2px solid #fff; cursor: pointer;"></button>
-                    <button type="button" class="plan-text-color" data-color="#fbbf24" aria-label="Choisir la couleur ambre" style="width: 28px; height: 28px; border-radius: 50%; background: #fbbf24; border: 2px solid transparent; cursor: pointer;"></button>
-                    <button type="button" class="plan-text-color" data-color="#ef4444" aria-label="Choisir la couleur rouge" style="width: 28px; height: 28px; border-radius: 50%; background: #ef4444; border: 2px solid transparent; cursor: pointer;"></button>
-                    <button type="button" class="plan-text-color" data-color="#22c55e" aria-label="Choisir la couleur verte" style="width: 28px; height: 28px; border-radius: 50%; background: #22c55e; border: 2px solid transparent; cursor: pointer;"></button>
-                    <button type="button" class="plan-text-color" data-color="#3b82f6" aria-label="Choisir la couleur bleue" style="width: 28px; height: 28px; border-radius: 50%; background: #3b82f6; border: 2px solid transparent; cursor: pointer;"></button>
+                    <button type="button" class="plan-text-color up-tap-target" data-color="#ffffff" aria-label="Choisir la couleur blanche" style="width: 28px; height: 28px; border-radius: 50%; background: #ffffff; border: 2px solid #fff; cursor: pointer;"></button>
+                    <button type="button" class="plan-text-color up-tap-target" data-color="#fbbf24" aria-label="Choisir la couleur ambre" style="width: 28px; height: 28px; border-radius: 50%; background: #fbbf24; border: 2px solid transparent; cursor: pointer;"></button>
+                    <button type="button" class="plan-text-color up-tap-target" data-color="#ef4444" aria-label="Choisir la couleur rouge" style="width: 28px; height: 28px; border-radius: 50%; background: #ef4444; border: 2px solid transparent; cursor: pointer;"></button>
+                    <button type="button" class="plan-text-color up-tap-target" data-color="#22c55e" aria-label="Choisir la couleur verte" style="width: 28px; height: 28px; border-radius: 50%; background: #22c55e; border: 2px solid transparent; cursor: pointer;"></button>
+                    <button type="button" class="plan-text-color up-tap-target" data-color="#3b82f6" aria-label="Choisir la couleur bleue" style="width: 28px; height: 28px; border-radius: 50%; background: #3b82f6; border: 2px solid transparent; cursor: pointer;"></button>
                 </div>
                 <input type="hidden" id="plan_text_color_val" value="#ffffff">
             </div>
             <div>
                 <label class="pctac-muted-sm">Taille</label>
                 <div class="pctac-size-controls-row">
-                    <button type="button" id="plan_text_size_minus" title="Réduire" aria-label="Réduire la taille du texte" class="pctac-icon-btn-sq">
+                    <button type="button" id="plan_text_size_minus" title="Réduire" aria-label="Réduire la taille du texte" class="pctac-icon-btn-sq up-tap-target">
                         <span class="material-symbols-outlined pctac-icon-20">text_decrease</span>
                     </button>
                     <span id="plan_text_size_val" class="pctac-text-size-val">13</span>
-                    <button type="button" id="plan_text_size_plus" title="Agrandir" aria-label="Agrandir la taille du texte" class="pctac-icon-btn-sq">
+                    <button type="button" id="plan_text_size_plus" title="Agrandir" aria-label="Agrandir la taille du texte" class="pctac-icon-btn-sq up-tap-target">
                         <span class="material-symbols-outlined pctac-icon-20">text_increase</span>
                     </button>
                 </div>
@@ -953,8 +954,8 @@
     <!-- Overlay de chargement générique (export PDF, export/import archive, capture carte) —
          piloté par src/apps/pctac/busy.ts (showBusy/hideBusy). Pattern repris de
          l'OI (#pdfLoadingModal, oi/index.html:972). -->
-    <div id="pctacBusyOverlay" role="status" aria-live="polite">
-        <div class="pctac-busy-card">
+    <div id="pctacBusyOverlay" class="tac-busy-overlay" role="status" aria-live="polite">
+        <div class="tac-busy-card">
             <!-- Sphere de points animee par shared/orb.ts, montee/demontee par
                  showBusy()/hideBusy() : rien ne tourne quand rien n'est affiche. -->
             <canvas id="pctacBusyOrb" class="tac-orb" width="72" height="72" aria-hidden="true"></canvas>

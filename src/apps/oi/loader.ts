@@ -21,10 +21,13 @@ function isVisible(el: HTMLElement): boolean {
 
 function sync(loader: HTMLElement): void {
     if (isVisible(loader)) {
+        // C9 — signale l'attente aux technologies d'assistance (role="status").
+        loader.setAttribute('aria-busy', 'true');
         // Monté APRÈS l'affichage : un canvas dans un parent masqué mesure zéro.
         if (!orb) orb = mountOrb(document.getElementById('pdfLoadingOrb') as HTMLCanvasElement | null);
         return;
     }
+    loader.removeAttribute('aria-busy');
     orb?.stop();
     orb = null;
 }

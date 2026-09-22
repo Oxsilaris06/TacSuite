@@ -360,6 +360,28 @@ document.addEventListener('input', (e) => dispatchOiAction(oiInputActions, e));
 document.addEventListener('change', (e) => dispatchOiAction(oiChangeActions, e));
 
 /**
+ * C8 — Fermeture au clic sur le fond, par délégation : un clic dont la cible EST
+ * le `<dialog>` (fond ou padding, jamais un enfant) ferme la modale. Les
+ * surfaces de travail plein écran où le clic sur le fond fait partie du geste
+ * sont EXCLUES — les fermer serait une perte de travail : cartographie,
+ * annotation photo, capture carto et sélection de membre pour annotation.
+ */
+const DIALOG_BACKDROP_EXEMPT = new Set<string>([
+    'cartographyModal',
+    'annotationModal',
+    'oi_carto_capture_modal',
+    'memberSelectionModalCanvas',
+]);
+document.addEventListener('click', (e) => {
+    const dialog = e.target;
+    if (!(dialog instanceof HTMLDialogElement) || !dialog.open) return;
+    if (DIALOG_BACKDROP_EXEMPT.has(dialog.id)) return;
+    if (typeof dialog.close === 'function') dialog.close();
+    // Ne libère le verrou de scroll que s'il ne reste aucune modale ouverte.
+    if (!document.querySelector('dialog[open]')) document.body.classList.remove('modal-open');
+});
+
+/**
  * Point d'entrée principal du Générateur d'OI.
  * §12.3 — Corps DOMContentLoaded, 18 étapes, ordre de 4.html:4537-4791.
  * Aucune étape fusionnée, réordonnée ni « optimisée ».

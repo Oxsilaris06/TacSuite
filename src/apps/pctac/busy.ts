@@ -39,7 +39,11 @@ export function showBusy(message = 'Chargement…'): void {
     const messageEl = getMessageEl();
     if (messageEl) messageEl.textContent = message;
     const overlay = getOverlay();
-    if (overlay) overlay.style.display = 'flex';
+    if (overlay) {
+        overlay.style.display = 'flex';
+        // C9 — signale l'attente aux technologies d'assistance (role="status").
+        overlay.setAttribute('aria-busy', 'true');
+    }
     // Monte apres l'affichage : la sphere lit `clientWidth` pour se
     // dimensionner, et un canvas dans un parent `display: none` mesure zero.
     if (!orb) orb = mountOrb(document.getElementById('pctacBusyOrb') as HTMLCanvasElement | null);
@@ -50,7 +54,10 @@ export function hideBusy(): void {
     depth = Math.max(0, depth - 1);
     if (depth > 0) return;
     const overlay = getOverlay();
-    if (overlay) overlay.style.display = 'none';
+    if (overlay) {
+        overlay.style.display = 'none';
+        overlay.removeAttribute('aria-busy');
+    }
     orb?.stop();
     orb = null;
 }

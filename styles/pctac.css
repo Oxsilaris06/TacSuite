@@ -8,7 +8,7 @@
  *   - vendor/maplibre-gl.css : desormais importe via `maplibre-gl/dist/maplibre-gl.css`
  *     dans src/apps/pctac/main.ts (npm, cf. mission P0.A5 point 4).
  *
- * Sources concatenees, dans l'ordre de chargement original de pctac2.html :
+ * Sources de cette feuille, dans l'ordre de chargement original de pctac2.html :
  *   0. Regle de base .material-symbols-outlined — AJOUT P0.FIX (absente des
  *      sources listees ci-dessous : dans pctac2.html elle etait fournie par la
  *      feuille distante https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined...
@@ -17,8 +17,9 @@
  *      via le paquet npm epingle `material-symbols` (import dans
  *      src/shared/fonts.ts, charge par src/apps/pctac/main.ts) et sa CSS est
  *      identique caractere pour caractere a celle servie par Google.
- *   1. shared/ui-platform.css       (lien <link>, pctac2.html:19 — charge AVANT le
- *      <style> inline ; socle UI partagee OI+PC-Tac)
+ *   1. (EXCLU) shared/ui-platform.css — extrait vers styles/ui-platform.css (C2)
+ *      et charge par son propre <link> AVANT cette feuille ; il n'est donc plus
+ *      concatene ici. Voir l'en-tete de styles/ui-platform.css.
  *   2. <style> inline principal     (pctac2.html:58-1530, theme "Tactical Glass")
  *   3. <style> inline #plan_legend  (pctac2.html:1916, masque le marker <summary>)
  *   4. <style id="tl-orbat-style">  (pctac2.html:1927-1962, panneau Geoloc Tchap live)
@@ -49,152 +50,6 @@
     -moz-osx-font-smoothing: grayscale;
     text-rendering: optimizeLegibility;
     font-feature-settings: 'liga';
-}
-
-/* ---------------------------------------------------------------------------
- * Source 1/4 : shared/ui-platform.css (GStart-main/shared/ui-platform.css, 141 lignes)
- * Socle UI transverse partage avec l'OI (4.html) — comportements/accessibilite.
- * ------------------------------------------------------------------------- */
-/* =====================================================================
-   UI Platform — socle "native-quality" partagé OI (4.html) + PC-Tac (pctac2.html)
-   Chargé dans les deux <head>. Purement ADDITIF : aucune règle existante
-   n'est modifiée. Un seul lieu de vérité pour le comportement de plateforme.
-   ===================================================================== */
-
-:root {
-    /* T1 — Safe-area (encoche / home indicator). 0px par défaut = no-op desktop. */
-    --safe-top: env(safe-area-inset-top, 0px);
-    --safe-right: env(safe-area-inset-right, 0px);
-    --safe-bottom: env(safe-area-inset-bottom, 0px);
-    --safe-left: env(safe-area-inset-left, 0px);
-    /* Hauteur du clavier virtuel (mis à jour par ui-platform.js via visualViewport). */
-    --kb-inset: 0px;
-}
-
-/* T5 — Confinement du scroll : tue le pull-to-refresh PWA parasite et le scroll-chaining. */
-html {
-    overscroll-behavior-y: none;
-}
-.up-scroll-contain {
-    overscroll-behavior: contain;
-    -webkit-overflow-scrolling: touch;
-}
-
-/* T2 — Anti-zoom iOS : tout champ < 16px déclenche un zoom auto au focus sur tactile.
-   On force >= 16px uniquement en pointeur grossier (mobile), jamais sur desktop. */
-@media (pointer: coarse) {
-    input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]),
-    textarea,
-    select {
-        font-size: max(16px, 1em);
-    }
-}
-
-/* T12 — Anneau de focus visible global (clavier uniquement). Neutralise les
-   outline:none des apps SANS réintroduire de halo à la souris. */
-:focus-visible {
-    outline: 2px solid var(--accent-blue, #3b82f6) !important;
-    outline-offset: 2px;
-    border-radius: 3px;
-}
-/* Pas d'outline résiduel quand le focus n'est PAS clavier. */
-:focus:not(:focus-visible) {
-    outline: none;
-}
-
-/* T9 — Sur tactile (pas de vrai survol), neutraliser le « lift » transform des
-   règles :hover qui reste COLLÉ après un tap (effet « web » typique). Additif :
-   ne réécrit aucune des règles :hover existantes, ne s'applique qu'aux pointeurs
-   grossiers, et seulement à la propriété transform (le retour visuel reste assuré
-   par :active). Couvre les classes interactives réelles des deux apps. */
-@media (hover: none) and (pointer: coarse) {
-    a:hover, button:hover, [role="button"]:hover,
-    .add-btn:hover, .remove-btn:hover, .tab-btn:hover, .dock-menu-item:hover,
-    .patracdvr-member-btn:hover, .action-btn-small:hover, .delete-btn:hover,
-    .delete:hover, .edit:hover, .tool-btn:hover, .effrac-tool-btn:hover,
-    .order-chip:hover, .rame-vl-chip:hover, .collapsible-header:hover,
-    .wizard-progress-step:hover, .quick-edit-btn:hover, .vehicle-name:hover,
-    .file-upload-label:hover, .custom-file-upload:hover, .image-preview-item:hover,
-    .plan-tool-fab:hover, .color-swatch:hover, .add-log-btn:hover,
-    .oi-carto-fab:hover, .oi-carto-draw-btn:hover, .oi-carto-search-result:hover {
-        transform: none !important;
-    }
-    /* Retour tactile immédiat (<100 ms) au lieu d'un survol fantôme. */
-    a:active, button:active, [role="button"]:active,
-    .add-btn:active, .tab-btn:active, .dock-menu-item:active, .plan-tool-fab:active {
-        transition: transform 0.06s ease;
-    }
-}
-
-/* T14 — prefers-reduced-motion partagé (absent de PC-Tac). */
-@media (prefers-reduced-motion: reduce) {
-    *, *::before, *::after {
-        animation-duration: 0.001ms !important;
-        animation-iteration-count: 1 !important;
-        transition-duration: 0.001ms !important;
-        scroll-behavior: auto !important;
-    }
-}
-
-/* T3 — Verrou de scroll natif (utilisé par UIPlatform.lockScroll).
-   Le décalage `top` est posé en inline par le JS pour préserver scrollY. */
-body.up-scroll-locked {
-    position: fixed;
-    left: 0;
-    right: 0;
-    width: 100%;
-    overflow: hidden;
-    touch-action: none;
-}
-
-/* T7 — Anti-callout iOS sur conteneurs interactifs (long-press propre). */
-.up-no-callout {
-    -webkit-touch-callout: none;
-    -webkit-user-select: none;
-    user-select: none;
-}
-
-/* T9 — Cible tapable >= 44px sans changer le rendu visuel (zone étendue). */
-.up-tap-target {
-    position: relative;
-}
-.up-tap-target::after {
-    content: "";
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    min-width: 44px;
-    min-height: 44px;
-    width: 100%;
-    height: 100%;
-}
-
-/* T6 — Tri tactile (états appliqués par UIPlatform.sortable). */
-.up-sorting {
-    touch-action: none;
-    cursor: grabbing;
-}
-.up-sort-dragging {
-    opacity: 0.85;
-    transform: scale(1.02);
-    box-shadow: 0 10px 24px rgba(0, 0, 0, 0.45);
-    z-index: var(--z-raised);
-    pointer-events: none;
-}
-.up-sort-placeholder {
-    outline: 2px dashed var(--accent-blue, #3b82f6);
-    outline-offset: -2px;
-    opacity: 0.4;
-}
-
-/* T4 — Modale/feuille recadrée au-dessus du clavier virtuel.
-   La classe est posée par makeDialog ; le décalage exploite --kb-inset. */
-.up-kb-aware {
-    transition: transform 0.18s ease;
-}
-body.up-kb-open .up-kb-aware {
-    transform: translateY(calc(-1 * var(--kb-inset) * 0.5));
 }
 
 /* ---------------------------------------------------------------------------
@@ -1144,6 +999,21 @@ body.up-kb-open .up-kb-aware {
             /* Évite les retours à la ligne moches dans le bouton */
         }
 
+        /* C9 — les pastilles Pax sont des `<button role="radio">` : la feuille UA
+           leur impose sa police et sa hauteur de ligne. On reprend celles du
+           parent pour un rendu identique aux anciens <span>, SANS toucher à
+           `font-size`/`font-weight` (posés par .pax-select-option, qui doit
+           rester prioritaire — un `font: inherit` les écraserait). L'icône du
+           bouton d'ajout garde sa police dédiée. */
+        .pax-select-option[role="radio"] {
+            font-family: inherit;
+            line-height: inherit;
+            /* Neutralise la règle globale `button` (uppercase, letter-spacing) :
+               les anciens <span> affichaient la casse et l'espacement saisis. */
+            text-transform: none;
+            letter-spacing: normal;
+        }
+
         .pax-select-option.selected {
             transform: scale(1.05);
             color: var(--tac-paper-50);
@@ -1174,8 +1044,7 @@ body.up-kb-open .up-kb-aware {
             border-color: #10b981;
         }
 
-        .add-btn,
-        .mode-toggle-btn {
+        .add-btn {
             padding: var(--tac-space-3);
             border: none;
             border-radius: var(--radius-sm);
@@ -1206,12 +1075,6 @@ body.up-kb-open .up-kb-aware {
             box-shadow: var(--shadow-glow-accent);
         }
 
-        .mode-toggle-btn.active {
-            background: var(--accent-fill);
-            color: white;
-            border-color: var(--accent-blue);
-        }
-
         .add-log-btn {
             background: var(--accent-fill);
             color: white;
@@ -1236,7 +1099,6 @@ body.up-kb-open .up-kb-aware {
         .tab-btn:focus-visible,
         .add-btn:focus-visible,
         .add-log-btn:focus-visible,
-        .mode-toggle-btn:focus-visible,
         .pax-select-option:focus-visible,
         .delete-btn:focus-visible,
         .action-btn-small:focus-visible,
@@ -2035,17 +1897,9 @@ body.up-kb-open .up-kb-aware {
             display: flex;
         }
 
-        .plan-layers-section-title {
-            margin: 6px 0 2px;
-            font-family: var(--font-ui);
-            font-size: 0.7em;
-            font-weight: 700;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-            color: var(--text-muted);
-        }
-
-        .plan-layers-section:first-child .plan-layers-section-title {
+        /* C4 — la déclaration de base vit dans styles/ui-platform.css
+           (.tac-layers-section-title) ; ne restent que les surcharges locales. */
+        .plan-layers-section:first-child .tac-layers-section-title {
             margin-top: 0;
         }
 
@@ -2102,7 +1956,7 @@ body.up-kb-open .up-kb-aware {
             gap: 6px;
         }
 
-        .plan-gpx-head .plan-layers-section-title {
+        .plan-gpx-head .tac-layers-section-title {
             margin: 0;
         }
 
@@ -2769,54 +2623,13 @@ body.up-kb-open .up-kb-aware {
  * (showBusy/hideBusy) ; l'animation du spinner est déjà neutralisée par le
  * bloc prefers-reduced-motion partagé plus haut dans ce fichier (T14).
  * ------------------------------------------------------------------------- */
+/* C3 — le voile, la carte et la sphère sont communs à l'OI et vivent désormais
+   dans styles/ui-platform.css (.tac-busy-overlay / .tac-busy-card / .tac-orb).
+   Ne restent ici que les deux valeurs propres à PC-Tac : l'empilement et la
+   couleur du texte. */
 #pctacBusyOverlay {
-    display: none;
-    position: fixed;
-    top: 0; left: 0; width: 100%; height: 100%;
-    background: rgba(0, 0, 0, 0.7);
-    backdrop-filter: blur(10px);
     z-index: var(--z-top, 3000);
-    align-items: center; justify-content: center;
-    flex-direction: column;
     color: var(--text-main);
-    transition: all var(--tac-duration-normal) ease;
-}
-.pctac-busy-card {
-    background: var(--bg-container);
-    border: 1px solid var(--border-light);
-    padding: 40px;
-    border-radius: var(--radius-lg);
-    text-align: center;
-    box-shadow: var(--shadow-float);
-    max-width: 350px; width: 85%;
-    display: flex; flex-direction: column; align-items: center; gap: 20px;
-}
-/* Sphere d'attente (shared/orb.ts). Le disque tournant a bord colore qui
-   occupait cette place est retire : a 0,8 s par tour il pressait l'oeil pendant
-   des attentes de vingt secondes. La sphere tourne en 9 s et se dessine sur un
-   canvas — d'ou l'absence d'animation CSS ici. */
-.tac-orb {
-    width: 72px;
-    height: 72px;
-    flex-shrink: 0;
-}
-
-/* Le message respire doucement pendant l'attente : une seule propriete
-   animee (opacity), cycle long, et rien du tout en mouvement reduit. */
-.tac-orb-message {
-    animation: tac-orb-breath 2.6s var(--ease-in-out) infinite;
-}
-
-@keyframes tac-orb-breath {
-    0%, 100% { opacity: 0.62; }
-    50% { opacity: 1; }
-}
-
-@media (prefers-reduced-motion: reduce) {
-    .tac-orb-message {
-        animation: none;
-        opacity: 1;
-    }
 }
 #pctacBusyMessage {
     font-family: var(--font-data);
@@ -3013,7 +2826,9 @@ body.light-mode .pctac-liens-btn-row--wa:hover { background: #bee9ce; box-shadow
 
 .pctac-plan-text-modal { max-width: 520px; }
 .pctac-text-modal-row { margin-top: 12px; display: flex; gap: 18px; flex-wrap: wrap; align-items: flex-end; }
-.pctac-text-color-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px; }
+/* C7 — gap porté à 16px (28 + 16 = 44) : les cibles tactiles .up-tap-target des
+   pastilles voisines ne se recouvrent plus. */
+.pctac-text-color-row { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 6px; }
 .pctac-size-controls-row { display: flex; gap: 6px; align-items: center; margin-top: 6px; }
 .pctac-icon-btn-sq { width: 36px; height: 36px; border-radius: 6px; background: var(--bg-input); border: 1px solid var(--border-glass); color: var(--text-main); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
 .pctac-text-size-val { min-width: 38px; text-align: center; font-family: var(--font-data, monospace); font-weight: 600; }
@@ -3031,21 +2846,6 @@ body.light-mode .pctac-liens-btn-row--wa:hover { background: #bee9ce; box-shadow
     font-style: italic;
     padding: 18px 10px;
 }
-
-/* U23 — en-tête de mission (bandeau discret au-dessus des onglets) */
-.mission-header {
-    font-size: 0.82em;
-    color: var(--text-muted);
-    padding: 4px 10px;
-    margin-bottom: 6px;
-    border: 1px solid var(--border-glass);
-    border-radius: var(--radius-sm, 6px);
-    background: var(--bg-glass, transparent);
-    white-space: nowrap;
-    overflow-x: auto;
-}
-.mission-header:empty { display: none; }
-.mission-header strong { color: var(--text-main); }
 
 /* U16 — badge de statut symbole+couleur (jamais couleur seule — daltonisme) */
 .status-badge {
