@@ -36,6 +36,7 @@ import maplibregl from 'maplibre-gl';
 import { GpxStore } from '@pctac/image-store.js';
 import { confirmDialog } from '@shared/feedback.js';
 import { Persist } from '@shared/persist.js';
+import { scopedKey } from '@pctac/modes.js';
 
 import {
     GPX_CASING_LAYER,
@@ -155,7 +156,7 @@ function trackNameFrom(parsed: ParsedGpx, fileName: string): string {
 
 /** Index persisté (localStorage). Ne jette jamais : renvoie `[]` si illisible. */
 function loadIndex(): PlanGpxTrack[] {
-    const raw = Persist.get<PlanGpxTrack[] | null>(GPX_INDEX_KEY, {
+    const raw = Persist.get<PlanGpxTrack[] | null>(scopedKey(GPX_INDEX_KEY), {
         validator: (v): v is PlanGpxTrack[] => Array.isArray(v),
         fallback: null,
     });
@@ -163,7 +164,7 @@ function loadIndex(): PlanGpxTrack[] {
 }
 
 function saveIndex(list: readonly PlanGpxTrack[]): void {
-    Persist.set(GPX_INDEX_KEY, list);
+    Persist.set(scopedKey(GPX_INDEX_KEY), list);
 }
 
 function escHtml(s: string): string {
@@ -180,7 +181,7 @@ const foldedDays = new Set<string>();
 
 /** Ordre de tri retenu, persisté. `true` = les plus récentes en premier. */
 function newestFirst(): boolean {
-    return Persist.get<boolean | null>(GPX_SORT_KEY, {
+    return Persist.get<boolean | null>(scopedKey(GPX_SORT_KEY), {
         validator: (v): v is boolean => typeof v === 'boolean',
         fallback: null,
     }) !== false;
@@ -299,7 +300,7 @@ export function operationalDayKey(ts: number, boundaryHour: number): string {
 
 /** Heure de bascule retenue par l'utilisateur, bornée à 0..23. */
 export function gpxDayBoundary(): number {
-    const raw = Persist.get<number | null>(GPX_DAY_BOUNDARY_KEY, {
+    const raw = Persist.get<number | null>(scopedKey(GPX_DAY_BOUNDARY_KEY), {
         validator: (v): v is number => typeof v === 'number' && Number.isFinite(v),
         fallback: null,
     });
@@ -772,14 +773,14 @@ export const GpxMethods = {
             onMount: (root: HTMLElement) => {
                 const sort = root.querySelector<HTMLElement>('[data-act="sort"]');
                 if (sort) sort.onclick = () => {
-                    Persist.set(GPX_SORT_KEY, !recent);
+                    Persist.set(scopedKey(GPX_SORT_KEY), !recent);
                     this._closeInlinePanel();
                     this._renderGpxList();
                 };
                 const inp = root.querySelector<HTMLInputElement>('#plan_gpx_boundary');
                 if (inp) inp.onchange = () => {
                     const h = Math.max(0, Math.min(23, Math.floor(Number(inp.value) || 0)));
-                    Persist.set(GPX_DAY_BOUNDARY_KEY, h);
+                    Persist.set(scopedKey(GPX_DAY_BOUNDARY_KEY), h);
                     this._renderGpxList();
                 };
             },

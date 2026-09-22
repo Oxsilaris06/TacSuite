@@ -15,6 +15,7 @@
 
 import { Persist } from '@shared/persist.js';
 import { createLocalStorageAdapter } from '@shared/map-persistence.js';
+import { scopedKey } from '@pctac/modes.js';
 
 import { PINS_KEY, SHAPES_KEY, VIEW_KEY } from './constants.js';
 import type { PlanMapInternal, PlanMapState, PlanPin, PlanShape, PlanView } from './types.js';
@@ -105,9 +106,9 @@ export function createPlanMapState(): PlanMapState {
          * périmètre de ce paquet.
          */
         persistence: createLocalStorageAdapter<PlanPin, PlanShape, PlanView>(Persist, {
-            pins: PINS_KEY,
-            shapes: SHAPES_KEY,
-            view: VIEW_KEY,
+            pins: scopedKey(PINS_KEY),
+            shapes: scopedKey(SHAPES_KEY),
+            view: scopedKey(VIEW_KEY),
         }),
     };
 }

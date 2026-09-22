@@ -24,16 +24,17 @@ import type {
     PctacCollectionItem,
     PctacLogEntry,
 } from '@shared/types/contracts.js';
-import { Storage } from '@pctac/storage.js';
+import { Storage, clearSituationData } from '@pctac/storage.js';
 import { GpxStore, ImageStore } from '@pctac/image-store.js';
-import { toast } from '@shared/feedback.js';
+import { confirmDialog, toast } from '@shared/feedback.js';
 import {
     applyScope,
     askImportScope,
     scopeCarriesGpx,
     scopeCarriesImages,
 } from '@pctac/import-scope.js';
-import { GPX_INDEX_KEY } from '@pctac/planmap/constants.js';
+import { GPX_INDEX_KEY, PINS_KEY } from '@pctac/planmap/constants.js';
+import { PCTAC_MODES, currentModeId, persistModeId, scopedKey, type PctacModeId } from '@pctac/modes.js';
 import {
     LOCAL_STORAGE_KEY, TP_ASSOC_KEY,
     ADVERSARIES_KEY, HOSTAGES_KEY, FRIENDS_KEY, PHOTOS_KEY, CUSTOM_PAX_KEY,
@@ -53,6 +54,46 @@ interface ArchiveManifest {
     appName?: string;
     version?: number;
     createdAt?: string;
+    /** Situation d'origine de l'archive (absent = ancien format → Forcené). */
+    situation?: unknown;
+}
+
+/** Vrai si `value` désigne une situation connue. */
+function isModeIdValue(value: unknown): value is PctacModeId {
+    return typeof value === 'string' && Object.prototype.hasOwnProperty.call(PCTAC_MODES, value);
+}
+
+/** Lit une clé localStorage et rend la liste d'objets qu'elle porte (best-effort). */
+function readCollectionList(raw: string | null | undefined): Array<Record<string, unknown>> {
+    if (!raw) return [];
+    try {
+        const v: unknown = JSON.parse(raw);
+        return Array.isArray(v) ? (v as Array<Record<string, unknown>>) : [];
+    } catch {
+        return [];
+    }
+}
+
+/**
+ * Ids d'images IndexedDB référencés par une situation, relus dans un snapshot
+ * localStorage BRUT (donc avant tout effacement). Sert au remplacement
+ * intégral : retirer exactement ces blobs, sans toucher au magasin partagé.
+ */
+function collectImageIds(snapshot: Record<string, string | null>): string[] {
+    const ids = new Set<string>();
+    [ADVERSARIES_KEY, HOSTAGES_KEY, PHOTOS_KEY].forEach((k) => {
+        readCollectionList(snapshot[k]).forEach((item) => {
+            const id = typeof item.id === 'string' ? item.id : '';
+            if (!id) return;
+            if (item.hasImage === true || k === PHOTOS_KEY) ids.add(id);
+            ids.add(id + '_sync');
+        });
+    });
+    readCollectionList(snapshot[PINS_KEY]).forEach((pin) => {
+        const pid = typeof pin.photoId === 'string' ? pin.photoId : '';
+        if (pid) ids.add(pid);
+    });
+    return [...ids];
 }
 
 /** Sous-ensemble utile d'un adversaire du Générateur d'OI (structure best-effort, 4.html). */
@@ -169,7 +210,7 @@ export function mergeGpxIndex(localRaw: string | null, archiveRaw: string | unde
 /** Ids des traces déclarées dans l'index localStorage. Ne jette jamais. */
 function gpxTrackIds(): string[] {
     try {
-        const raw = localStorage.getItem(GPX_INDEX_KEY);
+        const raw = localStorage.getItem(scopedKey(GPX_INDEX_KEY));
         if (!raw) return [];
         const v: unknown = JSON.parse(raw);
         if (!Array.isArray(v)) return [];
@@ -196,7 +237,7 @@ export const Archive: ArchiveContract = {
             // archive.js:60-65
             const data: Record<string, string> = {};
             COLLECTION_KEYS.forEach((k) => {
-                const raw = localStorage.getItem(k);
+                const raw = localStorage.getItem(scopedKey(k));
                 if (raw !== null) data[k] = raw;
             });
             zip.file('data.json', JSON.stringify(data, null, 2));
@@ -251,6 +292,7 @@ export const Archive: ArchiveContract = {
             zip.file('manifest.json', JSON.stringify({
                 appName: 'PC TAC',
                 version: 1,
+                situation: currentModeId(),
                 createdAt: new Date().toISOString(),
             }, null, 2));
 
@@ -258,7 +300,7 @@ export const Archive: ArchiveContract = {
             const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
             const a = document.createElement('a');
             a.href = URL.createObjectURL(blob);
-            a.download = `PC-TAC-${stamp}.pctac.zip`;
+            a.download = `PC-TAC-${stamp}-${currentModeId()}.pctac.zip`;
             document.body.appendChild(a);
             a.click();
             document.body.removeChild(a);
@@ -314,11 +356,16 @@ export const Archive: ArchiveContract = {
         try { dataJson = JSON.parse(await dataFile.async('string')) as Record<string, string>; }
         catch { throw new Error('Archive corrompue : « data.json » illisible.'); }
 
+        // Situation CIBLE : celle déclarée par l'archive, sinon Forcené
+        // (ancien format). Une archive TP s'importe donc dans la situation TP
+        // même si le poste en affiche une autre.
+        const targetMode: PctacModeId = isModeIdValue(manifest.situation) ? manifest.situation : 'forcene';
+
         // Portée de l'import : quelles catégories, et fusion ou remplacement
         // (cf. `import-scope.ts`). Sans interface de choix dans le document,
         // `askImportScope` retombe sur la confirmation simple d'autrefois et
         // rend « tout, en remplacement » — comportement historique intact.
-        const scope = await askImportScope();
+        const scope = await askImportScope(targetMode);
         if (!scope) {
             return { ok: false, cancelled: true };
         }
@@ -332,37 +379,41 @@ export const Archive: ArchiveContract = {
         // intégralement les deux — l'état terrain n'est jamais laissé à moitié effacé.
         const SNAPSHOT_KEYS = COLLECTION_KEYS.concat(['pcTacLieuHistory', 'lastView', 'lastPhotoFilter']);
         const snapshot: Record<string, string | null> = {};
-        SNAPSHOT_KEYS.forEach((k) => { snapshot[k] = localStorage.getItem(k); });
+        SNAPSHOT_KEYS.forEach((k) => { snapshot[k] = localStorage.getItem(scopedKey(k, targetMode)); });
 
         // Snapshot des images existantes (best-effort) : on collecte les ids depuis
         // les collections + leurs photos « _sync », exactement comme exportZip.
-        const imgSnapshot = await this._snapshotImages();
+        const imgSnapshot = await this._snapshotImages(targetMode);
 
-        // Restaure intégralement l'état précédent (localStorage + images).
+        // Ids d'images déjà référencés par la situation cible, relus dans le
+        // snapshot AVANT toute écriture. Le magasin d'images est PARTAGÉ entre
+        // les situations : on ne retire que ceux-ci en remplacement intégral.
+        const priorImageIds = collectImageIds(snapshot);
+
+        // Restaure l'état précédent (localStorage de la situation cible + images).
         const rollback = async (): Promise<void> => {
-            try { Storage.clearAllData(); } catch { /* best-effort */ }
+            try { clearSituationData(targetMode); } catch { /* best-effort */ }
             Object.entries(snapshot).forEach(([k, v]) => {
-                try { if (v !== null) localStorage.setItem(k, v); } catch { /* best-effort */ }
+                try { if (v !== null) localStorage.setItem(scopedKey(k, targetMode), v); } catch { /* best-effort */ }
             });
-            try {
-                await ImageStore.clear();
-                for (const [id, dataUrl] of Object.entries(imgSnapshot)) {
-                    try { await ImageStore.put(id, dataUrl); } catch { /* best-effort */ }
-                }
-            } catch { /* best-effort */ }
+            // Pas de `ImageStore.clear()` global : il effacerait les images des
+            // trois autres situations. On repose les blobs snapshotés.
+            for (const [id, dataUrl] of Object.entries(imgSnapshot)) {
+                try { await ImageStore.put(id, dataUrl); } catch { /* best-effort */ }
+            }
         };
 
         // 1) localStorage (rollback intégral si une écriture jette, ex. quota).
         try {
             if (scope.full) {
-                // Restauration intégrale : on repart d'un poste vide, comme avant.
-                Storage.clearAllData();
+                // Restauration intégrale : on repart d'une situation vide.
+                clearSituationData(targetMode);
                 Object.entries(dataJson).forEach(([k, v]) => {
-                    localStorage.setItem(k, v);
+                    localStorage.setItem(scopedKey(k, targetMode), v);
                 });
             } else {
                 // Import partiel : RIEN n'est effacé hors des catégories cochées.
-                applyScope(dataJson, scope);
+                applyScope(dataJson, scope, targetMode);
             }
         } catch (e) {
             await rollback();
@@ -371,15 +422,15 @@ export const Archive: ArchiveContract = {
             return { ok: false, error: e };
         }
 
-        // 2) Images. En restauration intégrale on efface d'abord, comme avant.
-        // En import partiel on n'efface RIEN : les photos des catégories non
-        // cochées doivent survivre. Quelques images orphelines peuvent alors
-        // rester en base — invisibles (rien ne les référence) et sans autre
-        // coût que de la place, là où un effacement de trop serait définitif.
+        // 2) Images. En restauration intégrale on retire d'abord les images de
+        // la situation cible (celles des trois autres restent). En import
+        // partiel on n'efface RIEN : les photos des catégories non cochées
+        // doivent survivre. Quelques images orphelines peuvent alors rester en
+        // base — invisibles et sans autre coût que de la place.
         let imgError: unknown = null;
-        if (scope.full) {
+        if (scope.full && priorImageIds.length) {
             try {
-                await ImageStore.clear();
+                await ImageStore.deleteMany(priorImageIds);
             } catch (e) {
                 await rollback();
                 console.error('[Archive] clear images échec, rollback effectué:', e);
@@ -443,7 +494,7 @@ export const Archive: ArchiveContract = {
         try {
             if (scopeCarriesGpx(scope)) {
                 const merged = mergeGpxIndex(snapshot[GPX_INDEX_KEY] ?? null, dataJson[GPX_INDEX_KEY]);
-                if (merged !== null) localStorage.setItem(GPX_INDEX_KEY, merged);
+                if (merged !== null) localStorage.setItem(scopedKey(GPX_INDEX_KEY, targetMode), merged);
             }
         } catch (e) {
             gpxError = e;
@@ -453,25 +504,42 @@ export const Archive: ArchiveContract = {
             toast("Import terminé, mais certaines traces GPX n'ont pas pu être restaurées. Le reste est intact.", { kind: 'error' });
         }
 
+        // Si l'archive visait une AUTRE situation que celle affichée, on
+        // propose d'y basculer : l'opérateur voit ce qu'il vient d'importer.
+        if (targetMode !== currentModeId()) {
+            const label = PCTAC_MODES[targetMode].label;
+            const go = await confirmDialog({
+                title: 'Changer de situation ?',
+                message: `Archive « ${label} » importée dans la situation « ${label} ». Y basculer maintenant ?`,
+                confirmLabel: 'Basculer',
+            });
+            if (go) {
+                persistModeId(targetMode);
+                try { location.reload(); } catch { /* environnement sans navigation */ }
+            }
+        }
+
         return { ok: true };
     },
 
     /**
-     * Snapshot best-effort des images IndexedDB liées aux collections courantes.
-     * Même logique de collecte d'ids que exportZip (fiches + photos « _sync »).
+     * Snapshot best-effort des images IndexedDB liées aux collections d'UNE
+     * situation (courante par défaut). Même logique de collecte d'ids que
+     * exportZip (fiches + photos « _sync ») ; la situation cible peut différer
+     * de celle affichée, d'où la lecture par `scopedKey`.
      */
-    async _snapshotImages(): Promise<Record<string, string>> {
+    async _snapshotImages(modeId: PctacModeId = currentModeId()): Promise<Record<string, string>> {
         const out: Record<string, string> = {};
         try {
             const imgIds = new Set<string>();
             [ADVERSARIES_KEY, HOSTAGES_KEY, PHOTOS_KEY].forEach((k) => {
-                Storage.loadCollection(k).forEach((item) => {
-                    if (item && item.hasImage && item.id) imgIds.add(item.id);
+                readCollectionList(localStorage.getItem(scopedKey(k, modeId))).forEach((item) => {
+                    if (item.hasImage === true && typeof item.id === 'string') imgIds.add(item.id);
                 });
             });
             [ADVERSARIES_KEY, HOSTAGES_KEY].forEach((k) => {
-                Storage.loadCollection(k).forEach((item) => {
-                    if (item && item.id) imgIds.add(item.id + '_sync');
+                readCollectionList(localStorage.getItem(scopedKey(k, modeId))).forEach((item) => {
+                    if (typeof item.id === 'string') imgIds.add(item.id + '_sync');
                 });
             });
             for (const id of imgIds) {
@@ -486,7 +554,10 @@ export const Archive: ArchiveContract = {
         return out;
     },
 
-    /** Compat : ancien export PC-TAC JSON (logs uniquement). */
+    /**
+     * Compat : ancien export PC-TAC JSON (logs uniquement). Sans champ
+     * `situation`, il vise Forcené — le mode historique.
+     */
     async _importLegacyJson(obj: unknown): Promise<{ ok: true }> {
         // Contenu JSON désérialisé : interface locale + gardes (archive.js:268-276).
         const o = (obj && typeof obj === 'object')
@@ -494,10 +565,15 @@ export const Archive: ArchiveContract = {
             : null;
         if (o && o.metadata && o.metadata.appName === 'PC Tac Log' && Array.isArray(o.logEntries)) {
             const logEntries = o.logEntries as PctacLogEntry[]; // structure best-effort, comme l'original
-            const current = Storage.loadLogData();
+            const key = scopedKey(LOCAL_STORAGE_KEY, 'forcene');
+            const current: PctacLogEntry[] = readCollectionList(localStorage.getItem(key)) as unknown as PctacLogEntry[];
             const ids = new Set(current.map((l) => l.id));
             logEntries.forEach((e) => { if (!ids.has(e.id)) current.push(e); });
-            Storage.saveLogData(current);
+            try {
+                localStorage.setItem(key, JSON.stringify(current));
+            } catch {
+                throw new Error("Import du journal impossible (stockage insuffisant).");
+            }
             return { ok: true };
         }
         throw new Error('Format JSON non reconnu.');

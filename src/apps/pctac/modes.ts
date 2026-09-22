@@ -39,6 +39,55 @@ export type PctacModeId = 'forcene' | 'tp' | 'recherche' | 'evenement';
 
 export const PCTAC_MODE_KEY = 'pcTacMode';
 
+/**
+ * Clés COMMUNES à toutes les situations : préférences de poste, drapeaux de
+ * migration/cache, configuration d'un service externe. Une donnée d'ici
+ * n'appartient pas à une situation et n'est donc JAMAIS suffixée — on la
+ * retrouve identique en Forcené comme en Tuerie planifiée.
+ *
+ * Toute autre clé passée à `scopedKey` est OPÉRATIONNELLE : elle vit dans la
+ * situation courante et prend le suffixe `@<situation>` hors Forcené.
+ */
+export const SHARED_KEYS: ReadonlySet<string> = new Set<string>([
+    // La situation elle-même (sinon on ne saurait plus la lire).
+    PCTAC_MODE_KEY,
+    // Apparence et confort de poste.
+    'theme',
+    'tacsuite.portal.theme',
+    'dockCollapsed',
+    // Dernières vues consultées (le retour d'un opérateur, pas une donnée).
+    'lastView',
+    'lastPhotoFilter',
+    // Disposition de l'écran scindé : mise en page, pas de l'opérationnel.
+    'pcTacSplit',
+    // Drapeaux de migration (image-store.ts) : uniques au poste.
+    'pcTacIdbMigratedV1',
+    // Le cache de tuiles est un état PHYSIQUE du navigateur, partagé de fait.
+    'pcTacFranceTilesCached',
+    // Configuration Tchap live : identifiants/curseur de connexion du poste.
+    'pcTacTchapLive',
+    'pcTacTchapLiveSince',
+]);
+
+/**
+ * Clé PHYSIQUE d'une donnée opérationnelle. C'est le POINT D'ENTRÉE UNIQUE du
+ * cloisonnement : tout accès `localStorage`/`Persist` à une clé opérationnelle
+ * doit passer par ici, sinon la donnée fuit d'une situation à l'autre.
+ *
+ * - Forcené : la clé nue (les postes déjà déployés n'ont AUCUNE migration à
+ *   subir — ce qu'ils ont enregistré reste visible).
+ * - Autres situations : `<clé>@<situation>`.
+ * - Clés communes : renvoyées telles quelles, jamais suffixées.
+ *
+ * Le second paramètre sert à l'import d'archive : écrire dans la situation que
+ * l'archive déclare, indépendamment de celle affichée.
+ */
+export function scopedKey(key: string, modeId: PctacModeId = currentModeId()): string {
+    if (SHARED_KEYS.has(key)) return key;
+    if (modeId === 'forcene') return key;
+    return `${key}@${modeId}`;
+}
+
 /** Champ doctrinal propre à une situation, rendu sous les champs historiques. */
 export interface PctacModeField {
     /** Clé de stockage, posée à plat sur la fiche. Jamais renommée après coup. */

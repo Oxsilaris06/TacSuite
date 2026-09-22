@@ -248,6 +248,18 @@ export function setMode(id: PctacModeId, group?: HTMLElement | null): void {
     }
     applyLexicon();
     notify();
+    // Bascule = RECHARGEMENT. Chaque situation est un espace de travail
+    // indépendant : listes, compteurs, plan (MapLibre), écran scindé et états
+    // internes des modules portent encore les données de la situation quittée.
+    // Un rendu complet à la main devrait tous les couvrir, un par un, et le
+    // premier oubli laisserait un résidu. Le rechargement repart d'un document
+    // neuf, donc sans résidu possible.
+    try {
+        location.reload();
+    } catch {
+        // Environnement sans navigation (tests unitaires) : le rendu ci-dessus
+        // a déjà appliqué le vocabulaire, l'échec est sans conséquence.
+    }
 }
 
 /**

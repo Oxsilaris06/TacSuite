@@ -37,6 +37,7 @@ import {
     TP_ASSOC_KEY,
 } from '@pctac/config.js';
 import { GPX_INDEX_KEY, PINS_KEY } from '@pctac/planmap/constants.js';
+import { PCTAC_MODES, currentModeId, scopedKey, type PctacModeId } from '@pctac/modes.js';
 import { confirmDialog } from '@shared/feedback.js';
 
 export type ImportMode = 'merge' | 'replace';
@@ -167,19 +168,31 @@ export function mergeCollectionJson(localRaw: string | null, incomingRaw: string
  * `applyLexicon` n'est pas appelé ici : le libellé dépendant de la situation
  * est résolu par l'appelant via `data-lex`, comme partout ailleurs.
  */
-export async function askImportScope(): Promise<ImportScope | null> {
+export async function askImportScope(targetMode?: PctacModeId): Promise<ImportScope | null> {
     const modal = document.getElementById('importScopeModal') as HTMLDialogElement | null;
+    const situationLabel = targetMode ? PCTAC_MODES[targetMode].label : '';
+    const situationHint = targetMode
+        ? `Archive « ${situationLabel} » → sera chargée dans la situation « ${situationLabel} ». `
+        : '';
     if (!modal || typeof modal.showModal !== 'function') {
         // Repli historique : confirmation simple, restauration intégrale.
         const ok = await confirmDialog({
             title: 'Importer cette archive ?',
-            message: 'Les données actuelles seront remplacées.',
+            message: situationHint + 'Les données actuelles seront remplacées.',
             confirmLabel: 'Importer',
             danger: true,
         });
         return ok
             ? { categories: IMPORT_CATEGORIES.map((c) => c.id), mode: 'replace', full: true }
             : null;
+    }
+
+    // Dire EN CLAIR dans la modale où l'archive atterrira : une archive TP
+    // chargée alors que le poste affiche Forcené serait sinon déroutante.
+    const intro = modal.querySelector<HTMLElement>('.import-scope-intro');
+    if (intro) {
+        if (intro.dataset.baseIntro === undefined) intro.dataset.baseIntro = intro.textContent ?? '';
+        intro.textContent = situationHint + (intro.dataset.baseIntro ?? '');
     }
 
     return new Promise<ImportScope | null>((resolve) => {
@@ -228,19 +241,22 @@ export async function askImportScope(): Promise<ImportScope | null> {
  *
  * Rend le nombre de clés effectivement écrites (diagnostic, message de fin).
  */
-export function applyScope(dataJson: Record<string, string>, scope: ImportScope): number {
+export function applyScope(dataJson: Record<string, string>, scope: ImportScope, modeId: PctacModeId = currentModeId()): number {
     let written = 0;
     scopeKeys(scope).forEach((key) => {
+        // Clé PHYSIQUE de la situation cible : l'archive porte les clés LOGIQUES,
+        // l'import les range sous le suffixe de la situation destinataire.
+        const physical = scopedKey(key, modeId);
         const incoming = dataJson[key];
         if (scope.mode === 'replace') {
-            if (incoming === undefined) localStorage.removeItem(key);
-            else localStorage.setItem(key, incoming);
+            if (incoming === undefined) localStorage.removeItem(physical);
+            else localStorage.setItem(physical, incoming);
             written += 1;
             return;
         }
-        const merged = mergeCollectionJson(localStorage.getItem(key), incoming);
+        const merged = mergeCollectionJson(localStorage.getItem(physical), incoming);
         if (merged !== null) {
-            localStorage.setItem(key, merged);
+            localStorage.setItem(physical, merged);
             written += 1;
         }
     });

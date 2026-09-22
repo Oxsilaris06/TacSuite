@@ -37,6 +37,7 @@ import maplibregl from 'maplibre-gl';
 import type { GeoJSONSource, MapMouseEvent, MapTouchEvent } from 'maplibre-gl';
 
 import { SHAPES_KEY } from './constants.js';
+import { scopedKey } from '@pctac/modes.js';
 import type { LngLatObj, LngLatTuple, PlanMapInternal, PlanMapState, PlanShape } from './types.js';
 
 export const DrawToolsMethods = {
@@ -60,7 +61,7 @@ export const DrawToolsMethods = {
         // présent au moment du pop — `localStorage.setItem` exige `string`.
         if (prev === undefined) return;
         // §5.8 : écriture DIRECTE (pas via Persist), volontaire — la chaîne est déjà connue.
-        try { localStorage.setItem(SHAPES_KEY, prev); } catch { /* volontaire, cf. SPEC-PLANMAP-SPLIT §5.8 */ }
+        try { localStorage.setItem(scopedKey(SHAPES_KEY), prev); } catch { /* volontaire, cf. SPEC-PLANMAP-SPLIT §5.8 */ }
         this._renderShapes();
         this._refreshUndoRedoButtons();
     },
@@ -73,7 +74,7 @@ export const DrawToolsMethods = {
         const next = this.redoStack.pop();
         // Adaptation TS (absente de l'original, jamais déclenchée en pratique) : idem `_undo`.
         if (next === undefined) return;
-        try { localStorage.setItem(SHAPES_KEY, next); } catch { /* volontaire, cf. SPEC-PLANMAP-SPLIT §5.8 */ }
+        try { localStorage.setItem(scopedKey(SHAPES_KEY), next); } catch { /* volontaire, cf. SPEC-PLANMAP-SPLIT §5.8 */ }
         this._renderShapes();
         this._refreshUndoRedoButtons();
     },

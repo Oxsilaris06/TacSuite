@@ -23,7 +23,44 @@ import {
   PHOTOS_KEY,
   CUSTOM_PAX_KEY,
 } from '@pctac/config.js';
+import { currentModeId, scopedKey, type PctacModeId } from '@pctac/modes.js';
 import { Persist } from '@shared/persist.js';
+
+/**
+ * Clés opérationnelles effacées par une réinitialisation. Elles appartiennent
+ * TOUTES à une situation (cf. `scopedKey`) : on ne supprime donc jamais que
+ * celles de la situation visée, jamais celles des trois autres.
+ */
+const SITUATION_KEYS: readonly string[] = [
+  LOCAL_STORAGE_KEY,
+  TP_ASSOC_KEY,
+  ADVERSARIES_KEY,
+  HOSTAGES_KEY,
+  FRIENDS_KEY,
+  PHOTOS_KEY,
+  CUSTOM_PAX_KEY,
+  'pcTacPlanPins',
+  'pcTacPlanView',
+  'pcTacPlanShapes',
+  'pcTacLieuHistory',
+  'pcTacPlanLocked',
+  'pcTacDashboard',
+];
+
+/**
+ * Efface les données opérationnelles d'UNE situation (celle passée en
+ * argument). Utilisé par le reset (situation courante) et par le rollback
+ * d'import (situation cible, qui peut différer de celle affichée).
+ */
+export function clearSituationData(modeId: PctacModeId): void {
+  SITUATION_KEYS.forEach((k) => {
+    try {
+      localStorage.removeItem(scopedKey(k, modeId));
+    } catch {
+      // localStorage indisponible : on dégrade proprement (offline-first).
+    }
+  });
+}
 
 // Validateurs simples pour Persist
 // (storage.js:16-17)
@@ -71,7 +108,7 @@ export const Storage: PctacStorageContract = {
       return a.heure < b.heure ? -1 : 1;
     });
     // Persist ne jette jamais sur quota : il émet 'pctac:quota' (non bloquant).
-    Persist.set(LOCAL_STORAGE_KEY, logData);
+    Persist.set(scopedKey(LOCAL_STORAGE_KEY), logData);
     announceChange(LOCAL_STORAGE_KEY);
   },
 
@@ -80,7 +117,7 @@ export const Storage: PctacStorageContract = {
    * (storage.js:37-39)
    */
   loadLogData(): PctacLogEntry[] {
-    return Persist.get(LOCAL_STORAGE_KEY, { validator: isArray, fallback: [] });
+    return Persist.get(scopedKey(LOCAL_STORAGE_KEY), { validator: isArray, fallback: [] });
   },
 
   /**
@@ -89,7 +126,7 @@ export const Storage: PctacStorageContract = {
    * (storage.js:45-47)
    */
   getTpAssociations(): Record<string, string> {
-    return Persist.get(TP_ASSOC_KEY, { validator: isObject, fallback: {} });
+    return Persist.get(scopedKey(TP_ASSOC_KEY), { validator: isObject, fallback: {} });
   },
 
   /**
@@ -100,7 +137,7 @@ export const Storage: PctacStorageContract = {
   saveTpAssociation(label: string, color: string): void {
     const assoc = this.getTpAssociations();
     assoc[color] = label; // Clé = couleur, pas label
-    Persist.set(TP_ASSOC_KEY, assoc);
+    Persist.set(scopedKey(TP_ASSOC_KEY), assoc);
   },
 
   /**
@@ -109,7 +146,7 @@ export const Storage: PctacStorageContract = {
    */
   saveCollection(key: string, data: readonly PctacCollectionItem[]): void {
     // Quota géré par Persist via l'évènement 'pctac:quota'.
-    Persist.set(key, data);
+    Persist.set(scopedKey(key), data);
     announceChange(key);
   },
 
@@ -118,34 +155,19 @@ export const Storage: PctacStorageContract = {
    * (storage.js:71-77)
    */
   loadCollection(key: string): PctacCollectionItem[] {
-    return Persist.get(key, { validator: isArray, fallback: [] });
+    return Persist.get(scopedKey(key), { validator: isArray, fallback: [] });
   },
 
   /**
-   * Réinitialise toutes les données.
-   * Supprime exactement 14 clés (liste de storage.js:84-109).
+   * Réinitialise les données de la situation COURANTE (et d'elle seule) : les
+   * trois autres situations gardent intactes leurs fiches, leur journal, leur
+   * plan et leurs photos. `lastView`/`lastPhotoFilter` sont des préférences de
+   * poste communes : elles sont reposées à leur valeur par défaut.
    */
   clearAllData(): void {
-    const keys = [
-      LOCAL_STORAGE_KEY,
-      TP_ASSOC_KEY,
-      ADVERSARIES_KEY,
-      HOSTAGES_KEY,
-      FRIENDS_KEY,
-      PHOTOS_KEY,
-      CUSTOM_PAX_KEY,
-      'pcTacPlanPins',
-      'pcTacPlanView',
-      'pcTacPlanShapes',
-      'pcTacLieuHistory',
-      'lastView',
-      'lastPhotoFilter',
-      // Sans ces deux clés, le verrou du plan et l'état du board relationnel
-      // survivaient à la réinitialisation complète. (storage.js:98-99)
-      'pcTacPlanLocked',
-      'pcTacDashboard',
-    ];
-    keys.forEach((k) => {
+    clearSituationData(currentModeId());
+    // Préférences de vue : communes, remises à zéro avec le reset demandé.
+    ['lastView', 'lastPhotoFilter'].forEach((k) => {
       try {
         localStorage.removeItem(k);
       } catch {

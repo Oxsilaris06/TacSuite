@@ -95,7 +95,7 @@ import {
     hostageStatusFromBlessures,
 } from '@pctac/config.js';
 import { GPX_INDEX_KEY, PINS_KEY } from '@pctac/planmap/constants.js';
-import { currentMode } from '@pctac/modes.js';
+import { currentMode, scopedKey } from '@pctac/modes.js';
 import { initImportScopeModal } from '@pctac/import-scope.js';
 import { initSplitView } from '@pctac/split-view.js';
 import {
@@ -549,7 +549,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         // exportées telles quelles dans l'archive, nettoyées seulement au
         // premier affichage du viewer — cf. planmap/panels.ts, nettoyage lazy).
         try {
-            const pins = Persist.get<{ photoId?: string }[]>(PINS_KEY, { validator: Array.isArray, fallback: [] }) || [];
+            const pins = Persist.get<{ photoId?: string }[]>(scopedKey(PINS_KEY), { validator: Array.isArray, fallback: [] }) || [];
             const syncId = id + '_sync';
             let pinsTouched = false;
             for (const pin of pins) {
@@ -559,7 +559,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 }
             }
             if (pinsTouched) {
-                Persist.set(PINS_KEY, pins);
+                Persist.set(scopedKey(PINS_KEY), pins);
                 if (window.PlanMap && window.PlanMap.initialized) window.PlanMap.refresh();
             }
         } catch { /* purge pings non bloquante */ }
@@ -567,7 +567,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         // Purge de l'état du board relationnel : position du nœud supprimé et
         // liens manuels qui le référencent (sinon orphelins persistés à vie).
         try {
-            const st = Persist.get<PctacDashboardPurgeState | null>(DASHBOARD_KEY, { validator: isDashboardState, fallback: null });
+            const st = Persist.get<PctacDashboardPurgeState | null>(scopedKey(DASHBOARD_KEY), { validator: isDashboardState, fallback: null });
             if (st) {
                 // Trois formes de clés de nœud : id photo brut, '<id>_sync', et les
                 // placeholders entités préfixés 'ent:adv:<id>' / 'ent:host:<id>'.
@@ -583,7 +583,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     st.links = st.links.filter((l) => !l || (!matches(l.from) && !matches(l.to)));
                     if (st.links.length !== before) touched = true;
                 }
-                if (touched) Persist.set(DASHBOARD_KEY, st);
+                if (touched) Persist.set(scopedKey(DASHBOARD_KEY), st);
             }
         } catch { /* purge board non bloquante */ }
 
@@ -604,16 +604,40 @@ document.addEventListener('DOMContentLoaded', async () => {
     const confirmResetBtn = document.getElementById('confirmResetBtn');
     if (confirmResetBtn) {
         confirmResetBtn.onclick = async () => {
+            // Collecte AVANT effacement des blobs IndexedDB de la situation
+            // courante : les images et les traces GPX y vivent en magasin
+            // PARTAGÉ. Un `clear()` global effacerait celles des trois autres
+            // situations — on ne retire donc que ce que la situation effacée
+            // référence, identifiant par identifiant.
+            const imgIds = new Set<string>();
+            [ADVERSARIES_KEY, HOSTAGES_KEY, PHOTOS_KEY].forEach((k) => {
+                Storage.loadCollection(k).forEach((item) => {
+                    if (item && item.id) {
+                        if (item.hasImage) imgIds.add(item.id);
+                        imgIds.add(item.id + '_sync');
+                    }
+                });
+            });
+            try {
+                const pins = Persist.get<{ photoId?: string }[]>(scopedKey(PINS_KEY), { validator: Array.isArray, fallback: [] }) || [];
+                pins.forEach((pin) => { if (pin && pin.photoId) imgIds.add(pin.photoId); });
+            } catch { /* best-effort */ }
+            let gpxIds: string[] = [];
+            try {
+                const raw = localStorage.getItem(scopedKey(GPX_INDEX_KEY));
+                const arr: unknown = raw ? JSON.parse(raw) : [];
+                if (Array.isArray(arr)) {
+                    gpxIds = arr
+                        .map((t) => (t && typeof (t as { id?: unknown }).id === 'string' ? (t as { id: string }).id : ''))
+                        .filter((id) => id !== '');
+                }
+            } catch { /* best-effort */ }
+
             Storage.clearAllData();
-            try { await ImageStore.clear(); } catch (e) { console.error('[PC TAC] clear IDB échec:', e); }
-            // Les traces GPX survivaient à la réinitialisation totale : ni
-            // `clearAllData` (liste de clés explicite) ni `ImageStore.clear`
-            // (magasin `images` seul) ne les connaissaient. Leur clé reste
-            // volontairement hors de `clearAllData`, pour qu'un IMPORT
-            // d'archive ne les efface pas ; c'est donc ici, et seulement ici,
-            // qu'on les supprime.
-            try { localStorage.removeItem(GPX_INDEX_KEY); } catch { /* stockage indisponible */ }
-            try { await GpxStore.clear(); } catch (e) { console.error('[PC TAC] clear traces GPX échec:', e); }
+            try { if (imgIds.size) await ImageStore.deleteMany([...imgIds]); } catch (e) { console.error('[PC TAC] suppression images IDB échec:', e); }
+            for (const id of gpxIds) {
+                try { await GpxStore.delete(id); } catch (e) { console.error('[PC TAC] suppression trace GPX échec:', e); }
+            }
 
             // Reset des champs du formulaire principal
             ['lieu_input', 'remarques_input', 'heure_input'].forEach((id) => {
