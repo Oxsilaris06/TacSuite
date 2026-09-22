@@ -24,6 +24,7 @@ import type {
 } from '@shared/types/contracts.js';
 import { Storage } from '@pctac/storage.js';
 import { Persist } from '@shared/persist.js';
+import { scopedKey } from '@pctac/modes.js';
 import { toast } from '@shared/feedback.js';
 import { FREE_MODE_COLORS, PDF_PAX_COLORS } from '@pctac/config.js';
 
@@ -107,7 +108,7 @@ export const LogManager: LogManagerContract = {
     if (!trimmed) return;
 
     // logManager.js:69 — Persist.get, fallback []
-    const raw = Persist.get('pcTacLieuHistory', { validator: Array.isArray, fallback: [] }) || [];
+    const raw = Persist.get(scopedKey('pcTacLieuHistory'), { validator: Array.isArray, fallback: [] }) || [];
     // Explicitement typé comme string[] : l'historique des lieux est un tableau de chaînes
     let hist: string[] = Array.isArray(raw) ? raw.map((l) => String(l)) : [];
 
@@ -119,7 +120,7 @@ export const LogManager: LogManagerContract = {
     if (hist.length > 30) hist = hist.slice(0, 30);
 
     // logManager.js:73 — persiste (tolère quota plein)
-    Persist.set('pcTacLieuHistory', hist);
+    Persist.set(scopedKey('pcTacLieuHistory'), hist);
   },
 
   /**
@@ -127,7 +128,7 @@ export const LogManager: LogManagerContract = {
    * logManager.js:76-78
    */
   getLieuHistory(): string[] {
-    return Persist.get('pcTacLieuHistory', { validator: Array.isArray, fallback: [] }) || [];
+    return Persist.get(scopedKey('pcTacLieuHistory'), { validator: Array.isArray, fallback: [] }) || [];
   },
 
   /**

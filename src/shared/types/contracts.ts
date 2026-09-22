@@ -529,8 +529,11 @@ export interface ArchiveContract {
      * du Générateur d'OI et fusionne SANS écraser (adversaires + trigrammes).
      */
     importOiArchive(file: File): Promise<ArchiveOiImportResult>;
-    /** Interne : snapshot best-effort des images IDB, pour le rollback d'import. */
-    _snapshotImages(): Promise<Record<string, string>>;
+    /**
+     * Interne : snapshot best-effort des images IDB, pour le rollback d'import.
+     * `modeId` (situation cible) est optionnel : par défaut, situation courante.
+     */
+    _snapshotImages(modeId?: string): Promise<Record<string, string>>;
     /** Interne : import de l'ancien export JSON « PC Tac Log » (logs seuls). */
     _importLegacyJson(obj: unknown): Promise<{ ok: true }>;
 }

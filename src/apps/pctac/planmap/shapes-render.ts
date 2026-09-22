@@ -55,6 +55,7 @@ import maplibregl from 'maplibre-gl';
 import type { GeoJSONSource } from 'maplibre-gl';
 
 import { coordAt, shapeCoords } from './geo.js';
+import { scopedKey } from '@pctac/modes.js';
 import type { PlanMapInternal, PlanShape } from './types.js';
 
 export const ShapesRenderMethods = {
@@ -195,7 +196,7 @@ export const ShapesRenderMethods = {
     // planMap.js:2791-2804
     _toggleLock(this: PlanMapInternal): void {
         this._locked = !this._locked;
-        try { localStorage.setItem('pcTacPlanLocked', this._locked ? '1' : '0'); } catch { /* quota plein — ignoré, comme l'original */ }
+        try { localStorage.setItem(scopedKey('pcTacPlanLocked'), this._locked ? '1' : '0'); } catch { /* quota plein — ignoré, comme l'original */ }
         this._updateLockButton();
         // En verrouillant, on retire les poignées de la forme sélectionnée.
         if (this._locked) this._clearHandles();

@@ -70,6 +70,7 @@ import {
     VIEW_KEY,
 } from './constants.js';
 import { prefetchFranceTiles } from './tiles.js';
+import { scopedKey } from '@pctac/modes.js';
 import type { LidarLayerId, PlanMapInternal, PlanView } from './types.js';
 import { toast } from '@shared/feedback.js';
 
@@ -90,7 +91,7 @@ export const MapCoreMethods = {
         }
 
         // Restaure l'état de verrouillage (position des pings/dessins figée).
-        try { this._locked = localStorage.getItem('pcTacPlanLocked') === '1'; } catch { this._locked = false; }
+        try { this._locked = localStorage.getItem(scopedKey('pcTacPlanLocked')) === '1'; } catch { this._locked = false; }
 
         const savedView = this._loadView();
         this.map = new maplibregl.Map({
@@ -208,7 +209,7 @@ export const MapCoreMethods = {
             // — valeur absorbée par la garde `if (v && v.center...)` ci-dessous, donc
             // neutraliser ce cas AVANT l'appel produit exactement le même
             // comportement observable (même principe que `coordAt`, SPEC-PLANMAP-SPLIT §6.3).
-            const raw = localStorage.getItem(VIEW_KEY);
+            const raw = localStorage.getItem(scopedKey(VIEW_KEY));
             const v = raw === null ? null : JSON.parse(raw);
             if (v && v.center && Array.isArray(v.center)) return v;
         } catch {}
@@ -219,7 +220,7 @@ export const MapCoreMethods = {
     _saveView(this: PlanMapInternal): void {
         if (!this.map) return;
         const c = this.map.getCenter();
-        localStorage.setItem(VIEW_KEY, JSON.stringify({
+        localStorage.setItem(scopedKey(VIEW_KEY), JSON.stringify({
             center: [c.lng, c.lat],
             zoom: this.map.getZoom(),
             pitch: this.map.getPitch(),
@@ -467,12 +468,12 @@ export const MapCoreMethods = {
         this.streetLabelsOn = !this.streetLabelsOn;
         if (this.streetLabelsOn) this._ensureStreetLabelLayers();
         this._applyStreetLabelsVisibility();
-        try { localStorage.setItem('pcTacStreetLabels', this.streetLabelsOn ? '1' : '0'); } catch {}
+        try { localStorage.setItem(scopedKey('pcTacStreetLabels'), this.streetLabelsOn ? '1' : '0'); } catch {}
     },
     /** Restaure l'état persistant au chargement de la carte. */
     // planMap.js:683-687
     _initStreetLabels(this: PlanMapInternal): void {
-        try { this.streetLabelsOn = localStorage.getItem('pcTacStreetLabels') === '1'; } catch { this.streetLabelsOn = false; }
+        try { this.streetLabelsOn = localStorage.getItem(scopedKey('pcTacStreetLabels')) === '1'; } catch { this.streetLabelsOn = false; }
         if (this.streetLabelsOn) this._ensureStreetLabelLayers();
         this._applyStreetLabelsVisibility();
     },
@@ -511,8 +512,8 @@ export const MapCoreMethods = {
         this.lidarLayer = id;
         this._applyLidarVisibility();
         try {
-            if (id) localStorage.setItem(LIDAR_KEY, id);
-            else localStorage.removeItem(LIDAR_KEY);
+            if (id) localStorage.setItem(scopedKey(LIDAR_KEY), id);
+            else localStorage.removeItem(scopedKey(LIDAR_KEY));
         } catch { /* stockage indispo : non bloquant */ }
     },
 
@@ -535,7 +536,7 @@ export const MapCoreMethods = {
     /** Restaure l'overlay persisté au chargement de la carte. */
     _initLidar(this: PlanMapInternal): void {
         let saved: string | null = null;
-        try { saved = localStorage.getItem(LIDAR_KEY); } catch { saved = null; }
+        try { saved = localStorage.getItem(scopedKey(LIDAR_KEY)); } catch { saved = null; }
         // Valeur inconnue (clé corrompue / ancienne version) → aucun overlay.
         this.lidarLayer = LIDAR_LAYER_IDS.find((id) => id === saved) ?? null;
         this._applyLidarVisibility();
@@ -579,7 +580,7 @@ export const MapCoreMethods = {
         if (!this.map) return;
         this.planIgnOn = !this.planIgnOn;
         this._applyTopoVisibility();
-        try { localStorage.setItem(PLANIGN_KEY, this.planIgnOn ? '1' : '0'); } catch { /* non bloquant */ }
+        try { localStorage.setItem(scopedKey(PLANIGN_KEY), this.planIgnOn ? '1' : '0'); } catch { /* non bloquant */ }
         toast(this.planIgnOn ? 'Fond Plan IGN (couleur)' : 'Fond imagerie satellite', { kind: 'info' });
     },
 
@@ -587,14 +588,14 @@ export const MapCoreMethods = {
         if (!this.map) return;
         this.contoursOn = !this.contoursOn;
         this._applyTopoVisibility();
-        try { localStorage.setItem(CONTOURS_KEY, this.contoursOn ? '1' : '0'); } catch { /* non bloquant */ }
+        try { localStorage.setItem(scopedKey(CONTOURS_KEY), this.contoursOn ? '1' : '0'); } catch { /* non bloquant */ }
         toast(this.contoursOn ? 'Courbes de niveau affichées' : 'Courbes de niveau masquées', { kind: 'info' });
     },
 
     /** Restaure les deux bascules persistées au chargement de la carte. */
     _initTopoLayers(this: PlanMapInternal): void {
-        try { this.planIgnOn = localStorage.getItem(PLANIGN_KEY) === '1'; } catch { this.planIgnOn = false; }
-        try { this.contoursOn = localStorage.getItem(CONTOURS_KEY) === '1'; } catch { this.contoursOn = false; }
+        try { this.planIgnOn = localStorage.getItem(scopedKey(PLANIGN_KEY)) === '1'; } catch { this.planIgnOn = false; }
+        try { this.contoursOn = localStorage.getItem(scopedKey(CONTOURS_KEY)) === '1'; } catch { this.contoursOn = false; }
         this._applyTopoVisibility();
     },
 

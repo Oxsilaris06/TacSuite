@@ -39,6 +39,7 @@ import type {
     TileTemplate,
 } from './types.js';
 import { Persist } from '@shared/persist.js';
+import { scopedKey } from '@pctac/modes.js';
 import { confirmDialog, toast } from '@shared/feedback.js';
 
 export const AoiMethods = {
@@ -276,14 +277,14 @@ export const AoiMethods = {
 
         // Persiste un INDEX des AOI confirmées (pas un flag binaire) avec son statut.
         try {
-            const index = Persist.get<AoiIndexEntry[]>(AOI_INDEX_KEY, { validator: Array.isArray, fallback: [] }) || [];
+            const index = Persist.get<AoiIndexEntry[]>(scopedKey(AOI_INDEX_KEY), { validator: Array.isArray, fallback: [] }) || [];
             index.push({
                 bbox, minZ, maxZ,
                 total: result.total, ok: result.ok, fail: result.fail,
                 complete: result.fail === 0,
                 ts: Date.now()
             });
-            Persist.set(AOI_INDEX_KEY, index);
+            Persist.set(scopedKey(AOI_INDEX_KEY), index);
         } catch { /* persistance non bloquante */ }
 
         if (result.fail === 0) {

@@ -31,7 +31,7 @@ import { ADVERSARIES_KEY, LOCAL_STORAGE_KEY } from '@pctac/config.js';
 // module, elle ne peut référencer que des valeurs elles-mêmes hissées.
 const imageStoreState = vi.hoisted(() => ({
   store: new Map<string, string>(),
-  failClearOnce: false,
+  failDeleteManyOnce: false,
 }));
 
 const gpxState = new Map<string, unknown>();
@@ -65,13 +65,13 @@ vi.mock('@pctac/image-store.js', () => {
         store.delete(id);
       },
       async deleteMany(ids: readonly string[]): Promise<void> {
+        if (imageStoreState.failDeleteManyOnce) {
+          imageStoreState.failDeleteManyOnce = false;
+          throw new Error('IDB indisponible (simulation de test)');
+        }
         ids.forEach((id) => store.delete(id));
       },
       async clear(): Promise<void> {
-        if (imageStoreState.failClearOnce) {
-          imageStoreState.failClearOnce = false;
-          throw new Error('IDB indisponible (simulation de test)');
-        }
         store.clear();
       },
       async migrateFromLocalStorage(): Promise<void> {
@@ -180,7 +180,7 @@ async function buildOiZip(opts: OiZipOptions): Promise<File> {
 beforeEach(() => {
   localStorage.clear();
   imageStoreState.store.clear();
-  imageStoreState.failClearOnce = false;
+  imageStoreState.failDeleteManyOnce = false;
   confirmSpy.mockClear();
   confirmSpy.mockImplementation(async () => true);
   toastSpy.mockClear();
@@ -228,14 +228,17 @@ describe('importFile — validation du manifest AVANT toute modification (archiv
 });
 
 describe('importFile — double snapshot + rollback intégral sur échec (archive.js:160-232)', () => {
-  it('restaure localStorage ET les images IndexedDB si ImageStore.clear() échoue après l\'écriture localStorage', async () => {
+  it('restaure localStorage ET les images IndexedDB si le retrait des images échoue après l\'écriture localStorage', async () => {
     // État "terrain" avant import.
+    // NB (D1-CLOISON) : l'import ne vide plus TOUT ImageStore — il ne retire
+    // que les images référencées par la situation cible, les autres situations
+    // partageant le même magasin. L'échec simulé porte donc sur `deleteMany`.
     Storage.saveCollection(ADVERSARIES_KEY, [{ id: 'a1', nom: 'Existant', hasImage: true }]);
     await ImageStore.put('a1', 'data:image/png;base64,AAA=');
     await ImageStore.put('a1_sync', 'data:image/png;base64,BBB=');
     const before = dumpLocalStorage();
 
-    imageStoreState.failClearOnce = true;
+    imageStoreState.failDeleteManyOnce = true;
 
     const file = await buildPctacZip({
       data: { [ADVERSARIES_KEY]: JSON.stringify([{ id: 'zzz', nom: 'Archive' }]) },
