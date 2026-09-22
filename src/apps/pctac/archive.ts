@@ -173,9 +173,10 @@ const COLLECTION_KEYS = [
     // Index des traces GPX (nom, couleur, visibilité, bornes de temps). Les
     // COORDONNÉES, elles, voyagent dans le dossier `gpx/` du zip, comme les
     // images : elles pèsent trop pour localStorage.
-    // ⚠ Cette clé est volontairement ABSENTE de `Storage.clearAllData()` : un
-    // import ne doit jamais effacer les traces locales (décision Nico :
-    // fusion). Elle est en revanche effacée par la réinitialisation totale.
+    // ⚠ Cette clé est volontairement ABSENTE de `clearSituationData()` (que
+    // l'import utilise) : un import ne doit jamais effacer les traces locales
+    // (décision Nico : fusion). Elle est en revanche effacée par la
+    // réinitialisation totale via `Storage.clearAllData()`.
     GPX_INDEX_KEY,
 ];
 

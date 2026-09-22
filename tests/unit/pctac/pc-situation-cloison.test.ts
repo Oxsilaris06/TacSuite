@@ -12,8 +12,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import JSZip from 'jszip';
 
 import { ADVERSARIES_KEY, LOCAL_STORAGE_KEY } from '@pctac/config.js';
+import { GPX_INDEX_KEY } from '@pctac/planmap/constants.js';
 import { PCTAC_MODE_KEY, SHARED_KEYS, scopedKey } from '@pctac/modes.js';
-import { Storage } from '@pctac/storage.js';
+import { Storage, clearSituationData } from '@pctac/storage.js';
 
 // --- Mock ImageStore : indexedDB absent sous jsdom.
 vi.mock('@pctac/image-store.js', () => ({
@@ -175,5 +176,28 @@ describe('clearAllData — situation courante seule', () => {
         // …Forcené intact.
         expect(localStorage.getItem(ADVERSARIES_KEY)).toContain('f1');
         expect(localStorage.getItem(LOCAL_STORAGE_KEY)).toContain('f2');
+    });
+
+    it('efface aussi l\'index GPX de la situation courante, mais pas celui d\'une autre', () => {
+        localStorage.setItem(GPX_INDEX_KEY, JSON.stringify([{ id: 'f-gpx' }]));
+        localStorage.setItem(PCTAC_MODE_KEY, 'tp');
+        localStorage.setItem(scopedKey(GPX_INDEX_KEY, 'tp'), JSON.stringify([{ id: 't-gpx' }]));
+
+        Storage.clearAllData();
+
+        // Le reset est censé effacer les traces de la situation visée (comportement
+        // historique de main.ts : `localStorage.removeItem(GPX_INDEX_KEY)`).
+        expect(localStorage.getItem(scopedKey(GPX_INDEX_KEY, 'tp'))).toBeNull();
+        // L'index Forcené (clé nue) survit.
+        expect(localStorage.getItem(GPX_INDEX_KEY)).toContain('f-gpx');
+    });
+
+    it('clearSituationData n\'efface PAS l\'index GPX (un import ne doit pas perdre les traces)', () => {
+        localStorage.setItem(PCTAC_MODE_KEY, 'tp');
+        localStorage.setItem(scopedKey(GPX_INDEX_KEY, 'tp'), JSON.stringify([{ id: 't-gpx' }]));
+
+        clearSituationData('tp');
+
+        expect(localStorage.getItem(scopedKey(GPX_INDEX_KEY, 'tp'))).toContain('t-gpx');
     });
 });
