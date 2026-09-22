@@ -96,6 +96,7 @@ import {
 } from '@pctac/config.js';
 import { GPX_INDEX_KEY, PINS_KEY } from '@pctac/planmap/constants.js';
 import { currentMode } from '@pctac/modes.js';
+import { initImportScopeModal } from '@pctac/import-scope.js';
 import {
     applyLexicon,
     collectModeFields,
@@ -138,6 +139,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     // libellés et les champs doctrinaux doivent être en place quand les vues
     // se peignent, sinon l'opérateur voit « Adversaire » clignoter en « Ennemi ».
     initModeSelector();
+    // Liste des categories d'import, construite depuis IMPORT_CATEGORIES : ses
+    // libelles dependant de la situation sont ensuite pris en charge par applyLexicon().
+    initImportScopeModal();
     renderCollectionModeBlocks();
     onModeChange(() => {
         renderCollectionModeBlocks();

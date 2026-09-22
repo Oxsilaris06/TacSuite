@@ -741,6 +741,41 @@
         </div>
     </dialog>
 
+    <!-- Portée d'un import d'archive (import-scope.ts). La liste des catégories
+         est peuplée par initImportScopeModal() depuis IMPORT_CATEGORIES. -->
+    <dialog class="modal" id="importScopeModal" aria-labelledby="importScopeTitle">
+        <h3 id="importScopeTitle">Importer une archive</h3>
+        <p class="import-scope-intro">
+            Choisissez ce que vous reprenez de cette archive. Les catégories non cochées
+            ne sont pas touchées.
+        </p>
+
+        <fieldset class="import-scope-mode">
+            <legend>Que faire des données déjà présentes ?</legend>
+            <label class="import-scope-mode-option">
+                <input type="radio" name="importScopeMode" value="merge" checked>
+                <span>
+                    <strong>Fusionner</strong>
+                    <small>Ce qui manque est ajouté, ce qui existe déjà est conservé. Rien de local n'est perdu.</small>
+                </span>
+            </label>
+            <label class="import-scope-mode-option">
+                <input type="radio" name="importScopeMode" value="replace">
+                <span>
+                    <strong>Remplacer</strong>
+                    <small>Les catégories cochées sont vidées puis réécrites depuis l'archive.</small>
+                </span>
+            </label>
+        </fieldset>
+
+        <div class="import-scope-list" id="importScopeList"></div>
+
+        <div class="pctac-actions-row">
+            <button type="button" class="add-btn" id="importScopeConfirm">Importer</button>
+            <button type="button" class="add-btn pctac-btn-bg-input" id="importScopeCancel">Annuler</button>
+        </div>
+    </dialog>
+
     <!-- Modale d'édition d'otage (champs + photo) -->
     <dialog class="modal pctac-modal-large pctac-modal-scroll" id="editHostageModal" aria-labelledby="editHostageModalTitle">
         <h3 id="editHostageModalTitle" data-lex="Modifier {host.demonstrative}">Modifier Otage</h3>

@@ -26,7 +26,13 @@ import type {
 } from '@shared/types/contracts.js';
 import { Storage } from '@pctac/storage.js';
 import { GpxStore, ImageStore } from '@pctac/image-store.js';
-import { confirmDialog, toast } from '@shared/feedback.js';
+import { toast } from '@shared/feedback.js';
+import {
+    applyScope,
+    askImportScope,
+    scopeCarriesGpx,
+    scopeCarriesImages,
+} from '@pctac/import-scope.js';
 import { GPX_INDEX_KEY } from '@pctac/planmap/constants.js';
 import {
     LOCAL_STORAGE_KEY, TP_ASSOC_KEY,
@@ -308,13 +314,12 @@ export const Archive: ArchiveContract = {
         try { dataJson = JSON.parse(await dataFile.async('string')) as Record<string, string>; }
         catch { throw new Error('Archive corrompue : « data.json » illisible.'); }
 
-        const confirmed = await confirmDialog({
-            title: 'Importer cette archive ?',
-            message: 'Les données actuelles seront remplacées.',
-            confirmLabel: 'Importer',
-            danger: true,
-        });
-        if (!confirmed) {
+        // Portée de l'import : quelles catégories, et fusion ou remplacement
+        // (cf. `import-scope.ts`). Sans interface de choix dans le document,
+        // `askImportScope` retombe sur la confirmation simple d'autrefois et
+        // rend « tout, en remplacement » — comportement historique intact.
+        const scope = await askImportScope();
+        if (!scope) {
             return { ok: false, cancelled: true };
         }
 
@@ -349,10 +354,16 @@ export const Archive: ArchiveContract = {
 
         // 1) localStorage (rollback intégral si une écriture jette, ex. quota).
         try {
-            Storage.clearAllData();
-            Object.entries(dataJson).forEach(([k, v]) => {
-                localStorage.setItem(k, v);
-            });
+            if (scope.full) {
+                // Restauration intégrale : on repart d'un poste vide, comme avant.
+                Storage.clearAllData();
+                Object.entries(dataJson).forEach(([k, v]) => {
+                    localStorage.setItem(k, v);
+                });
+            } else {
+                // Import partiel : RIEN n'est effacé hors des catégories cochées.
+                applyScope(dataJson, scope);
+            }
         } catch (e) {
             await rollback();
             console.error('[Archive] import localStorage échec, rollback effectué:', e);
@@ -360,18 +371,23 @@ export const Archive: ArchiveContract = {
             return { ok: false, error: e };
         }
 
-        // 2) Images : on efface puis on restaure depuis l'archive.
-        // Un échec critique (clear ou écriture impossible) déclenche le rollback complet.
+        // 2) Images. En restauration intégrale on efface d'abord, comme avant.
+        // En import partiel on n'efface RIEN : les photos des catégories non
+        // cochées doivent survivre. Quelques images orphelines peuvent alors
+        // rester en base — invisibles (rien ne les référence) et sans autre
+        // coût que de la place, là où un effacement de trop serait définitif.
         let imgError: unknown = null;
-        try {
-            await ImageStore.clear();
-        } catch (e) {
-            await rollback();
-            console.error('[Archive] clear images échec, rollback effectué:', e);
-            toast("Échec de l'import (impossible de réinitialiser les photos). Vos données précédentes ont été conservées.", { kind: 'error' });
-            return { ok: false, error: e };
+        if (scope.full) {
+            try {
+                await ImageStore.clear();
+            } catch (e) {
+                await rollback();
+                console.error('[Archive] clear images échec, rollback effectué:', e);
+                toast("Échec de l'import (impossible de réinitialiser les photos). Vos données précédentes ont été conservées.", { kind: 'error' });
+                return { ok: false, error: e };
+            }
         }
-        const imagesFolder = zip.folder('images');
+        const imagesFolder = scopeCarriesImages(scope) ? zip.folder('images') : null;
         if (imagesFolder) {
             const tasks: Promise<void>[] = [];
             imagesFolder.forEach((relPath, entry) => {
@@ -399,7 +415,7 @@ export const Archive: ArchiveContract = {
         // tort n'est pas récupérable, alors qu'on peut toujours en supprimer
         // une de trop.
         let gpxError: unknown = null;
-        const gpxFolder = zip.folder('gpx');
+        const gpxFolder = scopeCarriesGpx(scope) ? zip.folder('gpx') : null;
         if (gpxFolder) {
             const tasks: Promise<void>[] = [];
             gpxFolder.forEach((relPath, entry) => {
@@ -425,8 +441,10 @@ export const Archive: ArchiveContract = {
         // L'index est fusionné APRÈS l'écriture des coordonnées : une entrée
         // d'index ne doit jamais désigner une trace dont le contenu manque.
         try {
-            const merged = mergeGpxIndex(snapshot[GPX_INDEX_KEY] ?? null, dataJson[GPX_INDEX_KEY]);
-            if (merged !== null) localStorage.setItem(GPX_INDEX_KEY, merged);
+            if (scopeCarriesGpx(scope)) {
+                const merged = mergeGpxIndex(snapshot[GPX_INDEX_KEY] ?? null, dataJson[GPX_INDEX_KEY]);
+                if (merged !== null) localStorage.setItem(GPX_INDEX_KEY, merged);
+            }
         } catch (e) {
             gpxError = e;
         }
