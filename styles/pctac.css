@@ -336,15 +336,35 @@
             display: grid;
             grid-template-columns: var(--split-ratio) 10px 1fr;
             gap: var(--tac-zero);
-            /* Hauteur utile : la fenetre moins l'en-tete et la barre d'onglets.
-               Valeur unique plutot qu'un calcul dependant du contenu — deux
-               panneaux qui ne s'alignent pas se lisent comme un bogue. */
-            height: calc(100dvh - 260px);
-            min-height: 420px;
             margin-bottom: var(--space-5);
         }
 
         .split-view[hidden] {
+            display: none;
+        }
+
+        /* Plein écran : les deux panneaux prennent 100 % de la fenêtre
+           (100dvw × 100dvh). Plus de hauteur devinée (ex-`calc(100dvh - 260px)`)
+           qui laissait deux cases trop courtes. L'échelle de `z-index` reste
+           respectée : --z-panel passe SOUS le dock (--z-sticky), qui doit rester
+           visible et cliquable pour pouvoir sortir. */
+        body.is-split .split-view {
+            position: fixed;
+            inset: var(--tac-zero);
+            width: 100dvw;
+            height: 100dvh;
+            max-width: none;
+            margin: var(--tac-zero);
+            z-index: var(--z-panel);
+        }
+
+        /* En écran scindé, le titre, le sélecteur de situation et la barre
+           d'onglets n'ont plus rien à commander : chaque panneau porte son
+           propre sélecteur. On les masque pour ne pas laisser croire qu'un clic
+           dessus fera quelque chose. Le dock, lui, reste au-dessus. */
+        body.is-split h1,
+        body.is-split #modeSelector,
+        body.is-split .main-tab-bar {
             display: none;
         }
 
@@ -406,6 +426,13 @@
             overflow-wrap: anywhere;
         }
 
+        /* La rangee de saisie des amis tient sur six colonnes fixes : dans un
+           panneau etroit, le bouton d'enregistrement sortait du cadre derriere
+           un defilement horizontal. On la laisse passer a la ligne. */
+        .split-pane .pctac-row-friend {
+            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+        }
+
         .split-divider {
             position: relative;
             cursor: col-resize;
@@ -438,13 +465,6 @@
         .split-divider.is-dragging::before {
             top: var(--tac-zero);
             bottom: var(--tac-zero);
-        }
-
-        /* En ecran scinde, la barre d'onglets ne commande plus rien : chaque
-           panneau a son propre selecteur. On la masque pour ne pas laisser
-           croire qu'un clic dessus fera quelque chose. */
-        body.is-split .main-tab-bar {
-            display: none;
         }
 
         .dock-menu-item.is-active {
