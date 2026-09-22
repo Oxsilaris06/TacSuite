@@ -95,10 +95,31 @@ import {
     hostageStatusFromBlessures,
 } from '@pctac/config.js';
 import { GPX_INDEX_KEY, PINS_KEY } from '@pctac/planmap/constants.js';
+import { currentMode } from '@pctac/modes.js';
+import {
+    applyLexicon,
+    collectModeFields,
+    initModeSelector,
+    onModeChange,
+    renderModeBlocks,
+} from '@pctac/mode-ui.js';
 
 /**
  * Point d'entrée principal du module PC TAC
  */
+
+/**
+ * (Re)peuple les blocs doctrinaux des deux formulaires de collection depuis la
+ * situation courante, puis réapplique le vocabulaire aux champs fraîchement
+ * créés. Appelé au démarrage et à chaque changement de situation — jamais en
+ * cours de saisie d'une fiche, ce qui viderait le formulaire sous les doigts.
+ */
+function renderCollectionModeBlocks(): void {
+    const mode = currentMode();
+    renderModeBlocks(document.getElementById('advModeBlocks'), mode.advBlocks, 'adv');
+    renderModeBlocks(document.getElementById('hostageModeBlocks'), mode.hostBlocks, 'hostage');
+    applyLexicon();
+}
 
 document.addEventListener('DOMContentLoaded', async () => {
     // §5.3 étape 1 — Service Worker (PWA, offline-fallback).
@@ -112,6 +133,20 @@ document.addEventListener('DOMContentLoaded', async () => {
     } catch (e) {
         console.error('[PC TAC] migration IndexedDB échouée:', e);
     }
+
+    // Situation opérationnelle (modes.ts) — AVANT le premier rendu : les
+    // libellés et les champs doctrinaux doivent être en place quand les vues
+    // se peignent, sinon l'opérateur voit « Adversaire » clignoter en « Ennemi ».
+    initModeSelector();
+    renderCollectionModeBlocks();
+    onModeChange(() => {
+        renderCollectionModeBlocks();
+        // Les deux collections réaffichent leurs libellés et leurs champs ;
+        // la main courante réaffiche ses pastilles Pax.
+        void UI.renderAdversaries();
+        void UI.renderHostages();
+        UI.renderLogTable(Storage.loadLogData());
+    });
 
     // §5.3 étape 3-5 — Initialisation UI.
     UI.initElements();
@@ -233,6 +268,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         view: string;
         fields: string[];
         map: (f: string[]) => Record<string, unknown>;
+        /** Conteneur des champs doctrinaux, si la collection en porte. */
+        modeBlocksId?: string;
+        /** Préfixe des identifiants de ces champs (`adv_m_position`…). */
+        modeFieldPrefix?: string;
     }
     const forms: PctacFormConfig[] = [
         {
@@ -241,6 +280,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             view: 'view-adversaires',
             fields: ['adv_nom', 'adv_prenom', 'adv_dob', 'adv_lien', 'adv_antecedents', 'adv_attitude', 'adv_substance', 'adv_arme', 'adv_photo'],
             map: (f) => ({ nom: f[0], prenom: f[1], dob: f[2], lien: f[3], antecedents: f[4], attitude: f[5], substance: f[6], armes: f[7], photo: f[8] }),
+            modeBlocksId: 'advModeBlocks',
+            modeFieldPrefix: 'adv',
         },
         {
             id: 'hostage-form',
@@ -248,6 +289,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             view: 'view-otages',
             fields: ['hostage_nom', 'hostage_prenom', 'hostage_dob', 'hostage_lien', 'hostage_etat', 'hostage_blessure', 'hostage_photo'],
             map: (f) => ({ nom: f[0], prenom: f[1], dob: f[2], lien: f[3], etat: f[4], blessures: f[5], photo: f[6] }),
+            modeBlocksId: 'hostageModeBlocks',
+            modeFieldPrefix: 'hostage',
         },
         {
             id: 'friend-form',
@@ -273,6 +316,12 @@ document.addEventListener('DOMContentLoaded', async () => {
                 if (values.some((v) => v && (typeof v !== 'string' || v.trim() !== ''))) {
                     const itemId = Date.now().toString();
                     const mapped = cfg.map(values);
+                    // Champs doctrinaux de la situation courante, posés À PLAT
+                    // sur la fiche comme les champs historiques. Les clés d'une
+                    // autre situation déjà présentes ne sont pas touchées.
+                    if (cfg.modeBlocksId && cfg.modeFieldPrefix) {
+                        Object.assign(mapped, collectModeFields(document.getElementById(cfg.modeBlocksId)));
+                    }
                     // U16 — statut porté par la FICHE dès la création.
                     if (cfg.view === 'view-adversaires') mapped.status = 'active';
                     if (cfg.view === 'view-otages') mapped.status = hostageStatusFromBlessures(mapped.blessures);
@@ -295,6 +344,14 @@ document.addEventListener('DOMContentLoaded', async () => {
                         if (el.type === 'file') { el.value = ''; delete el.dataset.base64; }
                         else el.value = '';
                     });
+                    // Les champs doctrinaux se vident comme les autres : sans
+                    // ça, la fiche suivante hériterait du renseignement de la
+                    // précédente, erreur silencieuse et coûteuse.
+                    if (cfg.modeBlocksId) {
+                        document.getElementById(cfg.modeBlocksId)
+                            ?.querySelectorAll<HTMLInputElement>('[data-mode-field]')
+                            .forEach((input) => { input.value = ''; });
+                    }
                     // Reset des aperçus miniatures
                     ['adv_photo_preview', 'hostage_photo_preview'].forEach((pid) => {
                         const p = document.getElementById(pid);

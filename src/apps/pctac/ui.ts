@@ -70,6 +70,20 @@ import { ImageStore } from '@pctac/image-store.js';
 import { LogManager } from '@pctac/log-manager.js';
 import { esc } from '@shared/ui-platform.js';
 import { confirmDialog, promptDialog } from '@shared/feedback.js';
+import { currentMode } from '@pctac/modes.js';
+import { applyLexicon, collectModeFields, renderModeBlocks, visibleModeFieldsFor } from '@pctac/mode-ui.js';
+
+/**
+ * Rend les champs doctrinaux d'une fiche (cf. `modes.ts`) en lignes de la
+ * grille de détails. Vide quand la situation n'en porte pas — le gabarit reste
+ * alors strictement celui d'avant. `accent` suit la couleur déjà employée par
+ * la collection : bleu côté adverse, ambre côté partie protégée.
+ */
+function modeFieldRows(item: Record<string, unknown>, side: 'adv' | 'host', accent: string): string {
+  return visibleModeFieldsFor(item, side)
+    .map((row) => `<div style="grid-column: span 3;"><strong style="color: ${accent};">${esc(row.label.toUpperCase())}:</strong> ${esc(row.value)}</div>`)
+    .join('');
+}
 
 /* ------------------------------------------------------------------------
  * U16/C1 — Statuts sur les FICHES (source de vérité ; la photo _sync suit).
@@ -393,7 +407,10 @@ export const UI: UIContract = {
         const paxInfo = PDF_PAX_COLORS[entry.pax] ?? PDF_PAX_COLORS['Adversaire'];
         if (!paxInfo) return;
         paxColor = paxInfo.color;
-        paxText = paxInfo.text;
+        const lex = currentMode();
+        paxText = entry.pax === 'Adversaire' ? lex.adv.paxChip
+          : entry.pax === 'Otage' ? lex.host.paxChip
+          : paxInfo.text;
         paxFontColor = paxInfo.fontColor;
       } else {
         paxColor = entry.paxColor || (FREE_MODE_COLORS[0] ? FREE_MODE_COLORS[0].hex : '');
@@ -593,7 +610,7 @@ export const UI: UIContract = {
     const tbody = document.getElementById('adversary-table-body');
     if (!tbody) return;
     if (raw.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="3" class="empty-state">Aucun adversaire — utilisez le formulaire ci-dessus</td></tr>';
+      tbody.innerHTML = `<tr><td colspan="3" class="empty-state">${esc(currentMode().adv.emptyLabel)} — utilisez le formulaire ci-dessus</td></tr>`;
       return;
     }
     // U26 — squelette pendant l'hydratation IndexedDB des photos.
@@ -610,15 +627,16 @@ export const UI: UIContract = {
                         <div><strong style="color: var(--accent-blue);">NOM:</strong> ${esc(item.nom)}</div>
                         <div><strong style="color: var(--accent-blue);">PRÉNOM:</strong> ${esc(item.prenom)}</div>
                         <div><strong style="color: var(--accent-blue);"><span class="material-symbols-outlined" style="font-size: 14px; vertical-align: middle;">cake</span>:</strong> ${esc(item.dob) || 'N/C'}</div>
-                        <div><strong style="color: var(--accent-blue);">LIEN VICTIMES:</strong> ${esc(item.lien) || 'N/C'}</div>
+                        <div><strong style="color: var(--accent-blue);">${esc(currentMode().adv.linkLabel.toUpperCase())}:</strong> ${esc(item.lien) || 'N/C'}</div>
                         <div><strong style="color: var(--accent-blue);">ATTITUDE:</strong> ${esc(item.attitude) || 'N/C'}</div>
                         <div><strong style="color: var(--accent-blue);">SUBSTANCE:</strong> ${esc(item.substance) || 'N/C'}</div>
                         <div style="grid-column: span 3;"><strong style="color: var(--accent-blue);">ANTÉCÉDENTS:</strong> ${esc(item.antecedents) || 'N/C'}</div>
                         <div style="grid-column: span 3;"><strong style="color: var(--accent-blue);">ARMES:</strong> ${esc(item.armes) || 'N/C'}</div>
+                        ${modeFieldRows(item, 'adv', 'var(--accent-blue)')}
                         <div style="grid-column: span 3; display: flex; align-items: center; gap: 8px;">
                             <strong style="color: var(--accent-blue);">STATUT:</strong>
                             ${statusBadge(ADV_STATUS[String(item.status || 'active')])}
-                            <select onchange="UI.setItemStatus('pcTacAdversaries', '${item.id}', this.value)" aria-label="Statut de l'adversaire" style="font-size: 0.85em; padding: 2px 20px 2px 5px; height: auto; min-height: unset; width: auto;">
+                            <select onchange="UI.setItemStatus('pcTacAdversaries', '${item.id}', this.value)" aria-label="Statut : ${esc(currentMode().adv.singular)}" style="font-size: 0.85em; padding: 2px 20px 2px 5px; height: auto; min-height: unset; width: auto;">
                                 ${statusOptions(ADV_STATUS, String(item.status || 'active'))}
                             </select>
                         </div>
@@ -632,8 +650,8 @@ export const UI: UIContract = {
                 </td>
                 <td style="width: 50px;">
                     <div style="display: flex; gap: 5px;">
-                        <button class="action-btn-small edit" onclick="window.UI.showEditAdversaryModal('${item.id}')" title="Modifier" aria-label="Modifier cet adversaire"><span class="material-symbols-outlined" style="font-size: 18px;">edit</span></button>
-                        <button class="delete-btn" onclick="window.deleteCollectionItem('pcTacAdversaries', '${item.id}', 'view-adversaires')" aria-label="Supprimer cet adversaire"><span class="material-symbols-outlined" style="font-size: 18px;">delete</span></button>
+                        <button class="action-btn-small edit" onclick="window.UI.showEditAdversaryModal('${item.id}')" title="Modifier" aria-label="Modifier ${esc(currentMode().adv.demonstrative)}"><span class="material-symbols-outlined" style="font-size: 18px;">edit</span></button>
+                        <button class="delete-btn" onclick="window.deleteCollectionItem('pcTacAdversaries', '${item.id}', 'view-adversaires')" aria-label="Supprimer ${esc(currentMode().adv.demonstrative)}"><span class="material-symbols-outlined" style="font-size: 18px;">delete</span></button>
                     </div>
                 </td>
             </tr>
@@ -658,7 +676,7 @@ export const UI: UIContract = {
     const tbody = document.getElementById('hostage-table-body');
     if (!tbody) return;
     if (raw.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="3" class="empty-state">Aucun otage — utilisez le formulaire ci-dessus</td></tr>';
+      tbody.innerHTML = `<tr><td colspan="3" class="empty-state">${esc(currentMode().host.emptyLabel)} — utilisez le formulaire ci-dessus</td></tr>`;
       return;
     }
     // U26 — squelette pendant l'hydratation IndexedDB des photos.
@@ -675,13 +693,14 @@ export const UI: UIContract = {
                         <div><strong style="color: var(--civil-yellow);">NOM:</strong> ${esc(item.nom)}</div>
                         <div><strong style="color: var(--civil-yellow);">PRÉNOM:</strong> ${esc(item.prenom)}</div>
                         <div><strong style="color: var(--civil-yellow);"><span class="material-symbols-outlined" style="font-size: 14px; vertical-align: middle;">cake</span>:</strong> ${esc(item.dob) || 'N/C'}</div>
-                        <div><strong style="color: var(--civil-yellow);">LIEN ADV:</strong> ${esc(resolveLien(item.lien, advs)) || 'N/C'}</div>
+                        <div><strong style="color: var(--civil-yellow);">${esc(currentMode().host.linkLabel.toUpperCase())}:</strong> ${esc(resolveLien(item.lien, advs)) || 'N/C'}</div>
                         <div><strong style="color: var(--civil-yellow);">ÉTAT:</strong> ${esc(item.etat) || 'N/C'}</div>
                         <div><strong style="color: var(--civil-yellow);">BLESSURES:</strong> ${esc(item.blessures) || 'N/C'}</div>
+                        ${modeFieldRows(item, 'host', 'var(--civil-yellow)')}
                         <div style="grid-column: span 3; display: flex; align-items: center; gap: 8px;">
                             <strong style="color: var(--civil-yellow);">STATUT:</strong>
                             ${statusBadge(HOST_STATUS[String(item.status || 'ok')])}
-                            <select onchange="UI.setItemStatus('pcTacHostages', '${item.id}', this.value)" aria-label="Statut de l'otage" style="font-size: 0.85em; padding: 2px 20px 2px 5px; height: auto; min-height: unset; width: auto;">
+                            <select onchange="UI.setItemStatus('pcTacHostages', '${item.id}', this.value)" aria-label="Statut : ${esc(currentMode().host.singular)}" style="font-size: 0.85em; padding: 2px 20px 2px 5px; height: auto; min-height: unset; width: auto;">
                                 ${statusOptions(HOST_STATUS, String(item.status || 'ok'))}
                             </select>
                         </div>
@@ -689,8 +708,8 @@ export const UI: UIContract = {
                 </td>
                 <td style="width: 50px;">
                     <div style="display: flex; gap: 5px;">
-                        <button class="action-btn-small edit" onclick="window.UI.showEditHostageModal('${item.id}')" title="Modifier" aria-label="Modifier cet otage"><span class="material-symbols-outlined" style="font-size: 18px;">edit</span></button>
-                        <button class="delete-btn" onclick="window.deleteCollectionItem('pcTacHostages', '${item.id}', 'view-otages')" aria-label="Supprimer cet otage"><span class="material-symbols-outlined" style="font-size: 18px;">delete</span></button>
+                        <button class="action-btn-small edit" onclick="window.UI.showEditHostageModal('${item.id}')" title="Modifier" aria-label="Modifier ${esc(currentMode().host.demonstrative)}"><span class="material-symbols-outlined" style="font-size: 18px;">edit</span></button>
+                        <button class="delete-btn" onclick="window.deleteCollectionItem('pcTacHostages', '${item.id}', 'view-otages')" aria-label="Supprimer ${esc(currentMode().host.demonstrative)}"><span class="material-symbols-outlined" style="font-size: 18px;">delete</span></button>
                     </div>
                 </td>
             </tr>
@@ -1076,6 +1095,11 @@ export const UI: UIContract = {
     const fileInput = document.getElementById('edit_adv_photo_input') as HTMLInputElement | null;
     if (fileInput) { fileInput.value = ''; delete fileInput.dataset.compressedBase64; }
 
+    // Champs doctrinaux de la situation courante, pré-remplis depuis la fiche.
+    const advBlocks = document.getElementById('editAdvModeBlocks');
+    renderModeBlocks(advBlocks, currentMode().advBlocks, 'edit_adv', item);
+    if (advBlocks) applyLexicon(advBlocks);
+
     (document.getElementById('editAdversaryModal') as HTMLDialogElement).showModal();
   },
 
@@ -1097,6 +1121,7 @@ export const UI: UIContract = {
       const el = document.getElementById('edit_adv_' + f) as HTMLInputElement | HTMLTextAreaElement | null;
       if (el) adv[f] = el.value.trim();
     });
+    Object.assign(adv, collectModeFields(document.getElementById('editAdvModeBlocks')));
 
     const fileInput = document.getElementById('edit_adv_photo_input') as HTMLInputElement | null;
     const dataUrl = fileInput && fileInput.dataset.compressedBase64;
@@ -1166,6 +1191,11 @@ export const UI: UIContract = {
     const fileInput = document.getElementById('edit_host_photo_input') as HTMLInputElement | null;
     if (fileInput) { fileInput.value = ''; delete fileInput.dataset.compressedBase64; }
 
+    // Champs doctrinaux de la situation courante, pré-remplis depuis la fiche.
+    const hostBlocks = document.getElementById('editHostModeBlocks');
+    renderModeBlocks(hostBlocks, currentMode().hostBlocks, 'edit_host', item);
+    if (hostBlocks) applyLexicon(hostBlocks);
+
     (document.getElementById('editHostageModal') as HTMLDialogElement).showModal();
   },
 
@@ -1189,6 +1219,7 @@ export const UI: UIContract = {
       const el = document.getElementById('edit_host_' + f) as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement | null;
       if (el) host[f] = el.value.trim();
     });
+    Object.assign(host, collectModeFields(document.getElementById('editHostModeBlocks')));
 
     const fileInput = document.getElementById('edit_host_photo_input') as HTMLInputElement | null;
     const dataUrl = fileInput && fileInput.dataset.compressedBase64;
