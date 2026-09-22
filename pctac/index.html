@@ -671,12 +671,12 @@
         <input type="hidden" id="new_pax_color_val" value="#800000">
 
         <div class="pctac-create-pax-actions">
+            <button type="button" class="add-btn pctac-btn-flex-1-input-45" id="cancelCreatePaxBtn">
+                ANNULER
+            </button>
             <button type="button" class="add-btn pctac-btn-flex-2-45" id="confirmCreatePaxBtn">
                 <span class="material-symbols-outlined pctac-icon-20-mid-mr5" aria-hidden="true">check_circle</span>
                 CRÉER
-            </button>
-            <button type="button" class="add-btn pctac-btn-flex-1-input-45" id="cancelCreatePaxBtn">
-                ANNULER
             </button>
         </div>
     </dialog>
@@ -687,9 +687,9 @@
         <p class="pctac-reset-warning-text" data-lex="Attention, toutes les données (logs, {adv.plural}, {host.plural}, photos) seront définitivement supprimées. Cette action est irréversible.">Attention, toutes les données (logs,
             adversaires, otages, photos) seront définitivement supprimées. Cette action est irréversible.</p>
         <div class="pctac-actions-row-gap10">
+            <button type="button" class="add-btn pctac-btn-bg-input" id="cancelResetBtn">ANNULER</button>
             <button type="button" class="add-btn pctac-btn-danger-bg" id="confirmResetBtn">CONFIRMER LE
                 RESET</button>
-            <button type="button" class="add-btn pctac-btn-bg-input" id="cancelResetBtn">ANNULER</button>
         </div>
     </dialog>
 
@@ -709,8 +709,8 @@
             <textarea id="edit_remarques" rows="2" class="pctac-textarea-lg"></textarea>
         </div>
         <div class="pctac-actions-row">
-            <button type="button" class="add-btn" id="confirmEditBtn">Enregistrer</button>
             <button type="button" class="add-btn pctac-btn-bg-input" onclick="UI.hideEditModal()">Annuler</button>
+            <button type="button" class="add-btn" id="confirmEditBtn">Enregistrer</button>
         </div>
     </dialog>
 
@@ -746,8 +746,8 @@
         </div>
         <div class="mode-blocks" id="editAdvModeBlocks" hidden></div>
         <div class="pctac-actions-row">
-            <button type="button" class="add-btn" id="confirmEditAdvBtn">Enregistrer</button>
             <button type="button" class="add-btn pctac-btn-bg-input" onclick="UI.hideEditAdversaryModal()">Annuler</button>
+            <button type="button" class="add-btn" id="confirmEditAdvBtn">Enregistrer</button>
         </div>
     </dialog>
 
@@ -781,8 +781,8 @@
         <div class="import-scope-list" id="importScopeList"></div>
 
         <div class="pctac-actions-row">
-            <button type="button" class="add-btn" id="importScopeConfirm">Importer</button>
             <button type="button" class="add-btn pctac-btn-bg-input" id="importScopeCancel">Annuler</button>
+            <button type="button" class="add-btn" id="importScopeConfirm">Importer</button>
         </div>
     </dialog>
 
@@ -821,8 +821,8 @@
         </div>
         <div class="mode-blocks" id="editHostModeBlocks" hidden></div>
         <div class="pctac-actions-row">
-            <button type="button" class="add-btn" id="confirmEditHostBtn">Enregistrer</button>
             <button type="button" class="add-btn pctac-btn-bg-input" onclick="UI.hideEditHostageModal()">Annuler</button>
+            <button type="button" class="add-btn" id="confirmEditHostBtn">Enregistrer</button>
         </div>
     </dialog>
 
@@ -838,8 +838,8 @@
             <div><label for="edit_friend_mission">Mission</label><input type="text" id="edit_friend_mission" class="pctac-input-lg"></div>
         </div>
         <div class="pctac-actions-row">
-            <button type="button" class="add-btn" id="confirmEditFriendBtn">Enregistrer</button>
             <button type="button" class="add-btn pctac-btn-bg-input" onclick="UI.hideEditFriendModal()">Annuler</button>
+            <button type="button" class="add-btn" id="confirmEditFriendBtn">Enregistrer</button>
         </div>
     </dialog>
 
@@ -879,8 +879,8 @@
             </div>
         </div>
         <div class="pctac-actions-row">
-            <button type="button" class="add-btn" id="planTextConfirmBtn">Enregistrer</button>
             <button type="button" class="add-btn pctac-btn-bg-input" id="planTextCancelBtn">Annuler</button>
+            <button type="button" class="add-btn" id="planTextConfirmBtn">Enregistrer</button>
         </div>
     </dialog>
 
