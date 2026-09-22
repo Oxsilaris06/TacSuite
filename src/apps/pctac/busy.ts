@@ -18,7 +18,12 @@
  * masque réellement l'overlay.
  */
 
+import { mountOrb, type OrbHandle } from '@shared/orb.js';
+
 let depth = 0;
+/** Sphere d'attente en cours. `null` quand l'overlay est masque : la boucle
+ * d'animation n'existe alors pas, elle n'est pas seulement invisible. */
+let orb: OrbHandle | null = null;
 
 function getOverlay(): HTMLElement | null {
     return document.getElementById('pctacBusyOverlay');
@@ -35,6 +40,9 @@ export function showBusy(message = 'Chargement…'): void {
     if (messageEl) messageEl.textContent = message;
     const overlay = getOverlay();
     if (overlay) overlay.style.display = 'flex';
+    // Monte apres l'affichage : la sphere lit `clientWidth` pour se
+    // dimensionner, et un canvas dans un parent `display: none` mesure zero.
+    if (!orb) orb = mountOrb(document.getElementById('pctacBusyOrb') as HTMLCanvasElement | null);
 }
 
 /** Masque l'overlay busy. Sûr à appeler même sans `showBusy()` préalable. */
@@ -43,4 +51,6 @@ export function hideBusy(): void {
     if (depth > 0) return;
     const overlay = getOverlay();
     if (overlay) overlay.style.display = 'none';
+    orb?.stop();
+    orb = null;
 }

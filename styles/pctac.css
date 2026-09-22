@@ -2791,14 +2791,33 @@ body.up-kb-open .up-kb-aware {
     max-width: 350px; width: 85%;
     display: flex; flex-direction: column; align-items: center; gap: 20px;
 }
-.pctac-busy-spinner {
-    width: 60px; height: 60px;
-    border: 5px solid rgba(255, 255, 255, 0.05);
-    border-top: 5px solid var(--accent-blue);
-    border-radius: 50%;
-    animation: pctac-busy-spin 0.8s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+/* Sphere d'attente (shared/orb.ts). Le disque tournant a bord colore qui
+   occupait cette place est retire : a 0,8 s par tour il pressait l'oeil pendant
+   des attentes de vingt secondes. La sphere tourne en 9 s et se dessine sur un
+   canvas — d'ou l'absence d'animation CSS ici. */
+.tac-orb {
+    width: 72px;
+    height: 72px;
+    flex-shrink: 0;
 }
-@keyframes pctac-busy-spin { to { transform: rotate(360deg); } }
+
+/* Le message respire doucement pendant l'attente : une seule propriete
+   animee (opacity), cycle long, et rien du tout en mouvement reduit. */
+.tac-orb-message {
+    animation: tac-orb-breath 2.6s var(--ease-in-out) infinite;
+}
+
+@keyframes tac-orb-breath {
+    0%, 100% { opacity: 0.62; }
+    50% { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .tac-orb-message {
+        animation: none;
+        opacity: 1;
+    }
+}
 #pctacBusyMessage {
     font-family: var(--font-data);
     font-size: 0.95em;

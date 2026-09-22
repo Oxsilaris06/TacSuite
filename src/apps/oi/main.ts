@@ -224,6 +224,7 @@ import '@oi/dessin.js';
 // (SPEC-CONTRATS.md §4.2, SPEC-OI-CONVERSION.md §1.2). Seul écart d'ordre,
 // déjà couvert, zéro action ici.
 import '@oi/carto/index.js'; // pose window.OICarto + auto-câble #cartographyBtn (carto/index.ts:61-71)
+import { initPdfLoaderOrb } from '@oi/loader.js';
 
 /**
  * ─────────────────────────────────────────────────────────────────────────
@@ -364,6 +365,9 @@ document.addEventListener('change', (e) => dispatchOiAction(oiChangeActions, e))
  * Aucune étape fusionnée, réordonnée ni « optimisée ».
  */
 document.addEventListener('DOMContentLoaded', async () => {
+    // Sphère d'attente du chargeur PDF. Posée AVANT toute étape : une
+    // génération déclenchée tôt doit la trouver en place.
+    initPdfLoaderOrb();
     try {
         // §12.3 étape 1 — Initialiser IndexedDB. 4.html:4540
         if (window.dbManager) await window.dbManager.init();
