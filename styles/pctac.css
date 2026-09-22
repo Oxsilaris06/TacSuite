@@ -471,6 +471,139 @@ body.up-kb-open .up-kb-aware {
         }
 
         /* ════════════════════════════════════════════════════════════════
+         * SECTION : PORTEE D'IMPORT (import-scope.ts)
+         * ════════════════════════════════════════════════════════════════ */
+        /* Les regles globales `label { text-transform: uppercase; display: block }`
+           et `input { width: 100% }` sont pensees pour des champs de saisie
+           empiles. Dans cette modale il n'y a QUE des cases et des radios, avec
+           des phrases explicatives : sans ces neutralisations, les radios
+           s'etirent sur toute la largeur et les explications passent en
+           capitales, donc illisibles. Portee strictement limitee a la modale. */
+        #importScopeModal input[type="checkbox"],
+        #importScopeModal input[type="radio"] {
+            flex: 0 0 auto;
+            width: 18px;
+            height: 18px;
+            min-height: 0;
+            margin: var(--tac-zero);
+            padding: var(--tac-zero);
+            accent-color: var(--accent-fill);
+            cursor: pointer;
+        }
+
+        /* `display` est volontairement ABSENT de cette regle : `.import-scope-item`
+           et `.import-scope-mode-option` SONT des <label> en flex, et un
+           `display` pose ici, plus specifique, les remettrait en ligne. */
+        #importScopeModal label,
+        #importScopeModal legend,
+        #importScopeModal strong,
+        #importScopeModal small {
+            margin-bottom: var(--tac-zero);
+            text-transform: none;
+            text-align: left;
+            letter-spacing: normal;
+        }
+
+        #importScopeModal strong,
+        #importScopeModal small {
+            display: block;
+        }
+
+        .import-scope-intro {
+            margin: var(--tac-zero) var(--tac-zero) var(--space-4);
+            font-size: 0.85em;
+            line-height: 1.5;
+            color: var(--text-muted);
+        }
+
+        .import-scope-mode {
+            display: grid;
+            gap: var(--space-2);
+            margin-bottom: var(--space-4);
+            padding: var(--space-3);
+            border: 1px solid var(--border-glass);
+            border-radius: var(--radius-sm);
+        }
+
+        .import-scope-mode legend {
+            padding: var(--tac-zero) var(--tac-space-2);
+            font-size: 0.8em;
+            color: var(--text-muted);
+        }
+
+        .import-scope-mode-option {
+            display: flex;
+            align-items: flex-start;
+            gap: var(--space-3);
+            padding: var(--space-2);
+            border-radius: var(--radius-sm);
+            cursor: pointer;
+            transition: background var(--transition-fast);
+        }
+
+        .import-scope-mode-option:hover {
+            background: var(--bg-interactive);
+        }
+
+        /* La description doit passer SOUS son intitule : `display: revert` les a
+           remis en ligne, on les rempile explicitement. */
+        .import-scope-mode-option > span {
+            display: block;
+        }
+
+        .import-scope-mode-option strong {
+            display: block;
+            font-size: 0.95em;
+            color: var(--text-main);
+        }
+
+        .import-scope-mode-option small {
+            display: block;
+            margin-top: 2px;
+            font-size: 0.78em;
+            line-height: 1.45;
+            color: var(--text-muted);
+        }
+
+        /* Une case cochee par categorie. Grille auto-fit : huit categories
+           tiennent en deux colonnes au bureau, une seule au telephone, sans
+           point de rupture a maintenir. */
+        .import-scope-list {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+            gap: var(--tac-space-1);
+            margin-bottom: var(--space-4);
+        }
+
+        .import-scope-item {
+            display: flex;
+            align-items: center;
+            gap: var(--space-2);
+            min-height: 44px;
+            padding: var(--tac-space-1) var(--space-2);
+            border-radius: var(--radius-sm);
+            color: var(--text-secondary);
+            cursor: pointer;
+            transition: background var(--transition-fast), color var(--transition-fast);
+        }
+
+        .import-scope-item:hover {
+            background: var(--bg-interactive);
+            color: var(--text-main);
+        }
+
+        .import-scope-item .material-symbols-outlined {
+            font-size: 18px;
+            color: var(--text-muted);
+        }
+
+        .import-scope-item-label {
+            flex: 1;
+            font-size: 0.88em;
+            font-weight: 600;
+        }
+
+        /* ════════════════════════════════════════════════════════════════
          * SECTION : FAVORIS DE LA MAIN COURANTE
          * Etoile par entree + filtre d'en-tete. L'etoile vide reste discrete
          * (elle est presente sur CHAQUE ligne) et ne prend sa couleur qu'une
