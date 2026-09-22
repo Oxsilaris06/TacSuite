@@ -426,11 +426,26 @@
             overflow-wrap: anywhere;
         }
 
-        /* La rangee de saisie des amis tient sur six colonnes fixes : dans un
-           panneau etroit, le bouton d'enregistrement sortait du cadre derriere
-           un defilement horizontal. On la laisse passer a la ligne. */
-        .split-pane .pctac-row-friend {
+        /* Les rangees de formulaire a colonnes fixes (amis, adversaires,
+           photos) ne tiennent plus dans un panneau etroit : leurs `1fr` ont un
+           minimum de contenu (un champ texte fait ~200 px) et sortaient du
+           cadre derriere un defilement horizontal. On les laisse passer a la
+           ligne. */
+        .split-pane .pctac-row-friend,
+        .split-pane .pctac-row-entity,
+        .split-pane .pctac-row-photo {
             grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+        }
+
+        /* Liens : deux colonnes dont une barre laterale de 250 px fixe. Dans un
+           panneau etroit, le panneau carto et la barre debordaient. On empile
+           plutot que de rogner. */
+        .split-pane .pctac-liens-layout {
+            flex-direction: column;
+        }
+
+        .split-pane .pctac-liens-sidebar {
+            width: 100%;
         }
 
         .split-divider {
