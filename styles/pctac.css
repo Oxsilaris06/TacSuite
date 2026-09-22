@@ -470,6 +470,144 @@ body.up-kb-open .up-kb-aware {
             font-weight: 400;
         }
 
+        /* ════════════════════════════════════════════════════════════════
+         * SECTION : SITUATION OPERATIONNELLE (modes.ts / mode-ui.ts)
+         * Selecteur segmente en haut a droite. Quatre options exclusives dont
+         * une est toujours active : meme semantique qu'un groupe radio, d'ou
+         * le role ARIA pose par initModeSelector().
+         * ════════════════════════════════════════════════════════════════ */
+        .mode-selector {
+            position: relative;
+            width: max-content;
+            max-width: 100%;
+            margin: var(--tac-zero) var(--tac-zero) var(--space-3) auto;
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: var(--tac-zero);
+            padding: 3px;
+            background: var(--bg-glass);
+            border: 1px solid var(--border-glass);
+            border-radius: var(--radius-full);
+            backdrop-filter: blur(10px);
+            z-index: var(--z-sticky);
+        }
+
+        /* Pastille active. Les quatre segments ayant la MEME largeur, un
+           translateX suffit : aucune animation de largeur, donc aucun recalcul
+           de mise en page pendant le mouvement. */
+        .mode-selector-indicator {
+            position: absolute;
+            top: 3px;
+            left: 3px;
+            width: calc((100% - 6px) / 4);
+            height: calc(100% - 6px);
+            border-radius: var(--radius-full);
+            background: var(--accent-fill);
+            box-shadow: 0 0 15px rgba(52, 152, 219, 0.4);
+            transition: transform 220ms var(--ease-out-spring);
+            pointer-events: none;
+        }
+
+        .mode-selector-option {
+            position: relative;
+            z-index: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: var(--tac-space-1);
+            min-height: 34px;
+            padding: var(--tac-space-1) var(--space-3);
+            background: transparent;
+            border: none;
+            border-radius: var(--radius-full);
+            color: var(--text-muted);
+            font-family: var(--font-ui);
+            font-size: 0.78em;
+            font-weight: 600;
+            letter-spacing: 0.01em;
+            cursor: pointer;
+            transition: color var(--transition-fast), transform 100ms var(--ease-in-out);
+        }
+
+        .mode-selector-option .material-symbols-outlined {
+            font-size: 18px;
+        }
+
+        .mode-selector-option:hover {
+            color: var(--text-secondary);
+        }
+
+        .mode-selector-option.is-active {
+            color: #fff;
+        }
+
+        .mode-selector-option:active {
+            transform: scale(0.97);
+        }
+
+        /* Blocs doctrinaux injectes dans les formulaires par renderModeBlocks(). */
+        .mode-blocks[hidden] {
+            display: none;
+        }
+
+        .mode-block {
+            margin: var(--space-4) var(--tac-zero) var(--tac-zero);
+            padding: var(--space-3);
+            border: 1px solid var(--border-glass);
+            border-radius: var(--radius-sm);
+            background: rgba(0, 0, 0, 0.18);
+        }
+
+        .mode-block-title {
+            padding: var(--tac-zero) var(--tac-space-2);
+            font-family: var(--font-title);
+            font-size: 0.95em;
+            letter-spacing: 0.08em;
+            color: var(--accent-blue);
+        }
+
+        .mode-block-hint {
+            margin: var(--tac-zero) var(--tac-zero) var(--space-3);
+            font-size: 0.75em;
+            line-height: 1.45;
+            color: var(--text-muted);
+        }
+
+        .mode-block-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+            gap: var(--space-3);
+        }
+
+        .mode-field-wide {
+            grid-column: 1 / -1;
+        }
+
+        /* Sous 900 px le selecteur quitte le coin (il chevaucherait le titre)
+           et passe sous lui, pleine largeur, libelles conserves. */
+        /* Sous 900 px le selecteur prend toute la largeur : cale a droite il
+           deviendrait une bande etroite illisible au pouce. */
+        @media (max-width: 900px) {
+            .mode-selector {
+                width: 100%;
+                margin-left: var(--tac-zero);
+            }
+        }
+
+        /* Pointeur grossier etroit : les quatre libelles ne tiennent plus,
+           l'icone porte seule, le nom reste dans le title et l'aria. */
+        @media (max-width: 520px) {
+            .mode-selector-label {
+                display: none;
+            }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            .mode-selector-indicator {
+                transition: none;
+            }
+        }
+
         .main-tab-bar {
             display: grid;
             grid-template-columns: repeat(7, 1fr);
