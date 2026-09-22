@@ -31,6 +31,28 @@ const isArray = (v: unknown): v is unknown[] => Array.isArray(v);
 const isObject = (v: unknown): v is Record<string, unknown> =>
   v !== null && typeof v === 'object' && !Array.isArray(v);
 
+/**
+ * Évènement `pctac:data` — annonce qu'une zone de données vient d'être écrite.
+ *
+ * Existe pour l'écran scindé : deux vues affichées côte à côte doivent rester
+ * à jour l'une comme l'autre, alors que le rendu de PC-Tac est déclenché par
+ * l'action de l'utilisateur, donc seulement dans la vue où il travaille.
+ * Plutôt que d'appeler le rafraîchissement depuis chaque point d'écriture (et
+ * d'en oublier un), on annonce l'écriture ici, au SEUL endroit par lequel
+ * toutes passent, et l'écran scindé décide de ce qu'il repeint.
+ *
+ * Volontairement silencieux hors navigateur (tests Node) et jamais bloquant :
+ * une écriture de données ne doit pas échouer parce qu'un écouteur a levé.
+ */
+function announceChange(key: string): void {
+  if (typeof document === 'undefined' || typeof CustomEvent !== 'function') return;
+  try {
+    document.dispatchEvent(new CustomEvent('pctac:data', { detail: { key } }));
+  } catch {
+    // Un écouteur en échec ne doit jamais remonter jusqu'à l'appelant.
+  }
+}
+
 export const Storage: PctacStorageContract = {
   /**
    * Sauvegarde les données du journal.
@@ -50,6 +72,7 @@ export const Storage: PctacStorageContract = {
     });
     // Persist ne jette jamais sur quota : il émet 'pctac:quota' (non bloquant).
     Persist.set(LOCAL_STORAGE_KEY, logData);
+    announceChange(LOCAL_STORAGE_KEY);
   },
 
   /**
@@ -87,6 +110,7 @@ export const Storage: PctacStorageContract = {
   saveCollection(key: string, data: readonly PctacCollectionItem[]): void {
     // Quota géré par Persist via l'évènement 'pctac:quota'.
     Persist.set(key, data);
+    announceChange(key);
   },
 
   /**

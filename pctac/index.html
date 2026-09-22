@@ -66,6 +66,16 @@
             </button>
         </nav>
 
+        <!-- Écran scindé (split-view.ts). Les vues ne sont pas dupliquées :
+             elles sont DÉPLACÉES dans ces panneaux, puis remises à leur place. -->
+        <div id="splitView" class="split-view" hidden>
+            <section class="split-pane" id="splitPaneLeft" aria-label="Panneau gauche"></section>
+            <div id="splitDivider" class="split-divider" role="separator" tabindex="0"
+                aria-orientation="vertical" aria-label="Déplacer la séparation des deux panneaux"
+                title="Glisser pour redimensionner · double-clic pour recentrer"></div>
+            <section class="split-pane" id="splitPaneRight" aria-label="Panneau droit"></section>
+        </div>
+
         <!-- VUE : MAIN COURANTE -->
         <div id="view-main-courante" class="tab-content-view active">
             <div class="log-entry-form">
@@ -920,6 +930,10 @@
 
         <button type="button" class="dock-menu-item" id="darkModeToggle" title="Changer le thème" aria-label="Changer le thème">
             <span class="material-symbols-outlined" id="darkModeIcon">nightlight</span>
+        </button>
+        <button type="button" class="dock-menu-item" id="splitViewDockBtn" aria-pressed="false"
+            title="Écran scindé : deux onglets côte à côte" aria-label="Basculer l'écran scindé">
+            <span class="material-symbols-outlined">splitscreen_vertical_add</span>
         </button>
         <button type="button" class="dock-menu-item" id="fullscreenToggle" title="Plein écran" aria-label="Basculer le plein écran">
             <span class="material-symbols-outlined" id="fullscreenIcon">fullscreen</span>
