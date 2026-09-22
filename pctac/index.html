@@ -955,8 +955,10 @@
          l'OI (#pdfLoadingModal, oi/index.html:972). -->
     <div id="pctacBusyOverlay" role="status" aria-live="polite">
         <div class="pctac-busy-card">
-            <div class="pctac-busy-spinner"></div>
-            <div id="pctacBusyMessage">Chargement…</div>
+            <!-- Sphere de points animee par shared/orb.ts, montee/demontee par
+                 showBusy()/hideBusy() : rien ne tourne quand rien n'est affiche. -->
+            <canvas id="pctacBusyOrb" class="tac-orb" width="72" height="72" aria-hidden="true"></canvas>
+            <div id="pctacBusyMessage" class="tac-orb-message">Chargement…</div>
         </div>
     </div>
 

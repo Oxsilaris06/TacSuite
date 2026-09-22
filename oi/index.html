@@ -1042,8 +1042,10 @@ Gestuelle et visuelle entre les éléments INDIA</textarea>
     <!-- Modale de Chargement PDF (V6.10) -->
     <div id="pdfLoadingModal" role="status" aria-live="polite">
         <div class="pdf-loading-card">
-            <div class="pdf-spinner"></div>
-            <div id="pdfLoadingStatus">Initialisation...</div>
+            <!-- Sphere de points (shared/orb.ts), montee a l'ouverture du
+                 chargeur et demontee a sa fermeture : cf. src/apps/oi/loader.ts -->
+            <canvas id="pdfLoadingOrb" class="tac-orb" width="72" height="72" aria-hidden="true"></canvas>
+            <div id="pdfLoadingStatus" class="tac-orb-message">Initialisation...</div>
             <div class="pdf-loading-subtext">Veuillez patienter pendant la génération du rapport tactique.</div>
         </div>
     </div>
