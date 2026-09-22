@@ -20,6 +20,7 @@
 import { Wheel } from '@pctac/wheel.js';
 import type { WheelOption } from '@pctac/wheel.js';
 import { PIN_ICONS } from '@pctac/config.js';
+import { currentMode } from '@pctac/modes.js';
 import { formatCoordsClipboard, shortMgrs } from '@shared/coords.js';
 
 import type { LngLatObj, OtanColor, PlanMapInternal, PlanShapeType } from './types.js';
@@ -75,13 +76,26 @@ export const WheelsMethods = {
      *  même si l'icône par défaut s'appelle autrement dans PIN_ICONS. */
     // planMap.js:3572-3583 — pas d'usage de `this` : pas de paramètre `this` (SPEC-PLANMAP-SPLIT §1.3).
     _otanColors(): OtanColor[] {
-        return [
+        // La roue suit la situation : libellés surchargés (« Inter » →
+        // « Recherches » en Recherche de personnes) et cinquième segment propre
+        // à la situation (IS en TP, Secours en Événement d'ampleur). La clé
+        // `kind` reste la valeur historique, jamais traduite.
+        const mode = currentMode();
+        const chips: OtanColor[] = [
             { kind: 'Adv',     color: '#ef4444', icon: 'person_alert' },
             { kind: 'Otage',   color: '#eab308', icon: 'person_off' },
             { kind: 'Inter',   color: '#3b82f6', icon: 'local_police' },
             { kind: 'Oscar',   color: '#22c55e', icon: 'military_tech', defaultLabel: 'Oscar' },
             { kind: 'Inconnu', color: '#94a3b8', icon: 'help' },
         ];
+        if (mode.extraPaxChip) {
+            const extra = mode.extraPaxChip;
+            chips.push({ kind: extra.key, color: extra.color, icon: extra.icon, defaultLabel: extra.label });
+        }
+        return chips.map((chip) => {
+            const label = mode.paxChipLabels[chip.kind];
+            return label ? { ...chip, defaultLabel: label } : chip;
+        });
     },
 
     /**
@@ -96,7 +110,7 @@ export const WheelsMethods = {
         const opts: WheelOption[] = this._otanColors().map((o) => ({
             id: 'kind_' + o.kind,
             icon: o.icon,
-            label: o.kind,
+            label: o.defaultLabel ?? o.kind,
             color: '#fff',
             bg: o.color,
             action: () => this._quickPlacePing(lngLat, o, o.icon),

@@ -44,6 +44,12 @@ function resolveToken(token: string, mode: PctacMode): string | null {
         if (prop === 'summary') return mode.summary;
         return null;
     }
+    if (group === 'chip') {
+        // Libellé de pastille Pax propre à la situation (« Inter » → « Recherches »
+        // en Recherche de personnes). Une clé absente garde le libellé du HTML.
+        if (!prop) return null;
+        return mode.paxChipLabels[prop] ?? null;
+    }
     if (group !== 'adv' && group !== 'host') return null;
     const lexicon = mode[group];
     switch (prop) {
@@ -263,6 +269,36 @@ export function setMode(id: PctacModeId, group?: HTMLElement | null): void {
 }
 
 /**
+ * Insère (ou retire) la cinquième pastille Pax de la situation courante dans
+ * `#pax_select_container`, AVANT `#openCreatePaxBtn`. Hors de sa situation, la
+ * pastille est ABSENTE du DOM (jamais `display:none`) : la navigation aux
+ * flèches du `radiogroup` ne tombe pas sur un fantôme.
+ *
+ * Les écouteurs sont posés par `UI.initPaxModeAndColors()`, appelé APRÈS
+ * cette fonction au démarrage ; le bouton porte les mêmes classes et
+ * `data-pax` que les pastilles statiques.
+ */
+export function syncSituationPaxChip(): void {
+    const container = document.getElementById('pax_select_container');
+    if (!container) return;
+    container.querySelectorAll<HTMLElement>('.pax-select-option.situation').forEach((el) => el.remove());
+    const extra = currentMode().extraPaxChip;
+    if (!extra) return;
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.setAttribute('role', 'radio');
+    btn.setAttribute('aria-checked', 'false');
+    btn.className = 'pax-select-option situation';
+    btn.dataset.pax = extra.key;
+    btn.textContent = extra.label;
+    btn.style.background = extra.color;
+    btn.style.color = extra.fontColor;
+    const addBtn = document.getElementById('openCreatePaxBtn');
+    if (addBtn) container.insertBefore(btn, addBtn);
+    else container.appendChild(btn);
+}
+
+/**
  * Construit le sélecteur dans `#modeSelector`. Sans cet élément (autre page,
  * gabarit réduit), la fonction ne fait rien : les situations restent pilotables
  * par `setMode()` et le vocabulaire s'applique quand même.
@@ -310,4 +346,5 @@ export function initModeSelector(): void {
     });
 
     applyLexicon();
+    syncSituationPaxChip();
 }

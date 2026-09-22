@@ -23,13 +23,16 @@ import {
     currentMode,
     currentModeId,
     modeFieldsOf,
+    paxChipKeys,
 } from '@pctac/modes.js';
 import {
     applyLexicon,
     collectModeFields,
     renderModeBlocks,
+    syncSituationPaxChip,
     visibleModeFieldsFor,
 } from '@pctac/mode-ui.js';
+import { PDF_PAX_COLORS } from '@pctac/config.js';
 
 /** Clés portées par les fiches AVANT l'arrivée des situations. */
 const CLES_HISTORIQUES = [
@@ -174,5 +177,63 @@ describe('champs doctrinaux', () => {
     it('ignore les champs vides', () => {
         localStorage.setItem(PCTAC_MODE_KEY, 'tp');
         expect(visibleModeFieldsFor({ position: '   ', nature: '' }, 'adv')).toEqual([]);
+    });
+});
+
+describe('pastilles Pax par situation', () => {
+    /** Reproduit le gabarit des pastilles (index.html) pour un conteneur donné. */
+    function buildPaxContainer(): void {
+        document.body.innerHTML = `
+            <div class="pax-select" id="pax_select_container" role="radiogroup" aria-label="Pax">
+                <button type="button" role="radio" aria-checked="true" class="pax-select-option" data-pax="Adversaire">Adversaire</button>
+                <button type="button" role="radio" aria-checked="false" class="pax-select-option" data-pax="Otage">Otage</button>
+                <button type="button" role="radio" aria-checked="false" class="pax-select-option" data-pax="Inter" data-lex="chip.Inter">Inter</button>
+                <button type="button" role="radio" aria-checked="false" class="pax-select-option" data-pax="Oscar" data-lex="chip.Oscar">Oscar</button>
+                <button type="button" id="openCreatePaxBtn" class="pax-select-option pax-select-option--add" aria-label="Créer un nouvel intervenant">+</button>
+            </div>`;
+    }
+
+    it('affiche « Recherches » et « PC » en Recherche de personnes, clés inchangées', () => {
+        localStorage.setItem(PCTAC_MODE_KEY, 'recherche');
+        buildPaxContainer();
+        applyLexicon();
+        const byPax = (k: string): HTMLButtonElement =>
+            document.querySelector<HTMLButtonElement>(`.pax-select-option[data-pax="${k}"]`)!;
+        expect(byPax('Inter').textContent).toBe('Recherches');
+        expect(byPax('Oscar').textContent).toBe('PC');
+        // Les clés stockées restent les valeurs historiques.
+        expect(byPax('Inter').dataset.pax).toBe('Inter');
+        expect(byPax('Oscar').dataset.pax).toBe('Oscar');
+    });
+
+    it('donne 4, 5, 4, 5 pastilles selon la situation', () => {
+        // Ordre de PCTAC_MODE_ORDER : forcene, tp, recherche, evenement.
+        expect(PCTAC_MODE_ORDER.map((id) => paxChipKeys(PCTAC_MODES[id]).length)).toEqual([4, 5, 4, 5]);
+        expect(paxChipKeys(PCTAC_MODES.tp)).toContain('IS');
+        expect(paxChipKeys(PCTAC_MODES.evenement)).toContain('Secours');
+        expect(paxChipKeys(PCTAC_MODES.forcene)).toEqual(['Adversaire', 'Otage', 'Inter', 'Oscar']);
+    });
+
+    it('insère la cinquième pastille AVANT le bouton de création, absente en Forcené', () => {
+        localStorage.setItem(PCTAC_MODE_KEY, 'tp');
+        buildPaxContainer();
+        syncSituationPaxChip();
+        const options = Array.from(document.querySelectorAll<HTMLButtonElement>('#pax_select_container [role="radio"]'));
+        expect(options).toHaveLength(5);
+        expect(options.at(-1)?.dataset.pax).toBe('IS');
+        // Placée immédiatement avant le bouton d'ajout.
+        const add = document.getElementById('openCreatePaxBtn');
+        expect(options.at(-1)?.nextElementSibling).toBe(add);
+
+        // Forcené : quatre pastilles, aucune cinquième.
+        localStorage.setItem(PCTAC_MODE_KEY, 'forcene');
+        buildPaxContainer();
+        syncSituationPaxChip();
+        expect(document.querySelectorAll('#pax_select_container [role="radio"]')).toHaveLength(4);
+    });
+
+    it('déclare les couleurs PDF des cinquièmes pastilles', () => {
+        expect(PDF_PAX_COLORS.IS).toEqual({ text: 'IS', color: '#8b5cf6', fontColor: '#ffffff' });
+        expect(PDF_PAX_COLORS.Secours).toEqual({ text: 'Secours', color: '#f97316', fontColor: '#000000' });
     });
 });

@@ -83,9 +83,11 @@ describe('config.ts — FREE_MODE_COLORS (config.js:33-46)', () => {
 });
 
 describe('config.ts — PDF_PAX_COLORS (config.js:49-57)', () => {
-    it('contient les 7 clés attendues avec leurs métadonnées exactes', () => {
+    it('contient les 9 clés attendues avec leurs métadonnées exactes', () => {
+        // D1-PAX : IS (cinquième pastille TP) et Secours (cinquième pastille
+        // Événement d'ampleur) rejoignent la table, sans toucher aux 7 autres.
         expect(Object.keys(PDF_PAX_COLORS)).toEqual([
-            'Adversaire', 'Otage', 'Civil', 'Inter', 'Nego', 'Oscar', 'Autre',
+            'Adversaire', 'Otage', 'Civil', 'Inter', 'Nego', 'Oscar', 'IS', 'Secours', 'Autre',
         ]);
         expect(PDF_PAX_COLORS.Adversaire).toEqual({ text: 'Adversaire', color: '#be1b09', fontColor: '#ffffff' });
         // 'Otage' et 'Civil' partagent le même libellé affiché.

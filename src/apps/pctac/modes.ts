@@ -137,6 +137,25 @@ export interface PctacEntityLexicon {
     linkLabel: string;
 }
 
+/**
+ * Pastille Pax supplémentaire propre à une situation (la cinquième, au-delà
+ * des quatre historiques Adversaire / Otage / Inter / Oscar). La clé stockée
+ * dans `data-pax` est `key`, jamais renommée : seul le libellé affiché suit la
+ * situation.
+ */
+export interface PctacPaxChipDef {
+    /** Clé `data-pax` (valeur STOCKÉE, jamais traduite). */
+    key: string;
+    /** Libellé affiché. */
+    label: string;
+    /** Couleur de fond de la pastille. */
+    color: string;
+    /** Couleur du texte (contraste). */
+    fontColor: string;
+    /** Icône Material Symbols pour la roue du plan. */
+    icon: string;
+}
+
 export interface PctacMode {
     id: PctacModeId;
     /** Libellé complet, pour l'infobulle et le PDF. */
@@ -152,6 +171,13 @@ export interface PctacMode {
     advBlocks: PctacModeBlock[];
     /** Blocs doctrinaux ajoutés à la fiche protégée. */
     hostBlocks: PctacModeBlock[];
+    /**
+     * Surcharges de libellé des pastilles Pax, indexées par clé `data-pax`
+     * (« Inter », « Oscar »…). Une clé absente garde le libellé historique.
+     */
+    paxChipLabels: Record<string, string>;
+    /** Cinquième pastille de la situation ; absente du DOM si `undefined`. */
+    extraPaxChip?: PctacPaxChipDef;
 }
 
 /**
@@ -216,6 +242,7 @@ export const PCTAC_MODES: Record<PctacModeId, PctacMode> = {
         host: { singular: 'Otage', plural: 'Otages', demonstrative: 'cet otage', icon: 'person_off', paxChip: 'Otage', linkLabel: 'Lien adversaire', newLabel: 'Nouvel otage', saveLabel: 'Enregistrer l\'otage', emptyLabel: 'Aucun otage' },
         advBlocks: [],
         hostBlocks: [],
+        paxChipLabels: {},
     },
 
     tp: {
@@ -242,6 +269,8 @@ export const PCTAC_MODES: Record<PctacModeId, PctacMode> = {
             ]),
         ],
         hostBlocks: [],
+        paxChipLabels: {},
+        extraPaxChip: { key: 'IS', label: 'IS', color: '#8b5cf6', fontColor: '#ffffff', icon: 'security' },
     },
 
     recherche: {
@@ -265,6 +294,7 @@ export const PCTAC_MODES: Record<PctacModeId, PctacMode> = {
             ]),
         ],
         hostBlocks: [],
+        paxChipLabels: { Inter: 'Recherches', Oscar: 'PC' },
     },
 
     evenement: {
@@ -296,6 +326,8 @@ export const PCTAC_MODES: Record<PctacModeId, PctacMode> = {
             },
         ],
         hostBlocks: [],
+        paxChipLabels: {},
+        extraPaxChip: { key: 'Secours', label: 'Secours', color: '#f97316', fontColor: '#000000', icon: 'local_fire_department' },
     },
 };
 
@@ -332,6 +364,17 @@ export function persistModeId(id: PctacModeId): boolean {
     } catch {
         return false;
     }
+}
+
+/** Clés `data-pax` des quatre pastilles historiques, dans l'ordre d'affichage. */
+export const BASE_PAX_CHIPS: readonly string[] = ['Adversaire', 'Otage', 'Inter', 'Oscar'];
+
+/**
+ * Clés `data-pax` des pastilles d'une situation, dans l'ordre d'affichage :
+ * les quatre historiques, plus la cinquième quand la situation en a une.
+ */
+export function paxChipKeys(mode: PctacMode): string[] {
+    return mode.extraPaxChip ? [...BASE_PAX_CHIPS, mode.extraPaxChip.key] : [...BASE_PAX_CHIPS];
 }
 
 /** Tous les champs doctrinaux d'une entité, blocs confondus. */
