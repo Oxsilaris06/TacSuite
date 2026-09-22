@@ -175,7 +175,7 @@
                         <div><label for="adv_nom">Nom</label><input type="text" id="adv_nom" placeholder="Nom"></div>
                         <div><label for="adv_prenom">Prénom</label><input type="text" id="adv_prenom" placeholder="Prénom"></div>
                         <div><label for="adv_dob">D.N.</label><input type="text" id="adv_dob" placeholder="JJ/MM/AAAA"></div>
-                        <div><label for="adv_lien" data-lex="host.linkLabel">Lien Victimes</label><input type="text" id="adv_lien"
+                        <div><label for="adv_lien" data-lex="adv.linkLabel">Lien Victimes</label><input type="text" id="adv_lien"
                                 placeholder="Lien avec otages"></div>
                         <div><label for="adv_antecedents">Antécédents</label><input type="text" id="adv_antecedents"
                                 placeholder="Fichage, passif..."></div>
@@ -226,7 +226,7 @@
                         <div><label for="hostage_prenom">Prénom</label><input type="text" id="hostage_prenom" placeholder="Prénom"></div>
                         <div><label for="hostage_dob">D.N.</label><input type="text" id="hostage_dob" placeholder="JJ/MM/AAAA"></div>
                         <!-- C8 — lien vers une fiche adversaire (options peuplées par UI.renderHostages) -->
-                        <div><label for="hostage_lien" data-lex="adv.linkLabel">Lien Adversaire</label><select id="hostage_lien">
+                        <div><label for="hostage_lien" data-lex="host.linkLabel">Lien Adversaire</label><select id="hostage_lien">
                                 <option value="">— Aucun —</option>
                             </select></div>
                         <div><label for="hostage_etat">État</label><input type="text" id="hostage_etat" placeholder="Conscient, choc...">
@@ -262,7 +262,7 @@
                     <div><label for="friend_unite">Unité</label><input type="text" id="friend_unite"></div>
                     <div><label for="friend_tph">TPH</label><input type="text" id="friend_tph"></div>
                     <div><label for="friend_mission">Mission</label><input type="text" id="friend_mission"></div>
-                    <button type="submit" class="add-btn pctac-btn-auto-md">Ajouter</button>
+                    <button type="submit" class="add-btn pctac-btn-auto-md">Enregistrer l'ami</button>
                 </form>
             </div>
             <div class="collection-list-container">
@@ -546,7 +546,7 @@
             </div>
 
             <!-- ===== Géoloc équipe live (Tchap) — panneau paramètres sous la carte ===== -->
-            <div id="tl_bar" class="pctac-mt-14">
+            <div class="pctac-mt-14">
                 <button type="button" id="tl_toggle" class="add-btn pctac-toggle-btn">
                     <span class="material-symbols-outlined" aria-hidden="true">share_location</span>
                     <span>Géoloc équipe (Tchap)</span>
@@ -698,15 +698,15 @@
         <h3 id="editModalTitle">Modifier l'entrée</h3>
         <input type="hidden" id="edit_id">
         <div class="form-row pctac-row-edit">
-            <div><label for="edit_heure">Heure</label><input type="time" id="edit_heure"></div>
+            <div><label for="edit_heure">Heure</label><input type="time" id="edit_heure" required></div>
             <div>
                 <label for="edit_lieu">Localisation</label>
-                <textarea id="edit_lieu" rows="2" class="pctac-textarea-lg"></textarea>
+                <input type="text" id="edit_lieu" list="lieu_suggestions" autocomplete="off" class="pctac-textarea-lg">
             </div>
         </div>
         <div class="pctac-mt-12">
             <label for="edit_remarques">Remarques</label>
-            <textarea id="edit_remarques" rows="6" class="pctac-textarea-lg"></textarea>
+            <textarea id="edit_remarques" rows="2" class="pctac-textarea-lg"></textarea>
         </div>
         <div class="pctac-actions-row">
             <button type="button" class="add-btn" id="confirmEditBtn">Enregistrer</button>
@@ -729,14 +729,14 @@
                 </label>
             </div>
             <div class="pctac-edit-fields">
-                <div class="row-2"><div><label for="edit_adv_nom">Nom</label><input type="text" id="edit_adv_nom" class="pctac-input-lg"></div>
-                <div><label for="edit_adv_prenom">Prénom</label><input type="text" id="edit_adv_prenom" class="pctac-input-lg"></div></div>
-                <div class="row-2"><div><label for="edit_adv_dob">D.N.</label><input type="text" id="edit_adv_dob" class="pctac-input-lg"></div>
-                <div><label for="edit_adv_lien" data-lex="host.linkLabel">Lien Victimes</label><input type="text" id="edit_adv_lien" class="pctac-input-lg"></div></div>
-                <div><label for="edit_adv_antecedents">Antécédents</label><textarea id="edit_adv_antecedents" rows="2" class="pctac-textarea-lg"></textarea></div>
-                <div class="row-2"><div><label for="edit_adv_attitude">Attitude</label><input type="text" id="edit_adv_attitude" class="pctac-input-lg"></div>
-                <div><label for="edit_adv_substance">Substance</label><input type="text" id="edit_adv_substance" class="pctac-input-lg"></div></div>
-                <div><label for="edit_adv_armes">Armes</label><textarea id="edit_adv_armes" rows="2" class="pctac-textarea-lg"></textarea></div>
+                <div class="row-2"><div><label for="edit_adv_nom">Nom</label><input type="text" id="edit_adv_nom" placeholder="Nom" class="pctac-input-lg"></div>
+                <div><label for="edit_adv_prenom">Prénom</label><input type="text" id="edit_adv_prenom" placeholder="Prénom" class="pctac-input-lg"></div></div>
+                <div class="row-2"><div><label for="edit_adv_dob">D.N.</label><input type="text" id="edit_adv_dob" placeholder="JJ/MM/AAAA" class="pctac-input-lg"></div>
+                <div><label for="edit_adv_lien" data-lex="adv.linkLabel">Lien Victimes</label><input type="text" id="edit_adv_lien" placeholder="Lien avec otages" class="pctac-input-lg"></div></div>
+                <div><label for="edit_adv_antecedents">Antécédents</label><textarea id="edit_adv_antecedents" rows="2" placeholder="Fichage, passif..." class="pctac-textarea-lg"></textarea></div>
+                <div class="row-2"><div><label for="edit_adv_attitude">Attitude</label><input type="text" id="edit_adv_attitude" placeholder="Calme, nerveux..." class="pctac-input-lg"></div>
+                <div><label for="edit_adv_substance">Substance</label><input type="text" id="edit_adv_substance" placeholder="Alcool, stup..." class="pctac-input-lg"></div></div>
+                <div><label for="edit_adv_armes">Armes</label><textarea id="edit_adv_armes" rows="2" placeholder="Type, calibre, position..." class="pctac-textarea-lg"></textarea></div>
                 <!-- U16 — statut de la fiche -->
                 <div><label for="edit_adv_status">Statut</label><select id="edit_adv_status" class="pctac-input-lg">
                     <option value="active">▲ Actif</option>
@@ -747,7 +747,7 @@
         <div class="mode-blocks" id="editAdvModeBlocks" hidden></div>
         <div class="pctac-actions-row">
             <button type="button" class="add-btn" id="confirmEditAdvBtn">Enregistrer</button>
-            <button class="add-btn pctac-btn-bg-input" onclick="UI.hideEditAdversaryModal()">Annuler</button>
+            <button type="button" class="add-btn pctac-btn-bg-input" onclick="UI.hideEditAdversaryModal()">Annuler</button>
         </div>
     </dialog>
 
@@ -801,15 +801,15 @@
                 </label>
             </div>
             <div class="pctac-edit-fields">
-                <div class="row-2"><div><label for="edit_host_nom">Nom</label><input type="text" id="edit_host_nom" class="pctac-input-lg"></div>
-                <div><label for="edit_host_prenom">Prénom</label><input type="text" id="edit_host_prenom" class="pctac-input-lg"></div></div>
-                <div class="row-2"><div><label for="edit_host_dob">D.N.</label><input type="text" id="edit_host_dob" class="pctac-input-lg"></div>
+                <div class="row-2"><div><label for="edit_host_nom">Nom</label><input type="text" id="edit_host_nom" placeholder="Nom" class="pctac-input-lg"></div>
+                <div><label for="edit_host_prenom">Prénom</label><input type="text" id="edit_host_prenom" placeholder="Prénom" class="pctac-input-lg"></div></div>
+                <div class="row-2"><div><label for="edit_host_dob">D.N.</label><input type="text" id="edit_host_dob" placeholder="JJ/MM/AAAA" class="pctac-input-lg"></div>
                 <!-- C8 — select alimenté par les fiches adversaires (UI.showEditHostageModal) -->
-                <div><label for="edit_host_lien" data-lex="adv.linkLabel">Lien Adversaire</label><select id="edit_host_lien" class="pctac-input-lg">
+                <div><label for="edit_host_lien" data-lex="host.linkLabel">Lien Adversaire</label><select id="edit_host_lien" class="pctac-input-lg">
                     <option value="">— Aucun —</option>
                 </select></div></div>
-                <div><label for="edit_host_etat">État</label><textarea id="edit_host_etat" rows="2" class="pctac-textarea-lg"></textarea></div>
-                <div><label for="edit_host_blessures">Blessures</label><textarea id="edit_host_blessures" rows="3" class="pctac-textarea-lg"></textarea></div>
+                <div><label for="edit_host_etat">État</label><textarea id="edit_host_etat" rows="2" placeholder="Conscient, choc..." class="pctac-textarea-lg"></textarea></div>
+                <div><label for="edit_host_blessures">Blessures</label><textarea id="edit_host_blessures" rows="3" placeholder="Localisation, gravité..." class="pctac-textarea-lg"></textarea></div>
                 <!-- U16 — statut de la fiche (recalculé si les blessures changent) -->
                 <div><label for="edit_host_status">Statut</label><select id="edit_host_status" class="pctac-input-lg">
                     <option value="ok">✔ OK</option>
@@ -822,7 +822,7 @@
         <div class="mode-blocks" id="editHostModeBlocks" hidden></div>
         <div class="pctac-actions-row">
             <button type="button" class="add-btn" id="confirmEditHostBtn">Enregistrer</button>
-            <button class="add-btn pctac-btn-bg-input" onclick="UI.hideEditHostageModal()">Annuler</button>
+            <button type="button" class="add-btn pctac-btn-bg-input" onclick="UI.hideEditHostageModal()">Annuler</button>
         </div>
     </dialog>
 

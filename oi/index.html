@@ -19,9 +19,7 @@
     <script>if (localStorage.getItem('theme') === 'light') document.body.classList.add('light-mode');</script>
 
 
-    <input type="file" id="sessionFileInput" accept=".json" style="display: none;">
     <input type="file" id="archiveFileInput" accept=".zip,.json" style="display: none;">
-    <input type="file" id="jsonConfigInput" accept=".json" style="display: none;">
     <dialog id="presentationModal" aria-label="Aperçu et génération du PDF">
         <div class="pdf-preview-body">
             <div id="presentation-content">
@@ -105,10 +103,10 @@
             
             <div class="modal-footer">
                 <button type="button" id="quick_modal_cancelBtn" class="btn-cancel">
-                    <span class="material-symbols-outlined" aria-hidden="true">undo</span> Retour
+                    <span class="material-symbols-outlined" aria-hidden="true">undo</span> Annuler
                 </button>
                 <button type="button" id="quick_modal_saveBtn" class="btn-save">
-                    <span class="material-symbols-outlined" aria-hidden="true">check_circle</span> Valider
+                    <span class="material-symbols-outlined" aria-hidden="true">check_circle</span> Enregistrer
                 </button>
             </div>
         </div>
@@ -133,7 +131,7 @@
             <div class="modal-footer">
                 <button type="button" class="btn-cancel"
                     data-action="close-unite-config-modal">
-                    <span class="material-symbols-outlined" aria-hidden="true">undo</span> Retour
+                    <span class="material-symbols-outlined" aria-hidden="true">undo</span> Annuler
                 </button>
                 <button type="button" id="unite_config_saveBtn" class="btn-save">
                     <span class="material-symbols-outlined" aria-hidden="true">check_circle</span> Enregistrer
@@ -180,7 +178,7 @@
                 </h3>
                 <div class="header-actions" style="display: flex; gap: 10px; margin-left: auto;">
                     <button type="button" id="annotation_cancel_header" class="btn-cancel compact wizard-nav-btn annotation-header-btn" data-action="close-annotation-modal">Annuler</button>
-                    <button type="button" id="annotation_save_header" class="btn-save compact wizard-nav-btn annotation-header-btn">Valider</button>
+                    <button type="button" id="annotation_save_header" class="btn-save compact wizard-nav-btn annotation-header-btn">Enregistrer</button>
                 </div>
                 <button type="button" class="close-modal-btn annotation-close-btn" data-action="close-annotation-modal" aria-label="Fermer l'annotation photo">
                     <span class="material-symbols-outlined">close</span>
@@ -709,7 +707,7 @@ Gestuelle et visuelle entre les éléments INDIA</textarea>
             <div class="modal-body">
                 <p class="effraction-modal-intro">Sélectionnez les outils préconisés pour cette photo.</p>
 
-                <div id="tools_sections_container">
+                <div>
                     <h4 class="effraction-section-heading-tight">Hydraulique</h4>
                     <div class="effrac-tool-grid" data-category="hydraulique">
                         <button type="button" class="effrac-tool-btn" data-tool="HDR50">HDR50</button>
@@ -742,10 +740,10 @@ Gestuelle et visuelle entre les éléments INDIA</textarea>
 
             <div class="modal-footer">
                 <button type="button" class="btn-cancel" data-action="close-effraction-tools-modal">
-                    <span class="material-symbols-outlined" aria-hidden="true">undo</span> Retour
+                    <span class="material-symbols-outlined" aria-hidden="true">undo</span> Annuler
                 </button>
                 <button type="button" class="btn-save btn-save-effraction" data-action="save-effraction-tools">
-                    <span class="material-symbols-outlined" aria-hidden="true">check_circle</span> Valider
+                    <span class="material-symbols-outlined" aria-hidden="true">check_circle</span> Enregistrer
                 </button>
             </div>
         </div>

@@ -102,6 +102,35 @@ describe('applyLexicon', () => {
     });
 });
 
+describe('jetons de lien adversaire / otage', () => {
+    // Verrouille le constat 2 de l'audit UI : les jetons des quatre libellés de
+    // lien étaient croisés, `applyLexicon` affichait donc « Lien ennemi » sur la
+    // fiche adversaire et « Lien victimes » sur la fiche otage. Si quelqu'un
+    // réinverse les jetons, ce test repasse au rouge.
+    it('lie la fiche adversaire aux VICTIMES et la fiche otage à l\'ENNEMI', () => {
+        localStorage.setItem(PCTAC_MODE_KEY, 'tp');
+        document.body.innerHTML = `
+            <div><label for="adv_lien" data-lex="adv.linkLabel">Lien Victimes</label><input id="adv_lien"></div>
+            <div><label for="edit_adv_lien" data-lex="adv.linkLabel">Lien Victimes</label><input id="edit_adv_lien"></div>
+            <div><label for="hostage_lien" data-lex="host.linkLabel">Lien Adversaire</label><select id="hostage_lien"></select></div>
+            <div><label for="edit_host_lien" data-lex="host.linkLabel">Lien Adversaire</label><select id="edit_host_lien"></select></div>
+        `;
+        applyLexicon();
+        const libelle = (id: string): string =>
+            document.querySelector<HTMLLabelElement>(`label[for="${id}"]`)?.textContent ?? '';
+        // La fiche adversaire parle des victimes, et jamais de l'ennemi.
+        expect(libelle('adv_lien')).toMatch(/victime/i);
+        expect(libelle('edit_adv_lien')).toMatch(/victime/i);
+        expect(libelle('adv_lien')).not.toMatch(/ennemi/i);
+        expect(libelle('edit_adv_lien')).not.toMatch(/ennemi/i);
+        // La fiche otage parle de l'ennemi, et jamais des victimes.
+        expect(libelle('hostage_lien')).toMatch(/ennemi/i);
+        expect(libelle('edit_host_lien')).toMatch(/ennemi/i);
+        expect(libelle('hostage_lien')).not.toMatch(/victime/i);
+        expect(libelle('edit_host_lien')).not.toMatch(/victime/i);
+    });
+});
+
 describe('champs doctrinaux', () => {
     it('rend, relit et vide les blocs de la situation', () => {
         const host = document.createElement('div');

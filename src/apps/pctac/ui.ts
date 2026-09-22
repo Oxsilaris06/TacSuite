@@ -69,7 +69,7 @@ import { Storage } from '@pctac/storage.js';
 import { ImageStore } from '@pctac/image-store.js';
 import { LogManager } from '@pctac/log-manager.js';
 import { esc } from '@shared/ui-platform.js';
-import { confirmDialog, promptDialog } from '@shared/feedback.js';
+import { confirmDialog, promptDialog, toast } from '@shared/feedback.js';
 import { currentMode } from '@pctac/modes.js';
 import { applyLexicon, collectModeFields, renderModeBlocks, visibleModeFieldsFor } from '@pctac/mode-ui.js';
 
@@ -497,7 +497,7 @@ export const UI: UIContract = {
     if (!entry) return;
     (document.getElementById('edit_id') as HTMLInputElement).value = id;
     (document.getElementById('edit_heure') as HTMLInputElement).value = entry.heure;
-    (document.getElementById('edit_lieu') as HTMLTextAreaElement).value = entry.lieu || '';
+    (document.getElementById('edit_lieu') as HTMLInputElement).value = entry.lieu || '';
     (document.getElementById('edit_remarques') as HTMLTextAreaElement).value = entry.remarques || '';
     (document.getElementById('editModal') as HTMLDialogElement).showModal();
   },
@@ -506,9 +506,14 @@ export const UI: UIContract = {
   confirmEditLog(): void {
     const id = (document.getElementById('edit_id') as HTMLInputElement).value;
     if (!id) return;
+    const heure = (document.getElementById('edit_heure') as HTMLInputElement).value;
+    if (!heure) {
+      toast('Renseignez une heure', { kind: 'error' });
+      return;
+    }
     const updated = {
-      heure: (document.getElementById('edit_heure') as HTMLInputElement).value,
-      lieu: (document.getElementById('edit_lieu') as HTMLTextAreaElement).value.trim(),
+      heure,
+      lieu: (document.getElementById('edit_lieu') as HTMLInputElement).value.trim(),
       remarques: (document.getElementById('edit_remarques') as HTMLTextAreaElement).value.trim(),
     };
     LogManager.updateEntry(id, updated);
