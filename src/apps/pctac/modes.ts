@@ -159,7 +159,9 @@ export const PCTAC_MODES: Record<PctacModeId, PctacMode> = {
         id: 'forcene',
         label: 'Forcené',
         short: 'Forcené',
-        icon: 'crisis_alert',
+        // L'icône doit nommer la MENACE, pas l'action en cours : une personne
+        // enfermée, pas une alerte générique (retour Nico, 2026-09-22).
+        icon: 'lock_person',
         summary: 'Individu retranché, otages éventuels, négociation en cours.',
         adv: { singular: 'Adversaire', plural: 'Adversaires', demonstrative: 'cet adversaire', icon: 'groups', paxChip: 'Adversaire', linkLabel: 'Lien victimes', newLabel: 'Nouvel adversaire', saveLabel: 'Enregistrer l\'adversaire', emptyLabel: 'Aucun adversaire' },
         host: { singular: 'Otage', plural: 'Otages', demonstrative: 'cet otage', icon: 'person_off', paxChip: 'Otage', linkLabel: 'Lien adversaire', newLabel: 'Nouvel otage', saveLabel: 'Enregistrer l\'otage', emptyLabel: 'Aucun otage' },
@@ -171,7 +173,10 @@ export const PCTAC_MODES: Record<PctacModeId, PctacMode> = {
         id: 'tp',
         label: 'Tuerie planifiée',
         short: 'TP',
-        icon: 'swords',
+        // Menace en MOUVEMENT, par opposition au forcené retranché. `swords`
+        // disait « combat » sans dire lequel, et faisait doublon avec l'icône
+        // de la fiche Ennemi juste en dessous.
+        icon: 'directions_run',
         summary: 'Tuerie planifiée : adversaire en mouvement, priorité à la neutralisation de la menace.',
         adv: { singular: 'Ennemi', plural: 'Ennemis', demonstrative: 'cet ennemi', icon: 'swords', paxChip: 'Ennemi', linkLabel: 'Lien victimes', newLabel: 'Nouvel ennemi', saveLabel: 'Enregistrer l\'ennemi', emptyLabel: 'Aucun ennemi' },
         host: { singular: 'Otage / Victime', plural: 'Otages et victimes', demonstrative: 'cette victime', icon: 'personal_injury', paxChip: 'Victime', linkLabel: 'Lien ennemi', newLabel: 'Nouvel otage ou victime', saveLabel: 'Enregistrer', emptyLabel: 'Aucun otage ni victime' },
