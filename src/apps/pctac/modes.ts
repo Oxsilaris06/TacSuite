@@ -179,7 +179,7 @@ export const PCTAC_MODES: Record<PctacModeId, PctacMode> = {
         icon: 'directions_run',
         summary: 'Tuerie planifiée : adversaire en mouvement, priorité à la neutralisation de la menace.',
         adv: { singular: 'Ennemi', plural: 'Ennemis', demonstrative: 'cet ennemi', icon: 'swords', paxChip: 'Ennemi', linkLabel: 'Lien victimes', newLabel: 'Nouvel ennemi', saveLabel: 'Enregistrer l\'ennemi', emptyLabel: 'Aucun ennemi' },
-        host: { singular: 'Otage / Victime', plural: 'Otages et victimes', demonstrative: 'cette victime', icon: 'personal_injury', paxChip: 'Victime', linkLabel: 'Lien ennemi', newLabel: 'Nouvel otage ou victime', saveLabel: 'Enregistrer', emptyLabel: 'Aucun otage ni victime' },
+        host: { singular: 'Otage / Victime', plural: 'Otages et victimes', demonstrative: 'cette victime', icon: 'personal_injury', paxChip: 'Victime', linkLabel: 'Lien ennemi', newLabel: 'Nouvel otage ou victime', saveLabel: 'Enregistrer la victime', emptyLabel: 'Aucun otage ni victime' },
         advBlocks: [
             PNAVSA,
             qqocqpc('Circonstances de la tuerie, telles qu\'établies à l\'instant T.', [
