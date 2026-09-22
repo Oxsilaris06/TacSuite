@@ -97,6 +97,7 @@ import {
 import { GPX_INDEX_KEY, PINS_KEY } from '@pctac/planmap/constants.js';
 import { currentMode } from '@pctac/modes.js';
 import { initImportScopeModal } from '@pctac/import-scope.js';
+import { initSplitView } from '@pctac/split-view.js';
 import {
     applyLexicon,
     collectModeFields,
@@ -162,6 +163,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (UI.elements.heureInput) {
         UI.elements.heureInput.addEventListener('input', () => { window.isTimeInputManuallyChanged = true; });
     }
+
+    // Écran scindé — après `UI.initElements()`, dont ses rendus dépendent, et
+    // avant le premier rendu d'onglet : un écran scindé mémorisé se remonte
+    // ainsi directement, sans passer par un affichage en onglet unique.
+    initSplitView();
 
     // §5.3 étape 7 — Charger les données initiales.
     const initialLogs = Storage.loadLogData();

@@ -471,6 +471,145 @@ body.up-kb-open .up-kb-aware {
         }
 
         /* ════════════════════════════════════════════════════════════════
+         * SECTION : ECRAN SCINDE (split-view.ts)
+         * Deux panneaux cote a cote, separation deplacable. La proportion vit
+         * dans --split-ratio : une seule variable, posee par le geste, et la
+         * grille suit. Aucune largeur calculee en JavaScript.
+         * ════════════════════════════════════════════════════════════════ */
+        .split-view {
+            --split-ratio: 50%;
+            display: grid;
+            grid-template-columns: var(--split-ratio) 10px 1fr;
+            gap: var(--tac-zero);
+            /* Hauteur utile : la fenetre moins l'en-tete et la barre d'onglets.
+               Valeur unique plutot qu'un calcul dependant du contenu — deux
+               panneaux qui ne s'alignent pas se lisent comme un bogue. */
+            height: calc(100dvh - 260px);
+            min-height: 420px;
+            margin-bottom: var(--space-5);
+        }
+
+        .split-view[hidden] {
+            display: none;
+        }
+
+        .split-pane {
+            display: flex;
+            flex-direction: column;
+            min-width: var(--tac-zero);
+            overflow: hidden;
+            background: var(--bg-glass);
+            border: 1px solid var(--border-glass);
+            border-radius: var(--radius-md);
+            backdrop-filter: blur(10px);
+        }
+
+        .split-pane-header {
+            flex-shrink: 0;
+            padding: var(--tac-space-1) var(--space-2);
+            border-bottom: 1px solid var(--border-glass);
+        }
+
+        .split-pane-select {
+            width: 100%;
+            padding: var(--tac-space-1) var(--space-2);
+            font-family: var(--font-ui);
+            font-size: 0.82em;
+            font-weight: 600;
+        }
+
+        /* La vue occupe tout le panneau et defile pour elle-meme : chaque cote
+           garde sa position de lecture quand l'autre change. */
+        .split-pane > .tab-content-view.active {
+            display: block;
+            flex: 1;
+            min-height: var(--tac-zero);
+            overflow-y: auto;
+            overscroll-behavior: contain;
+            padding: var(--space-3);
+            animation: none;
+        }
+
+        /* Dans un panneau, les tableaux sont plus larges que la place offerte.
+           On les laisse defiler horizontalement pour eux-memes plutot que de
+           rogner une colonne : une remarque coupee se lit comme une donnee
+           perdue. `table-layout: fixed` garde les colonnes stables d'une
+           ligne a l'autre malgre le defilement. */
+        .split-pane .log-table {
+            table-layout: fixed;
+            min-width: 520px;
+        }
+
+        .split-pane #logTableContainer,
+        .split-pane .collection-list-container {
+            overflow-x: auto;
+            overscroll-behavior-x: contain;
+        }
+
+        .split-pane .log-table td,
+        .split-pane .log-table th {
+            overflow-wrap: anywhere;
+        }
+
+        .split-divider {
+            position: relative;
+            cursor: col-resize;
+            background: transparent;
+            border: none;
+            touch-action: none;
+        }
+
+        /* Le trait visible est plus fin que la zone saisissable : 10 px pour
+           le doigt, 2 px pour l'oeil. */
+        .split-divider::before {
+            content: '';
+            position: absolute;
+            top: var(--space-4);
+            bottom: var(--space-4);
+            left: 50%;
+            width: 2px;
+            transform: translateX(-50%);
+            border-radius: var(--radius-full);
+            background: var(--border-color);
+            transition: background var(--transition-fast);
+        }
+
+        .split-divider:hover::before,
+        .split-divider:focus-visible::before,
+        .split-divider.is-dragging::before {
+            background: var(--accent-blue);
+        }
+
+        .split-divider.is-dragging::before {
+            top: var(--tac-zero);
+            bottom: var(--tac-zero);
+        }
+
+        /* En ecran scinde, la barre d'onglets ne commande plus rien : chaque
+           panneau a son propre selecteur. On la masque pour ne pas laisser
+           croire qu'un clic dessus fera quelque chose. */
+        body.is-split .main-tab-bar {
+            display: none;
+        }
+
+        .dock-menu-item.is-active {
+            color: var(--accent-blue);
+            background: rgba(79, 141, 255, 0.16);
+        }
+
+        /* Sous 900 px l'ecran scinde est refuse par split-view.ts ; la regle
+           reste comme filet de securite si la fenetre retrecit avant l'ecouteur. */
+        @media (max-width: 899px) {
+            .split-view {
+                display: none;
+            }
+
+            body.is-split .main-tab-bar {
+                display: grid;
+            }
+        }
+
+        /* ════════════════════════════════════════════════════════════════
          * SECTION : PORTEE D'IMPORT (import-scope.ts)
          * ════════════════════════════════════════════════════════════════ */
         /* Les regles globales `label { text-transform: uppercase; display: block }`
@@ -609,6 +748,22 @@ body.up-kb-open .up-kb-aware {
          * (elle est presente sur CHAQUE ligne) et ne prend sa couleur qu'une
          * fois posee : sinon le journal se transforme en sapin.
          * ════════════════════════════════════════════════════════════════ */
+        /* La cellule d'heure porte l'heure et trois actions (favori, modifier,
+           supprimer). Sans disposition explicite elles retombaient a la ligne
+           des que la colonne se resserrait — visible des l'ecran scinde. */
+        .heure-cell-container {
+            display: flex;
+            align-items: center;
+            flex-wrap: nowrap;
+            gap: var(--tac-space-1);
+        }
+
+        .heure-cell-text {
+            flex: 0 0 auto;
+            font-family: var(--font-data);
+            white-space: nowrap;
+        }
+
         .log-favori-btn {
             display: inline-flex;
             align-items: center;
