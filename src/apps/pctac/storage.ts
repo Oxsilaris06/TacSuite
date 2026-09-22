@@ -24,6 +24,7 @@ import {
   CUSTOM_PAX_KEY,
 } from '@pctac/config.js';
 import { currentModeId, scopedKey, type PctacModeId } from '@pctac/modes.js';
+import { GPX_INDEX_KEY } from '@pctac/planmap/constants.js';
 import { Persist } from '@shared/persist.js';
 
 /**
@@ -163,9 +164,18 @@ export const Storage: PctacStorageContract = {
    * trois autres situations gardent intactes leurs fiches, leur journal, leur
    * plan et leurs photos. `lastView`/`lastPhotoFilter` sont des préférences de
    * poste communes : elles sont reposées à leur valeur par défaut.
+   *
+   * L'index GPX de la situation est retiré ICI et non dans `clearSituationData`
+   * (que l'import utilise) : une réinitialisation efface les traces de la
+   * situation visée, alors qu'un import doit les conserver (décision de fusion).
    */
   clearAllData(): void {
     clearSituationData(currentModeId());
+    try {
+      localStorage.removeItem(scopedKey(GPX_INDEX_KEY));
+    } catch {
+      // localStorage indisponible : on dégrade proprement (offline-first).
+    }
     // Préférences de vue : communes, remises à zéro avec le reset demandé.
     ['lastView', 'lastPhotoFilter'].forEach((k) => {
       try {
