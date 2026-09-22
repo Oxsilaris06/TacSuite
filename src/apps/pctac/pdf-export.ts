@@ -32,6 +32,7 @@ import * as PDFLib from 'pdf-lib';
 import { Storage } from '@pctac/storage.js';
 import { ImageStore } from '@pctac/image-store.js';
 import { PDF_PAX_COLORS, PHOTO_CATEGORIES, FREE_MODE_COLORS, ADV_STATUS, HOST_STATUS } from '@pctac/config.js';
+import { currentMode } from '@pctac/modes.js';
 import { showBusy, hideBusy } from '@pctac/busy.js';
 import { toast } from '@shared/feedback.js';
 import type { PdfExportContract, PlanMapPinSummary } from '@shared/types/contracts.js';
@@ -219,6 +220,10 @@ export const PdfExport: PdfExportContract = {
             const hostages = await ImageStore.hydrate(Storage.loadCollection('pcTacHostages'), 'photo');
             const friends = Storage.loadCollection('pcTacFriends');
             const photos = await ImageStore.hydrate(Storage.loadCollection('pcTacPhotos'), 'data');
+
+            // Lot B (constat 8) — le PDF suit la situation : titres et libellés
+            // de lien dérivés de la situation courante au moment de l'export.
+            const mode = currentMode();
 
             // Détection du thème
             const isDarkMode = document.body.classList.contains('dark-mode');
@@ -416,9 +421,9 @@ export const PdfExport: PdfExportContract = {
 
             // --- 2. ADVERSAIRES ---
             if (adversaries.length > 0) {
-                addNewPage("FICHIER ADVERSAIRES");
+                addNewPage(`FICHIER ${mode.adv.plural.toUpperCase()}`);
                 for (const adv of adversaries) {
-                    if (context.y < 180) addNewPage("FICHIER ADVERSAIRES (SUITE)");
+                    if (context.y < 180) addNewPage(`FICHIER ${mode.adv.plural.toUpperCase()} (SUITE)`);
 
                     pdfPage().drawRectangle({ x: context.margin, y: context.y - 5, width: context.pageWidth - 2*context.margin, height: 20, color: themeColors.headerBg });
                     pdfPage().drawText(sanitizeWinAnsi(`${adv.nom || ''} ${adv.prenom || ''}`), { x: context.margin + 5, y: context.y + 2, size: 11, font: fontBold, color: themeColors.text });
@@ -432,7 +437,7 @@ export const PdfExport: PdfExportContract = {
                     const labels = [
                         `Statut: ${ADV_STATUS[String(adv.status || 'active')]?.label ?? 'Actif'}`, // U16
                         `Né le: ${adv.dob || 'N/C'}`,
-                        `Lien ravisseurs: ${adv.lien || 'N/C'}`,
+                        `${mode.adv.linkLabel}: ${adv.lien || 'N/C'}`,
                         `Antécédents: ${adv.antecedents || 'N/C'}`,
                         `Attitude: ${adv.attitude || 'N/C'}`,
                         `Substance: ${adv.substance || 'N/C'}`,
@@ -448,9 +453,9 @@ export const PdfExport: PdfExportContract = {
 
             // --- 3. OTAGES ---
             if (hostages.length > 0) {
-                addNewPage("FICHIER OTAGES / VICTIMES");
+                addNewPage(`FICHIER ${mode.host.plural.toUpperCase()}`);
                 for (const host of hostages) {
-                    if (context.y < 180) addNewPage("FICHIER OTAGES (SUITE)");
+                    if (context.y < 180) addNewPage(`FICHIER ${mode.host.plural.toUpperCase()} (SUITE)`);
 
                     pdfPage().drawRectangle({ x: context.margin, y: context.y - 5, width: context.pageWidth - 2*context.margin, height: 20, color: themeColors.headerBg });
                     pdfPage().drawText(sanitizeWinAnsi(`${host.nom || ''} ${host.prenom || ''}`), { x: context.margin + 5, y: context.y + 2, size: 11, font: fontBold, color: themeColors.text });
@@ -467,7 +472,7 @@ export const PdfExport: PdfExportContract = {
                     const labels = [
                         `Statut: ${HOST_STATUS[String(host.status || 'ok')]?.label ?? 'OK'}`, // U16
                         `Né le: ${host.dob || 'N/C'}`,
-                        `Lien ravisseurs: ${lienLabel}`,
+                        `${mode.host.linkLabel}: ${lienLabel}`,
                         `État: ${host.etat || 'N/C'}`,
                         `Blessures: ${host.blessures || 'N/C'}`
                     ];

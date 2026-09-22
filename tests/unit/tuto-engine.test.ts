@@ -758,7 +758,7 @@ describe('intégration avec les jeux de données réels (P1.A4)', () => {
     const instance = PocheTuto.mount({
       appId: 'pctac',
       appName: 'PC-Tac',
-      data: pctacTutoData,
+      data: pctacTutoData(),
     })!;
     expect(instance.chapters).toHaveLength(8);
     expect(instance.flat).toHaveLength(72);

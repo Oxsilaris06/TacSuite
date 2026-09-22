@@ -6,8 +6,11 @@
  * ==========================================================================*/
 
 import type { TutoData } from '../../shared/types/tuto';
+import { currentMode } from '@pctac/modes.js';
 
-export const pctacTutoData: TutoData = {
+export function pctacTutoData(): TutoData {
+  const mode = currentMode();
+  return {
   intro: {
     title: "Bienvenue dans PC Tac",
     text: "PC Tac est le poste de commandement tactique de terrain : une application web installable (PWA) qui fonctionne hors-ligne pour tenir la main courante, ficher les acteurs d'une crise, annoter une carte et suivre vos équipes en temps réel. Ce tutoriel vous guide pas à pas, de la prise en main jusqu'aux exports, en reprenant exactement les libellés affichés à l'écran. Suivez les chapitres dans l'ordre pour découvrir chaque onglet, chaque outil et chaque geste."
@@ -31,12 +34,12 @@ export const pctacTutoData: TutoData = {
         },
         {
           title: "Basculer entre les onglets",
-          body: "La barre d'onglets, sous le titre, regroupe sept vues : Main Courante, Adversaires, Otages, Amis, Photos, Plan et Liens. Cliquer sur un onglet affiche la vue correspondante et met l'onglet en surbrillance (etat actif). Les fleches du clavier permettent aussi de passer d'un onglet a l'autre.",
+          body: `La barre d'onglets, sous le titre, regroupe sept vues : Main Courante, ${mode.adv.plural}, ${mode.host.plural}, Amis, Photos, Plan et Liens. Cliquer sur un onglet affiche la vue correspondante et met l'onglet en surbrillance (etat actif). Les fleches du clavier permettent aussi de passer d'un onglet a l'autre.`,
           selector: null,
           terms: [
             "Main Courante",
-            "Adversaires",
-            "Otages",
+            `${mode.adv.plural}`,
+            `${mode.host.plural}`,
             "Amis",
             "Photos",
             "Plan",
@@ -55,12 +58,12 @@ export const pctacTutoData: TutoData = {
           tip: null
         },
         {
-          title: "Onglets Adversaires, Otages, Amis",
-          body: "Ces trois onglets ouvrent les repertoires de personnes : Adversaires (fiches des mis en cause), Otages (personnes menacees) et Amis (forces amies engagees). Chaque onglet affiche son propre tableau de fiches et se remplit independamment.",
+          title: `Onglets ${mode.adv.plural}, ${mode.host.plural}, Amis`,
+          body: `Ces trois onglets ouvrent les repertoires de personnes : ${mode.adv.plural} (fiches des mis en cause), ${mode.host.plural} (personnes menacees) et Amis (forces amies engagees). Chaque onglet affiche son propre tableau de fiches et se remplit independamment.`,
           selector: null,
           terms: [
-            "Adversaires",
-            "Otages",
+            `${mode.adv.plural}`,
+            `${mode.host.plural}`,
             "Amis"
           ],
           tip: null
@@ -905,7 +908,7 @@ export const pctacTutoData: TutoData = {
         },
         {
           title: "Comprendre le contenu du PDF",
-          body: "Le PDF enchaîne dans l'ordre : « MAIN COURANTE - JOURNAL D'INTERVENTION » (colonnes « Heure », « Pax », « Localisation », « Remarques »), « FICHIER ADVERSAIRES », « FICHIER OTAGES / VICTIMES », « FORCES AMIES / UNITÉS », les galeries « GALERIE : {CATÉGORIE} », le « PLAN TACTIQUE » avec sa « PLAN TACTIQUE - LISTE DES POINTS », et le « BOARD RELATIONNEL ». Chaque page porte en pied de page la mention « DIFFUSION RESTREINTE », l'horodatage d'export et la pagination.",
+          body: `Le PDF enchaîne dans l'ordre : « MAIN COURANTE - JOURNAL D'INTERVENTION » (colonnes « Heure », « Pax », « Localisation », « Remarques »), « FICHIER ${mode.adv.plural.toUpperCase()} », « FICHIER ${mode.host.plural.toUpperCase()} », « FORCES AMIES / UNITÉS », les galeries « GALERIE : {CATÉGORIE} », le « PLAN TACTIQUE » avec sa « PLAN TACTIQUE - LISTE DES POINTS », et le « BOARD RELATIONNEL ». Chaque page porte en pied de page la mention « DIFFUSION RESTREINTE », l'horodatage d'export et la pagination.`,
           selector: null,
           terms: [
             "MAIN COURANTE - JOURNAL D'INTERVENTION",
@@ -913,8 +916,8 @@ export const pctacTutoData: TutoData = {
             "Pax",
             "Localisation",
             "Remarques",
-            "FICHIER ADVERSAIRES",
-            "FICHIER OTAGES / VICTIMES",
+            `FICHIER ${mode.adv.plural.toUpperCase()}`,
+            `FICHIER ${mode.host.plural.toUpperCase()}`,
             "FORCES AMIES / UNITÉS",
             "GALERIE : {CATÉGORIE}",
             "PLAN TACTIQUE",
@@ -926,12 +929,12 @@ export const pctacTutoData: TutoData = {
         },
         {
           title: "Réinitialiser toutes les données",
-          body: "Le bouton rouge à icône delete_forever (infobulle « Réinitialiser toutes les données ») ouvre la modale « RESET COMPLET », qui avertit que « toutes les données (logs, adversaires, otages, photos) seront définitivement supprimées. Cette action est irréversible. ». « CONFIRMER LE RESET » efface tout (stockage local + photos) puis recharge la page ; « ANNULER » referme sans rien supprimer.",
+          body: `Le bouton rouge à icône delete_forever (infobulle « Réinitialiser toutes les données ») ouvre la modale « RESET COMPLET », qui avertit que « toutes les données (logs, ${mode.adv.plural.toLowerCase()}, ${mode.host.plural.toLowerCase()}, photos) seront définitivement supprimées. Cette action est irréversible. ». « CONFIRMER LE RESET » efface tout (stockage local + photos) puis recharge la page ; « ANNULER » referme sans rien supprimer.`,
           selector: "#resetDataDockBtn",
           terms: [
             "Réinitialiser toutes les données",
             "RESET COMPLET",
-            "Attention, toutes les données (logs, adversaires, otages, photos) seront définitivement supprimées. Cette action est irréversible.",
+            `Attention, toutes les données (logs, ${mode.adv.plural.toLowerCase()}, ${mode.host.plural.toLowerCase()}, photos) seront définitivement supprimées. Cette action est irréversible.`,
             "CONFIRMER LE RESET",
             "ANNULER"
           ],
@@ -940,4 +943,5 @@ export const pctacTutoData: TutoData = {
       ]
     }
   ]
-};
+  };
+}

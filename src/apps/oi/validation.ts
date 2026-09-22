@@ -16,6 +16,11 @@
  *    en train de remplir) ;
  *  - après une première erreur, re-validation À CHAQUE frappe (`input`)
  *    pour effacer le message dès que la correction rend le champ valide.
+ *
+ * Règle actée (lot B, 2026-09-22) : seuls quatre champs de l'OI portent une
+ * validation en ligne — date, nom d'adversaire, domicile, trigramme ; c'est
+ * délibéré, car un ordre initial se rédige souvent avec des informations
+ * partielles et bloquer la saisie nuirait plus qu'il n'aiderait.
  */
 
 // P3 — compteurs de caractères calibrés PDF : lecture SEULE de l'API exportée
