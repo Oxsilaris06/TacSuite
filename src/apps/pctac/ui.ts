@@ -377,20 +377,63 @@ export const UI: UIContract = {
   /** Ordre d'affichage du journal : false = chrono (heure ASC, ordre du stockage), true = inversé. */
   logSortDesc: false,
 
+  /** Filtre « favoris seuls » de la main courante. Non persisté : c'est une
+   * loupe qu'on pose le temps d'un point de situation, pas un réglage. */
+  logFavorisOnly: false,
+
+  /**
+   * Marque ou démarque une entrée. Le tri du STOCKAGE reste strictement
+   * chronologique (`Storage.saveLogData`) : la remontée des favoris est une
+   * affaire d'affichage, et une archive relue ailleurs garde l'ordre des faits.
+   */
+  toggleLogFavori(id: string): void {
+    const logs = Storage.loadLogData();
+    const entry = logs.find((l) => l.id === id);
+    if (!entry) return;
+    entry.favori = !entry.favori;
+    Storage.saveLogData(logs);
+    this.renderLogTable(Storage.loadLogData());
+  },
+
+  /** Bascule le filtre « favoris seuls » et rafraîchit le journal. */
+  toggleLogFavorisFilter(): void {
+    this.logFavorisOnly = !this.logFavorisOnly;
+    const btn = document.getElementById('favorisLogBtn');
+    if (btn) {
+      btn.classList.toggle('is-active', this.logFavorisOnly);
+      btn.setAttribute('aria-pressed', String(this.logFavorisOnly));
+    }
+    this.renderLogTable(Storage.loadLogData());
+  },
+
   renderLogTable(logData: readonly PctacLogEntry[]): void {
     const tbody = this.elements.logTableBody;
     if (!tbody) return;
     if (this.logSortDesc) logData = [...logData].reverse();
+    if (this.logFavorisOnly) logData = logData.filter((e) => e.favori);
+    // Les favoris remontent en tête SANS casser l'ordre chronologique entre
+    // eux : `filter` conserve l'ordre d'entrée, donc concaténer les deux
+    // groupes suffit — un tri comparatif ici risquerait de le perdre.
+    const favoris = logData.filter((e) => e.favori);
+    if (favoris.length > 0 && favoris.length < logData.length) {
+      logData = [...favoris, ...logData.filter((e) => !e.favori)];
+    }
     tbody.innerHTML = '';
     // U11 — état vide explicite plutôt qu'un tableau muet.
     if (logData.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="4" class="empty-state">Aucun événement enregistré</td></tr>';
+      tbody.innerHTML = this.logFavorisOnly
+        ? '<tr><td colspan="4" class="empty-state">Aucune entrée en favori — marquez-en une avec l\'étoile</td></tr>'
+        : '<tr><td colspan="4" class="empty-state">Aucun événement enregistré</td></tr>';
       return;
     }
     // U15 — séparateur de jour discret quand la date change (pas de colonne).
+    // Désactivé dès qu'un favori remonte ou que le filtre est posé : l'ordre
+    // affiché n'est alors plus chronologique, et un séparateur de date y
+    // annoncerait un regroupement qui n'existe pas.
+    const separateursDeJour = !this.logFavorisOnly && favoris.length === 0;
     let prevDate: string | undefined;
     logData.forEach((entry) => {
-      if (entry.date && entry.date !== prevDate) {
+      if (separateursDeJour && entry.date && entry.date !== prevDate) {
         const sep = tbody.insertRow();
         sep.className = 'log-day-sep';
         sep.innerHTML = `<td colspan="4">${esc(formatDateFr(entry.date))}</td>`;
@@ -423,6 +466,13 @@ export const UI: UIContract = {
                 <td style="width: 15%;">
                     <div class="heure-cell-container">
                         <span class="heure-cell-text">${esc(entry.heure)}</span>
+                        <button type="button" class="log-favori-btn${entry.favori ? ' is-favori' : ''}"
+                            onclick="window.UI.toggleLogFavori('${entry.id}')"
+                            aria-pressed="${entry.favori ? 'true' : 'false'}"
+                            title="${entry.favori ? 'Retirer des favoris' : 'Marquer comme important'}"
+                            aria-label="${entry.favori ? 'Retirer cette entrée des favoris' : 'Marquer cette entrée comme importante'}">
+                            <span class="material-symbols-outlined" aria-hidden="true">${entry.favori ? 'star' : 'star_border'}</span>
+                        </button>
                         <button type="button" class="action-btn-small edit" onclick="window.openEditModal('${entry.id}')" title="Modifier" aria-label="Modifier cette entrée">
                             <span class="material-symbols-outlined" style="font-size: 18px;">edit</span>
                         </button>

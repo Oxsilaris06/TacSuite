@@ -330,6 +330,13 @@ export interface PctacLogEntry {
      * vers la page « JOURNAL DES ACTIONS PC-TAC » en fin de document.
      */
     auto?: boolean | undefined;
+    /**
+     * Entrée marquée comme importante par l'opérateur (étoile de la main
+     * courante). Absente des entrées créées avant la fonctionnalité et de
+     * toute entrée jamais marquée : `undefined` et `false` se lisent
+     * identiquement, aucune migration n'est nécessaire.
+     */
+    favori?: boolean | undefined;
     /** Champ legacy transporté par le flux QR (`QrSync`), absent des entrées créées aujourd'hui. */
     fenetrePorte?: string | undefined;
 }
@@ -650,6 +657,12 @@ export interface UIContract {
     /* --- tableau du journal --- */
     /** Ordre d'affichage du journal : false = chrono ASC (stockage), true = inversé (récent en tête). */
     logSortDesc: boolean;
+    /** Filtre « favoris seuls » du journal. Volontairement non persisté. */
+    logFavorisOnly: boolean;
+    /** Marque ou démarque une entrée comme importante, puis rafraîchit. */
+    toggleLogFavori(id: string): void;
+    /** Pose ou retire le filtre « favoris seuls ». */
+    toggleLogFavorisFilter(): void;
     renderLogTable(logData: readonly PctacLogEntry[]): void;
     openEditModal(id: string): void;
     confirmEditLog(): void;

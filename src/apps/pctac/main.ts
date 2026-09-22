@@ -665,6 +665,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         UI.logSortDesc = !UI.logSortDesc;
         UI.renderLogTable(Storage.loadLogData());
     };
+    const favorisLogBtn = document.getElementById('favorisLogBtn');
+    if (favorisLogBtn) favorisLogBtn.onclick = () => UI.toggleLogFavorisFilter();
     const closeSearchBtn = document.getElementById('closeSearchBtn');
     if (closeSearchBtn) closeSearchBtn.onclick = () => UI.closeSearchMode();
     const searchInput = document.getElementById('searchInput');
