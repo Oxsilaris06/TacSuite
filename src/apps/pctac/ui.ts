@@ -202,6 +202,47 @@ function photoCategoryLabel(cat: PctacPhotoCategory): string {
 }
 
 /**
+ * C9 — Reflète l'état de sélection des pastilles Pax (boutons `role="radio"`)
+ * dans `aria-checked`, et applique le curseur de tabulation unique (« roving
+ * tabindex ») attendu d'un `radiogroup` ARIA : seule l'option sélectionnée est
+ * joignable par Tab, les flèches parcourent le groupe. Le bouton d'ajout
+ * (`#openCreatePaxBtn`) n'a pas `role="radio"` : il est ignoré ici.
+ */
+function syncPaxAriaChecked(container: HTMLElement): void {
+  const options = Array.from(container.querySelectorAll<HTMLElement>('.pax-select-option[role="radio"]'));
+  const current = options.find((o) => o.classList.contains('selected')) ?? options[0];
+  options.forEach((o) => {
+    o.setAttribute('aria-checked', String(o.classList.contains('selected')));
+    o.tabIndex = (o === current) ? 0 : -1;
+  });
+}
+
+/**
+ * C9 — Navigation clavier d'un `radiogroup` : les flèches déplacent le focus
+ * (et la sélection, comportement radio) entre les pastilles. Lié une seule fois
+ * par conteneur.
+ */
+function bindPaxArrowKeys(container: HTMLElement): void {
+  if (container.dataset.paxArrowKeys === '1') return;
+  container.dataset.paxArrowKeys = '1';
+  container.addEventListener('keydown', (e) => {
+    if (e.key !== 'ArrowRight' && e.key !== 'ArrowDown' && e.key !== 'ArrowLeft' && e.key !== 'ArrowUp') return;
+    const options = Array.from(container.querySelectorAll<HTMLElement>('.pax-select-option[role="radio"]'));
+    if (options.length === 0) return;
+    const active = document.activeElement as HTMLElement | null;
+    let idx = active ? options.indexOf(active) : -1;
+    if (idx < 0) idx = options.findIndex((o) => o.classList.contains('selected'));
+    if (idx < 0) idx = 0;
+    const forward = e.key === 'ArrowRight' || e.key === 'ArrowDown';
+    const next = options[(idx + (forward ? 1 : -1) + options.length) % options.length];
+    if (!next) return;
+    e.preventDefault();
+    next.focus();
+    next.click();
+  });
+}
+
+/**
  * Gestionnaire de l'interface utilisateur PC TAC
  */
 export const UI: UIContract = {
@@ -351,12 +392,15 @@ export const UI: UIContract = {
             }
           });
           btn.classList.add('selected');
+          syncPaxAriaChecked(container);
         };
 
         if (this.elements.paxInput && this.elements.paxInput.value === key) btn.classList.add('selected');
       });
+      bindPaxArrowKeys(container);
     }
     this.renderCustomPaxOptions();
+    if (container) syncPaxAriaChecked(container);
 
     const openCreatePaxBtn = document.getElementById('openCreatePaxBtn');
     if (openCreatePaxBtn) {
@@ -658,10 +702,15 @@ export const UI: UIContract = {
     customPaxList.forEach((pax) => {
       const paxName = (pax.name as string | undefined) || '';
       const paxColor = (pax.color as string | undefined) || '';
-      const span = document.createElement('span');
-      span.className = 'pax-select-option custom';
-      span.textContent = paxName;
-      span.dataset.pax = paxName;
+      // C9 — la pastille personnalisée est un bouton radio (utilisable au
+      // clavier), mêmes classe et `dataset.pax` que les options statiques.
+      const option = document.createElement('button');
+      option.type = 'button';
+      option.setAttribute('role', 'radio');
+      option.setAttribute('aria-checked', 'false');
+      option.className = 'pax-select-option custom';
+      option.textContent = paxName;
+      option.dataset.pax = paxName;
 
       const selectCustom = (): void => {
         // Non gardé dans l'original (ui.js:398-401) : cast de typage pur,
@@ -679,29 +728,31 @@ export const UI: UIContract = {
           }
         });
 
-        span.classList.add('selected');
-        span.style.background = paxColor;
-        span.style.color = this.getContrastYIQ(paxColor);
+        option.classList.add('selected');
+        option.style.background = paxColor;
+        option.style.color = this.getContrastYIQ(paxColor);
+        syncPaxAriaChecked(container);
       };
 
-      span.onclick = selectCustom;
-      span.oncontextmenu = (e) => { e.preventDefault(); this.deleteCustomPax(pax.id); };
+      option.onclick = selectCustom;
+      option.oncontextmenu = (e) => { e.preventDefault(); this.deleteCustomPax(pax.id); };
 
       let timer: ReturnType<typeof setTimeout> | undefined;
-      span.ontouchstart = () => { timer = setTimeout(() => this.deleteCustomPax(pax.id), LONG_PRESS_DELAY); };
-      span.ontouchend = () => clearTimeout(timer);
+      option.ontouchstart = () => { timer = setTimeout(() => this.deleteCustomPax(pax.id), LONG_PRESS_DELAY); };
+      option.ontouchend = () => clearTimeout(timer);
       // Un scroll tactile qui traverse la puce ne doit PAS déclencher la suppression.
-      span.ontouchmove = () => clearTimeout(timer);
-      span.ontouchcancel = () => clearTimeout(timer);
+      option.ontouchmove = () => clearTimeout(timer);
+      option.ontouchcancel = () => clearTimeout(timer);
 
       if (this.elements.paxInput && this.elements.paxInput.value === paxName) {
-        span.classList.add('selected');
-        span.style.background = paxColor;
-        span.style.color = this.getContrastYIQ(paxColor);
+        option.classList.add('selected');
+        option.style.background = paxColor;
+        option.style.color = this.getContrastYIQ(paxColor);
       }
 
-      container.insertBefore(span, addBtn);
+      container.insertBefore(option, addBtn);
     });
+    syncPaxAriaChecked(container);
   },
 
   // ui.js:436-466

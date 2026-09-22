@@ -10,6 +10,7 @@
     <link rel="icon" href="/favicon-96x96.png" type="image/png" sizes="96x96">
     <link rel="apple-touch-icon" href="/apple-touch-icon.png">
     <link rel="stylesheet" href="/styles/tacsuite-tokens.css">
+    <link rel="stylesheet" href="/styles/ui-platform.css">
     <link rel="stylesheet" href="/styles/oi.css">
 </head>
 
@@ -180,7 +181,7 @@
                     <button type="button" id="annotation_cancel_header" class="btn-cancel compact wizard-nav-btn annotation-header-btn" data-action="close-annotation-modal">Annuler</button>
                     <button type="button" id="annotation_save_header" class="btn-save compact wizard-nav-btn annotation-header-btn">Enregistrer</button>
                 </div>
-                <button type="button" class="close-modal-btn annotation-close-btn" data-action="close-annotation-modal" aria-label="Fermer l'annotation photo">
+                <button type="button" class="close-modal-btn annotation-close-btn up-tap-target" data-action="close-annotation-modal" aria-label="Fermer l'annotation photo">
                     <span class="material-symbols-outlined">close</span>
                 </button>
             </div>
@@ -847,7 +848,7 @@ Gestuelle et visuelle entre les éléments INDIA</textarea>
                  pattern PC-Tac (git show 0c42d49) transposé aux ids oi_carto_*. -->
             <div id="oi_carto_layers_panel">
                 <div class="oi-layers-section">
-                    <p class="oi-layers-section-title">Fond de carte</p>
+                    <p class="tac-layers-section-title">Fond de carte</p>
                     <div class="oi-layers-row">
                         <button type="button" id="oi_carto_btn_topo" class="oi-carto-fab"
                             title="Fond Plan IGN (carte topographique couleur)" aria-label="Basculer entre le fond imagerie satellite et le fond Plan IGN couleur">
@@ -857,7 +858,7 @@ Gestuelle et visuelle entre les éléments INDIA</textarea>
                     </div>
                 </div>
                 <div class="oi-layers-section">
-                    <p class="oi-layers-section-title">Surimpressions</p>
+                    <p class="tac-layers-section-title">Surimpressions</p>
                     <div class="oi-layers-row">
                         <button type="button" id="oi_carto_btn_lidar" class="oi-carto-fab"
                             title="Ombrage LiDAR HD (relief sous la végétation)" aria-label="Basculer l'ombrage LiDAR HD : MNT, MNS, MNH ou aucun">
@@ -882,7 +883,7 @@ Gestuelle et visuelle entre les éléments INDIA</textarea>
                     </div>
                 </div>
                 <div class="oi-layers-section">
-                    <p class="oi-layers-section-title">Vue</p>
+                    <p class="tac-layers-section-title">Vue</p>
                     <div class="oi-layers-row">
                         <button type="button" id="oi_carto_btn_3d" class="oi-carto-fab"
                             title="Basculer vue 2D / 3D relief" aria-label="Basculer entre vue 2D et 3D">
@@ -913,11 +914,11 @@ Gestuelle et visuelle entre les éléments INDIA</textarea>
                 </button>
                 <div class="oi-carto-dock-sep"></div>
                 <div id="oi_carto_draw_colors">
-                    <button type="button" class="oi-carto-draw-color oi-carto-draw-color-red" data-color="#ef4444" title="Rouge" aria-label="Choisir la couleur rouge"></button>
-                    <button type="button" class="oi-carto-draw-color oi-carto-draw-color-yellow" data-color="#eab308" title="Jaune" aria-label="Choisir la couleur jaune"></button>
-                    <button type="button" class="oi-carto-draw-color oi-carto-draw-color-blue" data-color="#3b82f6" title="Bleu" aria-label="Choisir la couleur bleue"></button>
-                    <button type="button" class="oi-carto-draw-color oi-carto-draw-color-green" data-color="#22c55e" title="Vert" aria-label="Choisir la couleur verte"></button>
-                    <button type="button" class="oi-carto-draw-color oi-carto-draw-color-white" data-color="#ffffff" title="Blanc" aria-label="Choisir la couleur blanche"></button>
+                    <button type="button" class="oi-carto-draw-color up-tap-target oi-carto-draw-color-red" data-color="#ef4444" title="Rouge" aria-label="Choisir la couleur rouge"></button>
+                    <button type="button" class="oi-carto-draw-color up-tap-target oi-carto-draw-color-yellow" data-color="#eab308" title="Jaune" aria-label="Choisir la couleur jaune"></button>
+                    <button type="button" class="oi-carto-draw-color up-tap-target oi-carto-draw-color-blue" data-color="#3b82f6" title="Bleu" aria-label="Choisir la couleur bleue"></button>
+                    <button type="button" class="oi-carto-draw-color up-tap-target oi-carto-draw-color-green" data-color="#22c55e" title="Vert" aria-label="Choisir la couleur verte"></button>
+                    <button type="button" class="oi-carto-draw-color up-tap-target oi-carto-draw-color-white" data-color="#ffffff" title="Blanc" aria-label="Choisir la couleur blanche"></button>
                 </div>
                 <div class="oi-carto-dock-sep"></div>
                 <button type="button" id="oi_carto_draw_undo" class="oi-carto-draw-btn"
@@ -1038,8 +1039,8 @@ Gestuelle et visuelle entre les éléments INDIA</textarea>
     </dialog>
 
     <!-- Modale de Chargement PDF (V6.10) -->
-    <div id="pdfLoadingModal" role="status" aria-live="polite">
-        <div class="pdf-loading-card">
+    <div id="pdfLoadingModal" class="tac-busy-overlay" role="status" aria-live="polite">
+        <div class="tac-busy-card">
             <!-- Sphere de points (shared/orb.ts), montee a l'ouverture du
                  chargeur et demontee a sa fermeture : cf. src/apps/oi/loader.ts -->
             <canvas id="pdfLoadingOrb" class="tac-orb" width="72" height="72" aria-hidden="true"></canvas>

@@ -1,0 +1,232 @@
+/* ============================================================================
+ * styles/ui-platform.css — socle UI transverse partagé OI + PC-Tac
+ *
+ * Extrait de styles/pctac.css (ex-« Source 1/4 ») et styles/oi.css (ex-« Source
+ * 1/2 »), où ce bloc était concaténé à l'identique. Les deux pages le chargent
+ * désormais par un <link> placé AVANT leur feuille applicative : la position de
+ * cascade d'origine (après tacsuite-tokens.css, avant le CSS de l'app) est donc
+ * préservée à l'octet près.
+ *
+ * Purement ADDITIF : aucune règle existante n'est modifiée. Un seul lieu de
+ * vérité pour le comportement de plateforme. Les commentaires T1, T2, T5, T9,
+ * T12… qui expliquent POURQUOI chaque règle existe sont conservés tels quels.
+ * ========================================================================== */
+/* =====================================================================
+   UI Platform — socle "native-quality" partagé OI (4.html) + PC-Tac (pctac2.html)
+   Chargé dans les deux <head>. Purement ADDITIF : aucune règle existante
+   n'est modifiée. Un seul lieu de vérité pour le comportement de plateforme.
+   ===================================================================== */
+
+:root {
+    /* T1 — Safe-area (encoche / home indicator). 0px par défaut = no-op desktop. */
+    --safe-top: env(safe-area-inset-top, 0px);
+    --safe-right: env(safe-area-inset-right, 0px);
+    --safe-bottom: env(safe-area-inset-bottom, 0px);
+    --safe-left: env(safe-area-inset-left, 0px);
+    /* Hauteur du clavier virtuel (mis à jour par ui-platform.js via visualViewport). */
+    --kb-inset: 0px;
+}
+
+/* T5 — Confinement du scroll : tue le pull-to-refresh PWA parasite et le scroll-chaining. */
+html {
+    overscroll-behavior-y: none;
+}
+.up-scroll-contain {
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+}
+
+/* T2 — Anti-zoom iOS : tout champ < 16px déclenche un zoom auto au focus sur tactile.
+   On force >= 16px uniquement en pointeur grossier (mobile), jamais sur desktop. */
+@media (pointer: coarse) {
+    input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]),
+    textarea,
+    select {
+        font-size: max(16px, 1em);
+    }
+}
+
+/* T12 — Anneau de focus visible global (clavier uniquement). Neutralise les
+   outline:none des apps SANS réintroduire de halo à la souris. */
+:focus-visible {
+    outline: 2px solid var(--accent-blue, #3b82f6) !important;
+    outline-offset: 2px;
+    border-radius: 3px;
+}
+/* Pas d'outline résiduel quand le focus n'est PAS clavier. */
+:focus:not(:focus-visible) {
+    outline: none;
+}
+
+/* T9 — Sur tactile (pas de vrai survol), neutraliser le « lift » transform des
+   règles :hover qui reste COLLÉ après un tap (effet « web » typique). Additif :
+   ne réécrit aucune des règles :hover existantes, ne s'applique qu'aux pointeurs
+   grossiers, et seulement à la propriété transform (le retour visuel reste assuré
+   par :active). Couvre les classes interactives réelles des deux apps. */
+@media (hover: none) and (pointer: coarse) {
+    a:hover, button:hover, [role="button"]:hover,
+    .add-btn:hover, .remove-btn:hover, .tab-btn:hover, .dock-menu-item:hover,
+    .patracdvr-member-btn:hover, .action-btn-small:hover, .delete-btn:hover,
+    .delete:hover, .edit:hover, .tool-btn:hover, .effrac-tool-btn:hover,
+    .order-chip:hover, .rame-vl-chip:hover, .collapsible-header:hover,
+    .wizard-progress-step:hover, .quick-edit-btn:hover, .vehicle-name:hover,
+    .file-upload-label:hover, .custom-file-upload:hover, .image-preview-item:hover,
+    .plan-tool-fab:hover, .color-swatch:hover, .add-log-btn:hover,
+    .oi-carto-fab:hover, .oi-carto-draw-btn:hover, .oi-carto-search-result:hover {
+        transform: none !important;
+    }
+    /* Retour tactile immédiat (<100 ms) au lieu d'un survol fantôme. */
+    a:active, button:active, [role="button"]:active,
+    .add-btn:active, .tab-btn:active, .dock-menu-item:active, .plan-tool-fab:active {
+        transition: transform 0.06s ease;
+    }
+}
+
+/* T14 — prefers-reduced-motion partagé (absent de PC-Tac). */
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+        animation-duration: 0.001ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.001ms !important;
+        scroll-behavior: auto !important;
+    }
+}
+
+/* T3 — Verrou de scroll natif (utilisé par UIPlatform.lockScroll).
+   Le décalage `top` est posé en inline par le JS pour préserver scrollY. */
+body.up-scroll-locked {
+    position: fixed;
+    left: 0;
+    right: 0;
+    width: 100%;
+    overflow: hidden;
+    touch-action: none;
+}
+
+/* T7 — Anti-callout iOS sur conteneurs interactifs (long-press propre). */
+.up-no-callout {
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
+}
+
+/* T9 — Cible tapable >= 44px sans changer le rendu visuel (zone étendue). */
+.up-tap-target {
+    position: relative;
+}
+.up-tap-target::after {
+    content: "";
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    min-width: 44px;
+    min-height: 44px;
+    width: 100%;
+    height: 100%;
+}
+
+/* T6 — Tri tactile (états appliqués par UIPlatform.sortable). */
+.up-sorting {
+    touch-action: none;
+    cursor: grabbing;
+}
+.up-sort-dragging {
+    opacity: 0.85;
+    transform: scale(1.02);
+    box-shadow: 0 10px 24px rgba(0, 0, 0, 0.45);
+    z-index: var(--z-raised);
+    pointer-events: none;
+}
+.up-sort-placeholder {
+    outline: 2px dashed var(--accent-blue, #3b82f6);
+    outline-offset: -2px;
+    opacity: 0.4;
+}
+
+/* T4 — Modale/feuille recadrée au-dessus du clavier virtuel.
+   La classe est posée par makeDialog ; le décalage exploite --kb-inset. */
+.up-kb-aware {
+    transition: transform 0.18s ease;
+}
+body.up-kb-open .up-kb-aware {
+    transform: translateY(calc(-1 * var(--kb-inset) * 0.5));
+}
+
+/* =====================================================================
+   C3 — Busy overlay partagé OI (#pdfLoadingModal) + PC-Tac (#pctacBusyOverlay)
+   Avant C3, le voile, la carte et la sphère étaient copiés à l'identique dans
+   les deux feuilles applicatives. Seules les valeurs qui diffèrent vraiment
+   restent chez chaque app sur son identifiant (empilement, couleur du texte,
+   libellé de statut) ; le reste vit ici, sous classes communes. Les pages
+   gardent leurs identifiants, visés par src/apps/{pctac/busy,oi/loader}.ts.
+   ===================================================================== */
+/* Voile plein écran. `display: none` par défaut ; la visibilité est pilotée en
+   style.display inline par le JS. */
+.tac-busy-overlay {
+    display: none;
+    position: fixed;
+    top: 0; left: 0; width: 100%; height: 100%;
+    background: rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(10px);
+    align-items: center; justify-content: center;
+    flex-direction: column;
+    transition: all var(--tac-duration-normal) ease;
+}
+
+/* Carte centrale de l'indicateur d'attente. */
+.tac-busy-card {
+    background: var(--bg-container);
+    border: 1px solid var(--border-light);
+    padding: 40px;
+    border-radius: var(--radius-lg);
+    text-align: center;
+    box-shadow: var(--shadow-float);
+    max-width: 350px; width: 85%;
+    display: flex; flex-direction: column; align-items: center; gap: 20px;
+}
+
+/* Sphere d'attente (shared/orb.ts). Le disque tournant a bord colore qui
+   occupait cette place est retire : a 0,8 s par tour il pressait l'oeil pendant
+   des attentes de vingt secondes. La sphere tourne en 9 s et se dessine sur un
+   canvas — d'ou l'absence d'animation CSS ici. */
+.tac-orb {
+    width: 72px;
+    height: 72px;
+    flex-shrink: 0;
+}
+
+/* Le message respire doucement pendant l'attente : une seule propriete
+   animee (opacity), cycle long, et rien du tout en mouvement reduit. */
+.tac-orb-message {
+    animation: tac-orb-breath 2.6s var(--ease-in-out) infinite;
+}
+
+@keyframes tac-orb-breath {
+    0%, 100% { opacity: 0.62; }
+    50% { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .tac-orb-message {
+        animation: none;
+        opacity: 1;
+    }
+}
+
+/* =====================================================================
+   C4 — familles CSS copiées entre les deux applications.
+   ===================================================================== */
+/* Titre de section des panneaux de calques (PC-Tac `.plan-layers-section-title`
+   / OI `.oi-layers-section-title`) : déclarations identiques, extraites ici sous
+   une classe unique. Les règles contextuelles (premier enfant, en-tête GPX)
+   restent dans chaque feuille et ciblent cette classe commune. */
+.tac-layers-section-title {
+    margin: 6px 0 2px;
+    font-family: var(--font-ui);
+    font-size: 0.7em;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-muted);
+}

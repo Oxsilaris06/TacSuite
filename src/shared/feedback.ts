@@ -62,6 +62,8 @@ export interface ConfirmDialogOptions {
 const STYLE_ID = 'tac-feedback-styles';
 /** Au-dessus de tout, y compris les `<dialog>` propres à chaque app (`--z-dialog`/`--z-top` locaux ≤3000) — même idiome que `tuto-engine.ts` (`Z = 2147483000`). */
 const TOP_Z = 2147483000;
+/** Compteur d'identifiants de titre : deux dialogues peuvent coexister (cf. tests), l'`id` ciblé par `aria-labelledby` doit rester unique. */
+let dialogUid = 0;
 
 function injectStyles(): void {
   if (document.getElementById(STYLE_ID)) return;
@@ -281,8 +283,13 @@ export function confirmDialog(options: ConfirmDialogOptions): Promise<boolean> {
     if (title) {
       const h = document.createElement('h2');
       h.className = 'tac-confirm-title';
+      h.id = `tac-confirm-title-${++dialogUid}`;
       h.textContent = title;
       dialog.appendChild(h);
+      // Nom accessible : le titre s'il existe, sinon le message (C9, WCAG 4.1.2).
+      dialog.setAttribute('aria-labelledby', h.id);
+    } else {
+      dialog.setAttribute('aria-label', message);
     }
 
     const p = document.createElement('p');
@@ -414,8 +421,13 @@ export function promptDialog(options: PromptDialogOptions): Promise<string | nul
     if (title) {
       const h = document.createElement('h2');
       h.className = 'tac-confirm-title';
+      h.id = `tac-confirm-title-${++dialogUid}`;
       h.textContent = title;
       dialog.appendChild(h);
+      // Nom accessible : le titre s'il existe, sinon le message (C9, WCAG 4.1.2).
+      dialog.setAttribute('aria-labelledby', h.id);
+    } else {
+      dialog.setAttribute('aria-label', message);
     }
 
     const p = document.createElement('p');

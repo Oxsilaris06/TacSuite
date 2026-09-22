@@ -4,17 +4,13 @@
  * a la main hors portage : ce fichier est une concatenation fidele des sources
  * ci-dessous, dans l'ordre de cascade EXACT de l'original.
  *
- * ECART DE PERIMETRE ASSUME (a confirmer/ajuster en Phase 1 / P1.A5) : la mission
- * ne cite explicitement que le <style> inline de 4.html (~3720 lignes) pour ce
- * fichier. shared/ui-platform.css a ete concatene ICI AUSSI, par symetrie avec le
- * traitement de styles/pctac.css et parce que 4.html le charge dans la MEME
- * position de cascade (<link>, 4.html:27, avant le <style> inline) — sans cela la
- * page OI perdrait ce socle UI transverse (safe-area, :focus-visible, tap targets,
- * anti-hover mobile...) pendant toute la Phase 0/1. A la creation du fichier dedie
- * styles/ui-platform.css, cette duplication
- * devra etre retiree d'ici (et de styles/pctac.css) au profit d'un lien commun.
+ * EXTRACTION C2 (lot dette UI) : shared/ui-platform.css etait auparavant
+ * concatene dans ce fichier (et dans styles/pctac.css) par symetrie avec la
+ * position de cascade de 4.html (<link>, 4.html:27, avant le <style> inline). Il
+ * vit desormais dans styles/ui-platform.css, charge par un <link> place AVANT
+ * cette feuille — meme position de cascade, un seul lieu de verite.
  *
- * Sources concatenees, dans l'ordre de chargement original de 4.html :
+ * Sources de cette feuille, dans l'ordre de chargement original de 4.html :
  *   0. Regle de base .material-symbols-outlined — AJOUT P0.FIX (absente des
  *      sources listees ci-dessous : dans 4.html elle etait fournie par la
  *      feuille distante https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined...
@@ -23,8 +19,8 @@
  *      via le paquet npm epingle `material-symbols` (import dans
  *      src/shared/fonts.ts, charge par src/apps/oi/main.ts) et sa CSS est
  *      identique caractere pour caractere a celle servie par Google.
- *   1. shared/ui-platform.css   (lien <link>, 4.html:27 — charge AVANT le <style>
- *      inline ; socle UI partagee OI+PC-Tac ; cf. ecart ci-dessus)
+ *   1. (EXCLU) shared/ui-platform.css — extrait vers styles/ui-platform.css (C2)
+ *      et charge par son propre <link> AVANT cette feuille ; cf. ci-dessus)
  *   2. <style> inline unique    (4.html:113-3830, theme "tactical/OLED" complet :
  *      variables, wizard, dock, modales, canvas d'annotation, cartographie)
  * ========================================================================== */
@@ -54,152 +50,6 @@
     -moz-osx-font-smoothing: grayscale;
     text-rendering: optimizeLegibility;
     font-feature-settings: 'liga';
-}
-
-/* ---------------------------------------------------------------------------
- * Source 1/2 : shared/ui-platform.css (GStart-main/shared/ui-platform.css, 141 lignes)
- * Socle UI transverse partage avec PC-Tac (pctac2.html) — comportements/accessibilite.
- * ------------------------------------------------------------------------- */
-/* =====================================================================
-   UI Platform — socle "native-quality" partagé OI (4.html) + PC-Tac (pctac2.html)
-   Chargé dans les deux <head>. Purement ADDITIF : aucune règle existante
-   n'est modifiée. Un seul lieu de vérité pour le comportement de plateforme.
-   ===================================================================== */
-
-:root {
-    /* T1 — Safe-area (encoche / home indicator). 0px par défaut = no-op desktop. */
-    --safe-top: env(safe-area-inset-top, 0px);
-    --safe-right: env(safe-area-inset-right, 0px);
-    --safe-bottom: env(safe-area-inset-bottom, 0px);
-    --safe-left: env(safe-area-inset-left, 0px);
-    /* Hauteur du clavier virtuel (mis à jour par ui-platform.js via visualViewport). */
-    --kb-inset: 0px;
-}
-
-/* T5 — Confinement du scroll : tue le pull-to-refresh PWA parasite et le scroll-chaining. */
-html {
-    overscroll-behavior-y: none;
-}
-.up-scroll-contain {
-    overscroll-behavior: contain;
-    -webkit-overflow-scrolling: touch;
-}
-
-/* T2 — Anti-zoom iOS : tout champ < 16px déclenche un zoom auto au focus sur tactile.
-   On force >= 16px uniquement en pointeur grossier (mobile), jamais sur desktop. */
-@media (pointer: coarse) {
-    input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]),
-    textarea,
-    select {
-        font-size: max(16px, 1em);
-    }
-}
-
-/* T12 — Anneau de focus visible global (clavier uniquement). Neutralise les
-   outline:none des apps SANS réintroduire de halo à la souris. */
-:focus-visible {
-    outline: 2px solid var(--accent-blue, #3b82f6) !important;
-    outline-offset: 2px;
-    border-radius: 3px;
-}
-/* Pas d'outline résiduel quand le focus n'est PAS clavier. */
-:focus:not(:focus-visible) {
-    outline: none;
-}
-
-/* T9 — Sur tactile (pas de vrai survol), neutraliser le « lift » transform des
-   règles :hover qui reste COLLÉ après un tap (effet « web » typique). Additif :
-   ne réécrit aucune des règles :hover existantes, ne s'applique qu'aux pointeurs
-   grossiers, et seulement à la propriété transform (le retour visuel reste assuré
-   par :active). Couvre les classes interactives réelles des deux apps. */
-@media (hover: none) and (pointer: coarse) {
-    a:hover, button:hover, [role="button"]:hover,
-    .add-btn:hover, .remove-btn:hover, .tab-btn:hover, .dock-menu-item:hover,
-    .patracdvr-member-btn:hover, .action-btn-small:hover, .delete-btn:hover,
-    .delete:hover, .edit:hover, .tool-btn:hover, .effrac-tool-btn:hover,
-    .order-chip:hover, .rame-vl-chip:hover, .collapsible-header:hover,
-    .wizard-progress-step:hover, .quick-edit-btn:hover, .vehicle-name:hover,
-    .file-upload-label:hover, .custom-file-upload:hover, .image-preview-item:hover,
-    .plan-tool-fab:hover, .color-swatch:hover, .add-log-btn:hover,
-    .oi-carto-fab:hover, .oi-carto-draw-btn:hover, .oi-carto-search-result:hover {
-        transform: none !important;
-    }
-    /* Retour tactile immédiat (<100 ms) au lieu d'un survol fantôme. */
-    a:active, button:active, [role="button"]:active,
-    .add-btn:active, .tab-btn:active, .dock-menu-item:active, .plan-tool-fab:active {
-        transition: transform 0.06s ease;
-    }
-}
-
-/* T14 — prefers-reduced-motion partagé (absent de PC-Tac). */
-@media (prefers-reduced-motion: reduce) {
-    *, *::before, *::after {
-        animation-duration: 0.001ms !important;
-        animation-iteration-count: 1 !important;
-        transition-duration: 0.001ms !important;
-        scroll-behavior: auto !important;
-    }
-}
-
-/* T3 — Verrou de scroll natif (utilisé par UIPlatform.lockScroll).
-   Le décalage `top` est posé en inline par le JS pour préserver scrollY. */
-body.up-scroll-locked {
-    position: fixed;
-    left: 0;
-    right: 0;
-    width: 100%;
-    overflow: hidden;
-    touch-action: none;
-}
-
-/* T7 — Anti-callout iOS sur conteneurs interactifs (long-press propre). */
-.up-no-callout {
-    -webkit-touch-callout: none;
-    -webkit-user-select: none;
-    user-select: none;
-}
-
-/* T9 — Cible tapable >= 44px sans changer le rendu visuel (zone étendue). */
-.up-tap-target {
-    position: relative;
-}
-.up-tap-target::after {
-    content: "";
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    min-width: 44px;
-    min-height: 44px;
-    width: 100%;
-    height: 100%;
-}
-
-/* T6 — Tri tactile (états appliqués par UIPlatform.sortable). */
-.up-sorting {
-    touch-action: none;
-    cursor: grabbing;
-}
-.up-sort-dragging {
-    opacity: 0.85;
-    transform: scale(1.02);
-    box-shadow: 0 10px 24px rgba(0, 0, 0, 0.45);
-    z-index: var(--z-raised);
-    pointer-events: none;
-}
-.up-sort-placeholder {
-    outline: 2px dashed var(--accent-blue, #3b82f6);
-    outline-offset: -2px;
-    opacity: 0.4;
-}
-
-/* T4 — Modale/feuille recadrée au-dessus du clavier virtuel.
-   La classe est posée par makeDialog ; le décalage exploite --kb-inset. */
-.up-kb-aware {
-    transition: transform 0.18s ease;
-}
-body.up-kb-open .up-kb-aware {
-    transform: translateY(calc(-1 * var(--kb-inset) * 0.5));
 }
 
 /* ---------------------------------------------------------------------------
@@ -1207,7 +1057,10 @@ body.up-kb-open .up-kb-aware {
             font-weight: 500;
         }
 
-        .chip-btn.selected {
+        /* C5 — `.chip-btn.selected` et `.quick-edit-btn.selected` avaient des
+           déclarations identiques : un seul sélecteur groupé. */
+        .chip-btn.selected,
+        .quick-edit-btn.selected {
             background-color: var(--accent-fill);
             color: var(--tac-paper-50);
             border-color: var(--accent-blue);
@@ -2128,38 +1981,26 @@ body.up-kb-open .up-kb-aware {
             letter-spacing: 0.5px;
         }
 
+        /* C5 — `.modal-body`/`.modal-footer` étaient déclarés deux fois. Fusion
+           en préservant la valeur EFFECTIVE (la seconde déclaration l'emportait
+           pour padding, background, border-top ; les propriétés présentes
+           seulement dans la première — flex, backdrop-filter — sont conservées). */
         .modal-body {
             flex: 1;
             overflow-y: auto;
-            padding: var(--space-5);
-            -webkit-overflow-scrolling: touch;
-        }
-
-        .modal-footer {
-            flex-shrink: 0;
-            padding: 20px var(--space-5);
-            border-top: 1px solid var(--border-light);
-            background: color-mix(in srgb, var(--bg-body) 95%, transparent);
-            backdrop-filter: blur(10px);
-            -webkit-backdrop-filter: blur(10px);
-            position: sticky;
-            bottom: 0;
-            z-index: var(--tac-z-skip);
-            display: flex;
-            gap: var(--space-3);
-        }
-
-        .modal-body {
             padding: 20px;
-            overflow-y: auto;
+            -webkit-overflow-scrolling: touch;
             max-height: calc(90vh - 140px);
             scrollbar-width: thin;
         }
 
         .modal-footer {
+            flex-shrink: 0;
             padding: 15px 20px;
-            background: var(--bg-body);
             border-top: 1px solid var(--border-color);
+            background: var(--bg-body);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
             position: sticky;
             bottom: 0;
             z-index: var(--tac-z-skip);
@@ -2298,12 +2139,7 @@ body.up-kb-open .up-kb-aware {
             color: var(--text-primary);
             background: var(--bg-interactive);
         }
-        .quick-edit-btn.selected {
-            background-color: var(--accent-fill);
-            color: var(--tac-paper-50);
-            border-color: var(--accent-blue);
-            box-shadow: 0 2px 8px var(--accent-glow);
-        }
+        /* .quick-edit-btn.selected : groupé avec .chip-btn.selected (voir plus haut, C5). */
 
         /* Desktop : fiche en 2 colonnes (zéro scroll). */
         @media (min-width: 768px) {
@@ -2416,15 +2252,8 @@ body.up-kb-open .up-kb-aware {
             margin: 0 var(--space-1);
         }
 
-        .number-input-group {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            background: rgba(255,255,255,0.03);
-            padding: var(--space-1);
-            border-radius: var(--radius-sm);
-            border: 1px solid rgba(255,255,255,0.05);
-        }
+        /* C5 — `.number-input-group` (déclaré deux fois) et son enfant `input`
+           n'étaient jamais employés : supprimés. */
 
         .annotation-toolbar input[type="range"] {
             accent-color: #3b82f6;
@@ -2662,26 +2491,6 @@ body.up-kb-open .up-kb-aware {
         .tool-btn.compact { padding: 6px 12px; font-size: 0.8rem; }
         .tool-btn.danger { color: #fca5a5; }
         .tool-btn.danger:hover { background: rgba(239, 68, 68, 0.2); border-color: #ef4444; color: #ef4444; }
-
-        .number-input-group {
-            display: flex;
-            align-items: center;
-            background: rgba(255,255,255,0.05);
-            border-radius: 10px;
-            border: 1px solid rgba(255,255,255,0.1);
-            overflow: hidden;
-            height: 44px;
-        }
-        
-        .number-input-group input {
-            width: 50px;
-            background: transparent;
-            border: none;
-            color: white;
-            text-align: center;
-            font-family: 'JetBrains Mono', monospace;
-            font-size: 1rem;
-        }
 
         @media (min-width: 1024px) {
             .annotation-wrapper {
@@ -3992,52 +3801,12 @@ body.up-kb-open .up-kb-aware {
             }
         }
 
-        /* Modale de Chargement PDF (V6.10) */
+        /* Modale de Chargement PDF (V6.10). C3 — voile, carte et sphère communs
+           à PC-Tac : voir styles/ui-platform.css (.tac-busy-overlay /
+           .tac-busy-card / .tac-orb). Restent les valeurs propres à l'OI. */
         #pdfLoadingModal {
-            display: none;
-            position: fixed;
-            top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(0, 0, 0, 0.7);
-            backdrop-filter: blur(10px);
             z-index: var(--z-modal-top);
-            align-items: center; justify-content: center;
-            flex-direction: column;
             color: var(--text-primary);
-            transition: all var(--tac-duration-normal) ease;
-        }
-        .pdf-loading-card {
-            background: var(--bg-container);
-            border: 1px solid var(--border-light);
-            padding: 40px;
-            border-radius: var(--radius-lg);
-            text-align: center;
-            box-shadow: var(--shadow-float);
-            max-width: 350px; width: 85%;
-            display: flex; flex-direction: column; align-items: center; gap: 20px;
-        }
-        /* Sphere d'attente (shared/orb.ts) — meme indicateur que PC-Tac. Le
-           disque tournant precedent pressait l'oeil pendant des generations de
-           PDF de plusieurs dizaines de secondes. */
-        .tac-orb {
-            width: 72px;
-            height: 72px;
-            flex-shrink: 0;
-        }
-
-        .tac-orb-message {
-            animation: tac-orb-breath 2.6s var(--ease-in-out) infinite;
-        }
-
-        @keyframes tac-orb-breath {
-            0%, 100% { opacity: 0.62; }
-            50% { opacity: 1; }
-        }
-
-        @media (prefers-reduced-motion: reduce) {
-            .tac-orb-message {
-                animation: none;
-                opacity: 1;
-            }
         }
         #pdfLoadingStatus {
             font-family: 'JetBrains Mono', monospace;
@@ -4133,8 +3902,7 @@ body.up-kb-open .up-kb-aware {
             position: relative;
         }
 
-        .modal-content > div[style*="overflow-y: auto"],
-        .modal-content .tools-sections-container {
+        .modal-content > div[style*="overflow-y: auto"] {
             overflow-y: auto;
             flex: 1;
         }
@@ -4317,17 +4085,9 @@ body.up-kb-open .up-kb-aware {
             display: flex;
         }
 
-        .oi-layers-section-title {
-            margin: 6px 0 2px;
-            font-family: var(--font-ui);
-            font-size: 0.7em;
-            font-weight: 700;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-            color: var(--text-muted);
-        }
-
-        .oi-layers-section:first-child .oi-layers-section-title {
+        /* C4 — la déclaration de base vit dans styles/ui-platform.css
+           (.tac-layers-section-title) ; ne restent que les surcharges locales. */
+        .oi-layers-section:first-child .tac-layers-section-title {
             margin-top: 0;
         }
 
@@ -4386,12 +4146,15 @@ body.up-kb-open .up-kb-aware {
             font-size: 22px;
         }
 
+        /* C7 — pastilles de 20px portées par .up-tap-target (cible 44px) : gap et
+           largeur augmentés (44 = 20 + 24 par colonne de deux) pour que les
+           cibles voisines ne se recouvrent pas. */
         #oi_carto_draw_colors {
             display: flex;
             flex-wrap: wrap;
             justify-content: center;
-            gap: var(--space-1);
-            width: 48px;
+            gap: 24px;
+            width: 64px;
         }
 
         .oi-carto-draw-color {
@@ -4641,67 +4404,9 @@ body.up-kb-open .up-kb-aware {
             gap: var(--space-2);
         }
 
-        /* Légende repliable (pattern .pctac-plan-legend) — variables sémantiques
-           thème clair/sombre déjà résolues par oi.css (--bg-container, etc.) */
-        .oi-carto-legend {
-            position: absolute;
-            bottom: 12px;
-            right: 12px;
-            z-index: var(--z-panel);
-            background: var(--bg-container);
-            border: 1px solid var(--border-color);
-            border-radius: var(--radius-sm);
-            box-shadow: var(--shadow-lg);
-            font-size: 0.85em;
-            max-width: 70%;
-            color: var(--text-primary);
-        }
-
-        .oi-carto-legend[hidden] {
-            display: none;
-        }
-
-        .oi-carto-legend-summary {
-            cursor: pointer;
-            padding: 8px 12px;
-            display: flex;
-            align-items: center;
-            gap: 6px;
-            font-weight: 600;
-            list-style: none;
-        }
-
-        .oi-carto-legend-summary::-webkit-details-marker,
-        .oi-carto-legend-summary::marker {
-            display: none;
-        }
-
-        .oi-carto-legend-items {
-            display: flex;
-            gap: 12px;
-            align-items: center;
-            flex-wrap: wrap;
-            padding: 2px 12px 10px;
-        }
-
-        .oi-carto-legend-item {
-            display: inline-flex;
-            align-items: center;
-            gap: 5px;
-        }
-
-        .oi-carto-legend-dot {
-            width: 12px;
-            height: 12px;
-            border-radius: 50%;
-            display: inline-block;
-        }
-
-        /* Couleurs = OI_PIN_DEFS (src/apps/oi/carto/constants.ts:95-111) */
-        .oi-carto-legend-dot--force { background: #3b82f6; }
-        .oi-carto-legend-dot--target { background: #ef4444; }
-        .oi-carto-legend-dot--rassemblement { background: #22c55e; }
-        .oi-carto-legend-dot--generic { background: #a1a1aa; }
+        /* C6 — bloc `.oi-carto-legend*` supprimé : aucun élément ne porte ces
+           classes (grep HTML/src/tests, code mort) ; PC-Tac garde sa propre
+           légende `.pctac-plan-legend`. */
 
         /* --- Photo↔pin (parité PC-Tac) : badge sur le marker + panneaux --- */
 
@@ -4828,14 +4533,8 @@ body.up-kb-open .up-kb-aware {
                 height: 46px;
             }
 
-            .oi-carto-legend {
-                font-size: 0.75em;
-            }
-
-            /* Dock dessin ouvert : masquer la légende (même règle que PC-Tac) */
-            #oi_carto_draw_dock.open ~ .oi-carto-legend {
-                display: none;
-            }
+            /* C6 — règles `.oi-carto-legend` (média inclus) supprimées avec le
+               bloc de légende mort ci-dessus. */
 
             /* Panneau Calques en feuille compacte, ancrée au même bord que le
                rail : ne doit ni déborder ni couvrir le centre de la carte,
