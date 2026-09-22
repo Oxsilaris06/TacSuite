@@ -120,6 +120,27 @@ describe('bascule', () => {
         initSplitView();
         expect(document.body.classList.contains('is-split')).toBe(false);
     });
+
+    it('survit au switchMainView de démarrage (les deux panneaux restent actifs)', () => {
+        // Reproduction du démarrage : `initSplitView()` remonte l'écran
+        // mémorisé, puis `main.ts` restaure la dernière vue d'onglet via
+        // `UI.switchMainView(lastView)`. Ce second appel retirait `.active`
+        // aux vues déplacées dans les panneaux, laissant un panneau vide
+        // jusqu'au rechargement suivant.
+        localStorage.setItem('pcTacSplit', JSON.stringify({ on: true, left: 'view-main-courante', right: 'view-plan', ratio: 50 }));
+        localStorage.setItem('lastView', 'view-main-courante');
+        monterLeSquelette();
+        initSplitView();
+
+        UI.switchMainView('view-main-courante');
+
+        const gauche = document.getElementById('splitPaneLeft')?.querySelector('.tab-content-view');
+        const droite = document.getElementById('splitPaneRight')?.querySelector('.tab-content-view');
+        expect(gauche?.id).toBe('view-main-courante');
+        expect(droite?.id).toBe('view-plan');
+        expect(gauche?.classList.contains('active')).toBe(true);
+        expect(droite?.classList.contains('active')).toBe(true);
+    });
 });
 
 describe('choix des panneaux', () => {

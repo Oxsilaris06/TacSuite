@@ -340,6 +340,11 @@ export const UI: UIContract = {
       btn.setAttribute('aria-selected', String(active)); // U10 (a11y onglets)
     });
     document.querySelectorAll('.tab-content-view').forEach((view) => {
+      // En écran scindé, split-view.ts gouverne la visibilité des vues
+      // montées dans ses panneaux. Les retirer ici viderait un panneau :
+      // `main.ts` appelle `switchMainView(lastView)` APRÈS `initSplitView()`,
+      // ce qui cassait un écran scindé mémorisé à chaque rechargement.
+      if (document.body.classList.contains('is-split') && view.closest('.split-view')) return;
       view.classList.toggle('active', view.id === viewId);
     });
     if (viewId === 'view-adversaires') this.renderAdversaries();
