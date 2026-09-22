@@ -14,6 +14,9 @@
  *     celui où l'on ne travaille pas se périme.
  *   - un écran trop étroit refuse la scission au lieu de produire deux
  *     colonnes illisibles.
+ *   - Échap ferme l'écran scindé, sauf quand un dialogue l'attend en premier ;
+ *     quitter le plein écran ferme aussi, et un refus de plein écran (iOS)
+ *     laisse la scission intacte.
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -151,6 +154,50 @@ describe('choix des panneaux', () => {
         monterLeSquelette();
         initSplitView();
         expect(document.getElementById('splitView')?.style.getPropertyValue('--split-ratio')).toBe('75%');
+    });
+});
+
+describe('sortie et plein écran', () => {
+    it('ferme l\'écran scindé sur Échap', () => {
+        toggleSplit();
+        expect(document.body.classList.contains('is-split')).toBe(true);
+
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+
+        expect(document.body.classList.contains('is-split')).toBe(false);
+    });
+
+    it('laisse Échap au dialogue ouvert', () => {
+        toggleSplit();
+        const dialog = document.createElement('dialog');
+        dialog.open = true;
+        document.body.appendChild(dialog);
+
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+
+        expect(document.body.classList.contains('is-split')).toBe(true);
+    });
+
+    it('ferme l\'écran scindé si le plein écran est quitté', () => {
+        toggleSplit();
+        // Quitter le plein écran par le navigateur : plus d'élément plein écran.
+        Object.defineProperty(document, 'fullscreenElement', { value: null, configurable: true });
+        document.dispatchEvent(new Event('fullscreenchange'));
+
+        expect(document.body.classList.contains('is-split')).toBe(false);
+    });
+
+    it('reste scindé si requestFullscreen est refusé', async () => {
+        const req = vi.fn(() => Promise.reject(new Error('refus')));
+        Object.defineProperty(document.documentElement, 'requestFullscreen', {
+            value: req, configurable: true, writable: true,
+        });
+
+        toggleSplit();
+        await Promise.resolve();
+
+        expect(req).toHaveBeenCalled();
+        expect(document.body.classList.contains('is-split')).toBe(true);
     });
 });
 

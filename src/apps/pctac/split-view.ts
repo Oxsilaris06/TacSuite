@@ -89,6 +89,17 @@ let state: SplitState = { ...DEFAULT_STATE };
 /** Parent d'origine des vues, pour les remettre exactement d'où elles viennent. */
 let viewsHome: HTMLElement | null = null;
 
+/**
+ * Écouteurs posés sur `document`/`window`. Gardés pour être RETIRÉS avant
+ * réinstallation : `initSplitView()` est rappelable (rendu initial, gabarit
+ * remonté), et sans ce retrait les écouteurs s'empileraient — un seul Échap
+ * fermerait puis rouvrirait l'écran selon la parité du nombre d'écouteurs.
+ */
+let onData: (() => void) | null = null;
+let onResize: (() => void) | null = null;
+let onKeydown: ((e: KeyboardEvent) => void) | null = null;
+let onFullscreenChange: (() => void) | null = null;
+
 function panes(): { root: HTMLElement | null; left: HTMLElement | null; right: HTMLElement | null } {
     return {
         root: document.getElementById('splitView'),
@@ -204,6 +215,51 @@ function applySplit(): void {
     refreshBoth();
     // MapLibre ne connaît pas sa nouvelle largeur tant qu'on ne le lui dit pas.
     window.PlanMap?.refresh();
+    notifyResize();
+}
+
+/** Prévient la carte que sa boîte a changé. `planmap/` n'écoute aucun
+ *  `resize` : c'est l'événement émis ici que MapLibre (option `trackResize`)
+ *  rattrape pour se redimensionner. Appelé sur changement de ratio et au
+ *  montage, jamais pendant le glissement — même raison que le `refresh()`
+ *  différé : redimensionner la carte à chaque image ferait ramer le geste. */
+function notifyResize(): void {
+    window.dispatchEvent(new Event('resize'));
+}
+
+function updateDockButton(): void {
+    const btn = document.getElementById('splitViewDockBtn');
+    if (!btn) return;
+    btn.classList.toggle('is-active', state.on);
+    btn.setAttribute('aria-pressed', String(state.on));
+}
+
+/**
+ * Demande le plein écran à l'activation par le dock (geste utilisateur). Un
+ * refus (iOS, politique du navigateur) est SANS EFFET sur l'écran scindé, qui
+ * doit tenir dans la fenêtre de toute façon : l'API renvoie une promesse, et
+ * un navigateur qui n'expose pas la méthode est simplement ignoré.
+ */
+function enterFullscreen(): void {
+    const el = document.documentElement;
+    if (typeof el.requestFullscreen !== 'function') return;
+    try {
+        el.requestFullscreen().catch(() => { /* refus : la scission tient sans */ });
+    } catch {
+        /* idem, navigateur refusant hors promesse */
+    }
+}
+
+/** Quitte le plein écran seulement si quelqu'un l'a posé : `exitFullscreen`
+ *  sur un document déjà en fenêtre rejette et ferait du bruit. */
+function exitFullscreen(): void {
+    if (!document.fullscreenElement) return;
+    if (typeof document.exitFullscreen !== 'function') return;
+    try {
+        document.exitFullscreen().catch(() => { /* best-effort */ });
+    } catch {
+        /* best-effort */
+    }
 }
 
 export function toggleSplit(): void {
@@ -212,12 +268,10 @@ export function toggleSplit(): void {
         return;
     }
     state.on = !state.on;
+    if (state.on) enterFullscreen();
+    else exitFullscreen();
     writeState(state);
-    const btn = document.getElementById('splitViewDockBtn');
-    if (btn) {
-        btn.classList.toggle('is-active', state.on);
-        btn.setAttribute('aria-pressed', String(state.on));
-    }
+    updateDockButton();
     applySplit();
 }
 
@@ -248,6 +302,7 @@ function wireDivider(divider: HTMLElement, root: HTMLElement): void {
         // La carte n'apprend sa nouvelle largeur qu'une fois le geste fini :
         // la redimensionner à chaque image ferait ramer le glissement.
         window.PlanMap?.refresh();
+        notifyResize();
     };
     divider.addEventListener('pointerup', release);
     divider.addEventListener('pointercancel', release);
@@ -257,6 +312,7 @@ function wireDivider(divider: HTMLElement, root: HTMLElement): void {
         applyRatio();
         writeState(state);
         window.PlanMap?.refresh();
+        notifyResize();
     });
 
     // Un séparateur doit être déplaçable au clavier, sinon il n'existe pas
@@ -269,6 +325,7 @@ function wireDivider(divider: HTMLElement, root: HTMLElement): void {
         applyRatio();
         writeState(state);
         window.PlanMap?.refresh();
+        notifyResize();
     });
 }
 
@@ -293,19 +350,43 @@ export function initSplitView(): void {
 
     const btn = document.getElementById('splitViewDockBtn');
     if (btn) {
-        btn.setAttribute('aria-pressed', String(state.on));
-        btn.classList.toggle('is-active', state.on);
-        btn.addEventListener('click', () => toggleSplit());
+        updateDockButton();
+        // Affectation, pas addEventListener : un second appel réinstalle au
+        // lieu d'empiler un écouteur de plus.
+        btn.onclick = () => toggleSplit();
     }
 
-    // Mise à jour permanente des deux panneaux (cf. en-tête de fichier).
-    document.addEventListener('pctac:data', () => refreshBoth());
+    // Réinstallation propre des écouteurs globaux (cf. commentaire des `on*`).
+    if (onData) document.removeEventListener('pctac:data', onData);
+    onData = () => refreshBoth();
+    document.addEventListener('pctac:data', onData);
 
-    // L'écran rétrécit sous le seuil (rotation, fenêtre réduite) : on sort
-    // plutôt que de laisser deux colonnes illisibles.
-    window.addEventListener('resize', () => {
+    if (onResize) window.removeEventListener('resize', onResize);
+    onResize = () => {
+        // L'écran rétrécit sous le seuil (rotation, fenêtre réduite) : on sort
+        // plutôt que de laisser deux colonnes illisibles.
         if (state.on && window.innerWidth < MIN_WIDTH) toggleSplit();
-    });
+    };
+    window.addEventListener('resize', onResize);
+
+    // Échap ferme l'écran scindé. Un `<dialog>` ouvert capte Échap en premier
+    // (fermeture du dialogue) : on ne lui vole pas la touche.
+    if (onKeydown) document.removeEventListener('keydown', onKeydown);
+    onKeydown = (e: KeyboardEvent) => {
+        if (e.key !== 'Escape' || !state.on) return;
+        if (document.querySelector('dialog[open]')) return;
+        toggleSplit();
+    };
+    document.addEventListener('keydown', onKeydown);
+
+    // Quitter le plein écran par le navigateur (Échap système, bouton de la
+    // barre) laisserait un état à moitié plein écran, qui se lit comme un
+    // bogue : on ferme l'écran scindé avec.
+    if (onFullscreenChange) document.removeEventListener('fullscreenchange', onFullscreenChange);
+    onFullscreenChange = () => {
+        if (state.on && !document.fullscreenElement) toggleSplit();
+    };
+    document.addEventListener('fullscreenchange', onFullscreenChange);
 
     if (state.on) applySplit();
 }
