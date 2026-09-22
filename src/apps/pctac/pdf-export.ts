@@ -380,9 +380,11 @@ export const PdfExport: PdfExportContract = {
                 pdfPage().drawText(sanitizeWinAnsi(entry.heure), { x: currentX, y: context.y, size: 9, font, color: themeColors.text });
                 currentX += colWidths[0];
 
-                // Style Pax (Couleur)
+                // Style Pax (Couleur). Le libellé suit la situation (« Inter »
+                // devient « Recherches » en Recherche de personnes) ; la clé
+                // stockée, elle, ne change jamais.
                 let pColor = pdfRgb(0.5, 0.5, 0.5);
-                const pText = entry.pax || '';
+                const pText = mode.paxChipLabels[entry.pax] ?? entry.pax ?? '';
                 let hexColor = '#888888';
                 if (entry.paxMode === 'standard') {
                     const cfg = PDF_PAX_COLORS[entry.pax] ?? PDF_PAX_COLORS['Autre'];

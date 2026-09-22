@@ -68,6 +68,10 @@ export const PDF_PAX_COLORS: Record<string, PctacPaxColorEntry> = {
     Inter: { text: 'Inter', color: '#3498db', fontColor: '#ffffff' },
     Nego: { text: 'Nego', color: '#2ecc71', fontColor: '#000000' },
     Oscar: { text: 'Oscar', color: '#10b981', fontColor: '#000000' },
+    // D1-PAX — cinquième pastille de la situation TP.
+    IS: { text: 'IS', color: '#8b5cf6', fontColor: '#ffffff' },
+    // D1-PAX — cinquième pastille de la situation Événement d'ampleur.
+    Secours: { text: 'Secours', color: '#f97316', fontColor: '#000000' },
     Autre: { text: 'Autre', color: '#2d2d2d', fontColor: '#e0e0e0' },
 };
 
