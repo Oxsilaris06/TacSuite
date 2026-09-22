@@ -471,6 +471,62 @@ body.up-kb-open .up-kb-aware {
         }
 
         /* ════════════════════════════════════════════════════════════════
+         * SECTION : FAVORIS DE LA MAIN COURANTE
+         * Etoile par entree + filtre d'en-tete. L'etoile vide reste discrete
+         * (elle est presente sur CHAQUE ligne) et ne prend sa couleur qu'une
+         * fois posee : sinon le journal se transforme en sapin.
+         * ════════════════════════════════════════════════════════════════ */
+        .log-favori-btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 28px;
+            min-height: 28px;
+            padding: var(--tac-zero);
+            background: transparent;
+            border: none;
+            border-radius: var(--radius-sm);
+            color: var(--text-muted);
+            cursor: pointer;
+            opacity: 0.45;
+            transition: opacity var(--transition-fast), color var(--transition-fast), transform 100ms var(--ease-in-out);
+        }
+
+        .log-favori-btn .material-symbols-outlined {
+            font-size: 18px;
+        }
+
+        .log-favori-btn:hover,
+        .log-favori-btn:focus-visible {
+            opacity: 1;
+            color: var(--civil-yellow);
+        }
+
+        .log-favori-btn:active {
+            transform: scale(0.9);
+        }
+
+        .log-favori-btn.is-favori {
+            opacity: 1;
+            color: var(--civil-yellow);
+        }
+
+        /* Le filtre d'en-tete s'allume quand il est pose : sans ce repere, un
+           journal filtre se lit comme un journal vide. */
+        .th-action-btn.is-active {
+            color: var(--civil-yellow);
+            background: rgba(240, 181, 62, 0.14);
+        }
+
+        /* Pointeur grossier : pas de survol, l'etoile vide doit rester
+           assez visible pour qu'on sache qu'elle est cliquable. */
+        @media (hover: none) and (pointer: coarse) {
+            .log-favori-btn {
+                opacity: 0.7;
+            }
+        }
+
+        /* ════════════════════════════════════════════════════════════════
          * SECTION : SITUATION OPERATIONNELLE (modes.ts / mode-ui.ts)
          * Selecteur segmente en haut a droite. Quatre options exclusives dont
          * une est toujours active : meme semantique qu'un groupe radio, d'ou
