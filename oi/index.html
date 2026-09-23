@@ -269,6 +269,16 @@
             <span class="material-symbols-outlined log-btn-icon" aria-hidden="true">terminal</span> LOG
         </button>
         <h1>Générateur d'OI</h1>
+        <!-- OI complète / OI express (sections-ui.ts) : l'express ne montre que
+             Situation, Mission, Exécution et PATRACDVR, et produit un PDF court. -->
+        <div id="oiModeToggle" class="oi-mode-toggle" role="radiogroup" aria-label="Type d'OI">
+            <button type="button" role="radio" class="oi-mode-option" data-oi-mode="complete" aria-checked="true" tabindex="0">
+                <span class="material-symbols-outlined" aria-hidden="true">description</span> OI complète
+            </button>
+            <button type="button" role="radio" class="oi-mode-option" data-oi-mode="express" aria-checked="false" tabindex="-1">
+                <span class="material-symbols-outlined" aria-hidden="true">bolt</span> OI express
+            </button>
+        </div>
 
         <ul class="wizard-progress">
             <li class="wizard-progress-step" data-action="go-to-step" data-step="0"><span class="material-symbols-outlined wizard-step-icon">info</span>1. Situation</li>
@@ -291,6 +301,31 @@
                     <label for="situation_generale">1.1 Générale:</label><textarea id="situation_generale" data-action="sync-dom-to-store"></textarea>
                     <label for="situation_particuliere">1.2 Particulière:</label><textarea
                         id="situation_particuliere" data-action="sync-dom-to-store"></textarea>
+
+                    <!-- OI express seulement : les trois photos qui servent à l'exécution
+                         (le PDF express les met en page 2). Masqué en OI complète. -->
+                    <div class="oi-express-only oi-express-photos">
+                        <h3><span class="material-symbols-outlined" aria-hidden="true">photo_camera</span> Photos</h3>
+                        <div class="oi-express-photo-buttons">
+                            <button type="button" class="add-btn btn-flex-center" data-action="trigger-file-input" data-target="photo_container_express_objectif_input">
+                                <span class="material-symbols-outlined" aria-hidden="true">home_pin</span> Objectif
+                            </button>
+                            <input type="file" id="photo_container_express_objectif_input" class="photo-input sr-only-input" accept="image/*" multiple
+                                data-action="handle-file-change" data-preview-container="photo_container_express_objectif_preview_container" data-single="false">
+                            <button type="button" class="add-btn btn-flex-center" data-action="trigger-file-input" data-target="photo_container_express_adversaire_input">
+                                <span class="material-symbols-outlined" aria-hidden="true">person_search</span> Adversaire
+                            </button>
+                            <input type="file" id="photo_container_express_adversaire_input" class="photo-input sr-only-input" accept="image/*" multiple
+                                data-action="handle-file-change" data-preview-container="photo_container_express_adversaire_preview_container" data-single="false">
+                            <button type="button" class="add-btn btn-flex-center" id="expressCartoCaptureBtn">
+                                <span class="material-symbols-outlined" aria-hidden="true">map</span> Carte
+                            </button>
+                        </div>
+                        <p class="hint-text-block">« Carte » ouvre la cartographie : cadrez, activez le carroyage si besoin, puis « Capture » vers « OI express — Carte ».</p>
+                        <div id="photo_container_express_objectif_preview_container" class="image-preview-container"></div>
+                        <div id="photo_container_express_adversaire_preview_container" class="image-preview-container"></div>
+                        <div id="photo_container_express_carte_preview_container" class="image-preview-container"></div>
+                    </div>
                 </div>
 
                 <div class="wizard-step" data-oi-section="adversaires">
@@ -666,6 +701,9 @@ Gestuelle et visuelle entre les éléments INDIA</textarea>
         <div class="wizard-nav">
             <button class="wizard-nav-btn" id="prevBtn" type="button">Précédent</button>
             <button class="wizard-nav-btn" id="nextBtn" type="button">Suivant</button>
+            <!-- OI express : l'aperçu de l'étape Finalisation (masquée) est doublé ici. -->
+            <button class="wizard-nav-btn" id="expressPreviewBtn" type="button" style="display: none;">Aperçu de l'OI express <span
+                    class="material-symbols-outlined icon-1-2em" aria-hidden="true">visibility</span></button>
         </div>
         <footer id="main-footer">
             © G/ Maheux

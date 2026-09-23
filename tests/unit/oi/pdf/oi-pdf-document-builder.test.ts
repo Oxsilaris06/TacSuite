@@ -2500,8 +2500,77 @@ describe('buildOiDocDefinition — sections retirées et titres personnalisés',
         expect(json).not.toContain('CIBLES(S)');
     });
 
-    it('le mode express a ses propres sections retirées', () => {
-        const fd: OiFormData = { ...base([]), oi_mode: 'express', oi_sections: { complete: { removed: ['rame'], titles: {} } } };
-        expect(render(fd)).toContain('"text":"Ordre Rame VL"');
+    it('le mode express a ses propres sections retirées : un retrait fait en complète ne le touche pas', () => {
+        const fd: OiFormData = { ...base([]), oi_mode: 'express', oi_sections: { complete: { removed: ['chronologie'], titles: {} } } };
+        expect(render(fd)).toContain('Top');
+    });
+});
+
+// ===========================================================================
+// OI express (décision Nico 2026-09-24) : deux pages au plus — l'ordre, puis
+// les photos objectif / adversaire / carte.
+// ===========================================================================
+describe('buildOiDocDefinition — OI express', () => {
+    const member: OiPatracMember = {
+        trigramme: 'ABC', fonction: 'Chef inter', cellule: 'India 1', principales: 'UMP9, G36',
+        secondaires: 'PSA', afis: 'Sans', grenades: 'GENL', equipement: 'Sans',
+        equipement2: 'Sans', tenue: 'UBAS', gpb: 'Sans', dir: '',
+    };
+    const express = (extra: Partial<OiFormData> = {}): OiFormData => ({
+        oi_mode: 'express',
+        date_op: '2026-09-24',
+        situation_generale: 'Individu retranché',
+        missions_psig: 'INTERPELLER L’OBJECTIF',
+        heure_execution: '06:00',
+        action_body_text: 'Bouclage puis investissement',
+        time_events: [{ type: 'T4', hour: '06:00', description: 'TOP ACTION' }],
+        patracdvr_rows: [{ vehicle: 'VL1', members: [member] }],
+        adversaries: [{ id: 'a1', nom_adversaire: 'X', me_list: [], etat_esprit_list: [], volume_list: [], vehicules_list: [] }],
+        amies: 'Brigade',
+        cat_generales: 'Rester groupés',
+        ...extra,
+    });
+
+    it('page 1 : situation, mission, exécution, PATRACDVR ; rien de l’OI complète (garde, environnement, CAT…)', () => {
+        const dd = buildOiDocDefinition(collect(express()), { format: 'a4' });
+        const json = JSON.stringify(dd);
+        expect(json).toContain('OI EXPRESS');
+        expect(json).toContain('INTERPELLER');
+        expect(json).toContain('TOP ACTION');
+        expect(json).toContain('"text":"UMP9 /\\nG36"');
+        for (const absent of ['ORDRE INITIAL', 'ENVIRONNEMENT ET AMIS', 'CONDUITES À TENIR', 'CIBLES(S)', 'ARTICULATION']) {
+            expect(json).not.toContain(absent);
+        }
+        expect((dd.content as unknown[]).length).toBe(1);
+    });
+
+    it('page 2 : une photo par emplacement, légendée, sur une seule page — jamais plus de deux pages', () => {
+        const fd = express({
+            dynamic_photos: {
+                photo_container_express_objectif_preview_container: [
+                    { id: 'o1', annotations: '[]', tools: '[]', other_tools: '', customTitle: '' },
+                    { id: 'o2', annotations: '[]', tools: '[]', other_tools: '', customTitle: '' },
+                ],
+                photo_container_express_carte_preview_container: [{ id: 'c1', annotations: '[]', tools: '[]', other_tools: '', customTitle: 'Carroyage 50 m' }],
+            },
+        });
+        const img = 'data:image/jpeg;base64,/9j/';
+        const dd = buildOiDocDefinition(collect(fd, { o1: img, o2: img, c1: img }), { format: 'a4' });
+        const json = JSON.stringify(dd);
+        expect((dd.content as unknown[]).length).toBe(2);
+        expect(json).toContain('"text":"Objectif"');
+        expect(json).toContain('"text":"Carroyage 50 m"');
+        expect(json).not.toContain('"text":"Adversaire"'); // pas de photo adversaire : pas de case vide
+    });
+
+    it('chronologie retirée en express : absente de la page 1', () => {
+        const json = JSON.stringify(buildOiDocDefinition(collect(express({ oi_sections: { express: { removed: ['chronologie'], titles: {} } } })), { format: 'a4' }));
+        expect(json).not.toContain('TOP ACTION');
+    });
+
+    it('le même contenu en mode complète produit l’OI complète (garde incluse)', () => {
+        const json = JSON.stringify(buildOiDocDefinition(collect(express({ oi_mode: 'complete' })), { format: 'a4' }));
+        expect(json).toContain('ORDRE INITIAL');
+        expect(json).not.toContain('OI EXPRESS');
     });
 });

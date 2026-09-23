@@ -336,6 +336,17 @@ describe('oi-formulaires — persistance du formulaire OI', () => {
             expect(alertsHtml).toContain('opération');
         });
 
+        it("OI express : pas d'alerte « aucun adversaire » (étape masquée), mais une mission vide est signalée", async () => {
+            localStorage.setItem('tactical_oi_data', JSON.stringify({ oi_mode: 'express', date_op: '2026-08-01', missions_psig: '   ' }));
+            await import('@oi/formulaires.js');
+
+            window.checkCoherence();
+
+            const alertsHtml = document.getElementById('coherence_alerts_container')?.innerHTML ?? '';
+            expect(alertsHtml).not.toContain('adversaire');
+            expect(alertsHtml).toContain('mission');
+        });
+
         it('signale une chronologie incomplète (< 3 étapes)', async () => {
             localStorage.setItem('tactical_oi_data', JSON.stringify({
                 date_op: '2026-08-01',

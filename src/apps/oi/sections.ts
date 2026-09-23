@@ -185,3 +185,31 @@ export function applySectionRemovals(fd: OiFormData): OiFormData {
     if (gone('liaison')) out.cat_liaison = '';
     return out;
 }
+
+// ─── Mode express (décision Nico 2026-09-24, DevSYNCState §3 n° 12) ─────────
+
+/** Étapes (0-based) de l'OI express : Situation, Mission, Exécution, PATRACDVR. */
+export const OI_EXPRESS_STEPS: readonly number[] = [0, 3, 4, 6];
+
+/** Emplacements photo propres à l'express (étape Situation), dans l'ordre du PDF. */
+export const OI_EXPRESS_PHOTO_CONTAINERS = [
+    { id: 'photo_container_express_objectif_preview_container', label: 'Objectif' },
+    { id: 'photo_container_express_adversaire_preview_container', label: 'Adversaire' },
+    { id: 'photo_container_express_carte_preview_container', label: 'Carte' },
+] as const;
+
+/** Une étape est visible en complète, ou si elle fait partie du socle express. */
+export function isStepVisible(fd: OiFormData | null | undefined, index: number): boolean {
+    return currentOiMode(fd) === 'complete' || OI_EXPRESS_STEPS.includes(index);
+}
+
+/**
+ * Étape visible la plus proche dans le sens `dir` (+1 suivant, −1 précédent)
+ * à partir de `from` inclus ; `null` s'il n'y en a pas dans ce sens.
+ */
+export function nearestVisibleStep(fd: OiFormData | null | undefined, from: number, dir: 1 | -1, count: number): number | null {
+    for (let i = from; i >= 0 && i < count; i += dir) {
+        if (isStepVisible(fd, i)) return i;
+    }
+    return null;
+}

@@ -106,6 +106,11 @@ export const CaptureMethods = {
     // oi_cartographie.js:1185-1210
     _getPhotoTargets(): OiCartoPhotoTarget[] {
         const targets: OiCartoPhotoTarget[] = [
+            // OI express : photo « Carte » de l'étape Situation, proposée EN PREMIER
+            // (donc par défaut) seulement en mode express.
+            ...(document.body.classList.contains('oi-express')
+                ? [{ id: 'photo_container_express_carte_preview_container', label: 'OI express — Carte' }]
+                : []),
             { id: 'photo_container_transport_pr_preview_container', label: 'Transport PSIG → PR' },
             { id: 'photo_container_transport_domicile_preview_container', label: 'Transport PR → Domicile / LE' },
         ];
