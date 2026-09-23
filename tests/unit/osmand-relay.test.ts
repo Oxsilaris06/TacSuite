@@ -16,7 +16,7 @@ import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { startRelay, type Relay } from '../../tools/osmand-relay/relay.mjs';
+import { startRelay, clientIp, type Relay } from '../../tools/osmand-relay/relay.mjs';
 
 const READ_KEY = 'a'.repeat(64);
 const OP_TOKEN = 'b'.repeat(32);
@@ -200,7 +200,7 @@ describe('Relais OsmAnd — lecture /positions', () => {
     expect(parsed.operators[0]?.id).toHaveLength(12);
   });
 
-  it('ne rend que les points reçus après `since`', async () => {
+  it('ne rend que les points reçus depuis `since`, borne incluse (D-6)', async () => {
     const { file } = makeTokensFile({ [OP_TOKEN]: { nom: 'Dupont', fonction: 'Inter' } });
     let clock = Date.now();
     const relay = await start(file, { now: () => clock });
@@ -210,8 +210,62 @@ describe('Relais OsmAnd — lecture /positions', () => {
     clock += 50;
     await sendPoint(relay, OP_TOKEN, { lat: 48.1, lon: 2.1, ts: clock - 1000 });
 
+    // Depuis `first.now` : le premier point a rx == since, il est rendu — c'est
+    // tout le correctif D-6 (le `>` strict le sautait).
     const after = (await (await positions(relay, READ_KEY, first.now)).json()) as { operators: Array<{ points: unknown[] }> };
-    expect(after.operators[0]?.points).toHaveLength(1);
+    expect(after.operators[0]?.points).toHaveLength(2);
+
+    // Strictement après : seul le second point reste (le filtre existe encore).
+    const strict = (await (await positions(relay, READ_KEY, first.now + 1)).json()) as { operators: Array<{ points: unknown[] }> };
+    expect(strict.operators[0]?.points).toHaveLength(1);
+  });
+});
+
+describe('clientIp — choix de l’IP de limite (D-4)', () => {
+  it('boucle locale : première valeur de X-Forwarded-For, espaces retirés, bornée à 64', () => {
+    expect(clientIp('127.0.0.1', '6.6.6.6')).toBe('6.6.6.6');
+    expect(clientIp('::1', ' 1.1.1.1 , 2.2.2.2')).toBe('1.1.1.1');
+    expect(clientIp('::ffff:127.0.0.1', 'a'.repeat(100))).toBe('a'.repeat(64));
+  });
+
+  it('boucle locale sans en-tête exploitable : adresse du socket', () => {
+    expect(clientIp('127.0.0.1', undefined)).toBe('127.0.0.1');
+    expect(clientIp('::1', '')).toBe('::1');
+    expect(clientIp('127.0.0.1', '   ')).toBe('127.0.0.1');
+  });
+
+  it("hors boucle locale : l'en-tête est ignoré, l'adresse du socket prime", () => {
+    expect(clientIp('203.0.113.9', '6.6.6.6')).toBe('203.0.113.9');
+  });
+});
+
+describe('Relais OsmAnd — limite par IP derrière le Funnel (D-4)', () => {
+  it('suit la première IP de X-Forwarded-For quand le socket est en boucle locale', async () => {
+    const { file } = makeTokensFile({ [OP_TOKEN]: { nom: 'Dupont', fonction: 'Inter' } });
+    const relay = await start(file);
+    const bad = 'z'.repeat(32);
+
+    // 30 requêtes pour 1.1.1.1 : sous le quota, chacune répond 401.
+    for (let i = 0; i < 30; i++) {
+      const r = await raw(relay.port, 'GET', `/p?t=${bad}`, { 'X-Forwarded-For': '1.1.1.1' });
+      expect(r.status).toBe(401);
+    }
+    // 31e de la même IP : quota épuisé.
+    expect((await raw(relay.port, 'GET', `/p?t=${bad}`, { 'X-Forwarded-For': '1.1.1.1' })).status).toBe(429);
+    // Une AUTRE IP a son propre quota : elle passe encore.
+    expect((await raw(relay.port, 'GET', `/p?t=${bad}`, { 'X-Forwarded-For': '2.2.2.2' })).status).toBe(401);
+
+    expect(relay.ipCounts.has('1.1.1.1')).toBe(true);
+    expect(relay.ipCounts.has('2.2.2.2')).toBe(true);
+    expect(relay.ipCounts.has('127.0.0.1')).toBe(false);
+  });
+
+  it("sans X-Forwarded-For, la limite retombe sur l'adresse du socket", async () => {
+    const { file } = makeTokensFile();
+    const relay = await start(file);
+    const bad = 'z'.repeat(32);
+    expect((await raw(relay.port, 'GET', `/p?t=${bad}`)).status).toBe(401);
+    expect(relay.ipCounts.has('127.0.0.1')).toBe(true);
   });
 });
 

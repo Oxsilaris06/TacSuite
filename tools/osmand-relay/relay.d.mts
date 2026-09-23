@@ -56,3 +56,9 @@ export interface RelayOptions {
 
 export function createRelay(options?: RelayOptions): Relay;
 export function startRelay(options?: RelayOptions): Promise<Relay>;
+
+/**
+ * IP de limite « sans jeton valide » (D-4) : première valeur de
+ * `X-Forwarded-For` si le socket est en boucle locale, sinon son adresse.
+ */
+export function clientIp(remoteAddress: string | undefined, forwardedFor: string | string[] | undefined): string;
