@@ -13,10 +13,12 @@
  * l'ignore (`applySectionRemovals`).
  */
 import { Store } from '@oi/init.js';
+import { oiState } from '@oi/state.js';
 import {
     currentOiMode,
     customTitle,
     formSectionTitle,
+    isStepVisible,
     OI_SECTIONS,
     OI_SECTION_TITLE_MAX,
     readUnitTitles,
@@ -26,7 +28,7 @@ import {
     writeUnitTitles,
 } from '@oi/sections.js';
 import { toast } from '@shared/feedback.js';
-import type { OiSectionPrefs } from '@shared/types/contracts.js';
+import type { OiMode, OiSectionPrefs } from '@shared/types/contracts.js';
 
 function headingOf(el: HTMLElement): HTMLElement | null {
     return (
@@ -62,6 +64,10 @@ function updatePrefs(mutate: (prefs: OiSectionPrefs) => void): void {
     mutate(next);
     // Affectation d'une NOUVELLE valeur : le proxy du Store notifie et persiste.
     Store.state.formData.oi_sections = withSectionPrefs(fd, next);
+    // Écriture IMMÉDIATE : la cohérence (à chaque changement d'étape) relit
+    // localStorage et remplace formData ; dans la fenêtre de 250 ms de
+    // l'écriture différée, un retrait tout juste fait serait perdu.
+    Store.flush();
 }
 
 /** Pose, une seule fois par section, le libellé, le crayon, la × et la ligne « Rétablir ». */
@@ -190,6 +196,8 @@ function renderProgressChips(): void {
         if (li.dataset.defaultLabel === undefined) li.dataset.defaultLabel = (textNode.textContent ?? '').trim();
         const custom = customTitle(fd, def.id);
         textNode.textContent = custom ? `${index + 1}. ${custom}` : li.dataset.defaultLabel;
+        // OI express : les pastilles des étapes hors socle disparaissent.
+        li.hidden = !isStepVisible(fd, index);
         const isRemoved = removed.includes(def.id);
         li.classList.toggle('is-removed', isRemoved);
         if (isRemoved) li.setAttribute('title', 'Étape retirée de l’OI');
@@ -215,7 +223,53 @@ export function renderSections(): void {
     });
 }
 
+/** Peint la bascule Complète / Express et la classe de page qui masque ou montre les blocs express. */
+function renderModeToggle(): void {
+    const mode = currentOiMode(Store.state.formData);
+    document.body.classList.toggle('oi-express', mode === 'express');
+    document.querySelectorAll<HTMLButtonElement>('#oiModeToggle [data-oi-mode]').forEach((b) => {
+        const on = b.dataset.oiMode === mode;
+        b.setAttribute('aria-checked', String(on));
+        b.tabIndex = on ? 0 : -1;
+        b.classList.toggle('is-active', on);
+    });
+}
+
+/**
+ * Change de mode. Les données ne bougent pas : l'express MASQUE des étapes, il
+ * n'efface rien, et chaque mode garde ses propres sections retirées et titres
+ * (`sections.ts`). L'étape affichée est recalée sur une étape visible.
+ */
+export function setOiMode(mode: OiMode): void {
+    if (currentOiMode(Store.state.formData) === mode) return;
+    Store.state.formData.oi_mode = mode;
+    Store.flush(); // cf. `updatePrefs` : la cohérence relit localStorage
+    renderModeToggle();
+    renderSections();
+    if (typeof window.goToStep === 'function' && oiState.steps.length) window.goToStep(Store.state.currentStep);
+}
+
+function initModeToggle(): void {
+    const group = document.getElementById('oiModeToggle');
+    if (!group || group.dataset.ready === '1') return;
+    group.dataset.ready = '1';
+    group.addEventListener('click', (e) => {
+        const mode = (e.target as HTMLElement | null)?.closest<HTMLElement>('[data-oi-mode]')?.dataset.oiMode;
+        if (mode === 'complete' || mode === 'express') setOiMode(mode);
+    });
+    // Radiogroup : les flèches changent de mode sans tabuler.
+    group.addEventListener('keydown', (e) => {
+        if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) return;
+        e.preventDefault();
+        const next: OiMode = currentOiMode(Store.state.formData) === 'complete' ? 'express' : 'complete';
+        setOiMode(next);
+        group.querySelector<HTMLElement>(`[data-oi-mode="${next}"]`)?.focus();
+    });
+    renderModeToggle();
+}
+
 /** Branche les contrôles. À appeler APRÈS `loadFormData` (le `Store` porte alors l'OI chargée). */
 export function initSectionControls(): void {
+    initModeToggle();
     renderSections();
 }

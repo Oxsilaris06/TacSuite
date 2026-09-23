@@ -9,6 +9,7 @@
 import { oiState } from '@oi/state.js';
 import { Store, visitedSteps } from '@oi/init.js';
 import { coherenceIssuesByStep } from '@oi/coherence.js';
+import { isStepVisible, nearestVisibleStep } from '@oi/sections.js';
 
 // navigation.js:9-32
 function showStep(n: number): void {
@@ -33,11 +34,19 @@ function showStep(n: number): void {
 		pStep.classList.toggle('step-error', issues.has(index));
 	});
 
-	// navigation.js:16 — Masque prevBtn à l'étape 0
-	if (oiState.prevBtn) oiState.prevBtn.style.display = n === 0 ? 'none' : 'inline-block';
+	// navigation.js:16 — Masque prevBtn sur la première étape VISIBLE (l'OI
+	// express masque des étapes, `sections.ts`).
+	const fd = Store.state.formData;
+	const count = oiState.steps.length;
+	const isFirstStep = nearestVisibleStep(fd, n - 1, -1, count) === null;
+	if (oiState.prevBtn) oiState.prevBtn.style.display = isFirstStep ? 'none' : 'inline-block';
 
-	// navigation.js:17-19 — La dernière étape est l'index steps.length - 1.
-	const isLastStep = n === (oiState.steps.length - 1);
+	// navigation.js:17-19 — dernière étape VISIBLE (complète : steps.length - 1).
+	const isLastStep = nearestVisibleStep(fd, n + 1, 1, count) === null;
+	// OI express : l'aperçu vit dans l'étape Finalisation, masquée ; son
+	// double de la barre de navigation prend le relais sur la dernière étape.
+	const expressPreview = document.getElementById('expressPreviewBtn');
+	if (expressPreview) expressPreview.style.display = isLastStep && !isStepVisible(fd, count - 1) ? 'inline-block' : 'none';
 	if (oiState.nextBtn) oiState.nextBtn.style.display = isLastStep ? 'none' : 'inline-block';
 
 	// navigation.js:21-28
@@ -56,6 +65,13 @@ function showStep(n: number): void {
 
 // navigation.js:34-46
 function goToStep(n: number): void {
+	// OI express : une étape masquée renvoie à la visible suivante (ou, en fin
+	// de parcours, à la précédente) — jamais d'écran vide.
+	if (n >= 0 && n < oiState.steps.length && !isStepVisible(Store.state.formData, n)) {
+		n = nearestVisibleStep(Store.state.formData, n, 1, oiState.steps.length)
+			?? nearestVisibleStep(Store.state.formData, n, -1, oiState.steps.length)
+			?? 0;
+	}
 	// navigation.js:35
 	if (n >= 0 && n < oiState.steps.length) {
 		// navigation.js:36-40 — Saut via une puce : marque visitées toutes les étapes de l'intervalle parcouru.
@@ -75,7 +91,12 @@ function goToStep(n: number): void {
 }
 
 // navigation.js:48
-function changeStep(n: number): void { goToStep(Store.state.currentStep + n); }
+function changeStep(n: number): void {
+	// Suivant / Précédent sautent les étapes masquées (OI express).
+	const dir: 1 | -1 = n >= 0 ? 1 : -1;
+	const target = nearestVisibleStep(Store.state.formData, Store.state.currentStep + n, dir, oiState.steps.length);
+	if (target !== null) goToStep(target);
+}
 
 // Poser les 3 noms sur window AU SCOPE MODULE. (navigation.js:implicite, résolus par le scope global du script)
 // Le contrat OiWizardGlobals est déjà fusionné dans Window par global.d.ts.

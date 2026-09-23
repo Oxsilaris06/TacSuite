@@ -344,4 +344,56 @@ describe('oi-navigation', () => {
 			expect(() => window.showStep(0)).not.toThrow();
 		});
 	});
+
+	describe('OI express : étapes masquées (Situation, Mission, Exécution, PATRACDVR seules)', () => {
+		beforeEach(() => {
+			Store.state.formData = { oi_mode: 'express' };
+			// La cohérence (appelée par showStep) RELIT localStorage : le mode doit
+			// y être écrit tout de suite, comme le fait l'interface (`Store.flush`).
+			Store.flush();
+			const btn = document.createElement('button');
+			btn.id = 'expressPreviewBtn';
+			document.body.appendChild(btn);
+		});
+		afterEach(() => { Store.state.formData = {}; });
+
+		it('Suivant saute les étapes masquées : 0 → 3 → 4 → 6', () => {
+			window.goToStep(0);
+			window.changeStep(1);
+			expect(Store.state.currentStep).toBe(3);
+			window.changeStep(1);
+			expect(Store.state.currentStep).toBe(4);
+			window.changeStep(1);
+			expect(Store.state.currentStep).toBe(6);
+		});
+
+		it('Précédent saute aussi : 6 → 4', () => {
+			window.goToStep(6);
+			window.changeStep(-1);
+			expect(Store.state.currentStep).toBe(4);
+		});
+
+		it('une étape masquée demandée (puce, reprise) renvoie à la visible suivante', () => {
+			window.goToStep(1);
+			expect(Store.state.currentStep).toBe(3);
+			window.goToStep(7);
+			expect(Store.state.currentStep).toBe(6);
+		});
+
+		it('PATRACDVR est la dernière étape : Suivant masqué, aperçu express affiché', () => {
+			window.goToStep(6);
+			expect(oiState.nextBtn?.style.display).toBe('none');
+			expect(document.getElementById('expressPreviewBtn')?.style.display).toBe('inline-block');
+		});
+
+		it('en complète, l’aperçu express reste masqué et Suivant mène à l’étape 1', () => {
+			Store.state.formData = {};
+			Store.flush();
+			window.goToStep(0);
+			window.changeStep(1);
+			expect(Store.state.currentStep).toBe(1);
+			window.goToStep(7);
+			expect(document.getElementById('expressPreviewBtn')?.style.display).toBe('none');
+		});
+	});
 });

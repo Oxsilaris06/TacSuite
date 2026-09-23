@@ -16,7 +16,7 @@
  * `Store.state.formData` (source de vérité persistée, pas le DOM).
  */
 
-import { isSectionRemoved } from '@oi/sections.js';
+import { currentOiMode, isSectionRemoved } from '@oi/sections.js';
 import { Store } from '@oi/init.js';
 import type { OiFormData, OiPatracMember } from '@shared/types/contracts.js';
 
@@ -24,6 +24,7 @@ import type { OiFormData, OiPatracMember } from '@shared/types/contracts.js';
 const STEP_SITUATION = 0;   // Onglet 1 — date_op
 const STEP_ADVERSAIRE = 1;  // Onglet 2 — fiches adversaire
 const STEP_EXECUTION = 4;   // Onglet 5 — chronologie
+const STEP_MISSION = 3;     // Onglet 4 — mission (OI express : seul contrôle exigé)
 const STEP_PATRACDVR = 6;   // Onglet 7 — armement / affectations
 
 export interface CoherenceResult {
@@ -61,6 +62,17 @@ export function collectCoherence(): CoherenceResult {
     const indiaMembers = members.filter((m) => m.cellule && m.cellule.toLowerCase().startsWith('india'));
     const aoMembers = members.filter((m) => m.cellule && m.cellule.toLowerCase().startsWith('ao'));
     const allAssignedMembers = [...indiaMembers, ...aoMembers];
+
+    // OI express (décision Nico 2026-09-24) : rédigée en quelques minutes, elle
+    // n'est arrêtée par RIEN d'autre qu'une mission vide — ni date, ni
+    // chronologie, ni armement : l'avertissement « Générer quand même ? »
+    // n'apparaît que pour elle.
+    if (currentOiMode(Store.state.formData) === 'express') {
+        if (!getVal('missions_psig').trim()) {
+            push(STEP_MISSION, "La mission de l'unité est vide. (Onglet 4) <span class='material-symbols-outlined'>flag</span>");
+        }
+        return { alerts, byStep };
+    }
 
     if (!getVal('date_op')) { push(STEP_SITUATION, "La Date de l'opération est manquante. <span class='material-symbols-outlined'>event</span>"); }
 

@@ -615,6 +615,12 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         // §12.3 étape 16 — Présentation / PDF / fermeture modale. 4.html:4753-4772
         if (oiState.previewBtn) oiState.previewBtn.addEventListener('click', window.openPresentationMode);
+        // OI express : double de l'aperçu (l'étape Finalisation est masquée) et
+        // raccourci vers la cartographie pour la photo « Carte ».
+        document.getElementById('expressPreviewBtn')?.addEventListener('click', window.openPresentationMode);
+        document.getElementById('expressCartoCaptureBtn')?.addEventListener('click', () => {
+            if (window.OICarto && typeof window.OICarto.open === 'function') window.OICarto.open();
+        });
         // PDF.INTEG (SPEC-PDF-V3.md §5.1) — bascule silencieuse : le libellé/id/
         // position du bouton NE CHANGENT PAS, seule la fonction câblée change,
         // de l'ancien `window.downloadOiPdf` (rastérisation html2canvas+jsPDF,

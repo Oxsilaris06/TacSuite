@@ -74,7 +74,7 @@ import {
     type OiPdfPalette,
 } from './theme.js';
 import { breakLongTokens } from './text-utils.js';
-import { applySectionRemovals, isSectionRemoved, pdfSectionTitle } from '@oi/sections.js';
+import { applySectionRemovals, currentOiMode, isSectionRemoved, OI_EXPRESS_PHOTO_CONTAINERS, pdfSectionTitle } from '@oi/sections.js';
 import type {
     OiAdversary,
     OiEffractionBlock,
@@ -4085,6 +4085,142 @@ const OI_PDF_SECTIONS: OiPdfSectionDef[] = [
 ];
 
 /** Ordre par défaut des sections réordonnables (ids `OI_PDF_SECTIONS`, dans l'ordre) — `'transport'` déplacée juste après `'environnement'` (§5 SPEC-2026-08-18-pdf-et-champs.md). Exporté pour l'IHM de réordonnancement (`pdf-section-order.ts` — repli/réinitialisation). */
+// ===========================================================================
+// OI EXPRESS (décision Nico 2026-09-24, DevSYNCState §3 n° 12)
+// ===========================================================================
+
+/** Photos de l'OI express, dans l'ordre de la page 2. */
+const EXPRESS_PHOTOS = OI_EXPRESS_PHOTO_CONTAINERS;
+
+/**
+ * PDF de l'OI express : DEUX pages au plus.
+ *  - page 1, l'ordre : situation et mission côte à côte, exécution (date,
+ *    heure H, idée de manœuvre, chronologie si elle n'est pas retirée), puis le
+ *    PATRACDVR ; la police est choisie au plus grand palier (11 → 7) qui fait
+ *    tenir la page, avec le MÊME modèle de coût que le reste du document ;
+ *  - page 2, les photos : objectif, adversaire, carte (une chacune, la
+ *    première de chaque emplacement), légendées, sur une seule page.
+ * Au-delà du palier plancher (PATRACDVR très long), pdfmake paginera : c'est
+ * le seul cas où l'express dépasse deux pages, et il ne coupe rien.
+ */
+function buildExpressPages(ctx: BuildCtx): Content[] {
+    const { formData, p, geo, photosBase64, dynamicPhotos } = ctx;
+    const half = (geo.contentWidthPt - mm(6)) / 2;
+    const members: Array<{ vehicle: string; m: OiPatracMember }> = [];
+    for (const row of formData.patracdvr_rows ?? []) {
+        row.members.forEach((m, idx) => members.push({ vehicle: idx === 0 ? row.vehicle : '', m }));
+    }
+    const hasDir = members.some((r) => r.m.dir.trim() !== '');
+    const events = isSectionRemoved(formData, 'chronologie') ? [] : (formData.time_events ?? []);
+    const situationText = `Situation générale : ${strOr(formData.situation_generale)}\nSituation particulière : ${strOr(formData.situation_particuliere)}`;
+
+    const costPt = (fontPx: number): number => {
+        const line = effracLinePt(fontPx);
+        const row1 = Math.max(
+            cardWithTitlePt(textLinePt(situationText, fontPx, half)),
+            cardWithTitlePt(textLinePt(strOr(formData.missions_psig), Math.round(fontPx * 1.2), half)),
+        );
+        const exec = EFFRAC_H3_PT + line + textLinePt(`Idée de Manœuvre / Action : ${strOr(formData.action_body_text)}`, fontPx, geo.contentWidthPt);
+        const chrono = events.length ? cardWithTitlePt(line + events.reduce((s, e) => s + chronoEventPt(e, fontPx, geo.contentWidthPt * 0.78), 0)) : 0;
+        const patrac = members.length
+            ? EFFRAC_H3_PT + patracHeaderRowPt(fontPx) + members.reduce((s, r) => s + patracRowPt(fontPx, patracEqptText(r.m), geo.contentWidthPt * 0.3, patracStackLines(r.m)), 0)
+            : 0;
+        return 70 /* titre + date */ + row1 + 8 + exec + (chrono ? 8 + chrono : 0) + (patrac ? 8 + patrac : 0);
+    };
+    const fit = fitUsageToPage(costPt, geo.contentHeightPt - EFFRAC_FITS_SAFETY_PT);
+    const fontPx = 'fontPx' in fit ? fit.fontPx : FIT_FONT_FLOOR;
+
+    const header: Content = {
+        columns: [
+            { text: 'OI EXPRESS', font: 'Oswald', fontSize: 26, color: p.accent, width: '*' },
+            {
+                stack: [
+                    { text: `Opération : ${strOr(formData.date_op)}`, bold: true, alignment: 'right' },
+                    { text: `Rédacteur : ${strOr([formData.trigramme_redacteur, formData.unite_redacteur].filter(Boolean).join(' — '))}`, fontSize: 9, alignment: 'right', color: p.muted },
+                ],
+                width: 'auto',
+            },
+        ],
+        margin: [0, 0, 0, 8],
+    };
+    const situationCard = card(
+        [
+            h3(pdfSectionTitle(formData, 'situation'), p),
+            labelValue('Situation générale', strOr(formData.situation_generale), p, { valueBold: true }, { anchors: ctx.anchors, ref: fieldAnchor('situation_generale') }),
+            labelValue('Situation particulière', strOr(formData.situation_particuliere), p, { valueBold: true }, { anchors: ctx.anchors, ref: fieldAnchor('situation_particuliere') }),
+        ],
+        p,
+        { unbreakable: false },
+    );
+    const missionCard = card(
+        [h3(pdfSectionTitle(formData, 'mission'), p), { text: strOr(formData.missions_psig), bold: true, fontSize: Math.round(fontPx * 1.2), preserveLeadingSpaces: true }],
+        p,
+        { unbreakable: false },
+    );
+    registerPdfEditAnchor(ctx.anchors, fieldAnchor('missions_psig'), strOr(formData.missions_psig));
+    const execCard = card(
+        [
+            h3(pdfSectionTitle(formData, 'execution'), p),
+            grid2(
+                [fv(ctx, "Date d'exécution", 'date_execution')],
+                [fv(ctx, 'Heure H', 'heure_execution', { fontSize: Math.round(fontPx * 1.2), valueColor: p.accent, valueBold: true })],
+            ),
+            fv(ctx, 'Idée de Manœuvre / Action', 'action_body_text'),
+            ...(events.length ? [{ text: '', margin: [0, 4, 0, 0] } as Content, h3(pdfSectionTitle(formData, 'chronologie'), p), chronoTableFor(events, p)] : []),
+        ],
+        p,
+        { unbreakable: false },
+    );
+    const patracBlock: Content[] = members.length
+        ? [
+              h3(pdfSectionTitle(formData, 'patracdvr'), p),
+              {
+                  table: {
+                      widths: hasDir ? ['auto', 'auto', 'auto', 'auto', 'auto', 'auto', 'auto', '*', 'auto'] : ['auto', 'auto', 'auto', 'auto', 'auto', 'auto', 'auto', '*'],
+                      headerRows: 1,
+                      body: [
+                          ['VL', 'PAX', 'CELLULE', 'FONCTION', 'PPALE', 'SEC.', 'AFIS', 'EQPT/GREN.', ...(hasDir ? ['DIR'] : [])].map((t) => ({
+                              text: t, bold: true, fillColor: p.headerRow, alignment: 'center', borderColor: cellBorder(p),
+                          }) as TableCell),
+                          ...members.map((r) => patracRowCells(r, hasDir, p)),
+                      ],
+                  },
+                  layout: LAYOUT_BORDERED,
+              },
+          ]
+        : [];
+
+    const page1: Content = {
+        stack: [
+            header,
+            grid2([situationCard], [missionCard]),
+            { text: '', margin: [0, 8, 0, 0] },
+            execCard,
+            ...(patracBlock.length ? [{ text: '', margin: [0, 8, 0, 0] } as Content, ...patracBlock] : []),
+        ],
+        fontSize: fontPx,
+    };
+
+    // Page 2 : une photo par emplacement (la première), légendée, sur UNE page.
+    const photos = EXPRESS_PHOTOS.map((c) => {
+        const meta = (dynamicPhotos[c.id] ?? []).find((m) => photosBase64[m.id] !== undefined);
+        return meta ? { label: meta.customTitle?.trim() || c.label, ref: photosBase64[meta.id] as string } : null;
+    }).filter((x): x is { label: string; ref: string } => x !== null);
+    if (!photos.length) return [page1];
+    const n = photos.length;
+    const gap = mm(4);
+    const boxW = (geo.contentWidthPt - gap * (n - 1)) / n;
+    const boxH = geo.contentHeightPt - EFFRAC_H2_PT - 40;
+    const page2: Content = {
+        stack: [
+            h2('PHOTOS', p, geo.contentWidthPt),
+            { columns: photos.map((ph) => ({ width: boxW, stack: [figure(ph.ref, [boxW, boxH], p, ph.label)] })), columnGap: gap },
+        ],
+        pageBreak: 'before',
+    };
+    return [page1, page2];
+}
+
 /** Section du formulaire (`sections.ts`) dont le retrait (×) omet toute la section du PDF. */
 const OI_PDF_SECTION_FORM_ID: Record<string, string> = {
     adversaires: 'adversaires',
@@ -4196,24 +4332,29 @@ export function buildOiDocDefinition(data: OiPdfCollectedData, opts: { format: O
     };
 
     const pages: Content[] = [];
-    // Page de garde : verrouillée en première position, HORS registre —
-    // jamais numérotée, jamais réordonnée (cf. JSDoc `OI_PDF_SECTIONS`).
-    // `buildCover` renvoie désormais 1..N pages (couverture + pages « CIBLES(S)
-    // — <plage> » de débordement au-delà du seuil de la page 1, cf. sa JSDoc) —
-    // `pushPages` (même contrat que `galleryPages()`) pose le saut de page sur
-    // la 1re SEULEMENT, les suivantes portent déjà le leur.
-    pushPages(pages, buildCover(ctx));
-    // Baseline 3 : slots 1 (garde) et 2 (adversaires, numérotation fixe
-    // « 2.<index> » hors compteur) réservés — cf. JSDoc `OI_PDF_SECTIONS`.
-    const num = makeSectionNumberer(3);
-    const sectionOrder = resolveOiPdfSectionOrder(formData.pdf_section_order);
-    for (const id of sectionOrder) {
-        const section = OI_PDF_SECTIONS.find((s) => s.id === id);
-        // Section retirée (×) : jamais construite, donc aucun numéro consommé.
-        const formSection = OI_PDF_SECTION_FORM_ID[id];
-        if (formSection !== undefined && isSectionRemoved(formData, formSection)) continue;
-        if (section) {
-            pushPages(pages, section.build(ctx, num));
+    // OI express : deux pages dédiées, ni garde ni registre de sections.
+    if (currentOiMode(formData) === 'express') {
+        pushPages(pages, buildExpressPages(ctx));
+    } else {
+        // Page de garde : verrouillée en première position, HORS registre —
+        // jamais numérotée, jamais réordonnée (cf. JSDoc `OI_PDF_SECTIONS`).
+        // `buildCover` renvoie désormais 1..N pages (couverture + pages « CIBLES(S)
+        // — <plage> » de débordement au-delà du seuil de la page 1, cf. sa JSDoc) —
+        // `pushPages` (même contrat que `galleryPages()`) pose le saut de page sur
+        // la 1re SEULEMENT, les suivantes portent déjà le leur.
+        pushPages(pages, buildCover(ctx));
+        // Baseline 3 : slots 1 (garde) et 2 (adversaires, numérotation fixe
+        // « 2.<index> » hors compteur) réservés — cf. JSDoc `OI_PDF_SECTIONS`.
+        const num = makeSectionNumberer(3);
+        const sectionOrder = resolveOiPdfSectionOrder(formData.pdf_section_order);
+        for (const id of sectionOrder) {
+            const section = OI_PDF_SECTIONS.find((s) => s.id === id);
+            // Section retirée (×) : jamais construite, donc aucun numéro consommé.
+            const formSection = OI_PDF_SECTION_FORM_ID[id];
+            if (formSection !== undefined && isSectionRemoved(formData, formSection)) continue;
+            if (section) {
+                pushPages(pages, section.build(ctx, num));
+            }
         }
     }
 
