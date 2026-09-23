@@ -29,6 +29,12 @@ export const LIDAR_KEY = 'pcTacPlanLidar';
 // Fond topographique Plan IGN v2 / courbes de niveau (hors planMap.js).
 export const PLANIGN_KEY = 'pcTacPlanTopo';
 export const CONTOURS_KEY = 'pcTacPlanContours';
+// Carroyage tactique posé sur la zone : donnée D'OPÉRATION (effacée au reset de
+// la situation, embarquée dans l'archive, importée depuis l'OI).
+export const GRID_KEY = 'pcTacPlanGrid';
+// Interrupteurs carroyage / MGRS / lignes électriques et maille choisie :
+// réglages d'affichage, gardés au reset comme les autres réglages du plan.
+export const OVERLAYS_KEY = 'pcTacPlanOverlays';
 
 // Code couleur — strictement aligné sur la légende affichée
 // (--danger-red, --civil-yellow, --inter-blue, --ao-green dans pctac2.html)

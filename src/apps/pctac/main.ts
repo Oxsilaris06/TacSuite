@@ -801,6 +801,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 const parts = [`${res.advAdded} adversaire(s)`];
                 if (res.advPhotos) parts.push(`${res.advPhotos} photo(s)`);
                 parts.push(`${res.paxAdded} intervenant(s)`);
+                if (res.gridImported) parts.push('le carroyage');
                 const skipped = (res.advSkipped || 0) + (res.paxSkipped || 0);
                 toast(
                     `Passerelle OI → PC TAC : ${parts.join(', ')} importé(s) avec succès.`

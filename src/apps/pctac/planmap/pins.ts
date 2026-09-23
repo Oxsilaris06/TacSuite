@@ -39,6 +39,7 @@
  * (lecture seule).
  */
 
+import { mgrsOf } from '@shared/tactical-grid.js';
 import maplibregl from 'maplibre-gl';
 import type { GeoJSONSource, LngLat, MapMouseEvent } from 'maplibre-gl';
 
@@ -75,6 +76,8 @@ function logMapAction(remarques: string): void {
 export const PinsMethods = {
     // planMap.js:1156-1188
     _onMapClick(this: PlanMapInternal, e: MapMouseEvent): void {
+        // Tracé du carroyage en cours : ce clic lui appartient (map-overlays).
+        if (this.overlays?.isCapturing()) return;
         // Outil mesure : chaque clic/tap pose un sommet (machine d'états dédiée).
         // On le traite AVANT la garde drawTool ci-dessous.
         if (this.drawTool === 'measure') {
@@ -725,6 +728,8 @@ export const PinsMethods = {
                     lat: pin.lat,
                     lng: pin.lng,
                     diameterM: dia,
+                    mgrs: mgrsOf(pin.lng, pin.lat),
+                    cell: this.overlays?.cellAt(pin.lng, pin.lat) ?? null,
                 };
             });
         } catch (e) {

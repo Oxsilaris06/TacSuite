@@ -43,6 +43,7 @@ const SITUATION_KEYS: readonly string[] = [
   'pcTacPlanPins',
   'pcTacPlanView',
   'pcTacPlanShapes',
+  'pcTacPlanGrid',
   'pcTacLieuHistory',
   'pcTacPlanLocked',
   'pcTacDashboard',

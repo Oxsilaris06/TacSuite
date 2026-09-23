@@ -92,7 +92,7 @@ export const IMPORT_CATEGORIES: ImportCategory[] = [
         id: 'plan',
         label: 'Plan',
         icon: 'map',
-        keys: [PINS_KEY, 'pcTacPlanShapes', 'pcTacPlanView', 'pcTacPlanLocked', GPX_INDEX_KEY],
+        keys: [PINS_KEY, 'pcTacPlanShapes', 'pcTacPlanView', 'pcTacPlanLocked', 'pcTacPlanGrid', GPX_INDEX_KEY],
         gpx: true,
     },
     { id: 'liens', label: 'Liens', icon: 'link', keys: [DASHBOARD_KEY] },

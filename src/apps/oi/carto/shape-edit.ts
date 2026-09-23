@@ -160,7 +160,7 @@ export const ShapeEditMethods = {
 
         // Clic ailleurs (aucune forme sous le pointeur) → désélection
         map.on('click', this._safe((e: MapMouseEvent) => {
-            if (!this._selectedShapeId || this._gesture) return;
+            if (!this._selectedShapeId || this._gesture || this.overlays?.isCapturing()) return;
             let hits: unknown[] = [];
             try {
                 hits = map.queryRenderedFeatures(e.point, { layers: ['oi-carto-shapes-fill', 'oi-carto-shapes-line'] });

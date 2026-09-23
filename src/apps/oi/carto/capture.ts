@@ -75,6 +75,7 @@
 import html2canvas from 'html2canvas';
 
 import { toast } from '@shared/feedback.js';
+import { drawOverlayLegend, overlayLegend } from '@shared/map-overlays.js';
 
 import type { OICartoInternal, OiCartoPhotoTarget } from './types.js';
 
@@ -285,6 +286,10 @@ export const CaptureMethods = {
             if (!ctx) throw new Error('Contexte de dessin 2D indisponible.');
             ctx.drawImage(glCanvas, 0, 0, w, h);
             ctx.drawImage(overlay, 0, 0, w, h);
+            // Carroyage / MGRS / lignes visibles : leur légende voyage avec
+            // l'image (PDF, téléchargement), incrustée en bandeau.
+            const legend = this.overlays ? overlayLegend(this.overlays, map.getBearing()) : null;
+            if (legend) drawOverlayLegend(ctx, w, h, dpr, legend);
         } catch (e) {
             console.error('[OICarto] capture échec:', e);
             toast('Erreur lors de la capture : ' + (e instanceof Error ? e.message : String(e)), { kind: 'error' });

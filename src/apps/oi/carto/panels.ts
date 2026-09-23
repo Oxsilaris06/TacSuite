@@ -184,8 +184,9 @@ export const PanelsMethods = {
      * execCommand si l'API Clipboard est absente (contexte non sécurisé).
      */
     _copyCoords(this: OICartoInternal, lng: number, lat: number): void {
-        const text = formatCoordsClipboard(lng, lat);
-        const done = (): void => { toast('Coordonnées copiées — ' + shortMgrs(lng, lat)); };
+        const cell = this.overlays?.cellAt(lng, lat) ?? null;
+        const text = formatCoordsClipboard(lng, lat) + (cell ? `\nCase ${cell}` : '');
+        const done = (): void => { toast('Coordonnées copiées — ' + shortMgrs(lng, lat) + (cell ? ` · Case ${cell}` : '')); };
         const fallback = (): void => {
             try {
                 const ta = document.createElement('textarea');

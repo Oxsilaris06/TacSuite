@@ -36,6 +36,7 @@
 
 import type { Map as MapLibreMap } from 'maplibre-gl';
 import type { TutoChapter, TutoData, TutoFlatStep } from './tuto.js';
+import type { TacticalGridSpec } from '@shared/tactical-grid.js';
 
 /* =========================================================================
  * 1. CONTRAT PARTAGÉ — window.UIPlatform  (shared/ui-platform.js, 319 LOC)
@@ -511,6 +512,8 @@ export interface ArchiveOiImportResult {
     paxAdded: number;
     /** Trigrammes ignorés (`'N/A'`, vide, ou déjà présents). */
     paxSkipped: number;
+    /** Carroyage de la carto OI repris dans le plan de la situation courante. */
+    gridImported?: boolean | undefined;
 }
 
 export interface ArchiveContract {
@@ -746,6 +749,10 @@ export interface PlanMapPinSummary {
     lng: number;
     /** Diamètre en mètres si > 0, sinon `null`. */
     diameterM: number | null;
+    /** Coordonnée MGRS lisible (`null` hors domaine). */
+    mgrs?: string | null | undefined;
+    /** Case du carroyage tactique (« C4 »), `null` hors carroyage. */
+    cell?: string | null | undefined;
 }
 
 export interface PlanMapContract {
@@ -921,6 +928,10 @@ export interface OiCartographyState {
     view: OiCartoView | null;
     pins: Record<string, unknown>[];
     shapes: Record<string, unknown>[];
+    /** Interrupteurs carroyage / MGRS / lignes électriques et maille (`@shared/map-overlays`). */
+    overlays?: { gridOn?: boolean; mgrsOn?: boolean; powerOn?: boolean; cellM?: number } | undefined;
+    /** Carroyage tactique de l'OI : passe au PC-Tac par la passerelle d'archive. */
+    grid?: TacticalGridSpec | null | undefined;
 }
 
 /**

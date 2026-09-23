@@ -493,7 +493,17 @@ export const PinsMethods = {
     // au clic), puis tout autre outil de dessin actif bloque le clic simple,
     // puis la pose d'un pin armé (pending) — RIEN d'autre : le clic simple
     // n'ouvre JAMAIS de roue.
+    /** « 31U DP 12345 67890 · C4 » : MGRS du point, et sa case si un carroyage le couvre. */
+    _pointTitle(this: OICartoInternal, lng: number, lat: number): string | null {
+        const mgrs = this.overlays?.mgrsAt(lng, lat) ?? null;
+        if (!mgrs) return null;
+        const cell = this.overlays?.cellAt(lng, lat) ?? null;
+        return cell ? `${mgrs} · ${cell}` : mgrs;
+    },
+
     _onMapClick(this: OICartoInternal, e: MapMouseEvent): void {
+        // Tracé du carroyage en cours : ce clic lui appartient (map-overlays).
+        if (this.overlays?.isCapturing()) return;
         // Un clic sur le fond ferme tout panneau flottant d'édition de pin.
         this._closeInlinePanel();
         // Outil mesure : chaque clic pose un sommet (machine d'états dédiée).
@@ -555,7 +565,8 @@ export const PinsMethods = {
         this._activeWheel = new OIWheel({
             ...(this.map ? { map: this.map } : {}),
             lngLat,
-            title: 'Nouveau point',
+            // MGRS (et case du carroyage) du point touché, lisible d'emblée.
+            title: this._pointTitle(lngLat.lng, lngLat.lat) ?? 'Nouveau point',
             options: opts,
             onClose: () => { this._activeWheel = null; this._wheelJustClosed = Date.now(); },
         });
