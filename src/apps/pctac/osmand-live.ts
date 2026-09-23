@@ -29,6 +29,8 @@ const DEFAULT_URL = 'https://nico-ai-series-1.tailed318a.ts.net/osmand';
 const POLL_MS = 5000;
 /** Recul en cas d'échec réseau : 5 s, 10 s, 20 s, 40 s, puis plafond 60 s. */
 const BACKOFF_MS = [5000, 10000, 20000, 40000, 60000];
+/** Bornes des `ts` mémorisés par opérateur (dédoublonnage D-6). */
+const SEEN_MAX = 1000;
 
 interface OsmandCfg {
   url?: string | undefined;
@@ -65,6 +67,10 @@ let aborter: AbortController | null = null;
 let since = 0;
 let backoffIdx = 0;
 const known = new Set<string>();
+/** `ts` déjà traités par opérateur : le `rx >= since` du relais (D-6) rejoue
+ *  le point de bordure à chaque sondage, on l'ignore pour ne pas doubler la
+ *  trace. Borné par opérateur. */
+const seenTs = new Map<string, Set<number>>();
 
 function saveCfg(): void { Persist.set(LS_KEY, cfg); }
 
@@ -128,10 +134,20 @@ function applyResponse(data: RelayResponse): void {
     registerRemoteOperator(sender, op.nom ?? null, op.fonction ?? null);
     known.add(op.id);
     const points = Array.isArray(op.points) ? op.points : [];
+    let seen = seenTs.get(sender);
+    if (!seen) { seen = new Set<number>(); seenTs.set(sender, seen); }
     // Le relais trie déjà par ts ; l'upsert gère en plus un point en retard
     // (tampon écoulé entre deux sondages) sans déplacer le marqueur.
     for (const p of points) {
       if (!p || !Number.isFinite(p.lat) || !Number.isFinite(p.lon) || !Number.isFinite(p.ts)) continue;
+      // Point déjà vu (même opérateur, même `ts`) : le `rx >= since` du relais
+      // le rejoue au sondage suivant. On l'ignore pour ne pas doubler la trace.
+      if (seen.has(p.ts)) continue;
+      seen.add(p.ts);
+      if (seen.size > SEEN_MAX) {
+        const oldest = seen.values().next().value;
+        if (oldest !== undefined) seen.delete(oldest);
+      }
       upsert(sender, p.lat, p.lon, p.ts);
     }
   }
@@ -184,7 +200,7 @@ export function start(): void {
   if (urlEl instanceof HTMLInputElement) urlEl.value = url;
 
   halt();
-  running = true; since = 0; backoffIdx = 0; known.clear();
+  running = true; since = 0; backoffIdx = 0; known.clear(); seenTs.clear();
   aborter = new AbortController();
   setButtons();
   setStatus('Connexion au relais…');

@@ -65,7 +65,10 @@ modification : une révocation prend effet sans redémarrer.
 - Limite de débit **par jeton** : seau de 120 requêtes, recharge 2/s — il
   **tolère la vidange du tampon** OsmAnd au retour du réseau. Au-delà → `429`.
 - Sans jeton valide : 30 requêtes/minute et par IP, puis `429` (freine la
-  recherche de jetons).
+  recherche de jetons). Derrière le Funnel, toutes les requêtes viennent de la
+  boucle locale : l'IP retenue est alors la **première valeur de
+  `X-Forwarded-For`** (que le Funnel remplace par l'IP réelle), bornée à 64
+  caractères ; sinon l'adresse du socket. Cette IP n'est jamais journalisée.
 
 ### `GET /positions?since=<ms>` — lecture par PC-Tac
 
@@ -73,8 +76,10 @@ modification : une révocation prend effet sans redémarrer.
   `401`.
 - Rend `{ now, operators: [{ id, nom, fonction, points: [...] }] }`. `id` est un
   identifiant **stable** (`sha256(jeton)` tronqué à 12 hex) : **le jeton ne
-  sort jamais du relais**. `points` = ceux reçus après `since`, triés par `ts`
-  croissant.
+  sort jamais du relais**. `points` = ceux reçus **depuis** `since` (borne
+  incluse : un point reçu à la même milliseconde que le `now` rendu au sondage
+  précédent ne doit pas être sauté), triés par `ts` croissant ; PC-Tac
+  dédoublonne le point de bordure par `ts`.
 - CORS : `Access-Control-Allow-Origin` uniquement pour les origines autorisées,
   avec `Vary: Origin` ; préflight `OPTIONS` géré (`Authorization` autorisé).
 

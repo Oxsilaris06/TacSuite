@@ -90,6 +90,26 @@ function truncateToken(token) {
   return s.length <= 6 ? s : `${s.slice(0, 6)}…`;
 }
 
+/** Adresses de boucle locale : derrière le Funnel, tout arrive par là. */
+const LOOPBACK_ADDRS = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
+
+/**
+ * IP servant à la limite « sans jeton valide » (D-4). Derrière le Funnel, le
+ * socket est TOUJOURS en boucle locale : la vraie IP client est alors la
+ * PREMIÈRE valeur de `X-Forwarded-For`, que le Funnel remplace par l'IP réelle
+ * (mesure du 09-23 : un `X-Forwarded-For` forgé disparaît). On ne s'y fie QUE
+ * si le socket est en boucle locale ; sinon, ou si l'en-tête est absent/vide,
+ * on retombe sur l'adresse du socket. Valeur bornée à 64 caractères : elle sert
+ * de clé de table, jamais de ligne de journal.
+ */
+export function clientIp(remoteAddress, forwardedFor) {
+  const sock = remoteAddress || '?';
+  if (!LOOPBACK_ADDRS.has(sock)) return sock;
+  const raw = Array.isArray(forwardedFor) ? forwardedFor[0] : forwardedFor;
+  const first = typeof raw === 'string' ? raw.split(',')[0].trim() : '';
+  return first ? first.slice(0, 64) : sock;
+}
+
 function writeTokensFile(file, tokens) {
   fs.writeFileSync(file, `${JSON.stringify(tokens, null, 2)}\n`, { mode: 0o600 });
   try { fs.chmodSync(file, 0o600); } catch { /* best-effort (FS sans chmod) */ }
@@ -243,7 +263,7 @@ export function createRelay(options = {}) {
     const operator = findOperator(tokenRaw);
     if (!operator) {
       // Pas de jeton valide : limite par IP (freine la recherche de jetons).
-      const ip = req.socket.remoteAddress || '?';
+      const ip = clientIp(req.socket.remoteAddress, req.headers['x-forwarded-for']);
       if (!allowIp(ip)) { logLine('/p', 429, null); send(res, 429); return; }
       logLine('/p', 401, null);
       send(res, 401);
@@ -293,7 +313,10 @@ export function createRelay(options = {}) {
     const operators = [];
     for (const [token, meta] of Object.entries(state.tokens.operators)) {
       const list = state.points.get(token) || [];
-      const points = list.filter((p) => p.rx > since).sort((a, b) => a.ts - b.ts);
+      // `>=` (D-6) : un point reçu à la même milliseconde que le `now` rendu
+      // au sondage précédent ne doit pas être sauté. PC-Tac dédoublonne le
+      // point de bordure par `ts`.
+      const points = list.filter((p) => p.rx >= since).sort((a, b) => a.ts - b.ts);
       operators.push({
         id: idOf(token),
         nom: typeof meta?.nom === 'string' ? meta.nom : '',

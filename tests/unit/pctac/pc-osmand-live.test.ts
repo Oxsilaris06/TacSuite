@@ -110,6 +110,7 @@ afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
+  vi.doUnmock('@pctac/tchap-live.js');
   delete (window as unknown as { PlanMap?: unknown }).PlanMap;
 });
 
@@ -230,5 +231,34 @@ describe('OsmandLive — sondage du relais', () => {
     // Le point tardif (ts 1500 < dernière position ts 2000) n'a pas bougé le
     // marqueur, qui reste sur la position la plus récente.
     expect(h.markers[0]?.lngLat).toEqual([2.5, 48.5]);
+  });
+
+  it('ignore un point déjà vu (même opérateur, même ts) : une seule entrée (D-6)', async () => {
+    vi.useFakeTimers();
+    seedDom();
+    stubPlanMap();
+    // Le relais, avec `rx >= since`, rejoue le point de bordure au sondage
+    // suivant. On compte les upsert : il ne doit y en avoir qu'un.
+    const upserts: Array<{ sender: string; ts: number }> = [];
+    vi.doMock('@pctac/tchap-live.js', () => ({
+      upsert: (sender: string, _lat: number, _lon: number, ts: number): void => { upserts.push({ sender, ts }); },
+      registerRemoteOperator: (): void => { /* sans effet */ },
+    }));
+    const dup = { ts: 5000, rx: 5000, lat: 48.1, lon: 2.1 };
+    responses = [
+      () => jsonResponse({ now: 5000, operators: [{ id: 'a1', nom: 'Dupont', fonction: 'Inter', points: [dup] }] }),
+      () => jsonResponse({ now: 6000, operators: [{ id: 'a1', nom: 'Dupont', fonction: 'Inter', points: [dup] }] }),
+    ];
+
+    const mod = await boot();
+    mod.OsmandLive.start();
+    await vi.advanceTimersByTimeAsync(0);
+    await flush();
+    expect(upserts).toEqual([{ sender: 'osmand:a1', ts: 5000 }]);
+
+    await vi.advanceTimersByTimeAsync(5000);
+    await flush();
+    // Deuxième sondage : le même point est rejoué par le relais, mais dédoublonné.
+    expect(upserts).toEqual([{ sender: 'osmand:a1', ts: 5000 }]);
   });
 });
