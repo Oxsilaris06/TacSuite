@@ -8,6 +8,9 @@ tests/visual/diffs/
 
 # Artefacts d'outillage local, regenerables - jamais publies.
 graphify-out/
+
+# Relais OsmAnd : secrets locaux (readKey + jetons), jamais versionnes.
+tools/osmand-relay/tokens.json
 mempalace.yaml
 entities.json
 .agents/
