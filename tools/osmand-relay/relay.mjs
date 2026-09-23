@@ -203,11 +203,20 @@ export function createRelay(options = {}) {
 
   /** Retire les points de plus de ttlH heures (horloge de RÉCEPTION). */
   function purge() {
-    const cutoff = now() - ttlH * 3600_000;
+    const t = now();
+    const cutoff = t - ttlH * 3600_000;
     for (const [token, list] of state.points) {
       const kept = list.filter((p) => p.rx > cutoff);
       if (kept.length) state.points.set(token, kept);
       else state.points.delete(token);
+    }
+    // Tables de limite : sans purge, une entrée par IP jamais revue
+    // s'accumulerait sans fin (fuite mémoire exploitable). Une entrée IP n'a
+    // de sens que pendant sa fenêtre ; un seau, que tant que le jeton est un
+    // opérateur.
+    for (const [ip, e] of ipCounts) { if (t - e.start >= IP_WINDOW_MS) ipCounts.delete(ip); }
+    for (const token of buckets.keys()) {
+      if (!Object.prototype.hasOwnProperty.call(state.tokens.operators, token)) buckets.delete(token);
     }
   }
 
@@ -325,6 +334,8 @@ export function createRelay(options = {}) {
 
   return {
     server, state, purge, reloadTokens, tokensFile, base, allowedOrigins,
+    // Exposés pour l'observabilité des tests (taille bornée des compteurs).
+    buckets, ipCounts,
     host: options.host ?? '127.0.0.1',
     port: options.port ?? Number(process.env.PORT ?? 9690),
   };

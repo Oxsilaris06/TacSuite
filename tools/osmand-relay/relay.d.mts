@@ -27,6 +27,9 @@ export interface RelayState {
 export interface Relay {
   server: import('node:http').Server;
   state: RelayState;
+  /** Compteurs de limite par jeton / par IP — exposés pour vérifier leur purge. */
+  buckets: Map<string, { tokens: number; last: number }>;
+  ipCounts: Map<string, { start: number; count: number }>;
   purge: () => void;
   reloadTokens: () => void;
   tokensFile: string;
