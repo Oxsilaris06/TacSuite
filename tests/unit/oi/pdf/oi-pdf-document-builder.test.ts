@@ -426,6 +426,22 @@ describe('buildOiDocDefinition — PATRACDVR, colonne DIR conditionnelle', () =>
         expect(json).toContain('"text":"DIR"');
     });
 
+    it('choix multiples : valeurs empilées « / » dans PPALE/SEC., « Sans » écarté, jamais de virgule brute', () => {
+        const formData = patracFormData('');
+        const m = formData.patracdvr_rows![0]!.members[0]!;
+        m.principales = 'UMP9, G36';
+        m.secondaires = 'Sans';
+        m.grenades = 'GENL, MP7';
+        m.tenue = 'UBAS, Ghillie';
+        const json = JSON.stringify(buildOiDocDefinition(collect(formData), { format: 'a4' }));
+
+        expect(json).toContain('"text":"UMP9 /\\nG36"');
+        expect(json).not.toContain('UMP9, G36');
+        expect(json).toContain('"text":"GENL / MP7 / UBAS / Ghillie"');
+        // Arme S. à « Sans » : tiret, comme une case vide.
+        expect(json).not.toContain('"text":"Sans"');
+    });
+
     it('sans aucun membre PATRACDVR, la section est omise (aucune table PATRAC)', () => {
         const json = JSON.stringify(buildOiDocDefinition(collect({}), { format: 'a4' }));
 
@@ -781,7 +797,7 @@ describe('buildOiDocDefinition — alignement centré du roster PATRACDVR (arbit
         expect(json).toContain('{"text":"UMP9","alignment":"center","noWrap":true,"borderColor":');
         expect(json).toContain('{"text":"PSA","alignment":"center","noWrap":true,"borderColor":');
         expect(json).toContain('{"text":"PIE","alignment":"center","noWrap":true,"borderColor":');
-        expect(json).toContain('{"text":"GENL, UBAS","fontSize":8,"alignment":"center","borderColor":');
+        expect(json).toContain('{"text":"GENL / UBAS","fontSize":8,"alignment":"center","borderColor":');
     });
 });
 

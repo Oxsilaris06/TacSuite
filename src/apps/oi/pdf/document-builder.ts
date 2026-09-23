@@ -3550,9 +3550,33 @@ function buildCatPage(ctx: BuildCtx, num: () => number): Content | null {
     };
 }
 
+/**
+ * Valeurs d'un attribut PATRACDVR à choix multiple (`"UMP9, G36"`, format
+ * stocké du dataset, séparateur `', '`) : « Sans » et vides écartés. Tolère
+ * une valeur unique (anciennes OI) — même résultat qu'avant pour elles.
+ */
+function patracValues(v: string | undefined): string[] {
+    return (v ?? '').split(',').map((x) => x.trim()).filter((x) => x && x !== 'Sans');
+}
+
+/**
+ * Case « code court » (FONCTION, PPALE, SEC., AFIS) : une valeur par ligne,
+ * séparées par « / » (décision Nico 2026-09-24, « valeurs empilées »). Chaque
+ * ligne reste un code court `noWrap` — la colonne `auto` prend la largeur du
+ * plus long CODE, pas de la liste, et rien n'est jamais coupé.
+ */
+function patracStackText(v: string | undefined): string {
+    return patracValues(v).join(' /\n') || '-';
+}
+
+/** Nombre de lignes de la case empilée la plus haute d'un membre (≥ 1). */
+function patracStackLines(m: OiPatracMember): number {
+    return Math.max(1, ...[m.fonction, m.principales, m.secondaires, m.afis].map((v) => patracValues(v).length));
+}
+
 /** Texte combiné de la colonne EQPT/GREN. (`join`) — extrait pour être mesuré (coût pt) ET rendu par le MÊME code (`buildPatracPage`, anomalie E). */
 function patracEqptText(m: OiPatracMember): string {
-    return [m.equipement, m.equipement2, m.grenades, m.tenue, m.gpb].filter((v) => v && v !== 'Sans').join(', ') || '-';
+    return [m.equipement, m.equipement2, m.grenades, m.tenue, m.gpb].flatMap(patracValues).join(' / ') || '-';
 }
 
 /**
@@ -3583,10 +3607,10 @@ function patracRowCells(
         { text: r.vehicle, bold: true, fillColor: r.vehicle ? p.headerRow : undefined, alignment: 'center', noWrap: true, borderColor: cellBorder(p) },
         { text: r.m.trigramme || '-', bold: true, alignment: 'center', noWrap: true, borderColor: cellBorder(p) },
         { text: r.m.cellule || '-', alignment: 'center', noWrap: true, borderColor: cellBorder(p) },
-        { text: r.m.fonction || '-', alignment: 'center', noWrap: true, borderColor: cellBorder(p) },
-        { text: r.m.principales || '-', alignment: 'center', noWrap: true, borderColor: cellBorder(p) },
-        { text: r.m.secondaires || '-', alignment: 'center', noWrap: true, borderColor: cellBorder(p) },
-        { text: r.m.afis || '-', alignment: 'center', noWrap: true, borderColor: cellBorder(p) },
+        { text: patracStackText(r.m.fonction), alignment: 'center', noWrap: true, borderColor: cellBorder(p) },
+        { text: patracStackText(r.m.principales), alignment: 'center', noWrap: true, borderColor: cellBorder(p) },
+        { text: patracStackText(r.m.secondaires), alignment: 'center', noWrap: true, borderColor: cellBorder(p) },
+        { text: patracStackText(r.m.afis), alignment: 'center', noWrap: true, borderColor: cellBorder(p) },
         { text: patracEqptText(r.m), fontSize: 8, alignment: 'center', borderColor: cellBorder(p) },
     ];
     if (hasDir) {
@@ -3607,9 +3631,10 @@ function patracRowCells(
  * `EFFRAC_FITS_SAFETY_PT`) plutôt qu'un calcul exact hors de portée d'un
  * module PUR sans pdfmake en valeur.
  */
-function patracRowPt(fontPx: number, eqptText: string, eqptColWidthPt: number): number {
+function patracRowPt(fontPx: number, eqptText: string, eqptColWidthPt: number, stackLines = 1): number {
     const eqptLines = wrappedLinesWithNewlines(eqptText, estimateCharsPerLine(8, eqptColWidthPt));
-    const linePt = Math.max(effracLinePt(fontPx), eqptLines * effracLinePt(8));
+    // Cases empilées (choix multiples, `patracStackText`) : une ligne par valeur.
+    const linePt = Math.max(stackLines * effracLinePt(fontPx), eqptLines * effracLinePt(8));
     return linePt + EFFRAC_ROW_VPAD_PT;
 }
 
@@ -3708,7 +3733,7 @@ function buildPatracPage(ctx: BuildCtx, num: () => number): Content | null {
     const computeCostPt = (fontPx: number): number =>
         EFFRAC_H2_PT +
         patracHeaderRowPt(fontPx) +
-        allRows.reduce((sum, r) => sum + patracRowPt(fontPx, patracEqptText(r.m), eqptColWidthPt), 0);
+        allRows.reduce((sum, r) => sum + patracRowPt(fontPx, patracEqptText(r.m), eqptColWidthPt, patracStackLines(r.m)), 0);
     const fit = fitUsageToPage(computeCostPt, availablePt);
     if ('fontPx' in fit) {
         return { stack: [h2(title, p, geo.contentWidthPt), renderTable(allRows)], fontSize: fit.fontPx };
@@ -3720,7 +3745,7 @@ function buildPatracPage(ctx: BuildCtx, num: () => number): Content | null {
     let best: { groups: number[][]; fontPx: number } | null = null;
     for (const fontPx of FIT_FONT_STEPS) {
         const rowBudgetPt = budgetPt - patracHeaderRowPt(fontPx);
-        const costs = allRows.map((r) => patracRowPt(fontPx, patracEqptText(r.m), eqptColWidthPt));
+        const costs = allRows.map((r) => patracRowPt(fontPx, patracEqptText(r.m), eqptColWidthPt, patracStackLines(r.m)));
         const groups = packCardsByBudget(costs, rowBudgetPt);
         if (best === null || groups.length < best.groups.length) {
             best = { groups, fontPx };

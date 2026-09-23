@@ -68,7 +68,7 @@ export const tempCanvas: HTMLCanvasElement = document.createElement('canvas');
 export const tempCtx: CanvasRenderingContext2D | null = tempCanvas.getContext('2d');
 
 /** init.js:54 — attributs à sélection multiple (case à cocher, valeurs séparées par virgule). */
-export const multiSelectAttributes: string[] = ['fonction', 'equipement', 'equipement2', 'afis', 'gpb'];
+export const multiSelectAttributes: string[] = ['fonction', 'equipement', 'equipement2', 'afis', 'gpb', 'principales', 'secondaires', 'grenades', 'tenue'];
 
 /** init.js:55-66 — mapping du panneau d'édition rapide PATRACDVR. Type local : aucun contrat partagé ne le couvre. */
 interface OiQuickEditFieldMapping {

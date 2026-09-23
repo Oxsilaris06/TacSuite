@@ -1482,7 +1482,12 @@ async function generatePatracdvrPdf(): Promise<void> {
             pdfPage().drawText('VEHICULE : ' + safe(grp.vehicle), { x: M + 4, y: y - vehH + 4, size: 9, font: bold, color: cInk });
             y -= vehH;
             for (const m of grp.members) {
-                const cellLines = cols.map(c => { let v = m[c.k] || ''; if (v === 'Sans') v = '-'; return wrap(v, c.w); });
+                // Choix multiples (`"GENL, MP7"`) : « Sans » écarté, valeurs séparées par « / »
+                // (décision 2026-09-24) ; une valeur unique reste inchangée.
+                const cellLines = cols.map(c => {
+                    const vals = String(m[c.k] || '').split(',').map(x => x.trim()).filter(x => x && x !== 'Sans');
+                    return wrap(vals.length ? vals.join(' / ') : '-', c.w);
+                });
                 const nLines = Math.max(1, ...cellLines.map(l => l.length));
                 const h = Math.max(vehH, nLines * (fs + 2) + 4);
                 if (y - h < M) { newPage(); drawHeaderRow(); }

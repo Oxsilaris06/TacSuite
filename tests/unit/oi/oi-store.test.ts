@@ -505,11 +505,11 @@ describe('oi-store — Store (Proxy profond) + dbManager (IndexedDB)', () => {
             }
         });
 
-        it('multiSelectAttributes contient les 5 attributs multi-sélection', async () => {
+        it('multiSelectAttributes contient les 9 attributs multi-sélection (Tenue, Grenades, Arme P., Arme S. ajoutés le 2026-09-24)', async () => {
             installFakeIndexedDb();
             const { multiSelectAttributes } = await import('@oi/init.js');
 
-            expect(multiSelectAttributes).toEqual(['fonction', 'equipement', 'equipement2', 'afis', 'gpb']);
+            expect(multiSelectAttributes).toEqual(['fonction', 'equipement', 'equipement2', 'afis', 'gpb', 'principales', 'secondaires', 'grenades', 'tenue']);
         });
 
         it('tempCanvas est un HTMLCanvasElement et tempCtx son contexte 2D (ou null sous jsdom)', async () => {
