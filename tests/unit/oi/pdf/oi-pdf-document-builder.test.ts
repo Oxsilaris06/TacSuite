@@ -2413,3 +2413,95 @@ describe('buildOiDocDefinition — anomalie E : tableau PATRACDVR, budget de hau
         },
     );
 });
+
+// ===========================================================================
+// Sections retirées (×) et titres personnalisés (crayon) — décisions Nico
+// 2026-09-24 (`sections.ts`). Une section retirée disparaît du PDF, la
+// numérotation se recale ; un titre renommé remplace celui d'origine.
+// ===========================================================================
+describe('buildOiDocDefinition — sections retirées et titres personnalisés', () => {
+    const member: OiPatracMember = {
+        trigramme: 'ABC', fonction: 'Chef', cellule: 'India 1', principales: 'UMP9',
+        secondaires: 'PSA', afis: 'PIE', grenades: 'Sans', equipement: 'Sans',
+        equipement2: 'Sans', tenue: 'Sans', gpb: 'Sans', dir: '',
+    };
+    function base(removed: string[], titles: Record<string, string> = {}): OiFormData {
+        return {
+            oi_sections: { complete: { removed, titles } },
+            patracdvr_rows: [{ vehicle: 'VL1', members: [member] }],
+            rame_vl_order: ['VL1'],
+            colonne_progression_order: ['ABC'],
+            ordre_penetration_order: ['ABC'],
+            place_chef: 'Derrière India 1',
+            time_events: [{ type: 'H', hour: '06:00', description: 'Top' }],
+            hypotheses: ['Fuite par le jardin'],
+            cat_generales: 'Rester groupés',
+            no_go: 'Arme longue',
+            uda: 'L435-1',
+            cat_liaison: 'TOM',
+        };
+    }
+    const render = (fd: OiFormData): string => JSON.stringify(buildOiDocDefinition(collect(fd), { format: 'a4' }));
+
+    it('rien de retiré : toutes les cartes sont là (témoin)', () => {
+        const json = render(base([]));
+        for (const t of ['Ordre Rame VL', 'Colonne Progression', 'Ordre de Pénétration', 'Chronologie Prévisionnelle', "Hypothèses d'ensemble", 'CAT Générales', 'UDA', 'Liaison']) {
+            expect(json).toContain(`"text":"${t}"`);
+        }
+    });
+
+    it('milieu ouvert : sans colonne ni pénétration, la place du chef reste', () => {
+        const json = render(base(['colonne', 'penetration']));
+        expect(json).not.toContain('Colonne Progression');
+        expect(json).not.toContain('Ordre de Pénétration');
+        expect(json).toContain('"text":"Ordre Rame VL"');
+        expect(json).toContain('Derrière India 1');
+    });
+
+    it('Environnement retiré : page absente, numérotation recalée', () => {
+        const json = render(base(['environnement']));
+        expect(json).not.toContain('ENVIRONNEMENT ET AMIS');
+        expect(json).toContain("3. MISSION DE L'UNITÉ");
+    });
+
+    it('titre renommé : remplace le titre d’origine, en capitales pour un titre de page', () => {
+        const json = render(base([], { environnement: 'Terrain et amis', rame: 'Ordre des VL' }));
+        expect(json).toContain('3. TERRAIN ET AMIS');
+        expect(json).not.toContain('ENVIRONNEMENT ET AMIS');
+        expect(json).toContain('"text":"Ordre des VL"');
+    });
+
+    it('Chronologie retirée, Hypothèses gardées', () => {
+        const json = render(base(['chronologie']));
+        expect(json).not.toContain('Chronologie Prévisionnelle');
+        expect(json).toContain("Hypothèses d'ensemble");
+    });
+
+    it('Articulation retirée : aucune page d’articulation', () => {
+        const json = render(base(['articulation']));
+        expect(json).not.toContain('ARTICULATION & ORDRES DE MOUVEMENT');
+        expect(json).not.toContain('Ordre Rame VL');
+    });
+
+    it('les quatre rubriques CAT retirées : page CAT absente', () => {
+        const json = render(base(['cat_generales', 'no_go', 'uda', 'liaison']));
+        expect(json).not.toContain('CONDUITES À TENIR GÉNÉRALES');
+    });
+
+    it('UDA seule retirée : les autres rubriques CAT restent', () => {
+        const json = render(base(['uda']));
+        expect(json).toContain('CONDUITES À TENIR GÉNÉRALES');
+        expect(json).not.toContain('"text":"UDA"');
+        expect(json).toContain('"text":"Liaison"');
+    });
+
+    it('Adversaires retirés : plus de carte CIBLES(S) sur la garde', () => {
+        const json = render({ ...base(['adversaires']), adversaries: [{ id: 'a1', nom: 'X' }] as unknown as OiFormData['adversaries'] });
+        expect(json).not.toContain('CIBLES(S)');
+    });
+
+    it('le mode express a ses propres sections retirées', () => {
+        const fd: OiFormData = { ...base([]), oi_mode: 'express', oi_sections: { complete: { removed: ['rame'], titles: {} } } };
+        expect(render(fd)).toContain('"text":"Ordre Rame VL"');
+    });
+});

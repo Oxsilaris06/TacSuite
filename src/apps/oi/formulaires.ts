@@ -845,6 +845,16 @@ function syncDomToStoreCore(): void {
         if (Store.state.formData && Store.state.formData.cartography) {
             data.cartography = Store.state.formData.cartography;
         }
+        // Mêmes raisons pour les réglages posés hors champs DOM : ordre des
+        // sections du PDF (`pdf-section-order.ts`), mode complète/express et
+        // sections retirées/titres personnalisés (`sections.ts`). Sans ce
+        // report, la première saisie qui suit les effaçait.
+        const prev = Store.state.formData;
+        if (prev) {
+            if (prev.pdf_section_order) data.pdf_section_order = prev.pdf_section_order;
+            if (prev.oi_mode) data.oi_mode = prev.oi_mode;
+            if (prev.oi_sections) data.oi_sections = prev.oi_sections;
+        }
 
         // Persister dans Store (le Proxy déclenche notify() -> saveToStorage)
         Store.state.formData = data;
@@ -903,6 +913,7 @@ async function loadFormData(): Promise<boolean> {
                 'dynamic_photos', 'patracdvr_rows', 'patracdvr_unassigned',
                 'time_events', 'adversaries', 'pdf_background_id',
                 'moicp_blocks', 'zmspcp_blocks', 'effraction_blocks', 'options',
+                'pdf_section_order', 'oi_mode', 'oi_sections',
                 'rame_vl_order', 'colonne_progression_order', 'ordre_penetration_order'
             ];
             if (excludedKeys.includes(key2)) return;

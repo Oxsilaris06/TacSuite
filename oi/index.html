@@ -285,7 +285,7 @@
 
         <form id="oi-form">
             <div class="wizard-content">
-                <div class="wizard-step oi-grid">
+                <div class="wizard-step oi-grid" data-oi-section="situation">
                     <h2>1. Situation</h2>
                     <label for="date_op">Date de l'opération:</label><input type="date" id="date_op" data-action="sync-dom-to-store">
                     <label for="situation_generale">1.1 Générale:</label><textarea id="situation_generale" data-action="sync-dom-to-store"></textarea>
@@ -293,7 +293,7 @@
                         id="situation_particuliere" data-action="sync-dom-to-store"></textarea>
                 </div>
 
-                <div class="wizard-step">
+                <div class="wizard-step" data-oi-section="adversaires">
                     <h2>2. Adversaire(s)</h2>
                     <div id="adversaries_container"></div>
                     <button type="button" id="createAdversaryBtn" class="add-btn btn-add-adversary" data-action="add-adversary">
@@ -301,7 +301,7 @@
                     </button>
                 </div>
 
-                <div class="wizard-step oi-grid">
+                <div class="wizard-step oi-grid" data-oi-section="environnement">
                     <h2>3. Environnement</h2>
                     <label for="amies">Ami(e)s (Unités en soutien):</label><input type="text" id="amies" data-action="sync-dom-to-store">
                     <label for="terrain_info">Terrain / Météo:</label><input type="text" id="terrain_info" data-action="sync-dom-to-store">
@@ -314,7 +314,7 @@
                     <label for="cadre_juridique">Cadre juridique:</label><input type="text" id="cadre_juridique" data-action="sync-dom-to-store">
                 </div>
 
-                <div class="wizard-step">
+                <div class="wizard-step" data-oi-section="mission">
                     <h2>4. Mission de l'unité</h2>
                     <textarea id="missions_psig" rows="8" data-action="sync-dom-to-store">
 
@@ -325,7 +325,7 @@ ASSISTER LORS DE LA PERQUISITION.
 CONDUITE AU LIEU DE GAV.</textarea>
                 </div>
 
-                <div class="wizard-step">
+                <div class="wizard-step" data-oi-section="execution">
                     <h2>5. Exécution</h2>
                     <div class="oi-fields-grid">
                         <label for="date_execution">Date d'exécution:</label><input type="date" id="date_execution" data-action="sync-dom-to-store">
@@ -336,15 +336,20 @@ CONDUITE AU LIEU DE GAV.</textarea>
 Je veux, le (date) à partir de (heure), pour une action (type d'action) investir le domicile
 présumé de (Nom Adversaire 1) et (Nom Adversaire 2) après avoir bouclé celui-ci.</textarea>
                     </div>
+                    <div class="oi-subsection" data-oi-section="chronologie">
                     <h3>Chronologie</h3>
                     <div id="time_events_container"></div><button type="button" class="add-btn"
                         data-action="add-time-event"><span class="material-symbols-outlined" aria-hidden="true">add_box</span> Ajouter Événement</button>
+                    </div>
+                    <div class="oi-subsection" data-oi-section="hypotheses">
                     <h3>Hypothèses</h3>
                     <div id="hypotheses_container"></div>
                     <button type="button" class="add-btn btn-add-hypothesis" data-action="add-hypothesis">
                         <span class="material-symbols-outlined" aria-hidden="true">add_box</span> Créer Hypothèse
                     </button>
+                    </div>
 
+                    <div class="oi-subsection" data-oi-section="cheminement">
                     <h3 class="mt-20"><span class="material-symbols-outlined">photo_camera</span> Cheminement</h3>
                     <div style="display: flex; gap: 10px; flex-wrap: wrap;">
                         <button type="button" class="add-btn btn-flex-center"
@@ -366,14 +371,15 @@ présumé de (Nom Adversaire 1) et (Nom Adversaire 2) après avoir bouclé celui
                     <div id="photo_container_transport_pr_preview_container" class="image-preview-container"></div>
                     <div id="photo_container_transport_domicile_preview_container" class="image-preview-container">
                     </div>
+                    </div>
                 </div>
 
-                <div class="wizard-step">
+                <div class="wizard-step" data-oi-section="articulation">
                     <h2>6. Articulation (MOIPC/ZMSPCP)</h2>
                     <label for="place_chef">Place du Chef (Générale):</label><input type="text" id="place_chef" data-action="sync-dom-to-store">
 
                     <!-- Ordre de la rame VL -->
-                    <div class="collapsible-container">
+                    <div class="collapsible-container" data-oi-section="rame">
                         <div class="collapsible-header">
                             <h3><span class="material-symbols-outlined icon-align-mid">directions_car</span> Ordre de la rame VL</h3>
                             <span class="material-symbols-outlined">expand_more</span>
@@ -390,7 +396,7 @@ présumé de (Nom Adversaire 1) et (Nom Adversaire 2) après avoir bouclé celui
                     </div>
 
                     <!-- Ordre colonne de progression -->
-                    <div class="collapsible-container">
+                    <div class="collapsible-container" data-oi-section="colonne">
                         <div class="collapsible-header">
                             <h3><span class="material-symbols-outlined icon-align-mid">trending_flat</span> Ordre de la colonne de
                                 progression</h3>
@@ -409,7 +415,7 @@ présumé de (Nom Adversaire 1) et (Nom Adversaire 2) après avoir bouclé celui
                     </div>
 
                     <!-- Ordre de pénétration -->
-                    <div class="collapsible-container">
+                    <div class="collapsible-container" data-oi-section="penetration">
                         <div class="collapsible-header">
                             <h3><span class="material-symbols-outlined icon-align-mid">login</span>
                                 Ordre de pénétration</h3>
@@ -428,6 +434,7 @@ présumé de (Nom Adversaire 1) et (Nom Adversaire 2) après avoir bouclé celui
                     </div>
 
                     <!-- Blocs MOICP dynamiques -->
+                    <div class="oi-subsection" data-oi-section="moicp">
                     <h3
                         class="section-heading-blue">
                         <span class="material-symbols-outlined icon-align-mid">shield</span> MOICP —
@@ -438,8 +445,10 @@ présumé de (Nom Adversaire 1) et (Nom Adversaire 2) après avoir bouclé celui
                         style="margin-top: 10px; background: var(--accent-blue); color: white; display: flex; align-items: center; gap: 8px;">
                         <span class="material-symbols-outlined" aria-hidden="true">add_box</span> Créer MOICP
                     </button>
+                    </div>
 
                     <!-- Blocs ZMSPCP dynamiques -->
+                    <div class="oi-subsection" data-oi-section="zmspcp">
                     <h3
                         class="section-heading-purple">
                         <span class="material-symbols-outlined icon-align-mid">visibility</span> ZMSPCP
@@ -450,8 +459,10 @@ présumé de (Nom Adversaire 1) et (Nom Adversaire 2) après avoir bouclé celui
                         style="margin-top: 10px; background: var(--moicp-zmspcp-purple, #8e44ad); color: white; display: flex; align-items: center; gap: 8px;">
                         <span class="material-symbols-outlined" aria-hidden="true">add_box</span> Créer ZMSPCP
                     </button>
+                    </div>
 
                     <!-- Cellule Effraction dynamiques -->
+                    <div class="oi-subsection" data-oi-section="effraction">
                     <h3
                         class="section-heading-gold">
                         <span class="material-symbols-outlined icon-align-mid">hardware</span>
@@ -462,9 +473,10 @@ présumé de (Nom Adversaire 1) et (Nom Adversaire 2) après avoir bouclé celui
                         style="margin-top: 10px; background: var(--effraction-gold); color: white; display: flex; align-items: center; gap: 8px;">
                         <span class="material-symbols-outlined" aria-hidden="true">add_box</span> Ajouter Cellule Effraction
                     </button>
+                    </div>
                 </div>
 
-                <div class="wizard-step">
+                <div class="wizard-step" data-oi-section="patracdvr">
                     <h2>7. PATRACDVR</h2>
                     <div class="patracdvr-toolbar">
                         <button type="button" id="openUniteConfigBtn" class="patracdvr-member-btn"
@@ -565,7 +577,7 @@ présumé de (Nom Adversaire 1) et (Nom Adversaire 2) après avoir bouclé celui
                     </div>
                 </div>
 
-                <div class="wizard-step">
+                <div class="wizard-step" data-oi-section="finalisation">
                     <h2>8. Finalisation & Conduites à tenir</h2>
 
                     <!-- FOND PDF PERSONNALISÉ (Déplacé ici) -->
@@ -604,19 +616,27 @@ présumé de (Nom Adversaire 1) et (Nom Adversaire 2) après avoir bouclé celui
                         </div>
                     </div>
 
+                    <div class="oi-subsection" data-oi-section="cat_generales">
                     <h3 class="mt-25">Conduites à tenir (CAT) Générales</h3>
                     <textarea id="cat_generales" rows="6" data-action="sync-dom-to-store">- Si rébellion, user du strict niveau de force nécessaire
 - Si retranché, alerter en mesure de se ré-articuler
 - Si tente de fuir, alerter en mesure de jalonner/interpeller</textarea>
+                    </div>
 
+                    <div class="oi-subsection" data-oi-section="no_go">
                     <h3>NO GO</h3>
                     <textarea id="no_go" rows="3" placeholder="Saisir les conditions de désengagement..." data-action="sync-dom-to-store"></textarea>
+                    </div>
+                    <div class="oi-subsection" data-oi-section="uda">
                     <h3>UDA</h3>
                     <textarea id="uda" rows="3" data-action="sync-dom-to-store">Article L435-1 du CSI + légitime défense</textarea>
+                    </div>
+                    <div class="oi-subsection" data-oi-section="liaison">
                     <h3>Liaison</h3>
                     <textarea id="cat_liaison" rows="4" data-action="sync-dom-to-store">TOM:
 DIR:
 Gestuelle et visuelle entre les éléments INDIA</textarea>
+                    </div>
 
                     <label for="place_chef_dispo" class="mt-25">Place du chef de dispo :</label>
                     <input type="text" id="place_chef_dispo" data-action="sync-dom-to-store">

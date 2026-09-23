@@ -16,6 +16,7 @@
  * `Store.state.formData` (source de vérité persistée, pas le DOM).
  */
 
+import { isSectionRemoved } from '@oi/sections.js';
 import { Store } from '@oi/init.js';
 import type { OiFormData, OiPatracMember } from '@shared/types/contracts.js';
 
@@ -63,7 +64,11 @@ export function collectCoherence(): CoherenceResult {
 
     if (!getVal('date_op')) { push(STEP_SITUATION, "La Date de l'opération est manquante. <span class='material-symbols-outlined'>event</span>"); }
 
-    if (!Store.state.formData.adversaries || Store.state.formData.adversaries.length === 0) {
+    // Section retirée (×, `sections.ts`) : volontairement absente de l'OI,
+    // jamais signalée comme manquante.
+    if (isSectionRemoved(Store.state.formData, 'adversaires')) {
+        // rien à contrôler
+    } else if (!Store.state.formData.adversaries || Store.state.formData.adversaries.length === 0) {
         push(STEP_ADVERSAIRE, "Aucun adversaire n'a été créé. (Onglet 2) <span class='material-symbols-outlined'>person</span>");
     } else {
         Store.state.formData.adversaries.forEach((adv, index) => {
@@ -89,7 +94,9 @@ export function collectCoherence(): CoherenceResult {
         push(STEP_PATRACDVR, `Le Chef inter (${chefInter.trigramme}) est assigné à la cellule ${chefInter.cellule} au lieu d'India. <span class='material-symbols-outlined'>group</span>`);
     }
 
-    if (!Store.state.formData.time_events || Store.state.formData.time_events.length < 3) {
+    if (isSectionRemoved(Store.state.formData, 'chronologie')) {
+        // Chronologie retirée : rien à contrôler.
+    } else if (!Store.state.formData.time_events || Store.state.formData.time_events.length < 3) {
         push(STEP_EXECUTION, "La Chronologie (T0, T1, T4...) est incomplète. Au moins 3 étapes sont recommandées. (Onglet 5) <span class='material-symbols-outlined'>timeline</span>");
     } else {
         const t4 = Store.state.formData.time_events.find((e) => e.type === 'T4');

@@ -225,6 +225,7 @@ import '@oi/dessin.js';
 // déjà couvert, zéro action ici.
 import '@oi/carto/index.js'; // pose window.OICarto + auto-câble #cartographyBtn (carto/index.ts:61-71)
 import { initPdfLoaderOrb } from '@oi/loader.js';
+import { initSectionControls } from '@oi/sections-ui.js';
 
 /**
  * ─────────────────────────────────────────────────────────────────────────
@@ -401,6 +402,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (window.Store && typeof window.Store.checkIntegrity === 'function') {
             try { await window.Store.checkIntegrity(); } catch (e) { console.warn('checkIntegrity:', e); }
         }
+
+        // Sections retirables / renommables (`sections-ui.ts`) : après le
+        // chargement, pour peindre les réglages de l'OI chargée.
+        try { initSectionControls(); } catch (e) { console.warn('initSectionControls:', e); }
 
         // §12.3 étape 4 — Initialisation du wizard. 4.html:4553-4572
         oiState.steps = Array.from(document.querySelectorAll<HTMLElement>('.wizard-step'));
