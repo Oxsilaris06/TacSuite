@@ -214,6 +214,32 @@ describe('oi-formulaires — persistance du formulaire OI', () => {
             expect(roundTripped.adversaries?.[0]?.nom_adversaire).toBe('DUPONT');
         });
 
+        it('garde les réglages hors formulaire (ordre PDF, mode, sections retirées/titres) après un cycle load → sync', async () => {
+            const session = {
+                date_op: '2026-08-01',
+                patracdvr_rows: [],
+                patracdvr_unassigned: [],
+                pdf_section_order: ['patracdvr', 'environnement'],
+                oi_mode: 'express',
+                oi_sections: { express: { removed: ['colonne'], titles: { rame: 'Ordre des VL' } } },
+            };
+            localStorage.setItem('tactical_oi_data', JSON.stringify(session));
+
+            const mod = await import('@oi/formulaires.js');
+            stubCrossModuleWindow();
+            await window.loadFormData();
+            mod.flushFormData();
+
+            // Le Store, pas localStorage : l'écriture locale est différée de
+            // 250 ms, la relire ici rendrait la session d'origine (faux positif).
+            const { Store } = await import('@oi/init.js');
+            const roundTripped = Store.state.formData as unknown as typeof session;
+            expect(roundTripped.date_op).toBe('2026-08-01');
+            expect(roundTripped.pdf_section_order).toEqual(['patracdvr', 'environnement']);
+            expect(roundTripped.oi_mode).toBe('express');
+            expect(roundTripped.oi_sections).toEqual(session.oi_sections);
+        });
+
         it('loadFormData initialise le PATRACDVR (vide) si aucune donnée en localStorage', async () => {
             await import('@oi/formulaires.js');
             stubCrossModuleWindow();

@@ -928,6 +928,15 @@ export interface OiCartographyState {
  * les `id`/`name` du DOM, donc ouvertes) + un petit nombre de sous-structures
  * connues, listées ici pour être typées correctement.
  */
+/** Mode de rédaction de l'OI. */
+export type OiMode = 'complete' | 'express';
+
+/** Préférences de sections d'UN mode : ids retirés (×) et titres renommés (crayon). */
+export interface OiSectionPrefs {
+    removed: string[];
+    titles: Record<string, string>;
+}
+
 export interface OiFormData {
     adversaries?: OiAdversary[] | undefined;
     patracdvr_rows?: OiPatracRow[] | undefined;
@@ -957,6 +966,10 @@ export interface OiFormData {
      * champs.md).
      */
     pdf_section_order?: string[] | undefined;
+    /** Mode de l'OI (`sections.ts`) : complète par défaut, ou express (étapes du socle seules). */
+    oi_mode?: OiMode | undefined;
+    /** Sections retirées et titres personnalisés, PAR MODE (décision Nico 2026-09-24). */
+    oi_sections?: Partial<Record<OiMode, OiSectionPrefs>> | undefined;
     /** Tous les autres champs texte du formulaire (situation, mission, environnement…). */
     [key: string]: unknown;
 }

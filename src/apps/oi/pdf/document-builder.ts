@@ -74,6 +74,7 @@ import {
     type OiPdfPalette,
 } from './theme.js';
 import { breakLongTokens } from './text-utils.js';
+import { applySectionRemovals, isSectionRemoved, pdfSectionTitle } from '@oi/sections.js';
 import type {
     OiAdversary,
     OiEffractionBlock,
@@ -795,12 +796,13 @@ function buildCover(ctx: BuildCtx): Content[] {
     // le palier AVANT que `card()` (insécable) ne soit mis en présence d'un
     // contenu trop grand pour la place restante.
     const adversaries = formData.adversaries ?? [];
+    const ciblesRemoved = isSectionRemoved(formData, 'adversaires');
     const coverTextFields = [formData.situation_generale, formData.situation_particuliere].map(str);
     const coverFontPx = coverCardFontPx(coverTextFields, adversaries.length);
 
     const situationCard = card(
         [
-            h3('1. SITUATION GLOBALE', p),
+            h3(`1. ${pdfSectionTitle(formData, 'situation')}`, p),
             labelValue('Situation générale', strOr(formData.situation_generale), p, { valueBold: true }, {
                 anchors: ctx.anchors,
                 ref: fieldAnchor('situation_generale'),
@@ -902,11 +904,11 @@ function buildCover(ctx: BuildCtx): Content[] {
         adversaries.length > 0
             ? ciblesFirstGroup.map((adv) => renderCiblesEntry(adv, p))
             : [{ text: 'Aucune cible renseignée.', color: p.muted }];
-    const ciblesCard = card([h3('CIBLES(S)', p), ...ciblesFirstBody], p, { unbreakable: false });
+    const ciblesCard = card([h3(pdfSectionTitle(formData, 'adversaires'), p), ...ciblesFirstBody], p, { unbreakable: false });
     const overflowPages: Content[] = overflowGroups.map((group) => ({
         stack: [
-            h2(`CIBLES(S) — ${ciblesRangeLabel(group, adversaries)}`, p, geo.contentWidthPt),
-            card([h3('CIBLES(S)', p), ...group.map((adv) => renderCiblesEntry(adv, p))], p, { unbreakable: false }),
+            h2(`${pdfSectionTitle(formData, 'adversaires')} — ${ciblesRangeLabel(group, adversaries)}`, p, geo.contentWidthPt),
+            card([h3(pdfSectionTitle(formData, 'adversaires'), p), ...group.map((adv) => renderCiblesEntry(adv, p))], p, { unbreakable: false }),
         ],
         fontSize: coverFontPx,
         pageBreak: 'before',
@@ -917,10 +919,11 @@ function buildCover(ctx: BuildCtx): Content[] {
             ...watermark,
             opCard,
             { stack: [h1('ORDRE INITIAL', p, { boxed: true })], margin: [0, mm(35), 0, mm(15)] },
-            { stack: [grid2([situationCard], [ciblesCard])], fontSize: coverFontPx },
+            // Adversaires retirés (×) : la situation prend toute la largeur.
+            { stack: [ciblesRemoved ? situationCard : grid2([situationCard], [ciblesCard])], fontSize: coverFontPx },
         ],
     };
-    return [coverPage, ...overflowPages];
+    return [coverPage, ...(ciblesRemoved ? [] : overflowPages)];
 }
 
 /**
@@ -1499,7 +1502,7 @@ const ENV_FIELD_SLOTS: ReadonlyArray<readonly [string, string]> = [
 function buildEnvironnement(ctx: BuildCtx, num: () => number): Content {
     const { formData, p, geo } = ctx;
     const sectionNum = num();
-    const title = `${sectionNum}. ENVIRONNEMENT ET AMIS`;
+    const title = `${sectionNum}. ${pdfSectionTitle(formData, 'environnement')}`;
     const columnWidthPt = (geo.contentWidthPt - mm(6)) / 2;
     const availablePt = geo.contentHeightPt - EFFRAC_FITS_SAFETY_PT;
 
@@ -1712,7 +1715,7 @@ function executionBodyContent(ctx: BuildCtx, fontPx: number): Content[] {
     registerChronoAnchors(ctx, events);
     // Blindage BLIND.A : `time_events` (chronologie) est une liste non bornée
     // — filet `unbreakable:false` (audit « tout unbreakable a un filet »).
-    const chronoCard = card([h3('Chronologie Prévisionnelle', p), chronoTableFor(events, p)], p, { unbreakable: false });
+    const chronoCard = card([h3(pdfSectionTitle(formData, 'chronologie'), p), chronoTableFor(events, p)], p, { unbreakable: false });
 
     const hypotheses = formData.hypotheses ?? [];
     const hypBody: Content[] =
@@ -1720,14 +1723,23 @@ function executionBodyContent(ctx: BuildCtx, fontPx: number): Content[] {
     // Blindage BLIND.A : `formData.hypotheses` (liste libre, MÊME classe de
     // risque que la conduite à tenir ZMSPCP/MOICP, matrice-rupture.md §2/§3)
     // — filet `unbreakable:false`.
-    const hypCard = card([h3("Hypothèses d'ensemble", p), ...hypBody], p, { unbreakable: false });
+    const hypCard = card([h3(pdfSectionTitle(formData, 'hypotheses'), p), ...hypBody], p, { unbreakable: false });
+
+    // Section retirée (×, `sections.ts`) : sa carte n'est pas posée ; la carte
+    // restante prend la pleine largeur. Le coût (`executionPagePt`) garde les
+    // deux cartes : il surestime, direction sûre.
+    const cards = [
+        ...(isSectionRemoved(formData, 'chronologie') ? [] : [chronoCard]),
+        ...(isSectionRemoved(formData, 'hypotheses') ? [] : [hypCard]),
+    ];
+    const cardsRow: Content[] =
+        cards.length === 2 ? [grid2([chronoCard], [hypCard])] : cards.length === 1 ? [cards[0] as Content] : [];
 
     return [
         grid2([dateExecutionField], [heureExecutionField]),
         { text: '', margin: [0, 4, 0, 0] },
         actionField,
-        { text: '', margin: [0, 4, 0, 0] },
-        grid2([chronoCard], [hypCard]),
+        ...(cardsRow.length > 0 ? [{ text: '', margin: [0, 4, 0, 0] } as Content, ...cardsRow] : []),
     ];
 }
 
@@ -1793,7 +1805,7 @@ function buildMission(ctx: BuildCtx, num: number): Content {
     const { p, geo } = ctx;
     const fit = fitUsageToPage((fontPx) => missionPagePt(ctx, fontPx), geo.contentHeightPt - EFFRAC_FITS_SAFETY_PT);
     const fontPx = 'fontPx' in fit ? fit.fontPx : FIT_FONT_FLOOR;
-    return { stack: [h2(`${num}. MISSION DE L'UNITÉ`, p, geo.contentWidthPt), missionBodyContent(ctx, fontPx)], fontSize: fontPx };
+    return { stack: [h2(`${num}. ${pdfSectionTitle(ctx.formData, 'mission')}`, p, geo.contentWidthPt), missionBodyContent(ctx, fontPx)], fontSize: fontPx };
 }
 
 /** Étiquette de plage numérique 1-based « ÉVÉNEMENT <n> »/« ÉVÉNEMENTS <first>-<last> » d'un groupe d'indices CONTIGU de `packCardsByBudget` — même style que `patracRangeLabel` (chronologie EXÉCUTION, cas limite volumineux, `buildExecutionOverflowPages`). */
@@ -1860,7 +1872,7 @@ function buildExecutionOverflowPages(ctx: BuildCtx, num: number): Content[] {
     const actionField = fv(ctx, 'Idée de Manœuvre / Action', 'action_body_text');
     const headPage: Content = {
         stack: [
-            h2(`${num}. EXÉCUTION`, p, geo.contentWidthPt),
+            h2(`${num}. ${pdfSectionTitle(ctx.formData, 'execution')}`, p, geo.contentWidthPt),
             grid2([dateExecutionField], [heureExecutionField]),
             { text: '', margin: [0, 4, 0, 0] },
             actionField,
@@ -1870,7 +1882,7 @@ function buildExecutionOverflowPages(ctx: BuildCtx, num: number): Content[] {
     const chronoPages: Content[] = chronoGroups.map((indices): Content => {
         const subset = indices.map((i) => events[i] as OiTimeEvent);
         return {
-            stack: [h2(`${num}. EXÉCUTION — CHRONOLOGIE ${chronoRangeLabel(indices)}`, p, geo.contentWidthPt), chronoTableFor(subset, p)],
+            stack: [h2(`${num}. ${pdfSectionTitle(ctx.formData, 'execution')} — ${pdfSectionTitle(ctx.formData, 'chronologie', 'CHRONOLOGIE')} ${chronoRangeLabel(indices)}`, p, geo.contentWidthPt), chronoTableFor(subset, p)],
             fontSize: fontPx,
             pageBreak: 'before',
         };
@@ -1878,7 +1890,7 @@ function buildExecutionOverflowPages(ctx: BuildCtx, num: number): Content[] {
     const hypPages: Content[] = hypGroups.map((indices): Content => {
         const body = indices.map((i) => hypothesisLine(i, hypotheses[i] as string, p, ctx.anchors));
         return {
-            stack: [h2(`${num}. EXÉCUTION — ${hypExecRangeLabel(indices)}`, p, geo.contentWidthPt), ...body],
+            stack: [h2(`${num}. ${pdfSectionTitle(ctx.formData, 'execution')} — ${hypExecRangeLabel(indices)}`, p, geo.contentWidthPt), ...body],
             fontSize: fontPx,
             pageBreak: 'before',
         };
@@ -1898,7 +1910,7 @@ function buildExecution(ctx: BuildCtx, num: number): Content[] {
     const { p, geo } = ctx;
     const fit = fitUsageToPage((fontPx) => executionPagePt(ctx, fontPx), geo.contentHeightPt - EFFRAC_FITS_SAFETY_PT);
     if ('fontPx' in fit) {
-        return [{ stack: [h2(`${num}. EXÉCUTION`, p, geo.contentWidthPt), ...executionBodyContent(ctx, fit.fontPx)], fontSize: fit.fontPx }];
+        return [{ stack: [h2(`${num}. ${pdfSectionTitle(ctx.formData, 'execution')}`, p, geo.contentWidthPt), ...executionBodyContent(ctx, fit.fontPx)], fontSize: fit.fontPx }];
     }
     return buildExecutionOverflowPages(ctx, num);
 }
@@ -1958,13 +1970,13 @@ function buildMissionExecutionPages(ctx: BuildCtx, num: () => number): Content[]
 
     const mergedPage = (fontPx: number): Content => ({
         stack: [
-            h2(`${missionNum}. MISSION DE L'UNITÉ`, p, geo.contentWidthPt),
+            h2(`${missionNum}. ${pdfSectionTitle(ctx.formData, 'mission')}`, p, geo.contentWidthPt),
             missionBodyContent(ctx, fontPx),
             {
                 canvas: [{ type: 'line', x1: 0, y1: 0, x2: geo.contentWidthPt, y2: 0, lineWidth: 1, lineColor: p.border }],
                 margin: [0, MISSION_EXEC_SEP_MARGIN_PT, 0, MISSION_EXEC_SEP_MARGIN_PT],
             },
-            h2(`${execNum}. EXÉCUTION`, p, geo.contentWidthPt),
+            h2(`${execNum}. ${pdfSectionTitle(ctx.formData, 'execution')}`, p, geo.contentWidthPt),
             ...executionBodyContent(ctx, fontPx),
         ],
         fontSize: fontPx,
@@ -2036,12 +2048,12 @@ function buildArticulationOverview(ctx: BuildCtx, num: () => number): Content {
     // Blindage BLIND.A : les 3 listes de pastilles sont non bornées (filet
     // `unbreakable:false`, audit « tout unbreakable a un filet »).
     const rameCard = card(
-        [h3('Ordre Rame VL', p), rameVl.length > 0 ? pillRow(rameVl, p, { numbered: true }) : { text: '-' }],
+        [h3(pdfSectionTitle(formData, 'rame'), p), rameVl.length > 0 ? pillRow(rameVl, p, { numbered: true }) : { text: '-' }],
         p,
         { unbreakable: false },
     );
     const colonneCard = card(
-        [h3('Colonne Progression', p), colonne.length > 0 ? pillRow(colonne, p, { numbered: true }) : { text: '-' }],
+        [h3(pdfSectionTitle(formData, 'colonne'), p), colonne.length > 0 ? pillRow(colonne, p, { numbered: true }) : { text: '-' }],
         p,
         { unbreakable: false },
     );
@@ -2050,9 +2062,15 @@ function buildArticulationOverview(ctx: BuildCtx, num: () => number): Content {
     // l'identique) — D7, `pdfv3-design-fix/DEFAUTS.md`.
     const penetrationCard = card(
         [
-            h3('Ordre de Pénétration', p),
-            penetration.length > 0 ? pillRow(penetration, p, { numbered: true }) : { text: '-' },
-            { text: '', margin: [0, 6, 0, 0] },
+            // Pénétration retirée (milieu ouvert, `sections.ts`) : la carte ne
+            // garde que la PLACE DU CHEF, champ de l'étape Articulation.
+            ...(isSectionRemoved(formData, 'penetration')
+                ? []
+                : [
+                      h3(pdfSectionTitle(formData, 'penetration'), p),
+                      penetration.length > 0 ? pillRow(penetration, p, { numbered: true }) : { text: '-' },
+                      { text: '', margin: [0, 6, 0, 0] } as Content,
+                  ]),
             fv(ctx, 'PLACE DU CHEF', 'place_chef', { valueColor: p.accent }),
         ],
         p,
@@ -2060,7 +2078,7 @@ function buildArticulationOverview(ctx: BuildCtx, num: () => number): Content {
     );
 
     const sectionNum = num();
-    const title = `${sectionNum}. ARTICULATION & ORDRES DE MOUVEMENT`;
+    const title = `${sectionNum}. ${pdfSectionTitle(formData, 'articulation')}`;
     const availablePt = geo.contentHeightPt - EFFRAC_FITS_SAFETY_PT;
     const penetrationPt = (fontPx: number): number =>
         EFFRAC_H3_PT +
@@ -2074,13 +2092,22 @@ function buildArticulationOverview(ctx: BuildCtx, num: () => number): Content {
         const row1Pt = Math.max(cardWithTitlePt(pillGridPt(rameVl.length, fontPx)), cardWithTitlePt(pillGridPt(colonne.length, fontPx)));
         return EFFRAC_H2_PT + row1Pt + GRID_ROW_GAP_PT + penetrationPt(fontPx);
     };
+    // Rame / Colonne retirées (×) : la rangée ne garde que la carte restante,
+    // pleine largeur, ou disparaît. Coût inchangé (surestimé, direction sûre).
+    const orderCards = [
+        ...(isSectionRemoved(formData, 'rame') ? [] : [rameCard]),
+        ...(isSectionRemoved(formData, 'colonne') ? [] : [colonneCard]),
+    ];
+    const orderRow: Content[] = [
+        ...(orderCards.length === 2 ? [grid2([rameCard], [colonneCard])] : orderCards.length === 1 ? [orderCards[0] as Content] : []),
+        ...(orderCards.length > 0 ? [{ text: '', margin: [0, GRID_ROW_GAP_PT, 0, 0] } as Content] : []),
+    ];
     const gridFit = fitUsageToPage(computeGridCostPt, availablePt);
     if ('fontPx' in gridFit) {
         return {
             stack: [
                 h2(title, p, geo.contentWidthPt),
-                grid2([rameCard], [colonneCard]),
-                { text: '', margin: [0, GRID_ROW_GAP_PT, 0, 0] },
+                ...orderRow,
                 penetrationCard,
             ],
             fontSize: gridFit.fontPx,
@@ -2091,8 +2118,12 @@ function buildArticulationOverview(ctx: BuildCtx, num: () => number): Content {
     // pleine largeur paginé sur des pages « <titre> — <plage de rubriques> »
     // (jamais « (SUITE) », garde C1 ; `slotRangeLabel`) — même mécanique que
     // `buildCatPage`/`buildAdversaryModesActionPage` (`packCardsByBudget`).
-    const slotLabels = ['Ordre Rame VL', 'Colonne Progression', 'Ordre de Pénétration'] as const;
-    const slots: Content[] = [rameCard, colonneCard, penetrationCard];
+    const slotLabels = [pdfSectionTitle(formData, 'rame'), pdfSectionTitle(formData, 'colonne'), pdfSectionTitle(formData, 'penetration')];
+    const slots: Content[] = [
+        isSectionRemoved(formData, 'rame') ? { text: '' } : rameCard,
+        isSectionRemoved(formData, 'colonne') ? { text: '' } : colonneCard,
+        penetrationCard,
+    ];
     const budgetPt = availablePt - EFFRAC_H2_PT;
     let best: { groups: number[][]; fontPx: number } | null = null;
     for (const fontPx of FIT_FONT_STEPS) {
@@ -2378,7 +2409,7 @@ function buildZmspcpPage(ctx: BuildCtx, block: OiZmspcpBlock, memberToCell: Map<
     const cellsContent: Content[] =
         groups.length > 0 ? groups.map(([cell, members]) => cellGroupBox(cell, members, p)) : [{ text: '-', color: p.muted }];
     return buildArticulationPage(ctx, {
-        title: `Articulation : ZMSPCP - ${block.title || '-'}`,
+        title: `Articulation : ${pdfSectionTitle(ctx.formData, 'zmspcp')} - ${block.title || '-'}`,
         sectionLabel: 'ZMSPCP',
         coreFields: [
             ['Z zone', block.zone || '-', blockFieldAnchor('zmspcp', block.id, 'zone')],
@@ -2403,7 +2434,7 @@ function buildMoicpPage(ctx: BuildCtx, block: OiMoicpBlock, memberToCell: Map<st
     const cellsContent: Content[] =
         groups.length > 0 ? groups.map(([cell, members]) => cellGroupBox(cell, members, p)) : [{ text: '-', color: p.muted }];
     return buildArticulationPage(ctx, {
-        title: `Articulation : MOICP - ${block.title || '-'}`,
+        title: `Articulation : ${pdfSectionTitle(ctx.formData, 'moicp')} - ${block.title || '-'}`,
         sectionLabel: 'MOICP',
         coreFields: [
             ['M mission', block.mission || '-', blockFieldAnchor('moicp', block.id, 'mission')],
@@ -3117,7 +3148,7 @@ function buildEffractionPages(ctx: BuildCtx, block: OiEffractionBlock): Content[
     }
     const tools = doorMeta ? parseTools(doorMeta.tools) : [];
     const topHMm = is169 ? 45 : 55;
-    const title = `Articulation : EFFRACTION - ${block.title || '-'}`;
+    const title = `Articulation : ${pdfSectionTitle(ctx.formData, 'effraction')} - ${block.title || '-'}`;
     // `title` embarque `block.title` : texte utilisateur non borné, cf. JSDoc
     // `extraTitleLinesPt` — `h2()` rend TOUJOURS à fontSize 17 fixe, quel que
     // soit le palier choisi pour le corps. Coût PARTAGÉ par les TROIS budgets
@@ -3345,7 +3376,7 @@ function buildArticulationBlocksLoop(ctx: BuildCtx): Content[] {
             pushArticPages(galleryPages(`Baptême Terrain — ${zmspcp.title || '-'}`, bapteme, photosBase64, p, geo));
             pushArticPage(buildZmspcpPage(ctx, zmspcp, memberToCell));
             const emplAo = dynamicPhotos[`photo_empl_ao_${zmspcp.id}`] ?? [];
-            pushArticPages(galleryPages(`ZMSPCP : ${zmspcp.title || '-'} (Emplacement AO)`, emplAo, photosBase64, p, geo));
+            pushArticPages(galleryPages(`${pdfSectionTitle(ctx.formData, 'zmspcp')} : ${zmspcp.title || '-'} (Emplacement AO)`, emplAo, photosBase64, p, geo));
         }
 
         const moicp = moicpBlocks[i];
@@ -3353,7 +3384,7 @@ function buildArticulationBlocksLoop(ctx: BuildCtx): Content[] {
             pushArticPage(buildMoicpPage(ctx, moicp, memberToCell));
             const ext = dynamicPhotos[`photo_itin_ext_${moicp.id}`] ?? [];
             const int_ = dynamicPhotos[`photo_itin_int_${moicp.id}`] ?? [];
-            pushArticPages(galleryPages(`MOICP : ${moicp.title || '-'}`, [...ext, ...int_], photosBase64, p, geo));
+            pushArticPages(galleryPages(`${pdfSectionTitle(ctx.formData, 'moicp')} : ${moicp.title || '-'}`, [...ext, ...int_], photosBase64, p, geo));
         }
 
         const effrac = effracBlocks[i];
@@ -3438,21 +3469,21 @@ function buildCatPage(ctx: BuildCtx, num: () => number): Content | null {
     registerPdfEditAnchor(ctx.anchors, fieldAnchor('uda'), strOr(uda));
     registerPdfEditAnchor(ctx.anchors, fieldAnchor('place_chef_dispo'), strOr(placeChefDispo));
     registerPdfEditAnchor(ctx.anchors, fieldAnchor('cat_liaison'), strOr(liaison));
-    const catCard = accentCard('CAT Générales', [{ text: strOr(cat), preserveLeadingSpaces: true }], p, 'accent', { unbreakable: false });
+    const catCard = accentCard(pdfSectionTitle(formData, 'cat_generales'), [{ text: strOr(cat), preserveLeadingSpaces: true }], p, 'accent', { unbreakable: false });
     const nogoCard = accentCard(
-        'Conditions de Désengagement (NO-GO)',
+        pdfSectionTitle(formData, 'no_go'),
         [{ text: strOr(nogo), color: p.danger, bold: true, preserveLeadingSpaces: true }],
         p,
         'danger',
         { unbreakable: false },
     );
     const udaCard: Content | null = uda
-        ? accentCard('UDA', [{ text: strOr(uda), preserveLeadingSpaces: true }], p, 'uda', { unbreakable: false })
+        ? accentCard(pdfSectionTitle(formData, 'uda'), [{ text: strOr(uda), preserveLeadingSpaces: true }], p, 'uda', { unbreakable: false })
         : null;
     const placeChefDispoCard: Content | null = placeChefDispo
         ? accentCard('Place du Chef de Dispo', [{ text: strOr(placeChefDispo) }], p, 'accent', { unbreakable: false })
         : null;
-    const liaisonCard = accentCard('Liaison', [{ text: strOr(liaison), preserveLeadingSpaces: true }], p, 'warning', { unbreakable: false });
+    const liaisonCard = accentCard(pdfSectionTitle(formData, 'liaison'), [{ text: strOr(liaison), preserveLeadingSpaces: true }], p, 'warning', { unbreakable: false });
 
     // UDA et Place du chef de dispo (§4.1/§4.2) sont rendus APRÈS le bloc
     // NO-GO : nouvelle ligne grid2 sous la ligne CAT Générales/NO-GO existante
@@ -3468,7 +3499,7 @@ function buildCatPage(ctx: BuildCtx, num: () => number): Content | null {
         extraRow = placeChefDispoCard;
     }
 
-    const title = `${sectionNum}. CONDUITES À TENIR GÉNÉRALES`;
+    const title = `${sectionNum}. ${pdfSectionTitle(formData, 'finalisation')}`;
     const catColWidthPt = (geo.contentWidthPt - mm(6)) / 2;
     const availablePt = geo.contentHeightPt - EFFRAC_FITS_SAFETY_PT;
 
@@ -3492,15 +3523,27 @@ function buildCatPage(ctx: BuildCtx, num: () => number): Content | null {
         const row3Pt = accentCardPt('Liaison', strOr(liaison), fontPx, geo.contentWidthPt);
         return EFFRAC_H2_PT + row1Pt + (extraRow !== null ? STACKED_CARD_GAP_PT + row2Pt : 0) + STACKED_CARD_GAP_PT + row3Pt;
     };
+    // Rubriques retirées (×, `sections.ts`) : leurs données sont vidées en
+    // amont (`applySectionRemovals`), et leurs cartes, qui afficheraient « - »,
+    // ne sont pas posées. Coût inchangé (surestimé, direction sûre).
+    const showCat = !isSectionRemoved(formData, 'cat_generales');
+    const showNogo = !isSectionRemoved(formData, 'no_go');
+    const showLiaison = !isSectionRemoved(formData, 'liaison');
+    const row1Cards = [...(showCat ? [catCard] : []), ...(showNogo ? [nogoCard] : [])];
+    const catBlocks: Content[] = [
+        ...(row1Cards.length === 2 ? [grid2([catCard], [nogoCard])] : row1Cards.length === 1 ? [row1Cards[0] as Content] : []),
+        ...(extraRow !== null ? [extraRow] : []),
+        ...(showLiaison ? [liaisonCard] : []),
+    ];
+    const catRows: Content[] = catBlocks.flatMap((n, i) =>
+        i === 0 ? [n] : [{ text: '', margin: [0, STACKED_CARD_GAP_PT, 0, 0] } as Content, n],
+    );
     const gridFit = fitUsageToPage(computeGridCostPt, availablePt);
     if ('fontPx' in gridFit) {
         return {
             stack: [
                 h2(title, p, geo.contentWidthPt),
-                grid2([catCard], [nogoCard]),
-                ...(extraRow !== null ? [{ text: '', margin: [0, STACKED_CARD_GAP_PT, 0, 0] } as Content, extraRow] : []),
-                { text: '', margin: [0, STACKED_CARD_GAP_PT, 0, 0] },
-                liaisonCard,
+                ...catRows,
             ],
             fontSize: gridFit.fontPx,
         };
@@ -3512,11 +3555,11 @@ function buildCatPage(ctx: BuildCtx, num: () => number): Content | null {
     // lisible/premier rencontré l'emporte, `FIT_FONT_STEPS` trié
     // décroissant), même mécanique que `buildAdversaryModesActionPage`.
     const slots: Array<{ title: string; text: string; node: Content }> = [
-        { title: 'CAT Générales', text: strOr(cat), node: catCard },
-        { title: 'Conditions de Désengagement (NO-GO)', text: strOr(nogo), node: nogoCard },
+        ...(showCat ? [{ title: pdfSectionTitle(formData, 'cat_generales'), text: strOr(cat), node: catCard }] : []),
+        ...(showNogo ? [{ title: pdfSectionTitle(formData, 'no_go'), text: strOr(nogo), node: nogoCard }] : []),
         ...(udaCard ? [{ title: 'UDA', text: strOr(uda), node: udaCard }] : []),
         ...(placeChefDispoCard ? [{ title: 'Place du Chef de Dispo', text: strOr(placeChefDispo), node: placeChefDispoCard }] : []),
-        { title: 'Liaison', text: strOr(liaison), node: liaisonCard },
+        ...(showLiaison ? [{ title: pdfSectionTitle(formData, 'liaison'), text: strOr(liaison), node: liaisonCard }] : []),
     ];
     const renderSlots = (indices: number[]): Content[] => {
         const nodes = indices.map((i) => (slots[i] as (typeof slots)[number]).node);
@@ -3694,7 +3737,7 @@ function buildPatracPage(ctx: BuildCtx, num: () => number): Content | null {
     // Numéro consommé ICI seulement — jamais dans le repli `null` ci-dessus
     // (§6 SPEC-2026-08-18-pdf-et-champs.md, section omise = pas de numéro).
     const sectionNum = num();
-    const title = `${sectionNum}. RÉCAPITULATIF PATRACDVR`;
+    const title = `${sectionNum}. ${pdfSectionTitle(formData, 'patracdvr')}`;
 
     const hasDir = allRows.some((r) => r.m.dir.trim() !== '');
     // Largeurs adaptées (modèle pagination v2, mission PG.IMPL point 5 — banc
@@ -4013,7 +4056,7 @@ const OI_PDF_SECTIONS: OiPdfSectionDef[] = [
             if (!photos.some((meta) => photosBase64[meta.id] !== undefined)) {
                 return [];
             }
-            return galleryPages(`${num()}. TRANSPORT`, photos, photosBase64, p, geo);
+            return galleryPages(`${num()}. ${pdfSectionTitle(ctx.formData, 'cheminement')}`, photos, photosBase64, p, geo);
         },
     },
     { id: 'mission-execution', title: "Mission de l'unité / Exécution", build: (ctx, num) => buildMissionExecutionPages(ctx, num) },
@@ -4042,6 +4085,14 @@ const OI_PDF_SECTIONS: OiPdfSectionDef[] = [
 ];
 
 /** Ordre par défaut des sections réordonnables (ids `OI_PDF_SECTIONS`, dans l'ordre) — `'transport'` déplacée juste après `'environnement'` (§5 SPEC-2026-08-18-pdf-et-champs.md). Exporté pour l'IHM de réordonnancement (`pdf-section-order.ts` — repli/réinitialisation). */
+/** Section du formulaire (`sections.ts`) dont le retrait (×) omet toute la section du PDF. */
+const OI_PDF_SECTION_FORM_ID: Record<string, string> = {
+    adversaires: 'adversaires',
+    environnement: 'environnement',
+    transport: 'cheminement',
+    articulation: 'articulation',
+};
+
 export const OI_PDF_DEFAULT_SECTION_ORDER: string[] = OI_PDF_SECTIONS.map((s) => s.id);
 
 /** Libellés humains NUS par id de section — affichés par l'IHM de réordonnancement (`pdf-section-order.ts`). */
@@ -4115,7 +4166,10 @@ export interface OiPdfDocDefinitionWithAnchors extends TDocumentDefinitions {
 }
 
 export function buildOiDocDefinition(data: OiPdfCollectedData, opts: { format: OiPdfFormat }): OiPdfDocDefinitionWithAnchors {
-    const { formData, isDark } = data;
+    const { isDark } = data;
+    // Sections retirées (×, `sections.ts`) : données masquées dans une COPIE —
+    // l'OI garde tout, « Rétablir » rend la section intacte.
+    const formData = applySectionRemovals(data.formData);
     const p = palette(isDark);
     const geo = pageGeometry(opts.format);
     const dynamicPhotos = formData.dynamic_photos ?? {};
@@ -4155,6 +4209,9 @@ export function buildOiDocDefinition(data: OiPdfCollectedData, opts: { format: O
     const sectionOrder = resolveOiPdfSectionOrder(formData.pdf_section_order);
     for (const id of sectionOrder) {
         const section = OI_PDF_SECTIONS.find((s) => s.id === id);
+        // Section retirée (×) : jamais construite, donc aucun numéro consommé.
+        const formSection = OI_PDF_SECTION_FORM_ID[id];
+        if (formSection !== undefined && isSectionRemoved(formData, formSection)) continue;
         if (section) {
             pushPages(pages, section.build(ctx, num));
         }

@@ -4779,3 +4779,125 @@ textarea[aria-invalid="true"]:focus-visible {
     text-align: left;
     font-weight: 600;
 }
+
+        /* ════════════════════════════════════════════════════════════════
+         * SECTION : SECTIONS RETIRABLES ET RENOMMABLES (sections-ui.ts)
+         * Crayon et × discrets dans le titre, visibles au survol/focus ;
+         * toujours visibles au doigt (pas de survol). Une section retirée
+         * se replie en une seule ligne « … retirée — Rétablir ».
+         * ════════════════════════════════════════════════════════════════ */
+        .oi-section-heading {
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: var(--space-2);
+        }
+
+        .oi-section-tools {
+            display: inline-flex;
+            gap: var(--space-1);
+            margin-left: auto;
+            opacity: 0.35;
+            transition: opacity 150ms var(--ease-in-out);
+        }
+
+        .oi-section-heading:hover .oi-section-tools,
+        .oi-section-tools:focus-within {
+            opacity: 1;
+        }
+
+        @media (hover: none) {
+            .oi-section-tools { opacity: 0.8; }
+        }
+
+        .oi-section-tool {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: var(--space-1);
+            min-width: 44px;
+            min-height: 44px;
+            padding: 0 var(--space-2);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-sm);
+            background: transparent;
+            color: var(--text-muted);
+            font: inherit;
+            font-size: 0.8rem;
+            cursor: pointer;
+        }
+
+        .oi-section-tool:hover,
+        .oi-section-tool:focus-visible {
+            color: var(--text-primary);
+            border-color: var(--accent-blue);
+        }
+
+        .oi-section-remove:hover,
+        .oi-section-remove:focus-visible {
+            color: var(--danger-red);
+            border-color: var(--danger-red);
+        }
+
+        .oi-section-tool .material-symbols-outlined {
+            font-size: 1.1rem;
+        }
+
+        .oi-section-editor {
+            display: inline-flex;
+            align-items: center;
+            gap: var(--space-1);
+            flex: 1;
+            min-width: 12rem;
+        }
+
+        .oi-section-editor input {
+            flex: 1;
+            min-width: 0;
+            margin: 0;
+            font: inherit;
+        }
+
+        .oi-section-restore {
+            display: none;
+        }
+
+        [data-oi-section].oi-section-removed > :not(.oi-section-restore) {
+            display: none !important;
+        }
+
+        [data-oi-section].oi-section-removed > .oi-section-restore {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: var(--space-3);
+            padding: var(--space-2) var(--space-3);
+            margin: var(--space-2) 0;
+            border: 1px dashed var(--border-color);
+            border-radius: var(--radius-md);
+            color: var(--text-muted);
+            font-style: italic;
+        }
+
+        [data-oi-section].oi-section-removed > .oi-section-restore .oi-section-tool {
+            font-style: normal;
+        }
+
+        /* Section repliable retirée : le conteneur porte déjà un cadre, la
+           ligne « Rétablir » n'en ajoute pas un second. */
+        .collapsible-container.oi-section-removed {
+            border-style: dashed;
+            background: transparent;
+        }
+
+        .collapsible-container.oi-section-removed > .oi-section-restore {
+            margin: 0;
+            border: 0;
+        }
+
+        /* Pastille d'une étape retirée : toujours cliquable (pour rétablir),
+           mais visiblement hors de l'OI. */
+        .wizard-progress-step.is-removed {
+            opacity: 0.45;
+            text-decoration: line-through;
+        }
