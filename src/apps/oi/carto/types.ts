@@ -28,6 +28,7 @@ import type {
     OiCartoView,
 } from '@shared/types/contracts.js';
 import type { MapPersistenceAdapter } from '@shared/map-persistence.js';
+import type { MapOverlays } from '@shared/map-overlays.js';
 
 /** Couple `[lng, lat]` tel que persisté dans les tracés (oi_cartographie.js:1482-1486,1573-1602). */
 export type LngLatTuple = [number, number];
@@ -265,6 +266,8 @@ export interface OICartoInternal extends OICartoContract {
      * avec la vue (`OiCartoViewState.contoursOn`).
      */
     contoursOn: boolean;
+    /** Carroyage, grille MGRS, lignes électriques (`@shared/map-overlays`). */
+    overlays?: MapOverlays | null | undefined;
     /**
      * Dernier type de pin posé par la roue de création (`_quickPlacePing`) —
      * proposé en « re-pose » rapide au sommet de la roue suivante (parité
@@ -408,6 +411,7 @@ export interface OICartoInternal extends OICartoContract {
     // --- Parité roue d'options PC-Tac (hors source, introduit par ce chantier) ---
     /** Copie MGRS + GPS dans le presse-papier, toast de confirmation (@shared/coords + @shared/feedback). */
     _copyCoords(lng: number, lat: number): void;
+    _pointTitle(lng: number, lat: number): string | null;
     /** Verrouille/déverrouille la position d'un pin (bloque le drag) — parité PC-Tac `_togglePinLock`. */
     _togglePinLock(pinId: string, reopenWheel?: boolean): void;
     /** Panneau d'attache d'une photo du formulaire au pin (photo↔pin, parité PC-Tac `_openPinPhotoPanel`). */
@@ -462,6 +466,7 @@ export interface OICartoInternal extends OICartoContract {
     _togglePlanIgn(): void;
     _toggleContours(): void;
     _initTopoLayers(): void;
+    _initOverlays(): void;
     _updateTopoBtns(): void;
 
     // --- Relief 3D + bâtiments (map-core.ts) ---

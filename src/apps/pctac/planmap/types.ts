@@ -13,6 +13,7 @@
 import type { Map as MapLibreMap, Marker, LngLat, MapMouseEvent, MapTouchEvent, MapLayerMouseEvent, MapLayerTouchEvent } from 'maplibre-gl';
 import type { PlanMapContract, PlanMapPinSummary } from '@shared/types/contracts.js';
 import type { MapPersistenceAdapter } from '@shared/map-persistence.js';
+import type { MapOverlays } from '@shared/map-overlays.js';
 
 export type { PlanMapPinSummary };
 
@@ -312,6 +313,8 @@ export interface PlanMapState {
     /** Overlay courbes de niveau (hors littéral `planMap.js`).
      *  Persisté sous `CONTOURS_KEY`. */
     contoursOn: boolean;
+    /** Carroyage, grille MGRS, lignes électriques (`@shared/map-overlays`). */
+    overlays?: MapOverlays | null | undefined;
     _selectedShapeId: string | null;
     _handleMarkers: Marker[];
     _textMarkers: Marker[];
@@ -425,6 +428,7 @@ export interface PlanMapInternal extends PlanMapState, PlanMapContract {
     _togglePlanIgn(): void;
     _toggleContours(): void;
     _initTopoLayers(): void;
+    _initOverlays(): void;
     _updateTopoBtns(): void;
 
     /* --- chrome.ts (9) --- */
@@ -528,6 +532,7 @@ export interface PlanMapInternal extends PlanMapState, PlanMapContract {
     /* --- wheels.ts (7) --- */
     _closeWheel(): void;
     _copyCoords(lng: number, lat: number): void;
+    _pointTitle(lng: number, lat: number): string | null;
     _otanColors(): OtanColor[];
     _openCreatePingWheel(lngLat: LngLatObj): void;
     _quickPlacePing(lngLat: LngLatObj, otan: Pick<OtanColor, 'kind' | 'color'> & Partial<OtanColor>, iconId: string): void;

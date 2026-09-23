@@ -41,11 +41,20 @@ export const WheelsMethods = {
      * Utilisé par l'option « Copier coordonnées » des roues. Fallback execCommand si
      * l'API Clipboard est absente (contexte non sécurisé / navigateur ancien).
      */
+    /** « 31U DP 12345 67890 · C4 » : MGRS du point, et sa case si un carroyage le couvre. */
+    _pointTitle(this: PlanMapInternal, lng: number, lat: number): string | null {
+        const mgrs = this.overlays?.mgrsAt(lng, lat) ?? null;
+        if (!mgrs) return null;
+        const cell = this.overlays?.cellAt(lng, lat) ?? null;
+        return cell ? `${mgrs} · ${cell}` : mgrs;
+    },
+
     // planMap.js:3538-3570
     _copyCoords(this: PlanMapInternal, lng: number, lat: number): void {
-        const text = formatCoordsClipboard(lng, lat);
+        const cell = this.overlays?.cellAt(lng, lat) ?? null;
+        const text = formatCoordsClipboard(lng, lat) + (cell ? `\nCase ${cell}` : '');
         const done = (): void => {
-            this._showHint('Coordonnées copiées — ' + shortMgrs(lng, lat));
+            this._showHint('Coordonnées copiées — ' + shortMgrs(lng, lat) + (cell ? ` · Case ${cell}` : ''));
             setTimeout(() => this._hideHint(), 2000);
         };
         const fallback = (): void => {
@@ -143,7 +152,9 @@ export const WheelsMethods = {
         this._activeWheel = new Wheel({
             map: this.map,
             lngLat,
-            title: 'Nouveau ping',
+            // Coordonnée MGRS (et case du carroyage) du point touché, lisible
+            // sans ouvrir « Copier coords » : c'est ce qu'on lit à la radio.
+            title: this._pointTitle(lngLat.lng, lngLat.lat) ?? 'Nouveau ping',
             options: opts,
             onClose: () => { this._activeWheel = null; },
         });

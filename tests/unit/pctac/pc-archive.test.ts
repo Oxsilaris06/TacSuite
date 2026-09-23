@@ -322,6 +322,23 @@ describe('importOiArchive — passerelle OI → PC-Tac (archive.js:279-456)', ()
     expect(finalAdv).toHaveLength(2);
   });
 
+  it("reprend le carroyage de l'OI dans le plan de la situation courante, et l'affiche d'office", async () => {
+    const grid = { west: 1.9, north: 47.9, cellM: 50, cols: 4, rows: 3, dLon: 0.00067, dLat: 0.00045 };
+    const file = await buildOiZip({ oiData: { cartography: { grid } } });
+    const result = await Archive.importOiArchive(file);
+
+    expect(result.gridImported).toBe(true);
+    expect(JSON.parse(localStorage.getItem('pcTacPlanGrid') ?? 'null')).toEqual(grid);
+    expect(JSON.parse(localStorage.getItem('pcTacPlanOverlays') ?? '{}').gridOn).toBe(true);
+  });
+
+  it("carroyage OI corrompu : ignoré, jamais écrit", async () => {
+    const file = await buildOiZip({ oiData: { adversaries: [{ id: 'a', nom_adversaire: 'X' }], cartography: { grid: { cols: 0 } } } });
+    const result = await Archive.importOiArchive(file);
+    expect(result.gridImported).toBe(false);
+    expect(localStorage.getItem('pcTacPlanGrid')).toBeNull();
+  });
+
   it('lit la photo via images/<encodeURIComponent(id)>.bin, avec repli sur le nom NON encodé', async () => {
     const oiData = {
       adversaries: [{ id: 'adv1', nom_adversaire: 'Sans Photo Encodee' }],

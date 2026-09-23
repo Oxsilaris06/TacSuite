@@ -33,7 +33,8 @@ import {
     scopeCarriesGpx,
     scopeCarriesImages,
 } from '@pctac/import-scope.js';
-import { GPX_INDEX_KEY, PINS_KEY } from '@pctac/planmap/constants.js';
+import { GPX_INDEX_KEY, GRID_KEY, OVERLAYS_KEY, PINS_KEY } from '@pctac/planmap/constants.js';
+import { isTacticalGridSpec } from '@shared/tactical-grid.js';
 import { PCTAC_MODES, currentModeId, persistModeId, scopedKey, type PctacModeId } from '@pctac/modes.js';
 import {
     LOCAL_STORAGE_KEY, TP_ASSOC_KEY,
@@ -127,6 +128,8 @@ interface OiData {
     dynamic_photos?: Record<string, OiDynamicPhotoEntry[]>;
     patracdvr_rows?: OiPatracdvrRow[];
     patracdvr_unassigned?: OiPatracdvrMember[];
+    /** Seul le carroyage est repris de la carto OI (`grid`, `@shared/tactical-grid`). */
+    cartography?: { grid?: unknown };
 }
 
 /** Normalise un nom/trigramme pour la déduplication (sans accents, casse, espaces). */
@@ -158,6 +161,8 @@ const COLLECTION_KEYS = [
     LOCAL_STORAGE_KEY, TP_ASSOC_KEY,
     ADVERSARIES_KEY, HOSTAGES_KEY, FRIENDS_KEY, PHOTOS_KEY, CUSTOM_PAX_KEY,
     'pcTacPlanPins', 'pcTacPlanShapes', 'pcTacPlanView',
+    // Carroyage tactique : désigne les cases à la radio, doit voyager avec le plan.
+    'pcTacPlanGrid',
     // Tableau de liens (dashboard.js) : positions des nœuds + liens manuels.
     // C-KEY : clé localStorage 'pcTacDashboard' (constante DASHBOARD_KEY de config.js).
     // Littéral assumé volontairement — le board ne stocke aucune image propre, juste
@@ -659,8 +664,10 @@ export const Archive: ArchiveContract = {
         });
         (Array.isArray(oi.patracdvr_unassigned) ? oi.patracdvr_unassigned : []).forEach((m) => paxMembers.push(m));
 
-        if (!adversaries.length && !paxMembers.length) {
-            throw new Error('Aucun adversaire ni membre PATRACDVR trouvé dans ce fichier OI.');
+        const oiGrid = isTacticalGridSpec(oi.cartography?.grid) ? oi.cartography.grid : null;
+
+        if (!adversaries.length && !paxMembers.length && !oiGrid) {
+            throw new Error('Aucun adversaire, membre PATRACDVR ni carroyage trouvé dans ce fichier OI.');
         }
 
         // Récupère le data URL de la photo principale d'un adversaire depuis l'archive.
@@ -766,7 +773,23 @@ export const Archive: ArchiveContract = {
         });
         if (paxAdded) Storage.saveCollection(CUSTOM_PAX_KEY, paxList);
 
-        return { ok: true, advAdded, advPhotos, advSkipped, paxAdded, paxSkipped };
+        // --- 3) Carroyage de la carto OI → plan de la situation courante ---
+        // L'OI fait foi (décision Nico 2026-09-24) : tout le monde doit appeler
+        // « C4 » la même case, donc le carroyage de l'OI REMPLACE celui du plan,
+        // et il est affiché d'office.
+        let gridImported = false;
+        if (oiGrid) {
+            try {
+                localStorage.setItem(scopedKey(GRID_KEY), JSON.stringify(oiGrid));
+                let settings: Record<string, unknown> = {};
+                try { settings = (JSON.parse(localStorage.getItem(scopedKey(OVERLAYS_KEY)) || '{}') as Record<string, unknown>) || {}; } catch { settings = {}; }
+                localStorage.setItem(scopedKey(OVERLAYS_KEY), JSON.stringify({ ...settings, gridOn: true }));
+                gridImported = true;
+                document.dispatchEvent(new CustomEvent('pctac:data', { detail: { key: GRID_KEY } }));
+            } catch (e) { console.warn('[OI→PCTAC] carroyage non enregistré:', e); }
+        }
+
+        return { ok: true, advAdded, advPhotos, advSkipped, paxAdded, paxSkipped, gridImported };
     },
 };
 

@@ -17,6 +17,7 @@
 import html2canvas from 'html2canvas';
 
 import { toast } from '@shared/feedback.js';
+import { drawOverlayLegend, overlayLegend } from '@shared/map-overlays.js';
 import type { PlanMapInternal } from './types.js';
 
 export const CaptureMethods = {
@@ -243,6 +244,10 @@ export const CaptureMethods = {
             if (!outCtx) return null;
             outCtx.drawImage(baseCanvas, 0, 0, w, h);
             outCtx.drawImage(overlay, 0, 0, w, h);
+            // Carroyage / MGRS / lignes visibles : légende incrustée en bandeau,
+            // elle suit l'image dans le PDF comme au téléchargement.
+            const legend = this.overlays ? overlayLegend(this.overlays, this.map.getBearing()) : null;
+            if (legend) drawOverlayLegend(outCtx, w, h, dpr, legend);
             return outCanvas.toDataURL('image/png');
         } catch (e) {
             console.error('[PlanMap] capture échec:', e);

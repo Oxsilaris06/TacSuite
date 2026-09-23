@@ -60,11 +60,13 @@ import type {
 
 import {
     CONTOURS_KEY,
+    GRID_KEY,
     LIDAR_HD_LAYERS,
     LIDAR_KEY,
     LIDAR_LAYER_IDS,
     LIDAR_OPACITY_OVER_IMAGERY,
     LIDAR_OPACITY_OVER_TOPO,
+    OVERLAYS_KEY,
     PLANIGN_KEY,
     RASTER_STYLE,
     VIEW_KEY,
@@ -72,7 +74,8 @@ import {
 import { prefetchFranceTiles } from './tiles.js';
 import { scopedKey } from '@pctac/modes.js';
 import type { LidarLayerId, PlanMapInternal, PlanView } from './types.js';
-import { toast } from '@shared/feedback.js';
+import { confirmDialog, toast } from '@shared/feedback.js';
+import { createMapOverlays, mountOverlayControls, type OverlayState } from '@shared/map-overlays.js';
 
 export const MapCoreMethods = {
     // planMap.js:342-415
@@ -134,6 +137,7 @@ export const MapCoreMethods = {
         this.map.on('touchend',  this._safe((e: MapMouseEvent | MapTouchEvent) => this._handleDrawUp(e), 'drawUp'));
 
         this._bindUi();
+        this._initOverlays();
 
         this.map.on('load', () => {
             this._initDrawingLayers();
@@ -590,6 +594,37 @@ export const MapCoreMethods = {
         this._applyTopoVisibility();
         try { localStorage.setItem(scopedKey(CONTOURS_KEY), this.contoursOn ? '1' : '0'); } catch { /* non bloquant */ }
         toast(this.contoursOn ? 'Courbes de niveau affichées' : 'Courbes de niveau masquées', { kind: 'info' });
+    },
+
+    /* ----- CARROYAGE / MGRS / LIGNES ÉLECTRIQUES (`@shared/map-overlays`) -----
+     * Le carroyage est une donnée d'opération de la situation (`GRID_KEY`,
+     * effacé au reset, archivé) ; les interrupteurs et la maille sont des
+     * réglages d'affichage (`OVERLAYS_KEY`, gardés au reset). */
+    _initOverlays(this: PlanMapInternal): void {
+        if (!this.map) return;
+        const read = (k: string): unknown => {
+            try { return JSON.parse(localStorage.getItem(scopedKey(k)) || 'null'); } catch { return null; }
+        };
+        this.overlays = createMapOverlays(this.map, {
+            load: () => ({ ...((read(OVERLAYS_KEY) as Partial<OverlayState> | null) ?? {}), grid: read(GRID_KEY) as OverlayState['grid'] }),
+            save: (s) => {
+                try {
+                    localStorage.setItem(scopedKey(OVERLAYS_KEY), JSON.stringify({ gridOn: s.gridOn, mgrsOn: s.mgrsOn, powerOn: s.powerOn, cellM: s.cellM }));
+                    if (s.grid) localStorage.setItem(scopedKey(GRID_KEY), JSON.stringify(s.grid));
+                    else localStorage.removeItem(scopedKey(GRID_KEY));
+                } catch { /* stockage plein ou bloqué : l'affichage reste juste pour la session */ }
+            },
+            toast: (m, kind) => toast(m, { kind: kind ?? 'info' }),
+            confirm: (message) => confirmDialog({ message, confirmLabel: 'Confirmer' }),
+        });
+        const section = Array.from(document.querySelectorAll<HTMLElement>('#plan_layers_panel .plan-layers-section'))
+            .find((s) => s.querySelector('.tac-layers-section-title')?.textContent?.trim() === 'Surimpressions');
+        if (section) mountOverlayControls(section, this.overlays, { row: 'plan-layers-row', fab: 'plan-tool-fab', label: 'plan-layers-label' });
+        // Carroyage arrivé par la passerelle OI ou une archive : on le relit.
+        document.addEventListener('pctac:data', (e) => {
+            const key = (e as CustomEvent<{ key?: string }>).detail?.key ?? '';
+            if (key === GRID_KEY || key === scopedKey(GRID_KEY)) this.overlays?.reload();
+        });
     },
 
     /** Restaure les deux bascules persistées au chargement de la carte. */

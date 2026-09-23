@@ -96,7 +96,9 @@
 import maplibregl from 'maplibre-gl';
 import type { AddLayerObject, MapMouseEvent, MapTouchEvent, SkySpecification } from 'maplibre-gl';
 
-import { toast } from '@shared/feedback.js';
+import { confirmDialog, toast } from '@shared/feedback.js';
+import { createMapOverlays, mountOverlayControls } from '@shared/map-overlays.js';
+import { Store } from '@oi/init.js';
 
 import {
     LIDAR_HD_LAYERS,
@@ -235,6 +237,7 @@ export const MapCoreMethods = {
         }, 'load'));
 
         this._bindUi();
+        this._initOverlays();
         this._bindDrawUi();
         this._renderPins();
         this.initialized = true;
@@ -713,6 +716,32 @@ export const MapCoreMethods = {
     },
 
     /** Applique les deux bascules restaurées depuis la vue (posées par `_init`, cf. `load`). */
+    /* ----- CARROYAGE / MGRS / LIGNES ÉLECTRIQUES (`@shared/map-overlays`) -----
+     * Persistés dans `formData.cartography` (`overlays` : interrupteurs et
+     * maille ; `grid` : carroyage) : ils voyagent avec l'OI, son archive, et
+     * passent au PC-Tac par la passerelle d'import. */
+    _initOverlays(this: OICartoInternal): void {
+        if (!this.map) return;
+        const carto = () => {
+            const fd = Store.state.formData;
+            if (!fd.cartography) fd.cartography = { view: null, pins: [], shapes: [] };
+            return fd.cartography;
+        };
+        this.overlays = createMapOverlays(this.map, {
+            load: () => ({ ...(carto().overlays ?? {}), grid: carto().grid ?? null }),
+            save: (st) => {
+                const c = carto();
+                c.overlays = { gridOn: st.gridOn, mgrsOn: st.mgrsOn, powerOn: st.powerOn, cellM: st.cellM };
+                c.grid = st.grid;
+            },
+            toast: (m, kind) => toast(m, { kind: kind ?? 'info' }),
+            confirm: (message) => confirmDialog({ message, confirmLabel: 'Confirmer' }),
+        });
+        const section = Array.from(document.querySelectorAll<HTMLElement>('#oi_carto_layers_panel .oi-layers-section'))
+            .find((s) => s.querySelector('.tac-layers-section-title')?.textContent?.trim() === 'Surimpressions');
+        if (section) mountOverlayControls(section, this.overlays, { row: 'oi-layers-row', fab: 'oi-carto-fab', label: 'oi-layers-label' });
+    },
+
     _initTopoLayers(this: OICartoInternal): void {
         this._applyTopoVisibility();
     },

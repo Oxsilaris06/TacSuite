@@ -230,3 +230,81 @@ body.up-kb-open .up-kb-aware {
     letter-spacing: 0.5px;
     color: var(--text-muted);
 }
+
+/* ════════════════════════════════════════════════════════════════════════
+ * Surcouches de carte communes OI + PC-Tac (`src/shared/map-overlays.ts`) :
+ * carroyage, grille MGRS, lignes électriques. Les rangées reprennent les
+ * classes de l'hôte (`plan-layers-row`/`oi-layers-row`) ; seuls le texte
+ * d'état sous le libellé et les outils du carroyage sont définis ici.
+ * ════════════════════════════════════════════════════════════════════════ */
+.tac-overlay-text {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.tac-overlay-note {
+    font-size: 0.72em;
+    line-height: 1.2;
+    color: var(--text-muted);
+}
+
+.tac-overlay-note:empty {
+    display: none;
+}
+
+.tac-overlay-note.is-error {
+    color: var(--danger-red);
+}
+
+.tac-overlay-tools {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-1);
+    margin: calc(var(--space-1) * -1) 0 var(--space-2);
+    padding-left: var(--space-2);
+}
+
+.tac-overlay-tools[hidden] {
+    display: none;
+}
+
+.tac-overlay-tools select {
+    width: auto;
+    min-height: 36px;
+    margin: 0;
+    padding: 0 var(--space-2);
+    font-size: 0.8em;
+}
+
+.tac-overlay-tool {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    min-height: 36px;
+    min-width: 36px;
+    justify-content: center;
+    padding: 0 var(--space-2);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--text-main);
+    font: inherit;
+    font-size: 0.78em;
+    cursor: pointer;
+}
+
+.tac-overlay-tool .material-symbols-outlined {
+    font-size: 1.05rem;
+}
+
+.tac-overlay-tool:disabled {
+    opacity: 0.4;
+    cursor: default;
+}
+
+.tac-overlay-tool:not(:disabled):hover,
+.tac-overlay-tool:focus-visible {
+    border-color: var(--accent-blue);
+}

@@ -609,15 +609,17 @@ export const PdfExport: PdfExportContract = {
 
                     if (pins.length > 0) {
                         addNewPage('PLAN TACTIQUE - LISTE DES POINTS');
-                        const pCols: [number, number, number, number] = [200, 110, 110, 95]; // Label, Latitude, Longitude, Diamètre
-                        const pHeaders = ['Label', 'Latitude', 'Longitude', 'Diamètre (m)'];
+                        // MGRS et case du carroyage (décision Nico 2026-09-24) : ce qu'on
+                        // annonce à la radio ; décimal gardé pour les SIG.
+                        const pCols: [number, number, number, number, number, number] = [140, 130, 40, 72, 72, 61]; // Label, MGRS, Case, Latitude, Longitude, Diamètre
+                        const pHeaders = ['Label', 'MGRS', 'Case', 'Latitude', 'Longitude', 'Diam. (m)'];
 
                         const drawPinHeader = (): void => {
                             pdfPage().drawRectangle({ x: context.margin, y: context.y - 5, width: context.pageWidth - 2 * context.margin, height: 20, color: themeColors.headerBg });
                             let px = context.margin + 5;
                             pHeaders.forEach((h, i) => {
                                 pdfPage().drawText(h, { x: px, y: context.y + 2, size: 9, font: fontBold, color: themeColors.text });
-                                px += pCols[i] ?? 0; // pCols a 4 entrées fixes ; neutralise noUncheckedIndexedAccess
+                                px += pCols[i] ?? 0; // pCols a 6 entrées fixes ; neutralise noUncheckedIndexedAccess
                             });
                             context.y -= 25;
                         };
@@ -630,12 +632,16 @@ export const PdfExport: PdfExportContract = {
                             if (!pin || typeof pin !== 'object') continue;
                             if (context.y < context.margin + 20) { addNewPage('PLAN TACTIQUE - LISTE DES POINTS (SUITE)'); drawPinHeader(); }
                             let px = context.margin + 5;
-                            pdfPage().drawText(sanitizeWinAnsi(pin.label).substring(0, 40), { x: px, y: context.y, size: 9, font, color: themeColors.text });
+                            pdfPage().drawText(sanitizeWinAnsi(pin.label).substring(0, 28), { x: px, y: context.y, size: 9, font, color: themeColors.text });
                             px += pCols[0];
-                            pdfPage().drawText(fmtCoord(pin.lat), { x: px, y: context.y, size: 9, font, color: themeColors.text });
+                            pdfPage().drawText(sanitizeWinAnsi(pin.mgrs || 'N/C'), { x: px, y: context.y, size: 8, font, color: themeColors.text });
                             px += pCols[1];
-                            pdfPage().drawText(fmtCoord(pin.lng), { x: px, y: context.y, size: 9, font, color: themeColors.text });
+                            pdfPage().drawText(sanitizeWinAnsi(pin.cell || '-'), { x: px, y: context.y, size: 9, font: fontBold, color: themeColors.text });
                             px += pCols[2];
+                            pdfPage().drawText(fmtCoord(pin.lat), { x: px, y: context.y, size: 8, font, color: themeColors.text });
+                            px += pCols[3];
+                            pdfPage().drawText(fmtCoord(pin.lng), { x: px, y: context.y, size: 8, font, color: themeColors.text });
+                            px += pCols[4];
                             pdfPage().drawText(fmtDiam(pin.diameterM), { x: px, y: context.y, size: 9, font, color: themeColors.text });
 
                             pdfPage().drawLine({

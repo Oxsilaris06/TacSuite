@@ -26,6 +26,7 @@
     "jszip": "3.10.1",
     "maplibre-gl": "4.7.1",
     "material-symbols": "0.45.10",
+    "mgrs": "2.2.0",
     "pdf-lib": "1.17.1",
     "pdfjs-dist": "^6.2.108",
     "pdfmake": "0.3.11",

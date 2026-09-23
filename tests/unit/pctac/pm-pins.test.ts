@@ -303,7 +303,7 @@ describe('_resolvePin', () => {
 });
 
 describe('getPinsSummary — CONTRAT C2 : ne jette jamais, [] en cas d\'échec', () => {
-    it('résumé normal (label/lat/lng/diameterM)', () => {
+    it('résumé normal (label/lat/lng/diameterM + MGRS, case hors carroyage)', () => {
         const fake = makeFakeThis();
         fake._savePins([
             makePin({ id: 'p1', label: 'A', lat: 1, lng: 2, diameterM: 500 }),
@@ -311,9 +311,16 @@ describe('getPinsSummary — CONTRAT C2 : ne jette jamais, [] en cas d\'échec',
         ]);
         const summary = PinsMethods.getPinsSummary.call(fake);
         expect(summary).toEqual([
-            { label: 'A', lat: 1, lng: 2, diameterM: 500 },
-            { label: 'B', lat: 3, lng: 4, diameterM: null },
+            { label: 'A', lat: 1, lng: 2, diameterM: 500, mgrs: '31N CB 88736 10547', cell: null },
+            { label: 'B', lat: 3, lng: 4, diameterM: null, mgrs: '31N FD 11129 31643', cell: null },
         ]);
+    });
+
+    it('case du carroyage : fournie par les surcouches quand un carroyage couvre le ping', () => {
+        const fake = makeFakeThis();
+        fake._savePins([makePin({ id: 'p1', label: 'A', lat: 47.9, lng: 1.9 })]);
+        (fake as unknown as { overlays: { cellAt: () => string } }).overlays = { cellAt: () => 'C4' };
+        expect(PinsMethods.getPinsSummary.call(fake)[0]?.cell).toBe('C4');
     });
 
     it('JSON corrompu sous PINS_KEY → [] (Persist dégrade, ne jette pas)', () => {
