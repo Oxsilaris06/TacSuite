@@ -2495,6 +2495,12 @@ describe('buildOiDocDefinition — sections retirées et titres personnalisés',
         expect(json).toContain('"text":"Liaison"');
     });
 
+    it('Adversaires retirés : la numérotation se recale (« 2. » passe à la section suivante)', () => {
+        const json = render(base(['adversaires']));
+        expect(json).toContain('2. ENVIRONNEMENT ET AMIS');
+        expect(json).not.toContain('3. ENVIRONNEMENT ET AMIS');
+    });
+
     it('Adversaires retirés : plus de carte CIBLES(S) sur la garde', () => {
         const json = render({ ...base(['adversaires']), adversaries: [{ id: 'a1', nom: 'X' }] as unknown as OiFormData['adversaries'] });
         expect(json).not.toContain('CIBLES(S)');
@@ -2537,14 +2543,17 @@ describe('buildOiDocDefinition — OI express', () => {
         expect(json).toContain('OI EXPRESS');
         expect(json).toContain('INTERPELLER');
         expect(json).toContain('TOP ACTION');
-        expect(json).toContain('"text":"UMP9 /\\nG36"');
+        // PATRACDVR express condensé : une ligne par membre, armes jointes par « / ».
+        expect(json).toContain('"text":"UMP9 / G36 / PSA"');
         for (const absent of ['ORDRE INITIAL', 'ENVIRONNEMENT ET AMIS', 'CONDUITES À TENIR', 'CIBLES(S)', 'ARTICULATION']) {
             expect(json).not.toContain(absent);
         }
         expect((dd.content as unknown[]).length).toBe(1);
     });
 
-    it('page 2 : une photo par emplacement, légendée, sur une seule page — jamais plus de deux pages', () => {
+    // Le NOMBRE DE PAGES RENDUES est vérifié dans `oi-pdf-express-pages.test.ts`
+    // (pdfmake réel) : compter les nœuds de `content` laissait passer 3 à 6 pages.
+    it('page 2 : une photo par emplacement, légendée, sans case vide', () => {
         const fd = express({
             dynamic_photos: {
                 photo_container_express_objectif_preview_container: [
@@ -2557,10 +2566,17 @@ describe('buildOiDocDefinition — OI express', () => {
         const img = 'data:image/jpeg;base64,/9j/';
         const dd = buildOiDocDefinition(collect(fd, { o1: img, o2: img, c1: img }), { format: 'a4' });
         const json = JSON.stringify(dd);
-        expect((dd.content as unknown[]).length).toBe(2);
         expect(json).toContain('"text":"Objectif"');
         expect(json).toContain('"text":"Carroyage 50 m"');
         expect(json).not.toContain('"text":"Adversaire"'); // pas de photo adversaire : pas de case vide
+    });
+
+    it('page 1 de l’express : mention CONFIDENTIEL en pied de page (pas de page de garde)', () => {
+        const dd = buildOiDocDefinition(collect(express()), { format: 'a4' });
+        const footer = dd.footer as (page: number, count: number) => unknown;
+        expect(JSON.stringify(footer(1, 2))).toContain('CONFIDENTIEL');
+        const full = buildOiDocDefinition(collect(express({ oi_mode: 'complete' })), { format: 'a4' });
+        expect((full.footer as (page: number, count: number) => unknown)(1, 5)).toBeNull();
     });
 
     it('chronologie retirée en express : absente de la page 1', () => {

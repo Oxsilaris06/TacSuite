@@ -24,6 +24,7 @@ import {
     readUnitTitles,
     sectionDef,
     sectionPrefs,
+    seedFromUnitTemplate,
     withSectionPrefs,
     writeUnitTitles,
 } from '@oi/sections.js';
@@ -244,6 +245,7 @@ export function setOiMode(mode: OiMode): void {
     if (currentOiMode(Store.state.formData) === mode) return;
     Store.state.formData.oi_mode = mode;
     Store.flush(); // cf. `updatePrefs` : la cohérence relit localStorage
+    seedCurrentMode();
     renderModeToggle();
     renderSections();
     if (typeof window.goToStep === 'function' && oiState.steps.length) window.goToStep(Store.state.currentStep);
@@ -268,8 +270,19 @@ function initModeToggle(): void {
     renderModeToggle();
 }
 
+/** Recopie le modèle d'unité dans l'OI si elle n'a encore aucun réglage pour le mode courant. */
+function seedCurrentMode(): void {
+    const fd = Store.state.formData;
+    const mode = currentOiMode(fd);
+    const seed = seedFromUnitTemplate(fd, mode);
+    if (!seed) return;
+    Store.state.formData.oi_sections = withSectionPrefs(fd, seed, mode);
+    Store.flush();
+}
+
 /** Branche les contrôles. À appeler APRÈS `loadFormData` (le `Store` porte alors l'OI chargée). */
 export function initSectionControls(): void {
+    seedCurrentMode();
     initModeToggle();
     renderSections();
 }

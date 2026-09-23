@@ -45,6 +45,12 @@ export function collectCoherence(): CoherenceResult {
     // Fenêtre de désynchronisation acceptée : jusqu'à 250ms (débounce
     // Store.notify -> saveToStorage, perf carto) entre une mutation Store très
     // récente et sa lecture ici — même compromis que l'indicateur autosave U21.
+    // Écriture en attente du Store (différée de 250 ms) versée d'abord : sinon
+    // la relecture ci-dessous rendait une copie plus ancienne que la mémoire et
+    // effaçait un réglage ou une frappe tout juste faits. Pas pendant un
+    // chargement ni un import (`isFormLoading`) : ce sont eux qui écrivent
+    // localStorage directement, et la mémoire y serait la copie périmée.
+    if (!window.isFormLoading) Store.flush();
     const dataString = localStorage.getItem(key);
     Store.state.formData = JSON.parse(dataString || '{}') as OiFormData;
     const getVal = (id: string): string => (Store.state.formData[id] as string | undefined) || '';

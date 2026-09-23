@@ -112,6 +112,8 @@ function gestureDeps(self: PlanMapInternal, map: MapLibreMap): ShapeGestureDeps<
         // On neutralise le zoom double-clic natif de MapLibre le temps de la fenêtre.
         // (planMap.js:2948-2970 — fenêtre 350 ms, état `_lastShapeTap`)
         onTap: (shapeId, startLngLat) => {
+            // Tracé du carroyage en cours : ce tap lui appartient (map-overlays).
+            if (self.overlays?.isCapturing()) return;
             self._suppressDblZoom();
             const now = Date.now();
             const prev = self._lastShapeTap;

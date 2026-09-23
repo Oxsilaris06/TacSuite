@@ -347,6 +347,41 @@ describe('oi-formulaires — persistance du formulaire OI', () => {
             expect(alertsHtml).toContain('mission');
         });
 
+        it('« Réinitialiser la page » ne touche que le visible : section retirée et photos express masquées gardées', async () => {
+            await import('@oi/formulaires.js');
+            stubCrossModuleWindow();
+            const step = document.createElement('div');
+            step.className = 'wizard-step active';
+            step.innerHTML = `
+                <input id="visible_field" value="à effacer">
+                <div class="oi-section-removed"><textarea id="removed_field">gardé</textarea></div>
+                <div class="oi-express-only"><div class="image-preview-container"><div class="image-preview-item"><img id="img_express" class="image-preview"></div></div></div>`;
+            document.querySelector('#oi-form')!.appendChild(step);
+
+            const done = window.resetActivePage();
+            await new Promise((r) => setTimeout(r, 0));
+            document.querySelector<HTMLButtonElement>('.tac-confirm-btn--ok')!.click();
+            await done;
+
+            expect((document.getElementById('visible_field') as HTMLInputElement).value).toBe('');
+            expect((document.getElementById('removed_field') as HTMLTextAreaElement).value).toBe('gardé');
+            expect(document.getElementById('img_express')).not.toBeNull();
+        });
+
+        it("un réglage fait dans le Store juste avant la cohérence survit (écriture différée de 250 ms)", async () => {
+            localStorage.setItem('tactical_oi_data', JSON.stringify({ date_op: '2026-08-01' }));
+            await import('@oi/formulaires.js');
+            const { Store } = await import('@oi/init.js');
+            Store.state.formData = { date_op: '2026-08-01' };
+            Store.flush();
+            // Réglage tout juste fait : sauvegarde encore en attente.
+            Store.state.formData.oi_mode = 'express';
+
+            window.checkCoherence();
+
+            expect(Store.state.formData.oi_mode).toBe('express');
+        });
+
         it('signale une chronologie incomplète (< 3 étapes)', async () => {
             localStorage.setItem('tactical_oi_data', JSON.stringify({
                 date_op: '2026-08-01',

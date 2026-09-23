@@ -190,6 +190,8 @@ export const DrawToolsMethods = {
     /** Drag-to-draw : démarrage */
     // planMap.js:2092-2113
     _handleDrawDown(this: PlanMapInternal, e: MapMouseEvent | MapTouchEvent): void {
+        // Tracé du carroyage en cours : cet appui lui appartient (map-overlays).
+        if (this.overlays?.isCapturing()) return;
         // La mesure n'est pas un drag : elle est pilotée par _onMapClick / réticule.
         if (this.drawTool === 'measure') return;
         if (!this.drawTool || this.drawPrecisionMode) return;

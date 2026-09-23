@@ -9,6 +9,7 @@ import {
     OI_UNIT_TITLES_KEY,
     pdfSectionTitle,
     sectionPrefs,
+    seedFromUnitTemplate,
     withSectionPrefs,
     writeUnitTitles,
 } from '@oi/sections.js';
@@ -56,12 +57,17 @@ describe('sections OI — retrait et titres, par mode', () => {
         expect(pdfSectionTitle(fd, 'rame')).toBe('Ordre des VL');
     });
 
-    it("modèle d'unité : sert quand l'OI n'a pas son propre titre, et l'OI l'emporte", () => {
-        expect(writeUnitTitles('complete', { mission: 'But', rame: 'VL' })).toBe(true);
-        const fd: OiFormData = { oi_sections: { complete: { removed: [], titles: { rame: 'Rame' } } } };
-        expect(formSectionTitle(fd, 'mission')).toBe('But');
-        expect(formSectionTitle(fd, 'rame')).toBe('Rame');
-        expect(formSectionTitle({ oi_mode: 'express' }, 'mission')).toBe("Mission de l'unité");
+    it("modèle d'unité : recopié dans une OI qui n'a encore aucun réglage pour ce mode, jamais dans une OI déjà réglée", () => {
+        expect(writeUnitTitles('complete', { mission: 'But' })).toBe(true);
+        expect(seedFromUnitTemplate({}, 'complete')).toEqual({ removed: [], titles: { mission: 'But' } });
+        expect(seedFromUnitTemplate({ oi_sections: { complete: { removed: [], titles: {} } } }, 'complete')).toBeNull();
+        expect(seedFromUnitTemplate({}, 'express')).toBeNull();
+    });
+
+    it("titre vidé = titre d'origine, même quand un modèle d'unité existe (le modèle n'est plus un repli d'affichage)", () => {
+        writeUnitTitles('complete', { mission: 'But' });
+        const fd: OiFormData = { oi_sections: { complete: { removed: [], titles: {} } } };
+        expect(formSectionTitle(fd, 'mission')).toBe("Mission de l'unité");
     });
 
     it("modèle d'unité corrompu : ignoré sans exception", () => {

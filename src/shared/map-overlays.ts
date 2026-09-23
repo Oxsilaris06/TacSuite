@@ -26,7 +26,7 @@ import {
     type LngLat,
     type TacticalGridSpec,
 } from '@shared/tactical-grid.js';
-import { loadPowerLines, POWER_MIN_ZOOM } from '@shared/power-lines.js';
+import { loadPowerLines, POWER_MIN_ZOOM, tilesFor } from '@shared/power-lines.js';
 
 export interface OverlayState {
     gridOn: boolean;
@@ -54,7 +54,7 @@ export interface MapOverlays {
     setGridOn(on: boolean): void;
     setMgrsOn(on: boolean): void;
     setPowerOn(on: boolean): void;
-    setCellSize(m: number): void;
+    setCellSize(m: number): Promise<boolean>;
     startGridDraw(): Promise<void>;
     startGridMove(): void;
     clearGrid(): Promise<void>;
@@ -65,6 +65,8 @@ export interface MapOverlays {
     mgrsAt(lng: number, lat: number): string | null;
     onChange(listener: () => void): void;
     powerStatus(): PowerStatus;
+    /** `true` si la grille MGRS est active mais trop dense pour l'emprise (zoomer). */
+    mgrsNeedsZoom(): boolean;
     /** Relit l'état persisté (import d'archive, passerelle OI) et repeint. */
     reload(): void;
 }
@@ -93,6 +95,10 @@ function sanitize(raw: Partial<OverlayState> | null | undefined): OverlayState {
 
 export function createMapOverlays(map: MapLibreMap, opts: OverlayOptions): MapOverlays {
     const state = sanitize(opts.load());
+    // Interrupteur « Carroyage » actif sans carroyage (reset de situation,
+    // tracé abandonné) : on le relit éteint plutôt qu'« À tracer » à vide.
+    if (!state.grid) state.gridOn = false;
+    let mgrsZoom = false;
     const listeners = new Set<() => void>();
     let capture: null | { mode: 'draw' | 'move'; first?: LngLat } = null;
     let power: PowerStatus = 'off';
@@ -185,6 +191,10 @@ export function createMapOverlays(map: MapLibreMap, opts: OverlayOptions): MapOv
         const g = state.mgrsOn && step ? mgrsGridGeometry({ west: b.getWest(), south: b.getSouth(), east: b.getEast(), north: b.getNorth() }, step) : null;
         src(map, 'tac-mgrs')?.setData(g ? g.lines : EMPTY);
         src(map, 'tac-mgrs-labels')?.setData(g ? g.labels : EMPTY);
+        // Active mais non tracée (zoom trop large, ou trop dense pour un grand
+        // écran) : l'interface le dit au lieu de laisser croire à une panne.
+        const needsZoom = state.mgrsOn && !g;
+        if (needsZoom !== mgrsZoom) { mgrsZoom = needsZoom; notifyStatus(); }
     }
 
     async function renderPower(): Promise<void> {
@@ -202,10 +212,18 @@ export function createMapOverlays(map: MapLibreMap, opts: OverlayOptions): MapOv
             notifyStatus();
             return; // on garde ce qui est affiché : dézoomer ne l'efface pas
         }
+        const b = map.getBounds();
+        const bounds = { west: b.getWest(), south: b.getSouth(), east: b.getEast(), north: b.getNorth() };
+        // Emprise trop grande pour la couche (grand écran au zoom 13) : « zoomez »,
+        // pas « indisponible ».
+        if (tilesFor(bounds) === null) {
+            power = 'zoom';
+            notifyStatus();
+            return;
+        }
         power = 'loading';
         notifyStatus();
-        const b = map.getBounds();
-        const r = await loadPowerLines({ west: b.getWest(), south: b.getSouth(), east: b.getEast(), north: b.getNorth() }).catch(() => null);
+        const r = await loadPowerLines(bounds).catch(() => null);
         if (seq !== powerSeq) return; // une requête plus récente a pris la main
         if (!r) { power = 'error'; notifyStatus(); return; }
         src(map, 'tac-power')?.setData(r.lines);
@@ -301,17 +319,24 @@ export function createMapOverlays(map: MapLibreMap, opts: OverlayOptions): MapOv
             changed();
             void renderPower();
         },
-        setCellSize(m) {
-            if (!(GRID_CELL_SIZES as readonly number[]).includes(m)) return;
+        async setCellSize(m) {
+            if (!(GRID_CELL_SIZES as readonly number[]).includes(m) || m === state.cellM) return false;
+            // Un carroyage posé change de maille : toutes les cases changent de
+            // nom (« C4 » ne désigne plus le même endroit) — même confirmation
+            // que « Tracer ».
+            if (state.grid && opts.confirm && !(await opts.confirm(`Passer la maille à ${m} m ? Toutes les cases changent de nom.`))) return false;
             state.cellM = m;
             // Même emprise, nouvelle maille : on repart du coin A1 existant.
             if (state.grid) {
                 const g = state.grid;
                 const se: LngLat = [g.west + g.cols * g.dLon, g.north - g.rows * g.dLat];
-                state.grid = makeTacticalGrid([g.west, g.north], se, m).spec;
+                const { spec, clamped } = makeTacticalGrid([g.west, g.north], se, m);
+                state.grid = spec;
                 renderGrid();
+                if (clamped) toast(`Carroyage borné à ${spec.cols} × ${spec.rows} cases : l'emprise d'origine est trop grande pour une maille de ${m} m.`);
             }
             changed();
+            return true;
         },
         async startGridDraw() {
             if (state.grid && opts.confirm && !(await opts.confirm('Remplacer le carroyage actuel ? Les cases annoncées jusqu’ici changeront de place.'))) return;
@@ -340,6 +365,7 @@ export function createMapOverlays(map: MapLibreMap, opts: OverlayOptions): MapOv
         mgrsAt: (lng, lat) => mgrsOf(lng, lat),
         onChange: (l) => { listeners.add(l); },
         powerStatus: () => power,
+        mgrsNeedsZoom: () => mgrsZoom,
         reload() {
             Object.assign(state, sanitize(opts.load()));
             renderAll();
@@ -413,7 +439,10 @@ export function mountOverlayControls(section: HTMLElement, ov: MapOverlays, cls:
         o.textContent = `${m} m`;
         select.appendChild(o);
     }
-    select.addEventListener('change', () => ov.setCellSize(Number(select.value)));
+    select.addEventListener('change', () => {
+        // Refus de la confirmation : le menu revient sur la maille en place.
+        void ov.setCellSize(Number(select.value)).then((done) => { if (!done) select.value = String(ov.state.cellM); });
+    });
     const draw = fab('tac-overlay-tool', 'crop_free', 'Tracer le carroyage (deux coins opposés)');
     draw.append(' Tracer');
     draw.addEventListener('click', () => void ov.startGridDraw());
@@ -443,7 +472,7 @@ export function mountOverlayControls(section: HTMLElement, ov: MapOverlays, cls:
         grid.note.textContent = ov.isCapturing() ? 'Touchez la carte…' : s.grid ? `${s.grid.cols} × ${s.grid.rows} cases de ${s.grid.cellM} m` : s.gridOn ? 'À tracer' : '';
         mgrsBtn.classList.toggle('active', s.mgrsOn);
         mgrsBtn.setAttribute('aria-pressed', String(s.mgrsOn));
-        mgrs.note.textContent = s.mgrsOn ? '1 km, 100 m de près' : '';
+        mgrs.note.textContent = !s.mgrsOn ? '' : ov.mgrsNeedsZoom() ? 'Zoomez pour l’afficher' : '1 km, 100 m de près';
         powerBtn.classList.toggle('active', s.powerOn);
         powerBtn.setAttribute('aria-pressed', String(s.powerOn));
         const st = ov.powerStatus();

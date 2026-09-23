@@ -4,6 +4,7 @@ import {
     classifyPower,
     loadPowerLines,
     OVERPASS_ENDPOINTS,
+    prefetchPowerLines,
     overpassToGeoJSON,
     parseVoltage,
     tilesFor,
@@ -70,6 +71,18 @@ describe('lignes électriques — chargement, repli, cache', () => {
         expect(r?.lines.features).toEqual([]);
     });
 
+    it('réponse 200 avec « remark » d’erreur (Overpass saturé) : échec, JAMAIS mis en cache comme « aucune ligne »', async () => {
+        const timedOut = (): Response => new Response(JSON.stringify({ remark: 'runtime error: Query timed out in "query" at line 1 after 26 seconds.', elements: [] }), { status: 200 });
+        const f = vi.fn().mockImplementation(async () => timedOut());
+        const r = await loadPowerLines(bounds, f as unknown as typeof fetch);
+        expect(r?.missing).toBe(1);
+        // Serveur rétabli : la zone est redemandée, pas servie vide depuis le cache.
+        const f2 = vi.fn().mockResolvedValue(ok());
+        const r2 = await loadPowerLines(bounds, f2 as unknown as typeof fetch);
+        expect(f2).toHaveBeenCalled();
+        expect(r2?.lines.features.length).toBe(2);
+    });
+
     it('deuxième chargement de la même zone : servi par le cache, aucune requête', async () => {
         const f = vi.fn().mockResolvedValue(ok());
         await loadPowerLines(bounds, f as unknown as typeof fetch);
@@ -77,5 +90,22 @@ describe('lignes électriques — chargement, repli, cache', () => {
         const r = await loadPowerLines(bounds, f2 as unknown as typeof fetch);
         expect(f2).not.toHaveBeenCalled();
         expect(r?.lines.features.length).toBe(2);
+    });
+
+    it('pack hors ligne : une zone de 8 × 8 tuiles est préchargée en 4 blocs, puis servie sans réseau', async () => {
+        const f = vi.fn().mockImplementation(async () => ok());
+        const zone = { west: 1.901, south: 47.901, east: 2.299, north: 48.299 };
+        expect(await prefetchPowerLines(zone, f as unknown as typeof fetch)).toEqual({ missing: 0 });
+        expect(f).toHaveBeenCalledTimes(4);
+        const offline = vi.fn().mockRejectedValue(new Error('hors ligne'));
+        const r = await loadPowerLines({ west: 2.01, south: 48.01, east: 2.04, north: 48.04 }, offline as unknown as typeof fetch);
+        expect(offline).not.toHaveBeenCalled();
+        expect(r?.missing).toBe(0);
+    });
+
+    it('pack hors ligne : zone trop grande refusée (null), aucune requête', async () => {
+        const f = vi.fn();
+        expect(await prefetchPowerLines({ west: 0, south: 45, east: 1, north: 46 }, f as unknown as typeof fetch)).toBeNull();
+        expect(f).not.toHaveBeenCalled();
     });
 });

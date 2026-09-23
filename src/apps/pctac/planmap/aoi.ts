@@ -29,6 +29,7 @@ import type { MapMouseEvent, MapTouchEvent } from 'maplibre-gl';
 
 import { AOI_INDEX_KEY, AOI_MAX_TILES, LIDAR_HD_LAYERS } from './constants.js';
 import { estimateTileCount, prefetchTiles, styleTileTemplates } from './tiles.js';
+import { prefetchPowerLines } from '@shared/power-lines.js';
 import type {
     AoiFramingHandlers,
     AoiIndexEntry,
@@ -287,8 +288,19 @@ export const AoiMethods = {
             Persist.set(scopedKey(AOI_INDEX_KEY), index);
         } catch { /* persistance non bloquante */ }
 
+        // Lignes électriques de la zone (décision Nico 2026-09-24 : gardées dans
+        // le pack hors ligne). Non bloquant : un échec Overpass n'annule pas le pack.
+        let powerNote = '';
+        try {
+            ui.setLabel('Lignes électriques de la zone…');
+            const pw = await prefetchPowerLines(bbox);
+            powerNote = pw === null ? ' Lignes électriques : zone trop grande, non préchargées.'
+                : pw.missing ? ` Lignes électriques : ${pw.missing} tuile(s) indisponible(s), relance pour compléter.`
+                : ' Lignes électriques incluses.';
+        } catch { powerNote = ' Lignes électriques non préchargées (réseau).'; }
+
         if (result.fail === 0) {
-            ui.setLabel(`Zone téléchargée : ${result.ok.toLocaleString('fr-FR')} tuiles en cache hors-ligne.`);
+            ui.setLabel(`Zone téléchargée : ${result.ok.toLocaleString('fr-FR')} tuiles en cache hors-ligne.${powerNote}`);
         } else {
             ui.setLabel(`Terminé avec ${result.fail.toLocaleString('fr-FR')} tuile(s) manquante(s) (réseau). Relance pour compléter.`);
         }

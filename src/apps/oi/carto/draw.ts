@@ -280,6 +280,8 @@ export const DrawMethods = {
 
     // oi_cartographie.js:1437-1443
     _handleDrawDown(this: OICartoInternal, e: MapMouseEvent | MapTouchEvent): void {
+        // Tracé du carroyage en cours : cet appui lui appartient (map-overlays).
+        if (this.overlays?.isCapturing()) return;
         if (!this.drawTool) return;
         // La mesure n'est pas un drag : elle est pilotée par _onMapClick (sommets au clic).
         if (this.drawTool === 'measure') return;
@@ -456,7 +458,7 @@ export const DrawMethods = {
     // (poignées + toolbar flottante, groupe `shape-edit.ts`). La suppression
     // vit désormais dans la toolbar (toujours réversible via Undo).
     _onShapeClick(this: OICartoInternal, e: MapLayerMouseEvent): void {
-        if (this.drawTool) return;
+        if (this.drawTool || this.overlays?.isCapturing()) return;
         if (this._gesture) return; // un geste (drag/pinch/poignée) est en cours
         const feat = e.features && e.features[0];
         if (!feat) return;
