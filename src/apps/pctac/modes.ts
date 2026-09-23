@@ -67,6 +67,8 @@ export const SHARED_KEYS: ReadonlySet<string> = new Set<string>([
     // Configuration Tchap live : identifiants/curseur de connexion du poste.
     'pcTacTchapLive',
     'pcTacTchapLiveSince',
+    // Configuration du relais OsmAnd : URL et clé de lecture du poste.
+    'pcTacOsmandRelay',
 ]);
 
 /**

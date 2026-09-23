@@ -80,6 +80,7 @@ import { Utils } from '@pctac/utils.js';
 import { GpxStore, ImageStore } from '@pctac/image-store.js';
 import '@pctac/planmap/index.js'; // expose window.PlanMap (utilisé par UI.switchMainView)
 import '@pctac/tchap-live.js'; // géoloc équipe live (Tchap) → marqueurs sur PlanMap — APRÈS planmap (lit window.PlanMap)
+import '@pctac/osmand-live.js'; // géoloc équipe via relais OsmAnd → même upsert que Tchap — APRÈS tchap-live
 // NB : dashboard.js (board relationnel) est VOLONTAIREMENT débranché — inefficace
 // en l'état, mis de côté. Ne pas réimporter sans décision explicite.
 import { Persist } from '@shared/persist.js';
