@@ -86,6 +86,10 @@ interface TlMember {
   firstSeen: number;
   lastMove: number;
   trail: Array<[number, number]>;
+  /** Horodatage de chaque point de `trail` (même longueur, ordre croissant).
+   *  Permet la réception de points EN RETARD (tampon OsmAnd) : insertion à la
+   *  bonne place chronologique sans déplacer le marqueur. */
+  trailTs?: number[];
   beacon: TlBeacon | null;
   anim?: TlAnim | null;
   state?: TlState;
@@ -98,6 +102,7 @@ interface TlPersistedRec {
   lon: number;
   ts: number;
   trail?: Array<[number, number]> | undefined;
+  trailTs?: number[] | undefined;
   fonction?: string | null | undefined;
   name?: string | null | undefined;
   room?: string | null | undefined;
@@ -320,13 +325,14 @@ function tlWithStore<T>(mode: IDBTransactionMode, fn: (store: IDBObjectStore) =>
     .catch(() => null);
 }
 // Écrit (best-effort, fire-and-forget) l'état last-known d'un sender.
-function persistState(sender: string, m: { lat: number; lng: number; ts?: number | undefined; trail?: Array<[number, number]> | undefined }): void {
+function persistState(sender: string, m: { lat: number; lng: number; ts?: number | undefined; trail?: Array<[number, number]> | undefined; trailTs?: number[] | undefined }): void {
   if (!sender || !m) return;
   const rec: TlPersistedRec = {
     lat: m.lat,
     lon: m.lng,
     ts: m.ts || Date.now(),
     trail: Array.isArray(m.trail) ? m.trail.slice(-TRAIL_MAX) : undefined,
+    trailTs: Array.isArray(m.trailTs) ? m.trailTs.slice(-TRAIL_MAX) : undefined,
     fonction: (cfg.assign[sender] || {}).fonction || null,
     name: names.get(sender) || null,
     room: cfg.room || null,
@@ -529,8 +535,36 @@ function applyVisual(sender: string, m: TlMember | undefined): void {
   m.labelEl.style.borderLeftColor = color;
 }
 
+/* ─── trace : horodatage par point ─────────────────────────────────────────
+ * `trail` reste un tableau de coordonnées (format GeoJSON LineString) ; un
+ * tableau PARALLÈLE `trailTs` porte l'horodatage de chaque point, pour insérer
+ * un point reçu EN RETARD (tampon OsmAnd) à sa place chronologique. */
+function synthTrailTs(n: number, endTs: number): number[] {
+  const out: number[] = [];
+  for (let i = 0; i < n; i++) out.push(endTs - (n - 1 - i) * 1000);
+  return out;
+}
+function ensureTrailTs(m: TlMember): number[] {
+  if (Array.isArray(m.trailTs) && m.trailTs.length === m.trail.length) return m.trailTs;
+  m.trailTs = synthTrailTs(m.trail.length, m.ts || Date.now());
+  return m.trailTs;
+}
+function pushTrail(m: TlMember, lon: number, lat: number, ts: number): void {
+  const tsArr = ensureTrailTs(m);
+  m.trail.push([lon, lat]); tsArr.push(ts);
+  if (m.trail.length > TRAIL_MAX) { m.trail.shift(); tsArr.shift(); }
+}
+/** Insère un point à sa place chronologique (trace supposée triée par ts). */
+function insertTrailPoint(m: TlMember, lon: number, lat: number, ts: number): void {
+  const tsArr = ensureTrailTs(m);
+  let lo = 0, hi = tsArr.length;
+  while (lo < hi) { const mid = (lo + hi) >> 1; if ((tsArr[mid] ?? 0) <= ts) lo = mid + 1; else hi = mid; }
+  m.trail.splice(lo, 0, [lon, lat]); tsArr.splice(lo, 0, ts);
+  if (m.trail.length > TRAIL_MAX) { m.trail.shift(); tsArr.shift(); }
+}
+
 /* ─── marqueurs ─────────────────────────────────────────────────────────── */
-function upsert(sender: string, lat: number, lon: number, ts: number): void {
+export function upsert(sender: string, lat: number, lon: number, ts: number): void {
   if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
   const map = getMap();
   if (!map || typeof maplibregl === 'undefined') {
@@ -552,15 +586,25 @@ function upsert(sender: string, lat: number, lon: number, ts: number): void {
     m = {
       marker, root, iconEl: icon, glyphEl: glyph, labelEl: label,
       lng: lon, lat, dispLng: lon, dispLat: lat, ts, firstSeen: now, lastMove: now,
-      trail: [[lon, lat]], beacon: beacons.get(sender) || null,
+      trail: [[lon, lat]], trailTs: [ts], beacon: beacons.get(sender) || null,
     };
     members.set(sender, m);
     jlog(`👤 ${names.get(sender) || sender} connecté`, 'var(--inter-blue)');
+  } else if (ts < (m.ts || 0)) {
+    // POINT EN RETARD (tampon OsmAnd ou trame matrix ancienne) : il entre dans
+    // la trace à sa place chronologique, mais NE DÉPLACE PAS le marqueur — la
+    // position connue la plus récente reste `m.lat`/`m.lng`. Sans cette
+    // distinction, la vidange d'un tampon OsmAnd ferait reculer les marqueurs.
+    insertTrailPoint(m, lon, lat, ts);
+    applyVisual(sender, m);
+    if (trailsOn) updateTrails();
+    persistState(sender, m);
+    return;
   } else {
     // 1ère trame live d'un marqueur réhydraté : on sort de l'état 'stale'.
     if (m.stale) { m.stale = false; m.firstSeen = now; m.lastMove = now; }
     const moved = metersBetween(m.lat, m.lng, lat, lon);
-    if (moved > MOVE_MIN_M) { m.lastMove = now; m.trail.push([lon, lat]); if (m.trail.length > TRAIL_MAX) m.trail.shift(); }
+    if (moved > MOVE_MIN_M) { m.lastMove = now; pushTrail(m, lon, lat, ts); }
     m.anim = { fromLng: m.dispLng, fromLat: m.dispLat, toLng: lon, toLat: lat, t0: now };
     m.lng = lon; m.lat = lat; m.ts = Math.max(m.ts || 0, ts);
     if (beacons.get(sender)) m.beacon = beacons.get(sender) ?? null;
@@ -606,10 +650,13 @@ function rehydrateMarker(sender: string, rec: TlPersistedRec | undefined): boole
   icon.appendChild(glyph); root.appendChild(icon); root.appendChild(label);
   const marker = new maplibregl.Marker({ element: root, anchor: 'center' }).setLngLat([lon, lat]).addTo(map);
   const trail: Array<[number, number]> = Array.isArray(rec.trail) && rec.trail.length ? rec.trail.slice(-TRAIL_MAX) : [[lon, lat]];
+  const trailTs: number[] = Array.isArray(rec.trailTs) && rec.trailTs.length === trail.length
+    ? rec.trailTs.slice(-TRAIL_MAX)
+    : synthTrailTs(trail.length, ts);
   const m: TlMember = {
     marker, root, iconEl: icon, glyphEl: glyph, labelEl: label,
     lng: lon, lat, dispLng: lon, dispLat: lat, ts, firstSeen: ts, lastMove: ts,
-    trail, beacon: null, stale: true,
+    trail, trailTs, beacon: null, stale: true,
   };
   members.set(sender, m);
   if (rec.name) names.set(sender, rec.name);
@@ -1292,7 +1339,19 @@ void toggleTrails;
 // comportement.
 void CELLULES;
 
-export const TchapLive = { startManual, startOidc, stop, wireUI };
+/* ─── opérateurs externes (OsmAnd) ──────────────────────────────────────────
+ * Renseigne l'identité d'un opérateur d'une AUTRE source là où Tchap range les
+ * siens : `names` (libellé) et `cfg.assign` (fonction → icône + libellé
+ * « [FONCTION] Nom »). Ainsi l'affichage existant (marqueurs, liste par équipe,
+ * couleur, icône) marche SANS code nouveau. Non persisté : réinjecté par la
+ * source à chaque sondage. */
+export function registerRemoteOperator(sender: string, nom: string | null, fonction: string | null): void {
+  if (nom) names.set(sender, nom);
+  const a = cfg.assign[sender] = cfg.assign[sender] || {};
+  a.fonction = fonction || null;
+}
+
+export const TchapLive = { startManual, startOidc, stop, wireUI, upsert, registerRemoteOperator };
 
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', wireUI);
 else wireUI();

@@ -593,6 +593,24 @@
                         Code couleur des marqueurs : <span class="pctac-tl-color-tag pctac-tl-color-tag--blue">bleu</span>=nouveau · <span class="pctac-tl-color-tag pctac-tl-color-tag--green">vert</span>=déplacement · <span class="pctac-tl-color-tag pctac-tl-color-tag--gray">gris</span>=actif immobile · <span class="pctac-tl-color-tag pctac-tl-color-tag--red">rouge</span>=déconnexion imminente.
                         Un seul token (le tien) reçoit <b>toutes</b> les positions du salon. Salon <b>non chiffré (Forum)</b> requis pour cette voie.
                     </div>
+
+                    <!-- Seconde source : relais OsmAnd (Suivi en ligne) -->
+                    <div class="pctac-section-label">OsmAnd (relais)</div>
+                    <div class="pctac-col-gap-10">
+                        <div>
+                            <label class="pctac-muted-08" for="osm_url">URL du relais</label>
+                            <input type="text" id="osm_url" placeholder="https://…/osmand" class="pctac-w-100">
+                        </div>
+                        <div>
+                            <label class="pctac-muted-08" for="osm_key">Clé de lecture (readKey)</label>
+                            <input type="password" id="osm_key" placeholder="clé de lecture" class="pctac-w-100">
+                        </div>
+                    </div>
+                    <div class="pctac-tl-actions-row">
+                        <button type="button" id="osm_start" class="add-btn pctac-btn-outline-md">Démarrer</button>
+                        <button type="button" id="osm_stop" class="add-btn pctac-btn-outline-md" disabled>Arrêter</button>
+                        <span id="osm_status" class="pctac-muted-sm">Prêt.</span>
+                    </div>
                 </div>
             </div>
         </div>
