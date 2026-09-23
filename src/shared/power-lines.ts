@@ -18,7 +18,9 @@
 export const POWER_MIN_ZOOM = 13;
 const TILE_DEG = 0.05;
 const MAX_TILES = 24;
-const CACHE_NAME = 'tacsuite-power-v1';
+const CACHE_NAME = 'tacsuite-power-v2'; // v2 : entrées datées (v1 pouvait figer des tuiles vides)
+/** Durée de vie d'une tuile en cache : le réseau électrique évolue, OSM aussi. */
+const CACHE_TTL_MS = 30 * 24 * 3600 * 1000;
 const FETCH_TIMEOUT_MS = 25_000;
 export const OVERPASS_ENDPOINTS = ['https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter'];
 
@@ -111,18 +113,32 @@ function overpassQuery(b: Bounds): string {
     return `[out:json][timeout:25];(way["power"~"^(line|minor_line)$"](${bb});node["power"="tower"](${bb}););out geom tags;`;
 }
 
-interface TileData { lines: LineFeature[]; towers: TowerFeature[] }
+interface TileData { lines: LineFeature[]; towers: TowerFeature[]; t?: number }
 
 const memory = new Map<string, TileData>();
+/** Tuiles périmées relues du cache : servies seulement si le réseau échoue. */
+const stale = new Map<string, TileData>();
+
+let oldCacheDropped = false;
 
 async function cacheGet(id: string): Promise<TileData | null> {
     const hit = memory.get(id);
     if (hit) return hit;
     try {
         if (typeof caches === 'undefined') return null;
+        if (!oldCacheDropped) {
+            oldCacheDropped = true;
+            // v1 pouvait contenir des tuiles vides figées : on l'abandonne.
+            void caches.delete('tacsuite-power-v1').catch(() => false);
+        }
         const res = await (await caches.open(CACHE_NAME)).match(`/__tacsuite-power/${id}`);
         if (!res) return null;
         const data = (await res.json()) as TileData;
+        // Tuile périmée : on la redemande (mais on la garde si le réseau manque).
+        if (typeof data.t !== 'number' || Date.now() - data.t > CACHE_TTL_MS) {
+            stale.set(id, data);
+            return null;
+        }
         memory.set(id, data);
         return data;
     } catch {
@@ -131,7 +147,9 @@ async function cacheGet(id: string): Promise<TileData | null> {
 }
 
 async function cachePut(id: string, data: TileData): Promise<void> {
+    data.t = Date.now();
     memory.set(id, data);
+    stale.delete(id);
     try {
         if (typeof caches === 'undefined') return;
         await (await caches.open(CACHE_NAME)).put(`/__tacsuite-power/${id}`, new Response(JSON.stringify(data), { headers: { 'Content-Type': 'application/json' } }));
@@ -161,7 +179,14 @@ async function fetchOverpass(b: Bounds, fetchImpl: typeof fetch): Promise<unknow
         try {
             const res = await fetchImpl(url, { method: 'POST', body: new URLSearchParams({ data: overpassQuery(b) }), signal: ctrl.signal });
             if (!res.ok) throw new Error(`Overpass ${res.status}`);
-            return await res.json();
+            const json = (await res.json()) as { remark?: unknown };
+            // Overpass saturé répond 200 avec un `remark` d'erreur et une liste
+            // VIDE : c'est un échec, pas « aucune ligne ici » (qui se lirait
+            // comme « pas d'obstacle » et resterait en cache).
+            if (typeof json.remark === 'string' && /error|timed out|out of memory|abort/i.test(json.remark)) {
+                throw new Error(`Overpass : ${json.remark}`);
+            }
+            return json;
         } catch (e) {
             lastError = e;
         } finally {
@@ -211,7 +236,12 @@ export async function loadPowerLines(b: Bounds, fetchImpl: typeof fetch = fetch)
                 await cachePut(id, data);
             }
         } catch {
-            failed = missingIds.length;
+            // Réseau en échec : une tuile périmée vaut mieux que rien (hors ligne).
+            for (const id of missingIds) {
+                const old = stale.get(id);
+                if (old) have.set(id, old);
+                else failed++;
+            }
         }
     }
     const seenL = new Set<number>(), seenT = new Set<number>();
@@ -230,4 +260,34 @@ export async function loadPowerLines(b: Bounds, fetchImpl: typeof fetch = fetch)
 /** Vide le cache mémoire (tests). */
 export function _resetPowerMemory(): void {
     memory.clear();
+    stale.clear();
+}
+
+/** Au-delà (≈ 0,5° × 0,5°), le préchargement d'une zone est refusé : trop de requêtes Overpass. */
+export const PREFETCH_MAX_TILES = 100;
+
+/**
+ * Précharge (cache) les lignes d'une zone entière, pour le pack hors ligne :
+ * blocs de 4 × 4 tuiles, un à la fois (Overpass limite les requêtes
+ * simultanées). `null` si la zone est trop grande ; sinon le nombre de tuiles
+ * restées sans données (réseau, serveurs saturés).
+ */
+export async function prefetchPowerLines(b: Bounds, fetchImpl: typeof fetch = fetch): Promise<{ missing: number } | null> {
+    const x0 = Math.floor(b.west / TILE_DEG), x1 = Math.floor(b.east / TILE_DEG);
+    const y0 = Math.floor(b.south / TILE_DEG), y1 = Math.floor(b.north / TILE_DEG);
+    if ((x1 - x0 + 1) * (y1 - y0 + 1) > PREFETCH_MAX_TILES) return null;
+    let missing = 0;
+    for (let x = x0; x <= x1; x += 4) {
+        for (let y = y0; y <= y1; y += 4) {
+            // Bloc intérieur de 4 × 4 tuiles (marge d'un centième de tuile pour
+            // ne pas déborder sur la tuile voisine par arrondi).
+            const e = 0.01 * TILE_DEG;
+            const r = await loadPowerLines({
+                west: x * TILE_DEG + e, south: y * TILE_DEG + e,
+                east: Math.min(x + 4, x1 + 1) * TILE_DEG - e, north: Math.min(y + 4, y1 + 1) * TILE_DEG - e,
+            }, fetchImpl);
+            missing += r?.missing ?? 0;
+        }
+    }
+    return { missing };
 }

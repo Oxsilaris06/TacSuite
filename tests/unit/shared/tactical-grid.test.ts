@@ -61,6 +61,9 @@ describe('carroyage tactique', () => {
         expect(isTacticalGridSpec({ ...spec, cols: 0 })).toBe(false);
         expect(isTacticalGridSpec({ ...spec, dLat: Number.NaN })).toBe(false);
         expect(isTacticalGridSpec('x')).toBe(false);
+        // JSON forgé : maille inconnue, ou pas incohérents avec la maille.
+        expect(isTacticalGridSpec({ ...spec, cellM: -5 })).toBe(false);
+        expect(isTacticalGridSpec({ ...spec, dLat: spec.dLat * 20 })).toBe(false);
     });
 });
 
@@ -102,6 +105,44 @@ describe('grille MGRS', () => {
                 }
             }
         }
+    });
+
+    // Régression (revue 2026-09-24) : les lignes « est » reliaient les coins
+    // par RANG dans la rangée ; en limite de fuseau (0°, 6° E), dès que le
+    // nombre de cases du premier fuseau variait d'une rangée à l'autre, tout
+    // le second fuseau zigzaguait d'une colonne.
+    const verticalSegmentsAreStraight = (g: NonNullable<ReturnType<typeof mgrsGridGeometry>>, step: number): void => {
+        const m = metersPerDegree(47);
+        for (const f of g.lines.features) {
+            const c = f.geometry.coordinates;
+            for (let i = 1; i < c.length; i++) {
+                const dx = Math.abs((c[i]![0]! - c[i - 1]![0]!) * m.lon);
+                const dy = Math.abs((c[i]![1]! - c[i - 1]![1]!) * m.lat);
+                // Segment « nord » : quasi vertical (convergence < 5 %) ; « est » : quasi horizontal.
+                if (dy > dx) expect(dx).toBeLessThan(step * 0.1);
+                else expect(dy).toBeLessThan(step * 0.1);
+            }
+        }
+    };
+
+    it('limite de fuseau 6° E (Annecy) à 1 km : aucune ligne en zigzag', () => {
+        verticalSegmentsAreStraight(mgrsGridGeometry({ west: 5.8, south: 45.85, east: 6.2, north: 46.05 }, 1000)!, 1000);
+    });
+
+    it('limite de fuseau 0° (Caen, Le Mans) à 100 m : aucune ligne en zigzag', () => {
+        verticalSegmentsAreStraight(mgrsGridGeometry({ west: -0.012, south: 49.18, east: 0.012, north: 49.19 }, 100)!, 100);
+    });
+
+    it('limite de bande 48° N : les lignes « nord » traversent sans coupure', () => {
+        const g = mgrsGridGeometry({ west: 2.3, south: 47.98, east: 2.33, north: 48.02 }, 1000)!;
+        const m = metersPerDegree(48);
+        const longest = Math.max(...g.lines.features.map((f) => {
+            const c = f.geometry.coordinates;
+            return Math.abs((c[c.length - 1]![1]! - c[0]![1]!) * m.lat);
+        }));
+        // L'emprise fait ~4,4 km de haut : une ligne continue dépasse 4 km ;
+        // coupée à 48° N, aucune ne dépassait ~2,5 km.
+        expect(longest).toBeGreaterThan(4000);
     });
 
     it('à 100 m, les coins sont ronds à 100 m', () => {

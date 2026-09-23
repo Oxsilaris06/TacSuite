@@ -843,7 +843,7 @@ export const PinsMethods = {
         }
 
         const start = (e: MapMouseEvent | MapTouchEvent): void => {
-            if (this.drawTool || this.pendingPin) return;
+            if (this.drawTool || this.pendingPin || this.overlays?.isCapturing()) return;
             if (this._activeWheel || this._inlinePanel) return;
             const oe = e.originalEvent;
             // Multi-touch (pinch zoom etc.) → on annule le long-press

@@ -606,7 +606,12 @@ export const MapCoreMethods = {
             try { return JSON.parse(localStorage.getItem(scopedKey(k)) || 'null'); } catch { return null; }
         };
         this.overlays = createMapOverlays(this.map, {
-            load: () => ({ ...((read(OVERLAYS_KEY) as Partial<OverlayState> | null) ?? {}), grid: read(GRID_KEY) as OverlayState['grid'] }),
+            load: () => {
+                const settings = read(OVERLAYS_KEY) as Partial<OverlayState> | null;
+                // Carroyage arrivé par une archive de situation (les réglages ne
+                // voyagent pas avec elle) : affiché, sauf réglage contraire.
+                return { ...(settings ?? {}), gridOn: settings?.gridOn ?? true, grid: read(GRID_KEY) as OverlayState['grid'] };
+            },
             save: (s) => {
                 try {
                     localStorage.setItem(scopedKey(OVERLAYS_KEY), JSON.stringify({ gridOn: s.gridOn, mgrsOn: s.mgrsOn, powerOn: s.powerOn, cellM: s.cellM }));

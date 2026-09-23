@@ -126,7 +126,8 @@ function gestureDeps(self: OICartoInternal, map: MapLibreMap): ShapeGestureDeps<
         },
         // Tap sans drag : sélection directe (poignées + toolbar) — pas de
         // double-tap côté OI, la toolbar remplace la roue contextuelle PC-Tac.
-        onTap: shapeId => { self._selectShape(shapeId); },
+        // Tracé du carroyage en cours : ce tap lui appartient (map-overlays).
+        onTap: shapeId => { if (!self.overlays?.isCapturing()) self._selectShape(shapeId); },
         shapeCentroid,
         deselectShape: () => self._deselectShape(),
         canStartHandleGesture: () => !(self.drawTool || self._gesture),

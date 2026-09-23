@@ -5000,3 +5000,10 @@ textarea[aria-invalid="true"]:focus-visible {
         body.oi-express #pdfSectionOrderPanel {
             display: none !important;
         }
+
+        /* Sous-sections absentes du PDF express (hypothèses, cheminement) :
+           masquées en express pour ne pas faire saisir ce qui ne sera pas
+           imprimé ; leurs données restent dans l'OI. */
+        body.oi-express .oi-express-hidden {
+            display: none !important;
+        }

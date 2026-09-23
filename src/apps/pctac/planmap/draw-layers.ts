@@ -448,7 +448,7 @@ export const DrawLayersMethods = {
         }
 
         const start = (e: MapMouseEvent | MapTouchEvent) => {
-            if (this.drawTool || this.moveState || this._gesture) return;
+            if (this.drawTool || this.moveState || this._gesture || this.overlays?.isCapturing()) return;
             if (this._activeWheel || this._inlinePanel) return;
             const oe = e.originalEvent;
             // Multi-touch (pinch zoom etc.) → on annule le long-press

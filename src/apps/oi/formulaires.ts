@@ -1660,21 +1660,33 @@ async function resetActivePage(): Promise<void> {
     });
     if (!confirmedReset) return;
 
+    // Seul ce qui est VISIBLE est réinitialisé : une section retirée (×), un
+    // bloc réservé à l'OI express vu en complète, ou une sous-section masquée
+    // en express garde son contenu — et ses photos, supprimées DÉFINITIVEMENT
+    // d'IndexedDB sinon, alors que l'utilisateur ne les voyait pas.
+    const express = document.body.classList.contains('oi-express');
+    const shown = (el: Element): boolean =>
+        !el.closest('.oi-section-removed') &&
+        !(!express && el.closest('.oi-express-only')) &&
+        !(express && el.closest('.oi-express-hidden'));
+
     // 1. Vider les champs standards
     activeStep.querySelectorAll<FieldValueElement>('input:not([type="file"]), textarea, select').forEach((el) => {
+        if (!shown(el)) return;
         if (el.type === 'checkbox' || el.type === 'radio') (el as HTMLInputElement).checked = false;
         else el.value = '';
     });
 
     // 2. Supprimer les éléments dynamiques
-    activeStep.querySelectorAll('.dynamic-list-item, .adversary-entry, .moicp-block, .zmspcp-block, .effraction-block, .time-item, .order-chip').forEach((el) => el.remove());
+    activeStep.querySelectorAll('.dynamic-list-item, .adversary-entry, .moicp-block, .zmspcp-block, .effraction-block, .time-item, .order-chip').forEach((el) => { if (shown(el)) el.remove(); });
 
     // 3. Désélectionner les puces (chips)
-    activeStep.querySelectorAll('.chip-btn.selected').forEach((el) => el.classList.remove('selected'));
+    activeStep.querySelectorAll('.chip-btn.selected').forEach((el) => { if (shown(el)) el.classList.remove('selected'); });
 
     // 4. Supprimer les photos de la zone ET de l'IndexedDB
     const images = activeStep.querySelectorAll<HTMLImageElement>('.image-preview-item img');
     for (const img of images) {
+        if (!shown(img)) continue;
         if (dbManager) await dbManager.deleteItem(img.id);
         // TS strict : closest() renvoie Element | null, jamais absent en pratique
         // (l'image est toujours dans ce conteneur par construction).

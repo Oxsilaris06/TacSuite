@@ -86,7 +86,13 @@ export function isTacticalGridSpec(v: unknown): v is TacticalGridSpec {
         (g.cols as number) >= 1 && (g.cols as number) <= GRID_MAX_CELLS_PER_SIDE &&
         (g.rows as number) >= 1 && (g.rows as number) <= GRID_MAX_CELLS_PER_SIDE &&
         (g.dLon as number) > 0 && (g.dLat as number) > 0 &&
-        Math.abs(g.north as number) <= 85 && Math.abs(g.west as number) <= 180
+        Math.abs(g.north as number) <= 85 && Math.abs(g.west as number) <= 180 &&
+        // Maille connue, et pas cohérents avec elle à la latitude du carroyage
+        // (± 10 %) : un JSON forgé ne donne ni « carroyage -5 m » ni des cases
+        // démesurées.
+        (GRID_CELL_SIZES as readonly number[]).includes(g.cellM as number) &&
+        Math.abs((g.dLat as number) * metersPerDegree(g.north as number).lat - (g.cellM as number)) <= (g.cellM as number) * 0.1 &&
+        Math.abs((g.dLon as number) * metersPerDegree(g.north as number).lon - (g.cellM as number)) <= (g.cellM as number) * 0.1
     );
 }
 
@@ -143,13 +149,20 @@ export const MGRS_MAX_CELLS = 2500;
 
 const EPS = 1e-7; // ≈ 1 cm : juste au-delà d'un bord de case
 
-interface Corner { ref: string; sw: LngLat; box: [number, number, number, number] }
+interface Corner { ref: string; sw: LngLat; box: [number, number, number, number]; exact: boolean }
 
 function cellOf(lng: number, lat: number, digits: number): Corner | null {
     try {
         const ref = forward([lng, lat], digits);
         const box = inverse(ref);
-        return { ref, sw: [box[0], box[1]], box };
+        // Coin EXACT : juste au nord-est du coin, les chiffres fins (1 m) sont
+        // ronds au pas. Une case tronquée par la limite de fuseau a son coin
+        // rabattu sur le méridien de limite : ce n'est pas un nœud de la grille.
+        const fine = forward([box[0] + EPS, box[1] + EPS], 5);
+        const e = fine.slice(-10, -5), n = fine.slice(-5);
+        const zeros = 5 - digits;
+        const exact = e.slice(-zeros) === '0'.repeat(zeros) && n.slice(-zeros) === '0'.repeat(zeros);
+        return { ref, sw: [box[0], box[1]], box, exact };
     } catch {
         return null; // hors du domaine MGRS (pôles) ou coordonnée invalide
     }
@@ -174,9 +187,24 @@ function northOf(c: Corner, digits: number): Corner | null {
     return cellOf((c.box[0] + c.box[2]) / 2, c.box[3] + h / 2 + EPS, digits);
 }
 
-/** Zone UTM + bande d'une référence (« 31U »), pour couper une ligne au changement de fuseau. */
+/**
+ * Numéro de fuseau UTM d'une référence (« 31 »). La lettre de BANDE n'en fait
+ * pas partie : easting et northing sont continus d'une bande à l'autre, une
+ * ligne ne doit se couper qu'au changement de fuseau (régression 48° N).
+ */
 function zoneOf(ref: string): string {
-    return /^\d{1,2}[C-X]/.exec(ref)?.[0] ?? '';
+    return /^\d{1,2}/.exec(ref)?.[0] ?? '';
+}
+
+/**
+ * Identité de la colonne d'une case : fuseau + lettre de colonne 100 km +
+ * chiffres d'easting. Deux coins de même identité sont sur la MÊME ligne
+ * « est », quel que soit leur rang dans leur rangée (en limite de fuseau, le
+ * nombre de cases du premier fuseau varie d'une rangée à l'autre).
+ */
+function columnKey(ref: string, digits: number): string {
+    const m = /^(\d{1,2})[C-X]([A-Z])[A-Z](\d+)$/.exec(ref);
+    return m ? `${m[1]}|${m[2]}|${(m[3] ?? '').slice(0, digits)}` : ref;
 }
 
 /**
@@ -229,11 +257,13 @@ export function mgrsGridGeometry(
     const pushLine = (coords: LngLat[]): void => {
         if (coords.length >= 2) lines.push({ type: 'Feature', properties: { kind }, geometry: { type: 'LineString', coordinates: coords } });
     };
-    // Lignes « nord » (northing constant) : chaque rangée, coupée au changement de fuseau.
+    // Lignes « nord » (northing constant) : chaque rangée, coupée au changement
+    // de fuseau ; les coins non exacts (cases tronquées) coupent aussi la ligne.
     for (const row of rowsOfCorners) {
         let seg: LngLat[] = [];
         let zone = '';
         for (const c of row) {
+            if (!c.exact) { pushLine(seg); seg = []; continue; }
             const z = zoneOf(c.ref);
             if (seg.length && z !== zone) { pushLine(seg); seg = []; }
             zone = z;
@@ -241,30 +271,33 @@ export function mgrsGridGeometry(
         }
         pushLine(seg);
     }
-    // Lignes « est » (easting constant) : même rang de colonne d'une rangée à l'autre.
-    const width = Math.max(...rowsOfCorners.map((r) => r.length));
-    for (let j = 0; j < width; j++) {
-        let seg: LngLat[] = [];
-        let zone = '';
-        for (const row of rowsOfCorners) {
-            const c = row[j];
-            if (!c) continue;
-            const z = zoneOf(c.ref);
-            if (seg.length && z !== zone) { pushLine(seg); seg = []; }
-            zone = z;
-            seg.push(c.sw);
+    // Lignes « est » (easting constant) : coins regroupés par IDENTITÉ de
+    // colonne (`columnKey`), rangée après rangée, du sud au nord.
+    const columns = new Map<string, LngLat[][]>();
+    const maxGapDeg = (step * 1.5) / m.lat; // une rangée manquante coupe la ligne
+    for (const row of rowsOfCorners) {
+        for (const c of row) {
+            if (!c.exact) continue;
+            const key = columnKey(c.ref, digits);
+            const segs = columns.get(key) ?? [];
+            const last = segs[segs.length - 1];
+            const prev = last?.[last.length - 1];
+            if (last && prev && c.sw[1] - prev[1] <= maxGapDeg) last.push(c.sw);
+            else segs.push([c.sw]);
+            columns.set(key, segs);
         }
-        pushLine(seg);
     }
+    for (const segs of columns.values()) segs.forEach(pushLine);
     // Étiquettes : chiffres d'easting en bas de chaque ligne verticale, de
     // northing à gauche de chaque ligne horizontale (km : 2 chiffres, 100 m : 3).
     const first = rowsOfCorners[0] ?? [];
     for (const c of first) {
+        if (!c.exact) continue;
         const digitsPart = c.ref.slice(-2 * digits);
         labels.push({ type: 'Feature', properties: { label: digitsPart.slice(0, digits), kind: 'easting' }, geometry: { type: 'Point', coordinates: c.sw } });
     }
     for (const row of rowsOfCorners) {
-        const c = row[0];
+        const c = row.find((x) => x.exact);
         if (!c) continue;
         const digitsPart = c.ref.slice(-2 * digits);
         labels.push({ type: 'Feature', properties: { label: digitsPart.slice(digits), kind: 'northing' }, geometry: { type: 'Point', coordinates: c.sw } });

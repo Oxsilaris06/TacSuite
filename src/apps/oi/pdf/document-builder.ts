@@ -3852,8 +3852,11 @@ function buildFinalPage(ctx: BuildCtx): Content {
  * assumé E2, SPEC-PDF-V3.md §3.1 T14/§7) au lieu de la seule page finale.
  */
 function buildFooter(formData: OiFormData, p: OiPdfPalette): DynamicContent {
+    // L'OI express n'a pas de page de garde : sa page 1 est l'ordre, elle
+    // porte donc la mention CONFIDENTIEL comme toutes les autres.
+    const skipFirst = currentOiMode(formData) !== 'express';
     return (currentPage: number, pageCount: number): Content | null => {
-        if (currentPage === 1) {
+        if (currentPage === 1 && skipFirst) {
             return null;
         }
         return {
@@ -4092,43 +4095,151 @@ const OI_PDF_SECTIONS: OiPdfSectionDef[] = [
 /** Photos de l'OI express, dans l'ordre de la page 2. */
 const EXPRESS_PHOTOS = OI_EXPRESS_PHOTO_CONTAINERS;
 
+/** Au-delà, le PATRACDVR express passe sur deux tableaux côte à côte. */
+const EXPRESS_PATRAC_SPLIT = 10;
+
+type ExpressRow = { vehicle: string; m: OiPatracMember };
+
+/** Valeurs d'une ligne PATRACDVR express : tout sur UNE ligne, joint par « / ». */
+function expressPatracTexts(m: OiPatracMember): { armes: string; eqpt: string } {
+    const join = (...vs: Array<string | undefined>): string => vs.flatMap(patracValues).join(' / ') || '-';
+    return { armes: join(m.principales, m.secondaires, m.afis), eqpt: join(m.grenades, m.equipement, m.equipement2, m.tenue, m.gpb) };
+}
+
 /**
- * PDF de l'OI express : DEUX pages au plus.
- *  - page 1, l'ordre : situation et mission côte à côte, exécution (date,
- *    heure H, idée de manœuvre, chronologie si elle n'est pas retirée), puis le
- *    PATRACDVR ; la police est choisie au plus grand palier (11 → 7) qui fait
- *    tenir la page, avec le MÊME modèle de coût que le reste du document ;
- *  - page 2, les photos : objectif, adversaire, carte (une chacune, la
- *    première de chaque emplacement), légendées, sur une seule page.
- * Au-delà du palier plancher (PATRACDVR très long), pdfmake paginera : c'est
- * le seul cas où l'express dépasse deux pages, et il ne coupe rien.
+ * PATRACDVR condensé de l'OI express : une rangée par membre (VL, PAX,
+ * cellule, fonction, armes, équipement), deux tableaux côte à côte au-delà de
+ * `EXPRESS_PATRAC_SPLIT` membres. Retourne le rendu et son coût (pt) au
+ * palier donné, calculés sur les MÊMES colonnes.
+ */
+function expressPatrac(rows: ExpressRow[], p: OiPdfPalette, widthPt: number, fontPx: number): { node: Content; costPt: number } {
+    const halves = rows.length > EXPRESS_PATRAC_SPLIT ? [rows.slice(0, Math.ceil(rows.length / 2)), rows.slice(Math.ceil(rows.length / 2))] : [rows];
+    const gap = mm(4);
+    const tableW = (widthPt - gap * (halves.length - 1)) / halves.length;
+    // Largeurs FIXES (et non `auto`) : le coût estimé porte sur les largeurs
+    // réellement rendues. Une colonne auto élargie par une fonction longue
+    // rétrécissait armes/équipement et faisait déborder la page.
+    const shares = [0.07, 0.08, 0.12, 0.18, 0.25, 0.30];
+    const cellPad = 8; // marges internes d'une cellule (LAYOUT_BORDERED)
+    const colW = shares.map((f) => tableW * f - cellPad);
+    const line = effracLinePt(fontPx);
+    const rowPt = (r: ExpressRow): number => {
+        const t = expressPatracTexts(r.m);
+        const texts = [r.vehicle, r.m.trigramme, patracValues(r.m.cellule).join(' / '), patracValues(r.m.fonction).join(' / '), t.armes, t.eqpt];
+        return Math.max(line, ...texts.map((x, i) => textLinePt(x || '-', fontPx, colW[i] as number))) + EFFRAC_ROW_VPAD_PT;
+    };
+    const tables = halves.map((part) => ({
+        table: {
+            widths: shares.map((f) => `${Math.round(f * 1000) / 10}%`),
+            headerRows: 1,
+            body: [
+                ['VL', 'PAX', 'CEL.', 'FONCTION', 'ARMES', 'ÉQUIPEMENT'].map((t) => ({ text: t, bold: true, fillColor: p.headerRow, alignment: 'center', borderColor: cellBorder(p) }) as TableCell),
+                ...part.map((r) => {
+                    const t = expressPatracTexts(r.m);
+                    return [
+                        { text: r.vehicle, bold: true, fillColor: r.vehicle ? p.headerRow : undefined, borderColor: cellBorder(p) },
+                        { text: r.m.trigramme || '-', bold: true, borderColor: cellBorder(p) },
+                        { text: patracValues(r.m.cellule).join(' / ') || '-', borderColor: cellBorder(p) },
+                        { text: patracValues(r.m.fonction).join(' / ') || '-', borderColor: cellBorder(p) },
+                        { text: t.armes, borderColor: cellBorder(p) },
+                        { text: t.eqpt, borderColor: cellBorder(p) },
+                    ] as TableCell[];
+                }),
+            ],
+        },
+        layout: LAYOUT_BORDERED,
+        fontSize: fontPx,
+    }) as Content);
+    const costPt = Math.max(...halves.map((part) => line + EFFRAC_ROW_VPAD_PT + part.reduce((sum, r) => sum + rowPt(r), 0)));
+    const node: Content = tables.length === 1 ? (tables[0] as Content) : { columns: tables.map((t) => ({ width: tableW, stack: [t] })), columnGap: gap };
+    return { node, costPt };
+}
+
+/** Hauteur minimale d'une photo en page 2 : en dessous, une photo ne se lit plus. */
+const EXPRESS_PHOTO_MIN_PT = 150;
+
+/**
+ * PDF de l'OI express : DEUX pages (décision Nico 2026-09-24). Trois
+ * dispositions, essayées dans l'ordre ; la première qui tient ENTIÈREMENT
+ * (page 1, et page 2 avec des photos d'au moins `EXPRESS_PHOTO_MIN_PT`) au
+ * plus grand palier de police possible (11 → 7) est retenue :
+ *  - A : page 1 = l'ordre, chronologie et PATRACDVR ; page 2 = les photos ;
+ *  - B : page 1 = l'ordre et la chronologie ; page 2 = PATRACDVR puis photos ;
+ *  - C : page 1 = situation, mission, exécution ; page 2 = chronologie,
+ *        PATRACDVR, puis photos.
+ * Si même C ne tient pas au palier plancher (textes démesurés), C est rendue
+ * au plancher et pdfmake pagine : rien n'est jamais tronqué. Les coûts sont
+ * ceux du reste du document, sur les largeurs réellement rendues.
  */
 function buildExpressPages(ctx: BuildCtx): Content[] {
     const { formData, p, geo, photosBase64, dynamicPhotos } = ctx;
-    const half = (geo.contentWidthPt - mm(6)) / 2;
-    const members: Array<{ vehicle: string; m: OiPatracMember }> = [];
+    const W = geo.contentWidthPt;
+    const half = (W - mm(6)) / 2;
+    const members: ExpressRow[] = [];
     for (const row of formData.patracdvr_rows ?? []) {
         row.members.forEach((m, idx) => members.push({ vehicle: idx === 0 ? row.vehicle : '', m }));
     }
-    const hasDir = members.some((r) => r.m.dir.trim() !== '');
     const events = isSectionRemoved(formData, 'chronologie') ? [] : (formData.time_events ?? []);
-    const situationText = `Situation générale : ${strOr(formData.situation_generale)}\nSituation particulière : ${strOr(formData.situation_particuliere)}`;
+    // Même réserve que le reste du document. Mesuré sur 9 cas (2026-09-24) :
+    // les coûts estimés dépassent le rendu réel de 5 à 10 %, direction sûre ;
+    // une marge supplémentaire refusait à tort des dispositions qui tiennent.
+    const available = geo.contentHeightPt - EFFRAC_FITS_SAFETY_PT;
+    const HEADER_PT = 56;
 
-    const costPt = (fontPx: number): number => {
-        const line = effracLinePt(fontPx);
-        const row1 = Math.max(
-            cardWithTitlePt(textLinePt(situationText, fontPx, half)),
-            cardWithTitlePt(textLinePt(strOr(formData.missions_psig), Math.round(fontPx * 1.2), half)),
+    const photos = EXPRESS_PHOTOS.map((c) => {
+        const meta = (dynamicPhotos[c.id] ?? []).find((m) => photosBase64[m.id] !== undefined);
+        return meta ? { label: meta.customTitle?.trim() || c.label, ref: photosBase64[meta.id] as string } : null;
+    }).filter((x): x is { label: string; ref: string } => x !== null);
+    const nPhotos = photos.length;
+    const gapPh = mm(4);
+    const boxW = nPhotos ? (W - gapPh * (nPhotos - 1)) / nPhotos : W;
+    const captionPt = Math.max(0, ...photos.map((ph) => textLinePt(ph.label, 9, boxW) + 5));
+
+    // Coûts (pt) au palier `f`.
+    const corePt = (f: number): number => {
+        const situationPt = cardWithTitlePt(
+            textLinePt(`SITUATION GÉNÉRALE : ${strOr(formData.situation_generale)}`, f, half - 16) +
+            textLinePt(`SITUATION PARTICULIÈRE : ${strOr(formData.situation_particuliere)}`, f, half - 16),
         );
-        const exec = EFFRAC_H3_PT + line + textLinePt(`Idée de Manœuvre / Action : ${strOr(formData.action_body_text)}`, fontPx, geo.contentWidthPt);
-        const chrono = events.length ? cardWithTitlePt(line + events.reduce((s, e) => s + chronoEventPt(e, fontPx, geo.contentWidthPt * 0.78), 0)) : 0;
-        const patrac = members.length
-            ? EFFRAC_H3_PT + patracHeaderRowPt(fontPx) + members.reduce((s, r) => s + patracRowPt(fontPx, patracEqptText(r.m), geo.contentWidthPt * 0.3, patracStackLines(r.m)), 0)
-            : 0;
-        return 70 /* titre + date */ + row1 + 8 + exec + (chrono ? 8 + chrono : 0) + (patrac ? 8 + patrac : 0);
+        const missionPt = cardWithTitlePt(textLinePt(strOr(formData.missions_psig), Math.round(f * 1.2), half - 16));
+        const execPt = cardWithTitlePt(
+            Math.round(f * 1.2) * PDF_LINE_ADVANCE_EM + textLinePt(`IDÉE DE MANŒUVRE / ACTION : ${strOr(formData.action_body_text)}`, f, W - 16),
+        );
+        return HEADER_PT + Math.max(situationPt, missionPt) + STACKED_CARD_GAP_PT + execPt;
     };
-    const fit = fitUsageToPage(costPt, geo.contentHeightPt - EFFRAC_FITS_SAFETY_PT);
-    const fontPx = 'fontPx' in fit ? fit.fontPx : FIT_FONT_FLOOR;
+    const chronoPt = (f: number): number =>
+        events.length ? STACKED_CARD_GAP_PT + cardWithTitlePt(effracLinePt(f) + EFFRAC_ROW_VPAD_PT + events.reduce((sum, e) => sum + chronoEventPt(e, f, (W - 16) * 0.78), 0)) : 0;
+    const patracPt = (f: number): number => (members.length ? STACKED_CARD_GAP_PT + EFFRAC_H3_PT + expressPatrac(members, p, W, f).costPt : 0);
+    const photosNeedPt = nPhotos ? EFFRAC_H2_PT + EXPRESS_PHOTO_MIN_PT + captionPt : 0;
+
+    // `flow` : aucun saut forcé — la page 1 se remplit, la suite (chronologie
+    // coupée entre deux rangées, en-tête répété) passe en page 2 avant les
+    // photos. Dernier recours avant trois pages.
+    type Layout = { p1: Array<'chrono' | 'patrac'>; p2: Array<'chrono' | 'patrac'>; flow?: boolean };
+    const layouts: Layout[] = [
+        { p1: ['chrono', 'patrac'], p2: [] },
+        { p1: ['chrono'], p2: ['patrac'] },
+        { p1: [], p2: ['chrono', 'patrac'] },
+        { p1: ['chrono', 'patrac'], p2: [], flow: true },
+    ];
+    const partPt = (part: 'chrono' | 'patrac', f: number): number => (part === 'chrono' ? chronoPt(f) : patracPt(f));
+    const fits = (l: Layout, f: number): boolean =>
+        l.flow
+            ? corePt(f) + chronoPt(f) + patracPt(f) + photosNeedPt <= 2 * available
+            : corePt(f) + l.p1.reduce((sum, x) => sum + partPt(x, f), 0) <= available &&
+              l.p2.reduce((sum, x) => sum + partPt(x, f), 0) + photosNeedPt <= available;
+    // 1) Tout l'ordre sur la page 1 (disposition A) dès que la police reste
+    //    lisible (≥ 9 px) : un ordre court tient alors sur une seule page.
+    // 2) Sinon, la lisibilité d'abord : au plus grand palier, la première
+    //    disposition qui tient.
+    const layoutA = layouts[0] as Layout;
+    const aStep = FIT_FONT_STEPS.find((step) => step >= 9 && fits(layoutA, step));
+    let chosen: { layout: Layout; fontPx: number } | null = aStep !== undefined ? { layout: layoutA, fontPx: aStep } : null;
+    for (const step of chosen ? [] : FIT_FONT_STEPS) {
+        const layout = layouts.find((l) => fits(l, step));
+        if (layout) { chosen = { layout, fontPx: step }; break; }
+    }
+    const { layout, fontPx } = chosen ?? { layout: layouts[3] as Layout, fontPx: FIT_FONT_FLOOR };
 
     const header: Content = {
         columns: [
@@ -4152,12 +4263,12 @@ function buildExpressPages(ctx: BuildCtx): Content[] {
         p,
         { unbreakable: false },
     );
+    registerPdfEditAnchor(ctx.anchors, fieldAnchor('missions_psig'), strOr(formData.missions_psig));
     const missionCard = card(
         [h3(pdfSectionTitle(formData, 'mission'), p), { text: strOr(formData.missions_psig), bold: true, fontSize: Math.round(fontPx * 1.2), preserveLeadingSpaces: true }],
         p,
         { unbreakable: false },
     );
-    registerPdfEditAnchor(ctx.anchors, fieldAnchor('missions_psig'), strOr(formData.missions_psig));
     const execCard = card(
         [
             h3(pdfSectionTitle(formData, 'execution'), p),
@@ -4166,56 +4277,47 @@ function buildExpressPages(ctx: BuildCtx): Content[] {
                 [fv(ctx, 'Heure H', 'heure_execution', { fontSize: Math.round(fontPx * 1.2), valueColor: p.accent, valueBold: true })],
             ),
             fv(ctx, 'Idée de Manœuvre / Action', 'action_body_text'),
-            ...(events.length ? [{ text: '', margin: [0, 4, 0, 0] } as Content, h3(pdfSectionTitle(formData, 'chronologie'), p), chronoTableFor(events, p)] : []),
         ],
         p,
         { unbreakable: false },
     );
-    const patracBlock: Content[] = members.length
-        ? [
-              h3(pdfSectionTitle(formData, 'patracdvr'), p),
-              {
-                  table: {
-                      widths: hasDir ? ['auto', 'auto', 'auto', 'auto', 'auto', 'auto', 'auto', '*', 'auto'] : ['auto', 'auto', 'auto', 'auto', 'auto', 'auto', 'auto', '*'],
-                      headerRows: 1,
-                      body: [
-                          ['VL', 'PAX', 'CELLULE', 'FONCTION', 'PPALE', 'SEC.', 'AFIS', 'EQPT/GREN.', ...(hasDir ? ['DIR'] : [])].map((t) => ({
-                              text: t, bold: true, fillColor: p.headerRow, alignment: 'center', borderColor: cellBorder(p),
-                          }) as TableCell),
-                          ...members.map((r) => patracRowCells(r, hasDir, p)),
-                      ],
-                  },
-                  layout: LAYOUT_BORDERED,
-              },
-          ]
-        : [];
-
-    const page1: Content = {
-        stack: [
-            header,
-            grid2([situationCard], [missionCard]),
-            { text: '', margin: [0, 8, 0, 0] },
-            execCard,
-            ...(patracBlock.length ? [{ text: '', margin: [0, 8, 0, 0] } as Content, ...patracBlock] : []),
-        ],
-        fontSize: fontPx,
+    const gapNode = (): Content => ({ text: '', margin: [0, STACKED_CARD_GAP_PT, 0, 0] });
+    const partNodes = (part: 'chrono' | 'patrac'): Content[] => {
+        if (part === 'chrono') {
+            return events.length ? [gapNode(), card([h3(pdfSectionTitle(formData, 'chronologie'), p), chronoTableFor(events, p)], p, { unbreakable: false })] : [];
+        }
+        return members.length ? [gapNode(), h3(pdfSectionTitle(formData, 'patracdvr'), p), expressPatrac(members, p, W, fontPx).node] : [];
     };
 
-    // Page 2 : une photo par emplacement (la première), légendée, sur UNE page.
-    const photos = EXPRESS_PHOTOS.map((c) => {
-        const meta = (dynamicPhotos[c.id] ?? []).find((m) => photosBase64[m.id] !== undefined);
-        return meta ? { label: meta.customTitle?.trim() || c.label, ref: photosBase64[meta.id] as string } : null;
-    }).filter((x): x is { label: string; ref: string } => x !== null);
-    if (!photos.length) return [page1];
-    const n = photos.length;
-    const gap = mm(4);
-    const boxW = (geo.contentWidthPt - gap * (n - 1)) / n;
-    const boxH = geo.contentHeightPt - EFFRAC_H2_PT - 40;
+    const page1: Content = {
+        stack: [header, grid2([situationCard], [missionCard]), gapNode(), execCard, ...layout.p1.flatMap(partNodes)],
+        fontSize: fontPx,
+    };
+    const p2Parts = layout.p2.flatMap(partNodes);
+    if (!nPhotos && !p2Parts.length) return [page1];
+
+    // Photos : toute la hauteur que la page 2 laisse, légende la plus longue
+    // comprise — jamais de titre « PHOTOS » seul en bas de page.
+    const usedP2 = layout.flow
+        ? Math.max(0, corePt(fontPx) + chronoPt(fontPx) + patracPt(fontPx) - available)
+        : layout.p2.reduce((sum, x) => sum + partPt(x, fontPx), 0);
+    const boxH = Math.max(EXPRESS_PHOTO_MIN_PT, available - usedP2 - EFFRAC_H2_PT - captionPt - 8);
+    const photoNodes: Content[] = nPhotos
+        ? [
+              h2('PHOTOS', p, W),
+              { columns: photos.map((ph) => ({ width: boxW, stack: [figure(ph.ref, [boxW, boxH], p, ph.label)] })), columnGap: gapPh } as Content,
+          ]
+        : [];
+    if (layout.flow) {
+        // Tout d'un bloc : pdfmake coupe là où la page 1 est pleine.
+        return [{ stack: [...(page1 as { stack: Content[] }).stack, ...(nPhotos ? [gapNode(), ...photoNodes] : [])], fontSize: fontPx }];
+    }
     const page2: Content = {
         stack: [
-            h2('PHOTOS', p, geo.contentWidthPt),
-            { columns: photos.map((ph) => ({ width: boxW, stack: [figure(ph.ref, [boxW, boxH], p, ph.label)] })), columnGap: gap },
+            ...p2Parts,
+            ...(nPhotos ? [...(p2Parts.length ? [gapNode()] : []), ...photoNodes] : []),
         ],
+        fontSize: fontPx,
         pageBreak: 'before',
     };
     return [page1, page2];
@@ -4345,7 +4447,9 @@ export function buildOiDocDefinition(data: OiPdfCollectedData, opts: { format: O
         pushPages(pages, buildCover(ctx));
         // Baseline 3 : slots 1 (garde) et 2 (adversaires, numérotation fixe
         // « 2.<index> » hors compteur) réservés — cf. JSDoc `OI_PDF_SECTIONS`.
-        const num = makeSectionNumberer(3);
+        // Adversaires retirés (×) : leur créneau « 2. » est libéré, la
+        // numérotation dérivée commence à 2.
+        const num = makeSectionNumberer(isSectionRemoved(formData, 'adversaires') ? 2 : 3);
         const sectionOrder = resolveOiPdfSectionOrder(formData.pdf_section_order);
         for (const id of sectionOrder) {
             const section = OI_PDF_SECTIONS.find((s) => s.id === id);

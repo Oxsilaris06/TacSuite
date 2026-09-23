@@ -80,6 +80,10 @@ describe('oi-navigation', () => {
 		// U17 — `.completed` honnête : visitée ET sans incohérence réelle.
 		it('devrait ajouter "completed" aux puces visitées SANS incohérence (sauf celle courante)', () => {
 			// Données satisfaisant les règles des étapes 0 et 1 (coherence.ts).
+			// L'écriture différée du Store (posée par le beforeEach) est vidée
+			// d'abord : la cohérence la verse désormais avant de relire
+			// localStorage, et elle écraserait la donnée écrite à la main.
+			Store.flush();
 			localStorage.setItem('tactical_oi_data', JSON.stringify({
 				date_op: '2026-08-11',
 				adversaries: [{ nom_adversaire: 'X', domicile_adversaire: 'Y' }],

@@ -125,9 +125,26 @@ export function writeUnitTitles(mode: OiMode, titles: Record<string, string>): b
     }
 }
 
-/** Titre personnalisé effectif : celui de l'OI, sinon celui du modèle d'unité, sinon `undefined` (titre d'origine). */
+/**
+ * Titre personnalisé de l'OI, ou `undefined` (titre d'origine). Le modèle
+ * d'unité n'est PAS un repli d'affichage : il est recopié dans l'OI à sa
+ * première ouverture dans un mode (`seedFromUnitTemplate`), pour qu'un titre
+ * vidé revienne bien au titre d'origine, et que l'archive porte ses titres
+ * (le poste qui la reçoit n'a pas le modèle de l'émetteur).
+ */
 export function customTitle(fd: OiFormData | null | undefined, id: string, mode: OiMode = currentOiMode(fd)): string | undefined {
-    return sectionPrefs(fd, mode).titles[id] ?? readUnitTitles(mode)[id];
+    return sectionPrefs(fd, mode).titles[id];
+}
+
+/**
+ * Réglages initiaux d'un mode tirés du modèle d'unité, pour une OI qui n'a
+ * encore AUCUN réglage dans ce mode ; `null` sinon (une OI déjà réglée garde
+ * les siens) ou si le modèle est vide.
+ */
+export function seedFromUnitTemplate(fd: OiFormData | null | undefined, mode: OiMode): OiSectionPrefs | null {
+    if (fd?.oi_sections?.[mode]) return null;
+    const titles = readUnitTitles(mode);
+    return Object.keys(titles).length ? { removed: [], titles } : null;
 }
 
 /** Libellé affiché dans le formulaire. */
