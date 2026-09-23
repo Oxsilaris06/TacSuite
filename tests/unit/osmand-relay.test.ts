@@ -314,3 +314,34 @@ describe('Relais OsmAnd — divers', () => {
     expect(Object.keys(tokens.operators)).toHaveLength(0);
   });
 });
+
+describe('Relais OsmAnd — mémoire bornée des compteurs', () => {
+  it('purge les entrées de limite par IP expirées (aucune fuite)', async () => {
+    const { file } = makeTokensFile({ [OP_TOKEN]: { nom: 'Dupont', fonction: 'Inter' } });
+    let clock = Date.now();
+    const relay = await start(file, { now: () => clock });
+
+    // Jeton invalide : une entrée par IP est créée pour freiner la recherche.
+    await sendPoint(relay, 'f'.repeat(32), { lat: 48, lon: 2, ts: clock });
+    expect(relay.ipCounts.size).toBe(1);
+
+    // Une fois la fenêtre écoulée, la purge doit évincer l'entrée : sinon la
+    // table grossit à chaque IP vue une seule fois (fuite mémoire).
+    clock += 60_001;
+    relay.purge();
+    expect(relay.ipCounts.size).toBe(0);
+  });
+
+  it("purge le seau d'un jeton qui n'est plus un opérateur (révoqué)", async () => {
+    const { file } = makeTokensFile({ [OP_TOKEN]: { nom: 'Dupont', fonction: 'Inter' } });
+    const relay = await start(file);
+
+    await sendPoint(relay, OP_TOKEN, { lat: 48, lon: 2, ts: Date.now() });
+    expect(relay.buckets.size).toBe(1);
+
+    fs.writeFileSync(file, JSON.stringify({ readKey: READ_KEY, operators: {} }));
+    relay.reloadTokens();
+    relay.purge();
+    expect(relay.buckets.size).toBe(0);
+  });
+});
