@@ -1456,9 +1456,6 @@ async function closeAnnotationModal(): Promise<void> {
 
         persistAnnotationsToPreview();
         // REMOVED: cleanupObjectUrls() - Trop agressif, révoque tout le cache UI.
-        // Décision 25 : l'hôte range la photo (PC-Tac ; l'OI n'en a pas besoin).
-        const targetId = modal.dataset.targetPreviewId;
-        if (targetId) await annotationHost.closed?.(targetId);
     }
 }
 // ÉCART NÉCESSAIRE (ESM vs script classique, RÈGLE D'OR §2.2) : dans
@@ -1864,7 +1861,9 @@ function initAnnotationWorkspace(): void {
                 // de `objectUrlsCache` ci-dessous.
                 const cachedKey = targetId as string;
                 previewImg.dataset.annotations = JSON.stringify(annotationHost.annotations);
-                if (annotationHost.annotations.length > 0) {
+                if (annotationHost.renderPreview === false) {
+                    // Décision 25 (PC-Tac) : image annotée rendue par l'hôte.
+                } else if (annotationHost.annotations.length > 0) {
                     oiState.selectedAnnotation = null;
                     setContextualTools(null);
                     redrawCanvas();

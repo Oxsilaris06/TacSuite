@@ -16,6 +16,7 @@
     <link rel="stylesheet" href="/styles/tacsuite-tokens.css">
     <link rel="stylesheet" href="/styles/ui-platform.css">
     <link rel="stylesheet" href="/styles/pctac.css">
+    <link rel="stylesheet" href="/styles/annotation.css">
 </head>
 
 <body class="dark-mode">
@@ -777,6 +778,10 @@
     <dialog class="lightbox" id="lightboxModal" aria-labelledby="lightboxTitle">
         <img id="lightboxImage" src="" alt="">
         <div class="lightbox-title" id="lightboxTitle"></div>
+        <!-- Décision 25 : annoter la photo de la galerie affichée (masqué sinon). -->
+        <button type="button" id="lightboxAnnotateBtn" class="pctac-lightbox-annotate-btn" hidden>
+            <span class="material-symbols-outlined" aria-hidden="true">draw</span> Annoter
+        </button>
         <button type="button" onclick="UI.closeLightbox()" class="pctac-lightbox-close-btn" aria-label="Fermer l'aperçu photo">
             <span class="material-symbols-outlined pctac-icon-40">close</span>
         </button>

@@ -464,7 +464,9 @@ test.describe('PC-Tac — Checklist fonctionnelle', () => {
     await step('lightbox plein écran', async () => {
       await page.locator('#photo-board .photo-card img').first().click();
       await expect.soft(page.locator('#lightboxModal')).toBeVisible({ timeout: 1500 });
-      await page.locator('#lightboxModal button').click();
+      // Décision 25 : une photo de la galerie s'annote depuis la visionneuse.
+      await expect.soft(page.locator('#lightboxAnnotateBtn')).toBeVisible({ timeout: 1500 });
+      await page.locator('#lightboxModal .pctac-lightbox-close-btn').click();
       await expect.soft(page.locator('#lightboxModal')).toBeHidden({ timeout: 1500 });
     });
   });

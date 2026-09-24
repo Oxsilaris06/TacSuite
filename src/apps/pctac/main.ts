@@ -366,8 +366,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         const list = Storage.loadCollection(key).filter((item) => item.id !== id);
         Storage.saveCollection(key, list);
 
-        // Nettoyer l'image dans IndexedDB
+        // Nettoyer l'image dans IndexedDB (et l'original d'une photo annotée).
         try { await ImageStore.delete(id); } catch (e) { console.error('[PC TAC] delete image échec:', e); }
+        try { await ImageStore.delete(id + '_orig'); } catch (e) { console.error('[PC TAC] delete original échec:', e); }
 
         // Suppression en cascade pour les photos synchronisées
         if (viewId === 'view-adversaires' || viewId === 'view-otages') {
@@ -449,6 +450,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     if (item && item.id) {
                         if (item.hasImage) imgIds.add(item.id);
                         imgIds.add(item.id + '_sync');
+                        imgIds.add(item.id + '_orig'); // photo annotée (décision 25)
                     }
                 });
             });
