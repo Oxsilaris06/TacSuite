@@ -84,8 +84,7 @@ import type {
     OiPointAnnotation,
     OiShapeAnnotation,
 } from '@shared/types/contracts.js';
-import { Store, dbManager } from '@oi/init.js';
-import { getAnnotationAtPosition, getEventPos, getRotatedPoint, hexToRgb } from '@oi/outils.js';
+import { annotationHost } from '@shared/annotation-host.js';
 import { oiState } from '@oi/state.js';
 import { promptDialog, toast } from '@shared/feedback.js';
 
@@ -168,9 +167,186 @@ interface OiRotateGestureStart {
 }
 let gestureStart: OiResizeGestureStart | OiRotateGestureStart | null = null;
 
+// ---------------------------------------------------------------------------
+// Géométrie (venue de `@oi/outils.js`, décision 25) : le moteur n'importe plus
+// `outils`, qui charge le Store de l'OI.
+// ---------------------------------------------------------------------------
+
+// outils.js:8-15
+export function hexToRgb(hex: string): { r: number; g: number; b: number } | null {
+    const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+    // outils.js:10-14 — noUncheckedIndexedAccess : la regex a exactement 3
+    // groupes capturants NON optionnels, donc toujours renseignés quand
+    // `result` est non nul (même idiome que `carto/map-core.ts` `_parseGps`) ;
+    // `?? ''` ne change rien en pratique (jamais atteint), `parseInt('', 16)`
+    // vaut `NaN` comme `parseInt(undefined, 16)` dans l'original.
+    return result
+        ? {
+              r: parseInt(result[1] ?? '', 16),
+              g: parseInt(result[2] ?? '', 16),
+              b: parseInt(result[3] ?? '', 16),
+          }
+        : null;
+}
+
+// outils.js:27-38
+export function getEventPos(canvas: HTMLCanvasElement, evt: MouseEvent | TouchEvent): { x: number; y: number } {
+    const rect = canvas.getBoundingClientRect();
+    // Utiliser une vérification plus robuste pour l'événement tactile
+    // outils.js:30-31 — `'touches' in evt` distingue MouseEvent/TouchEvent
+    // (même test que le duck-typing `evt.touches && …` de l'original) ;
+    // noUncheckedIndexedAccess impose une capture locale de `touches[0]`
+    // (`TouchList[0]` est `Touch | undefined`) avant lecture.
+    const touch = 'touches' in evt && evt.touches.length > 0 ? evt.touches[0] : undefined;
+    // outils.js:30-31 — dans la branche « pas de touch », l'original lit
+    // `evt.clientX` sans discriminer le type (y compris si `evt` est un
+    // TouchEvent à `touches` vide, où `.clientX` vaut `undefined` — même
+    // issue avec ce cast, comportement identique).
+    const clientX = touch ? touch.clientX : (evt as MouseEvent).clientX;
+    const clientY = touch ? touch.clientY : (evt as MouseEvent).clientY;
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    return {
+        x: (clientX - rect.left) * scaleX,
+        y: (clientY - rect.top) * scaleY,
+    };
+}
+
+// outils.js:40-49
+export function getRotatedPoint(
+    x: number,
+    y: number,
+    centerX: number,
+    centerY: number,
+    angle: number,
+): { x: number; y: number } {
+    const cos = Math.cos(-angle);
+    const sin = Math.sin(-angle);
+    const translatedX = x - centerX;
+    const translatedY = y - centerY;
+    return {
+        x: translatedX * cos - translatedY * sin + centerX,
+        y: translatedX * sin + translatedY * cos + centerY,
+    };
+}
+
+/**
+ * outils.js:51-119 — lit les annotations de l'hôte (`annotationHost.annotations`) (parcours en ordre
+ * inverse : la dernière annotation dessinée est testée en premier) et
+ * `oiState.ctx` (mesure de texte pour 'text'/'member'). NE PAS simplifier la
+ * trigonométrie ni les tolérances (PAQUETS-OI.json `oi-outils`).
+ */
+export function getAnnotationAtPosition(x: number, y: number): OiAnnotation | null {
+    // outils.js:80,87 — `ctx` capturé une seule fois : le `const` narrowé par
+    // les gardes ci-dessous reste non nul pour le reste de la fonction (même
+    // idiome que `carto/map-core.ts`, capture locale dès l'entrée).
+    const ctx = oiState.ctx;
+
+    for (let i = annotationHost.annotations.length - 1; i >= 0; i--) {
+        // outils.js:53 — noUncheckedIndexedAccess (index toujours valide par
+        // construction de la boucle, jamais vérifié dans l'original) combiné
+        // à l'élargissement de contrat ci-dessus : passage par `unknown`,
+        // aucun sous-typage direct n'exprime les deux écarts à la fois.
+        const annotation = annotationHost.annotations[i] as unknown as OiAnnotationWithBounds;
+        const angle = annotation.rotation || 0;
+        // outils.js:55 — TypeScript exige une valeur initiale (analyse de
+        // définite assignment) : le if/else if ci-dessous couvre
+        // exhaustivement les 5 types d'annotation (aucun `else` dans
+        // l'original) ; ces valeurs par défaut ne sont donc jamais lues en
+        // pratique — écart de typage assumé, comportement identique
+        // (l'original laissait `undefined`, jamais lu non plus dans ce cas).
+        let centerX = 0;
+        let centerY = 0;
+
+        if (annotation.type === 'location' || annotation.type === 'text' || annotation.type === 'member') {
+            centerX = annotation.x;
+            centerY = annotation.y;
+        } else if (annotation.type === 'box') {
+            centerX = annotation.x + annotation.width / 2;
+            centerY = annotation.y + annotation.height / 2;
+        } else if (annotation.type === 'arrow') {
+            centerX = (annotation.startX + annotation.endX) / 2;
+            centerY = (annotation.startY + annotation.endY) / 2;
+        }
+
+        // Pour des annotationHost.annotations simples, le centre de rotation est le centre de l'objet
+        const rotatedPos = getRotatedPoint(x, y, centerX, centerY, angle);
+        const testX = rotatedPos.x;
+        const testY = rotatedPos.y;
+
+        const tolerance = 15;
+        let isInside = false;
+
+        switch (annotation.type) {
+            case 'location':
+                isInside = Math.sqrt(Math.pow(testX - annotation.x, 2) + Math.pow(testY - annotation.y, 2)) <= annotation.radius + tolerance / 2;
+                break;
+            case 'box':
+                isInside = testX >= annotation.x - tolerance && testX <= annotation.x + annotation.width + tolerance &&
+                    testY >= annotation.y - tolerance && testY <= annotation.y + annotation.height + tolerance;
+                break;
+            case 'text': {
+                // Simple bounding box approx
+                const size = annotation.size || 30;
+                // outils.js:80 — `ctx` potentiellement `null` côté TS (jamais
+                // en pratique, cf. capture ci-dessus) ; `!` interdit ⇒ un
+                // `break` laisse `isInside` à `false`, même issue observable
+                // que l'exception que l'original aurait levée ici (annotation
+                // ignorée par ce test de position).
+                if (!ctx) break;
+                ctx.font = `bold ${size}px Oswald`;
+                const w = ctx.measureText(annotation.text).width;
+                const h = size;
+                isInside = testX >= annotation.x && testX <= annotation.x + w && testY >= annotation.y - h && testY <= annotation.y;
+                break;
+            }
+            case 'member': {
+                const mSize = annotation.size || 20;
+                if (!ctx) break;
+                ctx.font = `bold ${mSize}px Oswald`;
+                const mPadX = mSize * 0.8;
+                const mPadY = mSize * 0.4;
+                const mW = ctx.measureText(annotation.text).width + mPadX * 2;
+                const mH = mSize + mPadY * 2;
+                isInside = testX >= annotation.x - mW / 2 && testX <= annotation.x + mW / 2 && testY >= annotation.y - mH / 2 && testY <= annotation.y + mH / 2;
+                break;
+            }
+            case 'arrow': {
+                const dx = annotation.endX - annotation.startX;
+                const dy = annotation.endY - annotation.startY;
+                const lenSq = dx * dx + dy * dy;
+                if (lenSq === 0) break;
+                const t = ((testX - annotation.startX) * dx + (testY - annotation.startY) * dy) / lenSq;
+                const projX = annotation.startX + t * dx;
+                const projY = annotation.startY + t * dy;
+                if (t >= 0 && t <= 1) {
+                    // Vérification de la distance au carré de la position du clic à la ligne projetée
+                    const distSq = Math.pow(testX - projX, 2) + Math.pow(testY - projY, 2);
+                    // outils.js:105,110 — `thickness` est optionnel dans
+                    // `OiShapeAnnotation` ; `?? NaN` reproduit exactement la
+                    // coercion `undefined + tolerance → NaN` de l'original
+                    // (comparaisons `<=`/`||` avec NaN toujours fausses, même
+                    // résultat observable).
+                    isInside = distSq <= Math.pow((annotation.thickness ?? NaN) + tolerance, 2);
+                } else {
+                    // Vérification si l'on est proche des extrémités (pour les flèches courtes)
+                    const distStartSq = Math.pow(testX - annotation.startX, 2) + Math.pow(testY - annotation.startY, 2);
+                    const distEndSq = Math.pow(testX - annotation.endX, 2) + Math.pow(testY - annotation.endY, 2);
+                    const maxDistSq = Math.pow((annotation.thickness ?? NaN) + tolerance, 2);
+                    isInside = distStartSq <= maxDistSq || distEndSq <= maxDistSq;
+                }
+                break;
+            }
+        }
+
+        if (isInside) return annotation;
+    }
+    return null;
+}
+
 /** Empile l'état courant des annotations (à appeler AVANT une mutation discrète). */
 function pushAnnotationHistory(): void {
-    annotationHistory.push(JSON.stringify(Store.state.annotations));
+    annotationHistory.push(JSON.stringify(annotationHost.annotations));
     if (annotationHistory.length > ANNOTATION_HISTORY_MAX) annotationHistory.shift();
     annotationRedoStack = [];
     refreshAnnotationUndoRedo();
@@ -178,7 +354,7 @@ function pushAnnotationHistory(): void {
 
 /** Valide un snapshot pré-geste dans l'historique (uniquement si l'état a changé). */
 function commitAnnotationHistory(snapshot: string | null): void {
-    if (!snapshot || snapshot === JSON.stringify(Store.state.annotations)) return;
+    if (!snapshot || snapshot === JSON.stringify(annotationHost.annotations)) return;
     annotationHistory.push(snapshot);
     if (annotationHistory.length > ANNOTATION_HISTORY_MAX) annotationHistory.shift();
     annotationRedoStack = [];
@@ -187,14 +363,14 @@ function commitAnnotationHistory(snapshot: string | null): void {
 
 function undoAnnotation(): void {
     if (!annotationHistory.length) return;
-    annotationRedoStack.push(JSON.stringify(Store.state.annotations));
+    annotationRedoStack.push(JSON.stringify(annotationHost.annotations));
     const snapshot = annotationHistory.pop();
     // dessin.js:42 — `pop()` ne peut renvoyer `undefined` ici (garde de
     // longueur ci-dessus) ; TS ne le déduit pas de `.length`, jamais pris en
     // défaut en pratique.
     if (snapshot !== undefined) {
         try {
-            Store.state.annotations = JSON.parse(snapshot) as OiAnnotation[];
+            annotationHost.annotations = JSON.parse(snapshot) as OiAnnotation[];
         } catch {
             /* JSON invalide : état inchangé, comme l'original (dessin.js:42) */
         }
@@ -208,12 +384,12 @@ function undoAnnotation(): void {
 
 function redoAnnotation(): void {
     if (!annotationRedoStack.length) return;
-    annotationHistory.push(JSON.stringify(Store.state.annotations));
+    annotationHistory.push(JSON.stringify(annotationHost.annotations));
     const snapshot = annotationRedoStack.pop();
     // dessin.js:53 — même garde que undoAnnotation (jamais `undefined` ici).
     if (snapshot !== undefined) {
         try {
-            Store.state.annotations = JSON.parse(snapshot) as OiAnnotation[];
+            annotationHost.annotations = JSON.parse(snapshot) as OiAnnotation[];
         } catch {
             /* JSON invalide : état inchangé, comme l'original (dessin.js:53) */
         }
@@ -249,7 +425,7 @@ function bindHistorySlider(el: HTMLElement | null): void {
     if (!el) return;
     let snap: string | null = null;
     const take = () => {
-        snap = JSON.stringify(Store.state.annotations);
+        snap = JSON.stringify(annotationHost.annotations);
     };
     el.addEventListener('pointerdown', take);
     el.addEventListener('keydown', take);
@@ -426,8 +602,8 @@ function persistAnnotationsToPreview(): void {
     if (!modal || !modal.dataset.targetPreviewId) return;
     const previewEl = document.getElementById(modal.dataset.targetPreviewId);
     if (!previewEl) return;
-    previewEl.dataset.annotations = JSON.stringify(Store.state.annotations);
-    if (typeof window.saveToStorage === 'function') window.saveToStorage();
+    previewEl.dataset.annotations = JSON.stringify(annotationHost.annotations);
+    annotationHost.save();
 }
 
 function updateStrokeWidth(val: string): void {
@@ -444,9 +620,9 @@ function updateStrokeWidth(val: string): void {
         const targetId = oiState.annotationModal?.dataset.targetPreviewId;
         if (targetId) {
             const previewEl = document.getElementById(targetId);
-            if (previewEl) previewEl.dataset.annotations = JSON.stringify(Store.state.annotations);
+            if (previewEl) previewEl.dataset.annotations = JSON.stringify(annotationHost.annotations);
         }
-        window.saveToStorage();
+        annotationHost.save();
     }
 }
 
@@ -458,9 +634,9 @@ function updateTextSize(val: string): void {
         const targetId = oiState.annotationModal?.dataset.targetPreviewId;
         if (targetId) {
             const previewEl = document.getElementById(targetId);
-            if (previewEl) previewEl.dataset.annotations = JSON.stringify(Store.state.annotations);
+            if (previewEl) previewEl.dataset.annotations = JSON.stringify(annotationHost.annotations);
         }
-        window.saveToStorage();
+        annotationHost.save();
     }
 }
 
@@ -472,9 +648,9 @@ function updateZoneText(val: string): void {
         const targetId = oiState.annotationModal?.dataset.targetPreviewId;
         if (targetId) {
             const previewEl = document.getElementById(targetId);
-            if (previewEl) previewEl.dataset.annotations = JSON.stringify(Store.state.annotations);
+            if (previewEl) previewEl.dataset.annotations = JSON.stringify(annotationHost.annotations);
         }
-        window.saveToStorage();
+        annotationHost.save();
     }
 }
 
@@ -486,9 +662,9 @@ function updateZoneOpacity(val: string): void {
         const targetId = oiState.annotationModal?.dataset.targetPreviewId;
         if (targetId) {
             const previewEl = document.getElementById(targetId);
-            if (previewEl) previewEl.dataset.annotations = JSON.stringify(Store.state.annotations);
+            if (previewEl) previewEl.dataset.annotations = JSON.stringify(annotationHost.annotations);
         }
-        window.saveToStorage();
+        annotationHost.save();
     }
 }
 
@@ -506,9 +682,9 @@ function updateAnnotationRotation(): void {
         const targetId = oiState.annotationModal?.dataset.targetPreviewId;
         if (targetId) {
             const previewEl = document.getElementById(targetId);
-            if (previewEl) previewEl.dataset.annotations = JSON.stringify(Store.state.annotations);
+            if (previewEl) previewEl.dataset.annotations = JSON.stringify(annotationHost.annotations);
         }
-        window.saveToStorage();
+        annotationHost.save();
     }
 }
 window.updateAnnotationRotation = updateAnnotationRotation; // dessin.js:254
@@ -565,7 +741,7 @@ async function openAnnotationModal(previewImgId: string): Promise<void> {
     const previewImg = document.getElementById(previewImgId) as HTMLImageElement | null;
     if (!previewImg) return;
 
-    let objectURL = Store.state.objectUrlsCache[previewImgId];
+    let objectURL = annotationHost.objectUrlsCache[previewImgId];
     const modal = oiState.annotationModal;
     // dessin.js:303 — l'original écrit `annotationModal.dataset...` sans garde
     // (assume la modale déjà résolue par la ligne 297, élément statique de
@@ -577,14 +753,14 @@ async function openAnnotationModal(previewImgId: string): Promise<void> {
         // Fallback: Essayer de récupérer l'URL depuis l'élément img s'il s'agit d'un blob existant
         if (previewImg.src && previewImg.src.startsWith('blob:')) {
             objectURL = previewImg.src;
-            Store.state.objectUrlsCache[previewImgId] = objectURL;
+            annotationHost.objectUrlsCache[previewImgId] = objectURL;
         } else {
             // Tenter de recharger le blob depuis la DB
             try {
-                const imageBlob = await dbManager.getItem(previewImgId);
+                const imageBlob = await annotationHost.getImage(previewImgId);
                 if (imageBlob) {
                     objectURL = URL.createObjectURL(imageBlob);
-                    Store.state.objectUrlsCache[previewImgId] = objectURL;
+                    annotationHost.objectUrlsCache[previewImgId] = objectURL;
                     previewImg.src = objectURL;
                 } else {
                     toast("Impossible de charger l'image pour l'annotation. Données non trouvées.", { kind: 'error' });
@@ -636,12 +812,12 @@ async function openAnnotationModal(previewImgId: string): Promise<void> {
 
                 try {
                     const rawAnnotations = previewImg.dataset.annotations;
-                    Store.state.annotations = rawAnnotations ? (JSON.parse(rawAnnotations) as OiAnnotation[]) : [];
+                    annotationHost.annotations = rawAnnotations ? (JSON.parse(rawAnnotations) as OiAnnotation[]) : [];
                 } catch (e) {
                     console.error('Erreur parsing annotations:', e);
-                    Store.state.annotations = [];
+                    annotationHost.annotations = [];
                 }
-                Store.state.annotations.forEach((a) => {
+                annotationHost.annotations.forEach((a) => {
                     if (!a.color) a.color = '#c0392b';
                 });
 
@@ -665,10 +841,10 @@ async function openAnnotationModal(previewImgId: string): Promise<void> {
         console.warn('Erreur de chargement baseImage, tentative de regénération du blob...', e);
         // Si l'URL a expiré ou a été révoquée, on tente de la recréer
         try {
-            const imageBlob = await dbManager.getItem(previewImgId);
+            const imageBlob = await annotationHost.getImage(previewImgId);
             if (imageBlob) {
                 const newUrl = URL.createObjectURL(imageBlob);
-                Store.state.objectUrlsCache[previewImgId] = newUrl;
+                annotationHost.objectUrlsCache[previewImgId] = newUrl;
                 previewImg.src = newUrl;
                 oiState.baseImage.src = newUrl; // Ré-essayer
             } else {
@@ -738,7 +914,7 @@ function redrawCanvas(): void {
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.drawImage(baseImage, 0, 0);
-    Store.state.annotations.forEach((a) => drawAnnotation(withBounds(a)));
+    annotationHost.annotations.forEach((a) => drawAnnotation(withBounds(a)));
     const currentAnnotation = oiState.currentAnnotation;
     if (oiState.isDrawing && currentAnnotation) {
         drawAnnotation(withBounds(currentAnnotation));
@@ -994,7 +1170,7 @@ function handleDrawStart(e: MouseEvent | TouchEvent): void {
         if (handle) {
             e.preventDefault();
             cancelLongPress();
-            gestureSnapshot = JSON.stringify(Store.state.annotations);
+            gestureSnapshot = JSON.stringify(annotationHost.annotations);
             if (handle === 'resize') {
                 isResizing = true;
                 // dessin.js:694-700 — box0/arrow0 lisent des champs
@@ -1029,7 +1205,7 @@ function handleDrawStart(e: MouseEvent | TouchEvent): void {
                 setActiveTool('move');
                 oiState.selectedAnnotation = hit;
                 oiState.isMovingAnnotation = true;
-                gestureSnapshot = JSON.stringify(Store.state.annotations);
+                gestureSnapshot = JSON.stringify(annotationHost.annotations);
                 setContextualTools(oiState.selectedAnnotation);
                 redrawCanvas();
             }, LONG_PRESS_DURATION);
@@ -1043,7 +1219,7 @@ function handleDrawStart(e: MouseEvent | TouchEvent): void {
         setContextualTools(oiState.selectedAnnotation);
         if (oiState.selectedAnnotation) {
             oiState.isMovingAnnotation = true;
-            gestureSnapshot = JSON.stringify(Store.state.annotations);
+            gestureSnapshot = JSON.stringify(annotationHost.annotations);
             document.body.style.overflow = 'hidden';
             redrawCanvas();
         }
@@ -1056,7 +1232,7 @@ function handleDrawStart(e: MouseEvent | TouchEvent): void {
                 const sizeInput = document.getElementById('text_size_tool') as HTMLInputElement | null;
                 const size = sizeInput ? parseInt(sizeInput.value, 10) : 30;
                 pushAnnotationHistory();
-                Store.state.annotations.push({
+                annotationHost.annotations.push({
                     id: Date.now() + Math.random(),
                     type: 'text',
                     x: oiState.startX,
@@ -1194,8 +1370,8 @@ function handleDrawEnd(e: MouseEvent | TouchEvent): void {
         setContextualTools(oiState.selectedAnnotation);
         const targetId = oiState.annotationModal?.dataset.targetPreviewId;
         const targetPreview = targetId ? document.getElementById(targetId) : null;
-        if (targetPreview) targetPreview.dataset.annotations = JSON.stringify(Store.state.annotations);
-        window.saveToStorage();
+        if (targetPreview) targetPreview.dataset.annotations = JSON.stringify(annotationHost.annotations);
+        annotationHost.save();
         redrawCanvas();
         return;
     }
@@ -1208,8 +1384,8 @@ function handleDrawEnd(e: MouseEvent | TouchEvent): void {
         // CONFORMITÉ: Sauvegarde après déplacement/modification d'une annotation
         const targetId = oiState.annotationModal?.dataset.targetPreviewId;
         const targetPreview = targetId ? document.getElementById(targetId) : null;
-        if (targetPreview) targetPreview.dataset.annotations = JSON.stringify(Store.state.annotations);
-        window.saveToStorage();
+        if (targetPreview) targetPreview.dataset.annotations = JSON.stringify(annotationHost.annotations);
+        annotationHost.save();
         redrawCanvas();
     } else if (oiState.isDrawing) {
         oiState.isDrawing = false;
@@ -1261,7 +1437,7 @@ function handleDrawEnd(e: MouseEvent | TouchEvent): void {
         // par handleDrawStart) : garde de l'original conservée telle quelle
         // (code mort assumé) ; `as string` neutralise l'erreur TS de
         // comparaison de littéraux disjoints, comportement runtime inchangé.
-        if ((final.type as string) !== 'text') Store.state.annotations.push(final);
+        if ((final.type as string) !== 'text') annotationHost.annotations.push(final);
 
         oiState.currentAnnotation = null;
         oiState.selectedAnnotation = final;
@@ -1280,6 +1456,9 @@ async function closeAnnotationModal(): Promise<void> {
 
         persistAnnotationsToPreview();
         // REMOVED: cleanupObjectUrls() - Trop agressif, révoque tout le cache UI.
+        // Décision 25 : l'hôte range la photo (PC-Tac ; l'OI n'en a pas besoin).
+        const targetId = modal.dataset.targetPreviewId;
+        if (targetId) await annotationHost.closed?.(targetId);
     }
 }
 // ÉCART NÉCESSAIRE (ESM vs script classique, RÈGLE D'OR §2.2) : dans
@@ -1528,7 +1707,7 @@ window.populateMemberCanvasModal = function (x: number, y: number): void {
                 const sizeEl = document.getElementById('text_size_edit') as HTMLInputElement | null;
                 const size = sizeEl ? parseInt(sizeEl.value, 10) : 20;
                 pushAnnotationHistory();
-                Store.state.annotations.push({
+                annotationHost.annotations.push({
                     id: Date.now() + Math.random(),
                     type: 'member',
                     x,
@@ -1539,7 +1718,7 @@ window.populateMemberCanvasModal = function (x: number, y: number): void {
                     size,
                 });
                 redrawCanvas();
-                window.syncDomToStore(); // Optionnel : Déclencher manuellement saveFormData si nécessaire
+                annotationHost.syncDom(); // Optionnel : Déclencher manuellement saveFormData si nécessaire
                 // Remettre l'outil sur deplacement
                 setActiveTool('move');
             };
@@ -1656,17 +1835,17 @@ function initAnnotationWorkspace(): void {
     const toolReset = document.getElementById('tool_reset');
     if (toolReset) {
         toolReset.addEventListener('click', () => {
-            if (Store.state.annotations.length) pushAnnotationHistory();
-            Store.state.annotations = [];
+            if (annotationHost.annotations.length) pushAnnotationHistory();
+            annotationHost.annotations = [];
             oiState.selectedAnnotation = null;
             setContextualTools(null);
             redrawCanvas();
             const targetId = modal.dataset.targetPreviewId;
             if (targetId) {
                 const previewImg = document.getElementById(targetId);
-                if (previewImg) previewImg.dataset.annotations = JSON.stringify(Store.state.annotations);
+                if (previewImg) previewImg.dataset.annotations = JSON.stringify(annotationHost.annotations);
             }
-            if (typeof window.saveToStorage === 'function') window.saveToStorage();
+            annotationHost.save();
         });
     }
 
@@ -1684,25 +1863,25 @@ function initAnnotationWorkspace(): void {
                 // les deux variables, cast de narrowing direct pour l'indexation
                 // de `objectUrlsCache` ci-dessous.
                 const cachedKey = targetId as string;
-                previewImg.dataset.annotations = JSON.stringify(Store.state.annotations);
-                if (Store.state.annotations.length > 0) {
+                previewImg.dataset.annotations = JSON.stringify(annotationHost.annotations);
+                if (annotationHost.annotations.length > 0) {
                     oiState.selectedAnnotation = null;
                     setContextualTools(null);
                     redrawCanvas();
                     const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve));
                     if (blob) {
                         const newUrl = URL.createObjectURL(blob);
-                        if (previewImg.src.startsWith('blob:') && previewImg.src !== Store.state.objectUrlsCache[cachedKey]) {
+                        if (previewImg.src.startsWith('blob:') && previewImg.src !== annotationHost.objectUrlsCache[cachedKey]) {
                             URL.revokeObjectURL(previewImg.src);
                         }
                         previewImg.src = newUrl;
                     }
                 } else {
-                    const cachedUrl = Store.state.objectUrlsCache[cachedKey];
+                    const cachedUrl = annotationHost.objectUrlsCache[cachedKey];
                     if (cachedUrl) previewImg.src = cachedUrl;
                 }
             }
-            if (typeof window.saveToStorage === 'function') window.saveToStorage();
+            annotationHost.save();
             await closeAnnotationModal();
         });
     });
@@ -1721,9 +1900,9 @@ function initAnnotationWorkspace(): void {
             pushAnnotationHistory();
             // Support backward compatibility if old annotations don't have an ID
             if (selected.id) {
-                Store.state.annotations = Store.state.annotations.filter((ann) => ann.id !== selected.id);
+                annotationHost.annotations = annotationHost.annotations.filter((ann) => ann.id !== selected.id);
             } else {
-                Store.state.annotations = Store.state.annotations.filter((ann) => ann !== selected);
+                annotationHost.annotations = annotationHost.annotations.filter((ann) => ann !== selected);
             }
             oiState.selectedAnnotation = null;
             setContextualTools(null);
