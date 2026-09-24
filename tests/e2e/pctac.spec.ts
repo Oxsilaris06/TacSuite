@@ -1691,3 +1691,39 @@ test('traces GPX — groupement par jour, actions groupées et timelapse', async
   expect.soft(await page.evaluate(() => (window as unknown as { PlanMap: { map: { getLayoutProperty(l: string, p: string): unknown } } })
     .PlanMap.map.getLayoutProperty('plan-gpx-line', 'visibility'))).toBe('visible');
 });
+
+// ============================================================================
+// Main courante en cartes (décision 22) : téléphone et écran scindé ; le
+// bureau standard garde le tableau. Rendu seulement (jsdom n'a pas de mise en
+// page) : on lit l'affichage calculé d'une ligne.
+// ============================================================================
+
+test('main courante : cartes en écran scindé, tableau en bureau standard', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name === 'chromium-mobile', 'écran scindé réservé au bureau (viewport posé ici)');
+  await page.setViewportSize({ width: 1366, height: 768 });
+  await page.goto('/pctac/', { waitUntil: 'domcontentloaded' });
+  await page.evaluate(() => {
+    localStorage.setItem('pcTacLogData', JSON.stringify([
+      { id: '1', timestamp: Date.now(), heure: '14:32', pax: 'Otage', lieu: 'Pavillon 3', remarques: 'Contact établi.' },
+    ]));
+  });
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  const rowDisplay = (): Promise<string> => page.evaluate(() => {
+    const row = document.querySelector('#logTable tbody tr:not(.log-day-sep)');
+    return row ? getComputedStyle(row).display : 'absente';
+  });
+  await expect.poll(rowDisplay).toBe('table-row');
+
+  await page.locator('#dockToggleBtn').click();
+  await page.locator('#splitViewDockBtn').click();
+  await page.locator('.split-pane-select').first().selectOption('view-main-courante');
+  await expect.poll(rowDisplay).toBe('grid');
+  const hScroll = await page.evaluate(() => {
+    const c = document.getElementById('logTableContainer')!;
+    return c.scrollWidth > c.clientWidth;
+  });
+  expect(hScroll).toBe(false);
+
+  await page.keyboard.press('Escape');
+  await expect.poll(rowDisplay).toBe('table-row');
+});
