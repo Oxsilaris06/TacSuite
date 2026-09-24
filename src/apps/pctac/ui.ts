@@ -75,6 +75,7 @@ import {
   defaultStatus,
   ficheCounters,
   ficheTitle,
+  ficheVariant,
   filledSections,
   statusChoices,
   statusMeta,
@@ -106,30 +107,30 @@ function ficheCard(
 ): string {
   const mode = currentModeId();
   const lex = currentMode()[side];
-  const key = side === 'adv' ? 'pcTacAdversaries' : 'pcTacHostages';
-  const view = side === 'adv' ? 'view-adversaires' : 'view-otages';
   const id = esc(item.id);
   const status = String(item.status || defaultStatus(side, mode));
   const meta = statusMeta(side, mode, status);
   const hasStatus = statusChoices(side, mode).length > 0;
   const title = ficheTitle(side, mode, item);
   const name = title === '(sans nom)' ? 'N/C' : title;
-  const age = ageFromDob(item.dob);
-  const sub = [age === null ? '' : `${age} ans`, String(item.alias ?? '').trim()].filter(Boolean).join(' · ');
+  // Phénomène : âge et alias sont masqués dans la fiche, donc ici aussi.
+  const age = ficheVariant(side, mode, item) === 'phenomene' ? null : ageFromDob(item.dob);
+  const alias = ficheVariant(side, mode, item) === 'phenomene' ? '' : String(item.alias ?? '').trim();
+  const sub = [age === null ? '' : `${age} ans`, alias].filter(Boolean).join(' · ');
   const facts = summaryRows(side, mode, item);
   const sections = filledSections(side, mode, item, new Date(), resolveLink);
   const photo = typeof item.photo === 'string' && item.photo
     ? `<img src="${esc(item.photo)}" alt="">`
     : `<span class="material-symbols-outlined" aria-hidden="true">${side === 'adv' ? 'person' : 'person_off'}</span>`;
   return `
-    <article class="fiche-card" style="--status-color: ${hasStatus ? meta.color : 'var(--border-glass)'}">
+    <article class="fiche-card" data-id="${id}" style="--status-color: ${hasStatus ? meta.color : 'var(--border-glass)'}">
       <div class="fiche-card-head">
         <div class="fiche-card-photo">${photo}</div>
         <div class="fiche-card-id">
           <h3 class="fiche-card-name">${esc(name)}</h3>
           ${sub ? `<p class="fiche-card-sub">${esc(sub)}</p>` : ''}
         </div>
-        ${hasStatus ? `<select class="fiche-card-status" onchange="UI.setItemStatus('${key}', '${id}', this.value)" aria-label="Statut : ${esc(name)}">${statusOptionsFor(side, status)}</select>` : ''}
+        ${hasStatus ? `<select class="fiche-card-status" data-fiche-action="status" aria-label="Statut : ${esc(name)}">${statusOptionsFor(side, status)}</select>` : ''}
       </div>
       ${facts.length ? `<dl class="fiche-card-facts">${facts.map((r) => `<div><dt>${esc(r.label)}</dt><dd>${esc(r.value)}</dd></div>`).join('')}</dl>` : ''}
       ${linked.length ? `<p class="fiche-card-linked"><span class="material-symbols-outlined" aria-hidden="true">link</span>Fiches liées : ${esc(linked.join(', '))}</p>` : ''}
@@ -137,10 +138,35 @@ function ficheCard(
         <section><h4>${esc(sec.title)}</h4><dl>${sec.rows.map((r) => `<div><dt>${esc(r.label)}</dt><dd>${esc(r.value)}</dd></div>`).join('')}</dl></section>`).join('')}
       </details>` : ''}
       <div class="fiche-card-actions">
-        <button type="button" class="fiche-card-edit" onclick="window.UI.${side === 'adv' ? 'showEditAdversaryModal' : 'showEditHostageModal'}('${id}')" aria-label="Modifier ${esc(lex.demonstrative)} : ${esc(name)}"><span class="material-symbols-outlined" aria-hidden="true">edit</span>Modifier</button>
-        <button type="button" class="delete-btn" onclick="window.deleteCollectionItem('${key}', '${id}', '${view}')" aria-label="Supprimer ${esc(lex.demonstrative)} : ${esc(name)}"><span class="material-symbols-outlined" aria-hidden="true">delete</span></button>
+        <button type="button" class="fiche-card-edit" data-fiche-action="edit" aria-label="Modifier ${esc(lex.demonstrative)} : ${esc(name)}"><span class="material-symbols-outlined" aria-hidden="true">edit</span>Modifier</button>
+        <button type="button" class="delete-btn" data-fiche-action="delete" aria-label="Supprimer ${esc(lex.demonstrative)} : ${esc(name)}"><span class="material-symbols-outlined" aria-hidden="true">delete</span></button>
       </div>
     </article>`;
+}
+
+/**
+ * Actions des cartes par délégation (revue neuve, constat XSS) : l'id de la
+ * fiche ne passe JAMAIS dans du JavaScript en ligne, il est lu dans
+ * `data-id` (texte, échappé) au moment du clic. Câblé une fois par liste.
+ */
+function bindFicheList(box: HTMLElement, side: FicheSide): void {
+  if (box.dataset.ficheBound) return;
+  box.dataset.ficheBound = '1';
+  const key = side === 'adv' ? 'pcTacAdversaries' : 'pcTacHostages';
+  const view = side === 'adv' ? 'view-adversaires' : 'view-otages';
+  const idOf = (el: Element): string | undefined => el.closest<HTMLElement>('.fiche-card')?.dataset.id;
+  box.addEventListener('click', (e) => {
+    const btn = (e.target as HTMLElement).closest<HTMLElement>('[data-fiche-action]');
+    const id = btn ? idOf(btn) : undefined;
+    if (!btn || !id) return;
+    if (btn.dataset.ficheAction === 'edit') void openFiche(side, id);
+    if (btn.dataset.ficheAction === 'delete') void window.deleteCollectionItem(key, id, view);
+  });
+  box.addEventListener('change', (e) => {
+    const sel = e.target as HTMLSelectElement;
+    const id = sel.dataset.ficheAction === 'status' ? idOf(sel) : undefined;
+    if (id) UI.setItemStatus(key, id, sel.value);
+  });
 }
 
 /** Compteurs « Combien », calculés depuis les deux collections. */
@@ -194,15 +220,19 @@ function setStatusOnFiche(key: string, id: string, status: string): boolean {
 
   // Entrée automatique en main courante, horodatée.
   const isAdv = key === 'pcTacAdversaries';
-  const meta = statusMeta(isAdv ? 'adv' : 'host', currentModeId(), status);
+  const side: FicheSide = isAdv ? 'adv' : 'host';
+  const meta = statusMeta(side, currentModeId(), status);
   const now = new Date();
   const heure = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0');
-  const nom = `${(item.nom as string | undefined) || ''} ${(item.prenom as string | undefined) || ''}`.trim() || '(sans nom)';
+  // Nom tel que la fiche l'affiche (un Phénomène n'a pas de prénom).
+  const nom = ficheTitle(side, currentModeId(), item);
+  // Sigle de triage (UA, EU) : jamais mis en minuscules.
+  const label = meta.label === meta.label.toUpperCase() ? meta.label : meta.label.toLowerCase();
   LogManager.addEntry({
     mode: 'standard',
     pax: isAdv ? 'Adversaire' : 'Otage',
     heure,
-    remarques: `${isAdv ? 'ADV' : 'OTG'} ${nom} : ${meta ? meta.label.toLowerCase() : status}`,
+    remarques: `${isAdv ? 'ADV' : 'OTG'} ${nom} : ${label}`,
     auto: true,
   });
   return true;
@@ -808,13 +838,15 @@ export const UI: UIContract = {
     renderFicheCounters();
     const box = document.getElementById('adversary-table-body');
     if (!box) return;
+    bindFicheList(box, 'adv');
     const lex = currentMode().adv;
     if (raw.length === 0) {
       box.innerHTML = `<p class="empty-state">${esc(lex.emptyLabel)} — touchez « ${esc(lex.newLabel)} »</p>`;
       return;
     }
-    // U26 — squelette pendant l'hydratation IndexedDB des photos.
-    box.innerHTML = '<p class="empty-state">Chargement des photos…</p>';
+    // U26 — squelette pendant l'hydratation IndexedDB des photos, au premier
+    // rendu seulement : remplacer des cartes déjà là ferait sauter la liste.
+    if (!box.querySelector('.fiche-card')) box.innerHTML = '<p class="empty-state">Chargement des photos…</p>';
     const list = await ImageStore.hydrate(raw, 'photo');
     const hostages = Storage.loadCollection('pcTacHostages');
     const mode = currentModeId();
@@ -846,12 +878,13 @@ export const UI: UIContract = {
     renderFicheCounters();
     const box = document.getElementById('hostage-table-body');
     if (!box) return;
+    bindFicheList(box, 'host');
     const lex = currentMode().host;
     if (raw.length === 0) {
       box.innerHTML = `<p class="empty-state">${esc(lex.emptyLabel)} — touchez « ${esc(lex.newLabel)} »</p>`;
       return;
     }
-    box.innerHTML = '<p class="empty-state">Chargement des photos…</p>';
+    if (!box.querySelector('.fiche-card')) box.innerHTML = '<p class="empty-state">Chargement des photos…</p>';
     const list = await ImageStore.hydrate(raw, 'photo');
     const advs = Storage.loadCollection('pcTacAdversaries');
     box.innerHTML = list.map((item) => ficheCard('host', item, [], (v) => resolveLien(v, advs) || v)).join('');

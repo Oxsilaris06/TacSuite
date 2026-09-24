@@ -18,7 +18,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import type { PctacLogEntry } from '../../../src/shared/types/contracts.js';
 
 // Imports des modules à tester (sera créés)
-import { Storage } from '../../../src/apps/pctac/storage.js';
+import { Storage, clearSituationData } from '../../../src/apps/pctac/storage.js';
 import { Utils } from '../../../src/apps/pctac/utils.js';
 
 // Constantes de config
@@ -177,6 +177,8 @@ describe('Storage — clearAllData supprime les 14 clés (storage.js:84-109)', (
       'lastPhotoFilter',
       'pcTacPlanLocked',
       'pcTacDashboard',
+      // Brouillons de fiche : effacés par la remise à zéro (décision 17).
+      'pcTacFicheDraft',
     ];
 
     keysToDelete.forEach((k) => {
@@ -198,6 +200,14 @@ describe('Storage — clearAllData supprime les 14 clés (storage.js:84-109)', (
     expect(localStorage.getItem('z_custom_key_outside')).toBe('should_remain');
     // Seule cette clé doit rester
     expect(localStorage.length).toBe(1);
+  });
+
+  it('revue : l’effacement d’un import (clearSituationData) garde les brouillons de fiche', () => {
+    localStorage.setItem('pcTacFicheDraft', '{"adv:new":{"values":{"nom":"X"}}}');
+    localStorage.setItem(ADVERSARIES_KEY, '[]');
+    clearSituationData('forcene');
+    expect(localStorage.getItem(ADVERSARIES_KEY)).toBeNull();
+    expect(localStorage.getItem('pcTacFicheDraft')).not.toBeNull();
   });
 
   it('ne jette pas même si une clé est manquante au départ', () => {

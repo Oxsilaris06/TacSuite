@@ -48,7 +48,6 @@ const SITUATION_KEYS: readonly string[] = [
   'pcTacLieuHistory',
   'pcTacPlanLocked',
   'pcTacDashboard',
-  FICHE_DRAFT_KEY,
 ];
 
 /**
@@ -171,11 +170,14 @@ export const Storage: PctacStorageContract = {
    * L'index GPX de la situation est retiré ICI et non dans `clearSituationData`
    * (que l'import utilise) : une réinitialisation efface les traces de la
    * situation visée, alors qu'un import doit les conserver (décision de fusion).
+   * Même règle pour les brouillons de fiche : un import (même raté, donc
+   * annulé) ne doit pas emporter une saisie non enregistrée.
    */
   clearAllData(): void {
     clearSituationData(currentModeId());
     try {
       localStorage.removeItem(scopedKey(GPX_INDEX_KEY));
+      localStorage.removeItem(scopedKey(FICHE_DRAFT_KEY));
     } catch {
       // localStorage indisponible : on dégrade proprement (offline-first).
     }

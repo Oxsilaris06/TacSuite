@@ -3198,7 +3198,8 @@ body.light-mode .pctac-liens-btn-row--wa:hover { background: #bee9ce; box-shadow
 }
 .fiche-list {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+    /* min() : une colonne ne dépasse jamais son conteneur (panneau scindé). */
+    grid-template-columns: repeat(auto-fill, minmax(min(340px, 100%), 1fr));
     gap: var(--space-4);
 }
 
@@ -3259,7 +3260,8 @@ body.light-mode .pctac-liens-btn-row--wa:hover { background: #bee9ce; box-shadow
     min-height: 44px;
     padding: 0 28px 0 12px;
     font-family: var(--font-ui);
-    font-size: 0.9rem;
+    /* 16 px : en dessous, iOS zoome la page à l'ouverture du menu. */
+    font-size: 16px;
     font-weight: 700;
     color: var(--text-main);
     border: 1px solid var(--status-color);
@@ -3349,6 +3351,7 @@ body.light-mode .pctac-liens-btn-row--wa:hover { background: #bee9ce; box-shadow
     width: min(720px, 95vw);
     max-width: 95vw;
     max-height: 90vh;
+    max-height: 90dvh;
     padding: 0;
     overflow: hidden;
     color: var(--text-main);
@@ -3370,6 +3373,7 @@ body.light-mode .pctac-liens-btn-row--wa:hover { background: #bee9ce; box-shadow
     display: flex;
     flex-direction: column;
     max-height: 90vh;
+    max-height: 90dvh;
 }
 .fiche-head {
     display: flex;
@@ -3562,6 +3566,12 @@ body.light-mode .pctac-liens-btn-row--wa:hover { background: #bee9ce; box-shadow
     font-family: var(--font-ui);
     font-size: 16px;
 }
+.fiche-sheet input:focus,
+.fiche-sheet textarea:focus,
+.fiche-sheet select:focus {
+    /* La règle globale assombrit le fond au focus : illisible en thème clair. */
+    background: var(--bg-input);
+}
 .fiche-sheet textarea {
     min-height: 72px;
     resize: vertical;
@@ -3630,6 +3640,16 @@ body.light-mode .pctac-liens-btn-row--wa:hover { background: #bee9ce; box-shadow
     border-color: var(--chip-color);
     background: color-mix(in srgb, var(--chip-color) 24%, var(--bg-input));
     box-shadow: inset 0 0 0 1px var(--chip-color);
+    font-weight: 800;
+}
+/* Repère sans couleur (thème clair, daltonisme) : la pastille cochée porte ✓. */
+.fiche-status-chip[aria-checked="true"]::before {
+    content: '✓';
+    width: auto;
+    height: auto;
+    background: none;
+    color: var(--text-main);
+    font-weight: 800;
 }
 
 @media (max-width: 640px) {
@@ -3644,6 +3664,11 @@ body.light-mode .pctac-liens-btn-row--wa:hover { background: #bee9ce; box-shadow
         grid-template-columns: 1fr;
         gap: 2px;
     }
+}
+
+/* Fiche plein écran : téléphone, ou téléphone en paysage (peu de hauteur).
+   La hauteur réelle (clavier ouvert) est posée par fiche-sheet.ts. */
+@media (max-width: 640px), (max-height: 500px) {
     .fiche-sheet {
         width: 100vw;
         max-width: 100vw;
@@ -3655,7 +3680,12 @@ body.light-mode .pctac-liens-btn-row--wa:hover { background: #bee9ce; box-shadow
     }
     .fiche-form {
         height: 100%;
-        max-height: 100dvh;
+        max-height: none;
+    }
+    .fiche-head {
+        padding-top: calc(var(--space-2) + env(safe-area-inset-top, 0px));
+        padding-left: calc(var(--space-4) + env(safe-area-inset-left, 0px));
+        padding-right: calc(var(--space-2) + env(safe-area-inset-right, 0px));
     }
     .fiche-body {
         padding: var(--space-3);
@@ -3668,6 +3698,17 @@ body.light-mode .pctac-liens-btn-row--wa:hover { background: #bee9ce; box-shadow
     .fiche-section-body {
         padding-left: var(--space-3);
         padding-right: var(--space-3);
+    }
+}
+
+/* Téléphone étroit : le statut passe sous le nom, qui garde sa largeur. */
+@media (max-width: 400px) {
+    .fiche-card-head {
+        flex-wrap: wrap;
+    }
+    .fiche-card-status {
+        order: 3;
+        flex: 1 1 100%;
     }
 }
 

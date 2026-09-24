@@ -307,17 +307,38 @@ export function ficheSections(side: FicheSide, modeId: PctacModeId, item: Record
 
 const norm = (s: string): string => s.trim().toLowerCase();
 
-/** Relit une valeur stockée : pastilles reconnues, et le reste en précision. */
-export function parseChips(value: unknown, chips: readonly string[]): { selected: string[]; precision: string } {
-    const tokens = String(value ?? '').split(',').map((t) => t.trim()).filter(Boolean);
-    const found = new Set<string>();
-    const rest: string[] = [];
-    tokens.forEach((t) => {
-        const chip = chips.find((c) => norm(c) === norm(t));
-        if (chip) found.add(chip);
-        else rest.push(t);
-    });
-    return { selected: chips.filter((c) => found.has(c)), precision: rest.join(', ') };
+/**
+ * Relit une valeur stockée : pastilles en tête, puis la précision MOT POUR MOT.
+ * `serializeChips` écrit les pastilles d'abord, dans l'ordre de la liste : on
+ * ne lit donc comme pastilles que les jetons de tête qui respectent cet ordre
+ * (et l'exclusivité, le choix unique). Tout le reste est rendu tel quel, sans
+ * redécoupage : « Fusil 7,62 mm » garde sa virgule décimale, et une précision
+ * « aucune connue » écrite après « Arme de poing » reste du texte.
+ */
+export function parseChips(
+    value: unknown,
+    chips: readonly string[],
+    rules: { single?: boolean; exclusive?: readonly string[] } = {},
+): { selected: string[]; precision: string } {
+    const text = String(value ?? '');
+    const selected: string[] = [];
+    let rest = text;
+    let lastIndex = -1;
+    for (;;) {
+        const comma = rest.indexOf(',');
+        const token = (comma < 0 ? rest : rest.slice(0, comma)).trim();
+        const index = chips.findIndex((c) => norm(c) === norm(token));
+        if (index <= lastIndex) break;
+        const chip = chips[index] as string;
+        const exclusive = rules.exclusive?.includes(chip) ?? false;
+        const blocked = selected.length > 0 && (rules.single || exclusive || selected.some((c) => rules.exclusive?.includes(c)));
+        if (blocked) break;
+        selected.push(chip);
+        lastIndex = index;
+        rest = comma < 0 ? '' : rest.slice(comma + 1);
+        if (comma < 0) break;
+    }
+    return { selected, precision: rest.trim() };
 }
 
 export function serializeChips(selected: readonly string[], precision: string, chips: readonly string[]): string {
