@@ -2965,16 +2965,31 @@ body.light-mode .pctac-liens-btn-row--wa:hover { background: #bee9ce; box-shadow
  * dézoom »). Sous 640 px, la table de 4 colonnes faisait ~730 px de large et
  * forçait le navigateur à dézoomer toute la page. Chaque entrée devient une
  * FICHE empilée : heure, favori et actions en tête, Pax à droite, puis le lieu,
- * puis les remarques en entier. Aucun changement au-dessus de 640 px (bureau,
- * écran scindé compris). Le balisage et le JavaScript sont inchangés : seul
- * l'affichage des éléments de table est redéfini.
+ * puis les remarques en entier. Le balisage et le JavaScript sont inchangés :
+ * seul l'affichage des éléments de table est redéfini.
+ *
+ * Décision 22 : même affichage dans un panneau de l'écran scindé (colonnes
+ * écrasées sinon) ; le bureau standard garde le tableau. Le nom de conteneur
+ * `logcards` sert d'interrupteur : il n'est posé que sur téléphone et dans un
+ * panneau, et les règles ne valent que sous lui (une requête de conteneur
+ * sans conteneur de ce nom ne s'applique pas). Une seule copie des règles.
  * ════════════════════════════════════════════════════════════════════════ */
 @media (max-width: 640px) {
+    #view-main-courante {
+        container: logcards / inline-size;
+    }
+}
+.split-pane > #view-main-courante {
+    container: logcards / inline-size;
+}
+@container logcards (min-width: 0px) {
     #logTable,
     #logTable thead,
     #logTable tbody {
         display: block;
         width: 100%;
+        /* Panneau scindé : `.split-pane .log-table` impose 520 px au tableau. */
+        min-width: 0;
     }
 
     /* En-tête : plus de titres de colonnes, mais la barre d'actions
