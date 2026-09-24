@@ -13,7 +13,7 @@
  * Tout ce qui calcule est pur et testé ailleurs (`tactical-grid.ts`,
  * `power-lines.ts`) ; ce fichier ne fait que brancher MapLibre.
  */
-import type { GeoJSONSource, Map as MapLibreMap, MapMouseEvent } from 'maplibre-gl';
+import type { GeoJSONSource, LayerSpecification, Map as MapLibreMap, MapMouseEvent, MapTouchEvent } from 'maplibre-gl';
 import {
     GRID_CELL_SIZES,
     GRID_DEFAULT_CELL,
@@ -56,6 +56,8 @@ export interface MapOverlays {
     setPowerOn(on: boolean): void;
     setCellSize(m: number): Promise<boolean>;
     startGridDraw(): Promise<void>;
+    /** Pose d'un seul geste un carroyage centré sur la vue (60 % de l'écran) : l'option commode au doigt. */
+    placeGridOnView(): Promise<void>;
     startGridMove(): void;
     clearGrid(): Promise<void>;
     cancelCapture(): void;
@@ -76,7 +78,45 @@ const EMPTY: GeoJSON.FeatureCollection = { type: 'FeatureCollection', features: 
 const GRID_COLOR = '#f5f7fa';
 const GRID_HALO = '#0b0d12';
 const MGRS_COLOR = '#7fdcff';
-const POWER_COLORS: Record<string, string> = { tht: '#e53935', ht: '#fb8c00', hta: '#fdd835', bt: '#9e9e9e' };
+// BT en blanc cassé : le gris d'origine se perdait sur l'orthophoto.
+const POWER_COLORS: Record<string, string> = { tht: '#e53935', ht: '#fb8c00', hta: '#fdd835', bt: '#e6e6e6' };
+
+/** Point d'un geste : coordonnées carte et position à l'écran (px). */
+type ScreenPoint = { at: LngLat; x: number; y: number };
+
+const BOLT_IMAGE = 'tac-power-bolt';
+
+/**
+ * Éclair dessiné sur un canevas (aucune image externe), déclaré en SDF pour
+ * être teinté par tension (`icon-color`) avec un halo noir. `false` sans
+ * canevas 2D (tests) : la couche d'éclairs est alors simplement omise.
+ */
+function addBoltImage(map: MapLibreMap): boolean {
+    if (map.hasImage(BOLT_IMAGE)) return true;
+    try {
+        const size = 32;
+        const c = document.createElement('canvas');
+        c.width = size;
+        c.height = size;
+        const ctx = c.getContext('2d');
+        if (!ctx) return false;
+        ctx.fillStyle = '#000000';
+        ctx.beginPath();
+        ctx.moveTo(19, 2);
+        ctx.lineTo(6, 18);
+        ctx.lineTo(15, 18);
+        ctx.lineTo(12, 30);
+        ctx.lineTo(26, 13);
+        ctx.lineTo(17, 13);
+        ctx.lineTo(21, 2);
+        ctx.closePath();
+        ctx.fill();
+        map.addImage(BOLT_IMAGE, ctx.getImageData(0, 0, size, size), { sdf: true, pixelRatio: 2 });
+        return true;
+    } catch {
+        return false;
+    }
+}
 
 function src(map: MapLibreMap, id: string): GeoJSONSource | undefined {
     return map.getSource(id) as GeoJSONSource | undefined;
@@ -93,6 +133,92 @@ function sanitize(raw: Partial<OverlayState> | null | undefined): OverlayState {
     };
 }
 
+/**
+ * Couches des surcouches, dans l'ordre d'empilement (les lignes électriques
+ * sous les grilles). Exportées pour être VALIDÉES par le validateur de style
+ * officiel de MapLibre (test) : deux expressions refusées à l'exécution
+ * (`line-dasharray`, puis `symbol-spacing`) avaient échappé aux tests.
+ */
+export function overlayLayers(withBolt: boolean): LayerSpecification[] {
+    return [
+        {
+            id: 'tac-power-casing', type: 'line', source: 'tac-power',
+            layout: { 'line-cap': 'round', 'line-join': 'round' },
+            paint: { 'line-color': '#000000', 'line-width': ['match', ['get', 'cls'], 'tht', 5.5, 'ht', 4.5, 'hta', 3.5, 3], 'line-opacity': 0.75 },
+        },
+        {
+            id: 'tac-power-line', type: 'line', source: 'tac-power',
+            filter: ['!=', ['get', 'cls'], 'bt'],
+            layout: { 'line-cap': 'round', 'line-join': 'round' },
+            paint: {
+                'line-color': ['match', ['get', 'cls'], 'tht', POWER_COLORS.tht!, 'ht', POWER_COLORS.ht!, POWER_COLORS.hta!],
+                'line-width': ['match', ['get', 'cls'], 'tht', 2.5, 'ht', 2, 1.5],
+            },
+        },
+        {
+            id: 'tac-power-line-bt', type: 'line', source: 'tac-power',
+            filter: ['==', ['get', 'cls'], 'bt'],
+            paint: { 'line-color': POWER_COLORS.bt!, 'line-width': 1.5, 'line-dasharray': [3, 2] },
+        },
+        // Éclairs le long des lignes : couche décorative, omise sans canevas 2D.
+        ...(withBolt ? [{
+            id: 'tac-power-bolt', type: 'symbol', source: 'tac-power',
+            layout: {
+                'symbol-placement': 'line',
+                'symbol-spacing': 180,
+                'icon-image': BOLT_IMAGE,
+                'icon-size': ['match', ['get', 'cls'], 'tht', 1, 'ht', 0.9, 'hta', 0.8, 0.7],
+                'icon-rotation-alignment': 'viewport',
+                'icon-padding': 4,
+            },
+            paint: {
+                'icon-color': ['match', ['get', 'cls'], 'tht', POWER_COLORS.tht!, 'ht', POWER_COLORS.ht!, 'hta', POWER_COLORS.hta!, POWER_COLORS.bt!],
+                'icon-halo-color': '#000000',
+                'icon-halo-width': 1.5,
+            },
+        }] : []),
+        {
+            id: 'tac-power-tower', type: 'circle', source: 'tac-power-towers', minzoom: 14,
+            paint: { 'circle-radius': 3.5, 'circle-color': '#ffffff', 'circle-stroke-color': '#000000', 'circle-stroke-width': 2 },
+        },
+        {
+            id: 'tac-power-label', type: 'symbol', source: 'tac-power', minzoom: 15,
+            filter: ['!=', ['get', 'label'], ''],
+            layout: { 'symbol-placement': 'line', 'text-field': ['get', 'label'], 'text-font': ['Noto Sans Bold'], 'text-size': 11 },
+            paint: { 'text-color': '#ffffff', 'text-halo-color': GRID_HALO, 'text-halo-width': 1.5 },
+        },
+        {
+            id: 'tac-mgrs-casing', type: 'line', source: 'tac-mgrs',
+            paint: { 'line-color': GRID_HALO, 'line-width': ['match', ['get', 'kind'], 'km', 3.2, 2.4], 'line-opacity': 0.45 },
+        },
+        {
+            id: 'tac-mgrs-line', type: 'line', source: 'tac-mgrs',
+            paint: { 'line-color': MGRS_COLOR, 'line-width': ['match', ['get', 'kind'], 'km', 1.6, 1.1], 'line-dasharray': [4, 3], 'line-opacity': 0.95 },
+        },
+        {
+            id: 'tac-mgrs-label', type: 'symbol', source: 'tac-mgrs-labels',
+            layout: { 'text-field': ['get', 'label'], 'text-font': ['Noto Sans Regular'], 'text-size': 11, 'text-anchor': 'bottom-left', 'text-offset': [0.2, -0.1], 'text-allow-overlap': false },
+            paint: { 'text-color': MGRS_COLOR, 'text-halo-color': GRID_HALO, 'text-halo-width': 1.5 },
+        },
+        {
+            id: 'tac-grid-line', type: 'line', source: 'tac-grid',
+            paint: { 'line-color': GRID_COLOR, 'line-width': ['match', ['get', 'kind'], 'edge', 2.5, 1.2], 'line-opacity': 0.95 },
+        },
+        {
+            id: 'tac-grid-label', type: 'symbol', source: 'tac-grid-labels',
+            layout: { 'text-field': ['get', 'label'], 'text-font': ['Noto Sans Bold'], 'text-size': 14, 'text-allow-overlap': true },
+            paint: { 'text-color': GRID_COLOR, 'text-halo-color': GRID_HALO, 'text-halo-width': 2 },
+        },
+        {
+            id: 'tac-grid-preview-line', type: 'line', source: 'tac-grid-preview',
+            paint: { 'line-color': GRID_COLOR, 'line-width': 2, 'line-dasharray': [2, 2] },
+        },
+    ] as LayerSpecification[];
+}
+
+/** Sources GeoJSON des surcouches. */
+export const OVERLAY_SOURCES = ['tac-grid', 'tac-grid-labels', 'tac-grid-preview', 'tac-mgrs', 'tac-mgrs-labels', 'tac-power', 'tac-power-towers'] as const;
+
 export function createMapOverlays(map: MapLibreMap, opts: OverlayOptions): MapOverlays {
     const state = sanitize(opts.load());
     // Interrupteur « Carroyage » actif sans carroyage (reset de situation,
@@ -100,7 +226,13 @@ export function createMapOverlays(map: MapLibreMap, opts: OverlayOptions): MapOv
     if (!state.grid) state.gridOn = false;
     let mgrsZoom = false;
     const listeners = new Set<() => void>();
-    let capture: null | { mode: 'draw' | 'move'; first?: LngLat } = null;
+    // Tracé du carroyage : `press` = appui en cours (glisser d'un coin à l'autre),
+    // `first` = premier coin posé par un simple toucher (tracé en deux touchers).
+    let capture: null | { mode: 'draw' | 'move'; first?: LngLat; press?: ScreenPoint | undefined; last?: ScreenPoint | undefined } = null;
+    // Le `click` qui suit le relâchement du doigt appartient encore au tracé :
+    // l'hôte (pings, formes) doit l'ignorer quelques instants.
+    let swallowUntil = 0;
+    let dragPanWasOn = false;
     let power: PowerStatus = 'off';
     let powerSeq = 0;
     let moveTimer: ReturnType<typeof setTimeout> | null = null;
@@ -114,64 +246,16 @@ export function createMapOverlays(map: MapLibreMap, opts: OverlayOptions): MapOv
 
     function addLayers(): void {
         if (map.getSource('tac-grid')) return;
-        for (const id of ['tac-grid', 'tac-grid-labels', 'tac-grid-preview', 'tac-mgrs', 'tac-mgrs-labels', 'tac-power', 'tac-power-towers']) {
-            map.addSource(id, { type: 'geojson', data: EMPTY });
+        for (const id of OVERLAY_SOURCES) map.addSource(id, { type: 'geojson', data: EMPTY });
+        // Chaque couche séparément : une couche refusée (style, navigateur) ne
+        // doit jamais empêcher les suivantes — carroyage et MGRS compris.
+        for (const layer of overlayLayers(addBoltImage(map))) {
+            try {
+                map.addLayer(layer);
+            } catch (e) {
+                console.warn(`[carte] couche ${layer.id} non ajoutée :`, e);
+            }
         }
-        // Lignes électriques sous les grilles : les grilles restent lisibles par-dessus.
-        // `line-dasharray` n'accepte pas d'expression de données : la basse
-        // tension (pointillée) a sa propre couche.
-        map.addLayer({
-            id: 'tac-power-line', type: 'line', source: 'tac-power',
-            filter: ['!=', ['get', 'cls'], 'bt'],
-            paint: {
-                'line-color': ['match', ['get', 'cls'], 'tht', POWER_COLORS.tht!, 'ht', POWER_COLORS.ht!, POWER_COLORS.hta!],
-                'line-width': ['match', ['get', 'cls'], 'tht', 3.5, 'ht', 2.5, 1.8],
-                'line-opacity': 0.9,
-            },
-        });
-        map.addLayer({
-            id: 'tac-power-line-bt', type: 'line', source: 'tac-power',
-            filter: ['==', ['get', 'cls'], 'bt'],
-            paint: { 'line-color': POWER_COLORS.bt!, 'line-width': 1.2, 'line-dasharray': [2, 2], 'line-opacity': 0.9 },
-        });
-        map.addLayer({
-            id: 'tac-power-tower', type: 'circle', source: 'tac-power-towers', minzoom: 14,
-            paint: { 'circle-radius': 3, 'circle-color': '#ffffff', 'circle-stroke-color': POWER_COLORS.tht!, 'circle-stroke-width': 1.5 },
-        });
-        map.addLayer({
-            id: 'tac-power-label', type: 'symbol', source: 'tac-power', minzoom: 15,
-            filter: ['!=', ['get', 'label'], ''],
-            layout: { 'symbol-placement': 'line', 'text-field': ['get', 'label'], 'text-font': ['Noto Sans Bold'], 'text-size': 11 },
-            paint: { 'text-color': '#ffffff', 'text-halo-color': GRID_HALO, 'text-halo-width': 1.5 },
-        });
-        // Liseré sombre sous le trait : la grille reste lisible sur une
-        // orthophoto claire comme sur un fond sombre.
-        map.addLayer({
-            id: 'tac-mgrs-casing', type: 'line', source: 'tac-mgrs',
-            paint: { 'line-color': GRID_HALO, 'line-width': ['match', ['get', 'kind'], 'km', 3.2, 2.4], 'line-opacity': 0.45 },
-        });
-        map.addLayer({
-            id: 'tac-mgrs-line', type: 'line', source: 'tac-mgrs',
-            paint: { 'line-color': MGRS_COLOR, 'line-width': ['match', ['get', 'kind'], 'km', 1.6, 1.1], 'line-dasharray': [4, 3], 'line-opacity': 0.95 },
-        });
-        map.addLayer({
-            id: 'tac-mgrs-label', type: 'symbol', source: 'tac-mgrs-labels',
-            layout: { 'text-field': ['get', 'label'], 'text-font': ['Noto Sans Regular'], 'text-size': 11, 'text-anchor': 'bottom-left', 'text-offset': [0.2, -0.1], 'text-allow-overlap': false },
-            paint: { 'text-color': MGRS_COLOR, 'text-halo-color': GRID_HALO, 'text-halo-width': 1.5 },
-        });
-        map.addLayer({
-            id: 'tac-grid-line', type: 'line', source: 'tac-grid',
-            paint: { 'line-color': GRID_COLOR, 'line-width': ['match', ['get', 'kind'], 'edge', 2.5, 1.2], 'line-opacity': 0.95 },
-        });
-        map.addLayer({
-            id: 'tac-grid-label', type: 'symbol', source: 'tac-grid-labels',
-            layout: { 'text-field': ['get', 'label'], 'text-font': ['Noto Sans Bold'], 'text-size': 14, 'text-allow-overlap': true },
-            paint: { 'text-color': GRID_COLOR, 'text-halo-color': GRID_HALO, 'text-halo-width': 2 },
-        });
-        map.addLayer({
-            id: 'tac-grid-preview-line', type: 'line', source: 'tac-grid-preview',
-            paint: { 'line-color': GRID_COLOR, 'line-width': 2, 'line-dasharray': [2, 2] },
-        });
         ready = true;
         renderAll();
     }
@@ -223,7 +307,12 @@ export function createMapOverlays(map: MapLibreMap, opts: OverlayOptions): MapOv
         }
         power = 'loading';
         notifyStatus();
-        const r = await loadPowerLines(bounds).catch(() => null);
+        // Affichage progressif : chaque bloc arrivé est montré tout de suite.
+        const r = await loadPowerLines(bounds, fetch, (partial) => {
+            if (seq !== powerSeq) return;
+            src(map, 'tac-power')?.setData(partial.lines);
+            src(map, 'tac-power-towers')?.setData(partial.towers);
+        }).catch(() => null);
         if (seq !== powerSeq) return; // une requête plus récente a pris la main
         if (!r) { power = 'error'; notifyStatus(); return; }
         src(map, 'tac-power')?.setData(r.lines);
@@ -247,34 +336,28 @@ export function createMapOverlays(map: MapLibreMap, opts: OverlayOptions): MapOv
         src(map, 'tac-grid-preview')?.setData({ type: 'FeatureCollection', features: [{ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: ring } }] });
     }
 
+    function beginCapture(mode: 'draw' | 'move'): void {
+        capture = { mode };
+        // Au doigt, glisser déplaçait la carte au lieu de tracer (retour Nico
+        // 2026-09-24) : le déplacement à un doigt est suspendu pendant le tracé.
+        // Le pincement (zoom à deux doigts) reste actif.
+        dragPanWasOn = map.dragPan.isEnabled();
+        map.dragPan.disable();
+        map.getCanvas().style.cursor = 'crosshair';
+        notifyStatus();
+    }
+
     function endCapture(): void {
         capture = null;
         src(map, 'tac-grid-preview')?.setData(EMPTY);
         map.getCanvas().style.cursor = '';
+        if (dragPanWasOn) map.dragPan.enable();
+        dragPanWasOn = false;
         notifyStatus();
     }
 
-    map.on('mousemove', (e: MapMouseEvent) => {
-        if (capture?.mode === 'draw' && capture.first) setPreview(capture.first, [e.lngLat.lng, e.lngLat.lat]);
-    });
-    map.on('click', (e: MapMouseEvent) => {
-        if (!capture) return;
-        const p: LngLat = [e.lngLat.lng, e.lngLat.lat];
-        if (capture.mode === 'move' && state.grid) {
-            state.grid = { ...state.grid, west: p[0], north: p[1] };
-            endCapture();
-            renderGrid();
-            changed();
-            toast('Carroyage déplacé : A1 est maintenant au point touché.', 'success');
-            return;
-        }
-        if (!capture.first) {
-            capture.first = p;
-            setPreview(p, p);
-            toast('Touchez le coin opposé.');
-            return;
-        }
-        const { spec, clamped } = makeTacticalGrid(capture.first, p, state.cellM);
+    function commitGrid(a: LngLat, b: LngLat): void {
+        const { spec, clamped } = makeTacticalGrid(a, b, state.cellM);
         state.grid = spec;
         state.gridOn = true;
         endCapture();
@@ -286,7 +369,66 @@ export function createMapOverlays(map: MapLibreMap, opts: OverlayOptions): MapOv
                 : `Carroyage posé : ${spec.cols} × ${spec.rows} cases de ${spec.cellM} m.`,
             clamped ? 'info' : 'success',
         );
-    });
+    }
+
+    /** Point d'un évènement souris ou tactile ; `null` pour un geste à plusieurs doigts (pincement). */
+    const pointOf = (e: MapMouseEvent | MapTouchEvent): ScreenPoint | null => {
+        if ('points' in e && Array.isArray(e.points) && e.points.length > 1) return null;
+        if (!Number.isFinite(e.lngLat?.lng) || !Number.isFinite(e.lngLat?.lat)) return null;
+        return { at: [e.lngLat.lng, e.lngLat.lat], x: e.point.x, y: e.point.y };
+    };
+    const TAP_SLOP_PX = 12; // en deçà, un appui est un toucher, pas un glisser
+
+    const onDown = (e: MapMouseEvent | MapTouchEvent): void => {
+        if (!capture) return;
+        const p = pointOf(e);
+        if (!p) { capture.press = undefined; return; } // pincement : on laisse zoomer
+        capture.press = p;
+        capture.last = p;
+    };
+    const onMove = (e: MapMouseEvent | MapTouchEvent): void => {
+        if (!capture || capture.mode !== 'draw') return;
+        const p = pointOf(e);
+        if (!p) return;
+        if (capture.press) {
+            capture.last = p;
+            setPreview(capture.press.at, p.at);
+        } else if (capture.first) {
+            setPreview(capture.first, p.at); // souris : aperçu entre les deux clics
+        }
+    };
+    const onUp = (): void => {
+        if (!capture || !capture.press) return;
+        const { press } = capture;
+        const last = capture.last ?? press;
+        capture.press = undefined;
+        swallowUntil = Date.now() + 500;
+        const moved = Math.hypot(last.x - press.x, last.y - press.y) > TAP_SLOP_PX;
+        if (capture.mode === 'move') {
+            if (moved || !state.grid) return;
+            state.grid = { ...state.grid, west: press.at[0], north: press.at[1] };
+            endCapture();
+            renderGrid();
+            changed();
+            toast('Carroyage déplacé : A1 est maintenant au point touché.', 'success');
+            return;
+        }
+        if (moved) { commitGrid(press.at, last.at); return; }
+        if (!capture.first) {
+            capture.first = press.at;
+            setPreview(press.at, press.at);
+            toast('Touchez le coin opposé (ou glissez d’un coin à l’autre).');
+            return;
+        }
+        commitGrid(capture.first, press.at);
+    };
+    map.on('mousedown', onDown);
+    map.on('touchstart', onDown);
+    map.on('mousemove', onMove);
+    map.on('touchmove', onMove);
+    map.on('mouseup', onUp);
+    map.on('touchend', onUp);
+    map.on('touchcancel', () => { if (capture) capture.press = undefined; });
     map.on('moveend', () => {
         if (moveTimer !== null) clearTimeout(moveTimer);
         moveTimer = setTimeout(() => { moveTimer = null; renderMgrs(); void renderPower(); }, 350);
@@ -301,7 +443,7 @@ export function createMapOverlays(map: MapLibreMap, opts: OverlayOptions): MapOv
 
     const api: MapOverlays = {
         get state() { return state; },
-        isCapturing: () => capture !== null,
+        isCapturing: () => capture !== null || Date.now() < swallowUntil,
         setGridOn(on) {
             state.gridOn = on;
             renderGrid();
@@ -340,17 +482,23 @@ export function createMapOverlays(map: MapLibreMap, opts: OverlayOptions): MapOv
         },
         async startGridDraw() {
             if (state.grid && opts.confirm && !(await opts.confirm('Remplacer le carroyage actuel ? Les cases annoncées jusqu’ici changeront de place.'))) return;
-            capture = { mode: 'draw' };
-            map.getCanvas().style.cursor = 'crosshair';
-            toast('Carroyage : touchez un premier coin de la zone (Échap pour annuler).');
-            notifyStatus();
+            beginCapture('draw');
+            toast('Carroyage : glissez d’un coin à l’autre, ou touchez deux coins opposés (Échap pour annuler).');
+        },
+        async placeGridOnView() {
+            if (state.grid && opts.confirm && !(await opts.confirm('Remplacer le carroyage actuel ? Les cases annoncées jusqu’ici changeront de place.'))) return;
+            // 60 % central de l'écran, en pixels puis en coordonnées : juste sous
+            // les yeux, quel que soit le zoom ou l'orientation de la carte.
+            const c = map.getCanvas();
+            const w = c.clientWidth || c.width, h = c.clientHeight || c.height;
+            const nw = map.unproject([w * 0.2, h * 0.2]);
+            const se = map.unproject([w * 0.8, h * 0.8]);
+            commitGrid([nw.lng, nw.lat], [se.lng, se.lat]);
         },
         startGridMove() {
             if (!state.grid) return;
-            capture = { mode: 'move' };
-            map.getCanvas().style.cursor = 'crosshair';
+            beginCapture('move');
             toast('Touchez le nouvel emplacement du coin A1 (Échap pour annuler).');
-            notifyStatus();
         },
         async clearGrid() {
             if (!state.grid) return;
@@ -384,10 +532,10 @@ export interface OverlayControlClasses {
 }
 
 const POWER_STATUS_TEXT: Record<PowerStatus, string> = {
-    off: 'Basse tension incomplète (OSM)',
+    off: 'RTE (OSM) · HTA et BT (Enedis)',
     zoom: 'Zoomez pour les afficher',
     loading: 'Chargement…',
-    ok: 'Basse tension incomplète (OSM)',
+    ok: 'RTE (OSM) · HTA et BT (Enedis)',
     partial: 'Zone en partie indisponible',
     error: 'Lignes indisponibles',
 };
@@ -443,14 +591,17 @@ export function mountOverlayControls(section: HTMLElement, ov: MapOverlays, cls:
         // Refus de la confirmation : le menu revient sur la maille en place.
         void ov.setCellSize(Number(select.value)).then((done) => { if (!done) select.value = String(ov.state.cellM); });
     });
-    const draw = fab('tac-overlay-tool', 'crop_free', 'Tracer le carroyage (deux coins opposés)');
+    const onView = fab('tac-overlay-tool', 'center_focus_strong', 'Poser le carroyage sur la vue (centre de l’écran)');
+    onView.append(' Sur la vue');
+    onView.addEventListener('click', () => void ov.placeGridOnView());
+    const draw = fab('tac-overlay-tool', 'crop_free', 'Tracer le carroyage : glisser d’un coin à l’autre, ou toucher deux coins');
     draw.append(' Tracer');
     draw.addEventListener('click', () => void ov.startGridDraw());
     const move = fab('tac-overlay-tool', 'open_with', 'Déplacer le carroyage (nouvel emplacement du coin A1)');
     move.addEventListener('click', () => ov.startGridMove());
     const clear = fab('tac-overlay-tool', 'delete', 'Effacer le carroyage');
     clear.addEventListener('click', () => void ov.clearGrid());
-    tools.append(select, draw, move, clear);
+    tools.append(select, onView, draw, move, clear);
     grid.el.after(tools);
 
     const mgrsBtn = fab(cls.fab, 'grid_4x4', 'Afficher ou masquer la grille MGRS');
@@ -497,7 +648,7 @@ export function overlayLegend(ov: MapOverlays | null | undefined, bearing: numbe
         parts.push(`Carroyage ${s.grid.cellM} m (${s.grid.cols} × ${s.grid.rows}), A1 au nord-ouest : ${mgrsOf(s.grid.west, s.grid.north) ?? 'N/C'}`);
     }
     if (s.mgrsOn) parts.push('Grille MGRS');
-    if (s.powerOn) parts.push('Lignes électriques OSM (basse tension incomplète)');
+    if (s.powerOn) parts.push('Lignes électriques : RTE (OSM), HTA et BT (Enedis)');
     if (!parts.length) return null;
     const b = ((Math.round(bearing) % 360) + 360) % 360;
     parts.push(b === 0 ? 'Nord en haut' : `Nord à ${360 - b}° (carte tournée)`);

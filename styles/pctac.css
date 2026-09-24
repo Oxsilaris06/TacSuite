@@ -850,19 +850,25 @@
                 display: flex;
                 align-items: center;
                 justify-content: center;
-                width: 34px;
-                height: 34px;
+                /* 44 px : cible tactile, et même hauteur que le menu à côté. */
+                width: 44px;
+                height: 44px;
                 border-radius: var(--radius-full);
                 background: var(--accent-fill);
                 color: #fff;
-                font-size: 18px;
+            }
+
+            .mode-selector-current .material-symbols-outlined {
+                display: block;
+                font-size: 22px;
+                line-height: 1;
             }
 
             .mode-selector-select {
                 appearance: none;
                 flex: 1 1 auto;
                 min-width: var(--tac-zero);
-                min-height: 34px;
+                min-height: 44px;
                 padding: var(--tac-space-1) var(--space-5) var(--tac-space-1) var(--space-3);
                 font-family: var(--font-ui);
                 font-size: 0.78em;
@@ -2955,4 +2961,215 @@ body.light-mode .pctac-liens-btn-row--wa:hover { background: #bee9ce; box-shadow
     letter-spacing: 0.08em;
     padding: 4px 0;
     border-bottom: 1px solid var(--border-glass);
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+ * MAIN COURANTE SUR MOBILE (retour Nico 2026-09-24 : « pas lisible sans
+ * dézoom »). Sous 640 px, la table de 4 colonnes faisait ~730 px de large et
+ * forçait le navigateur à dézoomer toute la page. Chaque entrée devient une
+ * FICHE empilée : heure, favori et actions en tête, Pax à droite, puis le lieu,
+ * puis les remarques en entier. Aucun changement au-dessus de 640 px (bureau,
+ * écran scindé compris). Le balisage et le JavaScript sont inchangés : seul
+ * l'affichage des éléments de table est redéfini.
+ * ════════════════════════════════════════════════════════════════════════ */
+@media (max-width: 640px) {
+    #logTable,
+    #logTable thead,
+    #logTable tbody {
+        display: block;
+        width: 100%;
+    }
+
+    /* En-tête : plus de titres de colonnes, mais la barre d'actions
+       (rechercher, favoris, trier) reste, alignée à droite. */
+    #logTable thead tr {
+        display: block;
+    }
+
+    #logTable thead th {
+        display: none;
+    }
+
+    #logTable thead th:last-child {
+        display: block;
+        padding: var(--tac-space-2) 0;
+        background: none;
+        border-bottom: 0;
+    }
+
+    #logTable .pctac-th-label {
+        display: none;
+    }
+
+    #logTable .pctac-th-actions-row {
+        justify-content: flex-end;
+    }
+
+    #logTable .th-action-btn {
+        justify-content: center;
+        min-width: 44px;
+        min-height: 44px;
+        border-radius: var(--radius-sm);
+    }
+
+    #logTable .th-action-btn .material-symbols-outlined {
+        font-size: 22px;
+    }
+
+    /* Une fiche par entrée. */
+    #logTable tbody tr:not(.log-day-sep) {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        grid-template-areas:
+            "heure pax"
+            "lieu lieu"
+            "rem rem";
+        align-items: center;
+        gap: var(--tac-space-2) var(--space-3);
+        margin: 0 0 var(--space-2);
+        padding: var(--space-3);
+        background: var(--bg-glass);
+        border: 1px solid var(--border-glass);
+        border-radius: var(--radius-md);
+    }
+
+    #logTable tbody td {
+        display: block;
+        /* Les largeurs en ligne (15 % / 35 %) ne valent que pour la table. */
+        width: auto !important;
+        min-width: 0;
+        padding: 0;
+        border: 0;
+        font-size: 1rem;
+    }
+
+    #logTable tbody tr:not(.log-day-sep) > td:nth-child(1) { grid-area: heure; }
+    #logTable tbody tr:not(.log-day-sep) > td:nth-child(2) { grid-area: pax; justify-self: end; }
+    #logTable tbody tr:not(.log-day-sep) > td:nth-child(3) { grid-area: lieu; }
+    #logTable tbody tr:not(.log-day-sep) > td:nth-child(4) { grid-area: rem; }
+
+    #logTable .heure-cell-text {
+        font-size: 1.15rem;
+        font-weight: 700;
+    }
+
+    /* Cibles tactiles de 44 px pour le favori, modifier, supprimer. */
+    #logTable .heure-cell-container .log-favori-btn,
+    #logTable .heure-cell-container .action-btn-small,
+    #logTable .heure-cell-container .delete-btn {
+        min-width: 44px;
+        min-height: 44px;
+    }
+
+    /* Lieu : ligne propre avec un repère, masquée quand il n'y en a pas. */
+    #logTable tbody tr:not(.log-day-sep) > td:nth-child(3) {
+        display: flex;
+        align-items: baseline;
+        gap: var(--tac-space-1);
+        font-weight: 600;
+        color: var(--text-main);
+    }
+
+    #logTable tbody tr:not(.log-day-sep) > td:nth-child(3)::before {
+        content: 'location_on';
+        font-family: 'Material Symbols Outlined';
+        font-size: 1.1em;
+        line-height: 1;
+        color: var(--text-muted);
+        align-self: center;
+    }
+
+    #logTable tbody tr:not(.log-day-sep) > td:nth-child(3):empty {
+        display: none;
+    }
+
+    /* Remarques : en entier, retours à la ligne respectés, jamais coupées. */
+    #logTable tbody tr:not(.log-day-sep) > td:nth-child(4) {
+        line-height: 1.5;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+    }
+
+    #logTable tbody tr:not(.log-day-sep) > td:nth-child(4):empty {
+        display: none;
+    }
+
+    /* Pastille Pax : sa couleur vient du JavaScript (fond et texte en ligne) ;
+       sur une fiche, elle prend une vraie forme de pastille. */
+    #logTable .pax-cell {
+        display: inline-block;
+        padding: 4px 12px;
+        border-radius: var(--radius-full);
+        font-size: 0.85rem;
+        font-weight: 700;
+        white-space: nowrap;
+    }
+
+    #logTable tbody tr.log-day-sep {
+        display: block;
+    }
+
+    #logTable tbody tr.log-day-sep td {
+        padding: var(--space-2) 0;
+    }
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+ * PAGE LIENS SUR MOBILE (retour Nico 2026-09-24). Sous 640 px, les deux
+ * colonnes (outils cartographiques | liens externes, 250 px fixes) faisaient
+ * ~530 px et débordaient ; les tuiles de 120 px de haut laissaient l'icône
+ * chevaucher un libellé passé sur trois lignes. Tout s'empile, les tuiles
+ * prennent la hauteur de leur contenu. Bureau inchangé.
+ * ════════════════════════════════════════════════════════════════════════ */
+@media (max-width: 640px) {
+    .pctac-liens-layout {
+        flex-direction: column;
+        min-height: 0;
+        gap: var(--space-3);
+    }
+
+    .pctac-liens-sidebar {
+        width: 100%;
+    }
+
+    .pctac-liens-carto-panel,
+    .pctac-liens-sidebar-panel {
+        padding: var(--space-4);
+    }
+
+    .pctac-liens-carto-header {
+        margin-bottom: var(--space-4);
+    }
+
+    .pctac-liens-h2 {
+        font-size: 1.4rem;
+        letter-spacing: 1px;
+        overflow-wrap: anywhere;
+    }
+
+    .pctac-liens-btn-grid {
+        grid-template-columns: 1fr;
+        gap: var(--space-3);
+    }
+
+    .pctac-liens-btn-tile {
+        height: auto;
+        min-height: 64px;
+        flex-direction: row;
+        padding: var(--space-3) var(--space-4);
+        text-align: left;
+    }
+
+    .pctac-liens-btn-row {
+        height: auto;
+        min-height: 56px;
+    }
+
+    .pctac-liens-sidebar-header {
+        margin-bottom: var(--space-3);
+    }
+
+    .pctac-liens-note-box {
+        margin-top: var(--space-4);
+    }
 }
