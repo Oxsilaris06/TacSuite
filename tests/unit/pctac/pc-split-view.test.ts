@@ -199,6 +199,18 @@ describe('sortie et plein écran', () => {
         expect(document.body.classList.contains('is-split')).toBe(true);
     });
 
+    it('une fiche ouverte dans la page (bureau, décision 21) ne retient pas Échap', () => {
+        toggleSplit();
+        const fiche = document.createElement('dialog');
+        fiche.className = 'fiche-sheet fiche-inline';
+        fiche.open = true;
+        document.body.appendChild(fiche);
+
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+
+        expect(document.body.classList.contains('is-split')).toBe(false);
+    });
+
     it('ferme l\'écran scindé si le plein écran est quitté', () => {
         toggleSplit();
         // Quitter le plein écran par le navigateur : plus d'élément plein écran.

@@ -161,7 +161,9 @@
         <!-- VUE : ADVERSAIRES -->
         <div id="view-adversaires" class="tab-content-view">
             <!-- Décisions 16-17 : liste d'abord ; la fiche (création et modification)
-                 s'ouvre dans #ficheSheet, construite par fiche-sheet.ts. -->
+                 s'ouvre dans #ficheSheet, construite par fiche-sheet.ts : plein écran
+                 sur téléphone, dans .fiche-layout à droite de la liste sur bureau
+                 et tablette (décision 21). -->
             <div class="fiche-toolbar">
                 <p class="fiche-counters" id="adversary-counters" aria-live="polite"></p>
                 <button type="button" class="add-btn fiche-new-btn" data-fiche-new="adv">
@@ -169,13 +171,17 @@
                     <span data-lex="adv.newLabel">Nouvel adversaire</span>
                 </button>
             </div>
-            <div class="fiche-list" id="adversary-table-body"></div>
+            <div class="fiche-layout">
+                <div class="fiche-list" id="adversary-table-body"></div>
+            </div>
         </div>
 
         <!-- VUE : OTAGES -->
         <div id="view-otages" class="tab-content-view">
             <!-- Décisions 16-17 : liste d'abord ; la fiche (création et modification)
-                 s'ouvre dans #ficheSheet, construite par fiche-sheet.ts. -->
+                 s'ouvre dans #ficheSheet, construite par fiche-sheet.ts : plein écran
+                 sur téléphone, dans .fiche-layout à droite de la liste sur bureau
+                 et tablette (décision 21). -->
             <div class="fiche-toolbar">
                 <p class="fiche-counters" id="hostage-counters" aria-live="polite"></p>
                 <button type="button" class="add-btn fiche-new-btn" data-fiche-new="host">
@@ -183,7 +189,9 @@
                     <span data-lex="host.newLabel">Nouvel otage</span>
                 </button>
             </div>
-            <div class="fiche-list" id="hostage-table-body"></div>
+            <div class="fiche-layout">
+                <div class="fiche-list" id="hostage-table-body"></div>
+            </div>
         </div>
 
         <!-- VUE : AMIS -->

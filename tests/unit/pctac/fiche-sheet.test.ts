@@ -2,7 +2,7 @@
  * fiche-sheet.test.ts — La fiche unique à l'écran (décision 17) : brouillon,
  * saisie en rafale, champs masqués jamais effacés, retour arrière.
  */
-import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('@pctac/image-store.js', () => ({
   ImageStore: {
@@ -272,3 +272,65 @@ describe('cartes (revue neuve)', () => {
   });
 });
 
+
+describe('bureau et tablette : fiche dans la page (décision 21)', () => {
+  // Gabarit réel : chaque liste est dans un `.fiche-layout`, la fiche au bout du document.
+  const layouts = (): void => {
+    document.body.innerHTML = `
+      <div id="view-adversaires"><div class="fiche-layout" id="advLayout"><div id="adversary-table-body"></div></div></div>
+      <div id="view-otages"><div class="fiche-layout" id="hostLayout"><div id="hostage-table-body"></div></div></div>
+      <dialog id="ficheSheet"></dialog>`;
+  };
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it('s’ouvre à côté de la liste de son camp, sans modale', async () => {
+    layouts();
+    const modal = vi.spyOn(HTMLDialogElement.prototype, 'showModal');
+    await openFiche('adv');
+    expect(dialog().open).toBe(true);
+    expect(dialog().parentElement?.id).toBe('advLayout');
+    expect(dialog().classList.contains('fiche-inline')).toBe(true);
+    expect(modal).not.toHaveBeenCalled();
+  });
+
+  it('téléphone : plein écran modal, hors de l’onglet', async () => {
+    layouts();
+    vi.stubGlobal('matchMedia', (media: string) => ({ matches: true, media, addEventListener() {}, removeEventListener() {} }));
+    const modal = vi.spyOn(HTMLDialogElement.prototype, 'showModal');
+    await openFiche('adv');
+    expect(modal).toHaveBeenCalled();
+    expect(dialog().parentElement).toBe(document.body);
+    expect(dialog().classList.contains('fiche-inline')).toBe(false);
+  });
+
+  it('un otage ouvert pendant un adversaire : la fiche passe dans l’onglet Otages, la saisie adverse reste en brouillon', async () => {
+    layouts();
+    await openFiche('adv');
+    setField('nom', 'Dupont');
+    await openFiche('host');
+    expect(dialog().parentElement?.id).toBe('hostLayout');
+    expect(dialog().querySelector('h2')?.textContent).toBe('Nouvel otage');
+    expect(Object.keys(drafts())).toContain('adv:new');
+  });
+
+  it('création : le premier champ reçoit le focus, on tape tout de suite', async () => {
+    layouts();
+    await openFiche('adv');
+    expect(document.activeElement?.id).toBe('fiche_nom');
+  });
+
+  it('Échap dans la fiche la ferme sans remonter à la page (écran scindé, raccourcis)', async () => {
+    layouts();
+    await openFiche('adv');
+    const page = vi.fn();
+    document.addEventListener('keydown', page);
+    document.getElementById('fiche_nom')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    document.removeEventListener('keydown', page);
+    expect(dialog().open).toBe(false);
+    expect(page).not.toHaveBeenCalled();
+  });
+});

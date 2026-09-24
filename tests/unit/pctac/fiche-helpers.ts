@@ -6,6 +6,7 @@ import { Storage } from '@pctac/storage.js';
 
 export function installDialog(): void {
   HTMLDialogElement.prototype.showModal = function showModal(this: HTMLDialogElement) { this.open = true; };
+  HTMLDialogElement.prototype.show = function show(this: HTMLDialogElement) { this.open = true; };
   HTMLDialogElement.prototype.close = function close(this: HTMLDialogElement) {
     if (!this.open) return;
     this.open = false;

@@ -1,8 +1,10 @@
 /**
  * fiche-sheet.ts — La fiche adverse ou protégée à l'écran (décisions 16 à 20).
  *
- * UN seul formulaire pour créer et pour modifier : plein écran sur téléphone,
- * fenêtre sur bureau (`<dialog id="ficheSheet">`). Tout est construit depuis
+ * UN seul formulaire pour créer et pour modifier (`<dialog id="ficheSheet">`) :
+ * plein écran modal sur téléphone ; sur bureau et tablette (décision 21), ouvert
+ * sans modale DANS l'onglet de son camp, à droite de la liste (classe
+ * `fiche-inline`, placée dans le `.fiche-layout` de la liste). Tout est construit depuis
  * le modèle (`fiche.ts`) : ajouter un champ là-bas le fait apparaître ici, dans
  * la carte et dans le PDF, sans seconde liste à tenir d'accord.
  *
@@ -70,6 +72,8 @@ let popstateBound = false;
 
 /** Même seuil que le CSS : téléphone, ou téléphone en paysage. */
 const FULLSCREEN_MQ = '(max-width: 640px), (max-height: 500px)';
+
+const isPhone = (): boolean => typeof window.matchMedia === 'function' && window.matchMedia(FULLSCREEN_MQ).matches;
 
 // Rechargement pendant qu'une fiche était ouverte : l'entrée d'historique
 // qu'elle avait poussée est encore là, et un « retour » tomberait dans le
@@ -565,6 +569,14 @@ function onKeydown(e: KeyboardEvent): void {
     const target = e.target as HTMLElement;
     const dlg = dialogEl();
     if (!dlg) return;
+    // Fiche dans la page : Échap la ferme, comme la modale, et ne va pas plus
+    // loin (sortie de l'écran scindé). La saisie reste en brouillon.
+    if (e.key === 'Escape' && dlg.classList.contains('fiche-inline')) {
+        e.preventDefault();
+        e.stopPropagation();
+        close();
+        return;
+    }
     const radio = target.closest<HTMLElement>('.fiche-status-chip');
     if (radio && ['ArrowRight', 'ArrowDown', 'ArrowLeft', 'ArrowUp'].includes(e.key)) {
         const radios = [...dlg.querySelectorAll<HTMLElement>('.fiche-status-chip')];
@@ -592,8 +604,7 @@ function fitViewport(): void {
     const dlg = dialogEl();
     const vv = window.visualViewport;
     if (!dlg) return;
-    const full = typeof window.matchMedia === 'function' && window.matchMedia(FULLSCREEN_MQ).matches;
-    if (!vv || !full || !dlg.open) {
+    if (!vv || !isPhone() || !dlg.open || dlg.classList.contains('fiche-inline')) {
         dlg.style.removeProperty('height');
         dlg.style.removeProperty('top');
         return;
@@ -662,8 +673,16 @@ export async function openFiche(side: FicheSide, id: string | null = null): Prom
     const pendingDraft = !!readDrafts()[slotOf(side, id)];
     state = { side, id, base, item, photo: null, statusTouched: false, dirty: false, pendingDraft, photoPending: null };
     render();
+    // Bureau et tablette : dans l'onglet du camp, à droite de la liste. Déjà
+    // ouverte pour l'autre camp : elle y passe (saisie gardée en brouillon).
+    const layout = document.getElementById(side === 'adv' ? 'adversary-table-body' : 'hostage-table-body')?.parentElement;
+    const inline = dlg.open ? dlg.classList.contains('fiche-inline') : !isPhone();
+    if (inline && layout && dlg.parentElement !== layout) layout.append(dlg);
+    if (!inline && dlg.parentElement !== document.body) document.body.append(dlg);
     if (!dlg.open) {
-        dlg.showModal();
+        dlg.classList.toggle('fiche-inline', inline);
+        if (inline) dlg.show();
+        else dlg.showModal();
         fitViewport();
         try {
             history.pushState({ pctacFiche: true }, '');
@@ -671,6 +690,14 @@ export async function openFiche(side: FicheSide, id: string | null = null): Prom
         } catch {
             // Historique indisponible (bac à sable) : la fiche reste fermable.
         }
+    }
+    // Après `show()` : un dialogue fermé ne prend ni focus ni défilement. Haut
+    // de fiche caché (sous la barre d'onglets, liste défilée) ou trop bas : on
+    // l'amène en vue ; sinon la page ne bouge pas.
+    if (inline) {
+        const { top } = dlg.getBoundingClientRect();
+        if (top < 80 || top > window.innerHeight / 2) dlg.scrollIntoView?.({ block: 'start' });
+        if (!id) dlg.querySelector<HTMLElement>('.fiche-section[open] [data-key], .fiche-section[open] .fiche-precision')?.focus({ preventScroll: true });
     }
 }
 
