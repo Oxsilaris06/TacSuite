@@ -232,6 +232,19 @@ describe('pastilles Pax par situation', () => {
         expect(document.querySelectorAll('#pax_select_container [role="radio"]')).toHaveLength(4);
     });
 
+    it('cinquième pastille : neutre tant qu’elle n’est pas choisie, comme les quatre autres', () => {
+        localStorage.setItem(PCTAC_MODE_KEY, 'tp');
+        buildPaxContainer();
+        syncSituationPaxChip();
+        const chip = document.querySelector<HTMLButtonElement>('.pax-select-option[data-pax="IS"]')!;
+        // Aucune peinture inline : un style inline battrait l'état neutre du CSS.
+        expect(chip.style.background).toBe('');
+        expect(chip.style.color).toBe('');
+        // La couleur n'est qu'une variable, consommée par `.selected`.
+        expect(chip.style.getPropertyValue('--pax-chip-bg')).toBe('#8b5cf6');
+        expect(chip.style.getPropertyValue('--pax-chip-fg')).toBe('#ffffff');
+    });
+
     it('déclare les couleurs PDF des cinquièmes pastilles', () => {
         expect(PDF_PAX_COLORS.IS).toEqual({ text: 'IS', color: '#8b5cf6', fontColor: '#ffffff' });
         expect(PDF_PAX_COLORS.Secours).toEqual({ text: 'Secours', color: '#f97316', fontColor: '#000000' });
