@@ -21,6 +21,7 @@ import { UI } from '@pctac/ui.js';
 import { openFiche } from '@pctac/fiche-sheet.js';
 import { Storage } from '@pctac/storage.js';
 import { Utils } from '@pctac/utils.js';
+import { ImageStore } from '@pctac/image-store.js';
 import { PCTAC_MODE_KEY } from '@pctac/modes.js';
 import { installDialog, flush, setField, clickSave, storedFiche } from './fiche-helpers.js';
 
@@ -440,3 +441,22 @@ describe('revue neuve de la fiche dans la page (e5791e0)', () => {
     expect(card?.textContent).toContain('CHARLIE');
   });
 });
+
+describe('photo annotée (décision 25)', () => {
+  afterEach(() => { vi.restoreAllMocks(); });
+
+  it('nouvelle photo : l’annotation de l’ancienne est effacée (original et annotations)', async () => {
+    Storage.saveCollection('pcTacAdversaries', [{ id: 'a1', nom: 'X', hasImage: true, annotations: '[{"id":1}]', status: 'active' }]);
+    const del = vi.spyOn(ImageStore, 'delete');
+    vi.spyOn(Utils, 'compressImage').mockResolvedValue('data:image/jpeg;base64,NEW');
+    await openFiche('adv', 'a1');
+    const input = dialog().querySelector<HTMLInputElement>('.fiche-photo-input')!;
+    Object.defineProperty(input, 'files', { value: [new File(['x'], 'p.jpg', { type: 'image/jpeg' })] });
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    await flush();
+    await clickSave();
+    expect(del).toHaveBeenCalledWith('a1_orig');
+    expect(storedFiche('pcTacAdversaries', 'a1')?.annotations).toBeUndefined();
+  });
+});
+

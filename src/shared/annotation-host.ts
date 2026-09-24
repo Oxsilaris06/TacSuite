@@ -21,8 +21,11 @@ export interface AnnotationHost {
     save(): void;
     /** Outil Membre (OI) : relit le formulaire après la pose d'un membre. */
     syncDom(): void;
-    /** Fenêtre d'annotation fermée (Enregistrer ou Annuler). */
-    closed?(previewId: string): void | Promise<void>;
+    /**
+     * `false` : « Enregistrer » ne redessine pas l'aperçu (le PC-Tac rend
+     * lui-même l'image annotée depuis l'original, à la fermeture). OI : absent.
+     */
+    renderPreview?: boolean;
 }
 
 /** Hôte par défaut : rien n'est lu ni écrit hors de la photo ouverte. */

@@ -88,6 +88,7 @@ function collectImageIds(snapshot: Record<string, string | null>): string[] {
             if (!id) return;
             if (item.hasImage === true || k === PHOTOS_KEY) ids.add(id);
             ids.add(id + '_sync');
+            ids.add(id + '_orig'); // original d'une photo annotée (décision 25)
         });
     });
     readCollectionList(snapshot[PINS_KEY]).forEach((pin) => {
@@ -294,6 +295,11 @@ export const Archive: ArchiveContract = {
             [ADVERSARIES_KEY, HOSTAGES_KEY].forEach((k) => {
                 const list = Storage.loadCollection(k);
                 list.forEach((item) => imgIds.add(item.id + '_sync'));
+            });
+            // Originaux des photos annotées (décision 25) : l'annotation reste
+            // modifiable après import.
+            [ADVERSARIES_KEY, HOSTAGES_KEY, PHOTOS_KEY].forEach((k) => {
+                Storage.loadCollection(k).forEach((item) => { if (item.annotations) imgIds.add(item.id + '_orig'); });
             });
 
             const imagesFolder = zip.folder('images');
@@ -586,6 +592,12 @@ export const Archive: ArchiveContract = {
             [ADVERSARIES_KEY, HOSTAGES_KEY].forEach((k) => {
                 readCollectionList(localStorage.getItem(scopedKey(k, modeId))).forEach((item) => {
                     if (typeof item.id === 'string') imgIds.add(item.id + '_sync');
+                });
+            });
+            // Originaux des photos annotées (décision 25).
+            [ADVERSARIES_KEY, HOSTAGES_KEY, PHOTOS_KEY].forEach((k) => {
+                readCollectionList(localStorage.getItem(scopedKey(k, modeId))).forEach((item) => {
+                    if (typeof item.id === 'string') imgIds.add(item.id + '_orig');
                 });
             });
             for (const id of imgIds) {

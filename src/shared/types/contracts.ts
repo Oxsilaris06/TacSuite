@@ -706,7 +706,7 @@ export interface UIContract {
     setItemStatus(key: string, id: string, status: string): void;
     /** U25 — `promptDialog` async (ex-`prompt()` natif). */
     editPhotoTitle(id: string): Promise<void>;
-    openLightbox(src: string, title?: string): void;
+    openLightbox(src: string, title?: string, photoId?: string): void;
     closeLightbox(): void;
 
     /* --- modales d'édition --- */

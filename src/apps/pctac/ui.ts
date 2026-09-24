@@ -84,6 +84,7 @@ import {
   type StatusChoice,
 } from '@pctac/fiche.js';
 import { openFiche } from '@pctac/fiche-sheet.js';
+import { annotatePhoto } from '@pctac/photo-annotation.js';
 
 /** Options de statut d'une fiche : celles de la situation, plus la valeur
  *  courante si elle vient d'ailleurs (jamais remplacée en silence). */
@@ -149,6 +150,27 @@ function ficheCard(
  * fiche ne passe JAMAIS dans du JavaScript en ligne, il est lu dans
  * `data-id` (texte, échappé) au moment du clic. Câblé une fois par liste.
  */
+/**
+ * Galerie Photos : « Annoter » et la visionneuse par délégation, l'id lu dans
+ * `data-id` au clic (jamais d'id dans du JavaScript en ligne). Câblé une fois.
+ */
+function bindPhotoBoard(board: HTMLElement): void {
+  if (board.dataset.photoBound) return;
+  board.dataset.photoBound = '1';
+  board.addEventListener('click', (e) => {
+    const target = e.target as HTMLElement;
+    const card = target.closest<HTMLElement>('.photo-card');
+    const id = card?.dataset.id;
+    if (!card || !id) return;
+    if (target.closest('[data-photo-action="annotate"]')) {
+      void annotatePhoto(id);
+      return;
+    }
+    const img = target.closest<HTMLImageElement>('img');
+    if (img) UI.openLightbox(img.src, card.querySelector('.photo-title-text')?.textContent ?? '', id);
+  });
+}
+
 function bindFicheList(box: HTMLElement, side: FicheSide): void {
   if (box.dataset.ficheBound) return;
   box.dataset.ficheBound = '1';
@@ -985,13 +1007,15 @@ export const UI: UIContract = {
       catSelect.value = filterCategory;
     }
 
+    bindPhotoBoard(board);
     board.innerHTML = filteredList.length === 0 ? emptyMsg : filteredList.map((item) => `
             <div class="photo-card" draggable="true" data-id="${item.id}" data-category="${item.category}" data-status="${item.status || 'active'}" ondragstart="UI.handlePhotoDragStart(event)" ondragover="UI.handlePhotoDragOver(event)" ondrop="UI.handlePhotoDrop(event)" ondragend="UI.handlePhotoDragEnd()">
-                <img src="${item.data}" onclick="UI.openLightbox('${item.data}', '${esc(String(item.title || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'"))}')" alt="${esc(item.title)}">
+                <img src="${item.data}" alt="${esc(item.title)}">
                 <div style="padding: 10px; display: flex; flex-direction: column; gap: 5px;">
                     <div style="display: flex; justify-content: space-between; align-items: center;">
                         <span class="photo-title-text" style="font-size: 0.9em; font-weight: bold;">${esc(item.title)}</span>
                         <div style="display: flex; gap: 5px;">
+                            <button type="button" class="action-btn-small" title="Annoter" data-photo-action="annotate" aria-label="Annoter cette photo"><span class="material-symbols-outlined" style="font-size: 16px;">draw</span></button>
                             <button class="action-btn-small edit" title="Renommer" onclick="window.UI.editPhotoTitle('${item.id}')" aria-label="Renommer cette photo"><span class="material-symbols-outlined" style="font-size: 16px;">edit</span></button>
                             <button class="action-btn-small delete" title="Supprimer" onclick="window.deleteCollectionItem('pcTacPhotos', '${item.id}', 'view-photos')" aria-label="Supprimer cette photo"><span class="material-symbols-outlined" style="font-size: 16px;">delete</span></button>
                         </div>
@@ -1114,12 +1138,26 @@ export const UI: UIContract = {
   },
 
   // ui.js:631-643
-  openLightbox(src: string, title?: string): void {
+  /** `photoId` : photo de la galerie, annotable depuis la visionneuse (décision 25). */
+  openLightbox(src: string, title?: string, photoId?: string): void {
     const modal = document.getElementById('lightboxModal') as HTMLDialogElement | null;
     const img = document.getElementById('lightboxImage') as HTMLImageElement | null;
     const titleEl = document.getElementById('lightboxTitle');
     if (!modal || !img) return;
     img.src = src;
+    modal.dataset.photoId = photoId ?? '';
+    const annotateBtn = document.getElementById('lightboxAnnotateBtn');
+    if (annotateBtn) {
+      annotateBtn.hidden = !photoId;
+      annotateBtn.onclick = () => {
+        const id = modal.dataset.photoId;
+        if (!id) return;
+        void annotatePhoto(id).then(async (saved) => {
+          const fresh = saved && modal.open && modal.dataset.photoId === id ? await ImageStore.get(id) : null;
+          if (fresh) img.src = fresh;
+        });
+      };
+    }
     // `textContent` n'accepte pas `undefined` (`string | null`) : adaptation de
     // typage pur, jamais exercée en pratique (title est toujours fourni par
     // les appelants de ce module, ui.js:545).
@@ -1132,7 +1170,10 @@ export const UI: UIContract = {
     // (`this.closeLightbox()` ferme un dialog déjà fermé sans jeter, cf.
     // spec `HTMLDialogElement.close()`), et évite de dépendre de l'ordre
     // événement/action-par-défaut du navigateur pour restaurer le scroll.
-    this._lightboxKeydown = (e) => { if (e.key === 'Escape') this.closeLightbox(); };
+    // Échap dans l'annotation ouverte par-dessus ne ferme qu'elle.
+    this._lightboxKeydown = (e) => {
+      if (e.key === 'Escape' && !document.getElementById('annotationModal')?.hasAttribute('open')) this.closeLightbox();
+    };
     window.addEventListener('keydown', this._lightboxKeydown);
   },
 

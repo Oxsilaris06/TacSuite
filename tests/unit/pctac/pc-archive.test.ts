@@ -23,7 +23,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import JSZip from 'jszip';
 
-import { ADVERSARIES_KEY, LOCAL_STORAGE_KEY } from '@pctac/config.js';
+import { ADVERSARIES_KEY, LOCAL_STORAGE_KEY, PHOTOS_KEY } from '@pctac/config.js';
 
 // --- Mock ImageStore : indexedDB absent sous jsdom. Store en mémoire, avec un
 // interrupteur `failClearOnce` pour simuler un échec ponctuel de clear() (test
@@ -32,6 +32,7 @@ import { ADVERSARIES_KEY, LOCAL_STORAGE_KEY } from '@pctac/config.js';
 const imageStoreState = vi.hoisted(() => ({
   store: new Map<string, string>(),
   failDeleteManyOnce: false,
+  deleteThenFailOnce: false,
 }));
 
 const gpxState = new Map<string, unknown>();
@@ -68,6 +69,11 @@ vi.mock('@pctac/image-store.js', () => {
         if (imageStoreState.failDeleteManyOnce) {
           imageStoreState.failDeleteManyOnce = false;
           throw new Error('IDB indisponible (simulation de test)');
+        }
+        if (imageStoreState.deleteThenFailOnce) {
+          imageStoreState.deleteThenFailOnce = false;
+          ids.forEach((id) => store.delete(id));
+          throw new Error('IDB interrompue après effacement (simulation de test)');
         }
         ids.forEach((id) => store.delete(id));
       },
@@ -181,6 +187,7 @@ beforeEach(() => {
   localStorage.clear();
   imageStoreState.store.clear();
   imageStoreState.failDeleteManyOnce = false;
+  imageStoreState.deleteThenFailOnce = false;
   confirmSpy.mockClear();
   confirmSpy.mockImplementation(async () => true);
   toastSpy.mockClear();
@@ -476,3 +483,42 @@ describe('importFile — traces GPX', () => {
     expect(gpxState.has('cassee')).toBe(false);
   });
 });
+
+describe('photos annotées (décision 25) : l’original `<base>_orig` voyage avec la photo', () => {
+  it('export : l’original d’une photo de fiche et d’une photo de galerie est dans l’archive', async () => {
+    Storage.saveCollection(ADVERSARIES_KEY, [{ id: 'a1', nom: 'X', hasImage: true, annotations: '[]' }]);
+    Storage.saveCollection(PHOTOS_KEY, [{ id: 'p1', title: 'Porte', category: 'other', hasImage: true, annotations: '[]' }]);
+    for (const id of ['a1', 'a1_sync', 'a1_orig', 'p1', 'p1_orig']) await ImageStore.put(id, `data:image/png;base64,${id}`);
+    let exported: Blob | null = null;
+    const create = vi.spyOn(URL, 'createObjectURL').mockImplementation((b) => { exported = b as Blob; return 'blob:x'; });
+    vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    await Archive.exportZip();
+    create.mockRestore();
+    const zip = await JSZip.loadAsync(exported as unknown as Blob);
+    const names = Object.keys(zip.files).filter((n) => n.startsWith('images/'));
+    expect(names).toEqual(expect.arrayContaining(['images/a1_orig.txt', 'images/p1_orig.txt']));
+  });
+
+  it('import en remplacement : les originaux de la situation remplacée sont retirés', async () => {
+    Storage.saveCollection(ADVERSARIES_KEY, [{ id: 'a1', nom: 'Existant', hasImage: true }]);
+    Storage.saveCollection(PHOTOS_KEY, [{ id: 'p1', title: 'Porte', category: 'other', hasImage: true }]);
+    for (const id of ['a1', 'a1_sync', 'a1_orig', 'p1', 'p1_orig']) await ImageStore.put(id, 'data:image/png;base64,AAA=');
+    const file = await buildPctacZip({ data: { [ADVERSARIES_KEY]: JSON.stringify([{ id: 'zzz', nom: 'Archive' }]) } });
+    const result = await Archive.importFile(file);
+    expect(result.ok).toBe(true);
+    expect(await ImageStore.get('a1_orig')).toBeNull();
+    expect(await ImageStore.get('p1_orig')).toBeNull();
+  });
+
+  it('import raté : l’original est restauré avec la photo', async () => {
+    Storage.saveCollection(ADVERSARIES_KEY, [{ id: 'a1', nom: 'Existant', hasImage: true }]);
+    await ImageStore.put('a1', 'data:image/png;base64,AAA=');
+    await ImageStore.put('a1_orig', 'data:image/png;base64,ORIG=');
+    imageStoreState.deleteThenFailOnce = true;
+    const file = await buildPctacZip({ data: { [ADVERSARIES_KEY]: JSON.stringify([{ id: 'zzz', nom: 'Archive' }]) } });
+    expect((await Archive.importFile(file)).ok).toBe(false);
+    expect(await ImageStore.get('a1_orig')).toBe('data:image/png;base64,ORIG=');
+  });
+});
+

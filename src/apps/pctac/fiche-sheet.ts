@@ -39,6 +39,7 @@ import {
 } from '@pctac/fiche.js';
 import { esc } from '@shared/ui-platform.js';
 import { toast } from '@shared/feedback.js';
+import { annotatePhoto } from '@pctac/photo-annotation.js';
 
 interface Draft {
     values: Record<string, string>;
@@ -264,10 +265,13 @@ function render(): void {
                 <button type="button" class="fiche-draft-resume">Reprendre</button>
                 <button type="button" class="fiche-draft-drop">Effacer</button></div>` : ''}
             <div class="fiche-top">
-                <label class="fiche-photo" aria-label="Photo">
-                    ${photoSrc ? `<img src="${attr(photoSrc)}" alt="">` : `<span class="material-symbols-outlined" aria-hidden="true">add_a_photo</span>`}
-                    <input type="file" accept="image/*" class="fiche-photo-input" hidden>
-                </label>
+                <div class="fiche-photo-col">
+                    <label class="fiche-photo" aria-label="Photo">
+                        ${photoSrc ? `<img src="${attr(photoSrc)}" alt="">` : `<span class="material-symbols-outlined" aria-hidden="true">add_a_photo</span>`}
+                        <input type="file" accept="image/*" class="fiche-photo-input" hidden>
+                    </label>
+                    ${id && photoSrc && !state.photo ? `<button type="button" class="fiche-annotate"><span class="material-symbols-outlined" aria-hidden="true">draw</span>Annoter</button>` : ''}
+                </div>
                 <div class="fiche-top-fields">
                     ${statusHtml(side, status)}
                     ${headerFields(side, mode).map((f) => `<div class="fiche-field"><span class="fiche-label">${esc(f.label)}</span>${chipsHtml(f, item[f.key])}</div>`).join('')}
@@ -351,6 +355,11 @@ async function syncPhoto(side: FicheSide, item: Record<string, unknown>, dataUrl
     }
     delete item.photo;
     item.hasImage = true;
+    // Nouvelle photo : l'annotation de l'ancienne ne la concerne plus (décision 25).
+    if (item.annotations !== undefined) {
+        delete item.annotations;
+        try { await ImageStore.delete(`${id}_orig`); } catch { /* original orphelin, sans effet visible */ }
+    }
     // Copie dans la galerie Photos, qui suit le statut de la fiche.
     const photos = Storage.loadCollection(PHOTOS_KEY);
     const title = ficheTitle(side, currentModeId(), item);
@@ -491,6 +500,20 @@ async function save(next: boolean): Promise<void> {
     }
 }
 
+/** Photo enregistrée de la fiche (décision 25) : la fiche montre ensuite la version annotée. */
+async function annotateFichePhoto(): Promise<void> {
+    const s = state;
+    if (!s?.id) return;
+    const saved = await annotatePhoto(s.id);
+    if (!saved || state !== s) return;
+    const fresh = await ImageStore.get(s.id).catch(() => null);
+    const img = dialogEl()?.querySelector<HTMLImageElement>('.fiche-photo img');
+    if (fresh && img) {
+        s.item.photo = fresh;
+        img.src = fresh;
+    }
+}
+
 // --- Événements -------------------------------------------------------------
 
 function onClick(e: Event): void {
@@ -498,6 +521,7 @@ function onClick(e: Event): void {
     const dlg = dialogEl();
     if (!state || !dlg) return;
     if (target.closest('.fiche-close')) { close(); return; }
+    if (target.closest('.fiche-annotate')) { void annotateFichePhoto(); return; }
     if (target.closest('.fiche-save-next')) { void save(true); return; }
     if (target.closest('.fiche-save')) { void save(false); return; }
     if (target.closest('.fiche-draft-resume')) {
