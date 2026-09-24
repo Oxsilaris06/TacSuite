@@ -738,7 +738,9 @@
             border-radius: var(--radius-full);
             background: var(--accent-fill);
             box-shadow: 0 0 15px rgba(52, 152, 219, 0.4);
-            transition: transform 220ms var(--ease-out-spring);
+            /* Sans rebond : un toucher ne porte pas d'inertie. 250 ms, la même
+               attente que le rechargement dans setMode(). */
+            transition: transform 250ms cubic-bezier(0.23, 1, 0.32, 1);
             pointer-events: none;
         }
 
@@ -777,6 +779,13 @@
 
         .mode-selector-option:active {
             transform: scale(0.97);
+        }
+
+        /* Tablette au doigt : cible de 44 px. La souris garde la barre fine. */
+        @media (pointer: coarse) {
+            .mode-selector-option {
+                min-height: 44px;
+            }
         }
 
         /* Blocs doctrinaux injectes dans les formulaires par renderModeBlocks(). */
@@ -828,34 +837,40 @@
             }
         }
 
-        /* Sous 520 px, le menu deroulant natif remplace les quatre segments :
-           au pouce, une rangee d'icones se vise mal, et le menu systeme offre
-           des cibles larges. Le verre est porte par le select lui-meme, pas par
-           le conteneur — sinon les deux fonds se superposeraient. */
+        /* Sous 520 px, le menu deroulant natif remplace les quatre segments
+           (decision 6). Une seule capsule, comme au bureau : la pastille de
+           la situation active a gauche, le libelle, le chevron. Le <select>,
+           transparent, couvre toute la capsule : un toucher n'importe ou
+           l'ouvre, icone comprise. */
         @media (max-width: 520px) {
             .mode-selector {
                 display: flex;
                 align-items: center;
-                gap: var(--tac-space-1);
-                padding: var(--tac-zero);
-                background: none;
-                border: none;
-                border-radius: var(--tac-zero);
+                min-height: 52px;
+                padding: 0 6px;
+                transition: transform 100ms ease-out;
+            }
+
+            .mode-selector:has(.mode-selector-select:active) {
+                transform: scale(0.98);
             }
 
             /* Un <option> ne peut pas porter d'icone : la situation active est
-               rappelee par cette pastille, a gauche du menu. */
+               rappelee par cette pastille. Elle laisse passer le toucher. */
             .mode-selector-current {
+                position: relative;
+                z-index: 1;
                 flex: 0 0 auto;
                 display: flex;
                 align-items: center;
                 justify-content: center;
-                /* 44 px : cible tactile, et même hauteur que le menu à côté. */
-                width: 44px;
-                height: 44px;
+                width: 40px;
+                height: 40px;
                 border-radius: var(--radius-full);
                 background: var(--accent-fill);
+                box-shadow: 0 0 12px rgba(52, 152, 219, 0.35);
                 color: #fff;
+                pointer-events: none;
             }
 
             .mode-selector-current .material-symbols-outlined {
@@ -866,27 +881,35 @@
 
             .mode-selector-select {
                 appearance: none;
-                flex: 1 1 auto;
-                min-width: var(--tac-zero);
-                min-height: 44px;
-                padding: var(--tac-space-1) var(--space-5) var(--tac-space-1) var(--space-3);
+                position: absolute;
+                inset: 0;
+                width: 100%;
+                height: 100%;
+                margin: var(--tac-zero);
+                padding: 0 44px 0 58px;
+                /* 16 px : en dessous, iOS zoome la page a l'ouverture du menu. */
                 font-family: var(--font-ui);
-                font-size: 0.78em;
+                font-size: 16px;
                 font-weight: 600;
                 color: var(--text-main);
-                background-color: var(--bg-glass);
-                border: 1px solid var(--border-glass);
-                border-radius: var(--radius-full);
-                backdrop-filter: blur(10px);
+                background-color: transparent;
+                border: none;
+                border-radius: inherit;
+                cursor: pointer;
                 /* Chevron dessine en CSS (deux gradients), aucune image externe. */
                 background-image:
                     linear-gradient(45deg, transparent 50%, currentColor 50%),
                     linear-gradient(135deg, currentColor 50%, transparent 50%);
                 background-position:
-                    calc(100% - 18px) calc(50% - 2px),
-                    calc(100% - 13px) calc(50% - 2px);
+                    calc(100% - 24px) calc(50% - 2px),
+                    calc(100% - 19px) calc(50% - 2px);
                 background-size: 5px 5px, 5px 5px;
                 background-repeat: no-repeat;
+            }
+
+            .mode-selector-select:focus-visible {
+                outline: none;
+                box-shadow: var(--focus-ring);
             }
 
             .mode-selector-select option {
@@ -896,8 +919,13 @@
         }
 
         @media (prefers-reduced-motion: reduce) {
-            .mode-selector-indicator {
+            .mode-selector-indicator,
+            .mode-selector {
                 transition: none;
+            }
+
+            .mode-selector:has(.mode-selector-select:active) {
+                transform: none;
             }
         }
 
@@ -1136,6 +1164,13 @@
             background: #10b981 !important;
             color: black;
             border-color: #10b981;
+        }
+
+        /* Cinquième pastille (IS, Secours) : couleur portée par variables. */
+        .pax-select-option.situation.selected {
+            background: var(--pax-chip-bg) !important;
+            color: var(--pax-chip-fg);
+            border-color: var(--pax-chip-bg);
         }
 
         .add-btn {

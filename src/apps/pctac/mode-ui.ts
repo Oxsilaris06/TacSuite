@@ -260,12 +260,25 @@ export function setMode(id: PctacModeId, group?: HTMLElement | null): void {
     // Un rendu complet à la main devrait tous les couvrir, un par un, et le
     // premier oubli laisserait un résidu. Le rechargement repart d'un document
     // neuf, donc sans résidu possible.
-    try {
-        location.reload();
-    } catch {
-        // Environnement sans navigation (tests unitaires) : le rendu ci-dessus
-        // a déjà appliqué le vocabulaire, l'échec est sans conséquence.
+    // Le rechargement attend que la pastille se pose (sa transition dure
+    // 250 ms) : le choix se voit arriver. Page inerte pendant l'attente, rien
+    // ne s'écrit dans la situation d'arrivée depuis un écran encore ancien.
+    const reload = (): void => {
+        try {
+            location.reload();
+        } catch {
+            // Environnement sans navigation (tests unitaires) : le rendu ci-dessus
+            // a déjà appliqué le vocabulaire, l'échec est sans conséquence.
+        }
+    };
+    const reducedMotion = typeof window.matchMedia === 'function'
+        && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (reducedMotion || !root?.querySelector('.mode-selector-indicator')) {
+        reload();
+        return;
     }
+    document.body.inert = true;
+    setTimeout(reload, 250);
 }
 
 /**
@@ -291,8 +304,10 @@ export function syncSituationPaxChip(): void {
     btn.className = 'pax-select-option situation';
     btn.dataset.pax = extra.key;
     btn.textContent = extra.label;
-    btn.style.background = extra.color;
-    btn.style.color = extra.fontColor;
+    // Couleur en variables seulement : `.situation.selected` la consomme. Un
+    // `style.background` inline peindrait la pastille en permanence.
+    btn.style.setProperty('--pax-chip-bg', extra.color);
+    btn.style.setProperty('--pax-chip-fg', extra.fontColor);
     const addBtn = document.getElementById('openCreatePaxBtn');
     if (addBtn) container.insertBefore(btn, addBtn);
     else container.appendChild(btn);
