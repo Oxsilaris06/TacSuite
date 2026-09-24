@@ -10,28 +10,22 @@
  *   1. les LIBELLÉS (« Adversaire » devient « Ennemi », « Otage » devient
  *      « Otage / Victime »…), posés par `applyLexicon()` sur tout élément
  *      portant `data-lex` / `data-lex-attr` ;
- *   2. les CHAMPS DOCTRINAUX affichés sous les fiches, décrits ci-dessous et
- *      rendus par `renderModeBlocks()`.
+ *   2. les CHAMPS des fiches adverse et protégée : sections, libellés et
+ *      ordre propres à la situation, décrits dans `fiche.ts`.
  *
  * La palette ne bouge PAS d'un mode à l'autre : l'accent reste bleu, l'adverse
  * reste rouge, la partie protégée reste ambre. Ces couleurs sont déjà
  * sémantiques dans le thème Tactical Glass et servent de repère sous stress —
  * les recolorer par situation ferait joli et coûterait cher en relecture.
  *
- * Une fiche saisie en Forcené reste intacte si l'on passe en Tuerie planifiée :
- * elle devient simplement un Ennemi, et les champs propres au nouveau mode
- * s'ajoutent, vides. Les champs d'un mode qu'on quitte ne sont JAMAIS effacés —
- * ils cessent seulement d'être affichés, et reviennent si l'on revient. C'est
- * ce qui permet de requalifier un cas en cours sans rien ressaisir.
+ * Les clés de champ sont posées À PLAT sur la fiche (`nom`, `attitude`,
+ * `position`…) : l'archive, le QR et le PDF les transportent sans traitement
+ * particulier. QQOCQPC et PNAVSA ne sont plus des blocs posés sous la fiche :
+ * leurs questions trouvent réponse dans les sections de `fiche.ts`.
  *
- * Les clés de champ sont posées À PLAT sur la fiche (`position`, `qui`, `ou`…),
- * comme les champs historiques (`nom`, `attitude`, `armes`…) : l'archive, le QR
- * et le PDF les transportent sans traitement particulier. Aucune ne collisionne
- * avec une clé existante.
- *
- * DOCTRINE — ces intitulés sont métier, pas techniques. Ils viennent de Nico
- * (PNAVSA : Position, Nature, Attitude, Volume, Substance, Arme ; QQOCQPC
- * décliné selon la situation). Ils se corrigent ICI, à un seul endroit.
+ * DOCTRINE — ces intitulés sont métier, pas techniques. Ils viennent de Nico.
+ * Ils se corrigent ICI (vocabulaire) et dans `fiche.ts` (champs), jamais
+ * ailleurs.
  */
 
 /** Identifiant de situation. `forcene` est le mode historique de PC-Tac. */
@@ -88,24 +82,6 @@ export function scopedKey(key: string, modeId: PctacModeId = currentModeId()): s
     if (SHARED_KEYS.has(key)) return key;
     if (modeId === 'forcene') return key;
     return `${key}@${modeId}`;
-}
-
-/** Champ doctrinal propre à une situation, rendu sous les champs historiques. */
-export interface PctacModeField {
-    /** Clé de stockage, posée à plat sur la fiche. Jamais renommée après coup. */
-    key: string;
-    label: string;
-    placeholder: string;
-    /** Champ occupant toute la largeur de la grille (texte long). */
-    wide?: boolean;
-}
-
-/** Bloc doctrinal titré (PNAVSA, QQOCQPC…) regroupant plusieurs champs. */
-export interface PctacModeBlock {
-    title: string;
-    /** Rappel du sens de l'acronyme, affiché en petit sous le titre. */
-    hint: string;
-    fields: PctacModeField[];
 }
 
 /** Vocabulaire d'une entité (l'adverse ou la partie protégée) dans un mode. */
@@ -169,10 +145,6 @@ export interface PctacMode {
     summary: string;
     adv: PctacEntityLexicon;
     host: PctacEntityLexicon;
-    /** Blocs doctrinaux ajoutés à la fiche adverse. Vide en Forcené. */
-    advBlocks: PctacModeBlock[];
-    /** Blocs doctrinaux ajoutés à la fiche protégée. */
-    hostBlocks: PctacModeBlock[];
     /**
      * Surcharges de libellé des pastilles Pax, indexées par clé `data-pax`
      * (« Inter », « Oscar »…). Une clé absente garde le libellé historique.
@@ -181,55 +153,6 @@ export interface PctacMode {
     /** Cinquième pastille de la situation ; absente du DOM si `undefined`. */
     extraPaxChip?: PctacPaxChipDef;
 }
-
-/**
- * Décline le questionnement QQOCQPC pour une situation donnée. Les sept lettres
- * ne changent pas ; ce que l'on cherche derrière chacune, si (directive Nico :
- * « adapté à la situation sélectionnée »). Les clés de stockage sont communes
- * aux quatre modes : requalifier un cas conserve les réponses déjà saisies.
- */
-function qqocqpc(hint: string, prompts: [string, string, string, string, string, string, string]): PctacModeBlock {
-    const labels = ['Qui', 'Quoi', 'Où', 'Comment', 'Quand', 'Pourquoi', 'Combien'];
-    const keys = ['qui', 'quoi', 'ou', 'comment', 'quand', 'pourquoi', 'combien'];
-    return {
-        title: 'QQOCQPC',
-        hint,
-        fields: labels.map((label, i) => ({
-            key: keys[i] as string,
-            label,
-            placeholder: prompts[i] as string,
-            wide: i >= 5,
-        })),
-    };
-}
-
-/**
- * PNAVSA — renseignement sur l'adverse. Trois des six lettres tombent sur des
- * champs que la fiche porte DÉJÀ (Attitude, Substance, Arme) : on ne les
- * duplique pas, le bloc n'ajoute que Position, Nature et Volume. Le rappel
- * ci-dessous donne les six pour que l'opérateur retrouve son acronyme entier.
- */
-const PNAVSA: PctacModeBlock = {
-    title: 'PNAVSA',
-    hint: 'Position, Nature, Attitude, Volume, Substance, Arme — Attitude, Substance et Arme sont saisies plus haut.',
-    fields: [
-        { key: 'position', label: 'Position', placeholder: 'Point précis, étage, retranchement…' },
-        { key: 'nature', label: 'Nature', placeholder: 'Isolé, groupe organisé, sympathisant…' },
-        { key: 'volume', label: 'Volume', placeholder: 'Nombre estimé, certitude du décompte…' },
-    ],
-};
-
-/** Signalement — commun aux situations où l'identification physique prime. */
-const SIGNALEMENT: PctacModeBlock = {
-    title: 'Signalement',
-    hint: 'Ce qui permet de reconnaître la personne sur le terrain.',
-    fields: [
-        { key: 'signalement', label: 'Physique', placeholder: 'Taille, corpulence, cheveux, signes distinctifs…' },
-        { key: 'tenue', label: 'Tenue', placeholder: 'Vêtements au moment des faits, couleurs…' },
-        { key: 'vehicule', label: 'Véhicule', placeholder: 'Marque, modèle, couleur, immatriculation…' },
-        { key: 'sante', label: 'État de santé', placeholder: 'Traitement, pathologie, vulnérabilité…', wide: true },
-    ],
-};
 
 export const PCTAC_MODES: Record<PctacModeId, PctacMode> = {
     forcene: {
@@ -242,8 +165,6 @@ export const PCTAC_MODES: Record<PctacModeId, PctacMode> = {
         summary: 'Individu retranché, otages éventuels, négociation en cours.',
         adv: { singular: 'Adversaire', plural: 'Adversaires', demonstrative: 'cet adversaire', icon: 'groups', paxChip: 'Adversaire', linkLabel: 'Lien victimes', newLabel: 'Nouvel adversaire', saveLabel: 'Enregistrer l\'adversaire', emptyLabel: 'Aucun adversaire' },
         host: { singular: 'Otage', plural: 'Otages', demonstrative: 'cet otage', icon: 'person_off', paxChip: 'Otage', linkLabel: 'Lien adversaire', newLabel: 'Nouvel otage', saveLabel: 'Enregistrer l\'otage', emptyLabel: 'Aucun otage' },
-        advBlocks: [],
-        hostBlocks: [],
         paxChipLabels: {},
     },
 
@@ -258,19 +179,6 @@ export const PCTAC_MODES: Record<PctacModeId, PctacMode> = {
         summary: 'Tuerie planifiée : adversaire en mouvement, priorité à la neutralisation de la menace.',
         adv: { singular: 'Ennemi', plural: 'Ennemis', demonstrative: 'cet ennemi', icon: 'swords', paxChip: 'Ennemi', linkLabel: 'Lien victimes', newLabel: 'Nouvel ennemi', saveLabel: 'Enregistrer l\'ennemi', emptyLabel: 'Aucun ennemi' },
         host: { singular: 'Otage / Victime', plural: 'Otages et victimes', demonstrative: 'cette victime', icon: 'personal_injury', paxChip: 'Victime', linkLabel: 'Lien ennemi', newLabel: 'Nouvel otage ou victime', saveLabel: 'Enregistrer la victime', emptyLabel: 'Aucun otage ni victime' },
-        advBlocks: [
-            PNAVSA,
-            qqocqpc('Circonstances de la tuerie, telles qu\'établies à l\'instant T.', [
-                'Auteur identifié ou décrit, complices éventuels',
-                'Nature des faits, mode opératoire constaté',
-                'Lieu exact, bâtiment, niveau, progression',
-                'Moyens employés, arme, explosif, véhicule bélier',
-                'Heure de déclenchement, dernier fait daté',
-                'Revendication, mobile idéologique ou personnel',
-                'Auteurs, victimes, personnes encore exposées',
-            ]),
-        ],
-        hostBlocks: [],
         paxChipLabels: {},
         extraPaxChip: { key: 'IS', label: 'IS', color: '#8b5cf6', fontColor: '#ffffff', icon: 'security' },
     },
@@ -283,19 +191,6 @@ export const PCTAC_MODES: Record<PctacModeId, PctacMode> = {
         summary: 'Disparition ou fuite : identifier, localiser, retrouver.',
         adv: { singular: 'Personne recherchée', plural: 'Personnes recherchées', demonstrative: 'cette personne', icon: 'person_search', paxChip: 'Recherché', linkLabel: 'Lien témoins', newLabel: 'Nouvelle personne recherchée', saveLabel: 'Enregistrer la personne', emptyLabel: 'Aucune personne recherchée' },
         host: { singular: 'Témoin', plural: 'Témoins', demonstrative: 'ce témoin', icon: 'record_voice_over', paxChip: 'Témoin', linkLabel: 'Personne recherchée', newLabel: 'Nouveau témoin', saveLabel: 'Enregistrer le témoin', emptyLabel: 'Aucun témoin' },
-        advBlocks: [
-            SIGNALEMENT,
-            qqocqpc('Circonstances de la disparition ou de la fuite.', [
-                'Identité, âge, lien avec les requérants',
-                'Disparition inquiétante, fugue, soustraction, évasion',
-                'Dernier lieu connu, secteur de recherche retenu',
-                'À pied, en véhicule, accompagné ou non',
-                'Heure et date de la dernière vue certaine',
-                'Motif présumé, contexte familial ou judiciaire',
-                'Nombre de personnes concernées, mineurs inclus',
-            ]),
-        ],
-        hostBlocks: [],
         paxChipLabels: { Inter: 'Recherches', Oscar: 'PC' },
     },
 
@@ -307,27 +202,6 @@ export const PCTAC_MODES: Record<PctacModeId, PctacMode> = {
         summary: 'Événement d\'ampleur : menace diffuse, nombreuses victimes, coordination interservices.',
         adv: { singular: 'Menace', plural: 'Menaces', demonstrative: 'cette menace', icon: 'warning', paxChip: 'Menace', linkLabel: 'Lien victimes', newLabel: 'Nouvelle menace', saveLabel: 'Enregistrer la menace', emptyLabel: 'Aucune menace' },
         host: { singular: 'Victime', plural: 'Victimes', demonstrative: 'cette victime', icon: 'personal_injury', paxChip: 'Victime', linkLabel: 'Lien menace', newLabel: 'Nouvelle victime', saveLabel: 'Enregistrer la victime', emptyLabel: 'Aucune victime' },
-        advBlocks: [
-            qqocqpc('Caractérisation de la menace, réévaluée à chaque point de situation.', [
-                'Origine de la menace, auteur, organisation, phénomène',
-                'Nature : attentat, accident majeur, mouvement de foule, risque NRBC',
-                'Emprise géographique, zones exposées, périmètre établi',
-                'Vecteur, cinétique, facteurs aggravants',
-                'Début des faits, évolution attendue, échéance',
-                'Cause ou revendication, si établie',
-                'Victimes estimées, impliqués, personnes à évacuer',
-            ]),
-            {
-                title: 'Conséquences',
-                hint: 'Ce que l\'événement produit, et qui doit être traité en parallèle.',
-                fields: [
-                    { key: 'position', label: 'Point de fixation', placeholder: 'Épicentre, foyer principal…' },
-                    { key: 'volume', label: 'Ampleur', placeholder: 'Emprise, nombre de sites touchés…' },
-                    { key: 'nature', label: 'Risques évolutifs', placeholder: 'Sur-accident, effondrement, propagation…', wide: true },
-                ],
-            },
-        ],
-        hostBlocks: [],
         paxChipLabels: {},
         extraPaxChip: { key: 'Secours', label: 'Secours', color: '#f97316', fontColor: '#000000', icon: 'local_fire_department' },
     },
@@ -377,24 +251,4 @@ export const BASE_PAX_CHIPS: readonly string[] = ['Adversaire', 'Otage', 'Inter'
  */
 export function paxChipKeys(mode: PctacMode): string[] {
     return mode.extraPaxChip ? [...BASE_PAX_CHIPS, mode.extraPaxChip.key] : [...BASE_PAX_CHIPS];
-}
-
-/** Tous les champs doctrinaux d'une entité, blocs confondus. */
-export function modeFieldsOf(blocks: PctacModeBlock[]): PctacModeField[] {
-    return blocks.flatMap((b) => b.fields);
-}
-
-/**
- * Union des clés doctrinales de TOUS les modes. Sert à relire une fiche sans
- * savoir dans quel mode elle a été saisie (rendu, PDF, archive) : une fiche
- * requalifiée porte les clés de plusieurs situations à la fois.
- */
-export function allModeFieldKeys(): string[] {
-    const keys = new Set<string>();
-    PCTAC_MODE_ORDER.forEach((id) => {
-        const mode = PCTAC_MODES[id];
-        modeFieldsOf(mode.advBlocks).forEach((f) => keys.add(f.key));
-        modeFieldsOf(mode.hostBlocks).forEach((f) => keys.add(f.key));
-    });
-    return [...keys];
 }

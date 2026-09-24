@@ -22,6 +22,7 @@ import {
   FRIENDS_KEY,
   PHOTOS_KEY,
   CUSTOM_PAX_KEY,
+  FICHE_DRAFT_KEY,
 } from '@pctac/config.js';
 import { currentModeId, scopedKey, type PctacModeId } from '@pctac/modes.js';
 import { GPX_INDEX_KEY } from '@pctac/planmap/constants.js';
@@ -47,6 +48,7 @@ const SITUATION_KEYS: readonly string[] = [
   'pcTacLieuHistory',
   'pcTacPlanLocked',
   'pcTacDashboard',
+  FICHE_DRAFT_KEY,
 ];
 
 /**

@@ -710,12 +710,9 @@ export interface UIContract {
     closeLightbox(): void;
 
     /* --- modales d'édition --- */
+    /** Décision 17 — ouvre la fiche unique (fiche-sheet.ts) en modification. */
     showEditAdversaryModal(id: string): Promise<void>;
-    hideEditAdversaryModal(): void;
-    handleAdversaryUpdate(): Promise<void>;
     showEditHostageModal(id: string): Promise<void>;
-    hideEditHostageModal(): void;
-    handleHostageUpdate(): Promise<void>;
     /** U13 — édition d'une fiche Ami (champs seuls, pas de photo). */
     showEditFriendModal(id: string): void;
     hideEditFriendModal(): void;

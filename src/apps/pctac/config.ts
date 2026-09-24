@@ -25,6 +25,8 @@ export const HOSTAGES_KEY = 'pcTacHostages';
 export const FRIENDS_KEY = 'pcTacFriends';
 export const PHOTOS_KEY = 'pcTacPhotos';
 export const CUSTOM_PAX_KEY = 'pcTacCustomPax';
+/** Brouillons de la fiche adverse ou protégée en cours de saisie (fiche-sheet.ts). */
+export const FICHE_DRAFT_KEY = 'pcTacFicheDraft';
 // Clé de persistance du tableau de liens (board "Dashboard")
 // Forme : { positions:{[nodeId]:{x,y}}, links:[{id,from,to,comment}], locked:boolean, layout:'auto'|'manual' }
 export const DASHBOARD_KEY = 'pcTacDashboard';
@@ -82,6 +84,8 @@ export interface PctacStatusMeta { label: string; symbol: string; color: string 
 
 export const ADV_STATUS: Record<string, PctacStatusMeta> = {
     active: { label: 'Actif', symbol: '▲', color: '#ef4444' },
+    // Recherche « Localisée », Ampleur « Contenue » (libellés : fiche.ts).
+    located: { label: 'Localisé', symbol: '◆', color: '#eab308' },
     neutralized: { label: 'Neutralisé', symbol: '✔', color: '#22c55e' },
 };
 
@@ -90,6 +94,13 @@ export const HOST_STATUS: Record<string, PctacStatusMeta> = {
     preoccupant: { label: 'Préoccupant', symbol: '!', color: '#eab308' },
     blesse: { label: 'Blessé', symbol: '✚', color: '#ef4444' },
     dcd: { label: 'DCD', symbol: '✝', color: '#94a3b8' },
+    // Triage des victimes (TP, Ampleur). Jamais déduit des blessures : c'est
+    // un médecin qui trie ; une victime fichée reste « Non triée ».
+    nt: { label: 'Non triée', symbol: '?', color: '#64748b' },
+    eu: { label: 'EU', symbol: '‼', color: '#dc2626' },
+    ua: { label: 'UA', symbol: '✚', color: '#ef4444' },
+    ur: { label: 'UR', symbol: '!', color: '#eab308' },
+    impl: { label: 'Impliqué', symbol: '✔', color: '#22c55e' },
 };
 
 /**

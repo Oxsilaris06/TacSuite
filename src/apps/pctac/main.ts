@@ -93,34 +93,23 @@ import {
     FRIENDS_KEY,
     PHOTOS_KEY,
     DASHBOARD_KEY,
-    hostageStatusFromBlessures,
 } from '@pctac/config.js';
 import { GPX_INDEX_KEY, PINS_KEY } from '@pctac/planmap/constants.js';
-import { currentMode, scopedKey } from '@pctac/modes.js';
+import { scopedKey } from '@pctac/modes.js';
 import { initImportScopeModal } from '@pctac/import-scope.js';
 import { initSplitView } from '@pctac/split-view.js';
-import {
-    applyLexicon,
-    collectModeFields,
-    initModeSelector,
-    onModeChange,
-    renderModeBlocks,
-} from '@pctac/mode-ui.js';
+import { applyLexicon, initModeSelector, onModeChange } from '@pctac/mode-ui.js';
+import { openFiche } from '@pctac/fiche-sheet.js';
 
 /**
  * Point d'entrée principal du module PC TAC
  */
 
 /**
- * (Re)peuple les blocs doctrinaux des deux formulaires de collection depuis la
- * situation courante, puis réapplique le vocabulaire aux champs fraîchement
- * créés. Appelé au démarrage et à chaque changement de situation — jamais en
- * cours de saisie d'une fiche, ce qui viderait le formulaire sous les doigts.
+ * Réapplique le vocabulaire de la situation courante. Appelé au démarrage et
+ * à chaque changement de situation.
  */
 function renderCollectionModeBlocks(): void {
-    const mode = currentMode();
-    renderModeBlocks(document.getElementById('advModeBlocks'), mode.advBlocks, 'adv');
-    renderModeBlocks(document.getElementById('hostageModeBlocks'), mode.hostBlocks, 'hostage');
     // Lot B — la catégorie photo suit la situation (« Otages »/« Adversaire »).
     // Repeuplée AVANT applyLexicon, qui en pose alors les libellés résolus.
     UI.refreshPhotoCategories();
@@ -278,189 +267,33 @@ document.addEventListener('DOMContentLoaded', async () => {
         };
     }
 
-    // §5.3 étape 14 — Gestion des collections génériques (Adversaires, Otages, Amis, Photos).
-    interface PctacFormConfig {
-        id: string;
-        key: string;
-        view: string;
-        fields: string[];
-        map: (f: string[]) => Record<string, unknown>;
-        /** Conteneur des champs doctrinaux, si la collection en porte. */
-        modeBlocksId?: string;
-        /** Préfixe des identifiants de ces champs (`adv_m_position`…). */
-        modeFieldPrefix?: string;
+    // §5.3 étape 14 — Fiches adverse et protégée : liste d'abord, la fiche
+    // (création et modification) s'ouvre plein écran (fiche-sheet.ts).
+    document.querySelectorAll<HTMLElement>('[data-fiche-new]').forEach((btn) => {
+        btn.addEventListener('click', () => { void openFiche(btn.dataset.ficheNew === 'host' ? 'host' : 'adv'); });
+    });
+
+    // Fiche Amis : formulaire en haut de l'onglet (inchangée, décision 16).
+    const friendForm = document.getElementById('friend-form') as HTMLFormElement | null;
+    if (friendForm) {
+        const friendFields = ['friend_nom', 'friend_prenom', 'friend_unite', 'friend_tph', 'friend_mission'];
+        friendForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            const values = friendFields.map((id) => (document.getElementById(id) as HTMLInputElement).value);
+            // Lot B — une fiche ENTIÈREMENT vide est refusée, avec un message.
+            if (!values.some((v) => v.trim() !== '')) {
+                toast('Renseignez au moins un champ', { kind: 'error' });
+                return;
+            }
+            const [nom, prenom, unite, tph, mission] = values;
+            const list = Storage.loadCollection(FRIENDS_KEY);
+            list.push({ id: Date.now().toString(), nom, prenom, unite, tph, mission });
+            Storage.saveCollection(FRIENDS_KEY, list);
+            friendFields.forEach((id) => { (document.getElementById(id) as HTMLInputElement).value = ''; });
+            UI.renderFriends();
+            toast('Fiche ajoutée', { kind: 'success' }); // U12
+        });
     }
-    const forms: PctacFormConfig[] = [
-        {
-            id: 'adversary-form',
-            key: ADVERSARIES_KEY,
-            view: 'view-adversaires',
-            fields: ['adv_nom', 'adv_prenom', 'adv_dob', 'adv_lien', 'adv_antecedents', 'adv_attitude', 'adv_substance', 'adv_arme', 'adv_photo'],
-            map: (f) => ({ nom: f[0], prenom: f[1], dob: f[2], lien: f[3], antecedents: f[4], attitude: f[5], substance: f[6], armes: f[7], photo: f[8] }),
-            modeBlocksId: 'advModeBlocks',
-            modeFieldPrefix: 'adv',
-        },
-        {
-            id: 'hostage-form',
-            key: HOSTAGES_KEY,
-            view: 'view-otages',
-            fields: ['hostage_nom', 'hostage_prenom', 'hostage_dob', 'hostage_lien', 'hostage_etat', 'hostage_blessure', 'hostage_photo'],
-            map: (f) => ({ nom: f[0], prenom: f[1], dob: f[2], lien: f[3], etat: f[4], blessures: f[5], photo: f[6] }),
-            modeBlocksId: 'hostageModeBlocks',
-            modeFieldPrefix: 'hostage',
-        },
-        {
-            id: 'friend-form',
-            key: FRIENDS_KEY,
-            view: 'view-amis',
-            fields: ['friend_nom', 'friend_prenom', 'friend_unite', 'friend_tph', 'friend_mission'],
-            map: (f) => ({ nom: f[0], prenom: f[1], unite: f[2], tph: f[3], mission: f[4] }),
-        },
-    ];
-
-    forms.forEach((cfg) => {
-        const f = document.getElementById(cfg.id) as HTMLFormElement | null;
-        if (f) {
-            f.addEventListener('submit', async (e) => {
-                e.preventDefault();
-                const values = cfg.fields.map((id) => {
-                    const el = document.getElementById(id) as HTMLInputElement;
-                    if (el.type === 'file') return el.dataset.base64 || '';
-                    return el.value;
-                });
-
-                // Au moins un champ texte/photo doit avoir une vraie valeur
-                if (!values.some((v) => v && (typeof v !== 'string' || v.trim() !== ''))) {
-                    // Lot B — une fiche ENTIÈREMENT vide est refusée, avec un
-                    // message : sans cette branche, le submit ne produisait rien.
-                    toast('Renseignez au moins un champ', { kind: 'error' });
-                    return;
-                }
-                // Lot B — anti double-soumission : le traitement est async
-                // (compression photo, IndexedDB) ; on verrouille le bouton.
-                const submitBtn = f.querySelector<HTMLButtonElement>('button[type="submit"]');
-                if (submitBtn) submitBtn.disabled = true;
-                try {
-                    const itemId = Date.now().toString();
-                    const mapped = cfg.map(values);
-                    // Champs doctrinaux de la situation courante, posés À PLAT
-                    // sur la fiche comme les champs historiques. Les clés d'une
-                    // autre situation déjà présentes ne sont pas touchées.
-                    if (cfg.modeBlocksId && cfg.modeFieldPrefix) {
-                        Object.assign(mapped, collectModeFields(document.getElementById(cfg.modeBlocksId)));
-                    }
-                    // U16 — statut porté par la FICHE dès la création.
-                    if (cfg.view === 'view-adversaires') mapped.status = 'active';
-                    if (cfg.view === 'view-otages') mapped.status = hostageStatusFromBlessures(mapped.blessures);
-                    // mapped.photo est une dataURL (string) quand présente, comme dans l'original.
-                    const photoData = mapped.photo as string | undefined;
-
-                    // L'image part en IndexedDB, on garde seulement un flag dans la collection
-                    if (photoData && typeof photoData === 'string' && photoData.startsWith('data:')) {
-                        try { await ImageStore.put(itemId, photoData); } catch (e) { console.error('[PC TAC] put image échec:', e); }
-                        delete mapped.photo;
-                        mapped.hasImage = true;
-                    }
-
-                    const list = Storage.loadCollection(cfg.key);
-                    list.push({ id: itemId, ...mapped });
-                    Storage.saveCollection(cfg.key, list);
-
-                    cfg.fields.forEach((id) => {
-                        const el = document.getElementById(id) as HTMLInputElement;
-                        if (el.type === 'file') { el.value = ''; delete el.dataset.base64; }
-                        else el.value = '';
-                    });
-                    // Les champs doctrinaux se vident comme les autres : sans
-                    // ça, la fiche suivante hériterait du renseignement de la
-                    // précédente, erreur silencieuse et coûteuse.
-                    if (cfg.modeBlocksId) {
-                        document.getElementById(cfg.modeBlocksId)
-                            ?.querySelectorAll<HTMLInputElement>('[data-mode-field]')
-                            .forEach((input) => { input.value = ''; });
-                    }
-                    // Reset des aperçus miniatures
-                    ['adv_photo_preview', 'hostage_photo_preview'].forEach((pid) => {
-                        const p = document.getElementById(pid);
-                        if (p) {
-                            const isAdv = pid === 'adv_photo_preview';
-                            p.innerHTML = `<span class="material-symbols-outlined" style="font-size: 30px; color: var(--text-muted);">${isAdv ? 'person' : 'person_off'}</span>`;
-                        }
-                    });
-
-                    if (cfg.view === 'view-adversaires') {
-                        await UI.renderAdversaries();
-                        // Copie automatique vers Photos pour les adversaires
-                        if (photoData) {
-                            const syncId = itemId + '_sync';
-                            try { await ImageStore.put(syncId, photoData); } catch (e) { console.error('[PC TAC] put sync image échec:', e); }
-                            const photoList = Storage.loadCollection(PHOTOS_KEY);
-                            photoList.push({
-                                id: syncId,
-                                title: `${String(mapped.nom)} ${String(mapped.prenom)}`,
-                                category: 'neutralized',
-                                status: 'active',
-                                hasImage: true,
-                            });
-                            Storage.saveCollection(PHOTOS_KEY, photoList);
-                            await UI.renderPhotos();
-                        }
-                    }
-                    if (cfg.view === 'view-otages') {
-                        await UI.renderHostages();
-                        // Copie automatique vers Photos pour les otages ; la photo
-                        // _sync reprend le statut de la FICHE (source de vérité, U16).
-                        if (photoData) {
-                            const status = String(mapped.status || 'ok');
-                            const syncId = itemId + '_sync';
-                            try { await ImageStore.put(syncId, photoData); } catch (e) { console.error('[PC TAC] put sync image échec:', e); }
-                            const photoList = Storage.loadCollection(PHOTOS_KEY);
-                            photoList.push({
-                                id: syncId,
-                                title: `${String(mapped.nom)} ${String(mapped.prenom)}`,
-                                category: 'hostage',
-                                status,
-                                hasImage: true,
-                            });
-                            Storage.saveCollection(PHOTOS_KEY, photoList);
-                            await UI.renderPhotos();
-                        }
-                    }
-                    if (cfg.view === 'view-amis') UI.renderFriends();
-                    toast('Fiche ajoutée', { kind: 'success' }); // U12
-                } finally {
-                    // Lot B — quoi qu'il arrive (succès ou exception), on rend
-                    // la main à l'opérateur : le bouton ne doit pas rester mort.
-                    if (submitBtn) submitBtn.disabled = false;
-                }
-            });
-        }
-    });
-
-    // §5.3 étape 15 — Gestion base64 pour les inputs file d'adversaire/otage + aperçu miniature.
-    ['adv_photo', 'hostage_photo'].forEach((id) => {
-        const el = document.getElementById(id) as HTMLInputElement | null;
-        if (el) {
-            el.addEventListener('change', async (e) => {
-                const file = (e.target as HTMLInputElement).files?.[0];
-                if (file) {
-                    try {
-                        const compressedData = await Utils.compressImage(file, 800, 800, 0.7);
-                        el.dataset.base64 = compressedData;
-                        // Mise à jour de la miniature dans le formulaire
-                        const previewId = id === 'adv_photo' ? 'adv_photo_preview' : 'hostage_photo_preview';
-                        const preview = document.getElementById(previewId);
-                        if (preview) {
-                            preview.innerHTML = `<img src="${compressedData}" style="width: 100%; height: 100%; object-fit: cover;">`;
-                        }
-                    } catch (err) {
-                        console.error('Erreur de compression:', err);
-                        toast('Échec du traitement de la photo', { kind: 'error' }); // U12
-                    }
-                }
-            });
-        }
-    });
 
     // §5.3 étape 16 — Formulaire Photo spécifique.
     if (UI.elements.photoForm) {
@@ -645,22 +478,11 @@ document.addEventListener('DOMContentLoaded', async () => {
                 const el = document.getElementById(id) as HTMLInputElement | null;
                 if (el) el.value = '';
             });
-            // Reset des formulaires de collection
-            ['adversary-form', 'hostage-form', 'friend-form', 'photo-form'].forEach((fid) => {
+            // Reset des formulaires restants (la fiche adverse/protégée n'a pas
+            // de formulaire permanent ; son brouillon est effacé avec la situation).
+            ['friend-form', 'photo-form'].forEach((fid) => {
                 const f = document.getElementById(fid) as HTMLFormElement | null;
                 if (f) f.reset();
-            });
-            // Reset des aperçus photo
-            ['adv_photo_preview', 'hostage_photo_preview'].forEach((pid) => {
-                const p = document.getElementById(pid);
-                if (p) {
-                    const isAdv = pid === 'adv_photo_preview';
-                    p.innerHTML = `<span class="material-symbols-outlined" style="font-size: 30px; color: var(--text-muted);">${isAdv ? 'person' : 'person_off'}</span>`;
-                }
-            });
-            ['adv_photo', 'hostage_photo'].forEach((id) => {
-                const el = document.getElementById(id) as HTMLInputElement | null;
-                if (el) { el.value = ''; delete el.dataset.base64; }
             });
 
             UI.hideResetModal();
@@ -670,48 +492,6 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const cancelCreatePaxBtn = document.getElementById('cancelCreatePaxBtn');
     if (cancelCreatePaxBtn) cancelCreatePaxBtn.onclick = () => UI.hideCreatePaxModal();
-
-    // Édition Adversaire (champs + photo)
-    const confirmEditAdvBtn = document.getElementById('confirmEditAdvBtn');
-    if (confirmEditAdvBtn) confirmEditAdvBtn.onclick = () => { void UI.handleAdversaryUpdate(); };
-
-    const editAdvPhotoInput = document.getElementById('edit_adv_photo_input') as HTMLInputElement | null;
-    if (editAdvPhotoInput) {
-        editAdvPhotoInput.onchange = async (e) => {
-            const file = (e.target as HTMLInputElement).files?.[0];
-            if (file) {
-                try {
-                    const compressedData = await Utils.compressImage(file, 800, 800, 0.7);
-                    (document.getElementById('edit_adv_preview') as HTMLElement).innerHTML = `<img src="${compressedData}" style="width: 100%; height: 100%; object-fit: cover;">`;
-                    editAdvPhotoInput.dataset.compressedBase64 = compressedData;
-                } catch (err) {
-                    console.error('Erreur de compression:', err);
-                    toast('Échec du traitement de la photo', { kind: 'error' }); // U12
-                }
-            }
-        };
-    }
-
-    // Édition Otage (champs + photo)
-    const confirmEditHostBtn = document.getElementById('confirmEditHostBtn');
-    if (confirmEditHostBtn) confirmEditHostBtn.onclick = () => { void UI.handleHostageUpdate(); };
-
-    const editHostPhotoInput = document.getElementById('edit_host_photo_input') as HTMLInputElement | null;
-    if (editHostPhotoInput) {
-        editHostPhotoInput.onchange = async (e) => {
-            const file = (e.target as HTMLInputElement).files?.[0];
-            if (file) {
-                try {
-                    const compressedData = await Utils.compressImage(file, 800, 800, 0.7);
-                    (document.getElementById('edit_host_preview') as HTMLElement).innerHTML = `<img src="${compressedData}" style="width: 100%; height: 100%; object-fit: cover;">`;
-                    editHostPhotoInput.dataset.compressedBase64 = compressedData;
-                } catch (err) {
-                    console.error('Erreur de compression:', err);
-                    toast('Échec du traitement de la photo', { kind: 'error' }); // U12
-                }
-            }
-        };
-    }
 
     // U13 — Édition Ami (champs seuls)
     const confirmEditFriendBtn = document.getElementById('confirmEditFriendBtn');

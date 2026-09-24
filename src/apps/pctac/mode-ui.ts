@@ -1,7 +1,7 @@
 /**
  * mode-ui.ts — Couche DOM des situations opérationnelles (`modes.ts`).
  *
- * Trois responsabilités, volontairement séparées du vocabulaire lui-même pour
+ * Deux responsabilités, volontairement séparées du vocabulaire lui-même pour
  * que `modes.ts` reste un fichier de DONNÉES que Nico peut corriger sans lire
  * une ligne de manipulation du DOM :
  *
@@ -11,9 +11,7 @@
  *      `data-lex-placeholder` font de même sur l'attribut nommé. Le texte
  *      d'origine reste dans le HTML : il sert de repli si un jeton est inconnu,
  *      et la page reste lisible avant l'exécution du script.
- *   2. `renderModeBlocks()` — injecte les champs doctrinaux du mode dans un
- *      formulaire, et relit/écrit leurs valeurs.
- *   3. `initModeSelector()` — construit le sélecteur de situation en haut à
+ *   2. `initModeSelector()` — construit le sélecteur de situation en haut à
  *      droite, à partir de `PCTAC_MODES` (jamais d'énumération en dur dans le
  *      HTML : ajouter une situation ne doit toucher qu'un fichier).
  *
@@ -28,10 +26,8 @@ import {
     PCTAC_MODE_ORDER,
     currentMode,
     currentModeId,
-    modeFieldsOf,
     persistModeId,
     type PctacMode,
-    type PctacModeBlock,
     type PctacModeId,
 } from '@pctac/modes.js';
 
@@ -113,100 +109,8 @@ export function applyLexicon(root: ParentNode = document): void {
     });
 }
 
-/** Identifiant DOM d'un champ doctrinal. `prefix` vaut `adv` ou `hostage`. */
-export function modeFieldInputId(prefix: string, key: string): string {
-    return `${prefix}_m_${key}`;
-}
-
 function escapeAttr(value: string): string {
     return value.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
-}
-
-/**
- * Rend les blocs doctrinaux dans `container` et rend `true` s'il y a quelque
- * chose à montrer. Le conteneur est VIDÉ à chaque appel : c'est ce qui rend le
- * changement de situation instantané, y compris quand on repasse à Forcené qui
- * n'a aucun bloc.
- *
- * `values` pré-remplit les champs (modale d'édition d'une fiche existante).
- * Une fiche saisie dans une AUTRE situation porte ses propres clés : celles du
- * mode courant qu'elle ne connaît pas restent simplement vides.
- */
-export function renderModeBlocks(
-    container: HTMLElement | null,
-    blocks: PctacModeBlock[],
-    prefix: string,
-    values?: Record<string, unknown>,
-): boolean {
-    if (!container) return false;
-    container.innerHTML = '';
-    if (blocks.length === 0) {
-        container.hidden = true;
-        return false;
-    }
-    container.hidden = false;
-    container.innerHTML = blocks.map((block) => `
-        <fieldset class="mode-block">
-            <legend class="mode-block-title">${escapeAttr(block.title)}</legend>
-            <p class="mode-block-hint">${escapeAttr(block.hint)}</p>
-            <div class="mode-block-grid">
-                ${block.fields.map((field) => {
-                    const id = modeFieldInputId(prefix, field.key);
-                    const raw = values?.[field.key];
-                    const value = typeof raw === 'string' ? raw : '';
-                    return `<div${field.wide ? ' class="mode-field-wide"' : ''}>
-                        <label for="${id}">${escapeAttr(field.label)}</label>
-                        <input type="text" id="${id}" data-mode-field="${escapeAttr(field.key)}"
-                            placeholder="${escapeAttr(field.placeholder)}" value="${escapeAttr(value)}">
-                    </div>`;
-                }).join('')}
-            </div>
-        </fieldset>
-    `).join('');
-    return true;
-}
-
-/** Relit les champs doctrinaux d'un formulaire, vides compris. */
-export function collectModeFields(container: HTMLElement | null): Record<string, string> {
-    const out: Record<string, string> = {};
-    if (!container) return out;
-    container.querySelectorAll<HTMLInputElement>('[data-mode-field]').forEach((input) => {
-        const key = input.dataset.modeField;
-        if (key) out[key] = input.value;
-    });
-    return out;
-}
-
-/**
- * Champs doctrinaux d'une fiche À AFFICHER : ceux de la situation courante,
- * plus tout champ renseigné dans une AUTRE situation. Une fiche requalifiée ne
- * doit pas faire disparaître silencieusement un renseignement déjà saisi —
- * l'opérateur doit le voir, quitte à ce qu'il porte le libellé d'un autre mode.
- */
-export function visibleModeFieldsFor(
-    item: Record<string, unknown>,
-    side: 'adv' | 'host',
-): { label: string; value: string }[] {
-    const mode = currentMode();
-    const own = modeFieldsOf(side === 'adv' ? mode.advBlocks : mode.hostBlocks);
-    const seen = new Set(own.map((f) => f.key));
-    const rows = own
-        .map((f) => ({ label: f.label, value: typeof item[f.key] === 'string' ? item[f.key] as string : '' }))
-        .filter((r) => r.value.trim() !== '');
-
-    PCTAC_MODE_ORDER.forEach((id) => {
-        if (id === mode.id) return;
-        const other = PCTAC_MODES[id];
-        modeFieldsOf(side === 'adv' ? other.advBlocks : other.hostBlocks).forEach((f) => {
-            if (seen.has(f.key)) return;
-            const value = item[f.key];
-            if (typeof value === 'string' && value.trim() !== '') {
-                seen.add(f.key);
-                rows.push({ label: `${f.label} (${other.short})`, value });
-            }
-        });
-    });
-    return rows;
 }
 
 // --- Sélecteur de situation ------------------------------------------------

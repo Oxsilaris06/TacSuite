@@ -106,6 +106,10 @@ interface OiAdversaryEntry {
     attitude_adversaire?: string;
     substances_adversaire?: string;
     armes_connues?: string;
+    domicile_adversaire?: string;
+    profession_adversaire?: string;
+    stature_adversaire?: string;
+    ethnie_adversaire?: string;
 }
 
 /** Membre PATRACDVR (trigramme) du Générateur d'OI. */
@@ -718,6 +722,16 @@ export const Archive: ArchiveContract = {
                 substance: (oa.substances_adversaire || '').toString(),
                 armes: (oa.armes_connues || '').toString(),
             };
+            // Décision 20 : domicile, profession, et stature + ethnie versées
+            // au signalement (« Physique »). Rien de vide n'est posé.
+            const stature = (oa.stature_adversaire || '').toString().trim();
+            const ethnie = (oa.ethnie_adversaire || '').toString().trim();
+            const extra: Record<string, string> = {
+                domicile: (oa.domicile_adversaire || '').toString().trim(),
+                profession: (oa.profession_adversaire || '').toString().trim(),
+                signalement: [stature, ethnie ? `type ${ethnie}` : ''].filter(Boolean).join(', '),
+            };
+            Object.entries(extra).forEach(([k, v]) => { if (v) item[k] = v; });
 
             const dataUrl = await photoDataUrlForAdv(oa.id);
             if (dataUrl) {

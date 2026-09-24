@@ -31,8 +31,9 @@
 import * as PDFLib from 'pdf-lib';
 import { Storage } from '@pctac/storage.js';
 import { ImageStore } from '@pctac/image-store.js';
-import { PDF_PAX_COLORS, PHOTO_CATEGORIES, FREE_MODE_COLORS, ADV_STATUS, HOST_STATUS } from '@pctac/config.js';
-import { currentMode } from '@pctac/modes.js';
+import { PDF_PAX_COLORS, PHOTO_CATEGORIES, FREE_MODE_COLORS } from '@pctac/config.js';
+import { currentMode, currentModeId } from '@pctac/modes.js';
+import { TYPE_MENACE_KEY, ficheCounters, ficheTitle, filledSections, statusChoices, statusMeta, type FicheSide } from '@pctac/fiche.js';
 import { showBusy, hideBusy } from '@pctac/busy.js';
 import { toast } from '@shared/feedback.js';
 import type { PdfExportContract, PlanMapPinSummary } from '@shared/types/contracts.js';
@@ -421,70 +422,74 @@ export const PdfExport: PdfExportContract = {
                 context.y -= rowHeight;
             }
 
-            // --- 2. ADVERSAIRES ---
-            if (adversaries.length > 0) {
-                addNewPage(`FICHIER ${mode.adv.plural.toUpperCase()}`);
-                for (const adv of adversaries) {
-                    if (context.y < 180) addNewPage(`FICHIER ${mode.adv.plural.toUpperCase()} (SUITE)`);
-
-                    pdfPage().drawRectangle({ x: context.margin, y: context.y - 5, width: context.pageWidth - 2*context.margin, height: 20, color: themeColors.headerBg });
-                    pdfPage().drawText(sanitizeWinAnsi(`${adv.nom || ''} ${adv.prenom || ''}`), { x: context.margin + 5, y: context.y + 2, size: 11, font: fontBold, color: themeColors.text });
+            // --- 2 et 3. FICHES ADVERSE ET PROTÉGÉE (décisions 17 à 19) ---
+            // Mêmes sections que l'écran, dans l'ordre de la situation, champs
+            // remplis seuls ; texte replié sur la largeur disponible.
+            const modeId = currentModeId();
+            const counters = ficheCounters(modeId, adversaries, hostages);
+            const hexRgb = (hex: string): PDFLib.RGB => {
+                const n = parseInt(hex.replace('#', ''), 16);
+                return Number.isNaN(n) ? themeColors.text : pdfRgb(((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255);
+            };
+            const drawFiches = async (side: FicheSide, items: typeof adversaries, countLine: string): Promise<void> => {
+                if (items.length === 0) return;
+                const chapter = `FICHIER ${mode[side].plural.toUpperCase()}`;
+                addNewPage(chapter);
+                if (countLine) {
+                    pdfPage().drawText(sanitizeWinAnsi(countLine), { x: context.margin, y: context.y, size: 9, font, color: themeColors.text });
+                    context.y -= 22;
+                }
+                const hasStatus = statusChoices(side, modeId).length > 0;
+                const statusWord = side === 'host' && (modeId === 'tp' || modeId === 'evenement') ? 'Triage' : 'Statut';
+                const resolveLink = (id: string): string => {
+                    const adv = adversaries.find((a) => a.id === id);
+                    return adv ? ficheTitle('adv', modeId, adv) : id;
+                };
+                for (const item of items) {
+                    if (context.y < 180) addNewPage(`${chapter} (SUITE)`);
+                    const status = statusMeta(side, modeId, String(item.status || ''));
+                    pdfPage().drawRectangle({ x: context.margin, y: context.y - 5, width: context.pageWidth - 2 * context.margin, height: 20, color: themeColors.headerBg });
+                    pdfPage().drawText(sanitizeWinAnsi(ficheTitle(side, modeId, item)), { x: context.margin + 5, y: context.y + 2, size: 11, font: fontBold, color: themeColors.text });
+                    if (hasStatus && item.status) {
+                        const label = sanitizeWinAnsi(status.label);
+                        const w = fontBold.widthOfTextAtSize(label, 10);
+                        pdfPage().drawText(label, { x: context.pageWidth - context.margin - 5 - w, y: context.y + 2, size: 10, font: fontBold, color: hexRgb(status.color) });
+                    }
                     context.y -= 25;
 
-                    if (adv.photo) {
-                        await drawImageSafe(pdfPage(), adv.photo, context.margin, context.y + 20, 120, 120);
-                    }
-
-                    let infoY = context.y;
-                    const labels = [
-                        `Statut: ${ADV_STATUS[String(adv.status || 'active')]?.label ?? 'Actif'}`, // U16
-                        `Né le: ${adv.dob || 'N/C'}`,
-                        `${mode.adv.linkLabel}: ${adv.lien || 'N/C'}`,
-                        `Antécédents: ${adv.antecedents || 'N/C'}`,
-                        `Attitude: ${adv.attitude || 'N/C'}`,
-                        `Substance: ${adv.substance || 'N/C'}`,
-                        `Armement: ${adv.armes || 'N/C'}`
-                    ];
-                    labels.forEach(l => {
-                        pdfPage().drawText(sanitizeWinAnsi(l), { x: context.margin + 140, y: infoY, size: 9, font, color: themeColors.text });
-                        infoY -= 14;
+                    const top = context.y;
+                    const hasPhoto = typeof item.photo === 'string' && item.photo !== '';
+                    if (hasPhoto) await drawImageSafe(pdfPage(), item.photo, context.margin, context.y + 20, 120, 120);
+                    let x = context.margin + (hasPhoto ? 140 : 5);
+                    let y = context.y;
+                    let photoOnPage = hasPhoto;
+                    const line = (text: string, bold = false): void => {
+                        if (y < context.margin + 12) {
+                            addNewPage(`${chapter} (SUITE)`);
+                            x = context.margin + 5;
+                            y = context.y;
+                            photoOnPage = false;
+                        }
+                        pdfPage().drawText(text, { x, y, size: 9, font: bold ? fontBold : font, color: themeColors.text });
+                        y -= 12;
+                    };
+                    const width = (): number => context.pageWidth - context.margin - x;
+                    const para = (text: string, bold = false): void => {
+                        String(text).split(/\r?\n/).forEach((p) => wrapText(p, width(), bold ? fontBold : font, 9).forEach((l) => line(l, bold)));
+                    };
+                    // Statut posé : déjà en couleur dans le bandeau. Absent : « N/C ».
+                    if (hasStatus && !item.status) para(`${statusWord} : N/C`);
+                    if (side === 'adv' && modeId === 'evenement' && item[TYPE_MENACE_KEY]) para(`Type : ${String(item[TYPE_MENACE_KEY])}`);
+                    filledSections(side, modeId, item, new Date(), resolveLink).forEach((sec) => {
+                        y -= 4;
+                        para(sec.title.toUpperCase(), true);
+                        sec.rows.forEach((r) => para(`${r.label} : ${r.value}`));
                     });
-                    context.y = Math.min(context.y - 130, infoY - 20);
+                    context.y = Math.min(photoOnPage ? top - 130 : y, y) - 16;
                 }
-            }
-
-            // --- 3. OTAGES ---
-            if (hostages.length > 0) {
-                addNewPage(`FICHIER ${mode.host.plural.toUpperCase()}`);
-                for (const host of hostages) {
-                    if (context.y < 180) addNewPage(`FICHIER ${mode.host.plural.toUpperCase()} (SUITE)`);
-
-                    pdfPage().drawRectangle({ x: context.margin, y: context.y - 5, width: context.pageWidth - 2*context.margin, height: 20, color: themeColors.headerBg });
-                    pdfPage().drawText(sanitizeWinAnsi(`${host.nom || ''} ${host.prenom || ''}`), { x: context.margin + 5, y: context.y + 2, size: 11, font: fontBold, color: themeColors.text });
-                    context.y -= 25;
-
-                    if (host.photo) {
-                        await drawImageSafe(pdfPage(), host.photo, context.margin, context.y + 20, 120, 120);
-                    }
-
-                    let infoY = context.y;
-                    // C8 — lien résolu vers le nom vivant de la fiche adversaire.
-                    const lienAdv = adversaries.find(a => a.id === host.lien);
-                    const lienLabel = lienAdv ? `${lienAdv.nom || ''} ${lienAdv.prenom || ''}`.trim() : (host.lien || 'N/C');
-                    const labels = [
-                        `Statut: ${HOST_STATUS[String(host.status || 'ok')]?.label ?? 'OK'}`, // U16
-                        `Né le: ${host.dob || 'N/C'}`,
-                        `${mode.host.linkLabel}: ${lienLabel}`,
-                        `État: ${host.etat || 'N/C'}`,
-                        `Blessures: ${host.blessures || 'N/C'}`
-                    ];
-                    labels.forEach(l => {
-                        pdfPage().drawText(sanitizeWinAnsi(l), { x: context.margin + 140, y: infoY, size: 9, font, color: themeColors.text });
-                        infoY -= 14;
-                    });
-                    context.y = Math.min(context.y - 130, infoY - 20);
-                }
-            }
+            };
+            await drawFiches('adv', adversaries, counters.adv);
+            await drawFiches('host', hostages, counters.host);
 
             // --- 4. AMIS ---
             if (friends.length > 0) {

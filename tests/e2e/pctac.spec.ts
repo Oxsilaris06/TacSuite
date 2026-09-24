@@ -361,28 +361,51 @@ test.describe('PC-Tac — Checklist fonctionnelle', () => {
     });
   }
 
-  test('Adversaires — CRUD fiche (nom, statut, notes) + suppression', async ({ page }) => {
-    await testCrudCollection(
-      page,
-      'view-adversaires',
-      'adversary-form',
-      { adv_nom: 'DUPONT-E2E', adv_prenom: 'Jean', adv_arme: 'Arme E2E' },
-      'button[type="submit"]',
-      'adversary-table-body',
-      'DUPONT-E2E'
-    );
+  // Décision 17 — fiche unique : bouton « + », fiche plein écran, carte.
+  async function testCrudFiche(
+    page: Page,
+    viewId: string,
+    side: 'adv' | 'host',
+    fill: (page: Page) => Promise<void>,
+    listId: string,
+    matchText: string
+  ): Promise<void> {
+    await clickTab(page, viewId);
+    await step(`${viewId} — création via la fiche`, async () => {
+      await page.locator(`[data-fiche-new="${side}"]`).click();
+      await expect.soft(page.locator('#ficheSheet')).toBeVisible({ timeout: 1500 });
+      await fill(page);
+      await page.locator('#ficheSheet .fiche-save').click();
+      await expect
+        .soft(page.locator(`#${listId} .fiche-card`, { hasText: matchText }))
+        .toBeVisible({ timeout: 1500 });
+    });
+
+    await step(`${viewId} — suppression`, async () => {
+      const card = page.locator(`#${listId} .fiche-card`, { hasText: matchText });
+      await card.locator('.delete-btn').click();
+      await clickConfirmDialogOk(page);
+      await expect.soft(page.locator(`#${listId} .fiche-card`, { hasText: matchText })).toHaveCount(0, {
+        timeout: 1500,
+      });
+    });
+  }
+
+  test('Adversaires — CRUD fiche (nom, armes) + suppression', async ({ page }) => {
+    await testCrudFiche(page, 'view-adversaires', 'adv', async (p) => {
+      await p.locator('#fiche_nom').fill('DUPONT-E2E');
+      await p.locator('#fiche_prenom').fill('Jean');
+      await p.locator('#ficheSheet .fiche-section[data-section="armement"] > summary').click();
+      await p.locator('[data-key="armes"] .fiche-chip[data-chip="Arme longue"]').click();
+    }, 'adversary-table-body', 'DUPONT-E2E');
   });
 
-  test('Otages — CRUD fiche (nom, état/blessures) + suppression', async ({ page }) => {
-    await testCrudCollection(
-      page,
-      'view-otages',
-      'hostage-form',
-      { hostage_nom: 'MARTIN-E2E', hostage_etat: 'Conscient' },
-      'button[type="submit"]',
-      'hostage-table-body',
-      'MARTIN-E2E'
-    );
+  test('Otages — CRUD fiche (nom, état) + suppression', async ({ page }) => {
+    await testCrudFiche(page, 'view-otages', 'host', async (p) => {
+      await p.locator('#fiche_nom').fill('MARTIN-E2E');
+      await p.locator('#ficheSheet .fiche-section[data-section="etat"] > summary').click();
+      await p.locator('[data-key="etat"] .fiche-chip[data-chip="Conscient"]').click();
+    }, 'hostage-table-body', 'MARTIN-E2E');
   });
 
   test('Amis — CRUD (nom, unité, TPH, mission) + suppression', async ({ page }) => {
@@ -1116,7 +1139,7 @@ test.describe('PC-Tac — Checklist fonctionnelle', () => {
     await step('seed localStorage puis reload : les adversaires se ré-affichent', async () => {
       await clickTab(page, 'view-adversaires');
       await expect
-        .soft(page.locator('#adversary-table-body tr', { hasText: 'SEED-ADV' }))
+        .soft(page.locator('#adversary-table-body .fiche-card', { hasText: 'SEED-ADV' }))
         .toBeVisible({ timeout: 1500 });
     });
   });

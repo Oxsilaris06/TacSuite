@@ -1367,7 +1367,7 @@ test.describe('OI — Checklist fonctionnelle', () => {
       // défaut au chargement (vue Main Courante l'est) — cliquer l'onglet.
       await page.locator('.tab-btn[data-view="view-adversaires"]').click().catch(() => {});
       await expect
-        .soft(page.locator('#adversary-table-body tr', { hasText: 'PONT-ADV-E2E' }))
+        .soft(page.locator('#adversary-table-body .fiche-card', { hasText: 'PONT-ADV-E2E' }))
         .toBeVisible({ timeout: 3000 });
     });
   });

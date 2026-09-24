@@ -1,16 +1,16 @@
 /**
- * pc-hostage-status.test.ts — Lot B (constat 3) : le choix humain prime.
+ * pc-hostage-status.test.ts — Statut et triage de la fiche protégée, dans la
+ * fiche unique (décisions 17 et 19 ; Lot B constat 3 conservé).
  *
- * Deux chemins, verrouillés ici :
- *   - statut NON touché par l'opérateur → `hostageStatusFromBlessures()`
- *     recalcule le statut quand les blessures changent ;
- *   - statut TOUCHÉ (change sur le sélecteur) → la valeur choisie est
- *     conservée, même si les blessures changent dans le même enregistrement.
+ *   - Forcené, statut NON touché : `hostageStatusFromBlessures()` recalcule le
+ *     statut quand les blessures changent ;
+ *   - Forcené, statut TOUCHÉ : la valeur choisie tient, même si les blessures
+ *     changent dans le même enregistrement ;
+ *   - TP et Ampleur : triage, « Non triée » par défaut, jamais déduit.
  */
 
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
-// IndexedDB absent sous jsdom : ImageStore mocké (même motif que pc-ui.test.ts).
 vi.mock('@pctac/image-store.js', () => ({
   ImageStore: {
     async put(): Promise<void> {},
@@ -24,87 +24,70 @@ vi.mock('@pctac/image-store.js', () => ({
   },
 }));
 
-import { UI } from '@pctac/ui.js';
+import '@pctac/ui.js';
+import { openFiche } from '@pctac/fiche-sheet.js';
 import { Storage } from '@pctac/storage.js';
+import { PCTAC_MODE_KEY } from '@pctac/modes.js';
+import { installDialog, flush, setField, clickSave, storedFiche } from './fiche-helpers.js';
 
-const HOST = {
-  id: 'h1',
-  nom: 'Martin',
-  prenom: 'Lucie',
-  dob: '01/01/1980',
-  lien: '',
-  etat: '',
-  blessures: '',
-  status: 'ok',
-};
+const HOST = { id: 'h1', nom: 'Martin', prenom: 'Lucie', blessures: '', status: 'ok' };
 
-function buildDom(): { modal: HTMLDialogElement; status: HTMLSelectElement; blessures: HTMLTextAreaElement } {
-  document.body.innerHTML = `
-    <dialog id="editHostageModal"></dialog>
-    <div id="editHostModeBlocks"></div>
-    <div id="edit_host_preview"></div>
-    <input type="hidden" id="edit_host_id">
-    <input type="text" id="edit_host_nom">
-    <input type="text" id="edit_host_prenom">
-    <input type="text" id="edit_host_dob">
-    <select id="edit_host_lien"></select>
-    <input type="text" id="edit_host_etat">
-    <textarea id="edit_host_blessures"></textarea>
-    <select id="edit_host_status">
-      <option value="ok">OK</option>
-      <option value="preoccupant">Préoccupant</option>
-      <option value="blesse">Blessé</option>
-      <option value="dcd">DCD</option>
-    </select>
-    <div id="hostage-table-body"></div>
-    <datalist id="otages_suggestions"></datalist>
-  `;
-  const modal = document.getElementById('editHostageModal') as HTMLDialogElement;
-  modal.showModal = vi.fn();
-  modal.close = vi.fn();
-  return {
-    modal,
-    status: document.getElementById('edit_host_status') as HTMLSelectElement,
-    blessures: document.getElementById('edit_host_blessures') as HTMLTextAreaElement,
-  };
-}
+beforeAll(installDialog);
 
-function storedStatus(): string {
-  const list = Storage.loadCollection('pcTacHostages');
-  return String(list.find((h) => h.id === 'h1')?.status ?? '');
-}
+beforeEach(() => {
+  localStorage.clear();
+  document.body.innerHTML = '<dialog id="ficheSheet"></dialog><div id="hostage-table-body"></div>';
+  Storage.saveCollection('pcTacAdversaries', []);
+});
 
-describe('statut otage — le choix humain prime (constat 3)', () => {
-  beforeEach(() => {
-    localStorage.clear();
-    document.body.innerHTML = '';
-    Storage.saveCollection('pcTacHostages', [HOST]);
-    Storage.saveCollection('pcTacAdversaries', []);
-  });
+describe('Forcené — le choix humain prime (constat 3)', () => {
+  beforeEach(() => { Storage.saveCollection('pcTacHostages', [HOST]); });
 
   it('statut non touché : recalculé depuis les blessures', async () => {
-    const { status, blessures } = buildDom();
-    await UI.showEditHostageModal('h1');
-
-    // L'opérateur ne touche PAS au sélecteur, mais corrige les blessures.
-    blessures.value = 'Blessé grave';
-    status.value = 'ok';
-    await UI.handleHostageUpdate();
-
-    expect(storedStatus()).toBe('blesse');
+    await openFiche('host', 'h1');
+    setField('blessures', 'Blessé grave');
+    await clickSave();
+    expect(storedFiche('pcTacHostages', 'h1')?.status).toBe('blesse');
   });
 
   it('statut touché : conservé malgré un changement de blessures', async () => {
-    const { status, blessures } = buildDom();
-    await UI.showEditHostageModal('h1');
+    await openFiche('host', 'h1');
+    document.querySelector<HTMLElement>('.fiche-status-chip[data-status="dcd"]')!.click();
+    setField('blessures', 'Indemne');
+    await clickSave();
+    expect(storedFiche('pcTacHostages', 'h1')?.status).toBe('dcd');
+  });
 
-    // L'opérateur touche explicitement au sélecteur…
-    status.value = 'dcd';
-    status.dispatchEvent(new Event('change'));
-    // …puis modifie les blessures dans le même passage.
-    blessures.value = 'Indemne';
-    await UI.handleHostageUpdate();
+  it('création : le statut suit les blessures tant qu’on n’y a pas touché', async () => {
+    Storage.saveCollection('pcTacHostages', []);
+    await openFiche('host');
+    setField('nom', 'Durand');
+    setField('blessures', 'blessé au bras');
+    await clickSave();
+    expect(Storage.loadCollection('pcTacHostages')[0]?.status).toBe('blesse');
+  });
+});
 
-    expect(storedStatus()).toBe('dcd');
+describe('TP et Ampleur — triage', () => {
+  beforeEach(() => {
+    localStorage.setItem(PCTAC_MODE_KEY, 'tp');
+    Storage.saveCollection('pcTacHostages', []);
+  });
+
+  it('« Non triée » par défaut, jamais déduite des blessures', async () => {
+    await openFiche('host');
+    setField('nom', 'Leroy');
+    setField('blessures', 'grave, hémorragie');
+    await clickSave();
+    expect(Storage.loadCollection('pcTacHostages')[0]?.status).toBe('nt');
+  });
+
+  it('le triage choisi est enregistré', async () => {
+    await openFiche('host');
+    setField('nom', 'Petit');
+    document.querySelector<HTMLElement>('.fiche-status-chip[data-status="ua"]')!.click();
+    await clickSave();
+    expect(Storage.loadCollection('pcTacHostages')[0]?.status).toBe('ua');
+    await flush();
   });
 });

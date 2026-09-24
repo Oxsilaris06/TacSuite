@@ -339,6 +339,20 @@ describe('importOiArchive — passerelle OI → PC-Tac (archive.js:279-456)', ()
     expect(localStorage.getItem('pcTacPlanGrid')).toBeNull();
   });
 
+  it('reprend domicile, profession, stature et ethnie (décision 20) ; rien de vide n’est posé', async () => {
+    const file = await buildOiZip({ oiData: { adversaries: [
+      { id: 'a', nom_adversaire: 'Leblanc', domicile_adversaire: '3 rue des Lilas', profession_adversaire: 'Chauffeur',
+        stature_adversaire: '1m80, massif', ethnie_adversaire: 'Caucasien' },
+      { id: 'b', nom_adversaire: 'Noir' },
+    ] } });
+    const result = await Archive.importOiArchive(file);
+    expect(result.advAdded).toBe(2);
+    const [a, b] = Storage.loadCollection(ADVERSARIES_KEY);
+    expect(a).toMatchObject({ nom: 'Leblanc', domicile: '3 rue des Lilas', profession: 'Chauffeur', signalement: '1m80, massif, type Caucasien' });
+    expect(b && 'signalement' in b).toBe(false);
+    expect(b && 'domicile' in b).toBe(false);
+  });
+
   it('lit la photo via images/<encodeURIComponent(id)>.bin, avec repli sur le nom NON encodé', async () => {
     const oiData = {
       adversaries: [{ id: 'adv1', nom_adversaire: 'Sans Photo Encodee' }],
