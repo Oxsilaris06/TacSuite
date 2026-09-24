@@ -160,100 +160,30 @@
 
         <!-- VUE : ADVERSAIRES -->
         <div id="view-adversaires" class="tab-content-view">
-            <div class="log-entry-form">
-                <h3 class="pctac-mb-15"><span class="material-symbols-outlined" data-lex-icon="adv.icon">groups</span>
+            <!-- Décisions 16-17 : liste d'abord ; la fiche (création et modification)
+                 s'ouvre dans #ficheSheet, construite par fiche-sheet.ts. -->
+            <div class="fiche-toolbar">
+                <p class="fiche-counters" id="adversary-counters" aria-live="polite"></p>
+                <button type="button" class="add-btn fiche-new-btn" data-fiche-new="adv">
+                    <span class="material-symbols-outlined" aria-hidden="true">add</span>
                     <span data-lex="adv.newLabel">Nouvel adversaire</span>
-                </h3>
-                <form id="adversary-form">
-                    <div class="form-row pctac-row-entity">
-                        <div class="pctac-grid-row-2">
-                            <label>Photo</label>
-                            <div id="adv_photo_preview" class="pctac-photo-preview">
-                                <span class="material-symbols-outlined pctac-icon-30-muted">person</span>
-                            </div>
-                            <label class="custom-file-upload pctac-upload-compact" for="adv_photo">
-                                <span class="material-symbols-outlined">add_a_photo</span>
-                                <input type="file" id="adv_photo" accept="image/*" style="display: none;">
-                            </label>
-                        </div>
-                        <div><label for="adv_nom">Nom</label><input type="text" id="adv_nom" placeholder="Nom"></div>
-                        <div><label for="adv_prenom">Prénom</label><input type="text" id="adv_prenom" placeholder="Prénom"></div>
-                        <div><label for="adv_dob">D.N.</label><input type="text" id="adv_dob" placeholder="JJ/MM/AAAA"></div>
-                        <div><label for="adv_lien" data-lex="adv.linkLabel">Lien Victimes</label><input type="text" id="adv_lien"
-                                list="otages_suggestions" data-lex-placeholder="adv.linkLabel" placeholder="Lien avec otages"></div>
-                        <div><label for="adv_antecedents">Antécédents</label><input type="text" id="adv_antecedents"
-                                placeholder="Fichage, passif..."></div>
-                        <div><label for="adv_attitude">Attitude</label><input type="text" id="adv_attitude"
-                                placeholder="Calme, nerveux..."></div>
-                        <div><label for="adv_substance">Substance</label><input type="text" id="adv_substance"
-                                placeholder="Alcool, stup..."></div>
-                        <div class="pctac-grid-col-2"><label for="adv_arme">Armes</label><input type="text" id="adv_arme"
-                                placeholder="Type, calibre, position..."></div>
-                    </div>
-                    <div class="mode-blocks" id="advModeBlocks" hidden></div>
-                    <button type="submit" class="add-btn" data-lex="adv.saveLabel">Enregistrer l'adversaire</button>
-                </form>
+                </button>
             </div>
-            <div class="collection-list-container">
-                <table class="log-table">
-                    <thead>
-                        <tr>
-                            <th class="pctac-w-80">Photo</th>
-                            <th data-lex="Détails · {adv.singular}">Détails de l'Adversaire</th>
-                            <th class="pctac-w-50">Action</th>
-                        </tr>
-                    </thead>
-                    <tbody id="adversary-table-body"></tbody>
-                </table>
-            </div>
+            <div class="fiche-list" id="adversary-table-body"></div>
         </div>
 
         <!-- VUE : OTAGES -->
         <div id="view-otages" class="tab-content-view">
-            <div class="log-entry-form">
-                <h3 class="pctac-mb-15"><span class="material-symbols-outlined" data-lex-icon="host.icon">person_off</span>
+            <!-- Décisions 16-17 : liste d'abord ; la fiche (création et modification)
+                 s'ouvre dans #ficheSheet, construite par fiche-sheet.ts. -->
+            <div class="fiche-toolbar">
+                <p class="fiche-counters" id="hostage-counters" aria-live="polite"></p>
+                <button type="button" class="add-btn fiche-new-btn" data-fiche-new="host">
+                    <span class="material-symbols-outlined" aria-hidden="true">add</span>
                     <span data-lex="host.newLabel">Nouvel otage</span>
-                </h3>
-                <form id="hostage-form">
-                    <div class="form-row pctac-row-entity">
-                        <div class="pctac-grid-row-2">
-                            <label>Photo</label>
-                            <div id="hostage_photo_preview" class="pctac-photo-preview">
-                                <span class="material-symbols-outlined pctac-icon-30-muted">person_off</span>
-                            </div>
-                            <label class="custom-file-upload pctac-upload-compact" for="hostage_photo">
-                                <span class="material-symbols-outlined">add_a_photo</span>
-                                <input type="file" id="hostage_photo" accept="image/*" style="display: none;">
-                            </label>
-                        </div>
-                        <div><label for="hostage_nom">Nom</label><input type="text" id="hostage_nom" placeholder="Nom"></div>
-                        <div><label for="hostage_prenom">Prénom</label><input type="text" id="hostage_prenom" placeholder="Prénom"></div>
-                        <div><label for="hostage_dob">D.N.</label><input type="text" id="hostage_dob" placeholder="JJ/MM/AAAA"></div>
-                        <!-- C8 — lien vers une fiche adversaire (options peuplées par UI.renderHostages) -->
-                        <div><label for="hostage_lien" data-lex="host.linkLabel">Lien Adversaire</label><select id="hostage_lien">
-                                <option value="">— Aucun —</option>
-                            </select></div>
-                        <div><label for="hostage_etat">État</label><input type="text" id="hostage_etat" placeholder="Conscient, choc...">
-                        </div>
-                        <div class="pctac-grid-col-2"><label for="hostage_blessure">Blessures</label><input type="text"
-                                id="hostage_blessure" placeholder="Localisation, gravité..."></div>
-                    </div>
-                    <div class="mode-blocks" id="hostageModeBlocks" hidden></div>
-                    <button type="submit" class="add-btn" data-lex="host.saveLabel">Enregistrer l'otage</button>
-                </form>
+                </button>
             </div>
-            <div class="collection-list-container">
-                <table class="log-table">
-                    <thead>
-                        <tr>
-                            <th class="pctac-w-80">Photo</th>
-                            <th data-lex="Détails · {host.singular}">Détails de l'Otage</th>
-                            <th class="pctac-w-50">Action</th>
-                        </tr>
-                    </thead>
-                    <tbody id="hostage-table-body"></tbody>
-                </table>
-            </div>
+            <div class="fiche-list" id="hostage-table-body"></div>
         </div>
 
         <!-- VUE : AMIS -->
@@ -733,42 +663,9 @@
         </div>
     </dialog>
 
-    <!-- Modale d'édition d'adversaire (champs + photo) -->
-    <dialog class="modal pctac-modal-large pctac-modal-scroll" id="editAdversaryModal" aria-labelledby="editAdversaryModalTitle">
-        <h3 id="editAdversaryModalTitle" data-lex="Modifier {adv.demonstrative}">Modifier Adversaire</h3>
-        <input type="hidden" id="edit_adv_id">
-        <div class="pctac-edit-grid">
-            <div class="pctac-edit-photo">
-                <div id="edit_adv_preview" class="pctac-edit-preview">
-                    <span class="material-symbols-outlined pctac-icon-48-muted">person</span>
-                </div>
-                <label class="custom-file-upload pctac-upload-edit" for="edit_adv_photo_input">
-                    <span class="material-symbols-outlined">add_a_photo</span> Photo
-                    <input type="file" id="edit_adv_photo_input" accept="image/*" style="display: none;">
-                </label>
-            </div>
-            <div class="pctac-edit-fields">
-                <div class="row-2"><div><label for="edit_adv_nom">Nom</label><input type="text" id="edit_adv_nom" placeholder="Nom" class="pctac-input-lg"></div>
-                <div><label for="edit_adv_prenom">Prénom</label><input type="text" id="edit_adv_prenom" placeholder="Prénom" class="pctac-input-lg"></div></div>
-                <div class="row-2"><div><label for="edit_adv_dob">D.N.</label><input type="text" id="edit_adv_dob" placeholder="JJ/MM/AAAA" class="pctac-input-lg"></div>
-                <div><label for="edit_adv_lien" data-lex="adv.linkLabel">Lien Victimes</label><input type="text" id="edit_adv_lien" list="otages_suggestions" data-lex-placeholder="adv.linkLabel" placeholder="Lien avec otages" class="pctac-input-lg"></div></div>
-                <div><label for="edit_adv_antecedents">Antécédents</label><textarea id="edit_adv_antecedents" rows="2" placeholder="Fichage, passif..." class="pctac-textarea-lg"></textarea></div>
-                <div class="row-2"><div><label for="edit_adv_attitude">Attitude</label><input type="text" id="edit_adv_attitude" placeholder="Calme, nerveux..." class="pctac-input-lg"></div>
-                <div><label for="edit_adv_substance">Substance</label><input type="text" id="edit_adv_substance" placeholder="Alcool, stup..." class="pctac-input-lg"></div></div>
-                <div><label for="edit_adv_armes">Armes</label><textarea id="edit_adv_armes" rows="2" placeholder="Type, calibre, position..." class="pctac-textarea-lg"></textarea></div>
-                <!-- U16 — statut de la fiche -->
-                <div><label for="edit_adv_status">Statut</label><select id="edit_adv_status" class="pctac-input-lg">
-                    <option value="active">▲ Actif</option>
-                    <option value="neutralized">✔ Neutralisé</option>
-                </select></div>
-            </div>
-        </div>
-        <div class="mode-blocks" id="editAdvModeBlocks" hidden></div>
-        <div class="pctac-actions-row">
-            <button type="button" class="add-btn pctac-btn-bg-input" onclick="UI.hideEditAdversaryModal()">Annuler</button>
-            <button type="button" class="add-btn" id="confirmEditAdvBtn">Enregistrer</button>
-        </div>
-    </dialog>
+    <!-- Fiche adverse ou protégée : création ET modification (fiche-sheet.ts).
+         Plein écran sur téléphone, fenêtre sur bureau. -->
+    <dialog class="fiche-sheet" id="ficheSheet" aria-labelledby="ficheSheetTitle"></dialog>
 
     <!-- Portée d'un import d'archive (import-scope.ts). La liste des catégories
          est peuplée par initImportScopeModal() depuis IMPORT_CATEGORIES. -->
@@ -805,47 +702,7 @@
         </div>
     </dialog>
 
-    <!-- Modale d'édition d'otage (champs + photo) -->
-    <dialog class="modal pctac-modal-large pctac-modal-scroll" id="editHostageModal" aria-labelledby="editHostageModalTitle">
-        <h3 id="editHostageModalTitle" data-lex="Modifier {host.demonstrative}">Modifier Otage</h3>
-        <input type="hidden" id="edit_host_id">
-        <div class="pctac-edit-grid">
-            <div class="pctac-edit-photo">
-                <div id="edit_host_preview" class="pctac-edit-preview">
-                    <span class="material-symbols-outlined pctac-icon-48-muted">person_off</span>
-                </div>
-                <label class="custom-file-upload pctac-upload-edit" for="edit_host_photo_input">
-                    <span class="material-symbols-outlined">add_a_photo</span> Photo
-                    <input type="file" id="edit_host_photo_input" accept="image/*" style="display: none;">
-                </label>
-            </div>
-            <div class="pctac-edit-fields">
-                <div class="row-2"><div><label for="edit_host_nom">Nom</label><input type="text" id="edit_host_nom" placeholder="Nom" class="pctac-input-lg"></div>
-                <div><label for="edit_host_prenom">Prénom</label><input type="text" id="edit_host_prenom" placeholder="Prénom" class="pctac-input-lg"></div></div>
-                <div class="row-2"><div><label for="edit_host_dob">D.N.</label><input type="text" id="edit_host_dob" placeholder="JJ/MM/AAAA" class="pctac-input-lg"></div>
-                <!-- C8 — select alimenté par les fiches adversaires (UI.showEditHostageModal) -->
-                <div><label for="edit_host_lien" data-lex="host.linkLabel">Lien Adversaire</label><select id="edit_host_lien" class="pctac-input-lg">
-                    <option value="">— Aucun —</option>
-                </select></div></div>
-                <div><label for="edit_host_etat">État</label><textarea id="edit_host_etat" rows="2" placeholder="Conscient, choc..." class="pctac-textarea-lg"></textarea></div>
-                <div><label for="edit_host_blessures">Blessures</label><textarea id="edit_host_blessures" rows="3" placeholder="Localisation, gravité..." class="pctac-textarea-lg"></textarea></div>
-                <!-- U16 — statut de la fiche (recalculé si les blessures changent) -->
-                <div><label for="edit_host_status">Statut</label><select id="edit_host_status" class="pctac-input-lg">
-                    <option value="ok">✔ OK</option>
-                    <option value="preoccupant">! Préoccupant</option>
-                    <option value="blesse">✚ Blessé</option>
-                    <option value="dcd">✝ DCD</option>
-                </select></div>
-            </div>
-        </div>
-        <div class="mode-blocks" id="editHostModeBlocks" hidden></div>
-        <div class="pctac-actions-row">
-            <button type="button" class="add-btn pctac-btn-bg-input" onclick="UI.hideEditHostageModal()">Annuler</button>
-            <button type="button" class="add-btn" id="confirmEditHostBtn">Enregistrer</button>
-        </div>
-    </dialog>
-
-    <!-- U13 — Modale d'édition d'ami (champs seuls, calquée sur #editAdversaryModal) -->
+    <!-- U13 — Modale d'édition d'ami (champs seuls, calquée sur l'ancienne modale d'adversaire) -->
     <dialog class="modal pctac-modal-large" id="editFriendModal" aria-labelledby="editFriendModalTitle">
         <h3 id="editFriendModalTitle">Modifier Ami</h3>
         <input type="hidden" id="edit_friend_id">

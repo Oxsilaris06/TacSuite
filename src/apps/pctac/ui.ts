@@ -63,26 +63,93 @@
  */
 
 import type { PctacLogEntry, PctacPhotoCategory, UIContract } from '@shared/types/contracts.js';
-import { PDF_PAX_COLORS, FREE_MODE_COLORS, LONG_PRESS_DELAY, PHOTO_CATEGORIES, ADV_STATUS, HOST_STATUS, hostageStatusFromBlessures } from '@pctac/config.js';
-import type { PctacStatusMeta } from '@pctac/config.js';
+import { PDF_PAX_COLORS, FREE_MODE_COLORS, LONG_PRESS_DELAY, PHOTO_CATEGORIES, hostageStatusFromBlessures } from '@pctac/config.js';
 import { Storage } from '@pctac/storage.js';
 import { ImageStore } from '@pctac/image-store.js';
 import { LogManager } from '@pctac/log-manager.js';
 import { esc } from '@shared/ui-platform.js';
 import { confirmDialog, promptDialog, toast } from '@shared/feedback.js';
-import { currentMode } from '@pctac/modes.js';
-import { applyLexicon, collectModeFields, renderModeBlocks, visibleModeFieldsFor } from '@pctac/mode-ui.js';
+import { currentMode, currentModeId } from '@pctac/modes.js';
+import {
+  ageFromDob,
+  defaultStatus,
+  ficheCounters,
+  ficheTitle,
+  filledSections,
+  statusChoices,
+  statusMeta,
+  summaryRows,
+  type FicheSide,
+  type StatusChoice,
+} from '@pctac/fiche.js';
+import { openFiche } from '@pctac/fiche-sheet.js';
+
+/** Options de statut d'une fiche : celles de la situation, plus la valeur
+ *  courante si elle vient d'ailleurs (jamais remplacée en silence). */
+function statusOptionsFor(side: FicheSide, current: string): string {
+  const mode = currentModeId();
+  const choices: StatusChoice[] = statusChoices(side, mode);
+  const list = choices.some((c) => c.key === current) ? choices : [statusMeta(side, mode, current), ...choices];
+  return list.map((c) => `<option value="${esc(c.key)}"${c.key === current ? ' selected' : ''}>${c.symbol} ${esc(c.label)}</option>`).join('');
+}
 
 /**
- * Rend les champs doctrinaux d'une fiche (cf. `modes.ts`) en lignes de la
- * grille de détails. Vide quand la situation n'en porte pas — le gabarit reste
- * alors strictement celui d'avant. `accent` suit la couleur déjà employée par
- * la collection : bleu côté adverse, ambre côté partie protégée.
+ * Carte résumé d'une fiche (décision 17) : photo, nom, statut, trois faits
+ * clés ; « Toute la fiche » déplie les sections remplies. Un champ vide
+ * n'apparaît pas ; seuls le nom et le statut gardent « N/C ».
  */
-function modeFieldRows(item: Record<string, unknown>, side: 'adv' | 'host', accent: string): string {
-  return visibleModeFieldsFor(item, side)
-    .map((row) => `<div style="grid-column: span 3;"><strong style="color: ${accent};">${esc(row.label.toUpperCase())}:</strong> ${esc(row.value)}</div>`)
-    .join('');
+function ficheCard(
+  side: FicheSide,
+  item: PctacCollectionItemLike,
+  linked: string[],
+  resolveLink: (id: string) => string,
+): string {
+  const mode = currentModeId();
+  const lex = currentMode()[side];
+  const key = side === 'adv' ? 'pcTacAdversaries' : 'pcTacHostages';
+  const view = side === 'adv' ? 'view-adversaires' : 'view-otages';
+  const id = esc(item.id);
+  const status = String(item.status || defaultStatus(side, mode));
+  const meta = statusMeta(side, mode, status);
+  const hasStatus = statusChoices(side, mode).length > 0;
+  const title = ficheTitle(side, mode, item);
+  const name = title === '(sans nom)' ? 'N/C' : title;
+  const age = ageFromDob(item.dob);
+  const sub = [age === null ? '' : `${age} ans`, String(item.alias ?? '').trim()].filter(Boolean).join(' · ');
+  const facts = summaryRows(side, mode, item);
+  const sections = filledSections(side, mode, item, new Date(), resolveLink);
+  const photo = typeof item.photo === 'string' && item.photo
+    ? `<img src="${esc(item.photo)}" alt="">`
+    : `<span class="material-symbols-outlined" aria-hidden="true">${side === 'adv' ? 'person' : 'person_off'}</span>`;
+  return `
+    <article class="fiche-card" style="--status-color: ${hasStatus ? meta.color : 'var(--border-glass)'}">
+      <div class="fiche-card-head">
+        <div class="fiche-card-photo">${photo}</div>
+        <div class="fiche-card-id">
+          <h3 class="fiche-card-name">${esc(name)}</h3>
+          ${sub ? `<p class="fiche-card-sub">${esc(sub)}</p>` : ''}
+        </div>
+        ${hasStatus ? `<select class="fiche-card-status" onchange="UI.setItemStatus('${key}', '${id}', this.value)" aria-label="Statut : ${esc(name)}">${statusOptionsFor(side, status)}</select>` : ''}
+      </div>
+      ${facts.length ? `<dl class="fiche-card-facts">${facts.map((r) => `<div><dt>${esc(r.label)}</dt><dd>${esc(r.value)}</dd></div>`).join('')}</dl>` : ''}
+      ${linked.length ? `<p class="fiche-card-linked"><span class="material-symbols-outlined" aria-hidden="true">link</span>Fiches liées : ${esc(linked.join(', '))}</p>` : ''}
+      ${sections.length ? `<details class="fiche-card-more"><summary>Toute la fiche</summary>${sections.map((sec) => `
+        <section><h4>${esc(sec.title)}</h4><dl>${sec.rows.map((r) => `<div><dt>${esc(r.label)}</dt><dd>${esc(r.value)}</dd></div>`).join('')}</dl></section>`).join('')}
+      </details>` : ''}
+      <div class="fiche-card-actions">
+        <button type="button" class="fiche-card-edit" onclick="window.UI.${side === 'adv' ? 'showEditAdversaryModal' : 'showEditHostageModal'}('${id}')" aria-label="Modifier ${esc(lex.demonstrative)} : ${esc(name)}"><span class="material-symbols-outlined" aria-hidden="true">edit</span>Modifier</button>
+        <button type="button" class="delete-btn" onclick="window.deleteCollectionItem('${key}', '${id}', '${view}')" aria-label="Supprimer ${esc(lex.demonstrative)} : ${esc(name)}"><span class="material-symbols-outlined" aria-hidden="true">delete</span></button>
+      </div>
+    </article>`;
+}
+
+/** Compteurs « Combien », calculés depuis les deux collections. */
+function renderFicheCounters(): void {
+  const c = ficheCounters(currentModeId(), Storage.loadCollection('pcTacAdversaries'), Storage.loadCollection('pcTacHostages'));
+  const adv = document.getElementById('adversary-counters');
+  if (adv) adv.textContent = c.adv;
+  const host = document.getElementById('hostage-counters');
+  if (host) host.textContent = c.host;
 }
 
 /* ------------------------------------------------------------------------
@@ -90,18 +157,6 @@ function modeFieldRows(item: Record<string, unknown>, side: 'adv' | 'host', acce
  * Métadonnées + heuristique : voir @pctac/config.js (partagées avec
  * pdf-export.ts et main.ts).
  * ---------------------------------------------------------------------- */
-
-/** Badge de statut (symbole + libellé colorés — jamais la couleur seule). */
-function statusBadge(meta: PctacStatusMeta | undefined): string {
-  if (!meta) return '';
-  return `<span class="status-badge" style="color: ${meta.color}; border-color: ${meta.color};">${meta.symbol} ${esc(meta.label)}</span>`;
-}
-
-/** Options `<select>` de statut pour une fiche. */
-function statusOptions(metas: Record<string, PctacStatusMeta>, current: string): string {
-  return Object.entries(metas).map(([k, m]) =>
-    `<option value="${k}" ${current === k ? 'selected' : ''}>${m.symbol} ${esc(m.label)}</option>`).join('');
-}
 
 /**
  * Migration douce U16 : si une fiche n'a pas de `status` mais que sa photo
@@ -139,7 +194,7 @@ function setStatusOnFiche(key: string, id: string, status: string): boolean {
 
   // Entrée automatique en main courante, horodatée.
   const isAdv = key === 'pcTacAdversaries';
-  const meta = (isAdv ? ADV_STATUS : HOST_STATUS)[status];
+  const meta = statusMeta(isAdv ? 'adv' : 'host', currentModeId(), status);
   const now = new Date();
   const heure = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0');
   const nom = `${(item.nom as string | undefined) || ''} ${(item.prenom as string | undefined) || ''}`.trim() || '(sans nom)';
@@ -167,20 +222,6 @@ function resolveLien(lien: unknown, advs: readonly PctacCollectionItemLike[]): s
 }
 
 interface PctacCollectionItemLike { id: string; [key: string]: unknown }
-
-/** Peuple un `<select>` de lien avec les fiches adversaires (+ option legacy). */
-function populateLienSelect(sel: HTMLSelectElement | null, current: string): void {
-  if (!sel) return;
-  const advs = Storage.loadCollection('pcTacAdversaries');
-  let html = '<option value="">— Aucun —</option>' + advs.map((a) =>
-    `<option value="${a.id}">${esc(`${(a.nom as string | undefined) || ''} ${(a.prenom as string | undefined) || ''}`.trim() || '(sans nom)')}</option>`).join('');
-  // Valeur legacy texte libre non résolue : conservée telle quelle.
-  if (current && !advs.some((a) => a.id === current)) {
-    html += `<option value="${esc(current)}">${esc(current)} (texte libre existant)</option>`;
-  }
-  sel.innerHTML = html;
-  sel.value = current;
-}
 
 /** U15 — `YYYY-MM-DD` → `JJ/MM/AAAA` (affichage sobre des séparateurs de jour). */
 function formatDateFr(iso: string): string {
@@ -764,116 +805,56 @@ export const UI: UIContract = {
   async renderAdversaries(): Promise<void> {
     const raw = Storage.loadCollection('pcTacAdversaries') || [];
     migrateStatuses('pcTacAdversaries', raw, 'active'); // U16 — migration douce
-    const tbody = document.getElementById('adversary-table-body');
-    if (!tbody) return;
+    renderFicheCounters();
+    const box = document.getElementById('adversary-table-body');
+    if (!box) return;
+    const lex = currentMode().adv;
     if (raw.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="3" class="empty-state">${esc(currentMode().adv.emptyLabel)} — utilisez le formulaire ci-dessus</td></tr>`;
+      box.innerHTML = `<p class="empty-state">${esc(lex.emptyLabel)} — touchez « ${esc(lex.newLabel)} »</p>`;
       return;
     }
     // U26 — squelette pendant l'hydratation IndexedDB des photos.
-    tbody.innerHTML = '<tr><td colspan="3" class="empty-state">Chargement des photos…</td></tr>';
+    box.innerHTML = '<p class="empty-state">Chargement des photos…</p>';
     const list = await ImageStore.hydrate(raw, 'photo');
     const hostages = Storage.loadCollection('pcTacHostages');
-    tbody.innerHTML = list.map((item) => `
-            <tr>
-                <td style="width: 80px;">
-                    ${item.photo ? `<img src="${item.photo}" style="width: 60px; height: 60px; border-radius: 4px; object-fit: cover; border: 1px solid var(--border-glass);">` : '<span class="material-symbols-outlined" style="font-size: 40px; color: var(--text-muted);">person</span>'}
-                </td>
-                <td>
-                    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; font-size: 0.85em;">
-                        <div><strong style="color: var(--accent-blue);">NOM:</strong> ${esc(item.nom)}</div>
-                        <div><strong style="color: var(--accent-blue);">PRÉNOM:</strong> ${esc(item.prenom)}</div>
-                        <div><strong style="color: var(--accent-blue);"><span class="material-symbols-outlined" style="font-size: 14px; vertical-align: middle;">cake</span>:</strong> ${esc(item.dob) || 'N/C'}</div>
-                        <div><strong style="color: var(--accent-blue);">${esc(currentMode().adv.linkLabel.toUpperCase())}:</strong> ${esc(item.lien) || 'N/C'}</div>
-                        <div><strong style="color: var(--accent-blue);">ATTITUDE:</strong> ${esc(item.attitude) || 'N/C'}</div>
-                        <div><strong style="color: var(--accent-blue);">SUBSTANCE:</strong> ${esc(item.substance) || 'N/C'}</div>
-                        <div style="grid-column: span 3;"><strong style="color: var(--accent-blue);">ANTÉCÉDENTS:</strong> ${esc(item.antecedents) || 'N/C'}</div>
-                        <div style="grid-column: span 3;"><strong style="color: var(--accent-blue);">ARMES:</strong> ${esc(item.armes) || 'N/C'}</div>
-                        ${modeFieldRows(item, 'adv', 'var(--accent-blue)')}
-                        <div style="grid-column: span 3; display: flex; align-items: center; gap: 8px;">
-                            <strong style="color: var(--accent-blue);">STATUT:</strong>
-                            ${statusBadge(ADV_STATUS[String(item.status || 'active')])}
-                            <select onchange="UI.setItemStatus('pcTacAdversaries', '${item.id}', this.value)" aria-label="Statut : ${esc(currentMode().adv.singular)}" style="font-size: 0.85em; padding: 2px 20px 2px 5px; height: auto; min-height: unset; width: auto;">
-                                ${statusOptions(ADV_STATUS, String(item.status || 'active'))}
-                            </select>
-                        </div>
-                        ${(() => {
-                          // C8 — otages liés à cette fiche (calcul au rendu, pas de nav)
-                          const linked = hostages.filter((h) => h.lien === item.id)
-                            .map((h) => `${(h.nom as string | undefined) || ''} ${(h.prenom as string | undefined) || ''}`.trim()).filter(Boolean);
-                          return linked.length ? `<div style="grid-column: span 3;"><strong style="color: var(--accent-blue);">OTAGES LIÉS:</strong> ${esc(linked.join(', '))}</div>` : '';
-                        })()}
-                    </div>
-                </td>
-                <td style="width: 50px;">
-                    <div style="display: flex; gap: 5px;">
-                        <button class="action-btn-small edit" onclick="window.UI.showEditAdversaryModal('${item.id}')" title="Modifier" aria-label="Modifier ${esc(currentMode().adv.demonstrative)}"><span class="material-symbols-outlined" style="font-size: 18px;">edit</span></button>
-                        <button class="delete-btn" onclick="window.deleteCollectionItem('pcTacAdversaries', '${item.id}', 'view-adversaires')" aria-label="Supprimer ${esc(currentMode().adv.demonstrative)}"><span class="material-symbols-outlined" style="font-size: 18px;">delete</span></button>
-                    </div>
-                </td>
-            </tr>
-        `).join('');
+    const mode = currentModeId();
+    box.innerHTML = list.map((item) => {
+      // C8 — fiches protégées liées à celle-ci (calcul au rendu).
+      const linked = hostages.filter((h) => h.lien === item.id).map((h) => ficheTitle('host', mode, h));
+      return ficheCard('adv', item, linked, (v) => v);
+    }).join('');
   },
 
   // ui.js:468-496
   async renderHostages(): Promise<void> {
     const raw = Storage.loadCollection('pcTacHostages') || [];
-    // U16 — migration douce : photo _sync d'abord, sinon heuristique blessures.
+    const mode = currentModeId();
+    // U16 — migration douce : photo _sync d'abord, sinon statut par défaut de
+    // la situation (Forcené : heuristique blessures ; triage : « Non triée »).
     const noStatus = raw.filter((it) => !it.status);
     if (noStatus.length > 0) {
       const photos = Storage.loadCollection('pcTacPhotos');
       noStatus.forEach((it) => {
         const photo = photos.find((p) => p.id === it.id + '_sync');
-        it.status = (photo && photo.status) || hostageStatusFromBlessures(it.blessures);
+        it.status = (photo && photo.status)
+          || (mode === 'forcene' ? hostageStatusFromBlessures(it.blessures) : defaultStatus('host', mode));
       });
       Storage.saveCollection('pcTacHostages', raw);
     }
-    // C8 — alimente le select « Lien Adversaire » du formulaire de création.
-    populateLienSelect(document.getElementById('hostage_lien') as HTMLSelectElement | null, '');
-    // Lot B (constat 10) — suggestions du lien adversaire, rafraîchies à chaque
-    // rendu des otages (comme les lieux le sont à chaque entrée de journal).
+    // Lot B (constat 10) — suggestions de la main courante.
     this.refreshOtagesSuggestions();
-    const tbody = document.getElementById('hostage-table-body');
-    if (!tbody) return;
+    renderFicheCounters();
+    const box = document.getElementById('hostage-table-body');
+    if (!box) return;
+    const lex = currentMode().host;
     if (raw.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="3" class="empty-state">${esc(currentMode().host.emptyLabel)} — utilisez le formulaire ci-dessus</td></tr>`;
+      box.innerHTML = `<p class="empty-state">${esc(lex.emptyLabel)} — touchez « ${esc(lex.newLabel)} »</p>`;
       return;
     }
-    // U26 — squelette pendant l'hydratation IndexedDB des photos.
-    tbody.innerHTML = '<tr><td colspan="3" class="empty-state">Chargement des photos…</td></tr>';
+    box.innerHTML = '<p class="empty-state">Chargement des photos…</p>';
     const list = await ImageStore.hydrate(raw, 'photo');
     const advs = Storage.loadCollection('pcTacAdversaries');
-    tbody.innerHTML = list.map((item) => `
-            <tr>
-                <td style="width: 80px;">
-                    ${item.photo ? `<img src="${item.photo}" style="width: 60px; height: 60px; border-radius: 4px; object-fit: cover; border: 1px solid var(--border-glass);">` : '<span class="material-symbols-outlined" style="font-size: 40px; color: var(--text-muted);">person</span>'}
-                </td>
-                <td>
-                    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; font-size: 0.85em;">
-                        <div><strong style="color: var(--civil-yellow);">NOM:</strong> ${esc(item.nom)}</div>
-                        <div><strong style="color: var(--civil-yellow);">PRÉNOM:</strong> ${esc(item.prenom)}</div>
-                        <div><strong style="color: var(--civil-yellow);"><span class="material-symbols-outlined" style="font-size: 14px; vertical-align: middle;">cake</span>:</strong> ${esc(item.dob) || 'N/C'}</div>
-                        <div><strong style="color: var(--civil-yellow);">${esc(currentMode().host.linkLabel.toUpperCase())}:</strong> ${esc(resolveLien(item.lien, advs)) || 'N/C'}</div>
-                        <div><strong style="color: var(--civil-yellow);">ÉTAT:</strong> ${esc(item.etat) || 'N/C'}</div>
-                        <div><strong style="color: var(--civil-yellow);">BLESSURES:</strong> ${esc(item.blessures) || 'N/C'}</div>
-                        ${modeFieldRows(item, 'host', 'var(--civil-yellow)')}
-                        <div style="grid-column: span 3; display: flex; align-items: center; gap: 8px;">
-                            <strong style="color: var(--civil-yellow);">STATUT:</strong>
-                            ${statusBadge(HOST_STATUS[String(item.status || 'ok')])}
-                            <select onchange="UI.setItemStatus('pcTacHostages', '${item.id}', this.value)" aria-label="Statut : ${esc(currentMode().host.singular)}" style="font-size: 0.85em; padding: 2px 20px 2px 5px; height: auto; min-height: unset; width: auto;">
-                                ${statusOptions(HOST_STATUS, String(item.status || 'ok'))}
-                            </select>
-                        </div>
-                    </div>
-                </td>
-                <td style="width: 50px;">
-                    <div style="display: flex; gap: 5px;">
-                        <button class="action-btn-small edit" onclick="window.UI.showEditHostageModal('${item.id}')" title="Modifier" aria-label="Modifier ${esc(currentMode().host.demonstrative)}"><span class="material-symbols-outlined" style="font-size: 18px;">edit</span></button>
-                        <button class="delete-btn" onclick="window.deleteCollectionItem('pcTacHostages', '${item.id}', 'view-otages')" aria-label="Supprimer ${esc(currentMode().host.demonstrative)}"><span class="material-symbols-outlined" style="font-size: 18px;">delete</span></button>
-                    </div>
-                </td>
-            </tr>
-        `).join('');
+    box.innerHTML = list.map((item) => ficheCard('host', item, [], (v) => resolveLien(v, advs) || v)).join('');
   },
 
   // ui.js:498-511
@@ -984,18 +965,15 @@ export const UI: UIContract = {
                     </div>
                     <div style="display: flex; justify-content: space-between; align-items: center;">
                         <span style="font-size: 0.7em; color: var(--text-muted); text-transform: uppercase;">${esc(photoCategoryLabel(PHOTO_CATEGORIES.find((c) => c.id === item.category) || { id: item.category as string, label: 'Autre' }))}</span>
-                        ${(item.category === 'neutralized' || item.category === 'trap') ? `
+                        ${item.category === 'trap' ? `
                             <select onchange="UI.updateAdversaryStatus('${item.id}', this.value)" style="font-size: 0.7em; padding: 2px 20px 2px 5px; height: auto; min-height: unset; width: auto; background-position: right 2px center;">
                                 <option value="active" ${item.status === 'active' || !item.status ? 'selected' : ''}>Actif</option>
                                 <option value="neutralized" ${item.status === 'neutralized' ? 'selected' : ''}>Neutralisé</option>
                             </select>
                         ` : ''}
-                        ${item.category === 'hostage' ? `
+                        ${(item.category === 'neutralized' || (item.category === 'hostage' && statusChoices('host', currentModeId()).length > 0)) ? `
                             <select onchange="UI.updateAdversaryStatus('${item.id}', this.value)" style="font-size: 0.7em; padding: 2px 20px 2px 5px; height: auto; min-height: unset; width: auto; background-position: right 2px center;">
-                                <option value="ok" ${item.status === 'ok' || !item.status ? 'selected' : ''}>OK</option>
-                                <option value="preoccupant" ${item.status === 'preoccupant' ? 'selected' : ''}>Préoccupant</option>
-                                <option value="blesse" ${item.status === 'blesse' ? 'selected' : ''}>Blessé</option>
-                                <option value="dcd" ${item.status === 'dcd' ? 'selected' : ''}>DCD</option>
+                                ${statusOptionsFor(item.category === 'hostage' ? 'host' : 'adv', String(item.status || defaultStatus(item.category === 'hostage' ? 'host' : 'adv', currentModeId())))}
                             </select>
                         ` : ''}
                     </div>
@@ -1232,212 +1210,13 @@ export const UI: UIContract = {
     this.hideEditModal();
   },
 
-  // ui.js:733-755
+  /** Décision 17 — la modification ouvre la MÊME fiche que la création. */
   async showEditAdversaryModal(id: string): Promise<void> {
-    const list = Storage.loadCollection('pcTacAdversaries');
-    const item = list.find((adv) => adv.id === id);
-    if (!item) return;
-
-    (document.getElementById('edit_adv_id') as HTMLInputElement).value = id;
-    const fields = ['nom', 'prenom', 'dob', 'lien', 'antecedents', 'attitude', 'substance', 'armes'];
-    fields.forEach((f) => {
-      const el = document.getElementById('edit_adv_' + f) as HTMLInputElement | HTMLTextAreaElement | null;
-      if (el) el.value = (item[f] as string | undefined) || '';
-    });
-    // U16 — statut de la fiche dans la modale d'édition.
-    const statusSel = document.getElementById('edit_adv_status') as HTMLSelectElement | null;
-    if (statusSel) statusSel.value = String(item.status || 'active');
-    const preview = document.getElementById('edit_adv_preview') as HTMLElement;
-    const existingPhoto = await ImageStore.get(id);
-    preview.innerHTML = existingPhoto
-      ? `<img src="${existingPhoto}" style="width: 100%; height: 100%; object-fit: cover;">`
-      : '<span class="material-symbols-outlined" style="font-size: 48px; color: var(--text-muted);">person</span>';
-
-    const fileInput = document.getElementById('edit_adv_photo_input') as HTMLInputElement | null;
-    if (fileInput) { fileInput.value = ''; delete fileInput.dataset.compressedBase64; }
-
-    // Champs doctrinaux de la situation courante, pré-remplis depuis la fiche.
-    const advBlocks = document.getElementById('editAdvModeBlocks');
-    renderModeBlocks(advBlocks, currentMode().advBlocks, 'edit_adv', item);
-    if (advBlocks) applyLexicon(advBlocks);
-
-    (document.getElementById('editAdversaryModal') as HTMLDialogElement).showModal();
+    await openFiche('adv', id);
   },
 
-  // ui.js:757-760
-  hideEditAdversaryModal(): void {
-    (document.getElementById('editAdversaryModal') as HTMLDialogElement).close();
-  },
-
-  // ui.js:762-806
-  async handleAdversaryUpdate(): Promise<void> {
-    const id = (document.getElementById('edit_adv_id') as HTMLInputElement).value;
-    if (!id) return;
-    const advList = Storage.loadCollection('pcTacAdversaries');
-    const adv = advList.find((a) => a.id === id);
-    if (!adv) { this.hideEditAdversaryModal(); return; }
-
-    const fields = ['nom', 'prenom', 'dob', 'lien', 'antecedents', 'attitude', 'substance', 'armes'];
-    fields.forEach((f) => {
-      const el = document.getElementById('edit_adv_' + f) as HTMLInputElement | HTMLTextAreaElement | null;
-      if (el) adv[f] = el.value.trim();
-    });
-    Object.assign(adv, collectModeFields(document.getElementById('editAdvModeBlocks')));
-
-    const fileInput = document.getElementById('edit_adv_photo_input') as HTMLInputElement | null;
-    const dataUrl = fileInput && fileInput.dataset.compressedBase64;
-    if (dataUrl) {
-      await ImageStore.put(id, dataUrl);
-      delete adv.photo;
-      adv.hasImage = true;
-
-      const photoList = Storage.loadCollection('pcTacPhotos');
-      const photoSyncId = id + '_sync';
-      await ImageStore.put(photoSyncId, dataUrl);
-      // ui.js:785 utilise `let photo` ; jamais réassignée ⇒ `const` imposé par
-      // la règle ESLint prefer-const du projet (adaptation de style pure).
-      const photo = photoList.find((p) => p.id === photoSyncId);
-      if (photo) {
-        delete photo.data;
-        photo.hasImage = true;
-        photo.title = `${adv.nom} ${adv.prenom}`;
-      } else {
-        photoList.push({
-          id: photoSyncId,
-          title: `${adv.nom} ${adv.prenom}`,
-          category: 'neutralized',
-          status: 'active',
-          hasImage: true,
-        });
-      }
-      Storage.saveCollection('pcTacPhotos', photoList);
-    }
-
-    Storage.saveCollection('pcTacAdversaries', advList);
-    // U16 — statut choisi dans la modale : propagation + journal si changé.
-    const statusSel = document.getElementById('edit_adv_status') as HTMLSelectElement | null;
-    if (statusSel && statusSel.value) setStatusOnFiche('pcTacAdversaries', id, statusSel.value);
-    this.hideEditAdversaryModal();
-    this.renderLogTable(Storage.loadLogData());
-    await this.renderAdversaries();
-    if (fileInput) { fileInput.value = ''; delete fileInput.dataset.compressedBase64; }
-    toast('Fiche mise à jour', { kind: 'success' }); // Lot B — constat 23
-  },
-
-  // ui.js:808-830
   async showEditHostageModal(id: string): Promise<void> {
-    const list = Storage.loadCollection('pcTacHostages');
-    const item = list.find((h) => h.id === id);
-    if (!item) return;
-
-    (document.getElementById('edit_host_id') as HTMLInputElement).value = id;
-    const fields = ['nom', 'prenom', 'dob', 'etat', 'blessures'];
-    fields.forEach((f) => {
-      const el = document.getElementById('edit_host_' + f) as HTMLInputElement | HTMLTextAreaElement | null;
-      if (el) el.value = (item[f] as string | undefined) || '';
-    });
-    // C8 — le lien adversaire est un <select> alimenté par les fiches adv.
-    populateLienSelect(
-      document.getElementById('edit_host_lien') as HTMLSelectElement | null,
-      (item.lien as string | undefined) || '',
-    );
-    // U16 — statut de la fiche dans la modale d'édition.
-    const statusSel = document.getElementById('edit_host_status') as HTMLSelectElement | null;
-    if (statusSel) {
-      statusSel.value = String(item.status || 'ok');
-      // Lot B (constat 3) — nouvelle ouverture : le choix n'a pas encore été
-      // touché par l'opérateur, l'heuristique blessures→statut reste permise.
-      delete statusSel.dataset.userTouched;
-      if (!statusSel.dataset.boundTouched) {
-        statusSel.dataset.boundTouched = '1';
-        statusSel.addEventListener('change', () => { statusSel.dataset.userTouched = '1'; });
-      }
-    }
-    const preview = document.getElementById('edit_host_preview') as HTMLElement;
-    const existingPhoto = await ImageStore.get(id);
-    preview.innerHTML = existingPhoto
-      ? `<img src="${existingPhoto}" style="width: 100%; height: 100%; object-fit: cover;">`
-      : '<span class="material-symbols-outlined" style="font-size: 48px; color: var(--text-muted);">person_off</span>';
-
-    const fileInput = document.getElementById('edit_host_photo_input') as HTMLInputElement | null;
-    if (fileInput) { fileInput.value = ''; delete fileInput.dataset.compressedBase64; }
-
-    // Champs doctrinaux de la situation courante, pré-remplis depuis la fiche.
-    const hostBlocks = document.getElementById('editHostModeBlocks');
-    renderModeBlocks(hostBlocks, currentMode().hostBlocks, 'edit_host', item);
-    if (hostBlocks) applyLexicon(hostBlocks);
-
-    (document.getElementById('editHostageModal') as HTMLDialogElement).showModal();
-  },
-
-  // ui.js:832-835
-  hideEditHostageModal(): void {
-    (document.getElementById('editHostageModal') as HTMLDialogElement).close();
-  },
-
-  // ui.js:837-881
-  async handleHostageUpdate(): Promise<void> {
-    const id = (document.getElementById('edit_host_id') as HTMLInputElement).value;
-    if (!id) return;
-    const list = Storage.loadCollection('pcTacHostages');
-    const host = list.find((h) => h.id === id);
-    if (!host) { this.hideEditHostageModal(); return; }
-
-    const oldBlessures = (host.blessures as string | undefined) || '';
-    // C8 — 'lien' inclus : le <select> expose .value comme un input.
-    const fields = ['nom', 'prenom', 'dob', 'lien', 'etat', 'blessures'];
-    fields.forEach((f) => {
-      const el = document.getElementById('edit_host_' + f) as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement | null;
-      if (el) host[f] = el.value.trim();
-    });
-    Object.assign(host, collectModeFields(document.getElementById('editHostModeBlocks')));
-
-    const fileInput = document.getElementById('edit_host_photo_input') as HTMLInputElement | null;
-    const dataUrl = fileInput && fileInput.dataset.compressedBase64;
-    if (dataUrl) {
-      await ImageStore.put(id, dataUrl);
-      delete host.photo;
-      host.hasImage = true;
-
-      const photoList = Storage.loadCollection('pcTacPhotos');
-      const photoSyncId = id + '_sync';
-      await ImageStore.put(photoSyncId, dataUrl);
-      // ui.js:860 utilise `let photo` ; jamais réassignée ⇒ `const` imposé par
-      // la règle ESLint prefer-const du projet (adaptation de style pure).
-      const photo = photoList.find((p) => p.id === photoSyncId);
-      if (photo) {
-        delete photo.data;
-        photo.hasImage = true;
-        photo.title = `${host.nom} ${host.prenom}`;
-      } else {
-        photoList.push({
-          id: photoSyncId,
-          title: `${host.nom} ${host.prenom}`,
-          category: 'hostage',
-          status: 'ok',
-          hasImage: true,
-        });
-      }
-      Storage.saveCollection('pcTacPhotos', photoList);
-    }
-
-    Storage.saveCollection('pcTacHostages', list);
-    // U16 / Lot B (constat 3) — le choix humain prime : l'heuristique
-    // hostageStatusFromBlessures() ne reprend la main QUE si l'opérateur n'a pas
-    // touché au sélecteur de statut. S'il y a touché, sa valeur tient, même
-    // après modification des blessures.
-    const statusSel = document.getElementById('edit_host_status') as HTMLSelectElement | null;
-    let newStatus = (statusSel && statusSel.value) || String(host.status || 'ok');
-    const userTouched = statusSel?.dataset.userTouched === '1';
-    if (!userTouched && ((host.blessures as string | undefined) || '') !== oldBlessures) {
-      newStatus = hostageStatusFromBlessures(host.blessures);
-    }
-    setStatusOnFiche('pcTacHostages', id, newStatus);
-    this.hideEditHostageModal();
-    this.renderLogTable(Storage.loadLogData());
-    await this.renderHostages();
-    if (fileInput) { fileInput.value = ''; delete fileInput.dataset.compressedBase64; }
-    toast('Fiche mise à jour', { kind: 'success' }); // Lot B — constat 23
+    await openFiche('host', id);
   },
 
 };
