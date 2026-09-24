@@ -331,12 +331,15 @@ function buildRadioSelector(group: HTMLElement, active: PctacModeId): void {
 function buildSelectSelector(group: HTMLElement, active: PctacModeId): void {
     group.removeAttribute('role');
     group.setAttribute('aria-label', 'Situation opérationnelle');
-    group.innerHTML = `<span class="mode-selector-current material-symbols-outlined" aria-hidden="true">${PCTAC_MODES[active].icon}</span>`
+    // L'icône est IMBRIQUÉE dans le cercle, pas portée par lui : la feuille de
+    // la police d'icônes (chargée après) remet `display: inline-block` sur
+    // `.material-symbols-outlined`, ce qui annulait le centrage en flex.
+    group.innerHTML = `<span class="mode-selector-current" aria-hidden="true"><span class="material-symbols-outlined">${PCTAC_MODES[active].icon}</span></span>`
         + `<select class="mode-selector-select" aria-label="Situation opérationnelle">`
         + PCTAC_MODE_ORDER.map((id) => `<option value="${id}"${id === active ? ' selected' : ''}>${escapeAttr(PCTAC_MODES[id].label)}</option>`).join('')
         + `</select>`;
     const select = group.querySelector<HTMLSelectElement>('select');
-    const icon = group.querySelector<HTMLElement>('.mode-selector-current');
+    const icon = group.querySelector<HTMLElement>('.mode-selector-current .material-symbols-outlined');
     select?.addEventListener('change', () => {
         const id = select.value as PctacModeId;
         if (icon) icon.textContent = PCTAC_MODES[id].icon;
