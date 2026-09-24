@@ -226,6 +226,12 @@ import '@oi/dessin.js';
 import '@oi/carto/index.js'; // pose window.OICarto + auto-câble #cartographyBtn (carto/index.ts:61-71)
 import { initPdfLoaderOrb } from '@oi/loader.js';
 import { initSectionControls } from '@oi/sections-ui.js';
+import { mountAnnotationModal } from '@shared/annotation-modal.js';
+
+// Fenêtre d'annotation commune avec le PC-Tac (décision 25) : insérée avant
+// DOMContentLoaded, où ses références sont relevées ; ses actions (fermer,
+// couleur, dock mobile, rotation) sont câblées sur elle.
+mountAnnotationModal({ memberTool: true });
 
 /**
  * ─────────────────────────────────────────────────────────────────────────
@@ -265,17 +271,8 @@ const oiClickActions: Record<string, OiActionHandler> = {
         (document.getElementById('uniteConfigModal') as HTMLDialogElement | null)?.close();
         document.body.classList.remove('modal-open');
     },
-    // index.html:170, 173
-    'close-annotation-modal': () => { void window.closeAnnotationModal(); },
-    // index.html:179
-    'toggle-mobile-dock': () => { window.toggleMobileDock(); },
-    // index.html:200
-    'close-mobile-sheet': () => { window.closeMobileSheet(); },
-    // index.html:231-235 — `this` de l'original = l'élément cliqué = `el`
-    'set-annotation-color': (el) => {
-        const color = el.dataset.color;
-        if (color) window.setAnnotationColor(color, el);
-    },
+    // Fenêtre d'annotation (fermer, dock mobile, couleur) : câblée par
+    // `mountAnnotationModal` (@shared/annotation-modal.js), décision 25.
     // index.html:257
     'open-logs': () => { window.openLogs(); },
     // index.html:263-277 — 8 sites, data-step="0".."7"
@@ -321,14 +318,7 @@ const oiClickActions: Record<string, OiActionHandler> = {
 const oiInputActions: Record<string, OiActionHandler> = {
     // 18 sites (formulaire texte/textarea) — index.html:286-370, 599-617
     'sync-dom-to-store': () => { window.syncDomToStore(); },
-    // index.html:206 — `this` de l'original = le slider = `el`
-    'sync-rotation-slider': (el) => {
-        const rotationInput = document.getElementById('rotation_input') as HTMLInputElement | null;
-        if (rotationInput) {
-            rotationInput.value = (el as HTMLInputElement).value;
-            rotationInput.dispatchEvent(new Event('change'));
-        }
-    },
+    // Curseur de rotation de l'annotation : câblé par `mountAnnotationModal`.
 };
 
 const oiChangeActions: Record<string, OiActionHandler> = {
