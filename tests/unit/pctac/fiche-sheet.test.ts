@@ -458,5 +458,42 @@ describe('photo annotée (décision 25)', () => {
     expect(del).toHaveBeenCalledWith('a1_orig');
     expect(storedFiche('pcTacAdversaries', 'a1')?.annotations).toBeUndefined();
   });
+
+  it('revue : nouvelle photo, un original orphelin (sans annotations) est effacé aussi', async () => {
+    Storage.saveCollection('pcTacAdversaries', [{ id: 'a1', nom: 'X', hasImage: true, status: 'active' }]);
+    const del = vi.spyOn(ImageStore, 'delete');
+    vi.spyOn(Utils, 'compressImage').mockResolvedValue('data:image/jpeg;base64,NEW');
+    await openFiche('adv', 'a1');
+    const input = dialog().querySelector<HTMLInputElement>('.fiche-photo-input')!;
+    Object.defineProperty(input, 'files', { value: [new File(['x'], 'p.jpg', { type: 'image/jpeg' })] });
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    await flush();
+    await clickSave();
+    expect(del).toHaveBeenCalledWith('a1_orig');
+  });
+
+  it('revue : une nouvelle photo choisie retire « Annoter » (qui annoterait l’ancienne)', async () => {
+    Storage.saveCollection('pcTacAdversaries', [{ id: 'a1', nom: 'X', hasImage: true, status: 'active' }]);
+    vi.spyOn(ImageStore, 'get').mockResolvedValue('data:image/jpeg;base64,OLD');
+    vi.spyOn(Utils, 'compressImage').mockResolvedValue('data:image/jpeg;base64,NEW');
+    await openFiche('adv', 'a1');
+    expect(dialog().querySelector('.fiche-annotate')).not.toBeNull();
+    const input = dialog().querySelector<HTMLInputElement>('.fiche-photo-input')!;
+    Object.defineProperty(input, 'files', { value: [new File(['x'], 'p.jpg', { type: 'image/jpeg' })] });
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    await flush();
+    expect(dialog().querySelector('.fiche-annotate')).toBeNull();
+  });
+
+  it('revue : une annotation enregistrée ne fait pas jeter le brouillon de la fiche', async () => {
+    Storage.saveCollection('pcTacAdversaries', [{ id: 'a1', nom: 'A', hasImage: true, status: 'active' }]);
+    await openFiche('adv', 'a1');
+    setField('antecedents', 'Fiché S');
+    dialog().close();
+    // Annotation de la photo (fiche ou galerie) : le moteur écrit `annotations`.
+    Storage.saveCollection('pcTacAdversaries', [{ id: 'a1', nom: 'A', hasImage: true, status: 'active', annotations: '[{"id":1}]' }]);
+    await openFiche('adv', 'a1');
+    expect(document.querySelector('.fiche-draft-resume')).not.toBeNull();
+  });
 });
 

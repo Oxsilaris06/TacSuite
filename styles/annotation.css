@@ -422,7 +422,10 @@
         .tool-btn.danger { color: #fca5a5; }
         .tool-btn.danger:hover { background: rgba(239, 68, 68, 0.2); border-color: #ef4444; color: #ef4444; }
 
-        @media (min-width: 1024px) {
+        /* Dès 768 px, comme le panneau d'outils en pleine hauteur (bloc 768 plus
+           haut) : en colonne, la toile tombait à 0 px (tablette en portrait,
+           téléphone en paysage). */
+        @media (min-width: 768px) {
             .annotation-wrapper {
                 flex-direction: row; 
             }

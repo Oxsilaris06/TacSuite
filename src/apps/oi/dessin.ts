@@ -86,7 +86,7 @@ import type {
 } from '@shared/types/contracts.js';
 import { annotationHost } from '@shared/annotation-host.js';
 import { oiState } from '@oi/state.js';
-import { promptDialog, toast } from '@shared/feedback.js';
+import { confirmDialog, promptDialog, toast } from '@shared/feedback.js';
 
 // ---------------------------------------------------------------------------
 // Écart de contrat (cf. en-tête) — vue élargie locale, en lecture ET écriture.
@@ -589,9 +589,7 @@ function setContextualTools(selection: OiAnnotation | null): void {
     if (zoneSettings) {
         zoneSettings.style.display = selection.type === 'location' ? 'flex' : 'none';
         if (selection.type === 'location') {
-            const ct = document.getElementById('circle_text') as HTMLInputElement | null;
             const co = document.getElementById('circle_opacity') as HTMLInputElement | null;
-            if (ct) ct.value = selection.text || '';
             if (co) co.value = String(selection.opacity || 0.5);
         }
     }
@@ -820,6 +818,7 @@ async function openAnnotationModal(previewImgId: string): Promise<void> {
                 annotationHost.annotations.forEach((a) => {
                     if (!a.color) a.color = '#c0392b';
                 });
+                openedAnnotations = JSON.stringify(annotationHost.annotations);
 
                 // Nouvelle session d'édition : on repart d'un historique vierge.
                 resetAnnotationHistory();
@@ -1191,7 +1190,7 @@ function handleDrawStart(e: MouseEvent | TouchEvent): void {
                 isRotating = true;
                 gestureStart = { cx: bb.centerX, cy: bb.centerY };
             }
-            document.body.style.overflow = 'hidden';
+            lockScroll();
             return;
         }
     }
@@ -1220,7 +1219,7 @@ function handleDrawStart(e: MouseEvent | TouchEvent): void {
         if (oiState.selectedAnnotation) {
             oiState.isMovingAnnotation = true;
             gestureSnapshot = JSON.stringify(annotationHost.annotations);
-            document.body.style.overflow = 'hidden';
+            lockScroll();
             redrawCanvas();
         }
     } else if (tool === 'text') {
@@ -1354,11 +1353,27 @@ function handleDrawMove(e: MouseEvent | TouchEvent): void {
     }
 }
 
+/**
+ * Verrou de défilement le temps d'un geste. La valeur d'avant revient à la
+ * fin : un hôte peut déjà bloquer la page (visionneuse du PC-Tac), et la
+ * souris qui sort de la toile sans geste ne touche à rien.
+ */
+let overflowBeforeGesture: string | null = null;
+function lockScroll(): void {
+    if (overflowBeforeGesture === null) overflowBeforeGesture = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+}
+function unlockScroll(): void {
+    if (overflowBeforeGesture === null) return;
+    document.body.style.overflow = overflowBeforeGesture;
+    overflowBeforeGesture = null;
+}
+
 function handleDrawEnd(e: MouseEvent | TouchEvent): void {
     cancelLongPress();
     if ('touches' in e && e.touches.length > 0) return; // Toujours un doigt posé
 
-    document.body.style.overflow = '';
+    unlockScroll();
 
     // Fin d'un geste de redimensionnement / rotation via poignée
     if (isResizing || isRotating) {
@@ -1415,8 +1430,7 @@ function handleDrawEnd(e: MouseEvent | TouchEvent): void {
             final.x = final.startX;
             final.y = final.startY;
             final.radius = Math.sqrt(Math.pow(final.endX - final.startX, 2) + Math.pow(final.endY - final.startY, 2));
-            const circleTextEl = document.getElementById('circle_text') as HTMLInputElement | null;
-            final.text = circleTextEl?.value || 'Zone';
+            final.text = oiState.zoneText;
             const circleOpacityEl = document.getElementById('circle_opacity') as HTMLInputElement | null;
             // dessin.js:911 — ÉCART DE CONTRAT : l'original affecte directement
             // la STRING `.value` (ou le nombre 0.5 par défaut) à `final.opacity`,
@@ -1447,9 +1461,22 @@ function handleDrawEnd(e: MouseEvent | TouchEvent): void {
     }
 }
 
-async function closeAnnotationModal(): Promise<void> {
+/** Annotations à l'ouverture de la séance : « Annuler » y revient (décision 26). */
+let openedAnnotations: string | null = null;
+let confirmingCancel = false;
+
+function discardAnnotationChanges(): void {
+    if (openedAnnotations === null) return;
+    annotationHost.annotations = JSON.parse(openedAnnotations) as OiAnnotation[];
+    oiState.selectedAnnotation = null;
+    persistAnnotationsToPreview();
+}
+
+/** Ferme la fenêtre en gardant les annotations en cours (Enregistrer). */
+function hideAnnotationModal(): void {
     const modal = oiState.annotationModal;
     if (modal) {
+        openedAnnotations = null;
         document.body.classList.remove('modal-open');
         if (typeof modal.close === 'function') modal.close();
         else modal.style.display = 'none';
@@ -1457,6 +1484,31 @@ async function closeAnnotationModal(): Promise<void> {
         persistAnnotationsToPreview();
         // REMOVED: cleanupObjectUrls() - Trop agressif, révoque tout le cache UI.
     }
+}
+
+/**
+ * Annuler, croix et Échap : rien de ce qui a été tracé depuis l'ouverture
+ * n'est gardé. Une confirmation d'abord, s'il y a des tracés à perdre.
+ */
+async function closeAnnotationModal(): Promise<void> {
+    // Annuler est câblé deux fois (délégation de la fenêtre et bouton) : une seule question.
+    if (confirmingCancel) return;
+    if (openedAnnotations !== null && JSON.stringify(annotationHost.annotations) !== openedAnnotations) {
+        confirmingCancel = true;
+        try {
+            const discard = await confirmDialog({
+                message: 'Abandonner les annotations non enregistrées ?',
+                confirmLabel: 'Abandonner',
+                cancelLabel: 'Continuer',
+                danger: true,
+            });
+            if (!discard) return;
+        } finally {
+            confirmingCancel = false;
+        }
+        discardAnnotationChanges();
+    }
+    hideAnnotationModal();
 }
 // ÉCART NÉCESSAIRE (ESM vs script classique, RÈGLE D'OR §2.2) : dans
 // dessin.js, `closeAnnotationModal` n'a JAMAIS de ligne explicite
@@ -1817,13 +1869,11 @@ function initAnnotationWorkspace(): void {
                 const toolId = id.replace(/^tool_/, '') as OiAnnotationTool;
                 setActiveTool(toolId);
                 if (toolId === 'location') {
-                    const circleTextEl = document.getElementById('circle_text') as HTMLInputElement | null;
-                    // U25 — `prompt()` natif → `promptDialog`.
-                    const txt = await promptDialog({ message: 'Texte personnalisé de la zone :', initial: circleTextEl?.value || 'Z' });
-                    if (txt !== null) {
-                        if (circleTextEl) circleTextEl.value = txt;
-                        if (typeof updateZoneText === 'function') updateZoneText(txt);
-                    }
+                    // U25 — `prompt()` natif → `promptDialog`. Le texte vit dans
+                    // l'état (aucun champ `circle_text` dans la page) : sinon
+                    // toute zone sortait « Zone ».
+                    const txt = await promptDialog({ message: 'Texte personnalisé de la zone :', initial: oiState.zoneText });
+                    if (txt !== null) oiState.zoneText = txt;
                 }
             });
         }
@@ -1848,6 +1898,19 @@ function initAnnotationWorkspace(): void {
 
     const annCancel = document.querySelectorAll('#annotation_cancel, #annotation_cancel_header');
     annCancel.forEach((btn) => btn.addEventListener('click', closeAnnotationModal));
+    // Échap vaut Annuler. Chrome force la fermeture sur un Échap répété sans
+    // autre geste : l'événement n'est alors pas annulable, le tracé est jeté
+    // sans question, avant l'événement `close` que l'hôte écoute.
+    modal.addEventListener('cancel', (e) => {
+        if (e.cancelable) {
+            e.preventDefault();
+            void closeAnnotationModal();
+            return;
+        }
+        discardAnnotationChanges();
+        openedAnnotations = null;
+        document.body.classList.remove('modal-open');
+    });
 
     const annSave = document.querySelectorAll('#annotation_save, #annotation_save_header');
     annSave.forEach((btn) => {
@@ -1881,7 +1944,7 @@ function initAnnotationWorkspace(): void {
                 }
             }
             annotationHost.save();
-            await closeAnnotationModal();
+            hideAnnotationModal();
         });
     });
 
@@ -1954,9 +2017,7 @@ function initAnnotationWorkspace(): void {
     const textSizeEdit = document.getElementById('text_size_edit') as HTMLInputElement | null;
     if (textSizeEdit) textSizeEdit.addEventListener('input', (e) => updateTextSize((e.target as HTMLInputElement).value));
 
-    const circleText = document.getElementById('circle_text') as HTMLInputElement | null;
     const circleOpacity = document.getElementById('circle_opacity') as HTMLInputElement | null;
-    if (circleText) circleText.addEventListener('input', (e) => updateZoneText((e.target as HTMLInputElement).value));
     if (circleOpacity) circleOpacity.addEventListener('input', (e) => updateZoneOpacity((e.target as HTMLInputElement).value));
 
     // Historique : snapshot avant / commit après pour les sliders contextuels
