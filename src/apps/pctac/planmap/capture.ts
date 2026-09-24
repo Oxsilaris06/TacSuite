@@ -15,6 +15,7 @@
  */
 
 import html2canvas from 'html2canvas';
+import { legacyCaptureColors } from '@shared/h2c-colors.js';
 
 import { toast } from '@shared/feedback.js';
 import { drawOverlayLegend, overlayLegend } from '@shared/map-overlays.js';
@@ -214,6 +215,8 @@ export const CaptureMethods = {
                 scrollY: 0,
                 ignoreElements: (n) => n.tagName === 'CANVAS',
                 onclone: (clonedDoc) => {
+                    // `color-mix()` calculé en `color(srgb …)`, illisible pour html2canvas.
+                    legacyCaptureColors(mapContainer.id ? clonedDoc.getElementById(mapContainer.id) : clonedDoc.body);
                     // Adaptation TS nécessaire (non listée au §5.5) : generic explicite
                     // `<HTMLElement>` (même motif que markerElements ci-dessus).
                     clonedDoc.querySelectorAll<HTMLElement>('[data-h2c-pin]').forEach((node) => {
