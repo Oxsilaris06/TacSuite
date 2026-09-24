@@ -1727,3 +1727,31 @@ test('main courante : cartes en écran scindé, tableau en bureau standard', asy
   await page.keyboard.press('Escape');
   await expect.poll(rowDisplay).toBe('table-row');
 });
+
+// ============================================================================
+// Fiche dans la page (décisions 21 et 23) : liste vide, la fiche prend toute
+// la largeur ; dès la première fiche enregistrée, liste à gauche, fiche à
+// droite.
+// ============================================================================
+
+test('fiche sur bureau : pleine largeur sans fiche, deux colonnes ensuite', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name === 'chromium-mobile', 'fiche plein écran sur téléphone');
+  await page.goto('/pctac/', { waitUntil: 'domcontentloaded' });
+  await page.evaluate(() => { localStorage.setItem('pcTacAdversaries', '[]'); });
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await clickTab(page, 'view-adversaires');
+  await page.locator('[data-fiche-new="adv"]').click();
+  const widths = (): Promise<{ fiche: number; layout: number; list: number }> => page.evaluate(() => {
+    const w = (sel: string): number => Math.round(document.querySelector(sel)!.getBoundingClientRect().width);
+    return { fiche: w('#ficheSheet'), layout: w('#view-adversaires .fiche-layout'), list: w('#adversary-table-body') };
+  });
+  await expect.poll(async () => (await widths()).fiche).toBe((await widths()).layout);
+  expect((await widths()).list).toBe(0);
+
+  await page.locator('#fiche_nom').fill('DUPONT');
+  await page.locator('#ficheSheet .fiche-save-next').click();
+  await expect(page.locator('#adversary-table-body .fiche-card')).toHaveCount(1);
+  const two = await widths();
+  expect(two.list).toBeGreaterThan(200);
+  expect(two.fiche).toBeLessThan(two.layout - two.list);
+});
