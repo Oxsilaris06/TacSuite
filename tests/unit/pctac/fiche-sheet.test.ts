@@ -20,6 +20,7 @@ vi.mock('@pctac/image-store.js', () => ({
 import { UI } from '@pctac/ui.js';
 import { openFiche } from '@pctac/fiche-sheet.js';
 import { Storage } from '@pctac/storage.js';
+import { Utils } from '@pctac/utils.js';
 import { PCTAC_MODE_KEY } from '@pctac/modes.js';
 import { installDialog, flush, setField, clickSave, storedFiche } from './fiche-helpers.js';
 
@@ -332,5 +333,110 @@ describe('bureau et tablette : fiche dans la page (décision 21)', () => {
     document.removeEventListener('keydown', page);
     expect(dialog().open).toBe(false);
     expect(page).not.toHaveBeenCalled();
+  });
+});
+
+describe('revue neuve de la fiche dans la page (e5791e0)', () => {
+  const layouts = (): void => {
+    document.body.innerHTML = `
+      <div id="view-adversaires"><div class="fiche-layout" id="advLayout"><div id="adversary-table-body"></div></div></div>
+      <div id="view-otages"><div class="fiche-layout" id="hostLayout"><div id="hostage-table-body"></div></div></div>
+      <dialog id="ficheSheet"></dialog>`;
+  };
+  const two = (): void => {
+    Storage.saveCollection('pcTacAdversaries', [
+      { id: 'a1', nom: 'ALPHA', prenom: 'Alain', alias: 'Le Grand', status: 'active' },
+      { id: 'b2', nom: 'BRAVO', prenom: 'Bruno', status: 'active' },
+    ]);
+  };
+  const scroll = vi.fn();
+
+  beforeEach(() => {
+    layouts();
+    two();
+    scroll.mockClear();
+    // jsdom n'implémente pas scrollIntoView.
+    (Element.prototype as unknown as { scrollIntoView: unknown }).scrollIntoView = scroll;
+  });
+
+  afterEach(() => {
+    delete (Element.prototype as unknown as { scrollIntoView?: unknown }).scrollIntoView;
+    vi.restoreAllMocks();
+  });
+
+  it('statut changé depuis la carte pendant la modification : gardé, aucune entrée de main courante ajoutée', async () => {
+    await openFiche('adv', 'a1');
+    UI.setItemStatus('pcTacAdversaries', 'a1', 'neutralized');
+    const logs = Storage.loadLogData().length;
+    setField('prenom', 'Jean');
+    await clickSave();
+    expect(storedFiche('pcTacAdversaries', 'a1')).toMatchObject({ prenom: 'Jean', status: 'neutralized' });
+    expect(Storage.loadLogData()).toHaveLength(logs);
+  });
+
+  it('champ changé ailleurs pendant la modification (import, autre vue) : pas écrasé par la copie d’ouverture', async () => {
+    await openFiche('adv', 'a1');
+    const list = Storage.loadCollection('pcTacAdversaries');
+    list[0]!.alias = 'Le Petit';
+    Storage.saveCollection('pcTacAdversaries', list);
+    setField('prenom', 'Jean');
+    await clickSave();
+    expect(storedFiche('pcTacAdversaries', 'a1')).toMatchObject({ alias: 'Le Petit', prenom: 'Jean' });
+  });
+
+  it('photo en compression pendant « Enregistrer » : une autre fiche ne s’ouvre pas, la première est enregistrée intacte', async () => {
+    let finish: (v: string) => void = () => {};
+    vi.spyOn(Utils, 'compressImage').mockReturnValue(new Promise<string>((r) => { finish = r; }));
+    await openFiche('adv', 'a1');
+    const input = dialog().querySelector<HTMLInputElement>('.fiche-photo-input')!;
+    Object.defineProperty(input, 'files', { value: [new File(['x'], 'p.jpg', { type: 'image/jpeg' })] });
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    setField('prenom', 'Alan');
+    dialog().querySelector<HTMLElement>('.fiche-save')!.click();
+    await openFiche('adv', 'b2');
+    finish('data:image/jpeg;base64,eA==');
+    await flush();
+    expect(storedFiche('pcTacAdversaries', 'a1')).toMatchObject({ nom: 'ALPHA', prenom: 'Alan' });
+    expect(storedFiche('pcTacAdversaries', 'b2')).toMatchObject({ nom: 'BRAVO', prenom: 'Bruno' });
+  });
+
+  it('« Enregistrer et suivante » : la fiche vierge revient en vue, curseur dans le premier champ', async () => {
+    await openFiche('adv');
+    setField('nom', 'Un');
+    scroll.mockClear();
+    await clickSave(true);
+    expect(scroll.mock.contexts).toContain(dialog());
+    expect(document.activeElement?.id).toBe('fiche_nom');
+  });
+
+  it('passer à une autre fiche : le focus entre dans la fiche, le titre la nomme', async () => {
+    await openFiche('adv', 'a1');
+    const outside = document.body.appendChild(document.createElement('button'));
+    outside.focus();
+    await openFiche('adv', 'b2');
+    expect(dialog().contains(document.activeElement)).toBe(true);
+    expect(dialog().querySelector('h2')?.textContent).toBe('Modifier cet adversaire : BRAVO Bruno');
+  });
+
+  it('la fiche précède la liste dans le document (tabulation dans l’ordre affiché)', async () => {
+    await openFiche('adv');
+    expect(dialog().nextElementSibling?.id).toBe('adversary-table-body');
+  });
+
+  it('fermer une fiche modifiée rend le focus à son bouton « Modifier »', async () => {
+    await UI.renderAdversaries();
+    await openFiche('adv', 'b2');
+    dialog().querySelector<HTMLElement>('.fiche-close')!.click();
+    await flush();
+    expect(document.activeElement?.closest<HTMLElement>('.fiche-card')?.dataset.id).toBe('b2');
+    expect(document.activeElement?.getAttribute('data-fiche-action')).toBe('edit');
+  });
+
+  it('enregistrer une nouvelle fiche rend le focus à sa carte', async () => {
+    await openFiche('adv');
+    setField('nom', 'CHARLIE');
+    await clickSave();
+    const card = document.activeElement?.closest<HTMLElement>('.fiche-card');
+    expect(card?.textContent).toContain('CHARLIE');
   });
 });
