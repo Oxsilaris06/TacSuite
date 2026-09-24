@@ -369,12 +369,14 @@ export function initSplitView(): void {
     };
     window.addEventListener('resize', onResize);
 
-    // Échap ferme l'écran scindé. Un `<dialog>` ouvert capte Échap en premier
-    // (fermeture du dialogue) : on ne lui vole pas la touche.
+    // Échap ferme l'écran scindé. Un `<dialog>` modal ouvert capte Échap en
+    // premier (fermeture du dialogue) : on ne lui vole pas la touche. La fiche
+    // ouverte dans la page (`fiche-inline`) traite Échap elle-même, depuis ses
+    // champs ; ailleurs, la touche revient à l'écran scindé.
     if (onKeydown) document.removeEventListener('keydown', onKeydown);
     onKeydown = (e: KeyboardEvent) => {
         if (e.key !== 'Escape' || !state.on) return;
-        if (document.querySelector('dialog[open]')) return;
+        if (document.querySelector('dialog[open]:not(.fiche-inline)')) return;
         toggleSplit();
     };
     document.addEventListener('keydown', onKeydown);

@@ -636,7 +636,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     // ignorés dans un champ de saisie actif (Ctrl+Entrée y reste actif : c'est
     // le geste « valider depuis le formulaire »). Échap : déjà géré ailleurs.
     document.addEventListener('keydown', (e) => {
-        if (document.querySelector('dialog[open]')) return;
+        // Modale ouverte : clavier à elle. La fiche dans la page (bureau) ne
+        // bloque que les touches frappées dans la fiche elle-même.
+        if (document.querySelector('dialog[open]:not(.fiche-inline)')) return;
+        if ((e.target as Element | null)?.closest?.('.fiche-inline')) return;
 
         // Ctrl+Entrée — soumettre le formulaire de log (partout dans la vue
         // main courante, y compris depuis un champ).
