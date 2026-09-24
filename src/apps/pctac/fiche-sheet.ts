@@ -65,6 +65,9 @@ interface SheetState {
 }
 
 let state: SheetState | null = null;
+/** Enregistrement en cours : aucune autre fiche ne s'ouvre (dans la page, la
+ *  liste reste cliquable pendant l'attente de la photo). */
+let saving = false;
 let historyPushed = false;
 /** Dialogue déjà câblé (un gabarit rechargé en crée un neuf). */
 let boundTo: HTMLDialogElement | null = null;
@@ -74,6 +77,19 @@ let popstateBound = false;
 const FULLSCREEN_MQ = '(max-width: 640px), (max-height: 500px)';
 
 const isPhone = (): boolean => typeof window.matchMedia === 'function' && window.matchMedia(FULLSCREEN_MQ).matches;
+
+const FIRST_FIELD = '.fiche-section[open] [data-key], .fiche-section[open] .fiche-precision';
+
+/** Fiche dans la page : haut caché (barre d'onglets, liste défilée) ou trop
+ *  bas, on l'amène en vue ; puis le focus y entre, sinon il reste dans la
+ *  liste et le changement de fiche passe inaperçu. */
+function reveal(dlg: HTMLDialogElement, focusSel: string): void {
+    const { top } = dlg.getBoundingClientRect();
+    if (top < 80 || top > window.innerHeight / 2) dlg.scrollIntoView?.({ block: 'start' });
+    // Sans preventScroll : un champ resté sous le pied collant (dock déplié)
+    // est remonté, la marge de défilement du CSS en tient compte.
+    dlg.querySelector<HTMLElement>(focusSel)?.focus();
+}
 
 // Rechargement pendant qu'une fiche était ouverte : l'entrée d'historique
 // qu'elle avait poussée est encore là, et un « retour » tomberait dans le
@@ -234,7 +250,7 @@ function render(): void {
     const status = String(item.status || defaultStatus(side, mode));
     const draft = readDrafts()[slotOf(side, id)];
     const photoSrc = state.photo ?? (typeof item.photo === 'string' ? item.photo : '');
-    const title = id ? `Modifier ${lex.demonstrative}` : lex.newLabel;
+    const title = id ? `Modifier ${lex.demonstrative} : ${ficheTitle(side, mode, item)}` : lex.newLabel;
 
     dlg.innerHTML = `
     <form class="fiche-form" novalidate>
@@ -357,22 +373,27 @@ async function syncPhoto(side: FicheSide, item: Record<string, unknown>, dataUrl
 
 async function save(next: boolean): Promise<void> {
     const dlg = dialogEl();
-    if (!state || !dlg) return;
-    const { side, id } = state;
+    // `s` et non `state` : la fiche affichée peut changer ou se fermer pendant
+    // les attentes ; on n'écrit jamais le formulaire d'une autre fiche.
+    const s = state;
+    if (!s || !dlg || saving) return;
+    const { side, id } = s;
     const mode = currentModeId();
-    // Photo en cours de compression : l'attendre, sinon la fiche part sans.
-    if (state.photoPending) await state.photoPending;
-    if (!state) return;
-    const values = collect();
-    const { status: chosen, ...fields } = values;
-    const hasContent = Object.values(fields).some((v) => v !== '') || state.photo !== null;
-    if (!id && !hasContent) {
-        toast('Renseignez au moins un champ', { kind: 'error' });
-        return;
-    }
     const buttons = dlg.querySelectorAll<HTMLButtonElement>('.fiche-save, .fiche-save-next');
+    saving = true;
     buttons.forEach((b) => { b.disabled = true; });
     try {
+        // Photo en cours de compression : l'attendre, sinon la fiche part sans.
+        if (s.photoPending) await s.photoPending;
+        // Fermée pendant l'attente : rien n'est écrit, la saisie est en brouillon.
+        if (state !== s) return;
+        const values = collect();
+        const { status: chosen, ...fields } = values;
+        const hasContent = Object.values(fields).some((v) => v !== '') || s.photo !== null;
+        if (!id && !hasContent) {
+            toast('Renseignez au moins un champ', { kind: 'error' });
+            return;
+        }
         const key = collectionKey(side);
         const list = Storage.loadCollection(key);
         let item = id ? list.find((i) => i.id === id) : undefined;
@@ -382,7 +403,7 @@ async function save(next: boolean): Promise<void> {
             const drafts = readDrafts();
             const freeSlot = !drafts[slotOf(side, null)];
             if (freeSlot) {
-                drafts[slotOf(side, null)] = { values, savedAt: Date.now(), base: null, statusTouched: state.statusTouched };
+                drafts[slotOf(side, null)] = { values, savedAt: Date.now(), base: null, statusTouched: s.statusTouched };
                 delete drafts[slotOf(side, id)];
                 writeDrafts(drafts);
             }
@@ -399,11 +420,15 @@ async function save(next: boolean): Promise<void> {
         }
         const oldBlessures = String(item.blessures ?? '');
         // Saisie masquée par un changement de type (Phénomène) : gardée aussi.
-        const kept = Object.fromEntries(Object.entries(state.item)
+        const kept = Object.fromEntries(Object.entries(s.item)
             .filter(([k, v]) => typeof v === 'string' && !['id', 'photo', 'status'].includes(k)));
-        // Un champ vidé retire sa clé : les QR et archives ne transportent
-        // pas une vingtaine de valeurs vides par fiche.
+        // Seuls les champs changés depuis l'ouverture sont écrits : une valeur
+        // posée ailleurs pendant la saisie (import, autre vue) n'est pas
+        // écrasée par la copie d'ouverture. Un champ vidé retire sa clé : les
+        // QR et archives ne transportent pas une vingtaine de valeurs vides.
+        const opened = (s.base ? JSON.parse(s.base) : {}) as Record<string, unknown>;
         Object.entries({ ...kept, ...fields }).forEach(([k, v]) => {
+            if (v === String(opened[k] ?? '')) return;
             if (v === '') delete item![k];
             else item![k] = v;
         });
@@ -412,14 +437,17 @@ async function save(next: boolean): Promise<void> {
         // personne n'a choisi le statut : ni dans cette fiche, ni avant (un DCD
         // posé depuis la carte ne correspond pas à la déduction des anciennes
         // blessures, il est donc gardé). Triage : jamais déduit.
-        let status = chosen ?? String(item.status || defaultStatus(side, mode));
+        // Statut de la fiche seulement s'il y a été choisi : sinon celui posé
+        // depuis la carte pendant la saisie tient (pas de retour en arrière ni
+        // de fausse entrée en main courante).
+        let status = s.statusTouched && chosen ? chosen : String(item.status || defaultStatus(side, mode));
         const derivedBefore = String(item.status ?? '') === hostageStatusFromBlessures(oldBlessures);
-        if (side === 'host' && mode === 'forcene' && !state.statusTouched
+        if (side === 'host' && mode === 'forcene' && !s.statusTouched
             && (created || (String(item.blessures ?? '') !== oldBlessures && derivedBefore))) {
             status = hostageStatusFromBlessures(item.blessures);
         }
         if (created) item.status = status;
-        if (state.photo) await syncPhoto(side, item, state.photo);
+        if (s.photo) await syncPhoto(side, item, s.photo);
         Storage.saveCollection(key, list);
         // Stockage plein : `saveCollection` n'échoue pas bruyamment. On relit ;
         // si la fiche n'y est pas telle quelle, rien n'est jeté ni fermé.
@@ -434,22 +462,31 @@ async function save(next: boolean): Promise<void> {
         if (!created && status !== item.status) window.UI.setItemStatus(key, String(item.id), status);
 
         // Brouillon ancien jamais tranché : il reste proposé (autre saisie).
-        if (!state.pendingDraft) dropDraft(side, id);
+        if (!s.pendingDraft) dropDraft(side, id);
         toast(created ? 'Fiche enregistrée' : 'Fiche mise à jour', { kind: 'success' });
         if (side === 'adv') await window.UI.renderAdversaries();
         else await window.UI.renderHostages();
-        if (state.photo) await window.UI.renderPhotos();
+        if (s.photo) await window.UI.renderPhotos();
+        // Fermée pendant l'enregistrement : c'est écrit, rien d'autre à faire.
+        if (state !== s) return;
         if (next) {
             const pendingDraft = !!readDrafts()[slotOf(side, null)];
             state = { side, id: null, base: null, item: {}, photo: null, statusTouched: false, dirty: false, pendingDraft, photoPending: null };
             render();
-            dlg.querySelector<HTMLElement>('.fiche-body')?.scrollTo?.({ top: 0 });
             // Saisie en rafale : on repart directement dans le premier champ.
-            dlg.querySelector<HTMLElement>('.fiche-section[open] [data-key], .fiche-section[open] .fiche-precision')?.focus();
+            if (dlg.classList.contains('fiche-inline')) {
+                reveal(dlg, FIRST_FIELD);
+            } else {
+                dlg.querySelector<HTMLElement>('.fiche-body')?.scrollTo?.({ top: 0 });
+                dlg.querySelector<HTMLElement>(FIRST_FIELD)?.focus();
+            }
         } else {
+            // Le focus revient à la carte de la fiche, même tout juste créée.
+            s.id = String(item.id);
             close();
         }
     } finally {
+        saving = false;
         buttons.forEach((b) => { b.disabled = false; });
     }
 }
@@ -624,20 +661,69 @@ function bind(dlg: HTMLDialogElement): void {
     dlg.addEventListener('submit', (e) => { e.preventDefault(); });
     // Fermeture par Échap ou `close()` : on rend l'entrée d'historique.
     dlg.addEventListener('close', () => {
+        const closed = state;
+        const pushed = historyPushed;
         state = null;
-        if (historyPushed) {
-            historyPushed = false;
-            history.back();
+        historyPushed = false;
+        // Fiche dans la page : retour à sa carte (focus et défilement), sinon
+        // au bouton « + ». Le navigateur rendrait le focus à l'élément de la
+        // PREMIÈRE ouverture, parfois une autre carte, hors de l'écran.
+        let target: HTMLElement | null = null;
+        if (closed && dlg.classList.contains('fiche-inline')) {
+            const list = document.getElementById(closed.side === 'adv' ? 'adversary-table-body' : 'hostage-table-body');
+            const card = closed.id ? list?.querySelector<HTMLElement>(`.fiche-card[data-id="${CSS.escape(closed.id)}"] [data-fiche-action="edit"]`) : null;
+            target = card ?? document.querySelector<HTMLElement>(`[data-fiche-new="${closed.side}"]`);
+            target?.focus({ preventScroll: true });
         }
+        const reveal = (): void => {
+            history.scrollRestoration = 'auto';
+            target?.scrollIntoView?.({ block: 'nearest' });
+        };
+        if (!pushed) { reveal(); return; }
+        // Défilement non restauré par ce retour (mode « manual » posé à
+        // l'ouverture) : sinon Chrome remet, après popstate, la position
+        // d'avant l'ouverture par-dessus celle de la carte.
+        window.addEventListener('popstate', reveal, { once: true });
+        history.back();
+    });
+    // Fiche dans la page : un champ qui prend le focus sous le pied collant ou
+    // sous la barre d'onglets est ramené en vue. `scroll-padding` (CSS) donne
+    // la place, mais focus() ne défile pas un champ déjà à l'écran, et
+    // Firefox fait défiler vers le champ en douceur APRÈS focusin, sans tenir
+    // compte de la marge : on revérifie à la fin de ce défilement-là (fenêtre
+    // d'une seconde, pour ne jamais contrer un défilement de l'utilisateur).
+    dlg.addEventListener('focusin', (e) => {
+        const el = e.target as HTMLElement;
+        if (!dlg.classList.contains('fiche-inline') || el.closest('.fiche-foot, .fiche-head')) return;
+        const keepVisible = (): void => {
+            if (document.activeElement !== el) return;
+            const foot = dlg.querySelector('.fiche-foot')?.getBoundingClientRect();
+            const r = el.getBoundingClientRect();
+            if ((foot && r.bottom > foot.top) || r.top < 80) el.scrollIntoView?.({ block: 'nearest' });
+        };
+        keepVisible();
+        document.addEventListener('scrollend', keepVisible, { capture: true, once: true });
+        setTimeout(() => { document.removeEventListener('scrollend', keepVisible, true); }, 1000);
     });
     // Geste retour (Android) ou bouton précédent : ferme la fiche, pas la page.
     if (popstateBound) return;
     popstateBound = true;
+    // Pied collant et défilement au clavier (CSS, `--dock-h`) calés sur la
+    // hauteur réelle du dock : replié, ou déplié sur une ou deux rangées.
+    // Mesure immédiate : le premier rappel de l'observateur arrive après la
+    // première ouverture, trop tard pour y placer le focus.
+    const dock = document.getElementById('dockMenu');
+    if (dock) {
+        const measure = (): void => { document.documentElement.style.setProperty('--dock-h', `${dock.offsetHeight}px`); };
+        measure();
+        if (typeof ResizeObserver === 'function') new ResizeObserver(measure).observe(dock);
+    }
     window.visualViewport?.addEventListener('resize', fitViewport);
     window.visualViewport?.addEventListener('scroll', fitViewport);
     window.addEventListener('popstate', () => {
         if (!historyPushed) return;
         historyPushed = false;
+        history.scrollRestoration = 'auto';
         const open = dialogEl();
         if (open?.open) open.close();
     });
@@ -649,6 +735,10 @@ function bind(dlg: HTMLDialogElement): void {
 export async function openFiche(side: FicheSide, id: string | null = null): Promise<void> {
     const dlg = dialogEl();
     if (!dlg) return;
+    if (saving) {
+        toast('Enregistrement en cours, un instant', { kind: 'info' });
+        return;
+    }
     bind(dlg);
     let item: Record<string, unknown> = {};
     let base: string | null = null;
@@ -673,11 +763,13 @@ export async function openFiche(side: FicheSide, id: string | null = null): Prom
     const pendingDraft = !!readDrafts()[slotOf(side, id)];
     state = { side, id, base, item, photo: null, statusTouched: false, dirty: false, pendingDraft, photoPending: null };
     render();
-    // Bureau et tablette : dans l'onglet du camp, à droite de la liste. Déjà
-    // ouverte pour l'autre camp : elle y passe (saisie gardée en brouillon).
+    // Bureau et tablette : dans l'onglet du camp, à droite de la liste (la
+    // grille la place ; AVANT la liste dans le document, pour que la
+    // tabulation suive l'ordre affiché en panneau étroit, fiche au-dessus).
+    // Déjà ouverte pour l'autre camp : elle y passe (saisie en brouillon).
     const layout = document.getElementById(side === 'adv' ? 'adversary-table-body' : 'hostage-table-body')?.parentElement;
     const inline = dlg.open ? dlg.classList.contains('fiche-inline') : !isPhone();
-    if (inline && layout && dlg.parentElement !== layout) layout.append(dlg);
+    if (inline && layout && dlg.parentElement !== layout) layout.prepend(dlg);
     if (!inline && dlg.parentElement !== document.body) document.body.append(dlg);
     if (!dlg.open) {
         dlg.classList.toggle('fiche-inline', inline);
@@ -685,20 +777,18 @@ export async function openFiche(side: FicheSide, id: string | null = null): Prom
         else dlg.showModal();
         fitViewport();
         try {
+            // Retour à la fermeture : la carte est ramenée en vue par nous, pas
+            // par la restauration du navigateur (voir l'écouteur « close »).
+            history.scrollRestoration = 'manual';
             history.pushState({ pctacFiche: true }, '');
             historyPushed = true;
         } catch {
             // Historique indisponible (bac à sable) : la fiche reste fermable.
         }
     }
-    // Après `show()` : un dialogue fermé ne prend ni focus ni défilement. Haut
-    // de fiche caché (sous la barre d'onglets, liste défilée) ou trop bas : on
-    // l'amène en vue ; sinon la page ne bouge pas.
-    if (inline) {
-        const { top } = dlg.getBoundingClientRect();
-        if (top < 80 || top > window.innerHeight / 2) dlg.scrollIntoView?.({ block: 'start' });
-        if (!id) dlg.querySelector<HTMLElement>('.fiche-section[open] [data-key], .fiche-section[open] .fiche-precision')?.focus({ preventScroll: true });
-    }
+    // Après `show()` : un dialogue fermé ne prend ni focus ni défilement.
+    // Création : on tape tout de suite ; modification : focus sur « Fermer ».
+    if (inline) reveal(dlg, id ? '.fiche-close' : FIRST_FIELD);
 }
 
 export function close(): void {

@@ -3684,11 +3684,12 @@ body.light-mode .pctac-liens-btn-row--wa:hover { background: #bee9ce; box-shadow
 
 /* Bureau et tablette (décision 21) : la fiche s'ouvre DANS l'onglet, à
    droite de la liste ; panneau étroit (écran scindé, fenêtre réduite) :
-   au-dessus. Elle suit le défilement de la page (ou du panneau scindé) et son
-   pied « Enregistrer » reste en vue, posé au-dessus du dock flottant (fixe à
-   20 px du bas, environ 62 px de haut replié). Le mode est choisi à
-   l'ouverture (fiche-sheet.ts) : une fenêtre réduite ensuite ne la rend pas
-   modale. */
+   au-dessus. Elle est AVANT la liste dans le document (ordre de tabulation) ;
+   la grille la place à droite en large. Elle suit le défilement de la page
+   (ou du panneau scindé) et son pied « Enregistrer » reste en vue, posé
+   au-dessus du dock flottant (fixe à 20 px du bas ; sa hauteur réelle,
+   `--dock-h`, est posée par fiche-sheet.ts). Le mode est choisi à
+   l'ouverture : une fenêtre réduite ensuite ne la rend pas modale. */
 #view-adversaires,
 #view-otages {
     container: fiches / inline-size;
@@ -3699,6 +3700,14 @@ body.light-mode .pctac-liens-btn-row--wa:hover { background: #bee9ce; box-shadow
     align-items: start;
     gap: var(--space-4);
 }
+.fiche-layout:has(> .fiche-inline[open]) > .fiche-list {
+    grid-column: 1;
+    grid-row: 1;
+}
+.fiche-layout > .fiche-sheet.fiche-inline {
+    grid-column: 2;
+    grid-row: 1;
+}
 .fiche-sheet.fiche-inline {
     position: static;
     width: auto;
@@ -3707,8 +3716,6 @@ body.light-mode .pctac-liens-btn-row--wa:hover { background: #bee9ce; box-shadow
     margin: 0;
     overflow: visible;
     box-shadow: none;
-    /* Sous la barre d'onglets collante quand la fiche est amenée en vue. */
-    scroll-margin-top: 88px;
 }
 body.is-split .fiche-sheet.fiche-inline {
     scroll-margin-top: var(--space-3);
@@ -3722,18 +3729,30 @@ body.is-split .fiche-sheet.fiche-inline {
 /* Barre flottante : le reste de la fiche défile dessous. */
 .fiche-inline .fiche-foot {
     position: sticky;
-    bottom: 90px;
+    bottom: calc(var(--dock-h, 62px) + 32px);
     z-index: 1;
     border: 1px solid var(--border-glass);
     border-radius: var(--radius-md);
     box-shadow: var(--shadow-float);
 }
+/* Tab, Entrée, focus() : un champ n'est jamais rangé sous une barre
+   collante (onglets en haut ; pied « Enregistrer », environ 74 px, et dock
+   en bas). Le défileur est la page, ou la vue du panneau scindé. */
+html:has(.tab-content-view.active .fiche-inline[open]) {
+    scroll-padding-top: 88px;
+    scroll-padding-bottom: calc(var(--dock-h, 62px) + 32px + 84px);
+}
+.split-pane > .tab-content-view:has(.fiche-inline[open]) {
+    scroll-padding-bottom: calc(var(--dock-h, 62px) + 32px + 84px);
+}
 @container fiches (max-width: 820px) {
     .fiche-layout:has(> .fiche-inline[open]) {
         grid-template-columns: minmax(0, 1fr);
     }
-    .fiche-sheet.fiche-inline {
-        order: -1;
+    .fiche-layout:has(> .fiche-inline[open]) > .fiche-list,
+    .fiche-layout > .fiche-sheet.fiche-inline {
+        grid-column: auto;
+        grid-row: auto;
     }
 }
 
