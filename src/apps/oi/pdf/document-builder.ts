@@ -4094,6 +4094,8 @@ const OI_PDF_SECTIONS: OiPdfSectionDef[] = [
 
 /** Photos de l'OI express, dans l'ordre de la page 2. */
 const EXPRESS_PHOTOS = OI_EXPRESS_PHOTO_CONTAINERS;
+/** Captures de plan : une par rangée, sur toute la largeur. */
+const EXPRESS_PLAN_CONTAINER = 'photo_container_express_carte_preview_container';
 
 /** Au-delà, le PATRACDVR express passe sur deux tableaux côte à côte. */
 const EXPRESS_PATRAC_SPLIT = 10;
@@ -4159,9 +4161,11 @@ function expressPatrac(rows: ExpressRow[], p: OiPdfPalette, widthPt: number, fon
 const EXPRESS_PHOTO_MIN_PT = 150;
 
 /**
- * PDF de l'OI express : DEUX pages (décision Nico 2026-09-24). Trois
- * dispositions, essayées dans l'ordre ; la première qui tient ENTIÈREMENT
- * (page 1, et page 2 avec des photos d'au moins `EXPRESS_PHOTO_MIN_PT`) au
+ * PDF de l'OI express : l'ordre en DEUX pages (décision Nico 2026-09-24),
+ * puis TOUTES les photos à taille naturelle, pages comprises (décision 24).
+ * Trois dispositions de l'ordre, essayées dans l'ordre ; la première qui tient
+ * ENTIÈREMENT (page 1, et page 2 avec une rangée de photos d'au moins
+ * `EXPRESS_PHOTO_MIN_PT`) au
  * plus grand palier de police possible (11 → 7) est retenue :
  *  - A : page 1 = l'ordre, chronologie et PATRACDVR ; page 2 = les photos ;
  *  - B : page 1 = l'ordre et la chronologie ; page 2 = PATRACDVR puis photos ;
@@ -4186,14 +4190,35 @@ function buildExpressPages(ctx: BuildCtx): Content[] {
     const available = geo.contentHeightPt - EFFRAC_FITS_SAFETY_PT;
     const HEADER_PT = 56;
 
-    const photos = EXPRESS_PHOTOS.map((c) => {
-        const meta = (dynamicPhotos[c.id] ?? []).find((m) => photosBase64[m.id] !== undefined);
-        return meta ? { label: meta.customTitle?.trim() || c.label, ref: photosBase64[meta.id] as string } : null;
-    }).filter((x): x is { label: string; ref: string } => x !== null);
+    // TOUTES les photos (décision 24) : objectif, adversaire, puis plans ;
+    // légende = titre saisi, sinon la catégorie, numérotée s'il y en a plusieurs.
+    const photos = EXPRESS_PHOTOS.flatMap((c) => {
+        const metas = (dynamicPhotos[c.id] ?? []).filter((m) => photosBase64[m.id] !== undefined);
+        return metas.map((m, i) => ({
+            label: m.customTitle?.trim() || (metas.length > 1 ? `${c.label} ${i + 1}` : c.label),
+            ref: photosBase64[m.id] as string,
+            plan: c.id === EXPRESS_PLAN_CONTAINER,
+        }));
+    });
     const nPhotos = photos.length;
     const gapPh = mm(4);
-    const boxW = nPhotos ? (W - gapPh * (nPhotos - 1)) / nPhotos : W;
-    const captionPt = Math.max(0, ...photos.map((ph) => textLinePt(ph.label, 9, boxW) + 5));
+    // Rangées : photos par deux (4:3), chaque plan sur toute la largeur (rues,
+    // carroyage lisibles). Une rangée ne dépasse jamais une page.
+    type PhotoRow = { items: typeof photos; w: number; h: number; capPt: number };
+    const halfW = (W - gapPh) / 2;
+    const rowGapPt = mm(3);
+    // `perPage` : rangées tenant sur une page (PDF paysage) ; photos : deux
+    // rangées, quatre photos par page ; plan : une page à lui.
+    const rowOf = (items: typeof photos, w: number, ratio: number, perPage: number): PhotoRow => {
+        const capPt = Math.max(0, ...items.map((ph) => textLinePt(ph.label, 9, w) + 5));
+        const pageMax = Math.floor((available - EFFRAC_H2_PT - 8 - rowGapPt * (perPage - 1)) / perPage) - capPt;
+        return { items, w, capPt, h: Math.min(Math.round(w * ratio), pageMax) };
+    };
+    const others = photos.filter((ph) => !ph.plan);
+    const rows: PhotoRow[] = [
+        ...others.flatMap((_, i) => (i % 2 ? [] : [rowOf(others.slice(i, i + 2), halfW, 0.75, 2)])),
+        ...photos.filter((ph) => ph.plan).map((ph) => rowOf([ph], W, 0.62, 1)),
+    ];
 
     // Coûts (pt) au palier `f`.
     const corePt = (f: number): number => {
@@ -4210,7 +4235,10 @@ function buildExpressPages(ctx: BuildCtx): Content[] {
     const chronoPt = (f: number): number =>
         events.length ? STACKED_CARD_GAP_PT + cardWithTitlePt(effracLinePt(f) + EFFRAC_ROW_VPAD_PT + events.reduce((sum, e) => sum + chronoEventPt(e, f, (W - 16) * 0.78), 0)) : 0;
     const patracPt = (f: number): number => (members.length ? STACKED_CARD_GAP_PT + EFFRAC_H3_PT + expressPatrac(members, p, W, f).costPt : 0);
-    const photosNeedPt = nPhotos ? EFFRAC_H2_PT + EXPRESS_PHOTO_MIN_PT + captionPt : 0;
+    // Place réservée aux photos pour choisir la disposition de l'ordre : la
+    // même qu'avant la décision 24 (une rangée au minimum), pour que l'ordre
+    // garde sa mise en page ; les photos suivent ensuite, pages comprises.
+    const photosNeedPt = nPhotos ? EFFRAC_H2_PT + EXPRESS_PHOTO_MIN_PT + (rows[0] as PhotoRow).capPt : 0;
 
     // `flow` : aucun saut forcé — la page 1 se remplit, la suite (chronologie
     // coupée entre deux rangées, en-tête répété) passe en page 2 avant les
@@ -4296,18 +4324,25 @@ function buildExpressPages(ctx: BuildCtx): Content[] {
     const p2Parts = layout.p2.flatMap(partNodes);
     if (!nPhotos && !p2Parts.length) return [page1];
 
-    // Photos : toute la hauteur que la page 2 laisse, légende la plus longue
-    // comprise — jamais de titre « PHOTOS » seul en bas de page.
+    // Photos à taille naturelle (un plan réduit ne se lit plus) ; les pages
+    // suivent. Une rangée n'est jamais coupée, et le titre « PHOTOS » voyage
+    // avec la première : jamais seul en bas de page. Seule exception : une
+    // première rangée de photos (pas un plan) se resserre, jamais sous
+    // `EXPRESS_PHOTO_MIN_PT`, pour commencer dans ce que la page 2 laisse au
+    // lieu de la laisser à moitié vide.
     const usedP2 = layout.flow
         ? Math.max(0, corePt(fontPx) + chronoPt(fontPx) + patracPt(fontPx) - available)
         : layout.p2.reduce((sum, x) => sum + partPt(x, fontPx), 0);
-    const boxH = Math.max(EXPRESS_PHOTO_MIN_PT, available - usedP2 - EFFRAC_H2_PT - captionPt - 8);
-    const photoNodes: Content[] = nPhotos
-        ? [
-              h2('PHOTOS', p, W),
-              { columns: photos.map((ph) => ({ width: boxW, stack: [figure(ph.ref, [boxW, boxH], p, ph.label)] })), columnGap: gapPh } as Content,
-          ]
-        : [];
+    const leftP2 = available - usedP2 - EFFRAC_H2_PT - (p2Parts.length ? STACKED_CARD_GAP_PT : 0) - 8;
+    const first = rows[0];
+    if (first && first.w !== W && first.h + first.capPt > leftP2 && leftP2 - first.capPt >= EXPRESS_PHOTO_MIN_PT) {
+        first.h = Math.floor(leftP2 - first.capPt);
+    }
+    const rowNode = (r: PhotoRow): Content =>
+        ({ columns: r.items.map((ph) => ({ width: r.w, stack: [figure(ph.ref, [r.w, r.h], p, ph.label)] })), columnGap: gapPh }) as Content;
+    const photoNodes: Content[] = rows.map((r, i) => (i === 0
+        ? { stack: [h2('PHOTOS', p, W), rowNode(r)], unbreakable: true }
+        : { stack: [rowNode(r)], unbreakable: true, margin: [0, rowGapPt, 0, 0] }) as Content);
     if (layout.flow) {
         // Tout d'un bloc : pdfmake coupe là où la page 1 est pleine.
         return [{ stack: [...(page1 as { stack: Content[] }).stack, ...(nPhotos ? [gapNode(), ...photoNodes] : [])], fontSize: fontPx }];

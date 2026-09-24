@@ -1,6 +1,6 @@
 // @vitest-environment node
 /**
- * OI express — « deux pages au plus » vérifié sur le PDF RÉELLEMENT RENDU par
+ * OI express — nombre de pages vérifié sur le PDF RÉELLEMENT RENDU par
  * pdfmake (et non sur le nombre de nœuds de `content`, qui laissait passer un
  * document de 3 à 6 pages : faux positif relevé par la revue du 2026-09-24).
  *
@@ -74,11 +74,14 @@ function expressOi(nMembers: number, nEvents: number, textLen: number): OiFormDa
     };
 }
 
-describe('OI express — deux pages au plus, sur le PDF rendu', () => {
+describe('OI express — pages du PDF rendu', () => {
     const photos = { o1: JPEG, a1: JPEG, c1: JPEG };
+    // Décision 24 : toutes les photos, plans pleine largeur (PDF paysage : un
+    // plan occupe presque une page). L'ordre et la paire objectif/adversaire
+    // tiennent en deux pages ; le plan prend la troisième.
     for (const [n, ev, len] of [[4, 3, 150], [8, 5, 300], [12, 5, 300], [16, 6, 400]] as const) {
-        it(`${n} membres, ${ev} étapes, textes de ${len} caractères, 3 photos : 2 pages`, async () => {
-            expect(await renderedPages(expressOi(n, ev, len), photos)).toBeLessThanOrEqual(2);
+        it(`${n} membres, ${ev} étapes, textes de ${len} caractères, 3 photos dont un plan : 3 pages`, async () => {
+            expect(await renderedPages(expressOi(n, ev, len), photos)).toBeLessThanOrEqual(3);
         }, 30_000);
     }
 
