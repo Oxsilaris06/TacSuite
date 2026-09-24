@@ -2553,22 +2553,26 @@ describe('buildOiDocDefinition — OI express', () => {
 
     // Le NOMBRE DE PAGES RENDUES est vérifié dans `oi-pdf-express-pages.test.ts`
     // (pdfmake réel) : compter les nœuds de `content` laissait passer 3 à 6 pages.
-    it('page 2 : une photo par emplacement, légendée, sans case vide', () => {
+    it('page 2 : TOUTES les photos (décision 24), légendées et numérotées, sans case vide', () => {
+        const meta = (id: string, customTitle = ''): OiPhotoMeta => ({ id, annotations: '[]', tools: '[]', other_tools: '', customTitle });
         const fd = express({
             dynamic_photos: {
-                photo_container_express_objectif_preview_container: [
-                    { id: 'o1', annotations: '[]', tools: '[]', other_tools: '', customTitle: '' },
-                    { id: 'o2', annotations: '[]', tools: '[]', other_tools: '', customTitle: '' },
-                ],
-                photo_container_express_carte_preview_container: [{ id: 'c1', annotations: '[]', tools: '[]', other_tools: '', customTitle: 'Carroyage 50 m' }],
+                photo_container_express_objectif_preview_container: [meta('o1'), meta('o2'), meta('o3')],
+                photo_container_express_carte_preview_container: [meta('c1', 'Carroyage 50 m'), meta('c2')],
             },
         });
-        const img = 'data:image/jpeg;base64,/9j/';
-        const dd = buildOiDocDefinition(collect(fd, { o1: img, o2: img, c1: img }), { format: 'a4' });
+        // Contenus distincts : des images identiques sont dédoublonnées.
+        const img = (n: number): string => `data:image/jpeg;base64,/9j/${n}`;
+        const dd = buildOiDocDefinition(collect(fd, { o1: img(1), o2: img(2), o3: img(3), c1: img(4), c2: img(5) }), { format: 'a4' });
         const json = JSON.stringify(dd);
-        expect(json).toContain('"text":"Objectif"');
-        expect(json).toContain('"text":"Carroyage 50 m"');
-        expect(json).not.toContain('"text":"Adversaire"'); // pas de photo adversaire : pas de case vide
+        for (const t of ['Objectif 1', 'Objectif 2', 'Objectif 3', 'Carroyage 50 m', 'Carte 2']) expect(json).toContain(`"text":"${t}"`);
+        expect(json).not.toContain('"text":"Adversaire'); // pas de photo adversaire : pas de case vide
+        // Plans en pleine largeur, photos sur deux colonnes.
+        const fits = [...json.matchAll(/"image":"(\w+)","fit":\[([\d.]+),/g)].map((m) => [m[1], Number(m[2])] as const);
+        expect(fits.map(([id]) => id)).toEqual(['o1', 'o2', 'o3', 'c1', 'c2']);
+        const widths = Object.fromEntries(fits);
+        expect(widths.c1).toBe(widths.c2);
+        expect(widths.o1! * 2).toBeLessThan(widths.c1!);
     });
 
     it('page 1 de l’express : mention CONFIDENTIEL en pied de page (pas de page de garde)', () => {
