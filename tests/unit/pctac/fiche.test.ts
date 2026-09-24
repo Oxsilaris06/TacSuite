@@ -37,8 +37,8 @@ describe('pastilles : stockées dans la clé historique, précision comprise', (
     it('relit un ancien texte libre : le mot connu allume sa pastille, le reste devient la précision', () => {
         expect(parseChips('Calme, nerveux...', ['Calme', 'Agité'])).toEqual({ selected: ['Calme'], precision: 'nerveux...' });
         expect(parseChips('', chips)).toEqual({ selected: [], precision: '' });
-        // Casse indifférente, ordre de la liste des pastilles.
-        expect(parseChips('arme longue, ARME DE POING', chips).selected).toEqual(['Arme de poing', 'Arme longue']);
+        // Casse indifférente.
+        expect(parseChips('arme de poing, ARME LONGUE', chips).selected).toEqual(['Arme de poing', 'Arme longue']);
     });
 
     it('une virgule dans la précision survit à l’aller-retour', () => {
@@ -46,6 +46,22 @@ describe('pastilles : stockées dans la clé historique, précision comprise', (
         expect(stored).toBe('Arme longue, fusil cal. 12, 2 cartouches');
         expect(parseChips(stored, chips)).toEqual({ selected: ['Arme longue'], precision: 'fusil cal. 12, 2 cartouches' });
         expect(serializeChips([], '  ', chips)).toBe('');
+    });
+
+    it('revue : une virgule décimale de la précision reste intacte', () => {
+        expect(parseChips('Arme longue, Fusil 7,62 mm', chips)).toEqual({ selected: ['Arme longue'], precision: 'Fusil 7,62 mm' });
+        // Import OI : texte libre avec virgule décimale, aucune pastille en tête.
+        expect(parseChips('Pistolet 7,65', chips)).toEqual({ selected: [], precision: 'Pistolet 7,65' });
+    });
+
+    it('revue : une précision qui porte le nom d’une pastille n’est pas absorbée', () => {
+        // « Aucune connue » est exclusive : après « Arme de poing », c'est du texte.
+        expect(parseChips('Arme de poing, aucune connue', chips, { exclusive: ['Aucune connue'] }))
+            .toEqual({ selected: ['Arme de poing'], precision: 'aucune connue' });
+        // Ordre des pastilles : serializeChips les écrit dans l'ordre de la liste.
+        expect(parseChips('Arme longue, Arme de poing', chips)).toEqual({ selected: ['Arme longue'], precision: 'Arme de poing' });
+        // Choix unique : une seule pastille lue.
+        expect(parseChips('Arme de poing, Arme longue', chips, { single: true })).toEqual({ selected: ['Arme de poing'], precision: 'Arme longue' });
     });
 
     it('« Aucune connue » exclut les autres, et inversement ; choix unique remplace', () => {

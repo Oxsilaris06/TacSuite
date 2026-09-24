@@ -161,6 +161,35 @@ function _normName(s: unknown): string {
  * par le navigateur via JSZip. Aucun besoin de scanner plusieurs QR codes.
  */
 
+/**
+ * Identifiant de fiche admissible. Les ids générés ici (horodatage, `oi_adv_…`,
+ * `…_sync`, pions `kind_id_date`) n'emploient que ces caractères ; un id venu
+ * d'ailleurs finit dans des gestionnaires en ligne (photos, journal) où un
+ * guillemet deviendrait du code exécuté (revue neuve 398b11e, constat XSS).
+ */
+const SAFE_ID = /^[A-Za-z0-9_.:-]{1,128}$/;
+
+/** Collections d'une archive dont les ids sont rendus dans la page. */
+const ID_BEARING_KEYS = [LOCAL_STORAGE_KEY, ADVERSARIES_KEY, HOSTAGES_KEY, FRIENDS_KEY, PHOTOS_KEY, CUSTOM_PAX_KEY, 'pcTacPlanPins'];
+
+/** Premier identifiant hors format dans `data.json`, ou `null`. */
+export function findUnsafeId(dataJson: Record<string, unknown>): string | null {
+    for (const key of ID_BEARING_KEYS) {
+        const raw = dataJson[key];
+        if (typeof raw !== 'string') continue;
+        let list: unknown;
+        try { list = JSON.parse(raw); } catch { continue; }
+        if (!Array.isArray(list)) continue;
+        for (const item of list) {
+            if (item && typeof item === 'object' && 'id' in item) {
+                const id = String((item as { id: unknown }).id);
+                if (!SAFE_ID.test(id)) return id;
+            }
+        }
+    }
+    return null;
+}
+
 const COLLECTION_KEYS = [
     LOCAL_STORAGE_KEY, TP_ASSOC_KEY,
     ADVERSARIES_KEY, HOSTAGES_KEY, FRIENDS_KEY, PHOTOS_KEY, CUSTOM_PAX_KEY,
@@ -365,6 +394,13 @@ export const Archive: ArchiveContract = {
         let dataJson: Record<string, string>;
         try { dataJson = JSON.parse(await dataFile.async('string')) as Record<string, string>; }
         catch { throw new Error('Archive corrompue : « data.json » illisible.'); }
+
+        // Frontière de confiance : un id hors format refuse l'archive entière,
+        // AVANT tout effacement (rien n'est modifié).
+        const unsafe = findUnsafeId(dataJson);
+        if (unsafe !== null) {
+            throw new Error(`Archive refusée : identifiant de fiche invalide (« ${unsafe.slice(0, 40)} »). Aucune donnée modifiée.`);
+        }
 
         // Situation CIBLE : celle déclarée par l'archive, sinon Forcené
         // (ancien format). Une archive TP s'importe donc dans la situation TP

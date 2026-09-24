@@ -449,11 +449,18 @@ export const PdfExport: PdfExportContract = {
                     if (context.y < 180) addNewPage(`${chapter} (SUITE)`);
                     const status = statusMeta(side, modeId, String(item.status || ''));
                     pdfPage().drawRectangle({ x: context.margin, y: context.y - 5, width: context.pageWidth - 2 * context.margin, height: 20, color: themeColors.headerBg });
-                    pdfPage().drawText(sanitizeWinAnsi(ficheTitle(side, modeId, item)), { x: context.margin + 5, y: context.y + 2, size: 11, font: fontBold, color: themeColors.text });
-                    if (hasStatus && item.status) {
-                        const label = sanitizeWinAnsi(status.label);
-                        const w = fontBold.widthOfTextAtSize(label, 10);
-                        pdfPage().drawText(label, { x: context.pageWidth - context.margin - 5 - w, y: context.y + 2, size: 10, font: fontBold, color: hexRgb(status.color) });
+                    const label = hasStatus && item.status ? sanitizeWinAnsi(status.label) : '';
+                    const labelWidth = label ? fontBold.widthOfTextAtSize(label, 10) + 12 : 0;
+                    // Titre tronqué (« … ») à la place restante : jamais sous le statut.
+                    const room = context.pageWidth - 2 * context.margin - 10 - labelWidth;
+                    let title = sanitizeWinAnsi(ficheTitle(side, modeId, item));
+                    if (fontBold.widthOfTextAtSize(title, 11) > room) {
+                        while (title.length > 1 && fontBold.widthOfTextAtSize(`${title}…`, 11) > room) title = title.slice(0, -1);
+                        title = `${title.trimEnd()}…`;
+                    }
+                    pdfPage().drawText(title, { x: context.margin + 5, y: context.y + 2, size: 11, font: fontBold, color: themeColors.text });
+                    if (label) {
+                        pdfPage().drawText(label, { x: context.pageWidth - context.margin - labelWidth + 7, y: context.y + 2, size: 10, font: fontBold, color: hexRgb(status.color) });
                     }
                     context.y -= 25;
 
@@ -477,8 +484,9 @@ export const PdfExport: PdfExportContract = {
                     const para = (text: string, bold = false): void => {
                         String(text).split(/\r?\n/).forEach((p) => wrapText(p, width(), bold ? fontBold : font, 9).forEach((l) => line(l, bold)));
                     };
-                    // Statut posé : déjà en couleur dans le bandeau. Absent : « N/C ».
-                    if (hasStatus && !item.status) para(`${statusWord} : N/C`);
+                    // Toujours écrit en couleur de texte : la couleur du bandeau
+                    // seule tombe sous 2:1 en thème clair (jaune, vert).
+                    if (hasStatus) para(`${statusWord} : ${item.status ? status.label : 'N/C'}`);
                     if (side === 'adv' && modeId === 'evenement' && item[TYPE_MENACE_KEY]) para(`Type : ${String(item[TYPE_MENACE_KEY])}`);
                     filledSections(side, modeId, item, new Date(), resolveLink).forEach((sec) => {
                         y -= 4;

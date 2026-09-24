@@ -17,7 +17,7 @@ vi.mock('@pctac/image-store.js', () => ({
   },
 }));
 
-import '@pctac/ui.js';
+import { UI } from '@pctac/ui.js';
 import { openFiche } from '@pctac/fiche-sheet.js';
 import { Storage } from '@pctac/storage.js';
 import { PCTAC_MODE_KEY } from '@pctac/modes.js';
@@ -143,3 +143,132 @@ describe('retour arrière', () => {
     expect(dialog().open).toBe(false);
   });
 });
+
+describe('revue neuve (398b11e)', () => {
+  it('Entrée dans un champ passe au suivant, sans enregistrer ni fermer', async () => {
+    await openFiche('adv');
+    setField('nom', 'DUPONT');
+    const nom = document.querySelector<HTMLInputElement>('#fiche_nom')!;
+    const ev = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true });
+    nom.dispatchEvent(ev);
+    await flush();
+    expect(ev.defaultPrevented).toBe(true);
+    expect(Storage.loadCollection('pcTacAdversaries')).toHaveLength(0);
+    expect(dialog().open).toBe(true);
+    expect(document.activeElement?.id).toBe('fiche_prenom');
+  });
+
+  it('brouillon repris en Forcené : la déduction blessures → statut tient toujours', async () => {
+    await openFiche('host');
+    setField('nom', 'Durand');
+    setField('blessures', 'balle abdomen, grave');
+    dialog().close();
+    await openFiche('host');
+    document.querySelector<HTMLElement>('.fiche-draft-resume')!.click();
+    await clickSave();
+    expect(Storage.loadCollection('pcTacHostages')[0]?.status).toBe('blesse');
+  });
+
+  it('statut posé depuis la carte : pas écrasé par une modification des blessures', async () => {
+    // DCD posé plus tôt par l'opérateur (hors fiche) ; blessures inchangées depuis.
+    Storage.saveCollection('pcTacHostages', [{ id: 'h1', nom: 'Roux', blessures: '', status: 'dcd' }]);
+    await openFiche('host', 'h1');
+    setField('blessures', 'plaie légère');
+    await clickSave();
+    expect(storedFiche('pcTacHostages', 'h1')?.status).toBe('dcd');
+  });
+
+  it('brouillon non repris : jamais écrasé par une nouvelle frappe', async () => {
+    await openFiche('adv');
+    setField('nom', 'PREMIER');
+    dialog().close();
+    await openFiche('adv');
+    setField('nom', 'SECOND');
+    const d = drafts()['adv:new'] as { values: Record<string, string> };
+    expect(d.values.nom).toBe('PREMIER');
+    expect(document.querySelector('.fiche-draft')).not.toBeNull();
+  });
+
+  it('un changement de statut depuis la carte ne fait pas jeter le brouillon de modification', async () => {
+    Storage.saveCollection('pcTacAdversaries', [{ id: 'a1', nom: 'A', status: 'active' }]);
+    await openFiche('adv', 'a1');
+    setField('antecedents', 'Fiché S');
+    dialog().close();
+    Storage.saveCollection('pcTacAdversaries', [{ id: 'a1', nom: 'A', status: 'neutralized' }]);
+    await openFiche('adv', 'a1');
+    document.querySelector<HTMLElement>('.fiche-draft-resume')!.click();
+    await clickSave();
+    // Saisie reprise, statut de la carte conservé.
+    expect(storedFiche('pcTacAdversaries', 'a1')).toMatchObject({ antecedents: 'Fiché S', status: 'neutralized' });
+  });
+
+  it('valeur illisible par le widget : jamais effacée par un enregistrement', async () => {
+    localStorage.setItem(PCTAC_MODE_KEY, 'recherche');
+    Storage.saveCollection('pcTacAdversaries', [{ id: 'a1', nom: 'A', quand: 'vers 14h', position_heure: '09:15', status: 'active' }]);
+    Storage.saveCollection('pcTacHostages', [{ id: 'h1', nom: 'T', fiabilite: 'Moyenne', status: 'ok' }]);
+    await openFiche('adv', 'a1');
+    await clickSave();
+    expect(storedFiche('pcTacAdversaries', 'a1')).toMatchObject({ quand: 'vers 14h', position_heure: '09:15' });
+    await openFiche('host', 'h1');
+    await clickSave();
+    expect(storedFiche('pcTacHostages', 'h1')?.fiabilite).toBe('Moyenne');
+  });
+
+  it('fiche supprimée pendant la modification : la saisie devient un brouillon de nouvelle fiche', async () => {
+    Storage.saveCollection('pcTacAdversaries', [{ id: 'a1', nom: 'A', status: 'active' }]);
+    await openFiche('adv', 'a1');
+    setField('antecedents', 'Fiché S');
+    Storage.saveCollection('pcTacAdversaries', []);
+    await clickSave();
+    expect(dialog().open).toBe(false);
+    const d = drafts()['adv:new'] as { values: Record<string, string> } | undefined;
+    expect(d?.values.antecedents).toBe('Fiché S');
+    expect(drafts()['adv:a1']).toBeUndefined();
+  });
+});
+
+describe('stockage plein (revue neuve)', () => {
+  it('écriture refusée : rien n’est jeté, la fiche reste ouverte, la saisie part en brouillon', async () => {
+    await openFiche('adv');
+    setField('nom', 'QUOTA');
+    const spy = vi.spyOn(Storage, 'saveCollection').mockImplementation(() => undefined);
+    try {
+      await clickSave();
+    } finally {
+      spy.mockRestore();
+    }
+    expect(dialog().open).toBe(true);
+    expect(Storage.loadCollection('pcTacAdversaries')).toHaveLength(0);
+    const d = drafts()['adv:new'] as { values: Record<string, string> } | undefined;
+    expect(d?.values.nom).toBe('QUOTA');
+  });
+});
+
+describe('cartes (revue neuve)', () => {
+  it('aucun id dans du JavaScript en ligne ; « Modifier » lit data-id au clic', async () => {
+    const evil = "1');window.__pwn=1;('";
+    Storage.saveCollection('pcTacAdversaries', [{ id: evil, nom: 'Piège', status: 'active' }]);
+    await UI.renderAdversaries();
+    const box = document.getElementById('adversary-table-body')!;
+    expect(box.innerHTML).not.toMatch(/on(click|change)=/);
+    box.querySelector<HTMLElement>('[data-fiche-action="edit"]')!.click();
+    await flush();
+    expect((window as unknown as { __pwn?: number }).__pwn).toBeUndefined();
+    expect(dialog().open).toBe(true);
+    expect(document.querySelector<HTMLInputElement>('#fiche_nom')?.value).toBe('Piège');
+  });
+
+  it('triage changé depuis la carte : sigle intact dans la main courante', async () => {
+    localStorage.setItem(PCTAC_MODE_KEY, 'tp');
+    Storage.saveCollection('pcTacHostages', [{ id: 'h1', nom: 'Roux', status: 'nt' }]);
+    await UI.renderHostages();
+    const sel = document.querySelector<HTMLSelectElement>('#hostage-table-body [data-fiche-action="status"]')!;
+    sel.value = 'ua';
+    sel.dispatchEvent(new Event('change', { bubbles: true }));
+    await flush();
+    expect(storedFiche('pcTacHostages', 'h1')?.status).toBe('ua');
+    const log = Storage.loadLogData();
+    expect(log.at(-1)?.remarques).toBe('OTG Roux : UA');
+  });
+});
+

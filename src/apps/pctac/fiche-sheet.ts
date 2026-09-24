@@ -41,8 +41,10 @@ import { toast } from '@shared/feedback.js';
 interface Draft {
     values: Record<string, string>;
     savedAt: number;
-    /** Fiche telle qu'à l'ouverture (modification) : un écart écarte le brouillon. */
+    /** Fiche telle qu'à l'ouverture, statut exclu (modification) : un écart écarte le brouillon. */
     base: string | null;
+    /** Statut choisi par l'opérateur (sinon, celui du brouillon n'est pas repris). */
+    statusTouched?: boolean;
 }
 
 interface SheetState {
@@ -54,6 +56,10 @@ interface SheetState {
     photo: string | null;
     statusTouched: boolean;
     dirty: boolean;
+    /** Brouillon trouvé à l'ouverture, ni repris ni effacé : jamais écrasé. */
+    pendingDraft: boolean;
+    /** Compression photo en cours : l'enregistrement l'attend. */
+    photoPending: Promise<void> | null;
 }
 
 let state: SheetState | null = null;
@@ -62,8 +68,26 @@ let historyPushed = false;
 let boundTo: HTMLDialogElement | null = null;
 let popstateBound = false;
 
+/** Même seuil que le CSS : téléphone, ou téléphone en paysage. */
+const FULLSCREEN_MQ = '(max-width: 640px), (max-height: 500px)';
+
+// Rechargement pendant qu'une fiche était ouverte : l'entrée d'historique
+// qu'elle avait poussée est encore là, et un « retour » tomberait dans le
+// vide. On la consomme dès le chargement (même document, sans navigation).
+try {
+    if ((history.state as { pctacFiche?: boolean } | null)?.pctacFiche) history.back();
+} catch {
+    // Historique inaccessible : sans conséquence.
+}
+
 const collectionKey = (side: FicheSide): string => (side === 'adv' ? ADVERSARIES_KEY : HOSTAGES_KEY);
 const slotOf = (side: FicheSide, id: string | null): string => `${side}:${id ?? 'new'}`;
+
+/** Empreinte d'une fiche pour son brouillon. Le statut en est exclu : il change
+ *  depuis la carte sans que la saisie en cours soit périmée pour autant. */
+function baseOf(fiche: Record<string, unknown>): string {
+    return JSON.stringify({ ...fiche, status: undefined });
+}
 
 // --- Brouillons -------------------------------------------------------------
 
@@ -92,10 +116,10 @@ function dropDraft(side: FicheSide, id: string | null): void {
     writeDrafts(drafts);
 }
 
-function saveDraft(): void {
-    if (!state) return;
+function saveDraft(force = false): void {
+    if (!state || (state.pendingDraft && !force)) return;
     const drafts = readDrafts();
-    drafts[slotOf(state.side, state.id)] = { values: collect(), savedAt: Date.now(), base: state.base };
+    drafts[slotOf(state.side, state.id)] = { values: collect(), savedAt: Date.now(), base: state.base, statusTouched: state.statusTouched };
     writeDrafts(drafts);
 }
 
@@ -111,11 +135,14 @@ function attr(value: unknown): string {
 
 function chipsHtml(field: FicheField, value: unknown, cls = ''): string {
     const chips = field.chips ?? [];
-    const { selected, precision } = parseChips(value, chips);
+    const { selected, precision } = parseChips(value, chips, field);
     const buttons = chips.map((c) => `<button type="button" class="fiche-chip" aria-pressed="${selected.includes(c)}" data-chip="${attr(c)}">${esc(c)}</button>`).join('');
-    const precisionInput = field.key === TYPE_MENACE_KEY || !field.placeholder ? '' :
-        `<input type="text" class="fiche-precision" aria-label="${attr(field.label)} : précision" placeholder="${attr(field.placeholder)}"
-            value="${attr(precision)}"${field.numeric ? ' inputmode="numeric"' : ''}>`;
+    // Précision : si le champ en prévoit une, ou si la valeur stockée porte un
+    // texte hors pastilles (sans champ pour l'afficher, il serait effacé).
+    const withPrecision = (field.key !== TYPE_MENACE_KEY && !!field.placeholder) || precision !== '';
+    const precisionInput = !withPrecision ? '' :
+        `<input type="text" class="fiche-precision" aria-label="${attr(field.label)} : précision" placeholder="${attr(field.placeholder ?? 'Précision')}"
+            value="${attr(precision)}" enterkeyhint="next"${field.numeric ? ' inputmode="numeric"' : ''}>`;
     return `<div class="fiche-chips ${cls}" data-key="${attr(field.key)}">
         <div class="fiche-chip-row" role="group" aria-label="${attr(field.label)}">${buttons}</div>${precisionInput}</div>`;
 }
@@ -142,21 +169,25 @@ function fieldHtml(field: FicheField, value: unknown): string {
             return `<div class="fiche-field"><span class="fiche-label">${esc(field.label)}</span>${chipsHtml(field, v)}</div>`;
         case 'long':
             return `<div class="fiche-field">${label}<textarea id="${id}" data-key="${attr(field.key)}" rows="2"${ph}>${esc(v)}</textarea></div>`;
-        case 'time':
+        case 'time': {
+            // Heure HH:MM : sélecteur natif. Texte libre ancien (« vers 14h ») :
+            // champ texte, sinon le sélecteur l'afficherait vide et l'effacerait.
+            const type = v === '' || /^\d{2}:\d{2}$/.test(v) ? 'time' : 'text';
             return `<div class="fiche-field">${label}<div class="fiche-time">
-                <input type="time" id="${id}" data-key="${attr(field.key)}" value="${attr(v)}">
+                <input type="${type}" id="${id}" data-key="${attr(field.key)}" value="${attr(v)}" enterkeyhint="next">
                 <button type="button" class="fiche-now" data-now="${attr(field.key)}">Maintenant</button></div></div>`;
+        }
         case 'tel':
-            return `<div class="fiche-field">${label}<input type="tel" id="${id}" data-key="${attr(field.key)}" autocomplete="off" value="${attr(v)}"${ph}></div>`;
+            return `<div class="fiche-field">${label}<input type="tel" id="${id}" data-key="${attr(field.key)}" autocomplete="off" enterkeyhint="next" value="${attr(v)}"${ph}></div>`;
         case 'dob': {
             const age = ageFromDob(v);
-            return `<div class="fiche-field">${label}<input type="text" id="${id}" data-key="${attr(field.key)}" autocomplete="off" value="${attr(v)}"${ph}>
+            return `<div class="fiche-field">${label}<input type="text" id="${id}" data-key="${attr(field.key)}" autocomplete="off" enterkeyhint="next" value="${attr(v)}"${ph}>
                 <span class="fiche-hint" data-age-for="${attr(field.key)}">${age === null ? '' : `${age} ans`}</span></div>`;
         }
         case 'link':
             return `<div class="fiche-field">${label}<select id="${id}" data-key="${attr(field.key)}">${linkOptions(v)}</select></div>`;
         default:
-            return `<div class="fiche-field">${label}<input type="text" id="${id}" data-key="${attr(field.key)}" autocomplete="off" value="${attr(v)}"${ph}></div>`;
+            return `<div class="fiche-field">${label}<input type="text" id="${id}" data-key="${attr(field.key)}" autocomplete="off" enterkeyhint="next" value="${attr(v)}"${ph}></div>`;
     }
 }
 
@@ -181,9 +212,12 @@ function statusHtml(side: FicheSide, current: string): string {
     if (choices.length === 0) return '';
     const label = side === 'host' && (currentModeId() === 'tp' || currentModeId() === 'evenement') ? 'Triage' : 'Statut';
     return `<div class="fiche-field fiche-status"><span class="fiche-label">${label}</span>
-        <div class="fiche-chip-row" role="radiogroup" aria-label="${label}">${choices.map((c) =>
-            `<button type="button" class="fiche-chip fiche-status-chip" role="radio" aria-checked="${c.key === current}" data-status="${attr(c.key)}"
-                style="--chip-color: ${c.color}">${esc(c.label)}</button>`).join('')}</div></div>`;
+        <div class="fiche-chip-row" role="radiogroup" aria-label="${label}">${choices.map((c, i) => {
+            const checked = c.key === current;
+            const tabbable = checked || (i === 0 && !choices.some((x) => x.key === current));
+            return `<button type="button" class="fiche-chip fiche-status-chip" role="radio" aria-checked="${checked}" tabindex="${tabbable ? 0 : -1}"
+                data-status="${attr(c.key)}" style="--chip-color: ${c.color}">${esc(c.label)}</button>`;
+        }).join('')}</div></div>`;
 }
 
 function render(): void {
@@ -205,7 +239,7 @@ function render(): void {
             <button type="button" class="fiche-close" aria-label="Fermer la fiche"><span class="material-symbols-outlined" aria-hidden="true">close</span></button>
         </header>
         <div class="fiche-body">
-            ${draft && !state.dirty ? `<div class="fiche-draft" role="status">
+            ${draft && state.pendingDraft ? `<div class="fiche-draft" role="status">
                 <span>Saisie non enregistrée du ${new Date(draft.savedAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</span>
                 <button type="button" class="fiche-draft-resume">Reprendre</button>
                 <button type="button" class="fiche-draft-drop">Effacer</button></div>` : ''}
@@ -227,7 +261,7 @@ function render(): void {
         </div>
         <footer class="fiche-foot">
             <button type="button" class="fiche-save-next">Enregistrer et suivante</button>
-            <button type="submit" class="fiche-save">${esc(id ? 'Enregistrer' : lex.saveLabel)}</button>
+            <button type="button" class="fiche-save">${esc(id ? 'Enregistrer' : lex.saveLabel)}</button>
         </footer>
     </form>`;
     updateCounts(dlg);
@@ -278,7 +312,6 @@ function rerenderKeepingInput(): void {
 function markDirty(): void {
     if (!state) return;
     state.dirty = true;
-    dialogEl()?.querySelector('.fiche-draft')?.remove();
     saveDraft();
     const dlg = dialogEl();
     if (dlg) updateCounts(dlg);
@@ -323,6 +356,9 @@ async function save(next: boolean): Promise<void> {
     if (!state || !dlg) return;
     const { side, id } = state;
     const mode = currentModeId();
+    // Photo en cours de compression : l'attendre, sinon la fiche part sans.
+    if (state.photoPending) await state.photoPending;
+    if (!state) return;
     const values = collect();
     const { status: chosen, ...fields } = values;
     const hasContent = Object.values(fields).some((v) => v !== '') || state.photo !== null;
@@ -337,7 +373,18 @@ async function save(next: boolean): Promise<void> {
         const list = Storage.loadCollection(key);
         let item = id ? list.find((i) => i.id === id) : undefined;
         if (id && !item) {
-            toast('Fiche introuvable (supprimée entre-temps ?)', { kind: 'error' });
+            // Supprimée ailleurs (autre onglet) : la saisie devient le brouillon
+            // d'une NOUVELLE fiche, proposé au prochain « + ».
+            const drafts = readDrafts();
+            const freeSlot = !drafts[slotOf(side, null)];
+            if (freeSlot) {
+                drafts[slotOf(side, null)] = { values, savedAt: Date.now(), base: null, statusTouched: state.statusTouched };
+                delete drafts[slotOf(side, id)];
+                writeDrafts(drafts);
+            }
+            toast(freeSlot
+                ? 'Fiche supprimée entre-temps : votre saisie est proposée dans une nouvelle fiche'
+                : 'Fiche supprimée entre-temps : votre saisie reste en brouillon', { kind: 'error' });
             close();
             return;
         }
@@ -357,29 +404,44 @@ async function save(next: boolean): Promise<void> {
             else item![k] = v;
         });
 
-        // Statut. Forcené : la déduction par les blessures ne vaut que tant que
-        // l'opérateur n'a pas choisi lui-même. Triage : jamais déduit.
+        // Statut. Forcené : la déduction par les blessures ne vaut que si
+        // personne n'a choisi le statut : ni dans cette fiche, ni avant (un DCD
+        // posé depuis la carte ne correspond pas à la déduction des anciennes
+        // blessures, il est donc gardé). Triage : jamais déduit.
         let status = chosen ?? String(item.status || defaultStatus(side, mode));
+        const derivedBefore = String(item.status ?? '') === hostageStatusFromBlessures(oldBlessures);
         if (side === 'host' && mode === 'forcene' && !state.statusTouched
-            && (created || String(item.blessures ?? '') !== oldBlessures)) {
+            && (created || (String(item.blessures ?? '') !== oldBlessures && derivedBefore))) {
             status = hostageStatusFromBlessures(item.blessures);
         }
         if (created) item.status = status;
         if (state.photo) await syncPhoto(side, item, state.photo);
         Storage.saveCollection(key, list);
+        // Stockage plein : `saveCollection` n'échoue pas bruyamment. On relit ;
+        // si la fiche n'y est pas telle quelle, rien n'est jeté ni fermé.
+        const persisted = Storage.loadCollection(key).find((i) => i.id === item!.id);
+        if (!persisted || JSON.stringify(persisted) !== JSON.stringify(item)) {
+            saveDraft(true);
+            toast('Stockage plein : fiche NON enregistrée. La saisie reste à l’écran et en brouillon.', { kind: 'error' });
+            return;
+        }
         // Modification : le changement de statut passe par la voie commune
         // (photo liée, entrée automatique en main courante).
         if (!created && status !== item.status) window.UI.setItemStatus(key, String(item.id), status);
 
-        dropDraft(side, id);
+        // Brouillon ancien jamais tranché : il reste proposé (autre saisie).
+        if (!state.pendingDraft) dropDraft(side, id);
         toast(created ? 'Fiche enregistrée' : 'Fiche mise à jour', { kind: 'success' });
         if (side === 'adv') await window.UI.renderAdversaries();
         else await window.UI.renderHostages();
         if (state.photo) await window.UI.renderPhotos();
         if (next) {
-            state = { side, id: null, base: null, item: {}, photo: null, statusTouched: false, dirty: false };
+            const pendingDraft = !!readDrafts()[slotOf(side, null)];
+            state = { side, id: null, base: null, item: {}, photo: null, statusTouched: false, dirty: false, pendingDraft, photoPending: null };
             render();
             dlg.querySelector<HTMLElement>('.fiche-body')?.scrollTo?.({ top: 0 });
+            // Saisie en rafale : on repart directement dans le premier champ.
+            dlg.querySelector<HTMLElement>('.fiche-section[open] [data-key], .fiche-section[open] .fiche-precision')?.focus();
         } else {
             close();
         }
@@ -396,11 +458,16 @@ function onClick(e: Event): void {
     if (!state || !dlg) return;
     if (target.closest('.fiche-close')) { close(); return; }
     if (target.closest('.fiche-save-next')) { void save(true); return; }
+    if (target.closest('.fiche-save')) { void save(false); return; }
     if (target.closest('.fiche-draft-resume')) {
         const draft = readDrafts()[slotOf(state.side, state.id)];
         if (draft) {
-            state.item = { ...state.item, ...draft.values };
-            if (draft.values.status) state.statusTouched = true;
+            // Statut du brouillon repris seulement s'il avait été choisi : sinon
+            // la déduction (Forcené) et un statut posé depuis la carte tiennent.
+            const { status: draftStatus, ...values } = draft.values;
+            state.item = { ...state.item, ...values, ...(draft.statusTouched && draftStatus ? { status: draftStatus } : {}) };
+            state.statusTouched = draft.statusTouched === true;
+            state.pendingDraft = false;
             state.dirty = true;
             render();
         }
@@ -408,7 +475,10 @@ function onClick(e: Event): void {
     }
     if (target.closest('.fiche-draft-drop')) {
         dropDraft(state.side, state.id);
+        state.pendingDraft = false;
         target.closest('.fiche-draft')?.remove();
+        // Saisie faite pendant que le bandeau attendait : protégée à son tour.
+        if (state.dirty) saveDraft();
         return;
     }
     const now = target.closest<HTMLElement>('.fiche-now');
@@ -423,7 +493,10 @@ function onClick(e: Event): void {
     }
     const statusChip = target.closest<HTMLElement>('.fiche-status-chip');
     if (statusChip) {
-        dlg.querySelectorAll('.fiche-status-chip').forEach((b) => b.setAttribute('aria-checked', String(b === statusChip)));
+        dlg.querySelectorAll('.fiche-status-chip').forEach((b) => {
+            b.setAttribute('aria-checked', String(b === statusChip));
+            b.setAttribute('tabindex', b === statusChip ? '0' : '-1');
+        });
         state.statusTouched = true;
         markDirty();
         return;
@@ -436,7 +509,10 @@ function onClick(e: Event): void {
         const selected = [...box.querySelectorAll<HTMLElement>('.fiche-chip[aria-pressed="true"]')].map((b) => b.dataset.chip ?? '');
         const next = toggleChip(selected, chip.dataset.chip ?? '', field);
         box.querySelectorAll<HTMLElement>('.fiche-chip').forEach((b) => b.setAttribute('aria-pressed', String(next.includes(b.dataset.chip ?? ''))));
-        if (field.key === TYPE_MENACE_KEY) rerenderKeepingInput();
+        if (field.key === TYPE_MENACE_KEY) {
+            rerenderKeepingInput();
+            dlg.querySelector<HTMLElement>(`[data-key="${TYPE_MENACE_KEY}"] .fiche-chip[data-chip="${CSS.escape(chip.dataset.chip ?? '')}"]`)?.focus();
+        }
         markDirty();
     }
 }
@@ -460,18 +536,70 @@ async function onChange(e: Event): Promise<void> {
     if (!input.classList.contains('fiche-photo-input') || !state) return;
     const file = input.files?.[0];
     if (!file) return;
-    try {
-        state.photo = await Utils.compressImage(file, 800, 800, 0.7);
-        const holder = input.closest('.fiche-photo');
-        holder?.querySelector('img, .material-symbols-outlined')?.remove();
-        const img = document.createElement('img');
-        img.src = state.photo;
-        img.alt = '';
-        holder?.prepend(img);
-    } catch (err) {
-        console.error('Erreur de compression:', err);
-        toast('Échec du traitement de la photo', { kind: 'error' });
+    // La fiche peut changer pendant la compression (« suivante », fermeture) :
+    // la photo n'appartient qu'à celle où elle a été choisie.
+    const owner = state;
+    const job = (async (): Promise<void> => {
+        try {
+            const data = await Utils.compressImage(file, 800, 800, 0.7);
+            if (state !== owner) return;
+            owner.photo = data;
+            const holder = input.closest('.fiche-photo');
+            holder?.querySelector('img, .material-symbols-outlined')?.remove();
+            const img = document.createElement('img');
+            img.src = data;
+            img.alt = '';
+            holder?.prepend(img);
+        } catch (err) {
+            console.error('Erreur de compression:', err);
+            toast('Échec du traitement de la photo', { kind: 'error' });
+        }
+    })();
+    owner.photoPending = job;
+    await job;
+    if (owner.photoPending === job) owner.photoPending = null;
+}
+
+/** Entrée : champ suivant (jamais d'enregistrement implicite, cf. revue). */
+function onKeydown(e: KeyboardEvent): void {
+    const target = e.target as HTMLElement;
+    const dlg = dialogEl();
+    if (!dlg) return;
+    const radio = target.closest<HTMLElement>('.fiche-status-chip');
+    if (radio && ['ArrowRight', 'ArrowDown', 'ArrowLeft', 'ArrowUp'].includes(e.key)) {
+        const radios = [...dlg.querySelectorAll<HTMLElement>('.fiche-status-chip')];
+        const step = e.key === 'ArrowRight' || e.key === 'ArrowDown' ? 1 : -1;
+        const next = radios[(radios.indexOf(radio) + step + radios.length) % radios.length];
+        e.preventDefault();
+        next?.click();
+        next?.focus();
+        return;
     }
+    if (e.key !== 'Enter' || e.isComposing || e.ctrlKey || e.metaKey) return;
+    if (!(target instanceof HTMLInputElement) || target.type === 'file') return;
+    e.preventDefault();
+    const fields = [...dlg.querySelectorAll<HTMLElement>('.fiche-body input:not([type="file"]), .fiche-body textarea, .fiche-body select')];
+    const next = fields[fields.indexOf(target) + 1];
+    if (!next) { target.blur(); return; }
+    const section = next.closest<HTMLDetailsElement>('details');
+    if (section && !section.open) section.open = true;
+    next.focus();
+}
+
+/** Clavier virtuel : la fiche plein écran suit la zone réellement visible,
+ *  sinon le pied « Enregistrer » reste sous le clavier (dvh ne bouge pas). */
+function fitViewport(): void {
+    const dlg = dialogEl();
+    const vv = window.visualViewport;
+    if (!dlg) return;
+    const full = typeof window.matchMedia === 'function' && window.matchMedia(FULLSCREEN_MQ).matches;
+    if (!vv || !full || !dlg.open) {
+        dlg.style.removeProperty('height');
+        dlg.style.removeProperty('top');
+        return;
+    }
+    dlg.style.height = `${Math.round(vv.height)}px`;
+    dlg.style.top = `${Math.round(vv.offsetTop)}px`;
 }
 
 function bind(dlg: HTMLDialogElement): void {
@@ -480,7 +608,9 @@ function bind(dlg: HTMLDialogElement): void {
     dlg.addEventListener('click', onClick);
     dlg.addEventListener('input', onInput);
     dlg.addEventListener('change', (e) => { void onChange(e); });
-    dlg.addEventListener('submit', (e) => { e.preventDefault(); void save(false); });
+    dlg.addEventListener('keydown', onKeydown);
+    // Filet : aucune soumission de formulaire, quelle qu'en soit l'origine.
+    dlg.addEventListener('submit', (e) => { e.preventDefault(); });
     // Fermeture par Échap ou `close()` : on rend l'entrée d'historique.
     dlg.addEventListener('close', () => {
         state = null;
@@ -492,6 +622,8 @@ function bind(dlg: HTMLDialogElement): void {
     // Geste retour (Android) ou bouton précédent : ferme la fiche, pas la page.
     if (popstateBound) return;
     popstateBound = true;
+    window.visualViewport?.addEventListener('resize', fitViewport);
+    window.visualViewport?.addEventListener('scroll', fitViewport);
     window.addEventListener('popstate', () => {
         if (!historyPushed) return;
         historyPushed = false;
@@ -515,7 +647,7 @@ export async function openFiche(side: FicheSide, id: string | null = null): Prom
             toast('Fiche introuvable', { kind: 'error' });
             return;
         }
-        base = JSON.stringify(found);
+        base = baseOf(found);
         item = { ...found };
         const photo = await ImageStore.get(id).catch(() => null);
         if (photo) item.photo = photo;
@@ -527,10 +659,12 @@ export async function openFiche(side: FicheSide, id: string | null = null): Prom
         dropDraft(side, id);
         toast('Brouillon écarté : la fiche a changé depuis', { kind: 'info' });
     }
-    state = { side, id, base, item, photo: null, statusTouched: false, dirty: false };
+    const pendingDraft = !!readDrafts()[slotOf(side, id)];
+    state = { side, id, base, item, photo: null, statusTouched: false, dirty: false, pendingDraft, photoPending: null };
     render();
     if (!dlg.open) {
         dlg.showModal();
+        fitViewport();
         try {
             history.pushState({ pctacFiche: true }, '');
             historyPushed = true;
