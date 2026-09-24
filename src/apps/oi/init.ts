@@ -10,6 +10,7 @@
  * ce qui n'est JAMAIS réassigné hors de init.js — export nommé classique.
  */
 import { toast } from '@shared/feedback.js';
+import { setAnnotationHost } from '@shared/annotation-host.js';
 
 import type {
     OiDbManagerContract,
@@ -472,6 +473,19 @@ window.saveToStorage = () => {
 };
 
 window.saveFormData = window.saveToStorage; // init.js:353
+
+// Moteur d'annotation partagé avec le PC-Tac (décision 25) : il lit et écrit
+// ici le Store et la base de l'OI, comme avant. `saveToStorage` et
+// `syncDomToStore` sont résolus à l'appel (formulaires.ts les remplace).
+setAnnotationHost({
+    get annotations() { return Store.state.annotations; },
+    set annotations(v) { Store.state.annotations = v; },
+    get objectUrlsCache() { return Store.state.objectUrlsCache; },
+    set objectUrlsCache(v) { Store.state.objectUrlsCache = v; },
+    getImage: (id) => dbManager.getItem(id),
+    save: () => { if (typeof window.saveToStorage === 'function') window.saveToStorage(); },
+    syncDom: () => { window.syncDomToStore(); },
+});
 
 // Export DEFAULTS — init.js:356
 window.DEFAULTS = DEFAULTS;
