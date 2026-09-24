@@ -1403,3 +1403,24 @@ test.describe('OI — Checklist fonctionnelle', () => {
     });
   });
 });
+
+// ============================================================================
+// Capture de la carte vers un champ photo (retour Nico 2026-09-24 : « Error
+// attempting to parse color »). html2canvas 1.4 ne lit pas `color(srgb …)`,
+// forme calculée de `color-mix()` : la capture échouait sans rien ajouter.
+// ============================================================================
+
+test('capture de la carte vers « OI Express — Carte » : photo ajoutée, aucune erreur', async ({ page }) => {
+  const errors: string[] = [];
+  page.on('console', (m) => { if (m.type() === 'error' && /capture|parse/i.test(m.text())) errors.push(m.text()); });
+  await page.goto('/oi/', { waitUntil: 'domcontentloaded' });
+  await page.locator('[data-oi-mode="express"]').click();
+  await page.locator('#expressCartoCaptureBtn').click();
+  await page.waitForTimeout(3000);
+  await page.locator('#oi_carto_btn_more').click();
+  await page.locator('#oi_carto_btn_capture').click();
+  await page.locator('#oi_carto_capture_export').click();
+  await expect(page.locator('#photo_container_express_carte_preview_container img')).toHaveCount(1, { timeout: 15000 });
+  expect(errors).toEqual([]);
+});
+

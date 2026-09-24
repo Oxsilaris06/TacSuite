@@ -269,14 +269,14 @@
             <span class="material-symbols-outlined log-btn-icon" aria-hidden="true">terminal</span> LOG
         </button>
         <h1>Générateur d'OI</h1>
-        <!-- OI complète / OI express (sections-ui.ts) : l'express ne montre que
+        <!-- OI Complet / OI Express (sections-ui.ts) : l'express ne montre que
              Situation, Mission, Exécution et PATRACDVR, et produit un PDF court. -->
         <div id="oiModeToggle" class="oi-mode-toggle" role="radiogroup" aria-label="Type d'OI">
             <button type="button" role="radio" class="oi-mode-option" data-oi-mode="complete" aria-checked="true" tabindex="0">
-                <span class="material-symbols-outlined" aria-hidden="true">description</span> OI complète
+                <span class="material-symbols-outlined" aria-hidden="true">description</span> OI Complet
             </button>
             <button type="button" role="radio" class="oi-mode-option" data-oi-mode="express" aria-checked="false" tabindex="-1">
-                <span class="material-symbols-outlined" aria-hidden="true">bolt</span> OI express
+                <span class="material-symbols-outlined" aria-hidden="true">bolt</span> OI Express
             </button>
         </div>
 
@@ -303,7 +303,7 @@
                         id="situation_particuliere" data-action="sync-dom-to-store"></textarea>
 
                     <!-- OI express seulement : les trois photos qui servent à l'exécution
-                         (le PDF express les met en page 2). Masqué en OI complète. -->
+                         (le PDF express les met en page 2). Masqué en OI Complet. -->
                     <div class="oi-express-only oi-express-photos">
                         <h3><span class="material-symbols-outlined" aria-hidden="true">photo_camera</span> Photos</h3>
                         <div class="oi-express-photo-buttons">
@@ -321,7 +321,7 @@
                                 <span class="material-symbols-outlined" aria-hidden="true">map</span> Carte
                             </button>
                         </div>
-                        <p class="hint-text-block">« Carte » ouvre la cartographie : cadrez, activez le carroyage si besoin, puis « Capture » vers « OI express — Carte ».</p>
+                        <p class="hint-text-block">« Carte » ouvre la cartographie : cadrez, activez le carroyage si besoin, puis « Capture » vers « OI Express — Carte ».</p>
                         <div id="photo_container_express_objectif_preview_container" class="image-preview-container"></div>
                         <div id="photo_container_express_adversaire_preview_container" class="image-preview-container"></div>
                         <div id="photo_container_express_carte_preview_container" class="image-preview-container"></div>
@@ -702,7 +702,7 @@ Gestuelle et visuelle entre les éléments INDIA</textarea>
             <button class="wizard-nav-btn" id="prevBtn" type="button">Précédent</button>
             <button class="wizard-nav-btn" id="nextBtn" type="button">Suivant</button>
             <!-- OI express : l'aperçu de l'étape Finalisation (masquée) est doublé ici. -->
-            <button class="wizard-nav-btn" id="expressPreviewBtn" type="button" style="display: none;">Aperçu de l'OI express <span
+            <button class="wizard-nav-btn" id="expressPreviewBtn" type="button" style="display: none;">Aperçu de l'OI Express <span
                     class="material-symbols-outlined icon-1-2em" aria-hidden="true">visibility</span></button>
         </div>
         <footer id="main-footer">

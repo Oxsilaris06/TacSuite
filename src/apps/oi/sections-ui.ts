@@ -224,7 +224,7 @@ export function renderSections(): void {
     });
 }
 
-/** Peint la bascule Complète / Express et la classe de page qui masque ou montre les blocs express. */
+/** Peint la bascule Complet / Express et la classe de page qui masque ou montre les blocs express. */
 function renderModeToggle(): void {
     const mode = currentOiMode(Store.state.formData);
     document.body.classList.toggle('oi-express', mode === 'express');

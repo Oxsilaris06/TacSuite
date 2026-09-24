@@ -75,6 +75,7 @@
 import html2canvas from 'html2canvas';
 
 import { toast } from '@shared/feedback.js';
+import { legacyCaptureColors } from '@shared/h2c-colors.js';
 import { drawOverlayLegend, overlayLegend } from '@shared/map-overlays.js';
 
 import type { OICartoInternal, OiCartoPhotoTarget } from './types.js';
@@ -109,7 +110,7 @@ export const CaptureMethods = {
             // OI express : photo « Carte » de l'étape Situation, proposée EN PREMIER
             // (donc par défaut) seulement en mode express.
             ...(document.body.classList.contains('oi-express')
-                ? [{ id: 'photo_container_express_carte_preview_container', label: 'OI express — Carte' }]
+                ? [{ id: 'photo_container_express_carte_preview_container', label: 'OI Express — Carte' }]
                 : []),
             { id: 'photo_container_transport_pr_preview_container', label: 'Transport PSIG → PR' },
             { id: 'photo_container_transport_domicile_preview_container', label: 'Transport PR → Domicile / LE' },
@@ -272,6 +273,8 @@ export const CaptureMethods = {
                 scrollX: 0, scrollY: 0,
                 ignoreElements: (n) => n.tagName === 'CANVAS',
                 onclone: (clonedDoc) => {
+                    // `color-mix()` calculé en `color(srgb …)`, illisible pour html2canvas.
+                    legacyCaptureColors(mapContainer.id ? clonedDoc.getElementById(mapContainer.id) : clonedDoc.body);
                     clonedDoc.querySelectorAll<HTMLElement>('[data-h2c-pin]').forEach((node) => {
                         try {
                             const r = JSON.parse(node.getAttribute('data-h2c-pin') ?? '');
