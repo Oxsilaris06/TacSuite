@@ -464,10 +464,115 @@ test.describe('PC-Tac — Checklist fonctionnelle', () => {
     await step('lightbox plein écran', async () => {
       await page.locator('#photo-board .photo-card img').first().click();
       await expect.soft(page.locator('#lightboxModal')).toBeVisible({ timeout: 1500 });
+      // Décision 26 : bord à bord, la marge de la feuille UA du <dialog> retirée.
+      const box = await page.locator('#lightboxModal').boundingBox();
+      const vp = page.viewportSize();
+      expect.soft(box && vp ? [box.x, box.y, box.width, box.height] : null).toEqual(vp ? [0, 0, vp.width, vp.height] : null);
       // Décision 25 : une photo de la galerie s'annote depuis la visionneuse.
       await expect.soft(page.locator('#lightboxAnnotateBtn')).toBeVisible({ timeout: 1500 });
       await page.locator('#lightboxModal .pctac-lightbox-close-btn').click();
       await expect.soft(page.locator('#lightboxModal')).toBeHidden({ timeout: 1500 });
+    });
+  });
+
+  test('Photos — annotation : texte de la Zone, Annuler jette le tracé (décision 26)', async ({ page }, testInfo) => {
+    // Sur téléphone, les outils vivent dans le dock mobile : parcours de bureau.
+    test.skip(testInfo.project.name === 'chromium-mobile', 'outils dans le dock mobile');
+    await clickTab(page, 'view-photos');
+    const png = await page.evaluate(() => {
+      const c = document.createElement('canvas');
+      c.width = 400;
+      c.height = 300;
+      const g = c.getContext('2d')!;
+      g.fillStyle = '#4a6';
+      g.fillRect(0, 0, 400, 300);
+      return c.toDataURL('image/png').split(',')[1]!;
+    });
+    await page.locator('#photo_title').fill('Zone E2E');
+    await page.setInputFiles('#photo_file', { name: 'zone.png', mimeType: 'image/png', buffer: Buffer.from(png, 'base64') });
+    await page.locator('#photo-form button[type="submit"]').click();
+    const card = page.locator('#photo-board .photo-card', { hasText: 'Zone E2E' });
+    const stored = (): Promise<string | null> =>
+      page.evaluate(() => {
+        const list = JSON.parse(localStorage.getItem('pcTacPhotos') || '[]') as { title?: string; annotations?: string }[];
+        return list.find((p) => p.title === 'Zone E2E')?.annotations ?? null;
+      });
+    const drag = async (dx: number): Promise<void> => {
+      const box = (await page.locator('#annotationCanvas').boundingBox())!;
+      const cx = box.x + box.width / 2;
+      const cy = box.y + box.height / 2;
+      await page.mouse.move(cx, cy);
+      await page.mouse.down();
+      await page.mouse.move(cx + dx, cy + dx / 2, { steps: 4 });
+      await page.mouse.up();
+    };
+
+    await step('Zone : le texte saisi est gardé', async () => {
+      await card.locator('[data-photo-action="annotate"]').click();
+      await expect(page.locator('#annotationModal')).toBeVisible();
+      await page.locator('#tool_location').click();
+      await page.locator('.tac-confirm-dialog .tac-confirm-input').fill('PC');
+      await page.locator('.tac-confirm-dialog .tac-confirm-btn--ok').click();
+      await drag(80);
+      await page.locator('#annotation_save_header').click();
+      await expect(page.locator('#annotationModal')).toBeHidden();
+      await expect.poll(stored).toContain('"text":"PC"');
+    });
+
+    await step('Annuler : confirmation, puis rien du nouveau tracé n’est gardé', async () => {
+      const before = await stored();
+      await card.locator('[data-photo-action="annotate"]').click();
+      await expect(page.locator('#annotationModal')).toBeVisible();
+      await page.locator('#tool_box').click();
+      await drag(-90);
+      await page.locator('#annotation_cancel_header').click();
+      await page.locator('.tac-confirm-dialog .tac-confirm-btn--danger').click();
+      await expect(page.locator('#annotationModal')).toBeHidden();
+      await page.waitForTimeout(300);
+      expect(await stored()).toBe(before);
+    });
+  });
+
+  test('Photos — tablette portrait et téléphone paysage : annotation et visionneuse utilisables (revue)', async ({ page }) => {
+    await clickTab(page, 'view-photos');
+    const png = await page.evaluate(() => {
+      const c = document.createElement('canvas');
+      c.width = 1600;
+      c.height = 1200;
+      const g = c.getContext('2d')!;
+      g.fillStyle = '#4a6';
+      g.fillRect(0, 0, 1600, 1200);
+      return c.toDataURL('image/png').split(',')[1]!;
+    });
+    await page.locator('#photo_title').fill('Tablette E2E');
+    await page.setInputFiles('#photo_file', { name: 't.png', mimeType: 'image/png', buffer: Buffer.from(png, 'base64') });
+    await page.locator('#photo-form button[type="submit"]').click();
+    const card = page.locator('#photo-board .photo-card', { hasText: 'Tablette E2E' });
+    await expect(card).toBeVisible();
+
+    for (const [w, h] of [[800, 1280], [768, 1024], [844, 390]] as const) {
+      await step(`annotation ${w}×${h} : la photo est visible`, async () => {
+        await page.setViewportSize({ width: w, height: h });
+        await card.locator('[data-photo-action="annotate"]').click();
+        await expect(page.locator('#annotationModal')).toBeVisible();
+        await page.waitForTimeout(300);
+        const box = await page.locator('#annotationCanvas').boundingBox();
+        expect.soft(box && box.width > 100 && box.height > 60, `toile ${JSON.stringify(box)}`).toBe(true);
+        await page.locator('#annotation_cancel_header').click();
+        await expect(page.locator('#annotationModal')).toBeHidden();
+      });
+    }
+
+    await step('visionneuse 844×390 : ouverte en haut, croix visible et focalisée', async () => {
+      await page.setViewportSize({ width: 844, height: 390 });
+      await card.locator('img').click();
+      await expect(page.locator('#lightboxModal')).toBeVisible();
+      await page.waitForTimeout(200);
+      const close = page.locator('#lightboxModal .pctac-lightbox-close-btn');
+      expect.soft(await page.locator('#lightboxModal').evaluate((d) => d.scrollTop)).toBe(0);
+      expect.soft((await close.boundingBox())!.y).toBeGreaterThanOrEqual(0);
+      await expect.soft(close).toBeFocused();
+      await close.click();
     });
   });
 

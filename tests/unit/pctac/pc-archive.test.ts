@@ -100,6 +100,13 @@ vi.mock('@shared/feedback.js', () => ({
   toast: toastSpy,
 }));
 
+// Rendu des annotations (canvas absent sous jsdom) : `<original>+<nombre>`.
+const renderSpy = vi.hoisted(() => vi.fn(async (original: string, anns: unknown[]) => `${original}+${anns.length}`));
+vi.mock('@pctac/photo-annotation.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@pctac/photo-annotation.js')>()),
+  renderAnnotated: renderSpy,
+}));
+
 // Imports APRÈS vi.mock (hissé de toute façon, mais garde l'ordre lisible).
 import { findUnsafeId, Archive, mergeGpxIndex } from '@pctac/archive.js';
 import { ImageStore } from '@pctac/image-store.js';
@@ -376,6 +383,54 @@ describe('importOiArchive — passerelle OI → PC-Tac (archive.js:279-456)', ()
     expect(a).toMatchObject({ nom: 'Leblanc', domicile: '3 rue des Lilas', profession: 'Chauffeur', signalement: '1m80, massif, type Caucasien' });
     expect(b && 'signalement' in b).toBe(false);
     expect(b && 'domicile' in b).toBe(false);
+  });
+
+  describe('photo annotée dans l’OI (décision 26)', () => {
+    const BOX = { id: 1, type: 'box', startX: 1, startY: 1, endX: 9, endY: 9, x: 1, y: 1, width: 8, height: 8, color: '#c0392b', thickness: 4, rotation: 0 };
+    const ORIG = 'data:image/png;base64,' + Buffer.from('hello').toString('base64');
+    const importWith = async (annotations: unknown): Promise<Record<string, unknown>> => {
+      const file = await buildOiZip({
+        oiData: { adversaries: [{ id: 'adv1', nom_adversaire: 'Annotée' }], dynamic_photos: { photo_main_adv1: [{ id: 'img1', annotations }] } },
+        imagesMeta: { img1: 'image/png' },
+        imageFiles: { 'img1.bin': Buffer.from('hello').toString('base64') },
+      });
+      const result = await Archive.importOiArchive(file);
+      expect(result.advPhotos).toBe(1);
+      return Storage.loadCollection(ADVERSARIES_KEY).find((a) => a.nom === 'Annotée')!;
+    };
+
+    beforeEach(() => { renderSpy.mockClear(); });
+
+    it('arrive annotée partout, original et annotations gardés : modifiable dans le PC-Tac', async () => {
+      const added = await importWith(JSON.stringify([BOX]));
+      const id = String(added.id);
+      expect(await ImageStore.get(id + '_orig')).toBe(ORIG);
+      expect(await ImageStore.get(id)).toBe(ORIG + '+1');
+      expect(await ImageStore.get(id + '_sync')).toBe(ORIG + '+1');
+      expect(JSON.parse(String(added.annotations))).toEqual([BOX]);
+    });
+
+    it('annotations illisibles ou vides : la photo arrive telle quelle, sans original en double', async () => {
+      for (const bad of ['pas du json', '{"a":1}', '[]', undefined]) {
+        localStorage.clear();
+        imageStoreState.store.clear();
+        const added = await importWith(bad);
+        const id = String(added.id);
+        expect(await ImageStore.get(id)).toBe(ORIG);
+        expect(await ImageStore.get(id + '_orig')).toBeNull();
+        expect(added.annotations).toBeUndefined();
+      }
+      expect(renderSpy).not.toHaveBeenCalled();
+    });
+
+    it('rendu impossible : la photo arrive sans annotations, l’import continue', async () => {
+      renderSpy.mockRejectedValueOnce(new Error('canvas'));
+      const added = await importWith(JSON.stringify([BOX]));
+      const id = String(added.id);
+      expect(await ImageStore.get(id)).toBe(ORIG);
+      expect(await ImageStore.get(id + '_orig')).toBeNull();
+      expect(added.annotations).toBeUndefined();
+    });
   });
 
   it('lit la photo via images/<encodeURIComponent(id)>.bin, avec repli sur le nom NON encodé', async () => {

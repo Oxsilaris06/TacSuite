@@ -21,11 +21,13 @@ import type {
     ArchiveContract,
     ArchiveImportResult,
     ArchiveOiImportResult,
+    OiAnnotation,
     PctacCollectionItem,
     PctacLogEntry,
 } from '@shared/types/contracts.js';
 import { Storage, clearSituationData } from '@pctac/storage.js';
 import { GpxStore, ImageStore } from '@pctac/image-store.js';
+import { origId, renderAnnotated } from '@pctac/photo-annotation.js';
 import { confirmDialog, toast } from '@shared/feedback.js';
 import {
     applyScope,
@@ -125,6 +127,8 @@ interface OiPatracdvrRow {
 /** Entrée `dynamic_photos['photo_main_<advId>']` : images liées à un adversaire. */
 interface OiDynamicPhotoEntry {
     id?: string;
+    /** JSON du moteur d'annotation (`formulaires.ts`), commun au PC-Tac. */
+    annotations?: unknown;
 }
 
 /** Sous-ensemble utile de `tactical_oi_data` désérialisé (structure best-effort). */
@@ -742,6 +746,15 @@ export const Archive: ArchiveContract = {
             } catch (e) { console.warn('[OI→PCTAC] photo illisible:', imgId, e); return null; }
         };
 
+        // Annotations de cette photo dans l'OI : tableau d'objets, sinon aucune.
+        const photoAnnotationsForAdv = (advId: string | undefined): OiAnnotation[] => {
+            const raw = advId ? dynPhotos['photo_main_' + advId]?.[0]?.annotations : undefined;
+            try {
+                const parsed: unknown = typeof raw === 'string' ? JSON.parse(raw) : raw;
+                return Array.isArray(parsed) ? parsed.filter((a): a is OiAnnotation => !!a && typeof a === 'object') : [];
+            } catch { return []; }
+        };
+
         // --- 1) Adversaires → pcTacAdversaries (+ photo + galerie Photos) ---
         const advList = Storage.loadCollection(ADVERSARIES_KEY);
         const photoList = Storage.loadCollection(PHOTOS_KEY);
@@ -784,13 +797,28 @@ export const Archive: ArchiveContract = {
             const dataUrl = await photoDataUrlForAdv(oa.id);
             if (dataUrl) {
                 try {
-                    await ImageStore.put(itemId, dataUrl);
+                    // Décision 26 : la photo annotée dans l'OI arrive annotée,
+                    // original et annotations gardés comme une annotation faite
+                    // ici (modifiable). Rendu impossible : la photo seule.
+                    let shown = dataUrl;
+                    const annotations = photoAnnotationsForAdv(oa.id);
+                    if (annotations.length) {
+                        try {
+                            shown = await renderAnnotated(dataUrl, annotations);
+                            await ImageStore.put(origId(itemId), dataUrl);
+                            item.annotations = JSON.stringify(annotations);
+                        } catch (e) {
+                            shown = dataUrl;
+                            console.warn('[OI→PCTAC] annotations non appliquées:', e);
+                        }
+                    }
+                    await ImageStore.put(itemId, shown);
                     item.hasImage = true;
                     advPhotos++;
                     // Copie automatique vers la galerie Photos (catégorie « Adversaire »),
                     // exactement comme une saisie manuelle PC TAC (id + "_sync").
                     const syncId = itemId + '_sync';
-                    await ImageStore.put(syncId, dataUrl);
+                    await ImageStore.put(syncId, shown);
                     photoList.push({ id: syncId, title: nom || 'Adversaire OI', category: 'neutralized', status: 'active', hasImage: true });
                 } catch (e) { console.warn('[OI→PCTAC] enregistrement photo échoué:', e); }
             }

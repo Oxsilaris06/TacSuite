@@ -27,6 +27,8 @@ export const oiState = {
 
 	// --- Moteur d'annotation --- init.js:49, 69-78
 	currentAnnotationColor: '#c0392b',
+	/** Texte de la prochaine Zone, saisi au choix de l'outil. */
+	zoneText: 'Zone',
 	annotationModal: null as HTMLDialogElement | null,
 	canvas: null as HTMLCanvasElement | null,
 	ctx: null as CanvasRenderingContext2D | null,

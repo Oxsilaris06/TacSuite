@@ -104,10 +104,11 @@ try {
 const collectionKey = (side: FicheSide): string => (side === 'adv' ? ADVERSARIES_KEY : HOSTAGES_KEY);
 const slotOf = (side: FicheSide, id: string | null): string => `${side}:${id ?? 'new'}`;
 
-/** Empreinte d'une fiche pour son brouillon. Le statut en est exclu : il change
- *  depuis la carte sans que la saisie en cours soit périmée pour autant. */
+/** Empreinte d'une fiche pour son brouillon. Le statut et les annotations de
+ *  la photo en sont exclus : ils changent depuis la carte ou l'annotation sans
+ *  que la saisie en cours soit périmée pour autant. */
 function baseOf(fiche: Record<string, unknown>): string {
-    return JSON.stringify({ ...fiche, status: undefined });
+    return JSON.stringify({ ...fiche, status: undefined, annotations: undefined });
 }
 
 // --- Brouillons -------------------------------------------------------------
@@ -355,11 +356,10 @@ async function syncPhoto(side: FicheSide, item: Record<string, unknown>, dataUrl
     }
     delete item.photo;
     item.hasImage = true;
-    // Nouvelle photo : l'annotation de l'ancienne ne la concerne plus (décision 25).
-    if (item.annotations !== undefined) {
-        delete item.annotations;
-        try { await ImageStore.delete(`${id}_orig`); } catch { /* original orphelin, sans effet visible */ }
-    }
+    // Nouvelle photo : l'annotation de l'ancienne ne la concerne plus (décision
+    // 25), ni un original resté seul (import partiel, écriture interrompue).
+    delete item.annotations;
+    try { await ImageStore.delete(`${id}_orig`); } catch { /* original orphelin, sans effet visible */ }
     // Copie dans la galerie Photos, qui suit le statut de la fiche.
     const photos = Storage.loadCollection(PHOTOS_KEY);
     const title = ficheTitle(side, currentModeId(), item);
@@ -503,7 +503,8 @@ async function save(next: boolean): Promise<void> {
 /** Photo enregistrée de la fiche (décision 25) : la fiche montre ensuite la version annotée. */
 async function annotateFichePhoto(): Promise<void> {
     const s = state;
-    if (!s?.id) return;
+    // Nouvelle photo choisie : l'annotation porterait sur l'ancienne.
+    if (!s?.id || s.photo) return;
     const saved = await annotatePhoto(s.id);
     if (!saved || state !== s) return;
     const fresh = await ImageStore.get(s.id).catch(() => null);
@@ -609,6 +610,8 @@ async function onChange(e: Event): Promise<void> {
             const data = await Utils.compressImage(file, 800, 800, 0.7);
             if (state !== owner) return;
             owner.photo = data;
+            // « Annoter » vise la photo enregistrée : plus celle de la fiche.
+            dialogEl()?.querySelector('.fiche-annotate')?.remove();
             const holder = input.closest('.fiche-photo');
             holder?.querySelector('img, .material-symbols-outlined')?.remove();
             const img = document.createElement('img');
