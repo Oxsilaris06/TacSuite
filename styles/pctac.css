@@ -3708,6 +3708,18 @@ body.light-mode .pctac-liens-btn-row--wa:hover { background: #bee9ce; box-shadow
     grid-column: 2;
     grid-row: 1;
 }
+/* Décision 23 : aucune fiche encore créée, la fiche prend toute la largeur
+   (le message « Aucun adversaire — touchez… » n'a plus d'objet). Deux
+   colonnes dès la première carte, « Enregistrer et suivante » compris. */
+.fiche-layout:has(> .fiche-inline[open]):has(> .fiche-list > .empty-state:only-child) {
+    grid-template-columns: minmax(0, 1fr);
+}
+.fiche-layout:has(> .fiche-inline[open]) > .fiche-list:has(> .empty-state:only-child) {
+    display: none;
+}
+.fiche-layout:has(> .fiche-inline[open]):has(> .fiche-list > .empty-state:only-child) > .fiche-sheet.fiche-inline {
+    grid-column: 1;
+}
 .fiche-sheet.fiche-inline {
     position: static;
     width: auto;
