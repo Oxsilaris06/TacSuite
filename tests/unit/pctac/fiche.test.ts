@@ -7,6 +7,7 @@
  * stockées dans la clé historique, statuts par situation, compteurs.
  */
 import { describe, expect, it } from 'vitest';
+import type { PctacCollectionItem } from '../../../src/shared/types/contracts.js';
 import {
     ageFromDob,
     defaultStatus,
@@ -15,6 +16,8 @@ import {
     ficheTitle,
     ficheVariant,
     filledSections,
+    findDuplicatePerson,
+    mergeFicheFields,
     parseChips,
     serializeChips,
     statusChoices,
@@ -205,5 +208,85 @@ describe('lecture : champs remplis, âge, résumé, compteurs', () => {
         expect(c.adv).toBe('Ennemis 3 · Actif 2 · Neutralisé 1');
         expect(c.host).toBe('Otages et victimes 4 · UA 1 · Non triée 3');
         expect(ficheCounters('forcene', [], []).adv).toBe('');
+    });
+});
+
+describe('findDuplicatePerson — doublons nom+prénom ou nom+date (décision 32)', () => {
+    const item = (o: Record<string, unknown>): PctacCollectionItem => ({ id: String(o.id ?? 'x'), ...o });
+
+    it('nom ET prénom égaux, comparaison normalisée (casse, accents, espaces)', () => {
+        const existing = item({ id: 'a', nom: 'DUPONT', prenom: '  Éléonore ' });
+        expect(findDuplicatePerson([existing], item({ id: 'b', nom: 'dupont', prenom: 'eleonore' })))
+            .toBe(existing);
+    });
+
+    it('nom ET date de naissance égaux (prénom vide)', () => {
+        const existing = item({ id: 'a', nom: 'Hélène', dob: '01/01/1980' });
+        expect(findDuplicatePerson([existing], item({ id: 'b', nom: 'Helene', dob: '01/01/1980' })))
+            .toBe(existing);
+    });
+
+    it('un seul des deux identifiants ne suffit pas', () => {
+        const existing = item({ id: 'a', nom: 'Dupont', prenom: 'Jean' });
+        // Même nom, prénom vide des deux côtés, pas de date : pas un doublon.
+        expect(findDuplicatePerson([existing], item({ id: 'b', nom: 'Dupont' }))).toBeNull();
+        // Même prénom seul.
+        expect(findDuplicatePerson([existing], item({ id: 'b', prenom: 'Jean' }))).toBeNull();
+    });
+
+    it("ne se signale jamais lui-même (même id)", () => {
+        const existing = item({ id: 'a', nom: 'Dupont', prenom: 'Jean' });
+        expect(findDuplicatePerson([existing], item({ id: 'a', nom: 'Dupont', prenom: 'Jean' }))).toBeNull();
+    });
+
+    it('une fiche « Phénomène » n’est jamais un doublon, ni comme candidat ni comme existant', () => {
+        const phenomene = item({ id: 'p', type_menace: 'Phénomène', nom: 'Dupont', prenom: 'Jean' });
+        // Le phénomène existant ne matche pas une personne homonyme…
+        expect(findDuplicatePerson([phenomene], item({ id: 'b', nom: 'Dupont', prenom: 'Jean' }))).toBeNull();
+        // …et un candidat phénomène ne matche pas une fiche.
+        const personne = item({ id: 'c', nom: 'Dupont', prenom: 'Jean' });
+        expect(findDuplicatePerson([personne], item({ id: 'd', type_menace: 'Phénomène', nom: 'Dupont', prenom: 'Jean' }))).toBeNull();
+    });
+
+    it('rend null sans doublon', () => {
+        expect(findDuplicatePerson([], item({ id: 'b', nom: 'Dupont', prenom: 'Jean' }))).toBeNull();
+        expect(findDuplicatePerson([item({ id: 'a', nom: 'Martin' })], item({ id: 'b', nom: 'Dupont', prenom: 'Jean' }))).toBeNull();
+    });
+});
+
+describe('mergeFicheFields — complète les champs vides sans écraser (décision 32)', () => {
+    const item = (o: Record<string, unknown>): PctacCollectionItem => ({ id: String(o.id ?? 'x'), ...o });
+
+    it('complète les champs absents, vides ou tableaux vides, et liste les clés', () => {
+        const existing = item({ id: 'a', nom: 'Dupont', prenom: '', telephone: undefined, tags: [], updatedAt: 't1' });
+        const incoming = item({ id: 'b', nom: 'Autre', prenom: 'Jean', telephone: '06', tags: ['x'], status: 'active', updatedAt: 't2' });
+        const { merged, filled } = mergeFicheFields(existing, incoming);
+
+        expect(merged.nom).toBe('Dupont');
+        expect(merged.prenom).toBe('Jean');
+        expect(merged.telephone).toBe('06');
+        expect(merged.tags).toEqual(['x']);
+        expect(merged.status).toBe('active');
+        // id et updatedAt d'`existing` sont gardés.
+        expect(merged.id).toBe('a');
+        expect(merged.updatedAt).toBe('t1');
+        expect([...filled].sort()).toEqual(['prenom', 'status', 'tags', 'telephone']);
+    });
+
+    it('n’écrase jamais un champ rempli', () => {
+        const existing = item({ id: 'a', nom: 'Dupont', prenom: 'Jean' });
+        const incoming = item({ id: 'b', nom: 'Autre', prenom: 'Paul' });
+        const { merged, filled } = mergeFicheFields(existing, incoming);
+        expect(merged.nom).toBe('Dupont');
+        expect(merged.prenom).toBe('Jean');
+        expect(filled).toEqual([]);
+    });
+
+    it('ne mute ni l’existant ni l’entrant', () => {
+        const existing = item({ id: 'a', prenom: '' });
+        const incoming = item({ id: 'b', prenom: 'Jean' });
+        mergeFicheFields(existing, incoming);
+        expect(existing.prenom).toBe('');
+        expect(incoming.prenom).toBe('Jean');
     });
 });
