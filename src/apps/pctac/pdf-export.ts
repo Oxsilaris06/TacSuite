@@ -37,6 +37,7 @@ import { PDF_PAX_COLORS, PHOTO_CATEGORIES, FREE_MODE_COLORS, safeHexColor } from
 import { currentMode, currentModeId, paxChipLabel, photoCategoryLabel } from '@pctac/modes.js';
 import { TYPE_MENACE_KEY, ficheCounters, ficheTitle, filledSections, sortFichesByPriority, statusChoices, statusMeta, type FicheSide } from '@pctac/fiche.js';
 import { showBusy, hideBusy } from '@pctac/busy.js';
+import { capturePlanForPdf } from '@pctac/plan-capture-for-pdf.js';
 import { Utils } from '@pctac/utils.js';
 import { toast } from '@shared/feedback.js';
 import type { PdfExportContract, PlanMapPinSummary } from '@shared/types/contracts.js';
@@ -57,25 +58,6 @@ void FREE_MODE_COLORS;
  */
 export function cloneA4(size: readonly [number, number]): [number, number] {
     return [size[0], size[1]];
-}
-
-/**
- * Recompresse un dataURL image (PNG plein DPR de la capture carte ≈ plusieurs Mo)
- * en JPEG sur fond blanc : divise ~par 10 le poids embarqué dans le PDF.
- * En cas d'échec, l'appelant garde le dataURL d'origine.
- */
-async function dataUrlToJpeg(dataUrl: string, quality = 0.85): Promise<string> {
-    const img = new Image();
-    await new Promise<void>((res, rej) => { img.onload = () => res(); img.onerror = () => rej(new Error('image load failed')); img.src = dataUrl; });
-    const c = document.createElement('canvas');
-    c.width = img.naturalWidth;
-    c.height = img.naturalHeight;
-    const cx = c.getContext('2d');
-    if (!cx) throw new Error('Canvas 2D context indisponible');
-    cx.fillStyle = '#ffffff';
-    cx.fillRect(0, 0, c.width, c.height);
-    cx.drawImage(img, 0, 0);
-    return c.toDataURL('image/jpeg', quality);
 }
 
 /**
@@ -736,45 +718,17 @@ export const PdfExport: PdfExportContract = {
             // Aucune de ces situations ne doit interrompre l'export.
             try {
                 if (window.PlanMap && typeof window.PlanMap.captureToDataUrl === 'function') {
-                    // La capture exige une vue Plan VISIBLE (canvas dimensionné).
-                    // Export lancé depuis un autre onglet : on bascule le temps de
-                    // la capture, puis on restaure la vue de départ.
-                    const planView = document.getElementById('view-plan');
-                    const planHidden = !planView || !planView.classList.contains('active');
-                    const prevView = localStorage.getItem('lastView');
-                    const canSwitch = window.UI && typeof window.UI.switchMainView === 'function';
-                    if (planHidden && canSwitch) {
-                        // R25 — la bascule temporaire ne doit PAS fermer la fiche
-                        // ouverte pendant la capture de carte.
-                        window.UI.switchMainView('view-plan', { keepFiche: true });
-                        try { if (window.PlanMap.map) window.PlanMap.map.resize(); } catch { /* no-op */ }
-                        await new Promise(r => setTimeout(r, 450)); // laisse la carte se dimensionner
-                    }
-                    let mapDataUrl: string | null = null;
-                    try {
-                        mapDataUrl = await window.PlanMap.captureToDataUrl();
-                    } catch (capErr) {
-                        console.warn('PDF Plan capture échouée :', capErr);
-                        mapDataUrl = null;
-                    } finally {
-                        if (planHidden && canSwitch && prevView) window.UI.switchMainView(prevView, { keepFiche: true });
-                    }
-
-                    if (mapDataUrl && typeof mapDataUrl === 'string' && mapDataUrl.startsWith('data:image')) {
-                        // PNG plein DPR → JPEG : PDF ~10× plus léger, qualité suffisante.
-                        // toDataURL peut renvoyer 'data:,' SANS exception (canvas trop
-                        // grand/mémoire) : on ne remplace le PNG que par un JPEG valide.
-                        try {
-                            const jpeg = await dataUrlToJpeg(mapDataUrl, 0.85);
-                            if (jpeg && jpeg.startsWith('data:image')) mapDataUrl = jpeg;
-                        } catch { /* on garde le PNG */ }
-                        addNewPage('PLAN TACTIQUE', true); // Paysage A4
+                    // Chaîne partagée avec la synthèse A3 (`plan-capture-for-pdf.ts`) :
+                    // bascule temporaire sur la vue Plan, capture, vue restaurée,
+                    // JPEG sur fond blanc ; `null` si la carte n'a pas pu être prise.
+                    const capture = await capturePlanForPdf();
+                    addNewPage('PLAN TACTIQUE', true); // Paysage A4
+                    if (capture) {
                         const imgMaxWidth = context.pageWidth - 2 * context.margin;
                         const imgMaxHeight = context.pageHeight - 2 * context.margin - 30;
-                        await drawImageSafe(pdfPage(), mapDataUrl, context.margin, context.y - 5, imgMaxWidth, imgMaxHeight);
+                        await drawImageSafe(pdfPage(), capture.dataUrl, context.margin, context.y - 5, imgMaxWidth, imgMaxHeight);
                     } else {
                         // Plus JAMAIS d'absence silencieuse : on le dit dans le PDF.
-                        addNewPage('PLAN TACTIQUE', true);
                         pdfPage().drawText(
                             sanitizeWinAnsi('Carte non disponible au moment de l\'export. Ouvre l\'onglet Plan puis relance l\'export PDF.'),
                             { x: context.margin, y: context.y - 10, size: 12, font, color: themeColors.text }
