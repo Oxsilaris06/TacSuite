@@ -16,8 +16,14 @@
 import type { GeoJSONSource, LayerSpecification, Map as MapLibreMap, MapMouseEvent, MapTouchEvent } from 'maplibre-gl';
 import {
     GRID_CELL_SIZES,
+    GRID_COLORS,
     GRID_DEFAULT_CELL,
+    GRID_DEFAULT_COLOR,
+    GRID_DEFAULT_LABEL_SIZE,
+    GRID_LABEL_SIZES,
     gridCellAt,
+    gridColor,
+    gridLabelSize,
     gridToGeo,
     isTacticalGridSpec,
     makeOrientedGrid,
@@ -26,6 +32,8 @@ import {
     orientedGridFromCorners,
     rotateTacticalGrid,
     tacticalGridGeometry,
+    type GridColor,
+    type GridLabelSize,
     type LngLat,
     type TacticalGridSpec,
 } from '@shared/tactical-grid.js';
@@ -58,6 +66,10 @@ export interface MapOverlays {
     setMgrsOn(on: boolean): void;
     setPowerOn(on: boolean): void;
     setCellSize(m: number): Promise<boolean>;
+    /** Couleur du carroyage (lignes, étiquettes, aperçu) ; gardée dans le spec. */
+    setGridColor(c: GridColor): void;
+    /** Taille des lettres et numéros (4 crans) ; gardée dans le spec. */
+    setGridLabelSize(s: GridLabelSize): void;
     startGridDraw(): Promise<void>;
     /** Pose d'un seul geste un carroyage centré sur la vue (60 % de l'écran) : l'option commode au doigt. */
     placeGridOnView(): Promise<void>;
@@ -82,7 +94,6 @@ export interface MapOverlays {
 
 const EMPTY: GeoJSON.FeatureCollection = { type: 'FeatureCollection', features: [] };
 
-const GRID_COLOR = '#f5f7fa';
 const GRID_HALO = '#0b0d12';
 const MGRS_COLOR = '#7fdcff';
 // BT en blanc cassé : le gris d'origine se perdait sur l'orthophoto.
@@ -208,17 +219,29 @@ export function overlayLayers(withBolt: boolean): LayerSpecification[] {
             paint: { 'text-color': MGRS_COLOR, 'text-halo-color': GRID_HALO, 'text-halo-width': 1.5 },
         },
         {
+            // Liseré sombre : rend la couleur choisie lisible sur photo
+            // aérienne comme sur plan clair (décision 39, G4).
+            id: 'tac-grid-casing', type: 'line', source: 'tac-grid',
+            paint: { 'line-color': GRID_HALO, 'line-width': ['match', ['get', 'kind'], 'edge', 4.2, 2.6], 'line-opacity': 0.7 },
+        },
+        {
             id: 'tac-grid-line', type: 'line', source: 'tac-grid',
-            paint: { 'line-color': GRID_COLOR, 'line-width': ['match', ['get', 'kind'], 'edge', 2.5, 1.2], 'line-opacity': 0.95 },
+            paint: { 'line-color': GRID_COLORS[GRID_DEFAULT_COLOR], 'line-width': ['match', ['get', 'kind'], 'edge', 2.5, 1.2], 'line-opacity': 0.95 },
         },
         {
             id: 'tac-grid-label', type: 'symbol', source: 'tac-grid-labels',
-            layout: { 'text-field': ['get', 'label'], 'text-font': ['Noto Sans Bold'], 'text-size': 14, 'text-allow-overlap': true },
-            paint: { 'text-color': GRID_COLOR, 'text-halo-color': GRID_HALO, 'text-halo-width': 2 },
+            // Le nom suit les axes du carroyage (rotation posée par la géométrie)
+            // sans se lire à l'envers.
+            layout: { 'text-field': ['get', 'label'], 'text-font': ['Noto Sans Bold'], 'text-size': GRID_LABEL_SIZES[GRID_DEFAULT_LABEL_SIZE], 'text-allow-overlap': true, 'text-rotation-alignment': 'map', 'text-rotate': ['get', 'rotation'] },
+            paint: { 'text-color': GRID_COLORS[GRID_DEFAULT_COLOR], 'text-halo-color': GRID_HALO, 'text-halo-width': 2 },
+        },
+        {
+            id: 'tac-grid-preview-casing', type: 'line', source: 'tac-grid-preview',
+            paint: { 'line-color': GRID_HALO, 'line-width': 4, 'line-opacity': 0.6 },
         },
         {
             id: 'tac-grid-preview-line', type: 'line', source: 'tac-grid-preview',
-            paint: { 'line-color': GRID_COLOR, 'line-width': 2, 'line-dasharray': [2, 2] },
+            paint: { 'line-color': GRID_COLORS[GRID_DEFAULT_COLOR], 'line-width': 2, 'line-dasharray': [2, 2] },
         },
     ] as LayerSpecification[];
 }
@@ -308,6 +331,16 @@ export function createMapOverlays(map: MapLibreMap, opts: OverlayOptions): MapOv
         const g = state.gridOn && state.grid ? tacticalGridGeometry(state.grid) : null;
         src(map, 'tac-grid')?.setData(g ? g.lines : EMPTY);
         src(map, 'tac-grid-labels')?.setData(g ? g.labels : EMPTY);
+        // Couleur et taille choisies (décision 39, G4) : elles s'appliquent aux
+        // lignes, aux étiquettes et à l'aperçu, liseré sombre compris.
+        const color = GRID_COLORS[state.grid ? gridColor(state.grid) : GRID_DEFAULT_COLOR];
+        const size = GRID_LABEL_SIZES[state.grid ? gridLabelSize(state.grid) : GRID_DEFAULT_LABEL_SIZE];
+        try {
+            map.setPaintProperty('tac-grid-line', 'line-color', color);
+            map.setPaintProperty('tac-grid-label', 'text-color', color);
+            map.setPaintProperty('tac-grid-preview-line', 'line-color', color);
+            map.setLayoutProperty('tac-grid-label', 'text-size', size);
+        } catch { /* couches pas encore posées : rien à teinter */ }
     }
 
     function renderMgrs(): void {
@@ -642,6 +675,18 @@ export function createMapOverlays(map: MapLibreMap, opts: OverlayOptions): MapOv
             changed();
             return true;
         },
+        setGridColor(c) {
+            if (!state.grid || !(c in GRID_COLORS) || gridColor(state.grid) === c) return;
+            state.grid = { ...state.grid, color: c };
+            renderGrid();
+            changed();
+        },
+        setGridLabelSize(s) {
+            if (!state.grid || !(s in GRID_LABEL_SIZES) || gridLabelSize(state.grid) === s) return;
+            state.grid = { ...state.grid, labelSize: s };
+            renderGrid();
+            changed();
+        },
         async startGridDraw() {
             if (state.grid && opts.confirm && !(await opts.confirm('Remplacer le carroyage actuel ? Les cases annoncées jusqu’ici changeront de place.'))) return;
             beginCapture('draw');
@@ -744,6 +789,9 @@ export interface OverlayControlClasses {
     label: string;
 }
 
+const GRID_COLOR_LABELS: Record<GridColor, string> = { yellow: 'Jaune', orange: 'Orange', magenta: 'Magenta', white: 'Blanc' };
+const GRID_SIZE_LABELS: Record<GridLabelSize, string> = { small: 'Petit', medium: 'Moyen', large: 'Grand', xlarge: 'Très grand' };
+
 const POWER_STATUS_TEXT: Record<PowerStatus, string> = {
     off: 'RTE (OSM) · HTA et BT (Enedis)',
     zoom: 'Zoomez pour les afficher',
@@ -804,6 +852,28 @@ export function mountOverlayControls(section: HTMLElement, ov: MapOverlays, cls:
         // Refus de la confirmation : le menu revient sur la maille en place.
         void ov.setCellSize(Number(select.value)).then((done) => { if (!done) select.value = String(ov.state.cellM); });
     });
+    // Couleur et taille (décision 39, G4) : contrôles accessibles (libellé
+    // clavier, 44 px de haut), appliqués aussitôt et gardés avec le carroyage.
+    const colorSelect = document.createElement('select');
+    colorSelect.setAttribute('aria-label', 'Couleur du carroyage');
+    colorSelect.style.minHeight = '44px';
+    for (const id of Object.keys(GRID_COLORS) as GridColor[]) {
+        const o = document.createElement('option');
+        o.value = id;
+        o.textContent = GRID_COLOR_LABELS[id];
+        colorSelect.appendChild(o);
+    }
+    colorSelect.addEventListener('change', () => ov.setGridColor(colorSelect.value as GridColor));
+    const sizeSelect = document.createElement('select');
+    sizeSelect.setAttribute('aria-label', 'Taille des lettres du carroyage');
+    sizeSelect.style.minHeight = '44px';
+    for (const id of Object.keys(GRID_LABEL_SIZES) as GridLabelSize[]) {
+        const o = document.createElement('option');
+        o.value = id;
+        o.textContent = GRID_SIZE_LABELS[id];
+        sizeSelect.appendChild(o);
+    }
+    sizeSelect.addEventListener('change', () => ov.setGridLabelSize(sizeSelect.value as GridLabelSize));
     const onView = fab('tac-overlay-tool', 'center_focus_strong', 'Poser le carroyage sur la vue (centre de l’écran)');
     onView.append(' Sur la vue');
     onView.addEventListener('click', () => void ov.placeGridOnView());
@@ -820,7 +890,7 @@ export function mountOverlayControls(section: HTMLElement, ov: MapOverlays, cls:
     northBtn.addEventListener('click', () => ov.gridNorthUp());
     const clear = fab('tac-overlay-tool', 'delete', 'Effacer le carroyage');
     clear.addEventListener('click', () => void ov.clearGrid());
-    tools.append(select, onView, draw, move, rotateBtn, northBtn, clear);
+    tools.append(select, colorSelect, sizeSelect, onView, draw, move, rotateBtn, northBtn, clear);
     grid.el.after(tools);
 
     const mgrsBtn = fab(cls.fab, 'grid_4x4', 'Afficher ou masquer la grille MGRS');
@@ -837,6 +907,12 @@ export function mountOverlayControls(section: HTMLElement, ov: MapOverlays, cls:
         gridBtn.setAttribute('aria-pressed', String(s.gridOn));
         tools.hidden = !s.gridOn;
         select.value = String(s.cellM);
+        colorSelect.disabled = !s.grid;
+        sizeSelect.disabled = !s.grid;
+        if (s.grid) {
+            colorSelect.value = gridColor(s.grid);
+            sizeSelect.value = gridLabelSize(s.grid);
+        }
         move.disabled = !s.grid;
         rotateBtn.disabled = !s.grid;
         northBtn.disabled = !s.grid;

@@ -26,8 +26,8 @@ vi.mock('maplibre-gl', () => {
     return { Marker: RecordingMarker, default: { Marker: RecordingMarker } };
 });
 
-import { createMapOverlays, gridAngleFromScreen, snapGridAngle } from '@shared/map-overlays.js';
-import { geoToGrid, gridToGeo, metersPerDegree, type TacticalGridSpec } from '@shared/tactical-grid.js';
+import { createMapOverlays, gridAngleFromScreen, mountOverlayControls, overlayLayers, snapGridAngle, type MapOverlays } from '@shared/map-overlays.js';
+import { GRID_COLORS, geoToGrid, gridToGeo, metersPerDegree, type TacticalGridSpec } from '@shared/tactical-grid.js';
 
 const CENTER_LAT = 47.9;
 const CENTER_LNG = 1.9;
@@ -37,7 +37,7 @@ interface FakeMap {
 }
 
 /** Faux map : 1 px = 1 m au centre, rotation au bearing voulu. */
-function makeRotatingMap(bearing: number): { map: FakeMap; project: (p: [number, number]) => { x: number; y: number }; unproject: (p: [number, number]) => { lng: number; lat: number }; emit: (type: string, ev: unknown) => void } {
+function makeRotatingMap(bearing: number): { map: FakeMap; project: (p: [number, number]) => { x: number; y: number }; unproject: (p: [number, number]) => { lng: number; lat: number }; emit: (type: string, ev: unknown) => void; paint: ReturnType<typeof vi.fn>; layout: ReturnType<typeof vi.fn> } {
     const m = metersPerDegree(CENTER_LAT);
     const b = (bearing * Math.PI) / 180;
     const ca = Math.cos(b);
@@ -59,6 +59,8 @@ function makeRotatingMap(bearing: number): { map: FakeMap; project: (p: [number,
     };
     const listeners = new Map<string, Array<(ev: unknown) => void>>();
     const sources = new Map<string, { setData: ReturnType<typeof vi.fn> }>();
+    const paint = vi.fn();
+    const layout = vi.fn();
     const canvas = {
         style: { cursor: '' },
         clientWidth: 800,
@@ -81,8 +83,8 @@ function makeRotatingMap(bearing: number): { map: FakeMap; project: (p: [number,
         addSource: (id: string) => { sources.set(id, { setData: vi.fn() }); },
         addLayer: vi.fn(),
         getLayer: () => undefined,
-        setLayoutProperty: vi.fn(),
-        setPaintProperty: vi.fn(),
+        setLayoutProperty: layout,
+        setPaintProperty: paint,
         hasImage: () => false,
         addImage: vi.fn(),
         dragPan: { enable: vi.fn(), disable: vi.fn(), isEnabled: () => true },
@@ -90,7 +92,7 @@ function makeRotatingMap(bearing: number): { map: FakeMap; project: (p: [number,
     const emit = (type: string, ev: unknown): void => {
         for (const fn of listeners.get(type) ?? []) fn(ev);
     };
-    return { map, project, unproject, emit };
+    return { map, project, unproject, emit, paint, layout };
 }
 
 function drag(helper: ReturnType<typeof makeRotatingMap>, a: [number, number], b: [number, number]): void {
@@ -264,5 +266,52 @@ describe('rotation du carroyage (décision 39, G3)', () => {
         const centerAfter = gridToGeo(after, after.cols / 2, after.rows / 2);
         expect(centerAfter[0]).toBeCloseTo(centerGeo[0], 9);
         expect(centerAfter[1]).toBeCloseTo(centerGeo[1], 9);
+    });
+});
+
+describe('couleur et taille du carroyage (décision 39, G4)', () => {
+    it('un liseré sombre encadre lignes et aperçu', () => {
+        const ids = overlayLayers(false).map((l) => l.id);
+        expect(ids).toContain('tac-grid-casing');
+        expect(ids).toContain('tac-grid-preview-casing');
+        // Le liseré est AVANT la ligne colorée (dessous).
+        expect(ids.indexOf('tac-grid-casing')).toBeLessThan(ids.indexOf('tac-grid-line'));
+    });
+
+    it('la couleur et la taille s’appliquent aux lignes, étiquettes et aperçu, et voyagent dans le spec', async () => {
+        const helper = makeRotatingMap(0);
+        const api = makeApi(helper, vi.fn());
+        await api.placeGridOnView();
+        api.setGridColor('magenta');
+        api.setGridLabelSize('xlarge');
+        const spec = api.state.grid as TacticalGridSpec;
+        expect(spec.color).toBe('magenta');
+        expect(spec.labelSize).toBe('xlarge');
+        const magenta = GRID_COLORS.magenta;
+        expect(helper.paint).toHaveBeenCalledWith('tac-grid-line', 'line-color', magenta);
+        expect(helper.paint).toHaveBeenCalledWith('tac-grid-label', 'text-color', magenta);
+        expect(helper.paint).toHaveBeenCalledWith('tac-grid-preview-line', 'line-color', magenta);
+        expect(helper.layout).toHaveBeenCalledWith('tac-grid-label', 'text-size', 24);
+    });
+
+    it('le panneau offre couleur et taille, accessibles', async () => {
+        const helper = makeRotatingMap(0);
+        const api = makeApi(helper, vi.fn());
+        await api.placeGridOnView();
+        const section = document.createElement('div');
+        mountOverlayControls(section, api as MapOverlays, { row: 'r', fab: 'f', label: 'l' });
+        const color = section.querySelector<HTMLSelectElement>('select[aria-label="Couleur du carroyage"]');
+        const size = section.querySelector<HTMLSelectElement>('select[aria-label="Taille des lettres du carroyage"]');
+        expect(color).not.toBeNull();
+        expect(size).not.toBeNull();
+        expect(color!.options).toHaveLength(4);
+        expect(size!.options).toHaveLength(4);
+        expect(color!.style.minHeight).toBe('44px');
+        color!.value = 'orange';
+        color!.dispatchEvent(new Event('change'));
+        expect((api.state.grid as TacticalGridSpec).color).toBe('orange');
+        size!.value = 'small';
+        size!.dispatchEvent(new Event('change'));
+        expect((api.state.grid as TacticalGridSpec).labelSize).toBe('small');
     });
 });
