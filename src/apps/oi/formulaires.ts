@@ -191,6 +191,7 @@ import { LOCAL_STORAGE_KEY, Store, dbManager, memberConfig } from '@oi/init.js';
 import { collectCoherence } from '@oi/coherence.js';
 import { createAnnotatedImageBlob } from '@oi/dessin.js';
 import { setupQuickEditPanel } from '@oi/patrac.js';
+import { reencodeSansExif } from '@oi/outils.js';
 // R2-T4 — validation inline (nouveau module, cf. son en-tête).
 import { attachValidation, required } from '@oi/validation.js';
 // P3 — compteur de caractères calibré PDF (nouveau module, cf. son en-tête).
@@ -1603,7 +1604,25 @@ async function applyArchiveImport(parsed: OiParsedArchiveOk, cats: readonly OiIm
                         if (entry.dir) return;
                         const k = decodeURIComponent(relPath.replace(/\.bin$/, '').replace(/\.txt$/, ''));
                         tasks.push(entry.async('arraybuffer')
-                            .then((ab) => dbManager.putItem(k, new Blob([ab], { type: parsed.imageMeta[k] || '' })))
+                            .then(async (ab) => {
+                                const brut = new Blob([ab], { type: parsed.imageMeta[k] || '' });
+                                // Ré-encodage canvas à l'ENTRÉE (audit PDF du
+                                // 2026-09-25, F09) : les images d'une archive
+                                // importée étaient stockées telles quelles,
+                                // EXIF et coordonnées GPS compris. Si le
+                                // ré-encodage échoue, l'original est CONSERVÉ
+                                // (un import d'archive restaure des données, il
+                                // ne les jette pas) mais c'est signalé : c'est
+                                // la seule image encore susceptible de porter
+                                // une position.
+                                let aStocker = brut;
+                                try {
+                                    aStocker = await reencodeSansExif(brut);
+                                } catch (err) {
+                                    console.warn('[OI Archive] image gardée telle quelle, sans ré-encodage (EXIF possible) :', k, err);
+                                }
+                                await dbManager.putItem(k, aStocker);
+                            })
                             .catch((err: unknown) => { imgFail++; console.warn('[OI Archive] image ignorée:', k, err); }));
                     });
                     await Promise.allSettled(tasks);

@@ -141,11 +141,27 @@ function computeTargetSize(width: number, height: number, maxPx: number): { widt
 }
 
 /**
+ * Identifiants dont les octets ne doivent JAMAIS traverser sans ré-encodage.
+ *
+ * Le fond PDF personnalisé est choisi comme un FICHIER, jamais saisi par un
+ * champ photo : il n'a donc pas traversé le pipeline canvas qui retire les
+ * métadonnées. Tant qu'il tenait sous `maxPx`, il partait OCTET POUR OCTET dans
+ * le PDF, EXIF et coordonnées GPS compris (audit du 2026-09-25, F09 : les
+ * coordonnées ont été relues dans l'image extraite du PDF). Il est désormais
+ * ré-encodé à l'entrée (`medias.ts`, `formulaires.ts`) ET exempté ici : un fond
+ * déjà enregistré dans une base existante est ainsi assaini au premier PDF
+ * suivant, sans migration de données.
+ */
+const PASSTHROUGH_EXEMPT_IDS = new Set(['custom_pdf_background']);
+
+/**
  * Une entrée JPEG/PNG déjà dans le gabarit ET sous `maxPx` traverse SANS
  * ré-encodage (pass-through inchangé, SPEC §3.5) — décision PARTAGÉE entre
- * les deux voies.
+ * les deux voies. Sauf les identifiants de `PASSTHROUGH_EXEMPT_IDS` : ceux-là
+ * doivent TOUJOURS être reconstruits par canvas.
  */
-function isPassthroughEligible(dataUrl: string, maxSide: number, maxPx: number): boolean {
+function isPassthroughEligible(id: string, dataUrl: string, maxSide: number, maxPx: number): boolean {
+    if (PASSTHROUGH_EXEMPT_IDS.has(id)) return false;
     const isDirectlySupported = dataUrl.startsWith('data:image/jpeg') || dataUrl.startsWith('data:image/png');
     return isDirectlySupported && maxSide <= maxPx;
 }
@@ -204,7 +220,7 @@ async function normalizeOnePhotoLegacy(id: string, dataUrl: string, step: PhotoB
     try {
         const img = await decodeImage(dataUrl);
         const maxSide = Math.max(img.naturalWidth, img.naturalHeight);
-        if (isPassthroughEligible(dataUrl, maxSide, step.maxPx)) {
+        if (isPassthroughEligible(id, dataUrl, maxSide, step.maxPx)) {
             return dataUrl;
         }
         return reencodeViaCanvas(img, step);
@@ -261,7 +277,7 @@ async function normalizeOnePhotoModern(id: string, dataUrl: string, step: PhotoB
         // principal côté navigateur.
         probeBitmap = await createImageBitmap(sourceBlob);
         const maxSide = Math.max(probeBitmap.width, probeBitmap.height);
-        if (isPassthroughEligible(dataUrl, maxSide, step.maxPx)) {
+        if (isPassthroughEligible(id, dataUrl, maxSide, step.maxPx)) {
             return dataUrl;
         }
 

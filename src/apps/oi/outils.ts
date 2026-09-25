@@ -175,6 +175,36 @@ export async function compressImage(imageBlob: Blob, quality: number, maxDimensi
     });
 }
 
+/**
+ * Définition maximale admise au ré-encodage d'ENTRÉE — alignée sur le plafond
+ * du pipeline photo du PDF (`engine-v3.ts`, SPEC §3.5) : aucune définition
+ * n'est perdue en aval, l'image est seulement reconstruite sans métadonnées.
+ */
+const EXIF_REENCODE_MAX_DIMENSION = 2560;
+
+/**
+ * Ré-encode une image par canvas à l'ENTRÉE, pour supprimer tout segment EXIF
+ * — donc les coordonnées GPS (audit PDF du 2026-09-25, F09).
+ *
+ * Les photos saisies par les champs photo traversent déjà le pipeline canvas
+ * (`medias.ts`, `engine-v3.ts`) et ressortent propres. Deux chemins, eux,
+ * stockaient l'octet d'origine : le **fond PDF personnalisé**
+ * (`medias.ts::handleCustomBackgroundChange`) et les **images d'un import
+ * d'archive** (`formulaires.ts`). Un fond photographié sur place partait donc
+ * dans le PDF — et dans les archives échangées entre unités — avec le lieu de
+ * prise de vue, alors que la décision 34 promet l'inverse pour PC-Tac
+ * (« position jamais gardée dans l'image »).
+ *
+ * Le format d'entrée est conservé (PNG reste PNG, JPEG reste JPEG) ; seul le
+ * passage par le canvas compte, il reconstruit l'image sans ses métadonnées.
+ * Lève si l'image n'est pas décodable : à l'appelant de refuser proprement
+ * plutôt que de laisser passer un fichier qui n'apparaîtra jamais dans le PDF.
+ */
+export async function reencodeSansExif(imageBlob: Blob, quality = 0.95): Promise<Blob> {
+    const octets = await compressImage(imageBlob, quality, EXIF_REENCODE_MAX_DIMENSION);
+    return new Blob([octets], { type: imageBlob.type === 'image/png' ? 'image/png' : 'image/jpeg' });
+}
+
 /** Détecte PNG (signature IHDR) pour choisir embedPng vs embedJpg (pdf-lib). */
 // outils.js:191-195
 export function isPngArrayBuffer(buffer: unknown): boolean {

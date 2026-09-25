@@ -53,17 +53,22 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { compressImageMock } = vi.hoisted(() => ({
+const { compressImageMock, reencodeSansExifMock } = vi.hoisted(() => ({
     // Signature volontairement non déclarée (params ignorés) : `vi.fn()`
     // capture les arguments d'appel réels indépendamment de l'arité de cette
     // implémentation, et un paramètre nommé mais inutilisé (même préfixé `_`)
     // est signalé par `@typescript-eslint/no-unused-vars` dès lors qu'AUCUN
     // paramètre suivant n'est utilisé (option par défaut `args: "after-used"`).
     compressImageMock: vi.fn(async (): Promise<ArrayBuffer> => new ArrayBuffer(8)),
+    // Audit PDF F09 : le fond personnalisé est désormais ré-encodé AVANT d'être
+    // stocké. Doublé renvoyant un Blob DISTINCT de l'entrée, pour prouver que
+    // c'est bien sa sortie qui part en base et non le fichier choisi.
+    reencodeSansExifMock: vi.fn(async (): Promise<Blob> => new Blob(['reencode-sans-exif'], { type: 'image/jpeg' })),
 }));
 
 vi.mock('@oi/outils.js', () => ({
     compressImage: compressImageMock,
+    reencodeSansExif: reencodeSansExifMock,
 }));
 
 // `removeImage` demande désormais confirmation (quick win U9) : auto-confirmer sous jsdom.
@@ -310,14 +315,20 @@ describe('(c) removeImage', () => {
 // ---------------------------------------------------------------------------
 
 describe('(d) handleCustomBackgroundChange', () => {
-    it('écrit le fichier sous la clé custom_pdf_background et rafraîchit l’aperçu', async () => {
+    it('ré-encode le fond puis l’écrit sous la clé custom_pdf_background et rafraîchit l’aperçu', async () => {
         const file = makeFile('fond.png', 'image/png');
         const input = makeFileInput([file]);
 
         await handleCustomBackgroundChange(input);
 
-        expect(dbManager.putItem).toHaveBeenCalledWith('custom_pdf_background', file);
-        expect(dbStore.get('custom_pdf_background')).toBe(file);
+        // Audit PDF F09 : le fond est ré-encodé par canvas AVANT d'être stocké
+        // (il partait sinon tel quel dans le PDF, EXIF et coordonnées GPS
+        // comprises) — c'est la SORTIE du ré-encodage qui part en base, pas le
+        // fichier choisi par l'utilisateur.
+        expect(reencodeSansExifMock).toHaveBeenCalledWith(file);
+        const stocke = dbStore.get('custom_pdf_background');
+        expect(stocke).not.toBe(file);
+        expect(dbManager.putItem).toHaveBeenCalledWith('custom_pdf_background', stocke);
         expect(input.value).toBe('');
 
         // medias.js:164 — `updateCustomBgPreview()` est appelée SANS `await`
