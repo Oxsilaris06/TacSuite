@@ -389,6 +389,13 @@ describe('undoableToast()', () => {
     expect(onUndoA).not.toHaveBeenCalled();
   });
 
+  it('Ctrl+Maj+Z (rétablir) n’est pas détourné en annulation de suppression (R12)', () => {
+    const onUndo = vi.fn();
+    undoableToast('Supprimé.', { onUndo });
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Z', ctrlKey: true, shiftKey: true }));
+    expect(onUndo).not.toHaveBeenCalled();
+  });
+
   it('Ctrl+Z ne vole pas l’annulation de frappe d’un champ éditable (R12)', () => {
     const onUndo = vi.fn();
     undoableToast('Supprimé.', { onUndo });
