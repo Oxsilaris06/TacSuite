@@ -297,6 +297,21 @@ function tokenizeDms(input: string): DmsComponent[] | null {
 }
 
 /**
+ * Garde-fou anti-faux-positifs (R16) : la seule forme DMS admise ne contient
+ * que des nombres, des symboles de degré/minute/seconde, des séparateurs et des
+ * lettres d'hémisphère ISOLÉES (N/S/E/W). Un « mot » de deux lettres ou plus
+ * trahit une adresse (« rue », « des », « Nantes », « Écoles ») : sans cette
+ * garde, toute adresse contenant un n/s/e/w était prise pour du DMS et ne
+ * partait jamais au géocodage.
+ */
+function looksLikeDms(str: string): boolean {
+    // Aucune suite de 2 lettres ou plus (un hémisphère légitime est isolé).
+    if (/\p{L}{2,}/u.test(str)) return false;
+    // Aucune lettre en dehors des hémisphères N/S/E/W (accents compris).
+    return !/\p{L}/u.test(str.replace(/[NSEWnsew]/g, ''));
+}
+
+/**
  * DMS : deux composantes (lat puis lon), dans n'importe quel ordre d'hémisphère.
  * `null` si non reconnu, `'bad-range'` si reconnu mais hors bornes.
  */
@@ -304,6 +319,9 @@ export function parseDmsCoords(str: string): { lat: number; lng: number } | 'bad
     // La présence d'au moins une lettre d'hémisphère est le signal DMS (sinon
     // une paire de nombres entiers serait ambiguë avec une paire décimale).
     if (!/[NSEWnsew]/.test(str)) return null;
+    // Une adresse contient un n/s/e/w au milieu d'un mot : la rejeter AVANT de
+    // tokeniser, pour ne pas voler la recherche d'adresse (R16).
+    if (!looksLikeDms(str)) return null;
     const comps = tokenizeDms(str);
     if (!comps || comps.length !== 2) return null;
     const [a, b] = comps as [DmsComponent, DmsComponent];
@@ -396,6 +414,8 @@ export function parseCoordinateInput(str: string, grid?: GridCellSpec | null): C
     const mgrs = parseMgrsCoords(q);
     if (mgrs) return { kind: 'point', lat: mgrs.lat, lng: mgrs.lng, format: 'mgrs', label: q };
 
-    if (looksLikeGridCell(q)) return parseGridCell(q, grid ?? null);
+    // La case n'a de sens qu'avec un carroyage actif : sans lui, « D951 » ou
+    // « A7 » sont des noms de route / d'axe, pas des cases → géocodage (R16).
+    if (grid && looksLikeGridCell(q)) return parseGridCell(q, grid);
     return null;
 }
