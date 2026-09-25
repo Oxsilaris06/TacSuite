@@ -103,7 +103,7 @@ import { assertD2_surPdf } from './assert-exif.mjs';
 export const MARKERS = [
   { n: 1, text: 'ORDRE INITIAL', conditional: false },
   { n: 2, text: '1. SITUATION GLOBALE', conditional: false },
-  { n: 3, text: 'CIBLES(S)', conditional: false },
+  { n: 3, text: 'CIBLE(S)', conditional: false },
   { n: 4, text: '2.1 FICHE ADVERSAIRE', conditional: true },
   { n: 5, text: '3. ENVIRONNEMENT ET AMIS', conditional: false, numbered: true },
   { n: 6, text: '4. TRANSPORT', conditional: true, numbered: true },
@@ -469,7 +469,10 @@ export function assertA3_sectionOrder(text, { lenient }) {
   // ne consomme pas de numéro) sans figer PAR AVANCE quelle section précise
   // est absente, contrairement à l'ancienne liste de libellés numérotés figés
   // qui supposait TRANSPORT toujours présent.
-  let expectedNum = NUMBERED_SECTION_BASELINE;
+  // Sans fiche adversaire (aucun adversaire saisi, ou section retirée), le
+  // créneau « 2. » est libéré : la numérotation dérivée commence à 2 (audit
+  // PDF du 2026-09-25, F18 — elle sautait de « 1. » à « 3. »).
+  let expectedNum = results.find((r) => r.n === 4)?.found ? NUMBERED_SECTION_BASELINE : NUMBERED_SECTION_BASELINE - 1;
   for (const r of present.filter((r) => r.numbered)) {
     if (r.num !== expectedNum) {
       return {
