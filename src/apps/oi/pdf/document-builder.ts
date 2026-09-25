@@ -472,19 +472,48 @@ function pillGridPt(itemCount: number, fontPx: number): number {
     return Math.ceil(itemCount / 4) * (effracLinePt(fontPx) + 4);
 }
 
-/** Fond/filigrane — port de `pdf-engine-v2.ts:772-776`. */
-function resolveBgSrc(ctx: BuildCtx): string | undefined {
+/**
+ * Opacité du fond personnalisé : un filigrane discret (audit PDF du
+ * 2026-09-25, F08, 15 % au plus). L'ancienne opacité de la palette (0,9 en
+ * clair, 0,6 en sombre) rendait titre et cartes de la couverture illisibles.
+ */
+const WATERMARK_OPACITY = 0.12;
+
+/** Image de fond : le fond personnalisé, sinon le logo d'unité — port de `pdf-engine-v2.ts:772-776`. */
+function resolveBgId(ctx: BuildCtx): string | undefined {
+    if (ctx.photosBase64['custom_pdf_background'] !== undefined) return 'custom_pdf_background';
     const logoId = ctx.dynamicPhotos['photo_logo_unite']?.[0]?.id;
-    return ctx.photosBase64['custom_pdf_background'] ?? (logoId ? ctx.photosBase64[logoId] : undefined);
+    return logoId !== undefined && ctx.photosBase64[logoId] !== undefined ? logoId : undefined;
 }
 
-/** Filigrane T15 (SPEC-PDF-V3.md §3.1) — port de `pdf-engine-v2.ts:738-742`/`:819`. */
+/** Fond/filigrane — port de `pdf-engine-v2.ts:772-776`. */
+function resolveBgSrc(ctx: BuildCtx): string | undefined {
+    const id = resolveBgId(ctx);
+    return id === undefined ? undefined : ctx.photosBase64[id];
+}
+
+/**
+ * Filigrane T15 (SPEC-PDF-V3.md §3.1), couverture et page finale : l'image
+ * garde ses proportions, tient dans la zone utile et est CENTRÉE sur la page
+ * (elle était calée sur le coin haut gauche de la page). Premier élément de
+ * la page, donc dessiné sous tout le reste.
+ */
 function buildWatermark(bgSrc: string, ctx: BuildCtx): Content {
+    const { geo } = ctx;
+    const size = ctx.photoSize(resolveBgId(ctx) ?? '');
+    if (!size) {
+        // Dimensions illisibles dans l'en-tête : cadrée dans la zone utile.
+        return { image: bgSrc, fit: [geo.contentWidthPt, geo.contentHeightPt], opacity: WATERMARK_OPACITY, absolutePosition: { x: geo.marginsPt[0], y: geo.marginsPt[1] } };
+    }
+    const scale = Math.min(geo.contentWidthPt / size.widthPx, geo.contentHeightPt / size.heightPx);
+    const width = size.widthPx * scale;
+    const height = size.heightPx * scale;
     return {
         image: bgSrc,
-        fit: [ctx.geo.contentWidthPt, ctx.geo.contentHeightPt],
-        opacity: Number(ctx.p.watermarkOpacity),
-        absolutePosition: { x: 0, y: 0 },
+        width,
+        height,
+        opacity: WATERMARK_OPACITY,
+        absolutePosition: { x: (geo.widthPt - width) / 2, y: (geo.heightPt - height) / 2 },
     };
 }
 
@@ -765,7 +794,8 @@ function rebalanceLastGroup<T>(groups: T[][], costPt: (subset: T[]) => number, b
 function buildCover(ctx: BuildCtx): Content[] {
     const { formData, p, geo } = ctx;
     const bgSrc = resolveBgSrc(ctx);
-    const watermark: Content[] = bgSrc !== undefined ? [buildWatermark(bgSrc, ctx)] : [];
+    // Cartes Situation et Cibles à fond opaque au-dessus du filigrane (audit F08).
+    const opaque = bgSrc !== undefined ? { fillColor: p.bg } : {};
 
     // Case « OP » (décision 43, audit F19) : le nom de l'opération (champ
     // facultatif de l'étape Situation) n'y figure que s'il est saisi, la date
@@ -820,7 +850,7 @@ function buildCover(ctx: BuildCtx): Content[] {
         // `situation_generale`/`situation_particuliere` très volumineux sur
         // la page 1 — la carte se scinde alors normalement plutôt que d'être
         // reportée EN BLOC (défaut « carte esseulée »).
-        { unbreakable: false },
+        { unbreakable: false, ...opaque },
     );
 
     // CORRECTIF (carte CIBLES(S) qui disparaît, anomalie CRITIQUE) — l'ancien
@@ -906,7 +936,7 @@ function buildCover(ctx: BuildCtx): Content[] {
         adversaries.length > 0
             ? ciblesFirstGroup.map((adv) => renderCiblesEntry(adv, p))
             : [{ text: 'Aucune cible renseignée.', color: p.muted }];
-    const ciblesCard = card([h3(pdfSectionTitle(formData, 'adversaires'), p), ...ciblesFirstBody], p, { unbreakable: false });
+    const ciblesCard = card([h3(pdfSectionTitle(formData, 'adversaires'), p), ...ciblesFirstBody], p, { unbreakable: false, ...opaque });
     const overflowPages: Content[] = overflowGroups.map((group) => ({
         stack: [
             h2(`${pdfSectionTitle(formData, 'adversaires')} — ${ciblesRangeLabel(group, adversaries)}`, p, geo.contentWidthPt),
@@ -918,7 +948,9 @@ function buildCover(ctx: BuildCtx): Content[] {
 
     const coverPage: Content = {
         stack: [
-            ...watermark,
+            // Filigrane de la couverture : posé dans le FOND de la page 1
+            // (`buildOiDocDefinition`, `background`), seul calque que les fonds
+            // de cellule des cartes recouvrent (pdfmake les insère juste après lui).
             ...opCard,
             { stack: [h1('ORDRE INITIAL', p, { boxed: true })], margin: [0, mm(35), 0, mm(15)] },
             // Adversaires retirés (×) : la situation prend toute la largeur.
@@ -4474,6 +4506,12 @@ export function buildOiDocDefinition(data: OiPdfCollectedData, opts: { format: O
         throw new OiPdfFitRefusalError(fitErrors);
     }
 
+    // Filigrane de la couverture (page 1 de l'OI complet) : dans le FOND de page,
+    // car pdfmake insère les fonds de cellule juste après lui — les cartes
+    // opaques de la couverture le recouvrent donc (audit F08).
+    const coverBgSrc = currentOiMode(formData) === 'express' ? undefined : resolveBgSrc(ctx);
+    const coverWatermark: Content[] = coverBgSrc !== undefined ? [buildWatermark(coverBgSrc, ctx)] : [];
+
     return {
         content: pages,
         // D4 : dictionnaire d'images par CLÉ — une seule incorporation par
@@ -4490,8 +4528,11 @@ export function buildOiDocDefinition(data: OiPdfCollectedData, opts: { format: O
         // callback, pdfmake retombe sur SON propre blanc par défaut quel que soit
         // `isDark`. Port de `body{background:${p.bg}}` (print-style.ts:49), même
         // mécanique `canvas` que `buildWatermark()` (ci-dessus) pour l'image de fond.
-        background: (_currentPage: number, pageSize: ContextPageSize): Content => ({
-            canvas: [{ type: 'rect', x: 0, y: 0, w: pageSize.width, h: pageSize.height, color: p.bg, lineWidth: 0 }],
+        background: (currentPage: number, pageSize: ContextPageSize): Content => ({
+            stack: [
+                { canvas: [{ type: 'rect', x: 0, y: 0, w: pageSize.width, h: pageSize.height, color: p.bg, lineWidth: 0 }] },
+                ...(currentPage === 1 ? coverWatermark : []),
+            ],
         }),
         // Édition en place (mission « régression édition ») — cf. JSDoc
         // `OiPdfDocDefinitionWithAnchors`. Ordre d'émission PRÉSERVÉ tel quel

@@ -709,8 +709,9 @@ describe('buildOiDocDefinition — thème : fond de page + encre par défaut sui
         const dd = buildOiDocDefinition(collect({}, {}, false), { format: 'a4' });
         expect(dd.defaultStyle?.color).toBe(PDF_LIGHT.text);
 
-        const bg = (dd.background as DynamicBackground)(1, fakePageSize) as Content & { canvas?: unknown[] };
-        const rect = bg.canvas?.[0] as { color?: string; w?: number; h?: number; type?: string };
+        // Fond de page = pile [couleur de page, filigrane éventuel de la couverture] (audit F08).
+        const bg = (dd.background as DynamicBackground)(1, fakePageSize) as Content & { stack?: Array<{ canvas?: unknown[] }> };
+        const rect = bg.stack?.[0]?.canvas?.[0] as { color?: string; w?: number; h?: number; type?: string };
         expect(rect.type).toBe('rect');
         expect(rect.color).toBe(PDF_LIGHT.bg);
         expect(rect.w).toBe(fakePageSize.width);
@@ -721,8 +722,8 @@ describe('buildOiDocDefinition — thème : fond de page + encre par défaut sui
         const dd = buildOiDocDefinition(collect({}, {}, true), { format: 'a4' });
         expect(dd.defaultStyle?.color).toBe(PDF_DARK.text);
 
-        const bg = (dd.background as DynamicBackground)(1, fakePageSize) as Content & { canvas?: unknown[] };
-        const rect = bg.canvas?.[0] as { color?: string };
+        const bg = (dd.background as DynamicBackground)(1, fakePageSize) as Content & { stack?: Array<{ canvas?: unknown[] }> };
+        const rect = bg.stack?.[0]?.canvas?.[0] as { color?: string };
         expect(rect.color).toBe(PDF_DARK.bg);
     });
 });
