@@ -714,7 +714,10 @@ export const PinsMethods = {
         // (capturé après `if (!this.map) return;`), `.getSource` y est une
         // méthode TOUJOURS définie (TS2774 : « this condition will always
         // return true ») ; l'omission de cette clause est neutre en observable.
-        if (!this._pinDiameterSrc && circleFeatures.length) {
+        // Audit PDF 2026-09-25 (M7) : avant le chargement du style, `addSource`
+        // jette « Style is not done loading » et les cercles manquaient à la
+        // capture ; ils sont posés par le gestionnaire `load` (map-core.ts).
+        if (!this._pinDiameterSrc && circleFeatures.length && map.style?._loaded) {
             try {
                 map.addSource('plan-pin-circles-src', {
                     type: 'geojson', data: { type: 'FeatureCollection', features: circleFeatures },

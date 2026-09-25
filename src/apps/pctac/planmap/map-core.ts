@@ -155,6 +155,10 @@ export const MapCoreMethods = {
             // Traces GPX : APRÈS `_initDrawingLayers`, pour que la couche de
             // dessin existe et que les traces s'insèrent en dessous.
             this._loadGpxTracks().catch(() => { /* best-effort : pas de trace au boot */ });
+            // Cercles de diamètre des points : leur source exige le style
+            // chargé (audit PDF 2026-09-25, M7) ; le premier `_renderPins`,
+            // lancé avant, ne les posait pas et la capture les perdait.
+            this._renderPinDecorations();
         });
 
         this._renderPins();

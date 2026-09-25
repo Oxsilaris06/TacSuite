@@ -405,8 +405,24 @@ async function readableImage(source: unknown): Promise<ReadableImage | null> {
     return jpeg && converted ? { dataUrl: jpeg, ...converted } : null;
 }
 
-/** Largeur imprimée du plan tactique (A4 paysage, marges de 40 pt). */
-const PLAN_PRINT_WIDTH_PT = 841.89 - 2 * 40;
+/** Hauteur réservée sous le plan : orientation du nord et attributions (deux lignes). */
+const PLAN_CAPTION_PT = 24;
+
+/** Place du plan sur sa page A4 (marges de 40 pt, titre, légende dessous). */
+function planBox(landscape: boolean): { width: number; height: number } {
+    const [w, h] = landscape ? [841.89, 595.28] : [595.28, 841.89];
+    return { width: w - 2 * 40, height: h - 2 * 40 - 30 - PLAN_CAPTION_PT };
+}
+
+/**
+ * Audit PDF 2026-09-25 (M8) — largeur imprimée du plan pour une carte de
+ * rapport largeur/hauteur `aspect` : la page s'oriente comme la capture
+ * (portrait de téléphone : page portrait), l'image la remplit au mieux.
+ */
+export function planPrintedWidth(aspect: number): number {
+    const box = planBox(aspect >= 1);
+    return Math.min(box.width, box.height * aspect);
+}
 
 /**
  * Données lues UNE fois par export (les essais du budget « Partage » les
@@ -452,7 +468,10 @@ async function loadReportData(sortie: PdfSortie) {
         // JPEG sur fond blanc ; `null` si la carte n'a pas pu être prise.
         plan = {
             capture: await capturePlanForPdf({
-                targetWidthPx: targetPixels(PLAN_PRINT_WIDTH_PT, sortie),
+                // Définition pour la largeur réellement imprimée, selon la forme
+                // de la carte à l'écran (4:3 si elle n'est pas mesurable).
+                targetWidthPxFor: (aspect) => targetPixels(planPrintedWidth(aspect), sortie),
+                targetWidthPx: targetPixels(planPrintedWidth(4 / 3), sortie),
                 jpegQuality: PDF_IMAGE_PROFILES[sortie].jpegQuality,
             }),
         };
@@ -1004,11 +1023,26 @@ async function renderReport(data: ReportData, settings: RenderSettings): Promise
     try {
         if (data.plan) {
             const capture = data.plan.capture;
-            addNewPage('PLAN TACTIQUE', true); // Paysage A4
+            // M8 — page orientée comme la capture : un plan de téléphone
+            // (portrait) n'occupe plus un tiers d'une page paysage.
+            const landscape = !capture || capture.widthPx >= capture.heightPx;
+            addNewPage('PLAN TACTIQUE', landscape);
             if (capture) {
-                const imgMaxWidth = context.pageWidth - 2 * context.margin;
-                const imgMaxHeight = context.pageHeight - 2 * context.margin - 30;
-                await drawImageSafe(pdfPage(), capture.dataUrl, context.margin, context.y - 5, imgMaxWidth, imgMaxHeight, false);
+                const box = planBox(landscape);
+                const bottom = await drawImageSafe(pdfPage(), capture.dataUrl, context.margin, context.y - 5, box.width, box.height, false);
+                // Orientation et attributions en texte sous l'image : lisibles
+                // à l'impression, même quand la capture les tasse ou les coupe.
+                const b = ((Math.round(capture.bearingDeg) % 360) + 360) % 360;
+                const north = b === 0 ? 'Nord en haut' : `Nord à ${360 - b}° (carte tournée)`;
+                const caption = capture.attribution ? `${north} · Fond de carte : ${capture.attribution}` : north;
+                let cy = bottom - 2;
+                for (const line of wrapText(caption, box.width, font, 7).slice(0, 2)) {
+                    pdfPage().drawText(line, { x: context.margin, y: cy, size: 7, font, color: themeColors.text });
+                    cy -= 9;
+                }
+                // La section suivante s'enchaîne SOUS le plan (page portrait),
+                // jamais par-dessus.
+                context.y = cy;
             } else {
                 // Plus JAMAIS d'absence silencieuse : on le dit dans le PDF.
                 pdfPage().drawText(
