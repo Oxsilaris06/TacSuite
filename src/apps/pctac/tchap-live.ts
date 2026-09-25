@@ -507,6 +507,16 @@ function computeState(m: TlMember, now: number): TlState {
   return 'idle';
 }
 function fnIcon(fonction: string | null | undefined): string { return (fonction && FUNCTION_ICONS[fonction]) || DEFAULT_ICON; }
+/** « perdu depuis N min » — N en minutes pleines, au moins 1. */
+export function lostSinceLabel(ageMs: number): string {
+  const min = Math.max(1, Math.floor(ageMs / 60000));
+  return `perdu depuis ${min} min`;
+}
+/** Retire le bouton « Retirer » d'un marqueur (états non perdus). */
+function clearRetireButton(m: TlMember): void {
+  const btn = m.root.querySelector('.tl-retire');
+  if (btn) btn.remove();
+}
 function applyVisual(sender: string, m: TlMember | undefined): void {
   if (!m || !m.iconEl) return;
   const a = cfg.assign[sender] || {};
@@ -523,15 +533,33 @@ function applyVisual(sender: string, m: TlMember | undefined): void {
     m.iconEl.classList.remove('pulse');
     m.labelEl.textContent = `${tag}${name} · ${fmtAge(age)}`;
     m.labelEl.style.borderLeftColor = color;
+    clearRetireButton(m);
     return;
   }
-  m.iconEl.style.opacity = '';
   const st = computeState(m, Date.now()); m.state = st;
   const color = STATE_COLORS[st] || STATE_COLORS.expiring;
-  m.iconEl.style.color = color;
   m.glyphEl.textContent = fnIcon(a.fonction);
   m.iconEl.classList.toggle('pulse', st === 'moving' || st === 'expiring');
-  m.labelEl.textContent = tag + name;
+  if (st === 'lost') {
+    // Décision 35 : l'opérateur perdu RESTE sur la carte, grisé et daté,
+    // jusqu'à un Stop ou un retrait à la main. Jamais retiré par le balayage.
+    m.iconEl.style.opacity = '0.45';
+    m.labelEl.textContent = `${tag}${name} · ${lostSinceLabel(Date.now() - (m.ts || Date.now()))}`;
+    if (!m.root.querySelector('.tl-retire')) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'tl-retire';
+      btn.textContent = 'Retirer';
+      btn.title = 'Retirer cet opérateur de la carte';
+      btn.addEventListener('click', (ev) => { ev.stopPropagation(); removeMember(sender); });
+      m.root.appendChild(btn);
+    }
+  } else {
+    m.iconEl.style.opacity = '';
+    m.labelEl.textContent = tag + name;
+    clearRetireButton(m);
+  }
+  m.iconEl.style.color = color;
   m.labelEl.style.borderLeftColor = color;
 }
 
@@ -818,7 +846,7 @@ function renderOps(force?: boolean): void {
   const pill = (st: TlState, label: string): string => glob[st] ? `<span title="${label}"><i style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${STATE_COLORS[st]};vertical-align:middle"></i> <b>${glob[st]}</b></span>` : '';
   let html = '<div class="tl-ops-bar">'
     + `<button type="button" class="tl-batch-toggle${batchMode ? ' active' : ''}" title="Mode lot : affecter une fonction à plusieurs opérateurs">Lot</button>`
-    + `<span class="tl-ops-states">${pill('new', 'Nouveau')}${pill('moving', 'En mouvement')}${pill('idle', 'Immobile')}${pill('expiring', 'Déco imminente')}</span></div>`;
+    + `<span class="tl-ops-states">${pill('new', 'Nouveau')}${pill('moving', 'En mouvement')}${pill('idle', 'Immobile')}${pill('expiring', 'Déco imminente')}${pill('lost', 'Perdu')}</span></div>`;
   if (batchMode) {
     html += '<div class="tl-batch-bar">'
       + '<button type="button" class="tl-batch-all" title="Tout sélectionner / désélectionner">Tout</button>'
@@ -854,6 +882,7 @@ function renderOps(force?: boolean): void {
         + `<span class="tl-op-age">${fmtAge(now - (m.ts || now))}</span>`
         + fnCtrl
         + `<button type="button" class="tl-op-follow ${followed === s ? 'on' : ''}" title="Suivre (centrage live)" aria-label="Suivre cet opérateur (centrage live)">${followed === s ? '◉' : '◎'}</button>`
+        + (m.state === 'lost' ? '<button type="button" class="tl-op-remove" title="Retirer de la carte" aria-label="Retirer cet opérateur de la carte">Retirer</button>' : '')
         + '</div>';
     }
     html += '</div></div>';
@@ -932,6 +961,14 @@ function onOpsClick(e: Event): void {
     renderOps(true);
     return;
   }
+  // Retirer un opérateur perdu de la carte (décision 35).
+  const rm = target.closest<HTMLElement>('.tl-op-remove');
+  if (rm) {
+    const rowR = rm.closest<HTMLElement>('.tl-op');
+    if (rowR) removeMember(decodeURIComponent(rowR.dataset.s ?? ''));
+    renderOps(true);
+    return;
+  }
   // Suivre un opérateur (centrage live)
   const btn = target.closest<HTMLElement>('.tl-op-follow'); if (!btn) return;
   const opRow = btn.closest<HTMLElement>('.tl-op'); if (!opRow) return;
@@ -969,7 +1006,7 @@ function processSync(data: MatrixSyncResponse, initial: boolean): void {
   if (initial) jlog(`salon trouvé : ${st.length} state + ${tl.length} timeline`, 'var(--text-muted)');
   for (const ev of st) handleEvent(ev);
   for (const ev of tl) handleEvent(ev);
-  if (initial) { const now = Date.now(); for (const [s, m] of [...members]) if (m.marker && computeState(m, now) === 'lost') removeMember(s); }
+  if (initial) applyVisualAll();
 }
 
 /* ─── AUTH : OIDC device-code (RFC 8628) + refresh + repli token manuel ──── */
@@ -1269,7 +1306,9 @@ function sweepStates(): void {
     // disparaître au bout de FB_LOST_MS (6 min), ce qui détruirait
     // l'affichage hors-ligne voulu.
     if (m.stale) { if (now - (m.ts || 0) > STALE_MAX_MS) removeMember(s); else applyVisual(s, m); continue; }
-    if (computeState(m, now) === 'lost') removeMember(s); else applyVisual(s, m);
+    // Décision 35 : un opérateur « perdu » RESTE affiché (grisé, daté) ; il
+    // n'est retiré que par un Stop ou l'action « Retirer » de son marqueur.
+    applyVisual(s, m);
   }
   if (members.size) scheduleRenderOps();
 }
