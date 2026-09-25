@@ -85,12 +85,18 @@ export const LogManager: LogManagerContract = {
       ...(auto ? { auto: true } : {}),
     };
 
-    // logManager.js:52-54 — persistance
+    // logManager.js:52-54 — persistance. `saveLogData` rend `false` quand le
+    // stockage a refusé l'écriture (quota, indisponible) et émet 'pctac:quota'.
+    // On ne doit alors NI annoncer l'ajout, NI vider le formulaire, NI dater
+    // l'historique des lieux : l'appelant garde la saisie intacte.
     const logData = Storage.loadLogData();
     logData.push(newEntry);
-    Storage.saveLogData(logData);
+    if (!Storage.saveLogData(logData)) {
+        toast('Stockage plein : événement NON enregistré.', { kind: 'error' });
+        return null;
+    }
 
-    // logManager.js:56 — ajout à l'historique des lieux
+    // logManager.js:56 — ajout à l'historique des lieux (seulement si écrit)
     if (newEntry.lieu) this.addLieuToHistory(newEntry.lieu);
 
     return newEntry;
