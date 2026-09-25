@@ -16,13 +16,24 @@
 import type { GeoJSONSource, LayerSpecification, Map as MapLibreMap, MapMouseEvent, MapTouchEvent } from 'maplibre-gl';
 import {
     GRID_CELL_SIZES,
+    GRID_COLORS,
     GRID_DEFAULT_CELL,
+    GRID_DEFAULT_COLOR,
+    GRID_DEFAULT_LABEL_SIZE,
+    GRID_LABEL_SIZES,
     gridCellAt,
+    gridColor,
+    gridLabelSize,
+    gridToGeo,
     isTacticalGridSpec,
-    makeTacticalGrid,
+    makeOrientedGrid,
     mgrsGridGeometry,
     mgrsOf,
+    orientedGridFromCorners,
+    rotateTacticalGrid,
     tacticalGridGeometry,
+    type GridColor,
+    type GridLabelSize,
     type LngLat,
     type TacticalGridSpec,
 } from '@shared/tactical-grid.js';
@@ -55,10 +66,18 @@ export interface MapOverlays {
     setMgrsOn(on: boolean): void;
     setPowerOn(on: boolean): void;
     setCellSize(m: number): Promise<boolean>;
+    /** Couleur du carroyage (lignes, étiquettes, aperçu) ; gardée dans le spec. */
+    setGridColor(c: GridColor): void;
+    /** Taille des lettres et numéros (4 crans) ; gardée dans le spec. */
+    setGridLabelSize(s: GridLabelSize): void;
     startGridDraw(): Promise<void>;
     /** Pose d'un seul geste un carroyage centré sur la vue (60 % de l'écran) : l'option commode au doigt. */
     placeGridOnView(): Promise<void>;
     startGridMove(): void;
+    /** Affiche une poignée pour tourner le carroyage autour de son centre (décision 39). */
+    startGridRotate(): Promise<void>;
+    /** Remet le carroyage au nord (angle 0) autour de son centre. */
+    gridNorthUp(): void;
     clearGrid(): Promise<void>;
     cancelCapture(): void;
     /** Case du carroyage (« C4 ») d'un point, `null` hors carroyage ou sans carroyage. */
@@ -75,7 +94,6 @@ export interface MapOverlays {
 
 const EMPTY: GeoJSON.FeatureCollection = { type: 'FeatureCollection', features: [] };
 
-const GRID_COLOR = '#f5f7fa';
 const GRID_HALO = '#0b0d12';
 const MGRS_COLOR = '#7fdcff';
 // BT en blanc cassé : le gris d'origine se perdait sur l'orthophoto.
@@ -201,23 +219,57 @@ export function overlayLayers(withBolt: boolean): LayerSpecification[] {
             paint: { 'text-color': MGRS_COLOR, 'text-halo-color': GRID_HALO, 'text-halo-width': 1.5 },
         },
         {
+            // Liseré sombre : rend la couleur choisie lisible sur photo
+            // aérienne comme sur plan clair (décision 39, G4).
+            id: 'tac-grid-casing', type: 'line', source: 'tac-grid',
+            paint: { 'line-color': GRID_HALO, 'line-width': ['match', ['get', 'kind'], 'edge', 4.2, 2.6], 'line-opacity': 0.7 },
+        },
+        {
             id: 'tac-grid-line', type: 'line', source: 'tac-grid',
-            paint: { 'line-color': GRID_COLOR, 'line-width': ['match', ['get', 'kind'], 'edge', 2.5, 1.2], 'line-opacity': 0.95 },
+            paint: { 'line-color': GRID_COLORS[GRID_DEFAULT_COLOR], 'line-width': ['match', ['get', 'kind'], 'edge', 2.5, 1.2], 'line-opacity': 0.95 },
         },
         {
             id: 'tac-grid-label', type: 'symbol', source: 'tac-grid-labels',
-            layout: { 'text-field': ['get', 'label'], 'text-font': ['Noto Sans Bold'], 'text-size': 14, 'text-allow-overlap': true },
-            paint: { 'text-color': GRID_COLOR, 'text-halo-color': GRID_HALO, 'text-halo-width': 2 },
+            // Le nom suit les axes du carroyage (rotation posée par la géométrie)
+            // sans se lire à l'envers.
+            layout: { 'text-field': ['get', 'label'], 'text-font': ['Noto Sans Bold'], 'text-size': GRID_LABEL_SIZES[GRID_DEFAULT_LABEL_SIZE], 'text-allow-overlap': true, 'text-rotation-alignment': 'map', 'text-rotate': ['get', 'rotation'] },
+            paint: { 'text-color': GRID_COLORS[GRID_DEFAULT_COLOR], 'text-halo-color': GRID_HALO, 'text-halo-width': 2 },
+        },
+        {
+            id: 'tac-grid-preview-casing', type: 'line', source: 'tac-grid-preview',
+            paint: { 'line-color': GRID_HALO, 'line-width': 4, 'line-opacity': 0.6 },
         },
         {
             id: 'tac-grid-preview-line', type: 'line', source: 'tac-grid-preview',
-            paint: { 'line-color': GRID_COLOR, 'line-width': 2, 'line-dasharray': [2, 2] },
+            paint: { 'line-color': GRID_COLORS[GRID_DEFAULT_COLOR], 'line-width': 2, 'line-dasharray': [2, 2] },
         },
     ] as LayerSpecification[];
 }
 
 /** Sources GeoJSON des surcouches. */
 export const OVERLAY_SOURCES = ['tac-grid', 'tac-grid-labels', 'tac-grid-preview', 'tac-mgrs', 'tac-mgrs-labels', 'tac-power', 'tac-power-towers'] as const;
+
+/** Aimant de la rotation (degrés) : le nord tombe pile, comme pour un tracé. */
+export const GRID_ROTATE_SNAP = 5;
+
+/** Distance en pixels entre le centre du carroyage et sa poignée de rotation. */
+const ROTATE_HANDLE_PX = 90;
+
+/**
+ * Angle de carroyage (degrés depuis le nord, sens horaire) désigné par un
+ * pointeur à l'écran. `center` et `pointer` sont en pixels du canevas ; l'angle
+ * tient compte de l'orientation de la carte (`bearing`).
+ */
+export function gridAngleFromScreen(bearing: number, center: { x: number; y: number }, pointer: { x: number; y: number }): number {
+    const deg = (Math.atan2(pointer.x - center.x, -(pointer.y - center.y)) * 180) / Math.PI;
+    return ((deg + bearing) % 360 + 360) % 360;
+}
+
+/** Cale un angle sur le pas d'aimant (5° par défaut), dans [0, 360). */
+export function snapGridAngle(angle: number, step = GRID_ROTATE_SNAP): number {
+    const a = Math.round(angle / step) * step;
+    return ((a % 360) + 360) % 360;
+}
 
 export function createMapOverlays(map: MapLibreMap, opts: OverlayOptions): MapOverlays {
     const state = sanitize(opts.load());
@@ -228,7 +280,7 @@ export function createMapOverlays(map: MapLibreMap, opts: OverlayOptions): MapOv
     const listeners = new Set<() => void>();
     // Tracé du carroyage : `press` = appui en cours (glisser d'un coin à l'autre),
     // `first` = premier coin posé par un simple toucher (tracé en deux touchers).
-    let capture: null | { mode: 'draw' | 'move'; first?: LngLat; press?: ScreenPoint | undefined; last?: ScreenPoint | undefined } = null;
+    let capture: null | { mode: 'draw' | 'move'; first?: ScreenPoint; press?: ScreenPoint | undefined; last?: ScreenPoint | undefined } = null;
     // Le `click` qui suit le relâchement du doigt appartient encore au tracé :
     // l'hôte (pings, formes) doit l'ignorer quelques instants.
     let swallowUntil = 0;
@@ -237,6 +289,20 @@ export function createMapOverlays(map: MapLibreMap, opts: OverlayOptions): MapOv
     let powerSeq = 0;
     let moveTimer: ReturnType<typeof setTimeout> | null = null;
     let ready = false;
+    // Rotation en cours : poignée posée sur la carte, geste suspendu, angle
+    // appliqué en direct mais enregistré seulement au relâcher (décision 39).
+    let rotate: null | {
+        marker: { setLngLat(ll: { lng: number; lat: number }): unknown; remove(): void };
+        el: HTMLElement;
+        label: HTMLElement;
+        original: TacticalGridSpec;
+        centerGeo: LngLat;
+        centerPx: { x: number; y: number };
+        dirty: boolean;
+    } = null;
+    let rotateCleanup: (() => void) | null = null;
+    let rotateDragWasOn = true;
+    let rotateActive = false;
 
     const toast = (m: string, k: OverlayToastKind = 'info'): void => opts.toast?.(m, k);
     const changed = (): void => {
@@ -265,6 +331,16 @@ export function createMapOverlays(map: MapLibreMap, opts: OverlayOptions): MapOv
         const g = state.gridOn && state.grid ? tacticalGridGeometry(state.grid) : null;
         src(map, 'tac-grid')?.setData(g ? g.lines : EMPTY);
         src(map, 'tac-grid-labels')?.setData(g ? g.labels : EMPTY);
+        // Couleur et taille choisies (décision 39, G4) : elles s'appliquent aux
+        // lignes, aux étiquettes et à l'aperçu, liseré sombre compris.
+        const color = GRID_COLORS[state.grid ? gridColor(state.grid) : GRID_DEFAULT_COLOR];
+        const size = GRID_LABEL_SIZES[state.grid ? gridLabelSize(state.grid) : GRID_DEFAULT_LABEL_SIZE];
+        try {
+            map.setPaintProperty('tac-grid-line', 'line-color', color);
+            map.setPaintProperty('tac-grid-label', 'text-color', color);
+            map.setPaintProperty('tac-grid-preview-line', 'line-color', color);
+            map.setLayoutProperty('tac-grid-label', 'text-size', size);
+        } catch { /* couches pas encore posées : rien à teinter */ }
     }
 
     function renderMgrs(): void {
@@ -331,12 +407,28 @@ export function createMapOverlays(map: MapLibreMap, opts: OverlayOptions): MapOv
         void renderPower();
     }
 
-    function setPreview(a: LngLat, b: LngLat): void {
-        const ring: LngLat[] = [a, [b[0], a[1]], b, [a[0], b[1]], a];
+    const toLngLat = (p: { lng: number; lat: number }): LngLat => [p.lng, p.lat];
+
+    /**
+     * Aperçu du rectangle À L'ÉCRAN : on reprojette les quatre coins de la
+     * boîte englobante des deux appuis, si bien que le pointillé suit
+     * exactement le doigt, même sur une carte tournée.
+     */
+    function setPreviewScreen(p: ScreenPoint, q: ScreenPoint): void {
+        const x0 = Math.min(p.x, q.x), x1 = Math.max(p.x, q.x);
+        const y0 = Math.min(p.y, q.y), y1 = Math.max(p.y, q.y);
+        const ring: LngLat[] = [
+            toLngLat(map.unproject([x0, y0])),
+            toLngLat(map.unproject([x1, y0])),
+            toLngLat(map.unproject([x1, y1])),
+            toLngLat(map.unproject([x0, y1])),
+            toLngLat(map.unproject([x0, y0])),
+        ];
         src(map, 'tac-grid-preview')?.setData({ type: 'FeatureCollection', features: [{ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: ring } }] });
     }
 
     function beginCapture(mode: 'draw' | 'move'): void {
+        if (rotate) endRotate();
         capture = { mode };
         // Au doigt, glisser déplaçait la carte au lieu de tracer (retour Nico
         // 2026-09-24) : le déplacement à un doigt est suspendu pendant le tracé.
@@ -356,8 +448,18 @@ export function createMapOverlays(map: MapLibreMap, opts: OverlayOptions): MapOv
         notifyStatus();
     }
 
-    function commitGrid(a: LngLat, b: LngLat): void {
-        const { spec, clamped } = makeTacticalGrid(a, b, state.cellM);
+    /**
+     * Pose le carroyage depuis deux appuis ÉCRAN : A1 au coin haut-gauche de
+     * la boîte englobante, colonnes et rangées tirées de ses dimensions, angle
+     * = orientation de la carte au moment du tracé (décision 39).
+     */
+    function commitGridFromScreen(p: ScreenPoint, q: ScreenPoint): void {
+        const x0 = Math.min(p.x, q.x), x1 = Math.max(p.x, q.x);
+        const y0 = Math.min(p.y, q.y), y1 = Math.max(p.y, q.y);
+        const tl = toLngLat(map.unproject([x0, y0]));
+        const tr = toLngLat(map.unproject([x1, y0]));
+        const bl = toLngLat(map.unproject([x0, y1]));
+        const { spec, clamped } = orientedGridFromCorners(tl, tr, bl, state.cellM, map.getBearing());
         state.grid = spec;
         state.gridOn = true;
         endCapture();
@@ -369,6 +471,90 @@ export function createMapOverlays(map: MapLibreMap, opts: OverlayOptions): MapOv
                 : `Carroyage posé : ${spec.cols} × ${spec.rows} cases de ${spec.cellM} m.`,
             clamped ? 'info' : 'success',
         );
+    }
+
+    type RotateMarkerCtor = new (opts: { element: HTMLElement; anchor: string }) => {
+        setLngLat(ll: { lng: number; lat: number }): { addTo(m: MapLibreMap): unknown };
+        addTo(m: MapLibreMap): unknown;
+        remove(): void;
+    };
+
+    /** Positionne la poignée sur l'axe « haut » du carroyage, à distance fixe du centre. */
+    function placeRotateHandle(): void {
+        if (!rotate || !state.grid) return;
+        const phi = (((state.grid.angle ?? 0) - map.getBearing()) * Math.PI) / 180;
+        const hx = rotate.centerPx.x + ROTATE_HANDLE_PX * Math.sin(phi);
+        const hy = rotate.centerPx.y - ROTATE_HANDLE_PX * Math.cos(phi);
+        rotate.marker.setLngLat(map.unproject([hx, hy]));
+        rotate.label.textContent = `${Math.round(state.grid.angle ?? 0)}°`;
+    }
+
+    function endRotate(): void {
+        if (!rotate) return;
+        rotateCleanup?.();
+        rotateCleanup = null;
+        rotateActive = false;
+        rotate.marker.remove();
+        rotate = null;
+        map.getCanvas().style.cursor = '';
+        if (rotateDragWasOn) map.dragPan.enable();
+        notifyStatus();
+    }
+
+    function rotationPointerPx(e: MouseEvent | TouchEvent): { x: number; y: number } {
+        const r = map.getCanvas().getBoundingClientRect();
+        const t = 'touches' in e ? e.touches[0] : e;
+        return { x: (t?.clientX ?? 0) - r.left, y: (t?.clientY ?? 0) - r.top };
+    }
+
+    /** Geste de la poignée : glisser fait tourner autour du centre, en direct, aimanté au 5°. */
+    function beginRotateGesture(): void {
+        if (!rotate) return;
+        const el = rotate.el;
+        const onDown = (ev: MouseEvent | TouchEvent): void => {
+            ev.preventDefault();
+            ev.stopPropagation();
+            rotateActive = true;
+            map.getCanvas().style.cursor = 'grabbing';
+        };
+        const onMove = (ev: MouseEvent | TouchEvent): void => {
+            if (!rotate || !rotateActive) return;
+            ev.preventDefault();
+            const p = rotationPointerPx(ev);
+            const angle = snapGridAngle(gridAngleFromScreen(map.getBearing(), rotate.centerPx, p));
+            state.grid = rotateTacticalGrid(rotate.original, angle);
+            rotate.dirty = true;
+            renderGrid();
+            placeRotateHandle();
+        };
+        const onUp = (): void => {
+            if (!rotate || !rotateActive) return;
+            const angle = state.grid ? (state.grid.angle ?? 0) : 0;
+            const dirty = rotate.dirty;
+            endRotate();
+            if (dirty) {
+                changed();
+                toast(`Carroyage orienté à ${Math.round(angle)}°.`, 'success');
+            }
+        };
+        el.addEventListener('pointerdown', onDown);
+        el.addEventListener('touchstart', onDown, { passive: false });
+        document.addEventListener('pointermove', onMove);
+        document.addEventListener('pointerup', onUp);
+        document.addEventListener('pointercancel', onUp);
+        document.addEventListener('touchmove', onMove, { passive: false });
+        document.addEventListener('touchend', onUp);
+        document.addEventListener('touchcancel', onUp);
+        rotateCleanup = () => {
+            el.removeEventListener('pointerdown', onDown);
+            el.removeEventListener('touchstart', onDown);
+            document.removeEventListener('pointermove', onMove);
+            document.removeEventListener('pointerup', onUp);
+            document.removeEventListener('pointercancel', onUp);
+            document.removeEventListener('touchmove', onMove);
+            document.removeEventListener('touchend', onUp);
+            document.removeEventListener('touchcancel', onUp);
+        };
     }
 
     /** Point d'un évènement souris ou tactile ; `null` pour un geste à plusieurs doigts (pincement). */
@@ -392,9 +578,9 @@ export function createMapOverlays(map: MapLibreMap, opts: OverlayOptions): MapOv
         if (!p) return;
         if (capture.press) {
             capture.last = p;
-            setPreview(capture.press.at, p.at);
+            setPreviewScreen(capture.press, p);
         } else if (capture.first) {
-            setPreview(capture.first, p.at); // souris : aperçu entre les deux clics
+            setPreviewScreen(capture.first, p); // souris : aperçu entre les deux clics
         }
     };
     const onUp = (): void => {
@@ -413,14 +599,14 @@ export function createMapOverlays(map: MapLibreMap, opts: OverlayOptions): MapOv
             toast('Carroyage déplacé : A1 est maintenant au point touché.', 'success');
             return;
         }
-        if (moved) { commitGrid(press.at, last.at); return; }
+        if (moved) { commitGridFromScreen(press, last); return; }
         if (!capture.first) {
-            capture.first = press.at;
-            setPreview(press.at, press.at);
+            capture.first = press;
+            setPreviewScreen(press, press);
             toast('Touchez le coin opposé (ou glissez d’un coin à l’autre).');
             return;
         }
-        commitGrid(capture.first, press.at);
+        commitGridFromScreen(capture.first, press);
     };
     map.on('mousedown', onDown);
     map.on('touchstart', onDown);
@@ -434,7 +620,16 @@ export function createMapOverlays(map: MapLibreMap, opts: OverlayOptions): MapOv
         moveTimer = setTimeout(() => { moveTimer = null; renderMgrs(); void renderPower(); }, 350);
     });
     const onKey = (e: KeyboardEvent): void => {
-        if (e.key === 'Escape' && capture) { endCapture(); toast('Tracé du carroyage annulé.'); }
+        if (e.key !== 'Escape') return;
+        if (rotate) {
+            const original = rotate.original;
+            endRotate();
+            state.grid = original;
+            renderGrid();
+            toast('Rotation du carroyage annulée.');
+            return;
+        }
+        if (capture) { endCapture(); toast('Tracé du carroyage annulé.'); }
     };
     document.addEventListener('keydown', onKey);
 
@@ -443,7 +638,7 @@ export function createMapOverlays(map: MapLibreMap, opts: OverlayOptions): MapOv
 
     const api: MapOverlays = {
         get state() { return state; },
-        isCapturing: () => capture !== null || Date.now() < swallowUntil,
+        isCapturing: () => capture !== null || rotate !== null || Date.now() < swallowUntil,
         setGridOn(on) {
             state.gridOn = on;
             renderGrid();
@@ -468,17 +663,29 @@ export function createMapOverlays(map: MapLibreMap, opts: OverlayOptions): MapOv
             // que « Tracer ».
             if (state.grid && opts.confirm && !(await opts.confirm(`Passer la maille à ${m} m ? Toutes les cases changent de nom.`))) return false;
             state.cellM = m;
-            // Même emprise, nouvelle maille : on repart du coin A1 existant.
+            // Même emprise, nouvelle maille : on repart du coin A1 existant, en
+            // CONSERVANT l'angle (décision 39).
             if (state.grid) {
                 const g = state.grid;
-                const se: LngLat = [g.west + g.cols * g.dLon, g.north - g.rows * g.dLat];
-                const { spec, clamped } = makeTacticalGrid([g.west, g.north], se, m);
+                const { spec, clamped } = makeOrientedGrid([g.west, g.north], g.cols * g.cellM, g.rows * g.cellM, m, g.angle ?? 0);
                 state.grid = spec;
                 renderGrid();
                 if (clamped) toast(`Carroyage borné à ${spec.cols} × ${spec.rows} cases : l'emprise d'origine est trop grande pour une maille de ${m} m.`);
             }
             changed();
             return true;
+        },
+        setGridColor(c) {
+            if (!state.grid || !(c in GRID_COLORS) || gridColor(state.grid) === c) return;
+            state.grid = { ...state.grid, color: c };
+            renderGrid();
+            changed();
+        },
+        setGridLabelSize(s) {
+            if (!state.grid || !(s in GRID_LABEL_SIZES) || gridLabelSize(state.grid) === s) return;
+            state.grid = { ...state.grid, labelSize: s };
+            renderGrid();
+            changed();
         },
         async startGridDraw() {
             if (state.grid && opts.confirm && !(await opts.confirm('Remplacer le carroyage actuel ? Les cases annoncées jusqu’ici changeront de place.'))) return;
@@ -487,18 +694,69 @@ export function createMapOverlays(map: MapLibreMap, opts: OverlayOptions): MapOv
         },
         async placeGridOnView() {
             if (state.grid && opts.confirm && !(await opts.confirm('Remplacer le carroyage actuel ? Les cases annoncées jusqu’ici changeront de place.'))) return;
-            // 60 % central de l'écran, en pixels puis en coordonnées : juste sous
-            // les yeux, quel que soit le zoom ou l'orientation de la carte.
+            // 60 % central de l'écran, en pixels : juste sous les yeux, quel que
+            // soit le zoom ou l'orientation de la carte (le carroyage prend
+            // l'orientation de l'écran, décision 39).
             const c = map.getCanvas();
             const w = c.clientWidth || c.width, h = c.clientHeight || c.height;
             const nw = map.unproject([w * 0.2, h * 0.2]);
             const se = map.unproject([w * 0.8, h * 0.8]);
-            commitGrid([nw.lng, nw.lat], [se.lng, se.lat]);
+            commitGridFromScreen({ at: toLngLat(nw), x: w * 0.2, y: h * 0.2 }, { at: toLngLat(se), x: w * 0.8, y: h * 0.8 });
         },
         startGridMove() {
             if (!state.grid) return;
             beginCapture('move');
             toast('Touchez le nouvel emplacement du coin A1 (Échap pour annuler).');
+        },
+        async startGridRotate() {
+            if (!state.grid || rotate) return;
+            const g = state.grid;
+            const centerGeo = gridToGeo(g, g.cols / 2, g.rows / 2);
+            const el = document.createElement('div');
+            el.className = 'tac-grid-rotate-handle';
+            el.setAttribute('role', 'slider');
+            el.setAttribute('aria-label', 'Tourner le carroyage');
+            el.style.cssText = 'width:44px;height:44px;border-radius:50%;background:rgba(11,13,18,0.85);border:2px solid #fff;color:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:grab;touch-action:none;user-select:none;-webkit-user-select:none;box-shadow:0 1px 6px rgba(0,0,0,0.5);font:600 11px Inter,system-ui,sans-serif;';
+            const icon = document.createElement('span');
+            icon.textContent = '⟳';
+            icon.style.cssText = 'font-size:18px;line-height:1;';
+            const label = document.createElement('span');
+            label.className = 'tac-grid-rotate-deg';
+            el.append(icon, label);
+            let MarkerCtor: RotateMarkerCtor | undefined;
+            try {
+                const mod = (await import('maplibre-gl')) as { Marker?: RotateMarkerCtor; default?: { Marker?: RotateMarkerCtor } };
+                MarkerCtor = mod.Marker ?? mod.default?.Marker;
+            } catch {
+                MarkerCtor = undefined;
+            }
+            if (!MarkerCtor) { toast('Rotation du carroyage indisponible sur cette carte.', 'error'); return; }
+            const marker = new MarkerCtor({ element: el, anchor: 'center' });
+            marker.setLngLat({ lng: centerGeo[0], lat: centerGeo[1] }).addTo(map);
+            rotate = {
+                marker: marker as unknown as { setLngLat(ll: { lng: number; lat: number }): unknown; remove(): void },
+                el,
+                label,
+                original: g,
+                centerGeo,
+                centerPx: map.project({ lng: centerGeo[0], lat: centerGeo[1] }),
+                dirty: false,
+            };
+            rotateDragWasOn = map.dragPan.isEnabled();
+            map.dragPan.disable();
+            map.getCanvas().style.cursor = 'grab';
+            placeRotateHandle();
+            beginRotateGesture();
+            notifyStatus();
+            toast('Glissez la poignée pour tourner le carroyage (Échap pour annuler).');
+        },
+        gridNorthUp() {
+            if (!state.grid) return;
+            if (rotate) endRotate();
+            state.grid = rotateTacticalGrid(state.grid, 0);
+            renderGrid();
+            changed();
+            toast('Carroyage remis au nord.', 'success');
         },
         async clearGrid() {
             if (!state.grid) return;
@@ -530,6 +788,9 @@ export interface OverlayControlClasses {
     fab: string;
     label: string;
 }
+
+const GRID_COLOR_LABELS: Record<GridColor, string> = { yellow: 'Jaune', orange: 'Orange', magenta: 'Magenta', white: 'Blanc' };
+const GRID_SIZE_LABELS: Record<GridLabelSize, string> = { small: 'Petit', medium: 'Moyen', large: 'Grand', xlarge: 'Très grand' };
 
 const POWER_STATUS_TEXT: Record<PowerStatus, string> = {
     off: 'RTE (OSM) · HTA et BT (Enedis)',
@@ -591,6 +852,28 @@ export function mountOverlayControls(section: HTMLElement, ov: MapOverlays, cls:
         // Refus de la confirmation : le menu revient sur la maille en place.
         void ov.setCellSize(Number(select.value)).then((done) => { if (!done) select.value = String(ov.state.cellM); });
     });
+    // Couleur et taille (décision 39, G4) : contrôles accessibles (libellé
+    // clavier, 44 px de haut), appliqués aussitôt et gardés avec le carroyage.
+    const colorSelect = document.createElement('select');
+    colorSelect.setAttribute('aria-label', 'Couleur du carroyage');
+    colorSelect.style.minHeight = '44px';
+    for (const id of Object.keys(GRID_COLORS) as GridColor[]) {
+        const o = document.createElement('option');
+        o.value = id;
+        o.textContent = GRID_COLOR_LABELS[id];
+        colorSelect.appendChild(o);
+    }
+    colorSelect.addEventListener('change', () => ov.setGridColor(colorSelect.value as GridColor));
+    const sizeSelect = document.createElement('select');
+    sizeSelect.setAttribute('aria-label', 'Taille des lettres du carroyage');
+    sizeSelect.style.minHeight = '44px';
+    for (const id of Object.keys(GRID_LABEL_SIZES) as GridLabelSize[]) {
+        const o = document.createElement('option');
+        o.value = id;
+        o.textContent = GRID_SIZE_LABELS[id];
+        sizeSelect.appendChild(o);
+    }
+    sizeSelect.addEventListener('change', () => ov.setGridLabelSize(sizeSelect.value as GridLabelSize));
     const onView = fab('tac-overlay-tool', 'center_focus_strong', 'Poser le carroyage sur la vue (centre de l’écran)');
     onView.append(' Sur la vue');
     onView.addEventListener('click', () => void ov.placeGridOnView());
@@ -599,9 +882,15 @@ export function mountOverlayControls(section: HTMLElement, ov: MapOverlays, cls:
     draw.addEventListener('click', () => void ov.startGridDraw());
     const move = fab('tac-overlay-tool', 'open_with', 'Déplacer le carroyage (nouvel emplacement du coin A1)');
     move.addEventListener('click', () => ov.startGridMove());
+    const rotateBtn = fab('tac-overlay-tool', 'rotate_right', 'Tourner le carroyage autour de son centre');
+    rotateBtn.append(' Tourner');
+    rotateBtn.addEventListener('click', () => void ov.startGridRotate());
+    const northBtn = fab('tac-overlay-tool', 'explore', 'Remettre le carroyage au nord (angle 0)');
+    northBtn.append(' Nord en haut');
+    northBtn.addEventListener('click', () => ov.gridNorthUp());
     const clear = fab('tac-overlay-tool', 'delete', 'Effacer le carroyage');
     clear.addEventListener('click', () => void ov.clearGrid());
-    tools.append(select, onView, draw, move, clear);
+    tools.append(select, colorSelect, sizeSelect, onView, draw, move, rotateBtn, northBtn, clear);
     grid.el.after(tools);
 
     const mgrsBtn = fab(cls.fab, 'grid_4x4', 'Afficher ou masquer la grille MGRS');
@@ -618,9 +907,18 @@ export function mountOverlayControls(section: HTMLElement, ov: MapOverlays, cls:
         gridBtn.setAttribute('aria-pressed', String(s.gridOn));
         tools.hidden = !s.gridOn;
         select.value = String(s.cellM);
+        colorSelect.disabled = !s.grid;
+        sizeSelect.disabled = !s.grid;
+        if (s.grid) {
+            colorSelect.value = gridColor(s.grid);
+            sizeSelect.value = gridLabelSize(s.grid);
+        }
         move.disabled = !s.grid;
+        rotateBtn.disabled = !s.grid;
+        northBtn.disabled = !s.grid;
         clear.disabled = !s.grid;
-        grid.note.textContent = ov.isCapturing() ? 'Touchez la carte…' : s.grid ? `${s.grid.cols} × ${s.grid.rows} cases de ${s.grid.cellM} m` : s.gridOn ? 'À tracer' : '';
+        const angle = s.grid ? Math.round(((s.grid.angle ?? 0) % 360 + 360) % 360) : 0;
+        grid.note.textContent = ov.isCapturing() ? 'Touchez la carte…' : s.grid ? `${s.grid.cols} × ${s.grid.rows} cases de ${s.grid.cellM} m${angle ? ` · orienté ${angle}°` : ''}` : s.gridOn ? 'À tracer' : '';
         mgrsBtn.classList.toggle('active', s.mgrsOn);
         mgrsBtn.setAttribute('aria-pressed', String(s.mgrsOn));
         mgrs.note.textContent = !s.mgrsOn ? '' : ov.mgrsNeedsZoom() ? 'Zoomez pour l’afficher' : '1 km, 100 m de près';
@@ -645,7 +943,8 @@ export function overlayLegend(ov: MapOverlays | null | undefined, bearing: numbe
     const s = ov.state;
     const parts: string[] = [];
     if (s.gridOn && s.grid) {
-        parts.push(`Carroyage ${s.grid.cellM} m (${s.grid.cols} × ${s.grid.rows}), A1 au nord-ouest : ${mgrsOf(s.grid.west, s.grid.north) ?? 'N/C'}`);
+        const a = Math.round(((s.grid.angle ?? 0) % 360 + 360) % 360);
+        parts.push(`Carroyage ${s.grid.cellM} m (${s.grid.cols} × ${s.grid.rows}), A1${a ? ` orienté à ${a}°` : ''} : ${mgrsOf(s.grid.west, s.grid.north) ?? 'N/C'}`);
     }
     if (s.mgrsOn) parts.push('Grille MGRS');
     if (s.powerOn) parts.push('Lignes électriques : RTE (OSM), HTA et BT (Enedis)');

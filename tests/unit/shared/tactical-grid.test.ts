@@ -2,13 +2,22 @@ import { describe, expect, it } from 'vitest';
 import { forward } from 'mgrs';
 import {
     columnLabel,
+    geoToGrid,
     GRID_MAX_CELLS_PER_SIDE,
+    gridAngle,
     gridCellAt,
+    gridCellCenter,
+    gridColor,
+    gridLabelRotation,
+    gridLabelSize,
+    gridToGeo,
     isTacticalGridSpec,
+    makeOrientedGrid,
     makeTacticalGrid,
     metersPerDegree,
     mgrsGridGeometry,
     mgrsOf,
+    rotateTacticalGrid,
     tacticalGridGeometry,
 } from '@shared/tactical-grid.js';
 import { latLngToMgrs } from '@shared/coords.js';
@@ -64,6 +73,117 @@ describe('carroyage tactique', () => {
         // JSON forgé : maille inconnue, ou pas incohérents avec la maille.
         expect(isTacticalGridSpec({ ...spec, cellM: -5 })).toBe(false);
         expect(isTacticalGridSpec({ ...spec, dLat: spec.dLat * 20 })).toBe(false);
+    });
+});
+
+describe('carroyage orientable (décision 39)', () => {
+    const angles = [0, 30, 90, 179, 271];
+
+    it.each(angles)('aller-retour case ↔ point à %i°', (angle) => {
+        const { spec } = makeOrientedGrid([1.9, 47.9], 200, 150, 50, angle);
+        expect(spec.angle).toBe(angle);
+        expect([spec.cols, spec.rows]).toEqual([4, 3]);
+        for (let col = 0; col < spec.cols; col++) {
+            for (let row = 0; row < spec.rows; row++) {
+                const label = `${columnLabel(col)}${row + 1}`;
+                const c = gridCellCenter(spec, label);
+                expect(c, label).not.toBeNull();
+                const [lng, lat] = c!;
+                expect(gridCellAt(spec, lng, lat), label).toBe(label);
+            }
+        }
+    });
+
+    it('le centre d’une case est à une demi-case de chaque bord (repère tourné)', () => {
+        for (const angle of angles) {
+            const { spec } = makeOrientedGrid([1.9, 47.9], 200, 150, 50, angle);
+            const c = gridCellCenter(spec, 'B2')!;
+            const g = geoToGrid(spec, c[0], c[1]);
+            expect(g.x).toBeCloseTo(1.5, 9);
+            expect(g.y).toBeCloseTo(1.5, 9);
+        }
+    });
+
+    it('un point juste à l’intérieur du bord d’une case y tombe, juste dehors non', () => {
+        for (const angle of angles) {
+            const { spec } = makeOrientedGrid([1.9, 47.9], 200, 150, 50, angle);
+            const eps = 1e-9;
+            const inside = gridToGeo(spec, 1 + eps, 2 + eps);
+            expect(gridCellAt(spec, inside[0], inside[1]), `angle ${angle}`).toBe('B3');
+            const outside = gridToGeo(spec, 1 - eps, 2 - eps);
+            expect(gridCellAt(spec, outside[0], outside[1]), `angle ${angle}`).toBe('A2');
+        }
+    });
+
+    it('bornage à 52 cases, angle et options conservés', () => {
+        const { spec, clamped } = makeOrientedGrid([1.8, 48], 100_000, 100_000, 25, 35);
+        expect(clamped).toBe(true);
+        expect(spec.cols).toBe(GRID_MAX_CELLS_PER_SIDE);
+        expect(spec.rows).toBe(GRID_MAX_CELLS_PER_SIDE);
+        expect(spec.angle).toBe(35);
+        expect(gridColor(spec)).toBe('yellow');
+        expect(gridLabelSize(spec)).toBe('medium');
+    });
+
+    it('ancien JSON sans angle : accepté, vaut 0, mêmes cases qu’avant', () => {
+        const { spec } = makeTacticalGrid([1.9, 47.9], [1.902, 47.899], 50);
+        const legacy = { west: spec.west, north: spec.north, cellM: spec.cellM, cols: spec.cols, rows: spec.rows, dLon: spec.dLon, dLat: spec.dLat };
+        expect(isTacticalGridSpec(legacy)).toBe(true);
+        expect(gridAngle(legacy)).toBe(0);
+        expect(gridCellAt(legacy, spec.west + 1.5 * spec.dLon, spec.north - 1.5 * spec.dLat)).toBe('B2');
+        expect(gridCellAt(spec, spec.west + 1.5 * spec.dLon, spec.north - 1.5 * spec.dLat)).toBe('B2');
+        expect(gridCellCenter(legacy, 'A1')).toEqual(gridCellCenter(spec, 'A1'));
+    });
+
+    it('JSON forgé refusé : angle NaN ou hors [0,360), couleur ou taille inconnues', () => {
+        const { spec } = makeOrientedGrid([1.9, 47.9], 200, 100, 50, 30);
+        expect(isTacticalGridSpec(spec)).toBe(true);
+        expect(isTacticalGridSpec({ ...spec, angle: Number.NaN })).toBe(false);
+        expect(isTacticalGridSpec({ ...spec, angle: 360 })).toBe(false);
+        expect(isTacticalGridSpec({ ...spec, angle: -1 })).toBe(false);
+        expect(isTacticalGridSpec({ ...spec, color: 'bleu' })).toBe(false);
+        expect(isTacticalGridSpec({ ...spec, labelSize: 'enorme' })).toBe(false);
+        expect(isTacticalGridSpec({ ...spec, color: 'white' })).toBe(true);
+        expect(isTacticalGridSpec({ ...spec, labelSize: 'xlarge' })).toBe(true);
+    });
+
+    it('rotation autour du centre : le centre ne bouge pas, l’angle est posé, la maille survit', () => {
+        const { spec } = makeOrientedGrid([1.9, 47.9], 200, 150, 50, 0);
+        const cx = gridToGeo(spec, spec.cols / 2, spec.rows / 2);
+        for (const angle of [35, 90, 271, 0]) {
+            const turned = rotateTacticalGrid(spec, angle);
+            expect(turned.angle).toBe(angle);
+            expect([turned.cols, turned.rows]).toEqual([spec.cols, spec.rows]);
+            const centerAfter = gridToGeo(turned, turned.cols / 2, turned.rows / 2);
+            expect(centerAfter[0]).toBeCloseTo(cx[0], 12);
+            expect(centerAfter[1]).toBeCloseTo(cx[1], 12);
+        }
+    });
+
+    it('étiquettes jamais à l’envers : au-delà de 90° et jusqu’à 270°, retournées de 180°', () => {
+        expect(gridLabelRotation(0)).toBe(0);
+        expect(gridLabelRotation(90)).toBe(90);
+        expect(gridLabelRotation(91)).toBe(-89);
+        expect(gridLabelRotation(179)).toBe(-1);
+        expect(gridLabelRotation(270)).toBe(90);
+        expect(gridLabelRotation(271)).toBe(271);
+        for (const a of [0, 30, 90, 179, 271, 359]) {
+            const mod = ((gridLabelRotation(a) % 360) + 360) % 360;
+            expect(mod <= 90 || mod > 270, `angle ${a}`).toBe(true);
+        }
+    });
+
+    it('géométrie tournée : les lignes relient les coins du repère du carroyage', () => {
+        const { spec } = makeOrientedGrid([1.9, 47.9], 200, 100, 50, 30);
+        const g = tacticalGridGeometry(spec);
+        expect(g.lines.features).toHaveLength(spec.cols + 1 + spec.rows + 1);
+        const a1 = gridToGeo(spec, 0, 0);
+        const first = g.lines.features[0]!.geometry.coordinates[0]!;
+        expect(first[0]).toBeCloseTo(a1[0], 12);
+        expect(first[1]).toBeCloseTo(a1[1], 12);
+        for (const l of g.labels.features) {
+            expect(typeof l.properties.rotation).toBe('number');
+        }
     });
 });
 
