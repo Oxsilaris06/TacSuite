@@ -160,9 +160,15 @@ document.addEventListener('DOMContentLoaded', async () => {
     setInterval(() => UI.updateTimeInput(), 60000);
     // Une heure saisie À LA MAIN ne doit pas être écrasée par le tick de 60 s :
     // updateTimeInput teste window.isTimeInputManuallyChanged, mais rien ne le posait.
-    if (UI.elements.heureInput) {
-        UI.elements.heureInput.addEventListener('input', () => { window.isTimeInputManuallyChanged = true; });
-    }
+    // Décision 30 — la première frappe dans le LIEU ou la REMARQUE fige aussi
+    // l'heure (comme une saisie manuelle) : l'horodatage correspond au début du
+    // compte-rendu, pas au moment de l'envoi.
+    const freezeHeureOnInput = (el: HTMLElement | null | undefined): void => {
+        el?.addEventListener('input', () => { window.isTimeInputManuallyChanged = true; });
+    };
+    freezeHeureOnInput(UI.elements.heureInput);
+    freezeHeureOnInput(UI.elements.lieuInput);
+    freezeHeureOnInput(UI.elements.remarquesInput);
 
     // Écran scindé — après `UI.initElements()`, dont ses rendus dépendent, et
     // avant le premier rendu d'onglet : un écran scindé mémorisé se remonte

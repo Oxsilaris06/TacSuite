@@ -29,6 +29,34 @@ import { toast } from '@shared/feedback.js';
 import { FREE_MODE_COLORS, PDF_PAX_COLORS } from '@pctac/config.js';
 
 /**
+ * Date d'opération (ISO `YYYY-MM-DD`, heure LOCALE) déduite de l'heure saisie
+ * et de maintenant (décision 30) : parmi la veille, aujourd'hui et le
+ * lendemain à l'heure saisie, l'occurrence la plus PROCHE de maintenant.
+ *   - 23:55 saisi à 00:05 → la veille ;
+ *   - 14:00 saisi à 13:00 → aujourd'hui ;
+ *   - 00:05 saisi à 23:55 → le lendemain ;
+ *   - heure égale à maintenant → aujourd'hui (départage par ordre).
+ * Heure illisible : on retombe sur le jour courant (jamais de crash).
+ */
+export function closestLocalDate(heure: unknown, now: Date = new Date()): string {
+  const match = /^(\d{1,2}):(\d{2})$/.exec(String(heure ?? '').trim());
+  const fallback = now.toLocaleDateString('sv-SE');
+  if (!match) return fallback;
+  const h = Number(match[1]);
+  const min = Number(match[2]);
+  if (!Number.isFinite(h) || !Number.isFinite(min) || h > 23 || min > 59) return fallback;
+  // Ordre voulu : aujourd'hui d'abord, pour gagner les égalités exactes.
+  const candidates = [0, -1, 1].map((delta) => new Date(now.getFullYear(), now.getMonth(), now.getDate() + delta, h, min, 0, 0));
+  let best = candidates[0] as Date;
+  for (const candidate of candidates) {
+    if (Math.abs(candidate.getTime() - now.getTime()) < Math.abs(best.getTime() - now.getTime())) {
+      best = candidate;
+    }
+  }
+  return best.toLocaleDateString('sv-SE');
+}
+
+/**
  * Gestionnaire du journal (main courante) : création, import/export, historique des lieux.
  * logManager.js:9-134
  */
@@ -74,8 +102,9 @@ export const LogManager: LogManagerContract = {
     // logManager.js:42-50 — construction de l'entrée
     const newEntry: PctacLogEntry = {
       id: Date.now().toString(36) + Math.random().toString(36).substr(2, 5),
-      // U15 — date d'opération auto (jour de saisie, local, ISO YYYY-MM-DD).
-      date: new Date().toLocaleDateString('sv-SE'),
+      // Décision 30 — date déduite de l'heure saisie : l'occurrence la plus
+      // proche de maintenant parmi la veille, aujourd'hui et le lendemain.
+      date: closestLocalDate(heure),
       heure: heure,
       pax: paxName,
       paxMode: mode,
