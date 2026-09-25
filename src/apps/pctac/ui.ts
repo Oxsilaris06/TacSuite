@@ -77,13 +77,14 @@ import {
   ficheTitle,
   ficheVariant,
   filledSections,
+  sortFichesByPriority,
   statusChoices,
   statusMeta,
   summaryRows,
   type FicheSide,
   type StatusChoice,
 } from '@pctac/fiche.js';
-import { openFiche } from '@pctac/fiche-sheet.js';
+import { close as closeFicheSheet, openFiche } from '@pctac/fiche-sheet.js';
 import { annotatePhoto } from '@pctac/photo-annotation.js';
 
 /** Options de statut d'une fiche : celles de la situation, plus la valeur
@@ -131,7 +132,7 @@ function ficheCard(
           <h3 class="fiche-card-name">${esc(name)}</h3>
           ${sub ? `<p class="fiche-card-sub">${esc(sub)}</p>` : ''}
         </div>
-        ${hasStatus ? `<select class="fiche-card-status" data-fiche-action="status" aria-label="Statut : ${esc(name)}">${statusOptionsFor(side, status)}</select>` : ''}
+        ${hasStatus ? `<select class="fiche-card-status" data-fiche-action="status" data-status="${esc(status)}" aria-label="Statut : ${esc(name)}">${statusOptionsFor(side, status)}</select>` : ''}
       </div>
       ${facts.length ? `<dl class="fiche-card-facts">${facts.map((r) => `<div><dt>${esc(r.label)}</dt><dd>${esc(r.value)}</dd></div>`).join('')}</dl>` : ''}
       ${linked.length ? `<p class="fiche-card-linked"><span class="material-symbols-outlined" aria-hidden="true">link</span>Fiches liées : ${esc(linked.join(', '))}</p>` : ''}
@@ -166,8 +167,68 @@ function bindPhotoBoard(board: HTMLElement): void {
       void annotatePhoto(id);
       return;
     }
+    if (target.closest('[data-photo-action="rename"]')) {
+      void UI.editPhotoTitle(id);
+      return;
+    }
+    if (target.closest('[data-photo-action="delete"]')) {
+      void window.deleteCollectionItem('pcTacPhotos', id, 'view-photos');
+      return;
+    }
     const img = target.closest<HTMLImageElement>('img');
     if (img) UI.openLightbox(img.src, card.querySelector('.photo-title-text')?.textContent ?? '', id);
+  });
+  // Statut d'une carte photo : la valeur du menu est lue à la délégation.
+  board.addEventListener('change', (e) => {
+    const sel = e.target as HTMLSelectElement;
+    if (!sel.classList.contains('photo-card-status')) return;
+    const id = sel.closest<HTMLElement>('.photo-card')?.dataset.id;
+    if (id) UI.updateAdversaryStatus(id, sel.value);
+  });
+  // Glisser-déposer : la délégation remplace les `ondrag*` en ligne.
+  board.addEventListener('dragstart', (e) => UI.handlePhotoDragStart(e as DragEvent));
+  board.addEventListener('dragover', (e) => UI.handlePhotoDragOver(e as DragEvent));
+  board.addEventListener('drop', (e) => UI.handlePhotoDrop(e as DragEvent));
+  board.addEventListener('dragend', () => UI.handlePhotoDragEnd());
+}
+
+/** Filtres de la galerie Photos par délégation (aucun id dans un onclick). */
+function bindPhotoFilters(container: HTMLElement): void {
+  if (container.dataset.photoFilterBound) return;
+  container.dataset.photoFilterBound = '1';
+  container.addEventListener('click', (e) => {
+    const btn = (e.target as HTMLElement).closest<HTMLElement>('[data-photo-filter]');
+    if (!btn || btn.dataset.photoFilter === undefined) return;
+    void UI.renderPhotos(btn.dataset.photoFilter);
+  });
+}
+
+/** Actions du journal par délégation (favori, modifier, supprimer). */
+function bindLogTable(tbody: HTMLElement): void {
+  if (tbody.dataset.logBound) return;
+  tbody.dataset.logBound = '1';
+  tbody.addEventListener('click', (e) => {
+    const btn = (e.target as HTMLElement).closest<HTMLElement>('[data-log-action]');
+    const row = btn?.closest<HTMLElement>('tr');
+    const id = row?.dataset.id;
+    if (!btn || !id) return;
+    if (btn.dataset.logAction === 'favori') UI.toggleLogFavori(id);
+    else if (btn.dataset.logAction === 'edit') UI.openEditModal(id);
+    else if (btn.dataset.logAction === 'delete') void window.deleteLogEntry(id);
+  });
+}
+
+/** Actions de la liste Amis par délégation. */
+function bindFriendList(tbody: HTMLElement): void {
+  if (tbody.dataset.friendBound) return;
+  tbody.dataset.friendBound = '1';
+  tbody.addEventListener('click', (e) => {
+    const btn = (e.target as HTMLElement).closest<HTMLElement>('[data-friend-action]');
+    const row = btn?.closest<HTMLElement>('tr');
+    const id = row?.dataset.id;
+    if (!btn || !id) return;
+    if (btn.dataset.friendAction === 'edit') UI.showEditFriendModal(id);
+    else if (btn.dataset.friendAction === 'delete') void window.deleteCollectionItem('pcTacFriends', id, 'view-amis');
   });
 }
 
@@ -427,6 +488,10 @@ export const UI: UIContract = {
    * non déclaré dans global.d.ts.
    */
   switchMainView(viewId: string): void {
+    // Décision 33 — quitter l'onglet de la fiche la referme (dans la page ou en
+    // modale) : la saisie reste en brouillon. Évite qu'un retour arrière
+    // Android ferme une fiche cachée au lieu d'agir sur l'onglet affiché.
+    if (document.getElementById('ficheSheet')?.hasAttribute('open')) closeFicheSheet();
     document.querySelectorAll<HTMLElement>('.tab-btn').forEach((btn) => {
       const active = btn.dataset.view === viewId;
       btn.classList.toggle('active', active);
@@ -564,6 +629,7 @@ export const UI: UIContract = {
   renderLogTable(logData: readonly PctacLogEntry[]): void {
     const tbody = this.elements.logTableBody;
     if (!tbody) return;
+    bindLogTable(tbody);
     if (this.logSortDesc) logData = [...logData].reverse();
     if (this.logFavorisOnly) logData = logData.filter((e) => e.favori);
     // Les favoris remontent en tête SANS casser l'ordre chronologique entre
@@ -622,16 +688,16 @@ export const UI: UIContract = {
                     <div class="heure-cell-container">
                         <span class="heure-cell-text">${esc(entry.heure)}</span>
                         <button type="button" class="log-favori-btn${entry.favori ? ' is-favori' : ''}"
-                            onclick="window.UI.toggleLogFavori('${entry.id}')"
+                            data-log-action="favori"
                             aria-pressed="${entry.favori ? 'true' : 'false'}"
                             title="${entry.favori ? 'Retirer des favoris' : 'Marquer comme important'}"
                             aria-label="${entry.favori ? 'Retirer cette entrée des favoris' : 'Marquer cette entrée comme importante'}">
                             <span class="material-symbols-outlined" aria-hidden="true">${entry.favori ? 'star' : 'star_border'}</span>
                         </button>
-                        <button type="button" class="action-btn-small edit" onclick="window.openEditModal('${entry.id}')" title="Modifier" aria-label="Modifier cette entrée">
+                        <button type="button" class="action-btn-small edit" data-log-action="edit" title="Modifier" aria-label="Modifier cette entrée">
                             <span class="material-symbols-outlined" style="font-size: 18px;">edit</span>
                         </button>
-                        <button type="button" class="delete-btn" onclick="window.deleteLogEntry('${entry.id}')" aria-label="Supprimer cette entrée">
+                        <button type="button" class="delete-btn" data-log-action="delete" aria-label="Supprimer cette entrée">
                             <span class="material-symbols-outlined" style="font-size: 18px;">close</span>
                         </button>
                     </div>
@@ -651,6 +717,8 @@ export const UI: UIContract = {
     const entry = logData.find((e) => e.id === id);
     if (!entry) return;
     (document.getElementById('edit_id') as HTMLInputElement).value = id;
+    // Décision 30 — la date est modifiable, préremplie avec celle de l'entrée.
+    (document.getElementById('edit_date') as HTMLInputElement).value = entry.date || '';
     (document.getElementById('edit_heure') as HTMLInputElement).value = entry.heure;
     (document.getElementById('edit_lieu') as HTMLInputElement).value = entry.lieu || '';
     (document.getElementById('edit_remarques') as HTMLTextAreaElement).value = entry.remarques || '';
@@ -666,10 +734,14 @@ export const UI: UIContract = {
       toast('Renseignez une heure', { kind: 'error' });
       return;
     }
-    const updated = {
+    // Décision 30 — changer l'heure seule garde la date : on ne l'écrit que si
+    // elle est renseignée (une entrée legacy sans date reste sans date).
+    const date = (document.getElementById('edit_date') as HTMLInputElement).value;
+    const updated: Partial<PctacLogEntry> = {
       heure,
       lieu: (document.getElementById('edit_lieu') as HTMLInputElement).value.trim(),
       remarques: (document.getElementById('edit_remarques') as HTMLTextAreaElement).value.trim(),
+      ...(date ? { date } : {}),
     };
     LogManager.updateEntry(id, updated);
     if (updated.lieu) LogManager.addLieuToHistory(updated.lieu);
@@ -855,8 +927,10 @@ export const UI: UIContract = {
 
   // ui.js:436-466
   async renderAdversaries(): Promise<void> {
-    const raw = Storage.loadCollection('pcTacAdversaries') || [];
-    migrateStatuses('pcTacAdversaries', raw, 'active'); // U16 — migration douce
+    const stored = Storage.loadCollection('pcTacAdversaries') || [];
+    migrateStatuses('pcTacAdversaries', stored, 'active'); // U16 — migration douce
+    // Décision 33 — tri par priorité (source unique partagée avec le PDF).
+    const raw = sortFichesByPriority('adv', currentModeId(), stored);
     renderFicheCounters();
     const box = document.getElementById('adversary-table-body');
     if (!box) return;
@@ -868,6 +942,7 @@ export const UI: UIContract = {
     }
     // U26 — squelette pendant l'hydratation IndexedDB des photos, au premier
     // rendu seulement : remplacer des cartes déjà là ferait sauter la liste.
+    const scrollTop = box.scrollTop;
     if (!box.querySelector('.fiche-card')) box.innerHTML = '<p class="empty-state">Chargement des photos…</p>';
     const list = await ImageStore.hydrate(raw, 'photo');
     const hostages = Storage.loadCollection('pcTacHostages');
@@ -877,15 +952,16 @@ export const UI: UIContract = {
       const linked = hostages.filter((h) => h.lien === item.id).map((h) => ficheTitle('host', mode, h));
       return ficheCard('adv', item, linked, (v) => v);
     }).join('');
+    box.scrollTop = scrollTop; // re-rendu distant : le défilement ne saute pas
   },
 
   // ui.js:468-496
   async renderHostages(): Promise<void> {
-    const raw = Storage.loadCollection('pcTacHostages') || [];
+    const stored = Storage.loadCollection('pcTacHostages') || [];
     const mode = currentModeId();
     // U16 — migration douce : photo _sync d'abord, sinon statut par défaut de
     // la situation (Forcené : heuristique blessures ; triage : « Non triée »).
-    const noStatus = raw.filter((it) => !it.status);
+    const noStatus = stored.filter((it) => !it.status);
     if (noStatus.length > 0) {
       const photos = Storage.loadCollection('pcTacPhotos');
       noStatus.forEach((it) => {
@@ -893,8 +969,10 @@ export const UI: UIContract = {
         it.status = (photo && photo.status)
           || (mode === 'forcene' ? hostageStatusFromBlessures(it.blessures) : defaultStatus('host', mode));
       });
-      Storage.saveCollection('pcTacHostages', raw);
+      Storage.saveCollection('pcTacHostages', stored);
     }
+    // Décision 33 — tri par priorité (source unique partagée avec le PDF).
+    const raw = sortFichesByPriority('host', mode, stored);
     // Lot B (constat 10) — suggestions de la main courante.
     this.refreshOtagesSuggestions();
     renderFicheCounters();
@@ -906,10 +984,12 @@ export const UI: UIContract = {
       box.innerHTML = `<p class="empty-state">${esc(lex.emptyLabel)} — touchez « ${esc(lex.newLabel)} »</p>`;
       return;
     }
+    const scrollTop = box.scrollTop;
     if (!box.querySelector('.fiche-card')) box.innerHTML = '<p class="empty-state">Chargement des photos…</p>';
     const list = await ImageStore.hydrate(raw, 'photo');
     const advs = Storage.loadCollection('pcTacAdversaries');
     box.innerHTML = list.map((item) => ficheCard('host', item, [], (v) => resolveLien(v, advs) || v)).join('');
+    box.scrollTop = scrollTop; // re-rendu distant : le défilement ne saute pas
   },
 
   // ui.js:498-511
@@ -917,20 +997,21 @@ export const UI: UIContract = {
     const list = Storage.loadCollection('pcTacFriends') || [];
     const tbody = document.getElementById('friend-table-body');
     if (!tbody) return;
+    bindFriendList(tbody);
     if (list.length === 0) {
       tbody.innerHTML = '<tr><td colspan="5" class="empty-state">Aucun ami — utilisez le formulaire ci-dessus</td></tr>';
       return;
     }
     tbody.innerHTML = list.map((item) => `
-            <tr>
+            <tr data-id="${esc(item.id)}">
                 <td>${esc(item.nom)} ${esc(item.prenom)}</td>
                 <td>${esc(item.unite)}</td>
                 <td>${esc(item.tph)}</td>
                 <td>${esc(item.mission)}</td>
                 <td>
                     <div style="display: flex; gap: 5px;">
-                        <button class="action-btn-small edit" onclick="window.UI.showEditFriendModal('${item.id}')" title="Modifier" aria-label="Modifier cet ami"><span class="material-symbols-outlined" style="font-size: 18px;">edit</span></button>
-                        <button class="delete-btn" onclick="window.deleteCollectionItem('pcTacFriends', '${item.id}', 'view-amis')" aria-label="Supprimer cet ami"><span class="material-symbols-outlined" style="font-size: 18px;">delete</span></button>
+                        <button type="button" class="action-btn-small edit" data-friend-action="edit" title="Modifier" aria-label="Modifier cet ami"><span class="material-symbols-outlined" style="font-size: 18px;">edit</span></button>
+                        <button type="button" class="delete-btn" data-friend-action="delete" aria-label="Supprimer cet ami"><span class="material-symbols-outlined" style="font-size: 18px;">delete</span></button>
                     </div>
                 </td>
             </tr>
@@ -993,8 +1074,9 @@ export const UI: UIContract = {
     // Mise à jour des boutons de filtre pour respecter l'ordre et le style
     const filterContainer = document.getElementById('photo-filter-container');
     if (filterContainer) {
+      bindPhotoFilters(filterContainer);
       filterContainer.innerHTML = PHOTO_CATEGORIES.map((cat) => `
-                <button class="tab-btn ${filterCategory === cat.id ? 'active' : ''}" onclick="UI.renderPhotos('${cat.id}')" style="padding: 6px 12px; font-size: 0.8em; width: auto; flex-direction: row; min-height: unset;">
+                <button type="button" class="tab-btn ${filterCategory === cat.id ? 'active' : ''}" data-photo-filter="${esc(cat.id)}" style="padding: 6px 12px; font-size: 0.8em; width: auto; flex-direction: row; min-height: unset;">
                     <span>${esc(photoCategoryLabel(cat))}</span>
                 </button>
             `).join('');
@@ -1009,27 +1091,27 @@ export const UI: UIContract = {
 
     bindPhotoBoard(board);
     board.innerHTML = filteredList.length === 0 ? emptyMsg : filteredList.map((item) => `
-            <div class="photo-card" draggable="true" data-id="${item.id}" data-category="${item.category}" data-status="${item.status || 'active'}" ondragstart="UI.handlePhotoDragStart(event)" ondragover="UI.handlePhotoDragOver(event)" ondrop="UI.handlePhotoDrop(event)" ondragend="UI.handlePhotoDragEnd()">
+            <div class="photo-card" draggable="true" data-id="${item.id}" data-category="${item.category}" data-status="${item.status || 'active'}">
                 <img src="${item.data}" alt="${esc(item.title)}">
                 <div style="padding: 10px; display: flex; flex-direction: column; gap: 5px;">
                     <div style="display: flex; justify-content: space-between; align-items: center;">
                         <span class="photo-title-text" style="font-size: 0.9em; font-weight: bold;">${esc(item.title)}</span>
                         <div style="display: flex; gap: 5px;">
                             <button type="button" class="action-btn-small" title="Annoter" data-photo-action="annotate" aria-label="Annoter cette photo"><span class="material-symbols-outlined" style="font-size: 16px;">draw</span></button>
-                            <button class="action-btn-small edit" title="Renommer" onclick="window.UI.editPhotoTitle('${item.id}')" aria-label="Renommer cette photo"><span class="material-symbols-outlined" style="font-size: 16px;">edit</span></button>
-                            <button class="action-btn-small delete" title="Supprimer" onclick="window.deleteCollectionItem('pcTacPhotos', '${item.id}', 'view-photos')" aria-label="Supprimer cette photo"><span class="material-symbols-outlined" style="font-size: 16px;">delete</span></button>
+                            <button type="button" class="action-btn-small edit" title="Renommer" data-photo-action="rename" aria-label="Renommer cette photo"><span class="material-symbols-outlined" style="font-size: 16px;">edit</span></button>
+                            <button type="button" class="action-btn-small delete" title="Supprimer" data-photo-action="delete" aria-label="Supprimer cette photo"><span class="material-symbols-outlined" style="font-size: 16px;">delete</span></button>
                         </div>
                     </div>
                     <div style="display: flex; justify-content: space-between; align-items: center;">
                         <span style="font-size: 0.7em; color: var(--text-muted); text-transform: uppercase;">${esc(photoCategoryLabel(PHOTO_CATEGORIES.find((c) => c.id === item.category) || { id: item.category as string, label: 'Autre' }))}</span>
                         ${item.category === 'trap' ? `
-                            <select onchange="UI.updateAdversaryStatus('${item.id}', this.value)" style="font-size: 0.7em; padding: 2px 20px 2px 5px; height: auto; min-height: unset; width: auto; background-position: right 2px center;">
+                            <select class="photo-card-status" style="font-size: 0.7em; padding: 2px 20px 2px 5px; height: auto; min-height: unset; width: auto; background-position: right 2px center;">
                                 <option value="active" ${item.status === 'active' || !item.status ? 'selected' : ''}>Actif</option>
                                 <option value="neutralized" ${item.status === 'neutralized' ? 'selected' : ''}>Neutralisé</option>
                             </select>
                         ` : ''}
                         ${(item.category === 'neutralized' || (item.category === 'hostage' && statusChoices('host', currentModeId()).length > 0)) ? `
-                            <select onchange="UI.updateAdversaryStatus('${item.id}', this.value)" style="font-size: 0.7em; padding: 2px 20px 2px 5px; height: auto; min-height: unset; width: auto; background-position: right 2px center;">
+                            <select class="photo-card-status" style="font-size: 0.7em; padding: 2px 20px 2px 5px; height: auto; min-height: unset; width: auto; background-position: right 2px center;">
                                 ${statusOptionsFor(item.category === 'hostage' ? 'host' : 'adv', String(item.status || defaultStatus(item.category === 'hostage' ? 'host' : 'adv', currentModeId())))}
                             </select>
                         ` : ''}
@@ -1126,15 +1208,23 @@ export const UI: UIContract = {
 
   // ui.js:623-629 — U25 : promptDialog async au lieu du prompt() natif.
   async editPhotoTitle(id: string): Promise<void> {
-    const list = Storage.loadCollection('pcTacPhotos');
-    const photo = list.find((p) => p.id === id);
+    const photo = Storage.loadCollection('pcTacPhotos').find((p) => p.id === id);
     if (!photo) return;
     const newTitle = await promptDialog({
       title: 'Renommer la photo',
       message: 'Nouveau titre :',
       initial: (photo.title as string | undefined) || '',
     });
-    if (newTitle) { photo.title = newTitle.trim(); Storage.saveCollection('pcTacPhotos', list); void this.renderPhotos(); }
+    if (!newTitle) return;
+    // Décision 29 — relecture JUSTE AVANT l'écriture : la fenêtre de saisie a
+    // pu laisser un autre onglet ajouter une photo, qu'une copie d'ouverture
+    // périmée effacerait.
+    const list = Storage.loadCollection('pcTacPhotos');
+    const fresh = list.find((p) => p.id === id);
+    if (!fresh) return;
+    fresh.title = newTitle.trim();
+    Storage.saveCollection('pcTacPhotos', list);
+    void this.renderPhotos();
   },
 
   // ui.js:631-643

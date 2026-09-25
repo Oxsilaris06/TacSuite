@@ -57,42 +57,21 @@ afterEach(() => {
 });
 
 describe('sanitizeWinAnsi (P2.CONV)', () => {
-  it('translittère guillemets courbes, tiret cadratin, espace insécable et BOM — caractère par caractère', async () => {
+  it('ne remplace QUE les caractères de contrôle ; garde typographie et lettres non latines', async () => {
     const { sanitizeWinAnsi } = await import('@pctac/pdf-export.js');
 
-    const LEFT_SINGLE_QUOTE = '‘';   // '
-    const RIGHT_SINGLE_QUOTE = '’';  // '
-    const EM_DASH = '—';             // —
-    const NBSP = ' ';                // espace insécable
-    const BOM = '﻿';                 // espace de largeur nulle / BOM
-
-    const input = `${LEFT_SINGLE_QUOTE}bonjour${RIGHT_SINGLE_QUOTE}${EM_DASH}test${NBSP}ici${BOM}`;
+    const input = '\u2018bonjour\u2019\u2014test\u00a0ici\ufeff';
     const out = sanitizeWinAnsi(input);
 
-    // Reconstruction caractère par caractère de la sortie attendue :
-    // ' -> "'", ' -> "'", — -> "-", (rien entre "test" et "ici" hors l'espace
-    // insécable devenu un espace ASCII normal), BOM -> "" (supprimé).
-    expect(out).toBe("'bonjour'-test ici");
-
-    // Assertions position par position, pour lever toute ambiguïté sur les
-    // caractères produits par la translittération.
-    expect(out.charAt(0)).toBe("'");
-    expect(out.charCodeAt(0)).toBe(0x27);
-    expect(out.charAt(8)).toBe("'");
-    expect(out.charCodeAt(8)).toBe(0x27);
-    expect(out.charAt(9)).toBe('-');
-    expect(out.charCodeAt(9)).toBe(0x2D);
-    // L'espace insécable (U+00A0) est devenu un espace ASCII normal (U+0020).
-    const spaceIndex = out.indexOf(' ', 10);
-    expect(spaceIndex).toBeGreaterThan(0);
-    expect(out.charCodeAt(spaceIndex)).toBe(0x20);
-    // Le BOM (U+FEFF) a disparu : la chaîne se termine par "ici", rien après.
-    expect(out.endsWith('ici')).toBe(true);
-    expect(out.includes('﻿')).toBe(false);
-    expect(out).not.toContain(LEFT_SINGLE_QUOTE);
-    expect(out).not.toContain(RIGHT_SINGLE_QUOTE);
-    expect(out).not.toContain(EM_DASH);
-    expect(out).not.toContain(NBSP);
+    // Guillemets courbes, tiret cadratin et espace insécable sont CONSERVÉS
+    // (la police embarquée les trace) ; seul le BOM disparaît.
+    expect(out).toBe('\u2018bonjour\u2019\u2014test\u00a0ici');
+    expect(out).toContain('\u2018');
+    expect(out).toContain('\u2014');
+    expect(out).toContain('\u00a0');
+    expect(out.includes('\ufeff')).toBe(false);
+    // Lettres qui faisaient « ? » avec Helvetica : conservées.
+    for (const ch of ['\u0141', '\u0218', '\u00d8', '\u011e', '\u0414']) expect(out + sanitizeWinAnsi(ch)).toContain(ch);
   });
 
   it('retourne une chaîne vide pour null/undefined et ne jette jamais', async () => {
@@ -101,24 +80,43 @@ describe('sanitizeWinAnsi (P2.CONV)', () => {
     expect(sanitizeWinAnsi(undefined)).toBe('');
   });
 
-  it('convertit tabulation, saut de ligne et retour chariot en espace — la sortie est mesurable par pdf-lib', async () => {
-    const { sanitizeWinAnsi } = await import('@pctac/pdf-export.js');
-    const { PDFDocument, StandardFonts } = await import('pdf-lib');
+  it('convertit tabulation, saut de ligne et retour chariot en espace — mesurable par la police embarquée', async () => {
+    const { sanitizeWinAnsi, embedReportFonts } = await import('@pctac/pdf-export.js');
+    const { PDFDocument } = await import('pdf-lib');
 
-    // Régression : les champs multilignes (Remarques, Action) partent dans
-    // wrapText -> font.widthOfTextAtSize(), qui encode chaque code point en
-    // WinAnsi SANS le nettoyage que drawText applique (lineSplit + cleanText).
-    // Un '\n' conservé y déclenchait « WinAnsi cannot encode "\n" (0x000a) »
-    // et faisait échouer l'export PDF entier.
     const out = sanitizeWinAnsi('ligne1\nligne2\r\nligne3\tfin');
     expect(out).toBe('ligne1 ligne2  ligne3 fin');
     expect(/[\t\n\r]/.test(out)).toBe(false);
 
     const doc = await PDFDocument.create();
-    const font = await doc.embedFont(StandardFonts.Helvetica);
+    const { font } = await embedReportFonts(doc);
     expect(() => font.widthOfTextAtSize(out, 9)).not.toThrow();
-    // La chaîne brute, elle, jette bien : le test échouerait sans la conversion.
-    expect(() => font.widthOfTextAtSize('ligne1\nligne2', 9)).toThrow(/WinAnsi cannot encode/);
+  });
+});
+
+describe('police complète du PDF (décision 34)', () => {
+  it('les noms étrangers passent dans le texte extrait du PDF généré', async () => {
+    const { PDFDocument } = await import('pdf-lib');
+    const { embedReportFonts } = await import('@pctac/pdf-export.js');
+    const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
+
+    const doc = await PDFDocument.create();
+    const { font } = await embedReportFonts(doc);
+    const page = doc.addPage([595, 842]);
+    const names = ['\u0141ukasz', '\u0218tefan', '\u00d8yvind', '\u011e\u00fcl', '\u0414\u043c\u0438\u0442\u0440\u0438\u0439'];
+    let y = 700;
+    for (const name of names) {
+      page.drawText(name, { x: 40, y, size: 14, font });
+      y -= 24;
+    }
+    const bytes = await doc.save();
+
+    const task = pdfjs.getDocument({ data: bytes, useWorkerFetch: false, disableFontFace: true });
+    const pdf = await task.promise;
+    const textPage = await pdf.getPage(1);
+    const content = await textPage.getTextContent();
+    const text = content.items.map((item) => ('str' in item ? item.str : '')).join(' ');
+    for (const name of names) expect(text).toContain(name);
   });
 });
 

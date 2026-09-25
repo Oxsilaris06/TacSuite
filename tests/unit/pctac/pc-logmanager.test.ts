@@ -12,7 +12,7 @@
  *   - :23-40 — addEntry : toast d'erreur (R2-T2a, ex-alert()) + retour null si PAX ou heure manquants
  */
 
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type {
   PctacLogEntry,
@@ -20,7 +20,7 @@ import type {
   PctacLegacyLogJson,
 } from '../../../src/shared/types/contracts.js';
 
-import { LogManager } from '../../../src/apps/pctac/log-manager.js';
+import { LogManager, closestLocalDate } from '../../../src/apps/pctac/log-manager.js';
 import { Storage } from '../../../src/apps/pctac/storage.js';
 import { FREE_MODE_COLORS, PDF_PAX_COLORS } from '../../../src/apps/pctac/config.js';
 
@@ -98,14 +98,13 @@ describe('LogManager.addEntry — validation et rejet avec toast (R2-T2a, ex-ale
     expect(result?.lieu).toBe('Paris');
   });
 
-  it('U15 — pose la date du jour (ISO YYYY-MM-DD) à la création', () => {
+  it('pose une date ISO YYYY-MM-DD (décision 30) à la création', () => {
     const result = LogManager.addEntry({
       mode: 'standard',
       pax: 'Adversaire',
       heure: '14:30',
     });
 
-    expect(result?.date).toBe(new Date().toLocaleDateString('sv-SE'));
     expect(result?.date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
   });
 
@@ -141,6 +140,133 @@ describe('LogManager.addEntry — validation et rejet avec toast (R2-T2a, ex-ale
     if (stored[0]) {
       expect(stored[0].pax).toBe('Adversaire');
     }
+  });
+});
+
+describe('closestLocalDate — occurrence la plus proche (décision 30)', () => {
+  const at = (y: number, mo: number, d: number, h: number, mi: number): Date => new Date(y, mo - 1, d, h, mi, 0, 0);
+
+  it('23:55 saisi à 00:05 = la veille', () => {
+    expect(closestLocalDate('23:55', at(2026, 1, 2, 0, 5))).toBe('2026-01-01');
+  });
+
+  it('14:00 saisi à 13:00 = aujourd\'hui', () => {
+    expect(closestLocalDate('14:00', at(2026, 1, 2, 13, 0))).toBe('2026-01-02');
+  });
+
+  it('00:05 saisi à 23:55 = le lendemain', () => {
+    expect(closestLocalDate('00:05', at(2026, 1, 2, 23, 55))).toBe('2026-01-03');
+  });
+
+  it('heure égale à maintenant = aujourd\'hui', () => {
+    expect(closestLocalDate('13:00', at(2026, 1, 2, 13, 0))).toBe('2026-01-02');
+  });
+
+  it('passage de minuit : la même heure saisie de part et d\'autre change de jour', () => {
+    expect(closestLocalDate('23:59', at(2026, 1, 2, 23, 59))).toBe('2026-01-02');
+    expect(closestLocalDate('23:59', at(2026, 1, 3, 0, 1))).toBe('2026-01-02');
+  });
+
+  it('heure illisible : repli sur le jour courant, jamais de crash', () => {
+    expect(closestLocalDate('pas une heure', at(2026, 1, 2, 8, 0))).toBe('2026-01-02');
+    expect(closestLocalDate('', at(2026, 1, 2, 8, 0))).toBe('2026-01-02');
+  });
+});
+
+describe('LogManager.addEntry — date déduite (horloge simulée, décision 30)', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    toastSpy.mockClear();
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('date la veille quand l\'heure saisie est proche de minuit passé', () => {
+    vi.setSystemTime(new Date(2026, 0, 2, 0, 5));
+    const result = LogManager.addEntry({ mode: 'standard', pax: 'Adversaire', heure: '23:55' });
+    expect(result?.date).toBe('2026-01-01');
+  });
+
+  it('date le lendemain quand l\'heure saisie est proche de minuit à venir', () => {
+    vi.setSystemTime(new Date(2026, 0, 2, 23, 55));
+    const result = LogManager.addEntry({ mode: 'standard', pax: 'Adversaire', heure: '00:05' });
+    expect(result?.date).toBe('2026-01-03');
+  });
+
+  it('changement de jour PENDANT la saisie : l\'heure figée de la veille passe sur la veille', () => {
+    vi.setSystemTime(new Date(2026, 0, 2, 23, 59));
+    expect(closestLocalDate('23:59')).toBe('2026-01-02');
+    // Le temps avance au-delà de minuit, l'heure saisie reste 23:59.
+    vi.setSystemTime(new Date(2026, 0, 3, 0, 1));
+    const result = LogManager.addEntry({ mode: 'standard', pax: 'Adversaire', heure: '23:59' });
+    expect(result?.date).toBe('2026-01-02');
+  });
+});
+
+describe('LogManager.updateEntry — tri après édition de la date', () => {
+  beforeEach(() => localStorage.clear());
+
+  it('réordonne le journal quand la date change (tri (date, heure))', () => {
+    Storage.saveLogData([
+      { id: 'a', heure: '10:00', pax: 'Adversaire', paxMode: 'standard', lieu: '', remarques: '', date: '2026-01-01' },
+      { id: 'b', heure: '09:00', pax: 'Otage', paxMode: 'standard', lieu: '', remarques: '', date: '2026-01-02' },
+    ]);
+    expect(Storage.loadLogData().map((e) => e.id)).toEqual(['a', 'b']);
+
+    LogManager.updateEntry('a', { date: '2026-01-03' });
+    expect(Storage.loadLogData().map((e) => e.id)).toEqual(['b', 'a']);
+  });
+});
+
+describe('LogManager.addEntry — stockage plein (correction d\'office)', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    toastSpy.mockClear();
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('refuse l\'ajout, ne date PAS l\'historique et ne vide rien (retour null)', () => {
+    const setItem = vi.spyOn(localStorage, 'setItem').mockImplementation(() => {
+      const err = new Error('quota');
+      (err as { name: string }).name = 'QuotaExceededError';
+      throw err;
+    });
+    try {
+      const result = LogManager.addEntry({
+        mode: 'standard',
+        pax: 'Adversaire',
+        heure: '14:30',
+        lieu: 'Paris',
+      });
+
+      expect(result).toBeNull();
+      expect(toastSpy).toHaveBeenCalledWith('Stockage plein : événement NON enregistré.', { kind: 'error' });
+      // Le journal reste vide (aucune écriture partielle) et l'historique des
+      // lieux n'a pas été daté avec une entrée fantôme.
+      expect(Storage.loadLogData()).toHaveLength(0);
+      expect(LogManager.getLieuHistory()).toHaveLength(0);
+    } finally {
+      setItem.mockRestore();
+    }
+  });
+
+  it('après restauration du stockage, l\'ajout réussit et l\'historique suit', () => {
+    const setItem = vi.spyOn(localStorage, 'setItem').mockImplementation(() => {
+      const err = new Error('quota');
+      (err as { name: string }).name = 'QuotaExceededError';
+      throw err;
+    });
+    expect(LogManager.addEntry({ mode: 'standard', pax: 'Adversaire', heure: '14:30', lieu: 'Paris' })).toBeNull();
+    setItem.mockRestore();
+
+    const result = LogManager.addEntry({ mode: 'standard', pax: 'Adversaire', heure: '14:31', lieu: 'Lyon' });
+    expect(result).not.toBeNull();
+    expect(Storage.loadLogData()).toHaveLength(1);
+    expect(LogManager.getLieuHistory()).toContain('Lyon');
   });
 });
 

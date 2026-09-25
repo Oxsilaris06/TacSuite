@@ -3290,6 +3290,12 @@ body.light-mode .pctac-liens-btn-row--wa:hover { background: #bee9ce; box-shadow
     border: 1px solid var(--status-color);
     background-color: color-mix(in srgb, var(--status-color) 18%, var(--bg-input));
 }
+/* Décision 33 — DCD noir, liseré clair : lisible sur les deux thèmes. */
+.fiche-card-status[data-status="dcd"] {
+    color: var(--text-main);
+    border-color: var(--text-main);
+    background-color: color-mix(in srgb, #000 55%, var(--bg-input));
+}
 .fiche-card-facts,
 .fiche-card-more dl {
     display: grid;
@@ -3701,6 +3707,16 @@ body.light-mode .pctac-liens-btn-row--wa:hover { background: #bee9ce; box-shadow
     background: none;
     color: var(--text-main);
     font-weight: 800;
+}
+/* Décision 33 — DCD noir, liseré clair (pastille et puce cochée). */
+.fiche-status-chip[data-status="dcd"]::before {
+    background: #000;
+    box-shadow: 0 0 0 1px var(--text-main);
+}
+.fiche-status-chip[data-status="dcd"][aria-checked="true"] {
+    border-color: var(--text-main);
+    box-shadow: inset 0 0 0 1px var(--text-main);
+    background: color-mix(in srgb, #000 55%, var(--bg-input));
 }
 
 @media (max-width: 640px) {

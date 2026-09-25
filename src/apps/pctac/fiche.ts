@@ -495,6 +495,48 @@ function countLine(side: FicheSide, modeId: PctacModeId, items: readonly Record<
     return statusChoices(side, modeId).length === 0 ? `${noun} ${items.length}` : [`${noun} ${items.length}`, ...parts].join(' · ');
 }
 
+/**
+ * Ordre de PRIORITÉ d'affichage/tri (décision 33) : une seule source pour
+ * l'écran et le PDF.
+ *   - Protégés triage (TP, Ampleur) : Non triée → EU → UA → UR → Impliqué → DCD.
+ *   - Protégés Forcené (hors triage) : Blessé → Préoccupant → OK → DCD.
+ *   - Témoins (Recherche) : pas de statut, l'ordre de création tient.
+ *   - Adversaires : actifs d'abord, puis l'ordre de `statusChoices`.
+ */
+const HOST_PRIORITY: Partial<Record<PctacModeId, readonly string[]>> = {
+    forcene: ['blesse', 'preoccupant', 'ok', 'dcd'],
+    tp: ['nt', 'eu', 'ua', 'ur', 'impl', 'dcd'],
+    evenement: ['nt', 'eu', 'ua', 'ur', 'impl', 'dcd'],
+};
+
+function priorityKeys(side: FicheSide, modeId: PctacModeId): readonly string[] {
+    if (side === 'adv') return statusChoices('adv', modeId).map((c) => c.key);
+    return HOST_PRIORITY[modeId] ?? [];
+}
+
+/**
+ * Trie une liste de fiches par priorité de statut, à priorité égale par ordre
+ * de création (le tri est STABLE, l'ordre d'entrée est conservé). Ne mute pas
+ * l'entrée. Un statut inconnu (fiche d'une autre situation) passe en dernier.
+ */
+export function sortFichesByPriority<T extends Record<string, unknown>>(
+    side: FicheSide,
+    modeId: PctacModeId,
+    items: readonly T[],
+): T[] {
+    const keys = priorityKeys(side, modeId);
+    if (keys.length === 0) return [...items];
+    const rank = (item: T): number => {
+        const status = String(item.status || defaultStatus(side, modeId));
+        const index = keys.indexOf(status);
+        return index < 0 ? keys.length : index;
+    };
+    return items
+        .map((item, index) => ({ item, index, key: rank(item) }))
+        .sort((a, b) => (a.key - b.key) || (a.index - b.index))
+        .map((entry) => entry.item);
+}
+
 /** « Combien » : calculé depuis les fiches, jamais saisi. */
 export function ficheCounters(
     modeId: PctacModeId,

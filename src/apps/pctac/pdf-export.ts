@@ -29,12 +29,15 @@
  */
 
 import * as PDFLib from 'pdf-lib';
+import fontkit from '@pdf-lib/fontkit';
+import { PDF_FONT_VFS } from '@oi/pdf/fonts.js';
 import { Storage } from '@pctac/storage.js';
 import { ImageStore } from '@pctac/image-store.js';
 import { PDF_PAX_COLORS, PHOTO_CATEGORIES, FREE_MODE_COLORS } from '@pctac/config.js';
 import { currentMode, currentModeId } from '@pctac/modes.js';
-import { TYPE_MENACE_KEY, ficheCounters, ficheTitle, filledSections, statusChoices, statusMeta, type FicheSide } from '@pctac/fiche.js';
+import { TYPE_MENACE_KEY, ficheCounters, ficheTitle, filledSections, sortFichesByPriority, statusChoices, statusMeta, type FicheSide } from '@pctac/fiche.js';
 import { showBusy, hideBusy } from '@pctac/busy.js';
+import { Utils } from '@pctac/utils.js';
 import { toast } from '@shared/feedback.js';
 import type { PdfExportContract, PlanMapPinSummary } from '@shared/types/contracts.js';
 
@@ -80,14 +83,38 @@ async function dataUrlToJpeg(dataUrl: string, quality = 0.85): Promise<string> {
  * Structure multi-pages ordonnée et respect du thème (clair/sombre).
  */
 
+/** Décode une chaîne base64 (VFS pdfmake) en octets, sans Buffer. */
+function base64ToBytes(b64: string): Uint8Array {
+    const binary = atob(b64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return bytes;
+}
+
+/**
+ * Embarque la police TrueType complète de l'OI (Oswald 500, sous-ensemble) via
+ * `@pdf-lib/fontkit` (décision 34). Remplace Helvetica/WinAnsi : plus de « ? »
+ * pour « \u0141ukasz », « \u0218tefan », « \u00d8yvind », « \u011e\u00fcl », « \u0414\u043c\u0438\u0442\u0440\u0438\u0439 ». Le sous-ensemble ne garde que
+ * les glyphes réellement utilisés.
+ */
+export async function embedReportFonts(
+    pdfDoc: PDFLib.PDFDocument,
+): Promise<{ font: PDFLib.PDFFont; fontBold: PDFLib.PDFFont }> {
+    pdfDoc.registerFontkit(fontkit);
+    const normal = PDF_FONT_VFS['Oswald-500.ttf'];
+    if (!normal) throw new Error("Police PDF de l'OI introuvable (Oswald-500.ttf).");
+    // Une seule graisse existe (Oswald 500) : « bold » pointe le même fichier.
+    const font = await pdfDoc.embedFont(base64ToBytes(normal), { subset: true });
+    return { font, fontBold: font };
+}
+
 /**
  * sanitizeWinAnsi(s)
- * Helvetica/Standard fonts de pdf-lib n'encodent que le jeu WinAnsi (cp1252).
- * Tout caractère hors de ce jeu (apostrophes/guillemets courbes, tirets longs,
- * points de suspension, espaces insécables exotiques, emoji, symboles, lettres
- * non-latines...) provoque une exception à drawText/widthOfTextAtSize et fait
- * planter l'export entier. On translittère vers ASCII/WinAnsi quand un équivalent
- * raisonnable existe, sinon on remplace par '?'. Ne jette jamais.
+ * La police embarquée trace le latin étendu, le grec et le cyrillique. Seuls
+ * les caractères de CONTRÔLE (tabulations, sauts de ligne, retours chariot,
+ * codes < 0x20, BOM et espaces de largeur nulle) ne sont pas dessinables : on
+ * les remplace par un espace (ou rien pour le BOM). Tout le reste est conservé
+ * tel quel (apostrophes courbes, tirets, lettres non latines). Ne jette jamais.
  */
 export function sanitizeWinAnsi(s: unknown): string {
     if (s === null || s === undefined) return '';
@@ -97,60 +124,13 @@ export function sanitizeWinAnsi(s: unknown): string {
     } catch {
         return '';
     }
-
-    // Translittérations ciblées (caractères fréquents en saisie utilisateur FR)
-    const MAP: Record<string, string> = {
-        '‘': "'", '’': "'", '‚': "'", '‛': "'",   // guillemets simples courbes
-        '“': '"', '”': '"', '„': '"', '‟': '"',   // guillemets doubles courbes
-        '′': "'", '″': '"',                                  // prime / double prime
-        '–': '-', '—': '-', '―': '-', '−': '-',    // tirets longs / signe moins
-        '‐': '-', '‑': '-',                                  // traits d'union
-        '…': '...',                                              // points de suspension
-        ' ': ' ', ' ': ' ', ' ': ' ', ' ': ' ',    // espaces insécables / fines
-        '​': '', '﻿': '',                                   // espaces de largeur nulle / BOM
-        '•': '-', '‣': '-', '●': '-', '·': '.',    // puces
-        '€': '€',                                            // euro (présent en WinAnsi 0x80)
-        '™': 'TM', '«': '"', '»': '"'                   // (chevrons) -> gardés via WinAnsi sinon
-    };
-
     let out = '';
     for (const ch of str) {
-        if (Object.prototype.hasOwnProperty.call(MAP, ch)) {
-            out += MAP[ch] ?? '';
-            continue;
-        }
         const code = ch.codePointAt(0) ?? -1;
-        // Tabulation / saut de ligne / retour chariot -> espace.
-        // pdf-lib les tolère dans drawText (lineSplit + cleanText) mais PAS dans
-        // widthOfTextAtSize, qui encode chaque code point en WinAnsi sans nettoyage
-        // et jette « WinAnsi cannot encode "\n" (0x000a) ». Les champs multilignes
-        // (Remarques, Action) passent par wrapText -> widthOfTextAtSize.
-        if (code === 0x09 || code === 0x0A || code === 0x0D) {
-            out += ' ';
-            continue;
-        }
-        // ASCII imprimable accepté tel quel
-        if (code >= 0x20 && code <= 0x7E) {
-            out += ch;
-            continue;
-        }
-        // Plage Latin-1 / WinAnsi haute (0xA0-0xFF) : majoritairement encodable.
-        // On garde les lettres accentuées usuelles (é, è, à, ç, ô, ü, ñ...).
-        if (code >= 0xA0 && code <= 0xFF) {
-            out += ch;
-            continue;
-        }
-        // Quelques caractères WinAnsi spécifiques dans la plage 0x80-0x9F
-        if (ch === 'Œ') { out += 'OE'; continue; }
-        if (ch === 'œ') { out += 'oe'; continue; }
-        if (ch === 'Š') { out += 'S'; continue; }
-        if (ch === 'š') { out += 's'; continue; }
-        if (ch === 'Ÿ') { out += 'Y'; continue; }
-        if (ch === 'Ž') { out += 'Z'; continue; }
-        if (ch === 'ž') { out += 'z'; continue; }
-        if (ch === 'ƒ') { out += 'f'; continue; }
-        // Tout le reste (emoji, idéogrammes, symboles divers...) -> '?'
-        out += '?';
+        if (code === 0xFEFF || code === 0x200B || code === 0x200C || code === 0x200D) continue;
+        if (code === 0x09 || code === 0x0A || code === 0x0D) { out += ' '; continue; }
+        if (code < 0x20) continue;
+        out += ch;
     }
     return out;
 }
@@ -191,13 +171,13 @@ export const PdfExport: PdfExportContract = {
                 toast('Librairie pdf-lib non chargée (réseau ?). Réessaie dans quelques secondes.', { kind: 'error' });
                 return;
             }
-            const { PDFDocument, rgb: pdfRgb, StandardFonts, PageSizes } = PDFLib;
+            const { PDFDocument, rgb: pdfRgb, PageSizes } = PDFLib;
             // PageSizes.A4 est un tuple partagé : toujours cloner avant addPage
             const A4_PORTRAIT: [number, number] = cloneA4(PageSizes.A4);
             const A4_LANDSCAPE: [number, number] = cloneA4([PageSizes.A4[1], PageSizes.A4[0]]);
             const pdfDoc = await PDFDocument.create();
-            const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
-            const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+            // Décision 34 — police TrueType complète de l'OI (sous-ensemble).
+            const { font, fontBold } = await embedReportFonts(pdfDoc);
 
             // Charger les données (les photos sont stockées en IndexedDB, on les hydrate)
             const allLogs = Storage.loadLogData();
@@ -217,8 +197,13 @@ export const PdfExport: PdfExportContract = {
             };
             const logData = allLogs.filter((e) => !isAuto(e));
             const carteLogs = allLogs.filter(isAuto);
-            const adversaries = await ImageStore.hydrate(Storage.loadCollection('pcTacAdversaries'), 'photo');
-            const hostages = await ImageStore.hydrate(Storage.loadCollection('pcTacHostages'), 'photo');
+            // Décision 33 — même tri par priorité qu'à l'écran (source unique).
+            const adversaries = sortFichesByPriority(
+                'adv', currentModeId(), await ImageStore.hydrate(Storage.loadCollection('pcTacAdversaries'), 'photo'),
+            );
+            const hostages = sortFichesByPriority(
+                'host', currentModeId(), await ImageStore.hydrate(Storage.loadCollection('pcTacHostages'), 'photo'),
+            );
             const friends = Storage.loadCollection('pcTacFriends');
             const photos = await ImageStore.hydrate(Storage.loadCollection('pcTacPhotos'), 'data');
 
@@ -460,7 +445,21 @@ export const PdfExport: PdfExportContract = {
                     }
                     pdfPage().drawText(title, { x: context.margin + 5, y: context.y + 2, size: 11, font: fontBold, color: themeColors.text });
                     if (label) {
-                        pdfPage().drawText(label, { x: context.pageWidth - context.margin - labelWidth + 7, y: context.y + 2, size: 10, font: fontBold, color: hexRgb(status.color) });
+                        const labelX = context.pageWidth - context.margin - labelWidth + 7;
+                        // Décision 33 — DCD : texte NOIR sur fond clair, encadré
+                        // d'un liseré : lisible sur thème sombre comme clair.
+                        const isDcd = status.key === 'dcd';
+                        if (isDcd) {
+                            pdfPage().drawRectangle({
+                                x: labelX - 4, y: context.y - 5, width: labelWidth, height: 18,
+                                color: pdfRgb(0.93, 0.93, 0.93),
+                                borderColor: pdfRgb(0.5, 0.5, 0.5), borderWidth: 0.8,
+                            });
+                        }
+                        pdfPage().drawText(label, {
+                            x: labelX, y: context.y + 2, size: 10, font: fontBold,
+                            color: isDcd ? pdfRgb(0, 0, 0) : hexRgb(status.color),
+                        });
                     }
                     context.y -= 25;
 
@@ -766,7 +765,8 @@ export const PdfExport: PdfExportContract = {
             const blob = new Blob([pdfBytes as BlobPart], { type: 'application/pdf' });
             const link = document.createElement('a');
             link.href = URL.createObjectURL(blob);
-            link.download = `PC-TAC-EXPORT-${new Date().getTime()}.pdf`;
+            // Décision 32/34 — nom de fichier lisible, sans nom de personne.
+            link.download = Utils.readableFileName(currentMode().label, new Date(), 'pdf');
             link.click();
             // Libère le blob une fois le téléchargement amorcé (sinon fuite mémoire).
             setTimeout(() => { try { URL.revokeObjectURL(link.href); } catch { /* no-op */ } }, 30000);

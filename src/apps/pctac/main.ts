@@ -93,13 +93,15 @@ import {
     HOSTAGES_KEY,
     FRIENDS_KEY,
     PHOTOS_KEY,
-    DASHBOARD_KEY,
 } from '@pctac/config.js';
+import { undoableDelete, undoableDeleteLog, purgeCollectionImages } from '@pctac/delete-undo.js';
+import { resetWithArchive } from '@pctac/reset-flow.js';
 import { GPX_INDEX_KEY, PINS_KEY } from '@pctac/planmap/constants.js';
 import { scopedKey } from '@pctac/modes.js';
 import { initImportScopeModal } from '@pctac/import-scope.js';
 import { initSplitView } from '@pctac/split-view.js';
 import { initTabSync } from '@pctac/tab-sync.js';
+import { initTabSyncViews } from '@pctac/tab-sync-views.js';
 import { applyLexicon, initModeSelector, onModeChange } from '@pctac/mode-ui.js';
 import { openFiche } from '@pctac/fiche-sheet.js';
 
@@ -160,9 +162,15 @@ document.addEventListener('DOMContentLoaded', async () => {
     setInterval(() => UI.updateTimeInput(), 60000);
     // Une heure saisie À LA MAIN ne doit pas être écrasée par le tick de 60 s :
     // updateTimeInput teste window.isTimeInputManuallyChanged, mais rien ne le posait.
-    if (UI.elements.heureInput) {
-        UI.elements.heureInput.addEventListener('input', () => { window.isTimeInputManuallyChanged = true; });
-    }
+    // Décision 30 — la première frappe dans le LIEU ou la REMARQUE fige aussi
+    // l'heure (comme une saisie manuelle) : l'horodatage correspond au début du
+    // compte-rendu, pas au moment de l'envoi.
+    const freezeHeureOnInput = (el: HTMLElement | null | undefined): void => {
+        el?.addEventListener('input', () => { window.isTimeInputManuallyChanged = true; });
+    };
+    freezeHeureOnInput(UI.elements.heureInput);
+    freezeHeureOnInput(UI.elements.lieuInput);
+    freezeHeureOnInput(UI.elements.remarquesInput);
 
     // Écran scindé — après `UI.initElements()`, dont ses rendus dépendent, et
     // avant le premier rendu d'onglet : un écran scindé mémorisé se remonte
@@ -176,6 +184,16 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Lot B (constat 10) — suggestions du lien adversaire disponibles dès
     // l'ouverture, sans attendre un premier rendu de la vue Otages.
     UI.refreshOtagesSuggestions();
+
+    // Décision 29 — repeindre les listes quand un AUTRE onglet change les
+    // données de la situation. Ne referme pas une fiche ouverte (hors liste).
+    initTabSyncViews({
+        log: () => UI.renderLogTable(Storage.loadLogData()),
+        adversaries: () => { void UI.renderAdversaries(); },
+        hostages: () => { void UI.renderHostages(); },
+        friends: () => UI.renderFriends(),
+        photos: () => { void UI.renderPhotos(); },
+    });
 
     // §5.3 étape 8 — Initialiser les écouteurs d'onglets.
     document.querySelectorAll('.tab-btn').forEach((btnEl) => {
@@ -317,6 +335,9 @@ document.addEventListener('DOMContentLoaded', async () => {
             const submitBtn = UI.elements.photoForm?.querySelector<HTMLButtonElement>('button[type="submit"]');
             if (submitBtn) submitBtn.disabled = true;
             try {
+                // Position GPS de l'original (décision 34) : question indépendante
+                // de l'ajout, jamais bloquante pour la compression.
+                void Utils.promptGpsPoint(file, title);
                 const compressedData = await Utils.compressImage(file, 1024, 1024, 0.7);
                 const photoId = Date.now().toString();
                 await ImageStore.put(photoId, compressedData);
@@ -336,6 +357,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     // §5.3 étape 17 — EXPOSITIONS GLOBALES.
+    // Décision 31 : suppression immédiate (liste + stockage) suivie d'un toast
+    // « Annuler » de 10 s ; les images IndexedDB ne partent qu'à l'échéance.
     window.deleteLogEntry = async (id) => {
         // U3 — même garde que deleteCollectionItem ci-dessous.
         const confirmed = await confirmDialog({
@@ -344,24 +367,16 @@ document.addEventListener('DOMContentLoaded', async () => {
             danger: true,
         });
         if (!confirmed) return;
-        LogManager.deleteEntry(id);
-        UI.renderLogTable(Storage.loadLogData());
+        undoableDeleteLog(id, 'Entrée supprimée', () => UI.renderLogTable(Storage.loadLogData()));
     };
 
-    /** Forme minimale lue/mutée par la purge ci-dessous (board relationnel, `dashboard.js` mort). */
-    interface PctacDashboardPurgeLink {
-        from?: unknown;
-        to?: unknown;
-    }
-    interface PctacDashboardPurgeState {
-        positions?: Record<string, unknown>;
-        links?: (PctacDashboardPurgeLink | null | undefined)[];
-    }
-    // Prédicat strict (cf. storage.ts `isObject`) — équivalent en pratique à
-    // l'original `v && typeof v === 'object'` : DASHBOARD_KEY ne contient jamais
-    // de valeur JSON falsy non-null (0/''/false) à la racine.
-    const isDashboardState = (v: unknown): v is PctacDashboardPurgeState =>
-        v !== null && typeof v === 'object';
+    /** Rendu de la vue concernée par une suppression annulable. */
+    const refreshDeletedView = (viewId: string | undefined): void => {
+        if (viewId === 'view-adversaires') void UI.renderAdversaries();
+        else if (viewId === 'view-otages') void UI.renderHostages();
+        else if (viewId === 'view-amis') UI.renderFriends();
+        else if (viewId === 'view-photos') void UI.renderPhotos();
+    };
 
     window.deleteCollectionItem = async (key, id, viewId) => {
         const confirmed = await confirmDialog({
@@ -370,69 +385,19 @@ document.addEventListener('DOMContentLoaded', async () => {
             danger: true,
         });
         if (!confirmed) return;
-        const list = Storage.loadCollection(key).filter((item) => item.id !== id);
-        Storage.saveCollection(key, list);
-
-        // Nettoyer l'image dans IndexedDB (et l'original d'une photo annotée).
-        try { await ImageStore.delete(id); } catch (e) { console.error('[PC TAC] delete image échec:', e); }
-        try { await ImageStore.delete(id + '_orig'); } catch (e) { console.error('[PC TAC] delete original échec:', e); }
-
-        // Suppression en cascade pour les photos synchronisées
-        if (viewId === 'view-adversaires' || viewId === 'view-otages') {
-            const photoKey = 'pcTacPhotos';
-            const photos = Storage.loadCollection(photoKey);
-            const syncId = id + '_sync';
-            const filteredPhotos = photos.filter((p) => p.id !== syncId);
-            Storage.saveCollection(photoKey, filteredPhotos);
-            try { await ImageStore.delete(syncId); } catch (e) { console.error('[PC TAC] delete sync échec:', e); }
-        }
-
-        // Purge des références photo mortes dans les pings du plan (sinon
-        // exportées telles quelles dans l'archive, nettoyées seulement au
-        // premier affichage du viewer — cf. planmap/panels.ts, nettoyage lazy).
-        try {
-            const pins = Persist.get<{ photoId?: string }[]>(scopedKey(PINS_KEY), { validator: Array.isArray, fallback: [] }) || [];
-            const syncId = id + '_sync';
-            let pinsTouched = false;
-            for (const pin of pins) {
-                if (pin && (pin.photoId === id || pin.photoId === syncId)) {
-                    delete pin.photoId; // jamais `= undefined` (précédent panels.ts:48)
-                    pinsTouched = true;
-                }
-            }
-            if (pinsTouched) {
-                Persist.set(scopedKey(PINS_KEY), pins);
-                if (window.PlanMap && window.PlanMap.initialized) window.PlanMap.refresh();
-            }
-        } catch { /* purge pings non bloquante */ }
-
-        // Purge de l'état du board relationnel : position du nœud supprimé et
-        // liens manuels qui le référencent (sinon orphelins persistés à vie).
-        try {
-            const st = Persist.get<PctacDashboardPurgeState | null>(scopedKey(DASHBOARD_KEY), { validator: isDashboardState, fallback: null });
-            if (st) {
-                // Trois formes de clés de nœud : id photo brut, '<id>_sync', et les
-                // placeholders entités préfixés 'ent:adv:<id>' / 'ent:host:<id>'.
-                const matches = (k: unknown): boolean => k === id || k === id + '_sync' || String(k).endsWith(':' + id);
-                let touched = false;
-                if (st.positions) {
-                    for (const k of Object.keys(st.positions)) {
-                        if (matches(k)) { delete st.positions[k]; touched = true; }
-                    }
-                }
-                if (Array.isArray(st.links)) {
-                    const before = st.links.length;
-                    st.links = st.links.filter((l) => !l || (!matches(l.from) && !matches(l.to)));
-                    if (st.links.length !== before) touched = true;
-                }
-                if (touched) Persist.set(scopedKey(DASHBOARD_KEY), st);
-            }
-        } catch { /* purge board non bloquante */ }
-
-        if (viewId === 'view-adversaires') await UI.renderAdversaries();
-        if (viewId === 'view-otages') await UI.renderHostages();
-        if (viewId === 'view-amis') UI.renderFriends();
-        if (viewId === 'view-photos') await UI.renderPhotos();
+        // Message generique par NATURE d'objet (fiche, photo) : evite les
+        // accords au masculin d'un libelle de situation (« Victime »…).
+        const message = key === PHOTOS_KEY ? 'Photo supprimée' : 'Fiche supprimée';
+        undoableDelete({
+            key,
+            id,
+            message,
+            refresh: () => refreshDeletedView(viewId),
+            onCommit: async () => {
+                await purgeCollectionImages(key, id);
+                refreshDeletedView(viewId);
+            },
+        });
     };
 
     // §5.3 étape 18 — Boutons dock : PDF, reset (+ confirm/cancel), création PAX,
@@ -443,61 +408,60 @@ document.addEventListener('DOMContentLoaded', async () => {
     const resetBtn = document.getElementById('resetDataDockBtn');
     if (resetBtn) resetBtn.onclick = () => UI.showResetModal();
 
-    const confirmResetBtn = document.getElementById('confirmResetBtn');
-    if (confirmResetBtn) {
-        confirmResetBtn.onclick = async () => {
-            // Collecte AVANT effacement des blobs IndexedDB de la situation
-            // courante : les images et les traces GPX y vivent en magasin
-            // PARTAGÉ. Un `clear()` global effacerait celles des trois autres
-            // situations — on ne retire donc que ce que la situation effacée
-            // référence, identifiant par identifiant.
-            const imgIds = new Set<string>();
-            [ADVERSARIES_KEY, HOSTAGES_KEY, PHOTOS_KEY].forEach((k) => {
-                Storage.loadCollection(k).forEach((item) => {
-                    if (item && item.id) {
-                        if (item.hasImage) imgIds.add(item.id);
-                        imgIds.add(item.id + '_sync');
-                        imgIds.add(item.id + '_orig'); // photo annotée (décision 25)
-                    }
-                });
-            });
-            try {
-                const pins = Persist.get<{ photoId?: string }[]>(scopedKey(PINS_KEY), { validator: Array.isArray, fallback: [] }) || [];
-                pins.forEach((pin) => { if (pin && pin.photoId) imgIds.add(pin.photoId); });
-            } catch { /* best-effort */ }
-            let gpxIds: string[] = [];
-            try {
-                const raw = localStorage.getItem(scopedKey(GPX_INDEX_KEY));
-                const arr: unknown = raw ? JSON.parse(raw) : [];
-                if (Array.isArray(arr)) {
-                    gpxIds = arr
-                        .map((t) => (t && typeof (t as { id?: unknown }).id === 'string' ? (t as { id: string }).id : ''))
-                        .filter((id) => id !== '');
+    // Décision 28 — le RESET propose deux voies : exporter l'archive puis
+    // effacer (l'échec d'export n'efface RIEN), ou effacer sans archive.
+    const performReset = async (): Promise<void> => {
+        // Collecte AVANT effacement des blobs IndexedDB de la situation
+        // courante : les images et les traces GPX y vivent en magasin
+        // PARTAGÉ. Un `clear()` global effacerait celles des trois autres
+        // situations — on ne retire donc que ce que la situation effacée
+        // référence, identifiant par identifiant.
+        const imgIds = new Set<string>();
+        [ADVERSARIES_KEY, HOSTAGES_KEY, PHOTOS_KEY].forEach((k) => {
+            Storage.loadCollection(k).forEach((item) => {
+                if (item && item.id) {
+                    if (item.hasImage) imgIds.add(item.id);
+                    imgIds.add(item.id + '_sync');
+                    imgIds.add(item.id + '_orig'); // photo annotée (décision 25)
                 }
-            } catch { /* best-effort */ }
-
-            Storage.clearAllData();
-            try { if (imgIds.size) await ImageStore.deleteMany([...imgIds]); } catch (e) { console.error('[PC TAC] suppression images IDB échec:', e); }
-            for (const id of gpxIds) {
-                try { await GpxStore.delete(id); } catch (e) { console.error('[PC TAC] suppression trace GPX échec:', e); }
+            });
+        });
+        try {
+            const pins = Persist.get<{ photoId?: string }[]>(scopedKey(PINS_KEY), { validator: Array.isArray, fallback: [] }) || [];
+            pins.forEach((pin) => { if (pin && pin.photoId) imgIds.add(pin.photoId); });
+        } catch { /* best-effort */ }
+        let gpxIds: string[] = [];
+        try {
+            const raw = localStorage.getItem(scopedKey(GPX_INDEX_KEY));
+            const arr: unknown = raw ? JSON.parse(raw) : [];
+            if (Array.isArray(arr)) {
+                gpxIds = arr
+                    .map((t) => (t && typeof (t as { id?: unknown }).id === 'string' ? (t as { id: string }).id : ''))
+                    .filter((id) => id !== '');
             }
+        } catch { /* best-effort */ }
 
-            // Reset des champs du formulaire principal
-            ['lieu_input', 'remarques_input', 'heure_input'].forEach((id) => {
-                const el = document.getElementById(id) as HTMLInputElement | null;
-                if (el) el.value = '';
-            });
-            // Reset des formulaires restants (la fiche adverse/protégée n'a pas
-            // de formulaire permanent ; son brouillon est effacé avec la situation).
-            ['friend-form', 'photo-form'].forEach((fid) => {
-                const f = document.getElementById(fid) as HTMLFormElement | null;
-                if (f) f.reset();
-            });
+        Storage.clearAllData();
+        try { if (imgIds.size) await ImageStore.deleteMany([...imgIds]); } catch (e) { console.error('[PC TAC] suppression images IDB échec:', e); }
+        for (const id of gpxIds) {
+            try { await GpxStore.delete(id); } catch (e) { console.error('[PC TAC] suppression trace GPX échec:', e); }
+        }
 
-            UI.hideResetModal();
-            location.reload();
-        };
-    }
+        // Reset des champs du formulaire principal
+        ['lieu_input', 'remarques_input', 'heure_input'].forEach((id) => {
+            const el = document.getElementById(id) as HTMLInputElement | null;
+            if (el) el.value = '';
+        });
+        // Reset des formulaires restants (la fiche adverse/protégée n'a pas
+        // de formulaire permanent ; son brouillon est effacé avec la situation).
+        ['friend-form', 'photo-form'].forEach((fid) => {
+            const f = document.getElementById(fid) as HTMLFormElement | null;
+            if (f) f.reset();
+        });
+
+        UI.hideResetModal();
+        location.reload();
+    };
 
     const cancelCreatePaxBtn = document.getElementById('cancelCreatePaxBtn');
     if (cancelCreatePaxBtn) cancelCreatePaxBtn.onclick = () => UI.hideCreatePaxModal();
@@ -531,6 +495,23 @@ document.addEventListener('DOMContentLoaded', async () => {
     // §5.3 étape 19 — ARCHIVE TOUT-EN-UN (.pctac.zip). Import dynamique conservé
     // (main.js:436) — Archive n'est PAS parmi les imports statiques de §5.2.
     const { Archive } = await import('@pctac/archive.js');
+
+    // Décision 28 — voies du RESET (l'export doit réussir avant tout effacement).
+    const confirmResetExportBtn = document.getElementById('confirmResetExportBtn');
+    if (confirmResetExportBtn) {
+        confirmResetExportBtn.onclick = async () => {
+            showBusy("Export de l'archive avant RESET…");
+            const exported = await resetWithArchive(
+                () => Archive.exportZip(),
+                performReset,
+            ).finally(hideBusy);
+            if (!exported) {
+                toast("Export impossible : RIEN n'a été effacé. Réessaie ou choisis « Effacer sans archive ».", { kind: 'error' });
+            }
+        };
+    }
+    const confirmResetBtn = document.getElementById('confirmResetBtn');
+    if (confirmResetBtn) confirmResetBtn.onclick = () => { void performReset(); };
 
     const exportArchiveBtn = document.getElementById('exportJsonDockBtn');
     if (exportArchiveBtn) exportArchiveBtn.onclick = () => {
