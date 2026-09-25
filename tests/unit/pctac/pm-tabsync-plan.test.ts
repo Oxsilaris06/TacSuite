@@ -186,3 +186,31 @@ describe('le dernier geste gagne par objet (relire PUIS appliquer PUIS écrire)'
         expect(a?.lat).toBe(48.9);
     });
 });
+
+describe('Revue du 25/09 — Annuler après une écriture distante des formes (B6)', () => {
+    it('une relecture distante des formes vide Annuler/Rétablir (instantanés complets périmés)', () => {
+        const refresh = vi.fn();
+        const fake = makeFakeThis({ _refreshUndoRedoButtons: refresh });
+        fake.history = ['[]'];
+        fake.redoStack = ['[{"id":"s9"}]'];
+        fake._onRemotePlanData('pcTacPlanShapes');
+        expect(fake.history).toEqual([]);
+        expect(fake.redoStack).toEqual([]);
+        expect(refresh).toHaveBeenCalled();
+    });
+
+    it('une écriture distante des POINTS ne touche pas à l’historique des formes', () => {
+        const fake = makeFakeThis();
+        fake.history = ['[]'];
+        fake._onRemotePlanData(PINS_KEY);
+        expect(fake.history).toEqual(['[]']);
+    });
+
+    it('même pendant un geste (rechargement différé), l’historique est vidé tout de suite', () => {
+        const fake = makeFakeThis({ drawState: { tool: 'line' } as never });
+        fake.history = ['[]'];
+        fake._onRemotePlanData('pcTacPlanShapes');
+        expect(fake._pendingRemoteReload).toBe(true);
+        expect(fake.history).toEqual([]);
+    });
+});

@@ -650,6 +650,14 @@ export const MapCoreMethods = {
     _onRemotePlanData(this: PlanMapInternal, key: string): void {
         const logical = (k: string): boolean => key === k || key === scopedKey(k);
         if (!logical(PINS_KEY) && !logical(SHAPES_KEY) && !logical(GRID_KEY)) return; // la vue n'est jamais synchronisée
+        if (logical(SHAPES_KEY) && (this.history.length || this.redoStack.length)) {
+            // B6 (revue du 25/09) — les formes ont changé ailleurs : les instantanés
+            // COMPLETS d'Annuler/Rétablir réécriraient la liste sans elles. On
+            // repart de zéro, même si la relecture elle-même attend la fin du geste.
+            this.history = [];
+            this.redoStack = [];
+            if (typeof this._refreshUndoRedoButtons === 'function') this._refreshUndoRedoButtons();
+        }
         if (this._planGestureActive()) { this._pendingRemoteReload = true; return; }
         this._reloadPlanFromStorage();
     },
