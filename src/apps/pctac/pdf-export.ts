@@ -36,7 +36,7 @@ import { ImageStore } from '@pctac/image-store.js';
 import { PDF_PAX_COLORS, PHOTO_CATEGORIES, FREE_MODE_COLORS, safeHexColor } from '@pctac/config.js';
 import { currentMode, currentModeId, paxChipLabel, photoCategoryLabel } from '@pctac/modes.js';
 import { TYPE_MENACE_KEY, ficheCounters, ficheTitle, filledSections, sortFichesByPriority, statusChoices, statusMeta, type FicheSide } from '@pctac/fiche.js';
-import { showBusy, hideBusy } from '@pctac/busy.js';
+import { showBusy, hideBusy, setBusyMessage } from '@pctac/busy.js';
 import { capturePlanForPdf, imageSizeFromDataUrl, type PlanPrintCapture } from '@pctac/plan-capture-for-pdf.js';
 import { Utils } from '@pctac/utils.js';
 import { toast } from '@shared/feedback.js';
@@ -422,6 +422,7 @@ async function loadReportData(sortie: PdfSortie) {
     // à la définition du profil de sortie. `plan: null` = pas de module Plan.
     let plan: { capture: PlanPrintCapture | null } | null = null;
     if (window.PlanMap && typeof window.PlanMap.captureToDataUrl === 'function') {
+        setBusyMessage('Génération du PDF : capture du plan…');
         // Chaîne partagée avec la synthèse A3 (`plan-capture-for-pdf.ts`) :
         // bascule temporaire sur la vue Plan, capture, vue restaurée,
         // JPEG sur fond blanc ; `null` si la carte n'a pas pu être prise.
@@ -585,7 +586,13 @@ async function renderReport(data: ReportData, settings: RenderSettings): Promise
         }
     };
 
+    // Progression affichée (audit : 35 s sans retour visuel sur le jeu extrême).
+    const step = (what: string): void => setBusyMessage(settings.attempt === 0
+        ? `Génération du PDF : ${what}…`
+        : `Allègement pour le Partage (essai ${settings.attempt + 1}) : ${what}…`);
+
     // --- 1. MAIN COURANTE ---
+    step('main courante');
     addNewPage("MAIN COURANTE - JOURNAL D'INTERVENTION");
     // Mo5 — bandeau d'identification sous le titre : situation et période.
     pdfPage().drawText(
@@ -712,6 +719,7 @@ async function renderReport(data: ReportData, settings: RenderSettings): Promise
     }
 
     // --- 2 et 3. FICHES ADVERSE ET PROTÉGÉE (décisions 17 à 19) ---
+    step('fiches');
     // Mêmes sections que l'écran, dans l'ordre de la situation, champs
     // remplis seuls ; texte replié sur la largeur disponible.
     const modeId = currentModeId();
@@ -799,6 +807,7 @@ async function renderReport(data: ReportData, settings: RenderSettings): Promise
     await drawFiches('host', hostages, counters.host);
 
     // --- 4. AMIS ---
+    step('forces amies');
     if (friends.length > 0) {
         addNewPage("FORCES AMIES / UNITÉS");
         const fCols: [number, number, number] = [150, 150, 215];
@@ -837,6 +846,9 @@ async function renderReport(data: ReportData, settings: RenderSettings): Promise
 
     // --- 5. PHOTOS PAR CATÉGORIE ---
     const categories = PHOTO_CATEGORIES.filter(c => c.id !== 'all');
+    const photoTotal = photos.filter((p) => categories.some((c) => c.id === p.category)).length;
+    let photoDone = 0;
+    const photoStep = (): void => { photoDone++; step(`photos (${photoDone}/${photoTotal})`); };
     for (const cat of categories) {
         const catPhotos = photos.filter(p => p.category === cat.id);
         if (catPhotos.length === 0) continue;
@@ -851,6 +863,7 @@ async function renderReport(data: ReportData, settings: RenderSettings): Promise
 
             const p1 = catPhotos[i];
             if (!p1) continue; // invariant : i < catPhotos.length (TypeScript ne suit pas la borne de boucle)
+            photoStep();
             pdfPage().drawText(sanitizeWinAnsi(p1.title), { x: context.margin, y: context.y, size: 10, font: fontBold, color: themeColors.text });
             const y1 = await drawImageSafe(pdfPage(), p1.data, context.margin, context.y - 10, photoWidth, photoHeightMax);
 
@@ -858,6 +871,7 @@ async function renderReport(data: ReportData, settings: RenderSettings): Promise
             if (i + 1 < catPhotos.length) {
                 const p2 = catPhotos[i+1];
                 if (p2) {
+                    photoStep();
                     pdfPage().drawText(sanitizeWinAnsi(p2.title), { x: context.margin + photoWidth + context.margin, y: context.y, size: 10, font: fontBold, color: themeColors.text });
                     y2 = await drawImageSafe(pdfPage(), p2.data, context.margin + photoWidth + context.margin, context.y - 10, photoWidth, photoHeightMax);
                 }
@@ -867,6 +881,7 @@ async function renderReport(data: ReportData, settings: RenderSettings): Promise
     }
 
     // --- 6. PLAN TACTIQUE (carte MapLibre + liste des points) ---
+    step('plan');
     // Défensif de bout en bout : la capture (faite une fois, `loadReportData`)
     // peut manquer ; cela n'interrompt jamais l'export.
     try {
@@ -948,6 +963,7 @@ async function renderReport(data: ReportData, settings: RenderSettings): Promise
     }
 
     // --- 7. JOURNAL DES ACTIONS PC-TAC (entrées auto, en dernier) ---
+    step('journal des actions');
     if (carteLogs.length > 0) {
         addNewPage('JOURNAL DES ACTIONS PC-TAC');
         const cCols: [number, number] = [70, 445]; // Heure, Action
@@ -1013,6 +1029,7 @@ async function renderReport(data: ReportData, settings: RenderSettings): Promise
     }
 
     // --- FOOTER : pagination + DIFFUSION RESTREINTE sur toutes les pages ---
+    step('assemblage');
     const allPages = pdfDoc.getPages();
     const totalPages = allPages.length;
     const exportStamp = new Date().toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' });
@@ -1051,11 +1068,25 @@ async function renderReport(data: ReportData, settings: RenderSettings): Promise
     return pdfDoc.save();
 }
 
+/**
+ * Verrou de génération (double clic, second bouton) : un seul PDF à la fois,
+ * rapport complet ou synthèse A3. Relâché dans tous les cas (finally).
+ */
+let pdfGenerating = false;
+
+function refuseWhileGenerating(): boolean {
+    if (!pdfGenerating) return false;
+    toast('Un PDF est déjà en cours de génération : patientez.', { kind: 'info' });
+    return true;
+}
+
 export const PdfExport: PdfExportContract = {
     async buildPdf(options?: PdfOptions): Promise<void> {
+        if (refuseWhileGenerating()) return;
+        pdfGenerating = true;
         // Sans choix explicite (appel hors fenêtre) : derniers choix retenus.
         const opts = options ?? loadPdfOptions('pctac', PCTAC_PDF_KINDS);
-        showBusy('Génération du PDF…');
+        showBusy('Génération du PDF : lecture des données…');
         try {
             // pdfExport.js:97-99 — en ESM le namespace importé n'est jamais `undefined` ;
             // on vérifie donc la présence réelle de la classe utilisée, message inchangé.
@@ -1096,6 +1127,7 @@ export const PdfExport: PdfExportContract = {
         } finally {
             // R23 — hors export, `sanitizeWinAnsi` garde son comportement d'origine.
             glyphChecker = null;
+            pdfGenerating = false;
             hideBusy();
         }
     }
@@ -1106,11 +1138,21 @@ export const PdfExport: PdfExportContract = {
  * sortie), puis le rapport complet ou la synthèse A3. « Annuler » = rien.
  */
 export async function openPdfDialog(): Promise<void> {
+    if (refuseWhileGenerating()) return;
     const options = await askPdfOptions({ appKey: 'pctac', title: 'Générer le PDF', kinds: PCTAC_PDF_KINDS });
     if (!options) return;
     if (options.kind === 'a3') {
-        const { buildA3Pdf } = await import('@pctac/pdf-a3.js');
-        await buildA3Pdf(options);
+        if (refuseWhileGenerating()) return;
+        pdfGenerating = true;
+        try {
+            const { buildA3Pdf } = await import('@pctac/pdf-a3.js');
+            await buildA3Pdf(options);
+        } catch (e) {
+            console.error('PDF A3 :', e);
+            toast(`Synthèse A3 impossible : ${e instanceof Error ? e.message : String(e)}`, { kind: 'error' });
+        } finally {
+            pdfGenerating = false;
+        }
         return;
     }
     await PdfExport.buildPdf(options);
