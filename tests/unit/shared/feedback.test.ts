@@ -487,12 +487,14 @@ describe('bandeaux persistants', () => {
     expect(document.querySelector('[data-banner-id="b2"]')).toBeNull();
   });
 
-  it('F-1 : sous 560 px, le message prend toute la largeur et les actions passent dessous', () => {
+  it('F-1 : sous 560 px, le message garde la largeur, la croix reste en haut à droite, les actions passent dessous', () => {
     showBanner('b1', { message: 'x', level: 'info' });
     const css = feedbackCss();
-    expect(css).toContain('@media (max-width: 560px)');
-    expect(css).toContain('flex-wrap: wrap');
-    expect(css).toMatch(/\.tac-banner-message\s*\{\s*flex:\s*1 1 100%/);
+    const phone = css.slice(css.indexOf('@media (max-width: 560px)'));
+    expect(phone).toMatch(/\.tac-banner\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)\s+auto/);
+    // Essai réel du 09-25 : la croix seule sur une deuxième ligne gaspillait ~60 px.
+    expect(phone).toMatch(/\.tac-banner-close\s*\{[^}]*grid-column:\s*2;[^}]*grid-row:\s*1/);
+    expect(phone).toMatch(/\.tac-banner-action\s*\{[^}]*grid-column:\s*1\s*\/\s*-1/);
   });
 
   it('F-2 : les jetons absents du portail ont un repli lisible', () => {
