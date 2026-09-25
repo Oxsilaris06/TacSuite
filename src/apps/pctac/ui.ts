@@ -942,6 +942,7 @@ export const UI: UIContract = {
     }
     // U26 — squelette pendant l'hydratation IndexedDB des photos, au premier
     // rendu seulement : remplacer des cartes déjà là ferait sauter la liste.
+    const scrollTop = box.scrollTop;
     if (!box.querySelector('.fiche-card')) box.innerHTML = '<p class="empty-state">Chargement des photos…</p>';
     const list = await ImageStore.hydrate(raw, 'photo');
     const hostages = Storage.loadCollection('pcTacHostages');
@@ -951,6 +952,7 @@ export const UI: UIContract = {
       const linked = hostages.filter((h) => h.lien === item.id).map((h) => ficheTitle('host', mode, h));
       return ficheCard('adv', item, linked, (v) => v);
     }).join('');
+    box.scrollTop = scrollTop; // re-rendu distant : le défilement ne saute pas
   },
 
   // ui.js:468-496
@@ -982,10 +984,12 @@ export const UI: UIContract = {
       box.innerHTML = `<p class="empty-state">${esc(lex.emptyLabel)} — touchez « ${esc(lex.newLabel)} »</p>`;
       return;
     }
+    const scrollTop = box.scrollTop;
     if (!box.querySelector('.fiche-card')) box.innerHTML = '<p class="empty-state">Chargement des photos…</p>';
     const list = await ImageStore.hydrate(raw, 'photo');
     const advs = Storage.loadCollection('pcTacAdversaries');
     box.innerHTML = list.map((item) => ficheCard('host', item, [], (v) => resolveLien(v, advs) || v)).join('');
+    box.scrollTop = scrollTop; // re-rendu distant : le défilement ne saute pas
   },
 
   // ui.js:498-511
@@ -1204,15 +1208,23 @@ export const UI: UIContract = {
 
   // ui.js:623-629 — U25 : promptDialog async au lieu du prompt() natif.
   async editPhotoTitle(id: string): Promise<void> {
-    const list = Storage.loadCollection('pcTacPhotos');
-    const photo = list.find((p) => p.id === id);
+    const photo = Storage.loadCollection('pcTacPhotos').find((p) => p.id === id);
     if (!photo) return;
     const newTitle = await promptDialog({
       title: 'Renommer la photo',
       message: 'Nouveau titre :',
       initial: (photo.title as string | undefined) || '',
     });
-    if (newTitle) { photo.title = newTitle.trim(); Storage.saveCollection('pcTacPhotos', list); void this.renderPhotos(); }
+    if (!newTitle) return;
+    // Décision 29 — relecture JUSTE AVANT l'écriture : la fenêtre de saisie a
+    // pu laisser un autre onglet ajouter une photo, qu'une copie d'ouverture
+    // périmée effacerait.
+    const list = Storage.loadCollection('pcTacPhotos');
+    const fresh = list.find((p) => p.id === id);
+    if (!fresh) return;
+    fresh.title = newTitle.trim();
+    Storage.saveCollection('pcTacPhotos', list);
+    void this.renderPhotos();
   },
 
   // ui.js:631-643
