@@ -344,6 +344,29 @@ describe('Storage — updatedAt et résultat d’écriture (décision 32)', () =
     });
 });
 
+describe('Utils — readableFileName (décision 32)', () => {
+    it('compose PC-Tac_<Situation>_<AAAA-MM-JJ>_<HHhMM>.<ext> en heure LOCALE', () => {
+        // Constructeur LOCAL : indépendant du fuseau de la machine de test.
+        const date = new Date(2026, 8, 25, 9, 5);
+        expect(Utils.readableFileName('Forcené', date, 'pdf'))
+            .toBe('PC-Tac_Forcene_2026-09-25_09h05.pdf');
+    });
+
+    it('retire les accents et remplace les caractères interdits sous Windows', () => {
+        const date = new Date(2026, 0, 2, 14, 30);
+        expect(Utils.readableFileName('Tuerie planifiée', date, 'pdf'))
+            .toBe('PC-Tac_Tuerie-planifiee_2026-01-02_14h30.pdf');
+        expect(Utils.readableFileName('A/B:C*D?E"F<G>H|I', date, 'pdf'))
+            .toBe('PC-Tac_A-B-C-D-E-F-G-H-I_2026-01-02_14h30.pdf');
+    });
+
+    it('réduit les tirets répétés et garde une extension composée', () => {
+        const date = new Date(2026, 11, 31, 0, 0);
+        expect(Utils.readableFileName('Un   --  Deux', date, 'pctac.zip'))
+            .toBe('PC-Tac_Un-Deux_2026-12-31_00h00.pctac.zip');
+    });
+});
+
 describe('Utils — compressImage (utils.js:38-46)', () => {
   /**
    * NOTE : les tests de compressImage ci-dessous testent l'aiguillage logique

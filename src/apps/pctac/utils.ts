@@ -7,6 +7,32 @@
 
 export const Utils = {
   /**
+   * Nom de fichier lisible pour une exportation (décision 32) :
+   * `PC-Tac_<Situation>_<AAAA-MM-JJ>_<HHhMM>.<ext>`, en heure LOCALE.
+   *
+   * L'ASCII d'abord (accents retirés par NFD), puis les caractères interdits
+   * sous Windows (`\ / : * ? " < > |`) et les espaces remplacés par des tirets,
+   * les tirets répétés réduits. Le nom ne porte JAMAIS de nom de personne.
+   *
+   * @param situationLabel Libellé de situation (« Forcené », « Tuerie planifiée »…)
+   * @param date           Date d'export (heure locale)
+   * @param ext            Extension, gardée telle quelle (`pdf`, `pctac.zip`…)
+   */
+  readableFileName(situationLabel: string, date: Date, ext: string): string {
+    const situation = situationLabel
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[\\/:*?"<>|]/g, '-')
+      .replace(/\s+/g, '-')
+      .replace(/-+/g, '-')
+      .replace(/^-+|-+$/g, '');
+    const pad = (n: number): string => String(n).padStart(2, '0');
+    const stamp = `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
+      + `_${pad(date.getHours())}h${pad(date.getMinutes())}`;
+    return `PC-Tac_${situation}_${stamp}.${ext}`;
+  },
+
+  /**
    * Compresse une image (redimensionnement et qualité JPEG).
    *
    * PIÈGE : accepte INDIFFÉREMMENT un File OU une dataURL (string).
