@@ -1420,6 +1420,67 @@ export function assertC5_fixtureIntegrity(text, fixturePath) {
 }
 
 
+// =========================================================================
+// D1 — pagination « n / N » réellement présente (audit du 2026-09-25, F03).
+// =========================================================================
+
+/**
+ * D1 — chaque pied de page porte sa pagination « n / N ».
+ *
+ * Audit du 2026-09-25 (constat F03) : l'écart assumé E2 promet « n / N sur
+ * toutes les pages », mais le pied demandait 4 + 17,2 + 15,3 = 36,5 pt pour
+ * les 31,2 pt de la marge basse de 11 mm (`theme.ts::pageGeometry`) — pdfmake
+ * supprimait la seconde ligne SANS erreur, et `pdftotext` ne trouvait aucun
+ * « / N » sur un OI réel de 10 pages. Les tests unitaires existants ne
+ * regardaient que la DÉFINITION envoyée à pdfmake : ils passaient au vert sur
+ * un document qui ne portait aucun numéro. Cette garde mesure le PDF rendu.
+ *
+ * Règle : sur toute page qui porte un pied (« CONFIDENTIEL »), le pied doit
+ * contenir « <numéro de la page> / <total> ». La page de garde du Complet n'a
+ * pas de pied (écart E2 assumé) et est donc simplement ignorée ; l'Express,
+ * qui n'a pas de garde, est couvert dès sa page 1. Un document peut aussi
+ * avoir perdu tout pied : c'est un FAIL explicite, pas un SKIP silencieux.
+ */
+export function assertD1_pagePagination(text) {
+  const pages = splitPages(text);
+  const pageCount = pages.length;
+  if (pageCount === 0) {
+    return { ok: true, detail: 'document vide — aucune page à examiner' };
+  }
+  const sansPagination = [];
+  let pieds = 0;
+  for (let i = 0; i < pageCount; i++) {
+    const pageNum = i + 1;
+    // Une ligne de pied se reconnaît à sa bande CONFIDENTIEL ; elle peut être
+    // entourée du contenu de la page dans le flux `pdftotext -layout`.
+    const lignePied = pages[i].split('\n').find((l) => l.includes('CONFIDENTIEL'));
+    if (!lignePied) continue;
+    pieds++;
+    // Espacement tolérant : la mise en page de `pdftotext` peut resserrer ou
+    // espacer les nombres, jamais les inverser ni les supprimer.
+    const attendu = new RegExp(`(^|[^0-9])${pageNum}\\s*/\\s*${pageCount}([^0-9]|$)`);
+    if (!attendu.test(lignePied)) {
+      sansPagination.push(`page ${pageNum} : « ${lignePied.trim().slice(0, 90)} »`);
+    }
+  }
+  if (pieds === 0) {
+    return {
+      ok: false,
+      detail: `aucun pied « CONFIDENTIEL » trouvé sur ${pageCount} page(s) — pied absent ou renommé, pagination non vérifiable`,
+    };
+  }
+  if (sansPagination.length > 0) {
+    return {
+      ok: false,
+      detail: `${sansPagination.length}/${pieds} pied(s) sans « n / N » : ${sansPagination.join(' | ')}`,
+    };
+  }
+  return {
+    ok: true,
+    detail: `${pieds}/${pageCount} pied(s) portent « n / N » (page de garde sans pied, écart E2 assumé)`,
+  };
+}
+
 // ===========================================================================
 // CLI
 // ===========================================================================
@@ -1536,6 +1597,11 @@ function main() {
     { code: 'C3', ...assertC3_articulationBlockSinglePage(text) },
     { code: 'C4', ...assertC4_effractionAutonomousPages(text) },
     { code: 'C5', ...assertC5_fixtureIntegrity(text, opts.fixture) },
+    // Garde d'AUDIT (audit PDF du 2026-09-25) — toujours évaluée,
+    // INDÉPENDANTE de --lenient. D1 : la pagination « n / N » est réellement
+    // IMPRIMÉE sur chaque page portant un pied (le pied à deux lignes était
+    // silencieusement tronqué par pdfmake — voir le JSDoc d'assertD1).
+    { code: 'D1', ...assertD1_pagePagination(text) },
   ];
 
   for (const a of assertions) {

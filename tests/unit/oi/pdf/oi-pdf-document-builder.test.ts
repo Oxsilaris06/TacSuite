@@ -662,6 +662,23 @@ describe('buildOiDocDefinition — footer document-wide', () => {
         expect(json).toContain('PSIG');
         expect(json).toContain('2 / 5');
     });
+
+    it('tient sur UNE seule ligne, pagination comprise — un pied à deux lignes était supprimé par pdfmake', () => {
+        const dd = buildOiDocDefinition(collect({ trigramme_redacteur: 'REF', unite_redacteur: 'PSIG' }), { format: 'a4' });
+        const footerFn = dd.footer as DynamicContent;
+        const band = footerFn(2, 5, fakePageSize) as { stack?: unknown[]; text?: unknown };
+
+        // Audit du 2026-09-25 (F03) : un `stack` de DEUX lignes (bande à 9 pt
+        // puis « n / N » à 8 pt) demande 4 + 17,2 + 15,3 = 36,5 pt pour les
+        // 31,2 pt de la marge basse de 11 mm. pdfmake supprimait alors la
+        // seconde ligne SANS erreur : la pagination « n / N » promise par
+        // l'écart assumé E2 n'apparaissait sur aucune page (vérifié au rendu
+        // réel : `pdftotext` ne trouvait aucun « / N » sur un OI de 10 pages).
+        expect(band.stack).toBeUndefined();
+        const json = JSON.stringify(band);
+        expect(json).toContain('CONFIDENTIEL');
+        expect(json).toContain('2 / 5');
+    });
 });
 
 // ===========================================================================

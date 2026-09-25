@@ -153,6 +153,32 @@ AUTONOMES, plus aucune continuation « (SUITE) » pour ces 4 usages. Toujours
 | **C4** | Cellule effraction = pages autonomes | (a) Spillover : contenu Hypothèses d'Effraction sans titre effraction sur la même page ⇒ FAIL. (b) Contiguïté : les plages « HYPOTHÈSES a-b » d'un même titre de base doivent être strictement croissantes et non chevauchantes (proxy texte de « aucune hypothèse scindée/dupliquée/omise »). |
 | **C5** | Anti-troncature ÉTENDUE | Si `--fixture=<json>` fourni : chaque chaîne texte libre ≥ 12 car. de `formData` (hors clés `id`/`annotations`/`tools`/`title`/`options`, jamais rendues verbatim) doit être retrouvée dans `pdftotext` — substring exact, ou à défaut couverture par SAC DE MOTS ≥ 90 % (repli anti-intercalation de colonnes `grid2()`, cf. JSDoc `assertC5_fixtureIntegrity`). Sans `--fixture`, SKIP. |
 
+## Garde d'audit PDF (D1, audit du 2026-09-25)
+
+| Code | Garde | Détection |
+|---|---|---|
+| **D1** | Pagination « n / N » réellement IMPRIMÉE | Sur chaque page portant un pied (ligne contenant `CONFIDENTIEL`), le pied doit porter « `<numéro de page> / <total>` » (espacement tolérant). La page de garde du Complet, sans pied (écart E2 assumé), est simplement ignorée ; l'Express, qui n'a pas de garde, est couvert dès sa page 1. Un document dont AUCUNE page ne porte de pied ⇒ FAIL explicite (pas de SKIP silencieux). |
+
+Motif : le pied tenait sur deux lignes (bande à 9 pt, puis « n / N » à 8 pt),
+soit 4 + 17,2 + 15,3 = 36,5 pt pour les 31,2 pt de la marge basse de 11 mm
+(`theme.ts::pageGeometry`). pdfmake supprimait la **seconde** ligne sans
+erreur : aucune page d'un OI réel de 10 pages ne portait de numéro, alors que
+les tests unitaires passaient — ils n'inspectaient que la DÉFINITION envoyée à
+pdfmake, jamais le PDF rendu. C'est exactement ce trou que D1 ferme.
+
+**Contre-épreuve** (exigée par la règle de ce protocole : une garde qui ne FAIL
+pas sur un PDF fautif ne prouve rien) — la garde a été écrite APRÈS le constat,
+puis passée sur le PDF produit AVANT le correctif :
+
+```
+FAIL D1 — 9/9 pied(s) sans « n / N » : page 2 : « OI - PGD - PSIG TEST - CONFIDENTIEL » | page 3 : … | page 10 : …
+17/18 assertions
+```
+
+Après correctif, sur le même jeu de données : `PASS D1 — 9/10 pied(s) portent
+« n / N » (page de garde sans pied, écart E2 assumé)`, 18/18 assertions — le
+pied imprimé est désormais `OI - PGD - PSIG TEST - CONFIDENTIEL - 2 / 10`.
+
 ### B7 (corrigée) et B9-B11 — protocole de contre-épreuve (historique, gardes retirées depuis)
 
 Gardes écrites et contre-éprouvées AVANT les correctifs D1-D4 : une garde
