@@ -770,11 +770,12 @@ export const UI: UIContract = {
       toast('Entrée supprimée dans un autre onglet : modification NON enregistrée.', { kind: 'error' });
       return;
     }
-    const base: Record<string, unknown> = editBase && editBase.id === id ? editBase : fresh;
+    const asRecord = (e: PctacLogEntry): Record<string, unknown> => e as unknown as Record<string, unknown>;
+    const base = asRecord(editBase && editBase.id === id ? editBase : fresh);
     const norm = (v: unknown): string => String(v ?? '');
     const updated: Record<string, unknown> = {};
     for (const key of Object.keys(mine)) if (norm(mine[key]) !== norm(base[key])) updated[key] = mine[key];
-    const diff = diffOpenFiche(base, { ...mine, ...(date ? {} : { date: base.date }) }, fresh);
+    const diff = diffOpenFiche(base, { ...mine, ...(date ? {} : { date: base.date }) }, asRecord(fresh));
     const labels: Record<string, string> = { heure: 'Heure', lieu: 'Lieu', remarques: 'Remarques', date: 'Date' };
     for (const c of diff.conflicts) {
       const choice = await choiceDialog({
