@@ -246,6 +246,10 @@ describe('OsmandLive — sondage du relais', () => {
       registerRemoteOperator: (): void => { /* sans effet */ },
       acquireScreenWakeLock: (): void => { /* sans effet */ },
       releaseScreenWakeLock: (): void => { /* sans effet */ },
+      acquireSweep: (): void => { /* sans effet */ },
+      releaseSweep: (): void => { /* sans effet */ },
+      removeRemoteMembers: (): void => { /* sans effet */ },
+      OSMAND_SENDER_PREFIX: 'osmand:',
     }));
     const dup = { ts: 5000, rx: 5000, lat: 48.1, lon: 2.1 };
     responses = [
@@ -263,5 +267,55 @@ describe('OsmandLive — sondage du relais', () => {
     await flush();
     // Deuxième sondage : le même point est rejoué par le relais, mais dédoublonné.
     expect(upserts).toEqual([{ sender: 'osmand:a1', ts: 5000 }]);
+  });
+});
+
+describe('Revue du 25/09 — vieillissement des marqueurs OsmAnd (A2)', () => {
+  it('OsmAnd seul : un opérateur muet passe « perdu depuis », et Stop retire ses marqueurs', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(OP_A.ts);
+    seedDom();
+    stubPlanMap();
+    responses = [() => jsonResponse({ now: 1000, operators: [{ id: 'a1', nom: 'Dupont', fonction: 'Inter', points: [OP_A] }] })];
+    // Ensuite, réponses vides (défaut de nextResponse) : aucun point neuf.
+    const mod = await boot();
+    mod.OsmandLive.start();
+    await vi.advanceTimersByTimeAsync(0);
+    await flush();
+    expect(h.markers).toHaveLength(1);
+    const el = h.markers[0]!.element!;
+    expect(el.querySelector('.tl-label')?.textContent ?? '').toContain('Dupont');
+
+    await vi.advanceTimersByTimeAsync(7 * 60 * 1000);
+    await flush();
+    expect(el.querySelector('.tl-label')?.textContent ?? '').toContain('perdu depuis');
+
+    mod.OsmandLive.stop();
+    expect(h.markers[0]!.removed).toBe(true);
+  });
+});
+
+describe('Revue du 25/09 — Stop de Tchap et marqueurs OsmAnd (A8)', () => {
+  it('Stop de Tchap (volontaire ou 401) ne retire pas les marqueurs OsmAnd, qui continuent de vieillir', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(OP_A.ts);
+    seedDom();
+    stubPlanMap();
+    responses = [() => jsonResponse({ now: 1000, operators: [{ id: 'a1', nom: 'Dupont', fonction: 'Inter', points: [OP_A] }] })];
+    const mod = await boot();
+    mod.OsmandLive.start();
+    await vi.advanceTimersByTimeAsync(0);
+    await flush();
+    expect(h.markers).toHaveLength(1);
+
+    const tchap = await import('@pctac/tchap-live.js');
+    tchap.TchapLive.stop(false);
+    tchap.TchapLive.stop(true);
+    await flush();
+    expect(h.markers[0]!.removed).toBe(false);
+
+    await vi.advanceTimersByTimeAsync(7 * 60 * 1000);
+    await flush();
+    expect(h.markers[0]!.element!.querySelector('.tl-label')?.textContent ?? '').toContain('perdu depuis');
   });
 });
