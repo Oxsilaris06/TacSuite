@@ -381,7 +381,14 @@ export const DrawLayersMethods = {
             const planView = document.getElementById('view-plan');
             if (!planView || !planView.classList.contains('active')) return;
             if (e.key === 'Escape' && this.drawTool) this._setTool(null);
-            else if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) { e.preventDefault(); this._undo(); }
+            else if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
+                // C3/K4 : si un toast d'annulation est ouvert, Ctrl+Z lui est
+                // destiné (le raccourci global de `feedback.ts` clique
+                // « Annuler »). Le plan ne consomme pas la touche et n'annule
+                // PAS le dessin — sans quoi une seule frappe ferait les deux.
+                if (document.querySelector('[data-tac-toast-action="undo"]')) return;
+                e.preventDefault(); this._undo();
+            }
             else if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.shiftKey && e.key === 'Z'))) { e.preventDefault(); this._redo(); }
         });
     },
