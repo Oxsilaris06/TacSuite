@@ -214,6 +214,47 @@ export function fitTextToWidth(text: string, font: PDFLib.PDFFont, size: number,
     return `${head.slice(0, lo).trimEnd()}…`;
 }
 
+/**
+ * Replie `text` sur `width` points. La coupe est DURE pour un mot plus large
+ * que la colonne (adresse, identifiant, nom composé collé) : sans elle, le
+ * jeton sort de la page, dans la main courante comme dans les fiches (M2).
+ * La coupe par dichotomie évite de remesurer la chaîne entière à chaque
+ * caractère retiré, même principe que `fitTextToWidth`.
+ */
+export function wrapText(text: unknown, width: number, font: PDFLib.PDFFont, size: number): string[] {
+    const lines: string[] = [];
+    let currentLine = '';
+    const pushSplitWord = (word: string): void => {
+        let rest = word;
+        while (rest && font.widthOfTextAtSize(rest, size) >= width) {
+            let lo = 1, hi = rest.length;
+            while (lo < hi) {
+                const mid = Math.ceil((lo + hi) / 2);
+                if (font.widthOfTextAtSize(rest.slice(0, mid), size) < width) lo = mid;
+                else hi = mid - 1;
+            }
+            lines.push(rest.slice(0, lo));
+            rest = rest.slice(lo);
+        }
+        currentLine = rest;
+    };
+    sanitizeWinAnsi(text).split(' ').forEach((word) => {
+        const testLine = currentLine ? currentLine + ' ' + word : word;
+        if (font.widthOfTextAtSize(testLine, size) < width) {
+            currentLine = testLine;
+            return;
+        }
+        if (currentLine) {
+            lines.push(currentLine);
+            currentLine = '';
+        }
+        if (font.widthOfTextAtSize(word, size) < width) currentLine = word;
+        else pushSplitWord(word);
+    });
+    if (currentLine) lines.push(currentLine);
+    return lines;
+}
+
 /** Palette de couleurs du thème courant, calculée une fois par export (pdfExport.js:118-124). */
 interface PdfThemeColors {
     background: PDFLib.RGB;
@@ -327,23 +368,6 @@ export const PdfExport: PdfExportContract = {
             };
 
             // --- FONCTIONS UTILITAIRES ---
-            const wrapText = (text: unknown, width: number, font: PDFLib.PDFFont, size: number): string[] => {
-                const words = sanitizeWinAnsi(text).split(' ');
-                const lines: string[] = [];
-                let currentLine = '';
-                words.forEach(word => {
-                    const testLine = currentLine ? currentLine + ' ' + word : word;
-                    if (font.widthOfTextAtSize(testLine, size) < width) {
-                        currentLine = testLine;
-                    } else {
-                        lines.push(currentLine);
-                        currentLine = word;
-                    }
-                });
-                if (currentLine) lines.push(currentLine);
-                return lines;
-            };
-
             const addNewPage = (title: string, isLandscape = false): void => {
                 // Cloner à chaque appel : pdf-lib peut conserver la référence
                 const size = cloneA4(isLandscape ? A4_LANDSCAPE : A4_PORTRAIT);
