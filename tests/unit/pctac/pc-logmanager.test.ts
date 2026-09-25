@@ -12,7 +12,7 @@
  *   - :23-40 — addEntry : toast d'erreur (R2-T2a, ex-alert()) + retour null si PAX ou heure manquants
  */
 
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type {
   PctacLogEntry,
@@ -141,6 +141,56 @@ describe('LogManager.addEntry — validation et rejet avec toast (R2-T2a, ex-ale
     if (stored[0]) {
       expect(stored[0].pax).toBe('Adversaire');
     }
+  });
+});
+
+describe('LogManager.addEntry — stockage plein (correction d\'office)', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    toastSpy.mockClear();
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('refuse l\'ajout, ne date PAS l\'historique et ne vide rien (retour null)', () => {
+    const setItem = vi.spyOn(localStorage, 'setItem').mockImplementation(() => {
+      const err = new Error('quota');
+      (err as { name: string }).name = 'QuotaExceededError';
+      throw err;
+    });
+    try {
+      const result = LogManager.addEntry({
+        mode: 'standard',
+        pax: 'Adversaire',
+        heure: '14:30',
+        lieu: 'Paris',
+      });
+
+      expect(result).toBeNull();
+      expect(toastSpy).toHaveBeenCalledWith('Stockage plein : événement NON enregistré.', { kind: 'error' });
+      // Le journal reste vide (aucune écriture partielle) et l'historique des
+      // lieux n'a pas été daté avec une entrée fantôme.
+      expect(Storage.loadLogData()).toHaveLength(0);
+      expect(LogManager.getLieuHistory()).toHaveLength(0);
+    } finally {
+      setItem.mockRestore();
+    }
+  });
+
+  it('après restauration du stockage, l\'ajout réussit et l\'historique suit', () => {
+    const setItem = vi.spyOn(localStorage, 'setItem').mockImplementation(() => {
+      const err = new Error('quota');
+      (err as { name: string }).name = 'QuotaExceededError';
+      throw err;
+    });
+    expect(LogManager.addEntry({ mode: 'standard', pax: 'Adversaire', heure: '14:30', lieu: 'Paris' })).toBeNull();
+    setItem.mockRestore();
+
+    const result = LogManager.addEntry({ mode: 'standard', pax: 'Adversaire', heure: '14:31', lieu: 'Lyon' });
+    expect(result).not.toBeNull();
+    expect(Storage.loadLogData()).toHaveLength(1);
+    expect(LogManager.getLieuHistory()).toContain('Lyon');
   });
 });
 
