@@ -513,9 +513,19 @@ export interface LogManagerContract {
  * 8. PC-TAC — window.Archive  (modules/pctac/archive.js:459)
  * ========================================================================= */
 
+/** Récapitulatif d'un import d'archive (décision 32). */
+export interface ArchiveImportSummary {
+    /** Noms lisibles des fiches REMPLACÉES par l'archive (fusion par date). */
+    replacedFiches: string[];
+    /** Noms lisibles des fiches fusionnées avec une existante (doublon). */
+    mergedFiches: string[];
+    /** Clés inconnues (ou communes) de l'archive, ignorées à l'import. */
+    unknownKeys: number;
+}
+
 /** Résultat de `Archive.importFile` (archive.js:157, 199, 211, 233, 274). */
 export type ArchiveImportResult =
-    | { ok: true }
+    | ({ ok: true } & ArchiveImportSummary)
     /** L'utilisateur a annulé la confirmation d'écrasement. */
     | { ok: false; cancelled: true }
     | { ok: false; error: unknown };
@@ -535,6 +545,10 @@ export interface ArchiveOiImportResult {
     paxSkipped: number;
     /** Carroyage de la carto OI repris dans le plan de la situation courante. */
     gridImported?: boolean | undefined;
+    /** Photos d'OI (hors photo principale des fiches) AJOUTÉES à la galerie. */
+    galleryAdded?: number | undefined;
+    /** Photos d'OI déjà présentes, Mises à jour au réimport (A6). */
+    galleryUpdated?: number | undefined;
 }
 
 export interface ArchiveContract {

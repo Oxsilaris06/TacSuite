@@ -34,10 +34,13 @@ import {
     askImportScope,
     scopeCarriesGpx,
     scopeCarriesImages,
+    type ApplyScopeReport,
 } from '@pctac/import-scope.js';
 import { GPX_INDEX_KEY, GRID_KEY, OVERLAYS_KEY, PINS_KEY } from '@pctac/planmap/constants.js';
 import { isTacticalGridSpec } from '@shared/tactical-grid.js';
-import { PCTAC_MODES, currentModeId, persistModeId, scopedKey, type PctacModeId } from '@pctac/modes.js';
+import { PCTAC_MODES, SHARED_KEYS, currentModeId, persistModeId, scopedKey, type PctacModeId } from '@pctac/modes.js';
+import { findDuplicatePerson, mergeFicheFields } from '@pctac/fiche.js';
+import { Utils } from '@pctac/utils.js';
 import {
     LOCAL_STORAGE_KEY, TP_ASSOC_KEY,
     ADVERSARIES_KEY, HOSTAGES_KEY, FRIENDS_KEY, PHOTOS_KEY, CUSTOM_PAX_KEY,
@@ -55,7 +58,7 @@ const OI_LOCAL_STORAGE_KEY = 'tactical_oi_data';
  */
 interface ArchiveManifest {
     appName?: string;
-    version?: number;
+    version?: number | string;
     createdAt?: string;
     /** Situation d'origine de l'archive (absent = ancien format → Forcené). */
     situation?: unknown;
@@ -124,11 +127,13 @@ interface OiPatracdvrRow {
     members?: OiPatracdvrMember[];
 }
 
-/** Entrée `dynamic_photos['photo_main_<advId>']` : images liées à un adversaire. */
+/** Entrée `dynamic_photos[<clé>]` : image liée à un contenant de l'OI. */
 interface OiDynamicPhotoEntry {
     id?: string;
     /** JSON du moteur d'annotation (`formulaires.ts`), commun au PC-Tac. */
     annotations?: unknown;
+    /** Légende saisie dans l'OI (formulaires « Photos HD »). */
+    customTitle?: string;
 }
 
 /** Sous-ensemble utile de `tactical_oi_data` désérialisé (structure best-effort). */
@@ -223,6 +228,51 @@ const COLLECTION_KEYS = [
     GPX_INDEX_KEY,
 ];
 
+/** Version de format d'archive écrite par `exportZip` (`manifest.version`). */
+export const ARCHIVE_VERSION = 1;
+
+/** Clés qu'un import a le DROIT d'écrire : exactement celles que `exportZip` produit. */
+const IMPORT_WHITELIST: ReadonlySet<string> = new Set(COLLECTION_KEYS);
+
+/** Collections de fiches : récapitulatif de remplacement et doublons. */
+const FICHE_KEYS: readonly string[] = [ADVERSARIES_KEY, HOSTAGES_KEY, FRIENDS_KEY];
+
+/**
+ * Filtre les clés de `data.json` : ne garde que la liste blanche, ignore et
+ * compte le reste. Une clé COMMUNE (`SHARED_KEYS`, ex. `pcTacTchapLive`) n'est
+ * JAMAIS écrite par un import : elle appartient au poste, pas à une archive.
+ */
+export function filterImportKeys(dataJson: Record<string, unknown>): {
+    allowed: Record<string, string>;
+    unknownKeys: number;
+} {
+    const allowed: Record<string, string> = {};
+    let unknownKeys = 0;
+    Object.entries(dataJson).forEach(([key, value]) => {
+        if (SHARED_KEYS.has(key) || !IMPORT_WHITELIST.has(key) || typeof value !== 'string') {
+            unknownKeys += 1;
+            return;
+        }
+        allowed[key] = value;
+    });
+    return { allowed, unknownKeys };
+}
+
+/** Nom lisible d'une fiche (« Prénom Nom »), pour le récapitulatif. */
+export function ficheDisplayName(item: Record<string, unknown>): string {
+    const prenom = typeof item.prenom === 'string' ? item.prenom.trim() : '';
+    const nom = typeof item.nom === 'string' ? item.nom.trim() : '';
+    return [prenom, nom].filter(Boolean).join(' ') || 'Sans nom';
+}
+
+/** Vrai si une fiche porte réellement des annotations (non vide). */
+function hasAnnotations(item: Record<string, unknown>): boolean {
+    const raw = item.annotations;
+    if (typeof raw !== 'string') return Array.isArray(raw) ? raw.length > 0 : false;
+    const trimmed = raw.trim();
+    return trimmed !== '' && trimmed !== '[]' && trimmed !== 'null';
+}
+
 /**
  * Fusionne l'index des traces de l'archive avec celui déjà présent.
  * JAMAIS de remplacement : une archive ancienne, sans traces, laisse les
@@ -263,6 +313,164 @@ function gpxTrackIds(): string[] {
     } catch {
         return [];
     }
+}
+
+/**
+ * Recopie vers l'id GARDÉ les images de la fiche entrante reprises par la
+ * fusion (décision 32). `mergeFicheFields` complète aussi `hasImage` et
+ * `annotations`, alors que les images de l'entrante vivent dans `ImageStore`
+ * sous l'id ENTRANT : sans cette recopie, la fiche gardée pointerait vers des
+ * blobs absents (photo cassée) — et l'invariant « `<id>_orig` seulement si la
+ * fiche porte `annotations` » doit tenir (revue G9). Si l'image manque, on
+ * retire le champ plutôt que de laisser un pointeur mort.
+ */
+export async function transferMergedImages(
+    keptId: string,
+    incomingId: string,
+    merged: PctacCollectionItem,
+    filled: readonly string[],
+): Promise<void> {
+    if (filled.includes('hasImage')) {
+        const base = await ImageStore.get(incomingId);
+        if (base) {
+            await ImageStore.put(keptId, base);
+            const sync = await ImageStore.get(incomingId + '_sync');
+            if (sync) await ImageStore.put(keptId + '_sync', sync);
+        } else {
+            delete merged.hasImage;
+        }
+    }
+    let annotated = hasAnnotations(merged as Record<string, unknown>);
+    if (filled.includes('annotations') && annotated) {
+        const orig = await ImageStore.get(incomingId + '_orig');
+        if (orig) await ImageStore.put(keptId + '_orig', orig);
+        else {
+            // `annotations` sans original ferait dessiner sur l'image affichée :
+            // on retire l'annotation plutôt que de conserver l'incohérence.
+            delete merged.annotations;
+            annotated = false;
+        }
+    }
+    if (!annotated) {
+        try { await ImageStore.delete(keptId + '_orig'); } catch { /* best-effort */ }
+    }
+}
+
+/**
+ * Signale et traite les doublons de personnes parmi les fiches AJOUTÉES par
+ * l'import (id différent mais `findDuplicatePerson` positive). Pour chacune,
+ * « Fusionner » complète la fiche existante (`mergeFicheFields`, champs vides
+ * seulement) et retire l'importée — images recopiées vers l'id gardé —,
+ * « Garder les deux » ne touche à rien. Rend les noms des fiches fusionnées.
+ */
+export async function resolveDuplicateFiches(
+    addedByKey: Record<string, Array<Record<string, unknown>>>,
+): Promise<string[]> {
+    const mergedNames: string[] = [];
+    for (const key of FICHE_KEYS) {
+        const added = addedByKey[key] ?? [];
+        if (!added.length) continue;
+        let list = Storage.loadCollection(key);
+        for (const incoming of added) {
+            if (!incoming || typeof incoming.id !== 'string') continue;
+            const candidate = incoming as PctacCollectionItem;
+            const existing = findDuplicatePerson(list, candidate);
+            if (!existing) continue;
+            const name = ficheDisplayName(incoming);
+            const merge = await confirmDialog({
+                title: 'Fiche en double',
+                message:
+                    `La fiche « ${name} » semble déjà exister. ` +
+                    "Fusionner les deux fiches (les champs vides de l'existante seront complétés), ou garder les deux ?",
+                confirmLabel: 'Fusionner',
+                cancelLabel: 'Garder les deux',
+            });
+            if (!merge) continue;
+            const { merged, filled } = mergeFicheFields(existing, candidate);
+            try {
+                await transferMergedImages(existing.id, candidate.id, merged, filled);
+            } catch (e) {
+                console.warn('[Archive] copie des images fusionnées échouée:', e);
+            }
+            list = list
+                .filter((it) => it.id !== candidate.id)
+                .map((it) => (it.id === existing.id ? merged : it));
+            Storage.saveCollection(key, list);
+            try { await ImageStore.deleteMany([candidate.id, candidate.id + '_sync', candidate.id + '_orig']); }
+            catch { /* best-effort */ }
+            mergedNames.push(name);
+        }
+    }
+    return mergedNames;
+}
+
+/** Noms lisibles des fiches remplacées par l'archive (fusion). */
+function replacedFicheNames(replacedByKey: Record<string, Array<Record<string, unknown>>>): string[] {
+    const names: string[] = [];
+    FICHE_KEYS.forEach((key) => {
+        (replacedByKey[key] ?? []).forEach((item) => names.push(ficheDisplayName(item)));
+    });
+    return names;
+}
+
+/** Message du récapitulatif d'import, ou `null` s'il n'y a rien à dire. */
+export function importSummaryMessage(
+    replacedFiches: readonly string[],
+    mergedFiches: readonly string[],
+    unknownKeys: number,
+): string | null {
+    const parts: string[] = [];
+    if (replacedFiches.length) {
+        parts.push(`${replacedFiches.length} fiche${replacedFiches.length > 1 ? 's' : ''} remplacée${replacedFiches.length > 1 ? 's' : ''} : ${replacedFiches.join(', ')}`);
+    }
+    if (mergedFiches.length) {
+        parts.push(`${mergedFiches.length} fiche${mergedFiches.length > 1 ? 's' : ''} fusionnée${mergedFiches.length > 1 ? 's' : ''} : ${mergedFiches.join(', ')}`);
+    }
+    if (unknownKeys > 0) {
+        parts.push(`${unknownKeys} élément${unknownKeys > 1 ? 's' : ''} inconnu${unknownKeys > 1 ? 's' : ''} ignoré${unknownKeys > 1 ? 's' : ''}`);
+    }
+    return parts.length ? `${parts.join('. ')}.` : null;
+}
+
+/**
+ * Identifiant PC-Tac STABLE d'une photo d'OI, dérivé de son id OI (A6). Un
+ * réimport du même OI retrouve donc la même entrée et la met à jour au lieu
+ * d'en ajouter une seconde. Restreint aux caractères admis par `SAFE_ID`
+ * (l'id finit dans des gestionnaires en ligne).
+ */
+export function stableOiPhotoId(imgId: string): string {
+    const safe = imgId.replace(/[^A-Za-z0-9_.:-]/g, '_').slice(0, 120);
+    return `oi_photo_${safe || 'sans_id'}`;
+}
+
+/** Catégorie de l'onglet Photos la plus cohérente pour un contenant OI. */
+export function oiPhotoCategory(key: string): string {
+    if (/advers|renfort|photo_extra_/.test(key)) return 'neutralized';
+    if (/logo/.test(key)) return 'other';
+    return 'location';
+}
+
+/** Légende lisible d'une photo d'OI (légende saisie, sinon libellé du contenant). */
+export function oiPhotoTitle(key: string, entry: OiDynamicPhotoEntry): string {
+    const custom = typeof entry.customTitle === 'string' ? entry.customTitle.trim() : '';
+    if (custom) return custom;
+    const known: Array<[RegExp, string]> = [
+        [/express_objectif/, 'Objectif'],
+        [/express_adversaire/, 'Adversaire'],
+        [/express_carte/, 'Carte'],
+        [/transport_pr/, 'Transport PSIG → PR'],
+        [/transport_domicile/, 'Transport PR → Domicile'],
+        [/photo_itin_ext_/, 'Cheminement extérieur'],
+        [/photo_itin_int_/, 'Cheminement intérieur'],
+        [/photo_bapteme_/, 'Baptême terrain'],
+        [/photo_empl_ao_/, 'Emplacement AO'],
+        [/photo_effrac_/, 'Effraction'],
+        [/photo_extra_/, 'Adversaire — photo supplémentaire'],
+        [/photo_renforts_/, 'Renforts'],
+        [/photo_logo_unite/, 'Logo unité'],
+    ];
+    for (const [re, label] of known) if (re.test(key)) return label;
+    return key;
 }
 
 export const Archive: ArchiveContract = {
@@ -346,10 +554,10 @@ export const Archive: ArchiveContract = {
             }, null, 2));
 
             const blob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE', compressionOptions: { level: 6 } });
-            const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
             const a = document.createElement('a');
             a.href = URL.createObjectURL(blob);
-            a.download = `PC-TAC-${stamp}-${currentModeId()}.pctac.zip`;
+            // Décision 32 : nom de fichier lisible, sans nom de personne.
+            a.download = Utils.readableFileName(PCTAC_MODES[currentModeId()].label, new Date(), 'pctac.zip');
             document.body.appendChild(a);
             a.click();
             document.body.removeChild(a);
@@ -372,7 +580,8 @@ export const Archive: ArchiveContract = {
         if (name.endsWith('.json')) {
             const text = await file.text();
             const obj: unknown = JSON.parse(text); // JSON désérialisé, gardé par _importLegacyJson
-            return this._importLegacyJson(obj);
+            const legacy = await this._importLegacyJson(obj);
+            return { ...legacy, replacedFiches: [], mergedFiches: [], unknownKeys: 0 };
         }
 
         const buf = await file.arrayBuffer();
@@ -400,12 +609,33 @@ export const Archive: ArchiveContract = {
             );
         }
 
+        // Version de format (décision 32) : une archive produite par une version
+        // PLUS RÉCENTE est refusée AVANT toute écriture — ses données peuvent
+        // employer des champs que cette version ne sait pas relire. Version
+        // absente : traitée comme 1 (anciens formats).
+        const versionRaw = manifest.version;
+        const archiveVersion = typeof versionRaw === 'number'
+            ? versionRaw
+            : (typeof versionRaw === 'string' && versionRaw.trim() !== '' && Number.isFinite(Number(versionRaw))
+                ? Number(versionRaw)
+                : 1);
+        if (archiveVersion > ARCHIVE_VERSION) {
+            throw new Error(
+                "Archive produite par une version plus récente de PC-Tac : mettez l'appli à jour avant d'importer."
+            );
+        }
+
         // Lire data.json
         const dataFile = zip.file('data.json');
         if (!dataFile) throw new Error('Archive invalide : data.json manquant');
-        let dataJson: Record<string, string>;
-        try { dataJson = JSON.parse(await dataFile.async('string')) as Record<string, string>; }
+        let rawData: Record<string, unknown>;
+        try { rawData = JSON.parse(await dataFile.async('string')) as Record<string, unknown>; }
         catch { throw new Error('Archive corrompue : « data.json » illisible.'); }
+
+        // Liste blanche (décision 32) : seules les clés qu'un export produit
+        // sont écrites ; le reste est ignoré et compté. Une clé commune n'est
+        // JAMAIS écrite par un import.
+        const { allowed: dataJson, unknownKeys } = filterImportKeys(rawData);
 
         // Frontière de confiance : un id hors format refuse l'archive entière,
         // AVANT tout effacement (rien n'est modifié).
@@ -462,6 +692,7 @@ export const Archive: ArchiveContract = {
         };
 
         // 1) localStorage (rollback intégral si une écriture jette, ex. quota).
+        let scopeReport: ApplyScopeReport = { written: 0, addedByKey: {}, replacedByKey: {} };
         try {
             if (scope.full) {
                 // Restauration intégrale : on repart d'une situation vide.
@@ -471,7 +702,7 @@ export const Archive: ArchiveContract = {
                 });
             } else {
                 // Import partiel : RIEN n'est effacé hors des catégories cochées.
-                applyScope(dataJson, scope, targetMode);
+                scopeReport = applyScope(dataJson, scope, targetMode);
             }
         } catch (e) {
             await rollback();
@@ -562,6 +793,15 @@ export const Archive: ArchiveContract = {
             toast("Import terminé, mais certaines traces GPX n'ont pas pu être restaurées. Le reste est intact.", { kind: 'error' });
         }
 
+        // 4) Doublons de personnes parmi les fiches AJOUTÉES par l'import
+        // (décision 32) : signalés et fusionnables un par un.
+        const mergedFiches = await resolveDuplicateFiches(scopeReport.addedByKey);
+        const replacedFiches = replacedFicheNames(scopeReport.replacedByKey);
+
+        // 5) Récapitulatif : fiches remplacées/fusionnées, clés ignorées.
+        const summary = importSummaryMessage(replacedFiches, mergedFiches, unknownKeys);
+        if (summary !== null) toast(summary, { kind: 'info', duration: 8000 });
+
         // Si l'archive visait une AUTRE situation que celle affichée, on
         // propose d'y basculer : l'opérateur voit ce qu'il vient d'importer.
         if (targetMode !== currentModeId()) {
@@ -577,7 +817,7 @@ export const Archive: ArchiveContract = {
             }
         }
 
-        return { ok: true };
+        return { ok: true, replacedFiches, mergedFiches, unknownKeys };
     },
 
     /**
@@ -724,19 +964,19 @@ export const Archive: ArchiveContract = {
 
         const oiGrid = isTacticalGridSpec(oi.cartography?.grid) ? oi.cartography.grid : null;
 
-        if (!adversaries.length && !paxMembers.length && !oiGrid) {
-            throw new Error('Aucun adversaire, membre PATRACDVR ni carroyage trouvé dans ce fichier OI.');
+        // Le fichier est-il porteur de quelque chose d'exploitable ? Les photos
+        // de `dynamic_photos` comptent autant que les fiches : un OI « photos
+        // seules » doit pouvoir être importé (A6).
+        const hasDynPhotos = Object.values(dynPhotos).some((e) => Array.isArray(e) && e.length > 0);
+        if (!adversaries.length && !paxMembers.length && !oiGrid && !hasDynPhotos) {
+            throw new Error('Aucun adversaire, membre PATRACDVR, photo ni carroyage trouvé dans ce fichier OI.');
         }
 
-        // Récupère le data URL de la photo principale d'un adversaire depuis l'archive.
-        // OI stocke la photo dans dynamic_photos['photo_main_<advId>'][0].id (clé img_…),
-        // dont les octets sont dans images/<encodeURIComponent(id)>.bin (type via images.json).
-        const photoDataUrlForAdv = async (advId: string | undefined): Promise<string | null> => {
-            if (!zip || !advId) return null;
-            const entries = dynPhotos['photo_main_' + advId];
-            const first = entries ? entries[0] : undefined;
-            const imgId = first ? first.id : undefined;
-            if (!imgId) return null;
+        // Lit les octets d'une photo de l'OI depuis l'archive. OI stocke la clé
+        // `img_…` dans `dynamic_photos`, les octets dans
+        // `images/<encodeURIComponent(id)>.bin` (type via images.json).
+        const readPhotoDataUrl = async (imgId: string | undefined): Promise<string | null> => {
+            if (!zip || !imgId) return null;
             // archive.js:369-370 — repli sur le nom d'image NON encodé.
             const zipEntry = zip.file('images/' + encodeURIComponent(imgId) + '.bin')
                 || zip.file('images/' + imgId + '.bin');
@@ -748,14 +988,21 @@ export const Archive: ArchiveContract = {
             } catch (e) { console.warn('[OI→PCTAC] photo illisible:', imgId, e); return null; }
         };
 
-        // Annotations de cette photo dans l'OI : tableau d'objets, sinon aucune.
-        const photoAnnotationsForAdv = (advId: string | undefined): OiAnnotation[] => {
-            const raw = advId ? dynPhotos['photo_main_' + advId]?.[0]?.annotations : undefined;
+        // Data URL de la photo PRINCIPALE d'un adversaire (première entrée).
+        const photoDataUrlForAdv = (advId: string | undefined): Promise<string | null> => {
+            const first = advId ? dynPhotos['photo_main_' + advId]?.[0] : undefined;
+            return readPhotoDataUrl(first?.id);
+        };
+
+        // Annotations d'une photo dans l'OI : tableau d'objets, sinon aucune.
+        const parseAnnotations = (raw: unknown): OiAnnotation[] => {
             try {
                 const parsed: unknown = typeof raw === 'string' ? JSON.parse(raw) : raw;
                 return Array.isArray(parsed) ? parsed.filter((a): a is OiAnnotation => !!a && typeof a === 'object') : [];
             } catch { return []; }
         };
+        const photoAnnotationsForAdv = (advId: string | undefined): OiAnnotation[] =>
+            advId ? parseAnnotations(dynPhotos['photo_main_' + advId]?.[0]?.annotations) : [];
 
         // --- 1) Adversaires → pcTacAdversaries (+ photo + galerie Photos) ---
         const advList = Storage.loadCollection(ADVERSARIES_KEY);
@@ -865,6 +1112,59 @@ export const Archive: ArchiveContract = {
         });
         if (paxAdded) Storage.saveCollection(CUSTOM_PAX_KEY, paxList);
 
+        // --- 2 bis) TOUTES les photos de l'OI → galerie Photos (A6) ---
+        // La photo PRINCIPALE de chaque adversaire est déjà passée par la fiche
+        // (id `_sync`), on ne la réimporte pas ici : les autres contenants
+        // (objectif, carte, transport, cheminement, effraction, photos
+        // supplémentaires d'adversaire…) arrivent avec leur légende, leurs
+        // annotations et une catégorie cohérente. L'id PC-Tac est DÉRIVÉ de
+        // l'id OI de la photo : réimporter le même OI met à jour l'entrée au
+        // lieu d'en ajouter une seconde.
+        const photoById = new Map(photoList.map((p) => [p.id, p]));
+        let galleryAdded = 0, galleryUpdated = 0;
+        for (const [key, entries] of Object.entries(dynPhotos)) {
+            if (key.startsWith('photo_main_') || !Array.isArray(entries)) continue;
+            for (const entry of entries) {
+                const imgId = entry && typeof entry.id === 'string' ? entry.id : '';
+                if (!imgId) continue;
+                const dataUrl = await readPhotoDataUrl(imgId);
+                if (!dataUrl) continue; // photo illisible : les autres passent
+
+                const pcId = stableOiPhotoId(imgId);
+                const annotations = parseAnnotations(entry.annotations);
+                let shown = dataUrl;
+                let annotated = false;
+                if (annotations.length) {
+                    try {
+                        shown = await renderAnnotated(dataUrl, annotations);
+                        annotated = true;
+                    } catch (e) {
+                        shown = dataUrl;
+                        console.warn('[OI→PCTAC] annotations non appliquées:', e);
+                    }
+                }
+                try {
+                    await ImageStore.put(pcId, shown);
+                    if (annotated) await ImageStore.put(pcId + '_orig', dataUrl);
+                    else { try { await ImageStore.delete(pcId + '_orig'); } catch { /* best-effort */ } }
+                } catch (e) {
+                    console.warn('[OI→PCTAC] photo de galerie non enregistrée:', imgId, e);
+                    continue;
+                }
+
+                const existing = photoById.get(pcId);
+                const item: PctacCollectionItem = existing ?? { id: pcId };
+                item.title = oiPhotoTitle(key, entry);
+                item.category = oiPhotoCategory(key);
+                item.hasImage = true;
+                if (annotated) item.annotations = JSON.stringify(annotations);
+                else delete item.annotations;
+                if (existing) galleryUpdated++;
+                else { photoList.push(item); photoById.set(pcId, item); galleryAdded++; }
+            }
+        }
+        if (galleryAdded || galleryUpdated) Storage.saveCollection(PHOTOS_KEY, photoList);
+
         // --- 3) Carroyage de la carto OI → plan de la situation courante ---
         // L'OI fait foi (décision Nico 2026-09-24) : tout le monde doit appeler
         // « C4 » la même case, donc le carroyage de l'OI REMPLACE celui du plan,
@@ -881,7 +1181,7 @@ export const Archive: ArchiveContract = {
             } catch (e) { console.warn('[OI→PCTAC] carroyage non enregistré:', e); }
         }
 
-        return { ok: true, advAdded, advPhotos, advSkipped, paxAdded, paxSkipped, gridImported };
+        return { ok: true, advAdded, advPhotos, advSkipped, paxAdded, paxSkipped, gridImported, galleryAdded, galleryUpdated };
     },
 };
 

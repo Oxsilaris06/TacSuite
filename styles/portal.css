@@ -599,6 +599,34 @@ body {
     flex: var(--tac-zero) var(--tac-zero) auto;
 }
 
+/* --- Badge « pret hors ligne » (decision 28) -------------------------------- */
+.offline-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--badge-gap);
+    padding: var(--badge-padding-block) var(--badge-padding-inline);
+    border: var(--tac-border-width) solid var(--badge-border-color);
+    border-radius: var(--badge-radius);
+    background: var(--badge-bg);
+    color: var(--color-text-muted);
+    font-family: var(--badge-font);
+    font-size: var(--badge-size);
+    letter-spacing: var(--status-tracking);
+    text-transform: uppercase;
+}
+
+.offline-badge[data-ready='true'] {
+    color: #22c55e;
+}
+
+.offline-badge__dot {
+    width: var(--status-dot-size);
+    height: var(--status-dot-size);
+    border-radius: var(--tac-radius-full);
+    background: currentColor;
+    flex: var(--tac-zero) var(--tac-zero) auto;
+}
+
 /* --- Pied de page ---------------------------------------------------------- */
 .portal-footer {
     margin-top: auto;
