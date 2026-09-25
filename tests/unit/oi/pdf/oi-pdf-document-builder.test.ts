@@ -2570,7 +2570,10 @@ describe('buildOiDocDefinition — OI express', () => {
 
     // Le NOMBRE DE PAGES RENDUES est vérifié dans `oi-pdf-express-pages.test.ts`
     // (pdfmake réel) : compter les nœuds de `content` laissait passer 3 à 6 pages.
-    it('page 2 : TOUTES les photos (décision 24), légendées et numérotées, sans case vide', () => {
+    // Décision 44 : les photos de l'express passent par la galerie adaptative
+    // de l'OI Complet (remplace la grille « photos par deux, plans pleine
+    // largeur » : l'ancien test comparait des largeurs de cette grille).
+    it('photos (décision 24) : toutes, légendées et numérotées, sans case vide, galerie adaptative après l’ordre, plans seuls sur leur page (décision 44)', () => {
         const meta = (id: string, customTitle = ''): OiPhotoMeta => ({ id, annotations: '[]', tools: '[]', other_tools: '', customTitle });
         const fd = express({
             dynamic_photos: {
@@ -2578,18 +2581,25 @@ describe('buildOiDocDefinition — OI express', () => {
                 photo_container_express_carte_preview_container: [meta('c1', 'Carroyage 50 m'), meta('c2')],
             },
         });
-        // Contenus distincts : des images identiques sont dédoublonnées.
-        const img = (n: number): string => `data:image/jpeg;base64,/9j/${n}`;
-        const dd = buildOiDocDefinition(collect(fd, { o1: img(1), o2: img(2), o3: img(3), c1: img(4), c2: img(5) }), { format: 'a4' });
+        // En-têtes PNG réels (1500×2000, portrait) : les objectifs vont par deux.
+        const png = (n: number, w: number, h: number): string => {
+            const u32 = (v: number): number[] => [(v >>> 24) & 255, (v >> 16) & 255, (v >> 8) & 255, v & 255];
+            return `data:image/png;base64,${Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52, ...u32(w), ...u32(h), 8, 2, 0, 0, 0, n]).toString('base64')}`;
+        };
+        const dd = buildOiDocDefinition(
+            collect(fd, { o1: png(1, 1500, 2000), o2: png(2, 1500, 2000), o3: png(3, 1500, 2000), c1: png(4, 1500, 2000), c2: png(5, 4000, 3000) }),
+            { format: 'a4' },
+        );
         const json = JSON.stringify(dd);
         for (const t of ['Objectif 1', 'Objectif 2', 'Objectif 3', 'Carroyage 50 m', 'Carte 2']) expect(json).toContain(`"text":"${t}"`);
         expect(json).not.toContain('"text":"Adversaire'); // pas de photo adversaire : pas de case vide
-        // Plans en pleine largeur, photos sur deux colonnes.
-        const fits = [...json.matchAll(/"image":"(\w+)","fit":\[([\d.]+),/g)].map((m) => [m[1], Number(m[2])] as const);
-        expect(fits.map(([id]) => id)).toEqual(['o1', 'o2', 'o3', 'c1', 'c2']);
-        const widths = Object.fromEntries(fits);
-        expect(widths.c1).toBe(widths.c2);
-        expect(widths.o1! * 2).toBeLessThan(widths.c1!);
+        const pages = dd.content as Content[];
+        const imagesOn = (page: Content): string[] => [...JSON.stringify(page).matchAll(/"image":"(\w+)"/g)].map((m) => m[1] as string);
+        const photoPages = pages.filter((page) => imagesOn(page).length > 0);
+        expect(photoPages.map(imagesOn)).toEqual([['o1', 'o2'], ['o3'], ['c1'], ['c2']]);
+        // Les photos commencent sur une nouvelle page, jamais sous l'ordre.
+        expect((photoPages[0] as { pageBreak?: string }).pageBreak).toBe('before');
+        expect(JSON.stringify(photoPages[0])).toContain('PHOTOS 1-2/5');
     });
 
     it('page 1 de l’express : mention CONFIDENTIEL en pied de page (pas de page de garde)', () => {

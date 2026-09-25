@@ -20,10 +20,12 @@
  * lignes 69-92). Port du langage visuel : la STRUCTURE (14 sections de
  * l'OI TacSuite) reste la nôtre, portée par `document-builder.ts`.
  */
-import type { Content, CustomTableLayout, TableCell } from 'pdfmake/interfaces';
+import type { Column, Content, CustomTableLayout, TableCell } from 'pdfmake/interfaces';
 
-import { mm, pageGeometry, photoPageGalleryHeightMm, type OiPdfPalette } from './theme.js';
+import { estimateCharsPerLine, estimateWrappedLines, mm, pageGeometry, PDF_H2_BLOCK_PT, type OiPdfPalette } from './theme.js';
 import { breakLongTokens } from './text-utils.js';
+import type { ImageSize } from './image-size.js';
+import { layoutGallery, photoShape, type GalleryPhoto, type GallerySlot, type PhotoShape } from '@shared/photo-layout.js';
 import type { OiPdfEditAnchor, OiPhotoMeta } from '@shared/types/contracts.js';
 
 // --- Édition en place depuis l'aperçu PDF (index d'ancrage, mission ---------
@@ -896,48 +898,146 @@ export function galleryToolsReservePt(tools: readonly string[], boxWidthPt: numb
     return total + mm(2);
 }
 
-/** Contenu empilé d'UNE photo de galerie : photo+légende (`figure`, sans
- *  cadre) puis, si présents, les badges d'outils premium (`layoutToolBadges`,
- *  fond or translucide, largeur variable en flow — port modernisé de
- *  `.tool-badge`, OrderPdfStyle.kt:727-733 côté v2). `boxPt[0]` est la
- *  largeur RÉELLE de la photo : les badges utilisent cette même largeur comme
- *  conteneur (jamais de repli approximatif ici, contrairement à
- *  `pillRow`/`document-builder.ts`, cf. JSDoc `layoutToolBadges`). */
-function galleryPhotoStack(
-    meta: OiPhotoMeta,
-    dataUrl: string,
-    boxPt: [number, number],
-    p: OiPdfPalette,
-    baseTitle: string,
-): Content[] {
-    const captionText = meta.customTitle || `${baseTitle} - Détail`;
-    const allTools = galleryAllTools(meta);
-    const items: Content[] = [figure(dataUrl, boxPt, p, captionText)];
-    if (allTools.length > 0) {
-        items.push(layoutToolBadges(allTools, p, p.warning, boxPt[0]));
+/** Espace entre deux images d'une page de galerie (pt). */
+const GALLERY_GAP_PT = 12;
+const GALLERY_CAPTION_FONT_PT = 9;
+/** Avance de ligne d'une légende (JetBrains Mono : 1,32 em × interligne 1,45). */
+const GALLERY_CAPTION_LINE_PT = GALLERY_CAPTION_FONT_PT * 1.32 * 1.45;
+const GALLERY_LOW_RES_FONT_PT = 8;
+/** Mention imprimée sous une image que sa définition empêche d'agrandir (décision 44). */
+export const LOW_RES_MENTION = 'basse définition';
+
+/** Id des captures de carte (`medias.ts`, fichier `carte_…`) : un plan est toujours seul sur sa page. */
+export function isPlanPhotoId(id: string): boolean {
+    return id.startsWith('img_plan_');
+}
+
+/** Une image de galerie, prête à placer. */
+export interface GalleryEntry {
+    id: string;
+    /** Clé du dictionnaire d'images pdfmake (ou data URL). */
+    ref: string;
+    caption: string;
+    tools: readonly string[];
+    /** Dimensions lues dans l'image ; `null` : forme inconnue (repli 4:3, jamais déformée). */
+    size: ImageSize | null;
+    isPlan: boolean;
+}
+
+/** Largeur d'une cellule selon la forme (mêmes règles que `layoutGallery`,
+ *  pages OI toujours paysage) : sert seulement à réserver la légende. */
+function galleryCellWidthPt(shape: PhotoShape, widthPt: number): number {
+    if (shape === 'portrait') return (widthPt - GALLERY_GAP_PT) / 2;
+    if (shape === 'ecran') return (widthPt - 3 * GALLERY_GAP_PT) / 4;
+    return widthPt;
+}
+
+/** Hauteur réservée sous une image : légende repliée, mention « basse
+ *  définition » (inconnue avant la mise en page, toujours réservée) et badges. */
+function galleryCaptionReservePt(entry: GalleryEntry, cellWidthPt: number): number {
+    const lines = estimateWrappedLines(entry.caption, estimateCharsPerLine(GALLERY_CAPTION_FONT_PT, cellWidthPt));
+    return 5 + lines * GALLERY_CAPTION_LINE_PT + GALLERY_LOW_RES_FONT_PT * 1.32 * 1.45 + galleryToolsReservePt(entry.tools, cellWidthPt);
+}
+
+function galleryInput(e: GalleryEntry): GalleryPhoto {
+    return { id: e.id, widthPx: e.size?.widthPx ?? 0, heightPx: e.size?.heightPx ?? 0, isPlan: e.isPlan };
+}
+
+/** Contenu d'une cellule : photo et légende (`figure`), mention « basse définition », badges d'outils. */
+function galleryCell(e: GalleryEntry, slot: GallerySlot, p: OiPdfPalette): Content[] {
+    const items: Content[] = [figure(e.ref, [slot.width, slot.height], p, e.caption)];
+    if (slot.lowRes) {
+        items.push({ text: LOW_RES_MENTION, fontSize: GALLERY_LOW_RES_FONT_PT, color: p.warning, alignment: 'center' });
+    }
+    if (e.tools.length > 0) {
+        items.push(layoutToolBadges([...e.tools], p, p.warning, slot.width));
     }
     return items;
 }
 
+/** Corps d'une page : les rangées de `layoutGallery` (une rangée = même `y`),
+ *  chaque image dans une colonne à sa largeur exacte, décalée comme calculé. */
+function galleryPageBody(slots: GallerySlot[], byId: Map<string, GalleryEntry>, p: OiPdfPalette): Content {
+    const rows: GallerySlot[][] = [];
+    for (const slot of slots) {
+        const last = rows[rows.length - 1];
+        if (last && last[0]?.y === slot.y) last.push(slot);
+        else rows.push([slot]);
+    }
+    return {
+        stack: rows.map((row, i): Content => {
+            const columns: Column[] = [];
+            let x = 0;
+            for (const slot of row) {
+                const entry = byId.get(slot.id);
+                if (!entry) continue;
+                if (slot.x - x > 0.5) columns.push({ width: slot.x - x, text: '' });
+                columns.push({ width: slot.width, stack: galleryCell(entry, slot, p) });
+                x = slot.x + slot.width;
+            }
+            return { columns, columnGap: 0, unbreakable: true, margin: [0, i === 0 ? 0 : GALLERY_GAP_PT, 0, 0] };
+        }),
+    };
+}
+
 /**
- * `galleryPages` — port de `OrderHtmlGallery.photoPages`
- * (OrderHtmlPhotos.kt:69-92), REDESIGN « une photo par page » (directive
- * Nico 2026-08-10, mission P2 : écart assumé E4 précédent — « les images
- * doubles prennent trop peu d'espace » — inversé : chaque photo occupe
- * DÉSORMAIS la pleine largeur utile de sa propre page, ratio préservé,
- * jamais déformée ni rognée, légende + badges dessous). `photos` vide, ou
- * dont AUCUN `id` n'a d'entrée dans `photosBase64`, -> `[]` (section omise,
- * §3.4.1 règle 1). Une photo dont l'`id` est absent de `photosBase64` est
- * ignorée silencieusement (jamais de figure vide).
+ * Galerie ADAPTATIVE (décision 44, audit A7) : `layoutGallery`
+ * (`shared/photo-layout.ts`, commune à PC-Tac) place les images page par page
+ * — plan ou paysage seul, 2 portraits côte à côte, 4 captures de téléphone,
+ * panoramas empilés, ordre de saisie gardé, jamais agrandie au-delà de
+ * 150 ppi (« basse définition » dessous). Chaque page porte le titre `h2`
+ * suivi de « PHOTO i/N » ou « PHOTOS i-j/N » (jamais « (SUITE) », mission R6).
  *
- * CONVENTION DE SAUT DE PAGE (au choix du contrat, documentée ici et
- * assertée par le test dédié) : chaque page retournée porte
- * `pageBreak: 'before'` sur son nœud racine, SAUF LA TOUTE PREMIÈRE page du
- * tableau. `galleryPages()` est ainsi autonome — quel que soit l'endroit où
- * `document-builder.ts` insère son tableau dans le document final, ses
- * propres pages ne se mélangent jamais entre elles ; c'est à l'appelant de
- * gérer, comme pour toute autre section, l'éventuel saut de page AVANT la
- * toute première page de la galerie.
+ * CONVENTION DE SAUT DE PAGE (inchangée) : `pageBreak: 'before'` sur toutes
+ * les pages SAUF la première ; l'appelant gère le saut avant la galerie.
+ */
+export function adaptiveGalleryPages(
+    title: string,
+    entries: readonly GalleryEntry[],
+    p: OiPdfPalette,
+    geo: ReturnType<typeof pageGeometry>,
+): Content[] {
+    if (entries.length === 0) {
+        return [];
+    }
+    const W = geo.contentWidthPt;
+    const box = { width: W, height: geo.contentHeightPt - PDF_H2_BLOCK_PT };
+    // Une réserve de légende par suite d'images de même forme (une page ne
+    // mélange jamais deux formes) : la place des badges d'une photo de porte
+    // ne rétrécit pas les portraits voisins. Plancher : l'image garde mm(40).
+    const slotsPages: GallerySlot[][] = [];
+    let i = 0;
+    while (i < entries.length) {
+        const shape = photoShape(galleryInput(entries[i] as GalleryEntry));
+        const run: GalleryEntry[] = [];
+        while (i < entries.length && photoShape(galleryInput(entries[i] as GalleryEntry)) === shape) {
+            run.push(entries[i] as GalleryEntry);
+            i++;
+        }
+        const cellWidth = galleryCellWidthPt(shape, W);
+        const reserve = Math.min(box.height - mm(40), Math.max(...run.map((e) => galleryCaptionReservePt(e, cellWidth))));
+        slotsPages.push(...layoutGallery(run.map(galleryInput), box, { gap: GALLERY_GAP_PT, captionHeight: reserve }));
+    }
+    const byId = new Map(entries.map((e) => [e.id, e]));
+    let shown = 0;
+    return slotsPages.map((slots, pageIndex) => {
+        const first = shown + 1;
+        shown += slots.length;
+        const suffix = slots.length === 1 ? `— PHOTO ${first}/${entries.length}` : `— PHOTOS ${first}-${shown}/${entries.length}`;
+        return {
+            stack: [h2(title, p, W, { suffix }), galleryPageBody(slots, byId, p)],
+            pageBreak: pageIndex === 0 ? undefined : 'before',
+        };
+    });
+}
+
+/**
+ * Galerie d'un champ photo de l'OI Complet (légende = titre saisi, sinon
+ * « <titre> - Détail » ; badges d'outils d'effraction) — cf.
+ * `adaptiveGalleryPages`. `photos` vide, ou dont AUCUN `id` n'a d'entrée dans
+ * `photosBase64`, -> `[]` (section omise, §3.4.1 règle 1) ; une photo absente
+ * de `photosBase64` est ignorée (jamais de figure vide). `sizeOf` donne les
+ * dimensions lues dans chaque image (`image-size.ts`).
  */
 export function galleryPages(
     title: string,
@@ -945,64 +1045,20 @@ export function galleryPages(
     photosBase64: Record<string, string>,
     p: OiPdfPalette,
     geo: ReturnType<typeof pageGeometry>,
+    sizeOf: (id: string) => ImageSize | null = () => null,
 ): Content[] {
-    const resolved: Array<{ meta: OiPhotoMeta; dataUrl: string }> = [];
+    const entries: GalleryEntry[] = [];
     for (const meta of photos) {
-        const dataUrl = photosBase64[meta.id];
-        if (dataUrl !== undefined) {
-            resolved.push({ meta, dataUrl });
-        }
+        const ref = photosBase64[meta.id];
+        if (ref === undefined) continue;
+        entries.push({
+            id: meta.id,
+            ref,
+            caption: meta.customTitle || `${title} - Détail`,
+            tools: galleryAllTools(meta),
+            size: sizeOf(meta.id),
+            isPlan: isPlanPhotoId(meta.id),
+        });
     }
-    if (resolved.length === 0) {
-        return [];
-    }
-
-    // BF.REFIX (round 1, point 6) — `photoPageGalleryHeightMm` réserve la
-    // place du titre `h2` mais PAS celle de la légende ajoutée par
-    // `figure()`/`galleryPhotoStack` SOUS la photo (`meta.customTitle ||
-    // "<titre> - Détail"`, TOUJOURS non vide) : le cadre photo était donc
-    // dimensionné à la hauteur UTILE ENTIÈRE de la page, garantissant un
-    // débordement de la légende sur CHAQUE page de galerie (reproduit sur
-    // `recipe-data.json`, légende « Transport PSIG -> PR » orpheline seule
-    // en page suivante). Réserve conservative pour 2 lignes de légende
-    // (typographie fine, `fontSize:9`) + sa marge `[0,5,0,0]` — le filet
-    // `unbreakable` de `figure()` ci-dessus couvre le cas résiduel d'une
-    // légende encore plus longue.
-    //
-    // Bug PDF-GALLERY-16-9 : `photoPageGalleryHeightMm` prenait auparavant
-    // un `landscape: boolean` figé à `true`, IDENTIQUE en A4 et en 16:9 —
-    // alors que `geo.contentHeightPt` (déjà calculé par l'appelant pour LE
-    // format demandé) diffère de 56,3 pt entre les deux (541,42 pt en A4,
-    // 485,15 pt en 16:9). Le budget photo était donc dimensionné pour l'A4
-    // et débordait systématiquement en 16:9 (page blanche + page orpheline
-    // sans titre). Dérivé maintenant de `geo.contentHeightPt`, correct par
-    // construction dans les deux formats.
-    const GALLERY_CAPTION_RESERVE_PT = mm(10);
-    const baseGalleryHeightPt = mm(photoPageGalleryHeightMm(geo.contentHeightPt)) - GALLERY_CAPTION_RESERVE_PT;
-
-    const pages: Content[] = resolved.map(({ meta, dataUrl }, pageIndex) => {
-        // Mission R6 : interdiction ABSOLUE de « (SUITE) » (garde inverse C1,
-        // `verify-structure.mjs`) désormais SANS exception galerie — chaque
-        // page de galerie affiche un COMPTEUR « PHOTO i/N » (i = 1-based),
-        // jamais une continuation de titre.
-        const pageSuffix = `— PHOTO ${pageIndex + 1}/${resolved.length}`;
-
-        // Axe A3 (SPEC-PDF-DEFINITIF §5, correctif D3) : la hauteur du cadre
-        // photo DÉDUIT la place des badges d'outils, à la largeur de cadre
-        // réelle (pleine largeur, 1 photo/page). Plancher de sécurité
-        // `mm(40)` : le cadre reste toujours exploitable — « la photo cède de
-        // la hauteur, les badges restent entiers et lisibles » (directive).
-        const toolsReservePt = galleryToolsReservePt(galleryAllTools(meta), geo.contentWidthPt);
-        const galleryHeightPt = Math.max(mm(40), baseGalleryHeightPt - toolsReservePt);
-
-        const body: Content = {
-            stack: galleryPhotoStack(meta, dataUrl, [geo.contentWidthPt, galleryHeightPt], p, title),
-        };
-
-        return {
-            stack: [h2(title, p, geo.contentWidthPt, { suffix: pageSuffix }), body],
-            pageBreak: pageIndex === 0 ? undefined : 'before',
-        };
-    });
-    return pages;
+    return adaptiveGalleryPages(title, entries, p, geo);
 }
