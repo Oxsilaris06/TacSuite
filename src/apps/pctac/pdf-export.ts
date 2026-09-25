@@ -562,6 +562,24 @@ async function renderReport(data: ReportData, settings: RenderSettings): Promise
     };
 
     /**
+     * Mo6 — une section commence sur la page en cours, sous la précédente,
+     * quand elle y tient ENTIÈRE (page portrait) ; sinon sur une page neuve.
+     * Plus de page « Forces amies » de trois lignes.
+     */
+    const SECTION_GAP = 14;
+    const startSection = (title: string, neededHeight: number): void => {
+        const page = context.currentPage;
+        const portrait = page !== null && page.getWidth() < page.getHeight();
+        if (portrait && context.y - SECTION_GAP - 30 - neededHeight >= context.margin) {
+            context.y -= SECTION_GAP;
+            pdfPage().drawText(title, { x: context.margin, y: context.y, size: 14, font: titleFont, color: themeColors.text });
+            context.y -= 30;
+            return;
+        }
+        addNewPage(title);
+    };
+
+    /**
      * Décision 42 — image ramenée à la définition du profil de sortie pour sa
      * taille imprimée (jamais agrandie), JPEG à la qualité du profil ; aux
      * essais suivants du budget « Partage », réduite et recompressée. Garde
@@ -771,26 +789,46 @@ async function renderReport(data: ReportData, settings: RenderSettings): Promise
     const drawFiches = async (side: FicheSide, items: typeof adversaries, countLine: string): Promise<void> => {
         if (items.length === 0) return;
         const chapter = `FICHIER ${mode[side].plural.toUpperCase()}`;
-        addNewPage(chapter);
-        if (countLine) {
-            pdfPage().drawText(sanitizeWinAnsi(countLine), { x: context.margin, y: context.y, size: 9, font, color: themeColors.text });
-            context.y -= 22;
-        }
         const hasStatus = statusChoices(side, modeId).length > 0;
         const statusWord = side === 'host' && (modeId === 'tp' || modeId === 'evenement') ? 'Triage' : 'Statut';
         const resolveLink = (id: string): string => {
             const adv = adversaries.find((a) => a.id === id);
             return adv ? ficheTitle('adv', modeId, adv) : id;
         };
-        for (const item of items) {
-            if (context.y < 180) addNewPage(`${chapter} (SUITE)`);
+        // Paragraphes de chaque fiche, mesurés AVANT le dessin : la hauteur
+        // du chapitre décide s'il suit la section précédente (Mo6).
+        const fiches = items.map((item) => {
             const status = statusMeta(side, modeId, String(item.status || ''));
+            const hasPhoto = typeof item.photo === 'string' && item.photo !== '';
+            const paras: { text: string; bold: boolean; gap: number }[] = [];
+            // Toujours écrit en couleur de texte : la couleur du bandeau
+            // seule tombe sous 2:1 en thème clair (jaune, vert).
+            if (hasStatus) paras.push({ text: `${statusWord} : ${item.status ? status.label : 'N/C'}`, bold: false, gap: 0 });
+            if (side === 'adv' && modeId === 'evenement' && item[TYPE_MENACE_KEY]) paras.push({ text: `Type : ${String(item[TYPE_MENACE_KEY])}`, bold: false, gap: 0 });
+            filledSections(side, modeId, item, new Date(), resolveLink).forEach((sec) => {
+                paras.push({ text: sec.title.toUpperCase(), bold: true, gap: 4 });
+                sec.rows.forEach((r) => paras.push({ text: `${r.label} : ${r.value}`, bold: false, gap: 0 }));
+            });
+            const textWidth = A4_PORTRAIT[0] - 2 * context.margin - (hasPhoto ? 140 : 5);
+            const textHeight = paras.reduce((h, p) => h + p.gap + wrapText(p.text, textWidth, p.bold ? fontBold : font, 9).length * 12, 0);
+            return { item, status, hasPhoto, paras, height: 25 + Math.max(hasPhoto ? 130 : 0, textHeight) + 16 };
+        });
+        startSection(chapter, (countLine ? 22 : 0) + fiches.reduce((h, f) => h + f.height, 0));
+        if (countLine) {
+            pdfPage().drawText(sanitizeWinAnsi(countLine), { x: context.margin, y: context.y, size: 9, font, color: themeColors.text });
+            context.y -= 22;
+        }
+        for (const { item, status, hasPhoto, paras, height } of fiches) {
+            // Une fiche qui tient dans la place restante n'est jamais coupée ;
+            // sinon, peu de place : elle commence sur une page neuve.
+            if (context.y - height < context.margin && context.y < 180) addNewPage(`${chapter} (SUITE)`);
+            const name = ficheTitle(side, modeId, item);
             pdfPage().drawRectangle({ x: context.margin, y: context.y - 5, width: context.pageWidth - 2 * context.margin, height: 20, color: themeColors.headerBg });
             const label = hasStatus && item.status ? sanitizeWinAnsi(status.label) : '';
             const labelWidth = label ? fontBold.widthOfTextAtSize(label, 10) + 12 : 0;
             // Titre tronqué (« … ») à la place restante : jamais sous le statut.
             const room = context.pageWidth - 2 * context.margin - 10 - labelWidth;
-            const title = fitTextToWidth(sanitizeWinAnsi(ficheTitle(side, modeId, item)), fontBold, 11, room);
+            const title = fitTextToWidth(sanitizeWinAnsi(name), fontBold, 11, room);
             pdfPage().drawText(title, { x: context.margin + 5, y: context.y + 2, size: 11, font: fontBold, color: themeColors.text });
             if (label) {
                 const labelX = context.pageWidth - context.margin - labelWidth + 7;
@@ -812,7 +850,6 @@ async function renderReport(data: ReportData, settings: RenderSettings): Promise
             context.y -= 25;
 
             const top = context.y;
-            const hasPhoto = typeof item.photo === 'string' && item.photo !== '';
             if (hasPhoto) await drawImageSafe(pdfPage(), item.photo, context.margin, context.y + 20, 120, 120);
             let x = context.margin + (hasPhoto ? 140 : 5);
             let y = context.y;
@@ -820,6 +857,12 @@ async function renderReport(data: ReportData, settings: RenderSettings): Promise
             const line = (text: string, bold = false): void => {
                 if (y < context.margin + 12) {
                     addNewPage(`${chapter} (SUITE)`);
+                    // Mo6 — fiche coupée : son nom est rappelé en tête de page.
+                    pdfPage().drawText(
+                        fitTextToWidth(sanitizeWinAnsi(`${name} (suite)`), fontBold, 10, context.pageWidth - 2 * context.margin - 10),
+                        { x: context.margin + 5, y: context.y, size: 10, font: fontBold, color: themeColors.text },
+                    );
+                    context.y -= 16;
                     x = context.margin + 5;
                     y = context.y;
                     photoOnPage = false;
@@ -827,19 +870,10 @@ async function renderReport(data: ReportData, settings: RenderSettings): Promise
                 pdfPage().drawText(text, { x, y, size: 9, font: bold ? fontBold : font, color: themeColors.text });
                 y -= 12;
             };
-            const width = (): number => context.pageWidth - context.margin - x;
-            const para = (text: string, bold = false): void => {
-                String(text).split(/\r?\n/).forEach((p) => wrapText(p, width(), bold ? fontBold : font, 9).forEach((l) => line(l, bold)));
-            };
-            // Toujours écrit en couleur de texte : la couleur du bandeau
-            // seule tombe sous 2:1 en thème clair (jaune, vert).
-            if (hasStatus) para(`${statusWord} : ${item.status ? status.label : 'N/C'}`);
-            if (side === 'adv' && modeId === 'evenement' && item[TYPE_MENACE_KEY]) para(`Type : ${String(item[TYPE_MENACE_KEY])}`);
-            filledSections(side, modeId, item, new Date(), resolveLink).forEach((sec) => {
-                y -= 4;
-                para(sec.title.toUpperCase(), true);
-                sec.rows.forEach((r) => para(`${r.label} : ${r.value}`));
-            });
+            for (const p of paras) {
+                y -= p.gap;
+                wrapText(p.text, context.pageWidth - context.margin - x, p.bold ? fontBold : font, 9).forEach((l) => line(l, p.bold));
+            }
             context.y = Math.min(photoOnPage ? top - 130 : y, y) - 16;
         }
     };
@@ -849,9 +883,15 @@ async function renderReport(data: ReportData, settings: RenderSettings): Promise
     // --- 4. AMIS ---
     step('forces amies');
     if (friends.length > 0) {
-        addNewPage("FORCES AMIES / UNITÉS");
         const fCols: [number, number, number] = [150, 150, 215];
         const fHeaders = ["Nom / Prénom", "Unité", "Mission / Contact"];
+        // M3 — la mission est repliée (hauteur variable) au lieu d'être
+        // tronquée par « … » ; hauteurs mesurées avant le dessin (Mo6).
+        const fRows = friends.map((f) => {
+            const missionLines = wrapText(`${f.mission || ''} ${f.tph ? '['+String(f.tph)+']':''}`, fCols[2] - 5, font, 9);
+            return { f, missionLines, rowHeight: Math.max(1, missionLines.length) * context.lineHeight + 8 };
+        });
+        startSection("FORCES AMIES / UNITÉS", 25 + fRows.reduce((h, r) => h + r.rowHeight, 0));
 
         const drawFHeader = (): void => {
             pdfPage().drawRectangle({ x: context.margin, y: context.y - 5, width: context.pageWidth - 2*context.margin, height: 20, color: themeColors.headerBg });
@@ -864,11 +904,7 @@ async function renderReport(data: ReportData, settings: RenderSettings): Promise
         };
         drawFHeader();
 
-        for (const f of friends) {
-            // M3 — la mission est repliée (hauteur variable) au lieu
-            // d'être tronquée par « … ».
-            const missionLines = wrapText(`${f.mission || ''} ${f.tph ? '['+String(f.tph)+']':''}`, fCols[2] - 5, font, 9);
-            const rowHeight = Math.max(1, missionLines.length) * context.lineHeight + 8;
+        for (const { f, missionLines, rowHeight } of fRows) {
             if (context.y - rowHeight < context.margin) { addNewPage("FORCES AMIES (SUITE)"); drawFHeader(); }
             let cx = context.margin + 5;
             // C16 / B-3 — nom et unité : colonnes à largeur FIXE, tronquées
@@ -986,11 +1022,18 @@ async function renderReport(data: ReportData, settings: RenderSettings): Promise
         if (data.pins) {
             const pins = data.pins;
             if (pins.length > 0) {
-                addNewPage('PLAN TACTIQUE - LISTE DES POINTS');
                 // MGRS et case du carroyage (décision Nico 2026-09-24) : ce qu'on
                 // annonce à la radio ; décimal gardé pour les SIG.
                 const pCols: [number, number, number, number, number, number] = [140, 130, 40, 72, 72, 61]; // Label, MGRS, Case, Latitude, Longitude, Diamètre
                 const pHeaders = ['Label', 'MGRS', 'Case', 'Latitude', 'Longitude', 'Diam. (m)'];
+                // M3 — le libellé est replié (hauteur variable) au lieu d'être
+                // tronqué par « … » : le point tel qu'annoncé à la radio ne
+                // doit pas perdre son intitulé. Hauteurs mesurées avant (Mo6).
+                const pinRows = pins.filter((pin) => !!pin && typeof pin === 'object').map((pin) => {
+                    const labelLines = wrapText(pin.label, pCols[0] - 5, font, 9);
+                    return { pin, labelLines, rowHeight: Math.max(1, labelLines.length) * context.lineHeight + 6 };
+                });
+                startSection('PLAN TACTIQUE - LISTE DES POINTS', 25 + pinRows.reduce((h, r) => h + r.rowHeight, 0));
 
                 const drawPinHeader = (): void => {
                     pdfPage().drawRectangle({ x: context.margin, y: context.y - 5, width: context.pageWidth - 2 * context.margin, height: 20, color: themeColors.headerBg });
@@ -1006,13 +1049,7 @@ async function renderReport(data: ReportData, settings: RenderSettings): Promise
                 const fmtCoord = (n: unknown): string => (typeof n === 'number' && isFinite(n)) ? n.toFixed(6) : 'N/C';
                 const fmtDiam = (n: unknown): string => (typeof n === 'number' && isFinite(n)) ? Math.round(n).toString() : '-';
 
-                for (const pin of pins) {
-                    if (!pin || typeof pin !== 'object') continue;
-                    // M3 — le libellé est replié (hauteur variable) au lieu
-                    // d'être tronqué par « … » : le point tel qu'annoncé à
-                    // la radio ne doit pas perdre son intitulé.
-                    const labelLines = wrapText(pin.label, pCols[0] - 5, font, 9);
-                    const rowHeight = Math.max(1, labelLines.length) * context.lineHeight + 6;
+                for (const { pin, labelLines, rowHeight } of pinRows) {
                     if (context.y - rowHeight < context.margin) { addNewPage('PLAN TACTIQUE - LISTE DES POINTS (SUITE)'); drawPinHeader(); }
                     let px = context.margin + 5;
                     labelLines.forEach((line, i) => {
@@ -1046,8 +1083,21 @@ async function renderReport(data: ReportData, settings: RenderSettings): Promise
     // --- 7. JOURNAL DES ACTIONS PC-TAC (entrées auto, en dernier) ---
     step('journal des actions');
     if (carteLogs.length > 0) {
-        addNewPage('JOURNAL DES ACTIONS PC-TAC');
         const cCols: [number, number] = [70, 445]; // Heure, Action
+        const actionOf = (entry: (typeof carteLogs)[number]): string => {
+            const text = (entry.remarques || '').trim();
+            return entry.pax && entry.pax !== 'Carte' && !text.toLowerCase().startsWith(entry.pax.toLowerCase())
+                ? `${entry.pax} ${text}`
+                : text;
+        };
+        // Hauteur mesurée avant le dessin (Mo6) : séparateurs de jour compris.
+        let measuredDate: string | undefined;
+        const journalHeight = carteLogs.reduce((h, entry) => {
+            const daySep = !!entry.date && entry.date !== measuredDate;
+            measuredDate = entry.date;
+            return h + Math.max(1, wrapText(actionOf(entry), cCols[1] - 10, font, 9).length) * context.lineHeight + 10 + (daySep ? 18 : 0);
+        }, 25);
+        startSection('JOURNAL DES ACTIONS PC-TAC', journalHeight);
         const drawCarteHeader = (): void => {
             pdfPage().drawRectangle({ x: context.margin, y: context.y - 5, width: context.pageWidth - 2 * context.margin, height: 20, color: themeColors.headerBg });
             pdfPage().drawText('Heure', { x: context.margin + 5, y: context.y + 2, size: 9, font: fontBold, color: themeColors.text });
@@ -1058,12 +1108,7 @@ async function renderReport(data: ReportData, settings: RenderSettings): Promise
 
         let prevCarteDate: string | undefined;
         for (const entry of carteLogs) {
-            let actionText = (entry.remarques || '').trim();
-            if (entry.pax && entry.pax !== 'Carte' && !actionText.toLowerCase().startsWith(entry.pax.toLowerCase())) {
-                actionText = `${entry.pax} ${actionText}`;
-            }
-
-            const lines = wrapText(actionText, cCols[1] - 10, font, 9);
+            const lines = wrapText(actionOf(entry), cCols[1] - 10, font, 9);
             const daySep = entry.date && entry.date !== prevCarteDate;
             prevCarteDate = entry.date;
             const rowHeight = Math.max(1, lines.length) * context.lineHeight + 10;
