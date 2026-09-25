@@ -95,6 +95,7 @@ import {
     PHOTOS_KEY,
 } from '@pctac/config.js';
 import { undoableDelete, undoableDeleteLog, purgeCollectionImages } from '@pctac/delete-undo.js';
+import { resetWithArchive } from '@pctac/reset-flow.js';
 import { GPX_INDEX_KEY, PINS_KEY } from '@pctac/planmap/constants.js';
 import { scopedKey } from '@pctac/modes.js';
 import { initImportScopeModal } from '@pctac/import-scope.js';
@@ -393,61 +394,60 @@ document.addEventListener('DOMContentLoaded', async () => {
     const resetBtn = document.getElementById('resetDataDockBtn');
     if (resetBtn) resetBtn.onclick = () => UI.showResetModal();
 
-    const confirmResetBtn = document.getElementById('confirmResetBtn');
-    if (confirmResetBtn) {
-        confirmResetBtn.onclick = async () => {
-            // Collecte AVANT effacement des blobs IndexedDB de la situation
-            // courante : les images et les traces GPX y vivent en magasin
-            // PARTAGÉ. Un `clear()` global effacerait celles des trois autres
-            // situations — on ne retire donc que ce que la situation effacée
-            // référence, identifiant par identifiant.
-            const imgIds = new Set<string>();
-            [ADVERSARIES_KEY, HOSTAGES_KEY, PHOTOS_KEY].forEach((k) => {
-                Storage.loadCollection(k).forEach((item) => {
-                    if (item && item.id) {
-                        if (item.hasImage) imgIds.add(item.id);
-                        imgIds.add(item.id + '_sync');
-                        imgIds.add(item.id + '_orig'); // photo annotée (décision 25)
-                    }
-                });
-            });
-            try {
-                const pins = Persist.get<{ photoId?: string }[]>(scopedKey(PINS_KEY), { validator: Array.isArray, fallback: [] }) || [];
-                pins.forEach((pin) => { if (pin && pin.photoId) imgIds.add(pin.photoId); });
-            } catch { /* best-effort */ }
-            let gpxIds: string[] = [];
-            try {
-                const raw = localStorage.getItem(scopedKey(GPX_INDEX_KEY));
-                const arr: unknown = raw ? JSON.parse(raw) : [];
-                if (Array.isArray(arr)) {
-                    gpxIds = arr
-                        .map((t) => (t && typeof (t as { id?: unknown }).id === 'string' ? (t as { id: string }).id : ''))
-                        .filter((id) => id !== '');
+    // Décision 28 — le RESET propose deux voies : exporter l'archive puis
+    // effacer (l'échec d'export n'efface RIEN), ou effacer sans archive.
+    const performReset = async (): Promise<void> => {
+        // Collecte AVANT effacement des blobs IndexedDB de la situation
+        // courante : les images et les traces GPX y vivent en magasin
+        // PARTAGÉ. Un `clear()` global effacerait celles des trois autres
+        // situations — on ne retire donc que ce que la situation effacée
+        // référence, identifiant par identifiant.
+        const imgIds = new Set<string>();
+        [ADVERSARIES_KEY, HOSTAGES_KEY, PHOTOS_KEY].forEach((k) => {
+            Storage.loadCollection(k).forEach((item) => {
+                if (item && item.id) {
+                    if (item.hasImage) imgIds.add(item.id);
+                    imgIds.add(item.id + '_sync');
+                    imgIds.add(item.id + '_orig'); // photo annotée (décision 25)
                 }
-            } catch { /* best-effort */ }
-
-            Storage.clearAllData();
-            try { if (imgIds.size) await ImageStore.deleteMany([...imgIds]); } catch (e) { console.error('[PC TAC] suppression images IDB échec:', e); }
-            for (const id of gpxIds) {
-                try { await GpxStore.delete(id); } catch (e) { console.error('[PC TAC] suppression trace GPX échec:', e); }
+            });
+        });
+        try {
+            const pins = Persist.get<{ photoId?: string }[]>(scopedKey(PINS_KEY), { validator: Array.isArray, fallback: [] }) || [];
+            pins.forEach((pin) => { if (pin && pin.photoId) imgIds.add(pin.photoId); });
+        } catch { /* best-effort */ }
+        let gpxIds: string[] = [];
+        try {
+            const raw = localStorage.getItem(scopedKey(GPX_INDEX_KEY));
+            const arr: unknown = raw ? JSON.parse(raw) : [];
+            if (Array.isArray(arr)) {
+                gpxIds = arr
+                    .map((t) => (t && typeof (t as { id?: unknown }).id === 'string' ? (t as { id: string }).id : ''))
+                    .filter((id) => id !== '');
             }
+        } catch { /* best-effort */ }
 
-            // Reset des champs du formulaire principal
-            ['lieu_input', 'remarques_input', 'heure_input'].forEach((id) => {
-                const el = document.getElementById(id) as HTMLInputElement | null;
-                if (el) el.value = '';
-            });
-            // Reset des formulaires restants (la fiche adverse/protégée n'a pas
-            // de formulaire permanent ; son brouillon est effacé avec la situation).
-            ['friend-form', 'photo-form'].forEach((fid) => {
-                const f = document.getElementById(fid) as HTMLFormElement | null;
-                if (f) f.reset();
-            });
+        Storage.clearAllData();
+        try { if (imgIds.size) await ImageStore.deleteMany([...imgIds]); } catch (e) { console.error('[PC TAC] suppression images IDB échec:', e); }
+        for (const id of gpxIds) {
+            try { await GpxStore.delete(id); } catch (e) { console.error('[PC TAC] suppression trace GPX échec:', e); }
+        }
 
-            UI.hideResetModal();
-            location.reload();
-        };
-    }
+        // Reset des champs du formulaire principal
+        ['lieu_input', 'remarques_input', 'heure_input'].forEach((id) => {
+            const el = document.getElementById(id) as HTMLInputElement | null;
+            if (el) el.value = '';
+        });
+        // Reset des formulaires restants (la fiche adverse/protégée n'a pas
+        // de formulaire permanent ; son brouillon est effacé avec la situation).
+        ['friend-form', 'photo-form'].forEach((fid) => {
+            const f = document.getElementById(fid) as HTMLFormElement | null;
+            if (f) f.reset();
+        });
+
+        UI.hideResetModal();
+        location.reload();
+    };
 
     const cancelCreatePaxBtn = document.getElementById('cancelCreatePaxBtn');
     if (cancelCreatePaxBtn) cancelCreatePaxBtn.onclick = () => UI.hideCreatePaxModal();
@@ -481,6 +481,23 @@ document.addEventListener('DOMContentLoaded', async () => {
     // §5.3 étape 19 — ARCHIVE TOUT-EN-UN (.pctac.zip). Import dynamique conservé
     // (main.js:436) — Archive n'est PAS parmi les imports statiques de §5.2.
     const { Archive } = await import('@pctac/archive.js');
+
+    // Décision 28 — voies du RESET (l'export doit réussir avant tout effacement).
+    const confirmResetExportBtn = document.getElementById('confirmResetExportBtn');
+    if (confirmResetExportBtn) {
+        confirmResetExportBtn.onclick = async () => {
+            showBusy("Export de l'archive avant RESET…");
+            const exported = await resetWithArchive(
+                () => Archive.exportZip(),
+                performReset,
+            ).finally(hideBusy);
+            if (!exported) {
+                toast("Export impossible : RIEN n'a été effacé. Réessaie ou choisis « Effacer sans archive ».", { kind: 'error' });
+            }
+        };
+    }
+    const confirmResetBtn = document.getElementById('confirmResetBtn');
+    if (confirmResetBtn) confirmResetBtn.onclick = () => { void performReset(); };
 
     const exportArchiveBtn = document.getElementById('exportJsonDockBtn');
     if (exportArchiveBtn) exportArchiveBtn.onclick = () => {
