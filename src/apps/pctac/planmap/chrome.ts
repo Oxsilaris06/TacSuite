@@ -54,14 +54,9 @@ import maplibregl from 'maplibre-gl';
 
 import { escHtml, GPX_PLAY_SPEEDS } from './constants.js';
 import { showBusy, hideBusy } from '@pctac/busy.js';
+import { parseCoordinateInput } from '@shared/coords.js';
+import { geocodeAddress, type GeocodeHit } from './search.js';
 import type { PlanMapInternal } from './types.js';
-
-/** Résultat Nominatim (endpoint `/search`) — seuls les champs lus par `_searchAddress`. */
-interface NominatimResult {
-    display_name: string;
-    lon: string;
-    lat: string;
-}
 
 /** Ferme le tiroir « Plus » (#plan_more_tools) s'il est ouvert. Fonction de
  *  module (pas de `this`) : appelée à la fois depuis `_bindUi` (clic extérieur,
@@ -350,11 +345,15 @@ export const ChromeMethods = {
         }
     },
 
-    // planMap.js:824-889 — INVARIANT §5.7 : jeton de séquence Nominatim. `seq`
-    // est incrémenté AVANT toute branche (GPS comprise), et le double test
+    // planMap.js:824-889 — INVARIANT §5.7 : jeton de séquence. `seq` est
+    // incrémenté AVANT toute branche (coordonnées comprises), et le double test
     // `if (seq !== this._searchSeq) return;` reste posé aux DEUX endroits
-    // (succès :856, échec :883) — une réponse Nominatim lente ne doit jamais
-    // écraser une recherche plus récente.
+    // (succès, échec) — une réponse réseau lente ne doit jamais écraser une
+    // recherche plus récente.
+    //
+    // Décision 35 (lot C) : la saisie est d'abord essayée comme COORDONNÉES
+    // (décimal, DMS, MGRS, case du carroyage actif) — aucun appel réseau dans
+    // ce cas ; sinon géocodage BAN puis Nominatim (`./search.js`).
     async _searchAddress(this: PlanMapInternal): Promise<void> {
         const input = document.getElementById('plan_address_input') as HTMLInputElement | null;
         const resultsBox = document.getElementById('plan_search_results');
@@ -362,67 +361,78 @@ export const ChromeMethods = {
         const q = input.value.trim();
         if (!q) return;
 
-        // Jeton de séquence incrémenté AVANT toute branche (GPS comprise) : une
-        // réponse Nominatim en vol d'une recherche précédente ne doit écraser NI un
-        // résultat d'adresse plus récent NI un centrage GPS direct.
+        // Jeton de séquence incrémenté AVANT toute branche : une réponse réseau
+        // en vol d'une recherche précédente ne doit écraser NI un résultat plus
+        // récent NI un centrage direct de coordonnées.
         const seq = (this._searchSeq = (this._searchSeq || 0) + 1);
 
-        // 1) Coordonnées GPS directes → on centre immédiatement
-        const gps = this._parseGps(q);
-        if (gps) {
-            // planMap.js:839 — garde de typage (`this.map` nullable), cf. note
-            // générale en tête de fichier ; jamais null en pratique.
-            if (this.map) this.map.flyTo({ center: [gps.lng, gps.lat], zoom: 17, speed: 1.4 });
-            this._placeSearchMarker(gps.lng, gps.lat, `GPS ${gps.lat.toFixed(5)}, ${gps.lng.toFixed(5)}`);
+        // 1) Coordonnées directes (décimal, DMS, MGRS, case) → centre immédiat.
+        const coord = parseCoordinateInput(q, this.overlays?.state?.grid ?? null);
+        if (coord) {
+            const centered = (lng: number, lat: number, label: string | null): void => {
+                if (this.map) this.map.flyTo({ center: [lng, lat], zoom: 17, speed: 1.4 });
+                this._placeSearchMarker(lng, lat, label);
+            };
+            if (coord.kind === 'bad-range') {
+                resultsBox.innerHTML = '<em style="color: var(--danger-red);">Coordonnées hors plage (latitude ±90°, longitude ±180°).</em>';
+                return;
+            }
+            if (coord.kind === 'cell-no-grid') {
+                resultsBox.innerHTML = '<em style="color: var(--text-muted);">Aucun carroyage actif : tracez-en un pour saisir une case.</em>';
+                return;
+            }
+            if (coord.kind === 'cell-out-of-grid') {
+                resultsBox.innerHTML = `<em style="color: var(--text-muted);">Case ${escHtml(coord.cell)} hors du carroyage.</em>`;
+                return;
+            }
+            if (coord.kind === 'cell') {
+                centered(coord.lng, coord.lat, `Case ${coord.cell}`);
+                resultsBox.innerHTML = `
+                    <div class="plan-search-result" style="padding: 8px; border-bottom: 1px solid var(--border-glass); display: flex; align-items: center; gap: 6px;">
+                        <span class="material-symbols-outlined" style="font-size: 16px; color: var(--ao-green);">grid_on</span>
+                        Case du carroyage : ${escHtml(coord.cell)}
+                    </div>`;
+                return;
+            }
+            // Point (décimal, DMS ou MGRS)
+            const label = coord.format === 'decimal'
+                ? `GPS ${coord.lat.toFixed(5)}, ${coord.lng.toFixed(5)}`
+                : coord.label;
+            centered(coord.lng, coord.lat, label);
+            const word = coord.format === 'mgrs' ? 'MGRS' : coord.format === 'dms' ? 'DMS' : 'GPS';
             resultsBox.innerHTML = `
                 <div class="plan-search-result" style="padding: 8px; border-bottom: 1px solid var(--border-glass); display: flex; align-items: center; gap: 6px;">
                     <span class="material-symbols-outlined" style="font-size: 16px; color: var(--ao-green);">my_location</span>
-                    Point GPS centré : ${gps.lat.toFixed(5)}, ${gps.lng.toFixed(5)}
+                    Point ${word} centré : ${escHtml(label)}
                 </div>`;
             return;
         }
 
-        // 2) Sinon, géocodage d'adresse via Nominatim
+        // 2) Géocodage d'adresse : BAN d'abord, Nominatim en repli.
         resultsBox.innerHTML = '<em style="color: var(--text-muted);">Recherche…</em>';
         try {
-            const url = `https://nominatim.openstreetmap.org/search?format=json&limit=5&q=${encodeURIComponent(q)}`;
-            const r = await fetch(url, { headers: { 'Accept-Language': 'fr' } });
-            if (!r.ok) throw new Error('HTTP ' + r.status);
-            // planMap.js:855 — typage du JSON externe (`any` interdit, SPEC-CONTRATS.md §0.1).
-            const list = (await r.json()) as NominatimResult[];
+            const hits = await geocodeAddress(q);
             if (seq !== this._searchSeq) return; // réponse périmée : ignorer
-            if (!list.length) {
+            if (!hits.length) {
                 resultsBox.innerHTML = '<em style="color: var(--text-muted);">Aucun résultat.</em>';
                 return;
             }
-            // Centrage + pointeur sur le 1er résultat (le plus probable)
-            const first = list[0];
-            // Garde de typage (noUncheckedIndexedAccess) : `list.length` déjà
-            // vérifié > 0 juste au-dessus, branche `!first` inatteignable —
-            // cf. SPEC-PLANMAP-SPLIT.md §6.3.
+            const first = hits[0];
             if (!first) return;
-            const flng = parseFloat(first.lon), flat = parseFloat(first.lat);
-            if (this.map) this.map.flyTo({ center: [flng, flat], zoom: 17, speed: 1.4 });
-            this._placeSearchMarker(flng, flat, first.display_name);
-            resultsBox.innerHTML = list.map((item, i) => `
+            if (this.map) this.map.flyTo({ center: [first.lng, first.lat], zoom: 17, speed: 1.4 });
+            this._placeSearchMarker(first.lng, first.lat, first.label);
+            resultsBox.innerHTML = hits.map((item: GeocodeHit, i: number) => `
                 <div class="plan-search-result" data-idx="${i}" style="padding: 6px 8px; cursor: pointer; border-bottom: 1px solid var(--border-glass);">
-                    ${escHtml(item.display_name)}
+                    ${escHtml(item.label)}
                 </div>
             `).join('');
             resultsBox.querySelectorAll<HTMLDivElement>('.plan-search-result').forEach((div) => {
                 div.onclick = () => {
-                    // planMap.js:873 — `String(...)` reproduit la coercion native de
-                    // `parseInt(undefined, 10)` (ToString → "undefined" → NaN), même
-                    // idiome que text-modal.ts (`_confirmTextModal`).
                     const idx = parseInt(String(div.dataset.idx), 10);
-                    const item = list[idx];
-                    // Garde de typage (noUncheckedIndexedAccess) : `data-idx` est posé
-                    // par nous-mêmes juste au-dessus sur les indices valides de `list`
-                    // — branche inatteignable, cf. SPEC-PLANMAP-SPLIT.md §6.3.
+                    const item = hits[idx];
                     if (!item) return;
-                    const lng = parseFloat(item.lon), lat = parseFloat(item.lat);
-                    if (this.map) this.map.flyTo({ center: [lng, lat], zoom: 17, speed: 1.4 });
-                    this._placeSearchMarker(lng, lat, item.display_name);
+                    if (this.map) this.map.flyTo({ center: [item.lng, item.lat], zoom: 17, speed: 1.4 });
+                    this._placeSearchMarker(item.lng, item.lat, item.label);
                     resultsBox.innerHTML = '';
                 };
                 div.onmouseover = () => { div.style.background = 'rgba(59, 130, 246, 0.15)'; };
@@ -430,7 +440,7 @@ export const ChromeMethods = {
             });
         } catch (e) {
             if (seq !== this._searchSeq) return; // échec d'une requête périmée : ignorer
-            console.error('[PlanMap] Nominatim échec:', e);
+            console.error('[PlanMap] Géocodage échec:', e);
             resultsBox.innerHTML = '<em style="color: var(--danger-red);">Erreur réseau. Vérifie ta connexion.</em>';
             // On purge le pointeur précédent pour éviter une localisation périmée
             if (this.searchMarker) { this.searchMarker.remove(); this.searchMarker = null; }
