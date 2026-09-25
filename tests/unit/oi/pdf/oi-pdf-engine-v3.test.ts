@@ -159,6 +159,33 @@ describe('normalizePhotos — voie de repli (jsdom, sans createImageBitmap/Offsc
         expect(toDataURLSpy).toHaveBeenCalledWith('image/jpeg', 0.92);
         getContextSpy.mockRestore();
     });
+
+    it("ré-encode TOUJOURS le fond PDF personnalisé, même petit — aucune traversée telle quelle (fuite EXIF/GPS, audit F09)", async () => {
+        // Le fond est choisi comme un FICHIER, jamais saisi par un champ photo :
+        // il n'a pas traversé le pipeline canvas. Sous le palier, il partait
+        // octet pour octet dans le PDF — coordonnées GPS comprises, relues dans
+        // l'image extraite du PDF lors de l'audit du 2026-09-25.
+        const drawImageSpy = vi.fn();
+        const toDataURLSpy = vi.fn(() => 'data:image/jpeg;base64,cmVlbmNvZGVk');
+        const getContextSpy = vi
+            .spyOn(HTMLCanvasElement.prototype, 'getContext')
+            .mockReturnValue({ drawImage: drawImageSpy } as unknown as CanvasRenderingContext2D);
+        vi.spyOn(HTMLCanvasElement.prototype, 'toDataURL').mockImplementation(toDataURLSpy);
+
+        const { normalizePhotos } = await loadEngineV3();
+        fakeImageState.naturalWidth = 800;
+        fakeImageState.naturalHeight = 600;
+        const petit = 'data:image/jpeg;base64,cGV0aXQtYXZlYy1leGlm';
+
+        const result = await normalizePhotos({ custom_pdf_background: petit, photo1: petit });
+
+        // Le fond est reconstruit par canvas — donc sans ses métadonnées —
+        // alors que la photo ordinaire, elle, garde sa traversée directe.
+        expect(result.custom_pdf_background).toBe('data:image/jpeg;base64,cmVlbmNvZGVk');
+        expect(result.photo1).toBe(petit);
+        expect(toDataURLSpy).toHaveBeenCalledTimes(1);
+        getContextSpy.mockRestore();
+    });
 });
 
 // ===========================================================================

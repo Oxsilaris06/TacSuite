@@ -98,7 +98,7 @@
  * seule).
  */
 import { Store, dbManager } from '@oi/init.js';
-import { compressImage } from '@oi/outils.js';
+import { compressImage, reencodeSansExif } from '@oi/outils.js';
 import { confirmDialog, toast } from '@shared/feedback.js';
 
 // ==================== MediaManager.js ====================
@@ -300,12 +300,17 @@ export async function handleCustomBackgroundChange(input: HTMLInputElement): Pro
     const file = input.files?.[0];
     if (file) {
         try {
-            await dbManager.putItem('custom_pdf_background', file);
+            // Ré-encodage canvas à l'ENTRÉE (audit PDF du 2026-09-25, F09) : ce
+            // fond partait tel quel dans le PDF, EXIF et coordonnées GPS
+            // compris. Il est refusé s'il n'est pas décodable — un fichier que
+            // le PDF n'aurait jamais pu afficher.
+            const fond = await reencodeSansExif(file);
+            await dbManager.putItem('custom_pdf_background', fond);
             updateCustomBgPreview();
             toast("Fond personnalisé enregistré.", { kind: 'success' });
         } catch (e) {
             console.error(e);
-            toast("Erreur lors de l'enregistrement du fond.", { kind: 'error' });
+            toast("Fond refusé : image illisible ou format non pris en charge.", { kind: 'error' });
         }
     }
     input.value = '';
