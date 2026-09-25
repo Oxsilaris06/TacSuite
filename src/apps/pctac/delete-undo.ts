@@ -146,13 +146,20 @@ function purgeReferences(id: string): void {
  */
 export async function purgeCollectionImages(key: string, id: string): Promise<void> {
     const syncId = `${id}_sync`;
-    try { await ImageStore.delete(id); } catch { /* image absente ou stockage indispo */ }
-    try { await ImageStore.delete(`${id}_orig`); } catch { /* original absent */ }
+    // B-1 — nettoyage SYNCHRONE d'abord : `pagehide` fige la page sans laisser
+    // tourner les `await` IndexedDB. La retirée de la galerie et la purge des
+    // références doivent donc être acquises AVANT la première attente, sinon
+    // l'entrée `_sync` reste dans Photos (10 s, ou pour toujours si la page
+    // se ferme avant l'échéance).
     if (key === ADVERSARIES_KEY || key === HOSTAGES_KEY) {
         const photos = Storage.loadCollection(PHOTOS_KEY);
         const filtered = photos.filter((photo) => photo.id !== syncId);
         if (filtered.length !== photos.length) Storage.saveCollection(PHOTOS_KEY, filtered);
-        try { await ImageStore.delete(syncId); } catch { /* copie absente */ }
     }
     purgeReferences(id);
+    try { await ImageStore.delete(id); } catch { /* image absente ou stockage indispo */ }
+    try { await ImageStore.delete(`${id}_orig`); } catch { /* original absent */ }
+    if (key === ADVERSARIES_KEY || key === HOSTAGES_KEY) {
+        try { await ImageStore.delete(syncId); } catch { /* copie absente */ }
+    }
 }

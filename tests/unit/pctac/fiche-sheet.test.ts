@@ -501,7 +501,7 @@ describe('photo annotée (décision 25)', () => {
 describe('brouillon : la photo choisie est gardée (décision 33)', () => {
   afterEach(() => { vi.restoreAllMocks(); });
 
-  it('la photo du brouillon est stockée sous une clé propre et remontrée à la réouverture', async () => {
+  it('la photo du brouillon est stockée sous une clé propre et remontrée à la REPRISE (R13)', async () => {
     const put = vi.spyOn(ImageStore, 'put').mockResolvedValue(undefined);
     vi.spyOn(Utils, 'compressImage').mockResolvedValue('data:image/jpeg;base64,DRAFT');
     await openFiche('adv');
@@ -515,6 +515,11 @@ describe('brouillon : la photo choisie est gardée (décision 33)', () => {
     dialog().close();
     vi.spyOn(ImageStore, 'get').mockResolvedValue('data:image/jpeg;base64,DRAFT');
     await openFiche('adv');
+    await flush();
+    // R13 — brouillon NON repris : sa photo ne s'affiche pas...
+    expect(dialog().querySelector('.fiche-photo img')).toBeNull();
+    // ...elle revient sur reprise explicite.
+    dialog().querySelector<HTMLElement>('.fiche-draft-resume')!.click();
     await flush();
     expect(dialog().querySelector<HTMLImageElement>('.fiche-photo img')?.getAttribute('src'))
       .toBe('data:image/jpeg;base64,DRAFT');

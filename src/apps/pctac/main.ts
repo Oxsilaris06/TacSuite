@@ -97,13 +97,13 @@ import {
 import { undoableDelete, undoableDeleteLog, purgeCollectionImages } from '@pctac/delete-undo.js';
 import { resetWithArchive } from '@pctac/reset-flow.js';
 import { GPX_INDEX_KEY, PINS_KEY } from '@pctac/planmap/constants.js';
-import { scopedKey } from '@pctac/modes.js';
+import { currentMode, scopedKey } from '@pctac/modes.js';
 import { initImportScopeModal } from '@pctac/import-scope.js';
 import { initSplitView } from '@pctac/split-view.js';
 import { initTabSync } from '@pctac/tab-sync.js';
 import { initTabSyncViews } from '@pctac/tab-sync-views.js';
 import { applyLexicon, initModeSelector, onModeChange } from '@pctac/mode-ui.js';
-import { openFiche } from '@pctac/fiche-sheet.js';
+import { draftImageIds, openFiche } from '@pctac/fiche-sheet.js';
 
 /**
  * Point d'entrée principal du module PC TAC
@@ -430,6 +430,11 @@ document.addEventListener('DOMContentLoaded', async () => {
             const pins = Persist.get<{ photoId?: string }[]>(scopedKey(PINS_KEY), { validator: Array.isArray, fallback: [] }) || [];
             pins.forEach((pin) => { if (pin && pin.photoId) imgIds.add(pin.photoId); });
         } catch { /* best-effort */ }
+        // R13 — photos de brouillon de fiches (blobs IndexedDB de la situation
+        // courante), collectées AVANT `clearAllData` : sinon elles survivraient
+        // au RESET et resurgiraient sur une fiche neuve.
+        try { draftImageIds().forEach((id) => imgIds.add(id)); } catch { /* best-effort */ }
+
         let gpxIds: string[] = [];
         try {
             const raw = localStorage.getItem(scopedKey(GPX_INDEX_KEY));
@@ -501,11 +506,25 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (confirmResetExportBtn) {
         confirmResetExportBtn.onclick = async () => {
             showBusy("Export de l'archive avant RESET…");
-            const exported = await resetWithArchive(
+            // R17 — nom du fichier à confirmer, calculé comme `Archive.exportZip`.
+            const fileName = Utils.readableFileName(currentMode().label, new Date(), 'pctac.zip');
+            const outcome = await resetWithArchive(
                 () => Archive.exportZip(),
                 performReset,
-            ).finally(hideBusy);
-            if (!exported) {
+                () => {
+                    hideBusy();
+                    return confirmDialog({
+                        title: 'Archive enregistrée ?',
+                        message: `L'archive ${fileName} a-t-elle bien été enregistrée ?`,
+                        confirmLabel: 'Effacer maintenant',
+                        cancelLabel: 'Pas encore',
+                        danger: true,
+                    });
+                },
+                2200,
+            );
+            hideBusy();
+            if (outcome === 'export-failed') {
                 toast("Export impossible : RIEN n'a été effacé. Réessaie ou choisis « Effacer sans archive ».", { kind: 'error' });
             }
         };
@@ -540,7 +559,14 @@ document.addEventListener('DOMContentLoaded', async () => {
                 UI.renderFriends();
                 await UI.renderPhotos();
                 if (window.PlanMap && window.PlanMap.initialized) window.PlanMap.refresh();
-                toast('Archive importée avec succès.', { kind: 'success' });
+                // R accord — un seul message : si `archive.ts` a produit un
+                // récapitulatif (fiches remplacées/fusionnées, clés ignorées),
+                // on n'ajoute rien ; sinon, succès générique.
+                if (!res.ok) {
+                    toast("Erreur d'import : " + String('error' in res ? res.error : ''), { kind: 'error' });
+                } else if (!Utils.archiveImportHasRecap(res)) {
+                    toast('Archive importée avec succès.', { kind: 'success' });
+                }
             } catch (err) {
                 console.error('[Archive] import échec:', err);
                 toast("Erreur d'import : " + (err instanceof Error ? err.message : String(err)), { kind: 'error' });
@@ -568,10 +594,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 await UI.renderPhotos();
                 UI.renderCustomPaxOptions();
 
-                const parts = [`${res.advAdded} adversaire(s)`];
-                if (res.advPhotos) parts.push(`${res.advPhotos} photo(s)`);
-                parts.push(`${res.paxAdded} intervenant(s)`);
-                if (res.gridImported) parts.push('le carroyage');
+                const parts = Utils.oiImportSummaryParts(res);
                 const skipped = (res.advSkipped || 0) + (res.paxSkipped || 0);
                 toast(
                     `Passerelle OI → PC TAC : ${parts.join(', ')} importé(s) avec succès.`

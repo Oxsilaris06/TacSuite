@@ -70,6 +70,9 @@ interface SheetState {
     photoPending: Promise<void> | null;
     /** La fiche a été supprimée dans un autre onglet : « Enregistrer » la recrée. */
     recreate?: boolean;
+    /** R20 — conflit en cours de traitement : une relance est demandée. */
+    resolving?: boolean;
+    rerun?: boolean;
 }
 
 let state: SheetState | null = null;
@@ -323,8 +326,10 @@ function render(): void {
         </footer>
         </form>`;
     updateCounts(dlg);
-    // Brouillon avec photo (décision 33) : la remontre à l'ouverture.
-    if (!photoSrc) void loadDraftPhoto(side, id);
+    // R13 — la photo du brouillon n'est remontrée QUE sur reprise explicite
+    // (bouton « Reprendre », `onClick`), jamais à l'ouverture : un brouillon non
+    // repris ne doit pas prêter sa photo à une autre personne, et un brouillon
+    // effacé (RESET) ne doit pas ressurgir tant que son blob traîne.
 }
 
 // --- Lecture du formulaire --------------------------------------------------
@@ -358,6 +363,15 @@ function fieldOf(key: string): FicheField | undefined {
         .find((f) => f.key === key && f.kind === 'chips');
 }
 
+/** R20 — libellé humain d'un champ (toutes sortes), pour les conflits. */
+function labelOf(key: string): string {
+    if (!state) return key;
+    const mode = currentModeId();
+    const field = [...headerFields(state.side, mode), ...ficheSections(state.side, mode, state.item).flatMap((s) => s.fields)]
+        .find((f) => f.key === key);
+    return field?.label ?? key;
+}
+
 /** Re-rend en gardant la saisie (changement de type de menace). */
 function rerenderKeepingInput(): void {
     if (!state) return;
@@ -379,23 +393,14 @@ function markDirty(): void {
 
 // --- Enregistrement ---------------------------------------------------------
 
-async function syncPhoto(side: FicheSide, item: Record<string, unknown>, dataUrl: string): Promise<void> {
+/**
+ * Crée ou actualise l'entrée de GALERIE `<id>_sync` d'une fiche qui a une
+ * photo, pour qu'elle suive le statut et le nom de la fiche. B-2 — appelée
+ * aussi après une fusion qui reprend la photo de l'entrante : `fiche-merge.ts`
+ * copie bien le blob `<id>_sync`, mais l'entrée de galerie, elle, manquait.
+ */
+function upsertGallerySync(side: FicheSide, item: Record<string, unknown>): void {
     const id = String(item.id);
-    try {
-        await ImageStore.put(id, dataUrl);
-        await ImageStore.put(`${id}_sync`, dataUrl);
-    } catch (e) {
-        console.error('[PC TAC] enregistrement photo échec:', e);
-        toast('Photo non enregistrée (stockage)', { kind: 'error' });
-        return;
-    }
-    delete item.photo;
-    item.hasImage = true;
-    // Nouvelle photo : l'annotation de l'ancienne ne la concerne plus (décision
-    // 25), ni un original resté seul (import partiel, écriture interrompue).
-    delete item.annotations;
-    try { await ImageStore.delete(`${id}_orig`); } catch { /* original orphelin, sans effet visible */ }
-    // Copie dans la galerie Photos, qui suit le statut de la fiche.
     const photos = Storage.loadCollection(PHOTOS_KEY);
     const title = ficheTitle(side, currentModeId(), item);
     const existing = photos.find((p) => p.id === `${id}_sync`);
@@ -413,6 +418,26 @@ async function syncPhoto(side: FicheSide, item: Record<string, unknown>, dataUrl
         });
     }
     Storage.saveCollection(PHOTOS_KEY, photos);
+}
+
+async function syncPhoto(side: FicheSide, item: Record<string, unknown>, dataUrl: string): Promise<void> {
+    const id = String(item.id);
+    try {
+        await ImageStore.put(id, dataUrl);
+        await ImageStore.put(`${id}_sync`, dataUrl);
+    } catch (e) {
+        console.error('[PC TAC] enregistrement photo échec:', e);
+        toast('Photo non enregistrée (stockage)', { kind: 'error' });
+        return;
+    }
+    delete item.photo;
+    item.hasImage = true;
+    // Nouvelle photo : l'annotation de l'ancienne ne la concerne plus (décision
+    // 25), ni un original resté seul (import partiel, écriture interrompue).
+    delete item.annotations;
+    try { await ImageStore.delete(`${id}_orig`); } catch { /* original orphelin, sans effet visible */ }
+    // Copie dans la galerie Photos, qui suit le statut de la fiche.
+    upsertGallerySync(side, item);
 }
 
 async function save(next: boolean): Promise<void> {
@@ -439,7 +464,7 @@ async function save(next: boolean): Promise<void> {
             return;
         }
         const key = collectionKey(side);
-        const list = Storage.loadCollection(key);
+        let list = Storage.loadCollection(key);
         let item = id ? list.find((i) => i.id === id) : undefined;
         if (id && !item && !s.recreate) {
             // Supprimée ailleurs (autre onglet) : la saisie devient le brouillon
@@ -463,7 +488,16 @@ async function save(next: boolean): Promise<void> {
             .filter(([k, v]) => typeof v === 'string' && !['id', 'photo', 'status'].includes(k)));
         const entered = { ...kept, ...fields };
 
-        if (!item) {
+        if (!item && s.recreate && id) {
+            // R14 — « Recréer en enregistrant » (décision 29) : la fiche a été
+            // supprimée dans un autre onglet. On repart de la fiche d'OUVERTURE
+            // (champs non modifiés compris), sous son id d'origine : liens,
+            // pings et statut sont préservés au lieu d'une fiche presque vide.
+            const openedItem = (s.base ? JSON.parse(s.base) : {}) as Record<string, unknown>;
+            item = { ...openedItem, ...s.item, id };
+            delete item.photo;
+            list.push(item);
+        } else if (!item) {
             // Décision 32/33 — doublon de personne à la CRÉATION : signaler et
             // laisser choisir « Ouvrir l'existante », « Fusionner » (la nouvelle
             // n'est pas créée, la photo de l'entrante est reprise si l'existante
@@ -482,13 +516,18 @@ async function save(next: boolean): Promise<void> {
                         { value: 'create', label: 'Créer quand même' },
                     ],
                 });
+                // R15 — la fenêtre a pu rester ouverte longtemps : on relit la
+                // liste AVANT d'insérer ou de fusionner. Sinon, ce qu'un autre
+                // onglet a écrit pendant l'attente est écrasé par cette copie.
+                list = Storage.loadCollection(key);
+                const target = list.find((i) => i.id === duplicate.id);
                 if (choice === 'open') {
                     close();
                     // `saving` retombe en fin de `save()` : l'ouverture attend.
                     setTimeout(() => { void openFiche(side, String(duplicate.id)); }, 0);
                     return;
                 }
-                if (choice === 'merge') {
+                if (choice === 'merge' && target) {
                     if (s.photo) {
                         try {
                             await ImageStore.put(candidateId, s.photo);
@@ -496,13 +535,21 @@ async function save(next: boolean): Promise<void> {
                             candidate.hasImage = true;
                         } catch { /* photo non copiée : la fusion reste possible sans */ }
                     }
-                    const at = list.findIndex((i) => i.id === duplicate.id);
-                    const { merged } = await mergePersonIntoExisting(duplicate, candidate);
-                    list[at] = merged;
+                    const { merged } = await mergePersonIntoExisting(target, candidate);
+                    // Relecture après les écritures d'images (await) : on écrit
+                    // dans la liste fraîche, pas dans celle d'avant la fenêtre.
+                    list = Storage.loadCollection(key);
+                    const at = list.findIndex((i) => i.id === merged.id);
+                    if (at === -1) list.push(merged);
+                    else list[at] = merged;
                     if (!Storage.saveCollection(key, list)) {
                         toast('Stockage plein : fiche NON enregistrée.', { kind: 'error' });
                         return;
                     }
+                    // B-2 — la fusion a recopié le blob `<id>_sync` ; l'entrée de
+                    // galerie correspondante doit exister pour que la photo soit
+                    // visible dans l'onglet Photos.
+                    if (merged.hasImage) upsertGallerySync(side, merged);
                     try {
                         await ImageStore.delete(candidateId);
                         await ImageStore.delete(`${candidateId}_sync`);
@@ -516,7 +563,11 @@ async function save(next: boolean): Promise<void> {
                     close();
                     return;
                 }
-                if (choice !== 'create') {
+                if (choice === 'merge') {
+                    // La fiche à fusionner a disparu pendant la fenêtre : on
+                    // prévient et on retombe sur la création (saisie gardée).
+                    toast('Fiche supprimée entre-temps : création d’une nouvelle fiche', { kind: 'info' });
+                } else if (choice !== 'create') {
                     // Fond ou Échap : on n'enregistre rien, la saisie reste.
                     return;
                 }
@@ -603,6 +654,19 @@ async function save(next: boolean): Promise<void> {
 async function handleRemoteFicheChange(): Promise<void> {
     const s = state;
     if (!s || !s.id) return;
+    // R20 — deux écritures distantes rapprochées empilaient deux fenêtres
+    // identiques. Une seule à la fois ; la dernière relance en fin de traitement.
+    if (s.resolving) { s.rerun = true; return; }
+    s.resolving = true;
+    try {
+        await handleRemoteFicheChangeInner(s);
+    } finally {
+        s.resolving = false;
+        if (s.rerun) { s.rerun = false; void handleRemoteFicheChange(); }
+    }
+}
+
+async function handleRemoteFicheChangeInner(s: SheetState): Promise<void> {
     const key = collectionKey(s.side);
     const fresh = Storage.loadCollection(key).find((i) => i.id === s.id);
     if (!fresh) {
@@ -615,6 +679,21 @@ async function handleRemoteFicheChange(): Promise<void> {
             ],
         });
         if (choice === 'recreate') { s.recreate = true; return; }
+        // R21 — « Fermer » ne doit pas laisser la saisie dans un brouillon
+        // jamais proposé (`adv:<id supprimé>`). On la déplace vers le créneau
+        // « nouvelle fiche » s'il est libre, comme le fait `save()`.
+        if (s.dirty) {
+            const drafts = readDrafts();
+            const freeSlot = !drafts[slotOf(s.side, null)];
+            if (freeSlot) {
+                drafts[slotOf(s.side, null)] = { values: collect(), savedAt: Date.now(), base: null, statusTouched: s.statusTouched };
+                delete drafts[slotOf(s.side, s.id)];
+                writeDrafts(drafts);
+                toast('Fiche supprimée entre-temps : votre saisie est proposée dans une nouvelle fiche', { kind: 'error' });
+            } else {
+                toast('Fiche supprimée entre-temps : votre saisie reste en brouillon', { kind: 'error' });
+            }
+        }
         close();
         return;
     }
@@ -626,16 +705,21 @@ async function handleRemoteFicheChange(): Promise<void> {
     // les valeurs non touchées ici uniquement.
     s.item = { ...s.item, ...mine, ...diff.silent };
     for (const conflict of diff.conflicts) {
+        // R20 — libellé humain du champ, pas sa clé technique.
+        const fieldLabel = labelOf(conflict.key);
         const choice = await choiceDialog({
             title: 'Champ modifié dans un autre onglet',
-            message: `Champ « ${conflict.key} » : votre valeur « ${String(conflict.mine ?? '')} » `
+            message: `Champ « ${fieldLabel} » : votre valeur « ${String(conflict.mine ?? '')} » `
                 + `/ autre onglet « ${String(conflict.theirs ?? '')} ».`,
             options: [
                 { value: 'mine', label: 'Garder la mienne' },
                 { value: 'theirs', label: "Prendre l'autre" },
             ],
         });
+        // R20 — choix explicite : « mine » repose ma valeur (elle primait déjà,
+        // mais une seconde fenêtre recalculée depuis le DOM pouvait l'écraser).
         if (choice === 'theirs') s.item[conflict.key] = conflict.theirs;
+        else if (choice === 'mine') s.item[conflict.key] = conflict.mine;
     }
     if (state === s) render();
 }
@@ -756,8 +840,12 @@ async function onChange(e: Event): Promise<void> {
             if (state !== owner) return;
             owner.photo = data;
             // Le brouillon garde la photo choisie (décision 33), propre à la
-            // situation : rechargée à la réouverture, effacée avec le brouillon.
-            void ImageStore.put(draftPhotoKey(owner.side, owner.id), data).catch(() => { /* stockage */ });
+            // situation : rechargée à la reprise, effacée avec le brouillon.
+            // R13 — jamais quand un brouillon ATTEND (non repris) sur ce
+            // créneau : sa photo ne doit pas être écrasée par une autre saisie.
+            if (!owner.pendingDraft) {
+                void ImageStore.put(draftPhotoKey(owner.side, owner.id), data).catch(() => { /* stockage */ });
+            }
             // Le brouillon existe dès qu'une photo est choisie (sinon la photo
             // n'aurait aucun brouillon auquel s'accrocher à la réouverture).
             owner.dirty = true;
@@ -983,4 +1071,23 @@ export async function openFiche(side: FicheSide, id: string | null = null): Prom
 export function close(): void {
     const dlg = dialogEl();
     if (dlg?.open) dlg.close();
+}
+
+/**
+ * R25 — ferme la fiche si elle est montée DANS la vue `viewId` (écran scindé :
+ * le panneau change de vue, la fiche cachée ne doit pas rester ouverte).
+ */
+export function closeFicheIfInView(viewId: string): void {
+    const dlg = dialogEl();
+    if (!dlg?.open) return;
+    if (dlg.closest<HTMLElement>('.tab-content-view')?.id === viewId) close();
+}
+
+/**
+ * R13 — blobs ImageStore des photos de brouillon de la situation courante.
+ * `performReset` les collecte AVANT `clearAllData` : sans cela, un brouillon
+ * effacé ressurgirait sur une fiche neuve tant que son blob traîne.
+ */
+export function draftImageIds(): string[] {
+    return Object.keys(readDrafts()).map((slot) => `${scopedKey(FICHE_DRAFT_KEY)}-img:${slot}`);
 }

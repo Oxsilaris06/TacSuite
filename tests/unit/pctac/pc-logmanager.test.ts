@@ -537,13 +537,25 @@ describe('LogManager.deleteEntry et updateEntry', () => {
     };
     Storage.saveLogData([entry]);
 
-    const result = LogManager.updateEntry('to-update', { remarques: 'Updated' });
+    // R22 — `updateEntry` rend désormais le succès de l'écriture.
+    expect(LogManager.updateEntry('to-update', { remarques: 'Updated' })).toBe(true);
 
+    const result = Storage.loadLogData();
     expect(result).toHaveLength(1);
     expect(result[0]).toBeDefined();
     if (result[0]) {
       expect(result[0].remarques).toBe('Updated');
       expect(result[0].pax).toBe('Adversaire'); // autres champs inchangés
     }
+  });
+
+  it('R22 — stockage plein : updateEntry rend false et ne jette pas', () => {
+    const entry: PctacLogEntry = {
+      id: 'to-update', heure: '14:00', pax: 'Adversaire', paxMode: 'standard', lieu: 'Paris', remarques: 'Original',
+    };
+    Storage.saveLogData([entry]);
+    const spy = vi.spyOn(Storage, 'saveLogData').mockReturnValue(false);
+    expect(LogManager.updateEntry('to-update', { remarques: 'Updated' })).toBe(false);
+    spy.mockRestore();
   });
 });

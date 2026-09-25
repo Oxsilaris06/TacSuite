@@ -20,20 +20,31 @@ export interface ChoiceDialogOptions {
     options: ChoiceOption[];
 }
 
+let choiceUid = 0;
+
 export function choiceDialog(options: ChoiceDialogOptions): Promise<string | null> {
     return new Promise((resolve) => {
         const dlg = document.createElement('dialog');
         dlg.className = 'modal tac-choice-dialog';
 
+        // R26 — nom accessible (C9, WCAG 4.1.2) : titre s'il existe, sinon le
+        // message ; le message est toujours décrit.
+        let labelledBy = '';
         if (options.title) {
             const h = document.createElement('h3');
+            h.id = `tac-choice-title-${++choiceUid}`;
             h.textContent = options.title;
             dlg.appendChild(h);
+            labelledBy = h.id;
         }
         const p = document.createElement('p');
         p.className = 'tac-choice-message';
+        p.id = `tac-choice-message-${++choiceUid}`;
         p.textContent = options.message;
         dlg.appendChild(p);
+        if (labelledBy) dlg.setAttribute('aria-labelledby', labelledBy);
+        else dlg.setAttribute('aria-label', options.message);
+        dlg.setAttribute('aria-describedby', p.id);
 
         const row = document.createElement('div');
         row.className = 'pctac-actions-row';

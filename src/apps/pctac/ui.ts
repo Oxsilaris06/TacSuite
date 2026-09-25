@@ -487,11 +487,18 @@ export const UI: UIContract = {
    * `window.Dashboard` est du code mort prouvé (SPEC-PCTAC-CONVERSION.md §1.3),
    * non déclaré dans global.d.ts.
    */
-  switchMainView(viewId: string): void {
-    // Décision 33 — quitter l'onglet de la fiche la referme (dans la page ou en
-    // modale) : la saisie reste en brouillon. Évite qu'un retour arrière
-    // Android ferme une fiche cachée au lieu d'agir sur l'onglet affiché.
-    if (document.getElementById('ficheSheet')?.hasAttribute('open')) closeFicheSheet();
+  switchMainView(viewId: string, options?: { keepFiche?: boolean }): void {
+    // Décision 33 / R25 — quitter l'onglet de la fiche la referme (dans la page
+    // ou en modale) : la saisie reste en brouillon. Mais PAS quand on reste sur
+    // l'onglet qui la contient (reclic, raccourci), ni pendant la capture de
+    // carte du PDF (`keepFiche`, contourne la fermeture).
+    const ficheDlg = document.getElementById('ficheSheet');
+    if (ficheDlg?.hasAttribute('open') && !options?.keepFiche) {
+      const holder = ficheDlg.closest('.tab-content-view');
+      // Fiche dans la page : ne fermer que si on quitte SA vue. Fiche modale
+      // (téléphone, dans <body>) : tout changement d'onglet la ferme.
+      if (!holder || holder.id !== viewId) closeFicheSheet();
+    }
     document.querySelectorAll<HTMLElement>('.tab-btn').forEach((btn) => {
       const active = btn.dataset.view === viewId;
       btn.classList.toggle('active', active);
@@ -743,7 +750,11 @@ export const UI: UIContract = {
       remarques: (document.getElementById('edit_remarques') as HTMLTextAreaElement).value.trim(),
       ...(date ? { date } : {}),
     };
-    LogManager.updateEntry(id, updated);
+    // R22 — stockage plein : ne pas fermer la modale ni annoncer un succès.
+    if (!LogManager.updateEntry(id, updated)) {
+      toast('Stockage plein : modification NON enregistrée.', { kind: 'error' });
+      return;
+    }
     if (updated.lieu) LogManager.addLieuToHistory(updated.lieu);
     this.renderLogTable(Storage.loadLogData());
     this.refreshLieuSuggestions();
@@ -1091,8 +1102,8 @@ export const UI: UIContract = {
 
     bindPhotoBoard(board);
     board.innerHTML = filteredList.length === 0 ? emptyMsg : filteredList.map((item) => `
-            <div class="photo-card" draggable="true" data-id="${item.id}" data-category="${item.category}" data-status="${item.status || 'active'}">
-                <img src="${item.data}" alt="${esc(item.title)}">
+            <div class="photo-card" draggable="true" data-id="${esc(item.id)}" data-category="${esc(item.category)}" data-status="${esc(item.status || 'active')}">
+                <img src="${esc(item.data)}" alt="${esc(item.title)}">
                 <div style="padding: 10px; display: flex; flex-direction: column; gap: 5px;">
                     <div style="display: flex; justify-content: space-between; align-items: center;">
                         <span class="photo-title-text" style="font-size: 0.9em; font-weight: bold;">${esc(item.title)}</span>
