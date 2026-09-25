@@ -123,7 +123,7 @@ function injectStyles(): void {
   position: fixed;
   left: 0;
   right: 0;
-  bottom: var(--tac-space-5, 24px);
+  bottom: calc(var(--tac-space-5, 24px) + env(safe-area-inset-bottom, 0px));
   margin-inline: auto;
   width: min(92vw, 420px);
   z-index: ${TOP_Z};
@@ -468,7 +468,24 @@ function ensureToastContainer(): HTMLElement {
     el.setAttribute('aria-live', 'polite');
     document.body.appendChild(el);
   }
+  // Recalculé à chaque toast : le dock peut être replié ou déplié entre-temps.
+  el.style.bottom = toastBottomOffset();
   return el;
+}
+
+/**
+ * Hauteur à laisser libre en bas d'écran. Le dock flottant des applications
+ * (`#dockMenu`, PC-Tac et OI, fixé en bas au centre comme les toasts) passait
+ * sous les toasts : le toast masquait le dock (constat UI-1 du 25/09). Rend ''
+ * (position de la feuille) sans dock rendu dans la moitié basse de l'écran.
+ */
+function toastBottomOffset(): string {
+  const dock = document.getElementById('dockMenu');
+  if (!dock) return '';
+  const r = dock.getBoundingClientRect();
+  const vh = window.innerHeight;
+  if (r.height === 0 || r.top < vh / 2) return '';
+  return `${Math.round(vh - r.top + 8)}px`;
 }
 
 /**

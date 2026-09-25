@@ -46,4 +46,31 @@ describe('toasts sur téléphone', () => {
     expect(body).toMatch(/margin-inline:\s*auto/);
     expect(body).toMatch(/width:\s*min\(92vw,\s*420px\)/);
   });
+
+  it('ne recouvre pas le dock flottant des applications (#dockMenu en bas d’écran)', () => {
+    // Constat 390 × 844 : les toasts (bas 24 px) recouvraient le bouton du dock
+    // (bas 20 px, 50 px de haut) de PC-Tac, et le dock de l'OI de même.
+    const dock = document.createElement('div');
+    dock.id = 'dockMenu';
+    document.body.appendChild(dock);
+    const top = window.innerHeight - 70;
+    vi.spyOn(dock, 'getBoundingClientRect').mockReturnValue({ top, bottom: top + 50, left: 170, right: 220, width: 50, height: 50, x: 170, y: top, toJSON: () => ({}) });
+    toast('Archive importée');
+    const container = document.getElementById('tac-toast-container');
+    // 70 px occupés par le dock et sa marge : le toast se pose au-dessus.
+    expect(parseFloat(container?.style.bottom ?? '0')).toBeGreaterThanOrEqual(78);
+  });
+
+  it('sans dock, la position par défaut de la feuille s’applique (aucun style en ligne)', () => {
+    toast('Enregistré');
+    expect(document.getElementById('tac-toast-container')?.style.bottom).toBe('');
+  });
+
+  it('dock masqué (fiche plein écran, rien de rendu) : position par défaut', () => {
+    const dock = document.createElement('div');
+    dock.id = 'dockMenu';
+    document.body.appendChild(dock);
+    toast('Fiche enregistrée');
+    expect(document.getElementById('tac-toast-container')?.style.bottom).toBe('');
+  });
 });
