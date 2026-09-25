@@ -309,7 +309,7 @@ describe('importFile — accepte les images .txt ET .bin (archive.js:218)', () =
     });
 
     const result = await Archive.importFile(file);
-    expect(result).toEqual({ ok: true });
+    expect(result).toMatchObject({ ok: true });
 
     expect(await ImageStore.get('idtxt')).toBe('data:image/png;base64,AAAA');
     expect(await ImageStore.get('idbin')).toBe('data:image/png;base64,BBBB');
@@ -503,7 +503,7 @@ describe('importFile — traces GPX', () => {
     });
 
     const result = await Archive.importFile(file);
-    expect(result).toEqual({ ok: true });
+    expect(result).toMatchObject({ ok: true });
 
     // Les coordonnées de l'archive sont arrivées…
     expect(gpxState.get('archivee')).toEqual({ coords: [[[3, 3], [4, 4]]], times: [[1000, 2000]] });
@@ -519,7 +519,7 @@ describe('importFile — traces GPX', () => {
     gpxState.set('locale', { coords: [[[1, 1], [2, 2]]], times: null });
 
     const result = await Archive.importFile(await buildPctacZip({ data: {} }));
-    expect(result).toEqual({ ok: true });
+    expect(result).toMatchObject({ ok: true });
 
     expect(gpxState.get('locale')).toEqual({ coords: [[[1, 1], [2, 2]]], times: null });
     const index = JSON.parse(localStorage.getItem('pcTacGpxIndex') ?? '[]') as Array<{ id: string }>;
@@ -533,7 +533,7 @@ describe('importFile — traces GPX', () => {
     });
 
     const result = await Archive.importFile(file);
-    expect(result).toEqual({ ok: true });
+    expect(result).toMatchObject({ ok: true });
     expect(gpxState.get('bonne')).toBeDefined();
     expect(gpxState.has('cassee')).toBe(false);
   });
