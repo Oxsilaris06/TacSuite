@@ -268,7 +268,7 @@ export const WheelsMethods = {
                 label: 'Supprimer',
                 color: '#fff',
                 bg: 'rgba(239,68,68,0.95)',
-                action: () => this._removePin(pinId),
+                action: () => { void this._requestRemovePin(pinId); },
             },
         ];
 

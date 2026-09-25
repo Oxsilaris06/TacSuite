@@ -45,6 +45,7 @@ import type { GeoJSONSource, LngLat, MapMouseEvent } from 'maplibre-gl';
 
 import { Storage } from '@pctac/storage.js';
 import { ADVERSARIES_KEY, FRIENDS_KEY, HOSTAGES_KEY } from '@pctac/config.js';
+import { confirmDialog, undoableToast } from '@shared/feedback.js';
 import { attachPinGestures } from '@shared/pin-gestures.js';
 
 import { ENTITY_COLORS } from './constants.js';
@@ -130,6 +131,34 @@ export const PinsMethods = {
         this._renderPins();
         // C5 : suppression d'un pin d'entité → main courante (jamais bloquant).
         if (gone?.entityRef) logMapAction(`Ping retiré : ${this._resolvePin(gone).label}`);
+    },
+
+    /**
+     * Suppression d'un point du plan par l'utilisateur (décision 31) :
+     * confirmation PUIS retrait immédiat PUIS toast d'annulation pendant 10 s
+     * (« Annuler » remet le point à l'identique). Appelée par la roue
+     * contextuelle du ping ; `_removePin` reste le retrait pur.
+     */
+    async _requestRemovePin(this: PlanMapInternal, id: string): Promise<void> {
+        const target = this._loadPins().find(p => p.id === id);
+        if (!target) return;
+        const ok = await confirmDialog({
+            message: 'Supprimer ce point du plan ?',
+            confirmLabel: 'Supprimer',
+            danger: true,
+        });
+        if (!ok) return;
+        const snapshot: PlanPin = { ...target };
+        this._removePin(id);
+        undoableToast('Point supprimé', {
+            onUndo: () => {
+                const list = this._loadPins();
+                if (list.some(p => p.id === snapshot.id)) return; // déjà remis (double annulation)
+                list.push(snapshot);
+                this._savePins(list);
+                this._renderPins();
+            },
+        });
     },
 
     // planMap.js:1203-1207

@@ -446,6 +446,7 @@ export interface PlanMapInternal extends PlanMapState, PlanMapContract {
     _onMapClick(e: MapMouseEvent): void;
     _addPin(pin: PlanPin): void;
     _removePin(id: string): void;
+    _requestRemovePin(id: string): Promise<void>;
     _loadPins(): PlanPin[];
     _savePins(pins: readonly PlanPin[]): void;
     _resolvePin(pin: PlanPin): ResolvedPin;
