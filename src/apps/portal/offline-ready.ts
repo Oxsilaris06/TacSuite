@@ -7,7 +7,8 @@
  *
  *   - « Prêt hors ligne » si un service worker ACTIF contrôle la page ET si le
  *     précache contient la page de l'application (`caches.match`) ;
- *   - « À ouvrir une fois en ligne avant départ » sinon.
+ *   - rien sinon : le badge est masqué (Nico, 09-25 : le message « À ouvrir
+ *     une fois en ligne avant départ » est supprimé).
  *
  * On interroge le cache avec `ignoreSearch: true` : les entrées de précache
  * Workbox portent une query `__WB_REVISION__`, et l'URL demandée peut être le
@@ -114,7 +115,6 @@ export interface OfflineBadgeApp {
 }
 
 const READY_LABEL = 'Prêt hors ligne';
-const NOT_READY_LABEL = 'À ouvrir une fois en ligne avant départ';
 
 /** Met à jour un badge et rend l'état calculé. */
 export async function renderOfflineBadge(app: OfflineBadgeApp, deps: OfflineCheckDeps = {}): Promise<boolean> {
@@ -122,11 +122,12 @@ export async function renderOfflineBadge(app: OfflineBadgeApp, deps: OfflineChec
     const el = typeof document !== 'undefined' ? document.getElementById(app.badgeId) : null;
     if (el) {
         el.dataset.ready = String(ready);
+        // Pas prête : badge masqué, aucun message (décision de Nico du 09-25).
+        el.hidden = !ready;
         const label = el.querySelector<HTMLElement>('.offline-badge__label');
-        if (label) label.textContent = ready ? READY_LABEL : NOT_READY_LABEL;
-        el.title = ready
-            ? "Cette application est installée pour un usage hors connexion."
-            : "Ouvrez cette application une fois en ligne (avec la connexion active) avant de partir.";
+        if (label) label.textContent = ready ? READY_LABEL : '';
+        if (ready) el.title = 'Cette application est installée pour un usage hors connexion.';
+        else el.removeAttribute('title');
     }
     return ready;
 }
@@ -136,8 +137,8 @@ export function initOfflineBadges(apps: readonly OfflineBadgeApp[], deps: Offlin
     const refresh = (): void => apps.forEach((app) => { void renderOfflineBadge(app, deps); });
     refresh();
 
-    // R11 : réévaluer à la prise de contrôle par le service worker. À la toute
-    // première visite, le badge restait « À ouvrir » même après `controllerchange`.
+    // R11 : réévaluer à la prise de contrôle par le service worker : à la toute
+    // première visite, le badge apparaît dès que l'application est prête.
     const sw = deps.serviceWorker !== undefined
         ? deps.serviceWorker
         : (typeof navigator !== 'undefined' ? navigator.serviceWorker : null);

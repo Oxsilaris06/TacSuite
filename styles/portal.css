@@ -619,6 +619,12 @@ body {
     color: #22c55e;
 }
 
+/* Pas prête hors ligne : badge masqué, sans message (Nico, 09-25). Le
+   `display: inline-flex` ci-dessus l'emporterait sinon sur l'attribut hidden. */
+.offline-badge[hidden] {
+    display: none;
+}
+
 .offline-badge__dot {
     width: var(--status-dot-size);
     height: var(--status-dot-size);

@@ -3,7 +3,7 @@
  *
  * « Prêt » exige DEUX choses : un service worker actif qui contrôle la page,
  * ET la page présente dans le précache. Toute autre combinaison affiche
- * « À ouvrir une fois en ligne avant départ ».
+ * rien (badge masqué, décision de Nico du 09-25).
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -91,7 +91,7 @@ describe('renderOfflineBadge', () => {
         expect(el.querySelector('.offline-badge__label')?.textContent).toBe('Prêt hors ligne');
     });
 
-    it('affiche « À ouvrir une fois en ligne avant départ » sinon', async () => {
+    it('sinon le badge est masqué, sans message (Nico, 09-25 : « À ouvrir une fois en ligne avant départ » supprimé)', async () => {
         document.body.innerHTML = `<span id="offline-oi" data-ready="true">
             <span class="offline-badge__label">x</span></span>`;
         await renderOfflineBadge(
@@ -100,7 +100,16 @@ describe('renderOfflineBadge', () => {
         );
         const el = document.getElementById('offline-oi') as HTMLElement;
         expect(el.dataset.ready).toBe('false');
-        expect(el.querySelector('.offline-badge__label')?.textContent).toBe('À ouvrir une fois en ligne avant départ');
+        expect(el.hidden).toBe(true);
+        expect(document.body.textContent).not.toMatch(/ouvrir une fois/i);
+    });
+
+    it('un badge masqué réapparaît quand l’application devient prête', async () => {
+        document.body.innerHTML = `<span id="offline-pctac" hidden><span class="offline-badge__label"></span></span>`;
+        await renderOfflineBadge({ badgeId: 'offline-pctac', pageUrl: 'https://x/pctac/' }, deps({}, fakeCaches(['https://x/pctac/'])));
+        const el = document.getElementById('offline-pctac') as HTMLElement;
+        expect(el.hidden).toBe(false);
+        expect(el.querySelector('.offline-badge__label')?.textContent).toBe('Prêt hors ligne');
     });
 });
 
@@ -129,15 +138,14 @@ describe('R11 — le badge dépend de l’application, pas seulement du portail'
         await expect(isAppReadyOffline('https://x/pctac/', deps(fakeCaches(['https://x/pctac/'])))).resolves.toBe(true);
     });
 
-    it('renderOfflineBadge affiche « À ouvrir » quand la police manque', async () => {
+    it('renderOfflineBadge masque le badge quand la police manque', async () => {
         document.body.innerHTML = `<span id="offline-pctac"><span class="offline-badge__label">x</span></span>`;
         const ready = await renderOfflineBadge(
             { badgeId: 'offline-pctac', pageUrl: 'https://x/pctac/' },
             { serviceWorker: { controller: {} }, caches: cachesWithFonts(['https://x/pctac/'], []) },
         );
         expect(ready).toBe(false);
-        expect(document.querySelector('#offline-pctac .offline-badge__label')?.textContent)
-            .toBe('À ouvrir une fois en ligne avant départ');
+        expect((document.getElementById('offline-pctac') as HTMLElement).hidden).toBe(true);
     });
 
     it('réévalue les badges au controllerchange', async () => {
