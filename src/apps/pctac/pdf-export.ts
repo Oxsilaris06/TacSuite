@@ -92,31 +92,75 @@ function base64ToBytes(b64: string): Uint8Array {
 }
 
 /**
- * Embarque la police TrueType complète de l'OI (Oswald 500, sous-ensemble) via
- * `@pdf-lib/fontkit` (décision 34). Remplace Helvetica/WinAnsi : plus de « ? »
- * pour « \u0141ukasz », « \u0218tefan », « \u00d8yvind », « \u011e\u00fcl », « \u0414\u043c\u0438\u0442\u0440\u0438\u0439 ». Le sous-ensemble ne garde que
- * les glyphes réellement utilisés.
+ * B-3 — Polices du PDF PC-Tac, comme l'OI : corps en JetBrains Mono (400
+ * normal, 700 gras, monocasse lisible en petit), titres de section en Oswald
+ * 500 (condensée d'affichage). R23 — `hasGlyph` expose la couverture réelle de
+ * la police de corps (lue via fontkit) : un caractère absent est translittéré
+ * (grec → latin) ou remplacé par « ? » plutôt que de sortir en carré vide.
  */
-export async function embedReportFonts(
-    pdfDoc: PDFLib.PDFDocument,
-): Promise<{ font: PDFLib.PDFFont; fontBold: PDFLib.PDFFont }> {
-    pdfDoc.registerFontkit(fontkit);
-    const normal = PDF_FONT_VFS['Oswald-500.ttf'];
-    if (!normal) throw new Error("Police PDF de l'OI introuvable (Oswald-500.ttf).");
-    // Une seule graisse existe (Oswald 500) : « bold » pointe le même fichier.
-    const font = await pdfDoc.embedFont(base64ToBytes(normal), { subset: true });
-    return { font, fontBold: font };
+export interface ReportFonts {
+    font: PDFLib.PDFFont;
+    fontBold: PDFLib.PDFFont;
+    titleFont: PDFLib.PDFFont;
+    hasGlyph: (codePoint: number) => boolean;
 }
 
+export async function embedReportFonts(pdfDoc: PDFLib.PDFDocument): Promise<ReportFonts> {
+    pdfDoc.registerFontkit(fontkit);
+    const bodyNormal = PDF_FONT_VFS['JetBrainsMono-400.ttf'];
+    const bodyBold = PDF_FONT_VFS['JetBrainsMono-700.ttf'];
+    const title = PDF_FONT_VFS['Oswald-500.ttf'];
+    if (!bodyNormal || !bodyBold || !title) {
+        throw new Error("Polices PDF de l'OI introuvables (JetBrainsMono/Oswald).");
+    }
+    const bodyBytes = base64ToBytes(bodyNormal);
+    const font = await pdfDoc.embedFont(bodyBytes, { subset: true });
+    const fontBold = await pdfDoc.embedFont(base64ToBytes(bodyBold), { subset: true });
+    const titleFont = await pdfDoc.embedFont(base64ToBytes(title), { subset: true });
+    // Couverture de la police de CORPS (celle qui porte les noms saisis).
+    const kit = fontkit.create(bodyBytes) as unknown as { hasGlyphForCodePoint?: (c: number) => boolean };
+    const hasGlyph = (codePoint: number): boolean =>
+        typeof kit.hasGlyphForCodePoint === 'function' ? kit.hasGlyphForCodePoint(codePoint) : true;
+    return { font, fontBold, titleFont, hasGlyph };
+}
+
+/** Base de translittération grecque → latine (R23), lettres isolées. */
+const GREEK_BASE: Readonly<Record<string, string>> = {
+    'α': 'a', 'β': 'b', 'γ': 'g', 'δ': 'd', 'ε': 'e', 'ζ': 'z', 'η': 'i', 'θ': 'th',
+    'ι': 'i', 'κ': 'k', 'λ': 'l', 'μ': 'm', 'ν': 'n', 'ξ': 'x', 'ο': 'o', 'π': 'p',
+    'ρ': 'r', 'σ': 's', 'ς': 's', 'τ': 't', 'υ': 'u', 'φ': 'f', 'χ': 'ch', 'ψ': 'ps', 'ω': 'o',
+    'Α': 'A', 'Β': 'B', 'Γ': 'G', 'Δ': 'D', 'Ε': 'E', 'Ζ': 'Z', 'Η': 'I', 'Θ': 'Th',
+    'Ι': 'I', 'Κ': 'K', 'Λ': 'L', 'Μ': 'M', 'Ν': 'N', 'Ξ': 'X', 'Ο': 'O', 'Π': 'P',
+    'Ρ': 'R', 'Σ': 'S', 'Τ': 'T', 'Υ': 'U', 'Φ': 'F', 'Χ': 'Ch', 'Ψ': 'Ps', 'Ω': 'O',
+};
+
 /**
- * sanitizeWinAnsi(s)
- * La police embarquée trace le latin étendu, le grec et le cyrillique. Seuls
- * les caractères de CONTRÔLE (tabulations, sauts de ligne, retours chariot,
- * codes < 0x20, BOM et espaces de largeur nulle) ne sont pas dessinables : on
- * les remplace par un espace (ou rien pour le BOM). Tout le reste est conservé
- * tel quel (apostrophes courbes, tirets, lettres non latines). Ne jette jamais.
+ * R23 — translittération simple du grec vers le latin. Les diacritiques
+ * (tonos, tréma) sont retirés avant correspondance. Les caractères non grecs
+ * sont rendus tels quels.
  */
-export function sanitizeWinAnsi(s: unknown): string {
+export function transliterateGreek(str: string): string {
+    return [...str.normalize('NFD').replace(/[\u0300-\u036f]/g, '')]
+        .map((ch) => GREEK_BASE[ch] ?? ch)
+        .join('');
+}
+
+/** Vérificateur de glyphes actif pendant un export (R23). `null` hors export. */
+let glyphChecker: ((codePoint: number) => boolean) | null = null;
+
+/**
+ * sanitizeWinAnsi(s, hasGlyph?)
+ * Nettoie les caractères non dessinables : les CONTRÔLES (tabulations, sauts
+ * de ligne, codes < 0x20, BOM, espaces de largeur nulle) deviennent un espace
+ * ou disparaissent. Sans `hasGlyph`, tout le reste est conservé tel quel
+ * (apostrophes courbes, tirets, lettres non latines) — comportement d'origine.
+ *
+ * R23 — avec un vérificateur de couverture (la police de corps pendant
+ * l'export), un caractère ABSENT est translittéré s'il est grec, sinon
+ * remplacé par « ? » (repli visible et documenté) : jamais de carré vide.
+ * Ne jette jamais.
+ */
+export function sanitizeWinAnsi(s: unknown, hasGlyph: ((codePoint: number) => boolean) | null = glyphChecker): string {
     if (s === null || s === undefined) return '';
     let str: string;
     try {
@@ -130,6 +174,12 @@ export function sanitizeWinAnsi(s: unknown): string {
         if (code === 0xFEFF || code === 0x200B || code === 0x200C || code === 0x200D) continue;
         if (code === 0x09 || code === 0x0A || code === 0x0D) { out += ' '; continue; }
         if (code < 0x20) continue;
+        if (hasGlyph && !hasGlyph(code)) {
+            const latin = transliterateGreek(ch);
+            if (latin !== ch && [...latin].every((c) => hasGlyph(c.codePointAt(0) ?? -1))) out += latin;
+            else out += '?';
+            continue;
+        }
         out += ch;
     }
     return out;
@@ -176,8 +226,11 @@ export const PdfExport: PdfExportContract = {
             const A4_PORTRAIT: [number, number] = cloneA4(PageSizes.A4);
             const A4_LANDSCAPE: [number, number] = cloneA4([PageSizes.A4[1], PageSizes.A4[0]]);
             const pdfDoc = await PDFDocument.create();
-            // Décision 34 — police TrueType complète de l'OI (sous-ensemble).
-            const { font, fontBold } = await embedReportFonts(pdfDoc);
+            // Décision 34 / B-3 — corps JetBrains Mono, titres Oswald (comme l'OI).
+            const { font, fontBold, titleFont, hasGlyph } = await embedReportFonts(pdfDoc);
+            // R23 — la couverture de la police de corps guide l'échappement des
+            // textes saisis (translittération/« ? »), retiré en fin d'export.
+            glyphChecker = hasGlyph;
 
             // Charger les données (les photos sont stockées en IndexedDB, on les hydrate)
             const allLogs = Storage.loadLogData();
@@ -276,8 +329,9 @@ export const PdfExport: PdfExportContract = {
                 });
 
                 if (title) {
-                    pdfPage().drawText(sanitizeWinAnsi(title), {
-                        x: context.margin, y: context.y, size: 14, font: fontBold, color: themeColors.text
+                    // B-3 — titre de section en Oswald (titre d'affichage).
+                    pdfPage().drawText(title, {
+                        x: context.margin, y: context.y, size: 14, font: titleFont, color: themeColors.text
                     });
                     context.y -= 30;
                 }
@@ -572,7 +626,9 @@ export const PdfExport: PdfExportContract = {
                     const prevView = localStorage.getItem('lastView');
                     const canSwitch = window.UI && typeof window.UI.switchMainView === 'function';
                     if (planHidden && canSwitch) {
-                        window.UI.switchMainView('view-plan');
+                        // R25 — la bascule temporaire ne doit PAS fermer la fiche
+                        // ouverte pendant la capture de carte.
+                        window.UI.switchMainView('view-plan', { keepFiche: true });
                         try { if (window.PlanMap.map) window.PlanMap.map.resize(); } catch { /* no-op */ }
                         await new Promise(r => setTimeout(r, 450)); // laisse la carte se dimensionner
                     }
@@ -583,7 +639,7 @@ export const PdfExport: PdfExportContract = {
                         console.warn('PDF Plan capture échouée :', capErr);
                         mapDataUrl = null;
                     } finally {
-                        if (planHidden && canSwitch && prevView) window.UI.switchMainView(prevView);
+                        if (planHidden && canSwitch && prevView) window.UI.switchMainView(prevView, { keepFiche: true });
                     }
 
                     if (mapDataUrl && typeof mapDataUrl === 'string' && mapDataUrl.startsWith('data:image')) {
@@ -644,7 +700,10 @@ export const PdfExport: PdfExportContract = {
                             if (!pin || typeof pin !== 'object') continue;
                             if (context.y < context.margin + 20) { addNewPage('PLAN TACTIQUE - LISTE DES POINTS (SUITE)'); drawPinHeader(); }
                             let px = context.margin + 5;
-                            pdfPage().drawText(sanitizeWinAnsi(pin.label).substring(0, 28), { x: px, y: context.y, size: 9, font, color: themeColors.text });
+                            // B-3 — JetBrains Mono (5,4 pt/car. à 9 pt) : 25 car.
+                            // tiennent dans la colonne Label (140 pt) sans mordre
+                            // sur MGRS (l'Oswald condensé laissait passer 28).
+                            pdfPage().drawText(sanitizeWinAnsi(pin.label).substring(0, 25), { x: px, y: context.y, size: 9, font, color: themeColors.text });
                             px += pCols[0];
                             pdfPage().drawText(sanitizeWinAnsi(pin.mgrs || 'N/C'), { x: px, y: context.y, size: 8, font, color: themeColors.text });
                             px += pCols[1];
@@ -776,6 +835,8 @@ export const PdfExport: PdfExportContract = {
             const detail: unknown = (e && typeof e === 'object' && 'message' in e) ? (e as { message: unknown }).message : e;
             toast("Erreur lors de la génération du PDF : " + String(detail), { kind: 'error' });
         } finally {
+            // R23 — hors export, `sanitizeWinAnsi` garde son comportement d'origine.
+            glyphChecker = null;
             hideBusy();
         }
     }
