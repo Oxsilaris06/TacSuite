@@ -619,5 +619,14 @@ describe('_buildPinVisual — R18 : aucun HTML venu d’une archive forgée', ()
         const span = entry.pinWrap.querySelector<HTMLElement>('.material-symbols-outlined');
         expect(span?.style.color).toBe('rgb(18, 52, 86)');
     });
+
+    it('icône OTAN « Inconnu » (help), hors catalogue mais produite par le code, conservée', () => {
+        const fake = makeFakeThis();
+        const entry = makeEntry(makePin({ id: 'x5', icon: 'help', kind: 'Inconnu' }));
+
+        PinsMethods._buildPinVisual.call(fake, entry);
+
+        expect(entry.pinWrap.querySelector('.material-symbols-outlined')?.textContent).toBe('help');
+    });
 });
 

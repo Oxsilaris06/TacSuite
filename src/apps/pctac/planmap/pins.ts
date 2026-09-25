@@ -90,15 +90,22 @@ function safePinColor(color: string | undefined): string {
 }
 
 /**
+ * Icônes hors catalogue produites par le code : la roue OTAN pose le segment
+ * « Inconnu » avec `help`, absent de `PIN_ICONS`. On les garde pour ne pas
+ * changer l'aspect d'un pin légitime.
+ */
+const EXTRA_PIN_GLYPHS: readonly string[] = ['help'];
+
+/**
  * R18 — glyph Material Symbols d'un pin : `icon` n'est retenu que s'il est un
- * id du catalogue `PIN_ICONS` (donc choisi par la roue). Sinon on retombe sur
- * l'icône par défaut (voiture pour un véhicule, repère sinon) ; `null` quand le
- * pin n'a pas d'icône du tout (rendu en goutte SVG).
+ * id du catalogue `PIN_ICONS` (donc choisi par la roue), sinon `EXTRA_PIN_GLYPHS`.
+ * À défaut on retombe sur l'icône par défaut (voiture pour un véhicule, repère
+ * sinon) ; `null` quand le pin n'a pas d'icône du tout (rendu en goutte SVG).
  */
 function safePinGlyph(icon: string | undefined, isVehicle: boolean): string | null {
     const raw = icon && icon.trim();
     if (!raw) return isVehicle ? 'directions_car' : null;
-    if (PIN_ICONS.some((i) => i.id === raw)) return raw;
+    if (PIN_ICONS.some((i) => i.id === raw) || EXTRA_PIN_GLYPHS.includes(raw)) return raw;
     return isVehicle ? 'directions_car' : 'flag';
 }
 
