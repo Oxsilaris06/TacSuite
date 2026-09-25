@@ -19,7 +19,28 @@ import { legacyCaptureColors } from '@shared/h2c-colors.js';
 
 import { toast } from '@shared/feedback.js';
 import { drawOverlayLegend, overlayLegend } from '@shared/map-overlays.js';
+import type { Map as MapLibreMap } from 'maplibre-gl';
 import type { PlanMapInternal } from './types.js';
+
+/** Surface maximale d'un canvas sur iOS (Safari), en pixels. */
+const IOS_MAX_CANVAS_AREA = 16_777_216;
+/**
+ * Hauteur maximale du bandeau de `drawOverlayLegend` (police 13 + 2 × 8 de
+ * marge, en px CSS) : la bande ajoutée sous la carte le contient entier.
+ */
+const LEGEND_BAND_CSS_PX = 29;
+
+/**
+ * Audit PDF 2026-09-25 (M8) — rapport de pixels donnant `targetWidthPx` de
+ * large à la capture, borné par la taille de texture de la carte graphique
+ * (et le plafond de 4096 px de MapLibre) et par la surface de canvas d'iOS,
+ * bandeau de légende compris.
+ */
+function printPixelRatio(map: MapLibreMap, targetWidthPx: number, cssW: number, cssH: number): number {
+    const maxSide = Math.min(4096, map.painter?.context?.maxTextureSize || 4096);
+    const withLegend = cssH + LEGEND_BAND_CSS_PX;
+    return Math.min(targetWidthPx / cssW, maxSide / cssW, maxSide / withLegend, Math.sqrt(IOS_MAX_CANVAS_AREA / (cssW * withLegend)));
+}
 
 export const CaptureMethods = {
     /**
@@ -29,7 +50,7 @@ export const CaptureMethods = {
      *          ou html2canvas indisponible (dégradation propre, hors-ligne).
      */
     // planMap.js:5054-5241
-    async captureToDataUrl(this: PlanMapInternal): Promise<string | null> {
+    async captureToDataUrl(this: PlanMapInternal, options?: { targetWidthPx?: number }): Promise<string | null> {
         if (!this.map) return null;
         // planMap.js:5056 — `typeof html2canvas === 'undefined'` devient un test de
         // forme : html2canvas est désormais un import statique (SPEC-PCTAC-CONVERSION §1.4).
@@ -79,6 +100,17 @@ export const CaptureMethods = {
             Array.prototype.slice.call(document.querySelectorAll('.plan-lock-badge, .plan-photo-badge')));
         Array.prototype.push.apply(toHide,
             Array.prototype.slice.call(document.querySelectorAll('.plan-inline-panel')));
+        // Audit PDF 2026-09-25 (M8) : les boutons de zoom ne s'impriment pas ;
+        // la boussole, elle, reste (elle donne le nord).
+        Array.prototype.push.apply(toHide,
+            Array.prototype.slice.call(mapContainer.querySelectorAll('.maplibregl-ctrl-zoom-in, .maplibregl-ctrl-zoom-out')));
+        // Capture pour l'impression (`targetWidthPx`) : les PDF écrivent les
+        // attributions sous l'image ; le cartouche déplié d'un téléphone
+        // couvrait l'échelle. L'image téléchargée seule les garde.
+        if (options?.targetWidthPx) {
+            Array.prototype.push.apply(toHide,
+                Array.prototype.slice.call(mapContainer.querySelectorAll('.maplibregl-ctrl-attrib')));
+        }
         if (this._activeWheel && this._activeWheel.element) toHide.push(this._activeWheel.element);
         if (Array.isArray(this._handleMarkers)) {
             for (const m of this._handleMarkers) {
@@ -103,11 +135,31 @@ export const CaptureMethods = {
             height: string;
         }[] = [];
         const pinnedEls: HTMLElement[] = [];
+        // Audit PDF 2026-09-25 (M8) : définition voulue pour l'impression,
+        // rendue au rapport de pixels d'origine dans le `finally`.
+        const previousPixelRatio = (this.map as unknown as { _overridePixelRatio?: number | null })._overridePixelRatio ?? null;
+        let pixelRatioChanged = false;
         try {
+            const targetWidthPx = options?.targetWidthPx;
+            const cssWidth = this.map.getCanvas().clientWidth;
+            const cssHeight = this.map.getCanvas().clientHeight;
+            if (targetWidthPx && cssWidth > 0 && cssHeight > 0) {
+                const ratio = printPixelRatio(this.map, targetWidthPx, cssWidth, cssHeight);
+                // Jamais en dessous de la définition de l'écran.
+                if (ratio > this.map.getPixelRatio() * 1.01) {
+                    this.map.setPixelRatio(ratio);
+                    pixelRatioChanged = true;
+                }
+            }
             // Attendre la fin d'un mouvement caméra et le chargement des tuiles
             // visibles (borné à 2,5 s pour ne jamais bloquer hors-ligne : les tuiles
             // absentes du cache ne viendront pas, on capture l'état réel).
-            if (this.map.isMoving() || !this.map.areTilesLoaded()) {
+            // Audit PDF 2026-09-25 (M7) : attendre aussi le style et les sources
+            // (`loaded()`) — onglet Plan jamais ouvert, la carte vient d'être
+            // créée et le carroyage n'était pas encore posé — et le rendu à la
+            // nouvelle définition. Style pas encore chargé : borne de 8 s.
+            if (pixelRatioChanged || !this.map.loaded() || this.map.isMoving() || !this.map.areTilesLoaded()) {
+                const bound = this.map.style?._loaded ? 2500 : 8000;
                 await new Promise<void>((res) => {
                     let done = false;
                     const fin = () => {
@@ -122,8 +174,10 @@ export const CaptureMethods = {
                         clearTimeout(t);
                         res();
                     };
-                    const t = setTimeout(fin, 2500);
+                    const t = setTimeout(fin, bound);
                     this.map?.once('idle', fin);
+                    // Une image est nécessaire pour que `idle` soit émis.
+                    this.map?.triggerRepaint();
                 });
             }
 
@@ -236,9 +290,15 @@ export const CaptureMethods = {
                 }
             });
 
+            // Carroyage / MGRS / lignes visibles : légende incrustée en bandeau,
+            // elle suit l'image dans le PDF comme au téléchargement. Audit PDF
+            // 2026-09-25 (M8) : le bandeau passe dans une bande AJOUTÉE sous la
+            // carte ; posé sur la carte, il recouvrait l'échelle graphique.
+            const legend = this.overlays ? overlayLegend(this.overlays, this.map.getBearing()) : null;
+            const band = legend ? Math.ceil(LEGEND_BAND_CSS_PX * dpr) : 0;
             const outCanvas = document.createElement('canvas');
             outCanvas.width = w;
-            outCanvas.height = h;
+            outCanvas.height = h + band;
             // Même adaptation (d) que pour `baseCanvas` ci-dessus : `getContext('2d')`
             // est nullable côté TS. `ctx` est ici un NOUVEAU nom de variable local à ce
             // bloc (le `ctx` de `baseCanvas` est sorti de portée après son usage
@@ -247,10 +307,11 @@ export const CaptureMethods = {
             if (!outCtx) return null;
             outCtx.drawImage(baseCanvas, 0, 0, w, h);
             outCtx.drawImage(overlay, 0, 0, w, h);
-            // Carroyage / MGRS / lignes visibles : légende incrustée en bandeau,
-            // elle suit l'image dans le PDF comme au téléchargement.
-            const legend = this.overlays ? overlayLegend(this.overlays, this.map.getBearing()) : null;
-            if (legend) drawOverlayLegend(outCtx, w, h, dpr, legend);
+            if (legend) {
+                outCtx.fillStyle = '#0b0d12';
+                outCtx.fillRect(0, h, w, band);
+                drawOverlayLegend(outCtx, w, h + band, dpr, legend);
+            }
             return outCanvas.toDataURL('image/png');
         } catch (e) {
             console.error('[PlanMap] capture échec:', e);
@@ -267,6 +328,10 @@ export const CaptureMethods = {
             }
             pinnedEls.forEach((n) => { try { n.removeAttribute('data-h2c-pin'); } catch { /* ignore */ } });
             toHide.forEach((el, i) => { el.style.display = memo[i] || ''; });
+            // `null` rend la main au devicePixelRatio (aucun forçage d'origine).
+            if (pixelRatioChanged) {
+                try { this.map?.setPixelRatio(previousPixelRatio as number); } catch { /* carte détruite entre-temps */ }
+            }
             this._captureBusy = false;
         }
     },

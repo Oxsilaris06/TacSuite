@@ -1015,7 +1015,7 @@ export function pctacTutoData(): TutoData {
         },
         {
           title: "Comprendre le contenu du PDF",
-          body: `Le PDF enchaîne dans l'ordre : « MAIN COURANTE - JOURNAL D'INTERVENTION » (colonnes « Heure », « Pax », « Localisation », « Remarques »), « FICHIER ${mode.adv.plural.toUpperCase()} », « FICHIER ${mode.host.plural.toUpperCase()} », « FORCES AMIES / UNITÉS », les galeries « GALERIE : », le « PLAN TACTIQUE » avec sa « PLAN TACTIQUE - LISTE DES POINTS », et le « BOARD RELATIONNEL ». Chaque page porte en pied de page la mention « DIFFUSION RESTREINTE », l'horodatage d'export et la pagination.`,
+          body: `Le rapport complet enchaîne dans l'ordre : « MAIN COURANTE - JOURNAL D'INTERVENTION » (situation et période en tête, colonnes « Heure », « Pax », « Localisation », « Remarques », une étoile à côté de l'heure des entrées marquées importantes, comptées sous « Entrées marquées importantes »), « FICHIER ${mode.adv.plural.toUpperCase()} » (avec les « Fiches liées »), « FICHIER ${mode.host.plural.toUpperCase()} », « FORCES AMIES / UNITÉS », les galeries « GALERIE : », le « PLAN TACTIQUE » (nord et fond de carte écrits sous l'image), la « PLAN TACTIQUE - LISTE DES POINTS », la « PLAN TACTIQUE - FORMES ET TRACES » (nom, type, longueur ou surface de chaque forme et de chaque trace GPX) et le « JOURNAL DES ACTIONS PC-TAC » (points posés et changements de statut enregistrés par l'application). Chaque page porte en pied de page la mention « DIFFUSION RESTREINTE », l'horodatage d'export et la pagination.`,
           selector: null,
           terms: [
             "MAIN COURANTE - JOURNAL D'INTERVENTION",
@@ -1023,15 +1023,18 @@ export function pctacTutoData(): TutoData {
             "Pax",
             "Localisation",
             "Remarques",
+            "Entrées marquées importantes",
             "FICHIER",
+            "Fiches liées",
             "FORCES AMIES / UNITÉS",
             "GALERIE :",
             "PLAN TACTIQUE",
             "PLAN TACTIQUE - LISTE DES POINTS",
-            "BOARD RELATIONNEL",
+            "PLAN TACTIQUE - FORMES ET TRACES",
+            "JOURNAL DES ACTIONS PC-TAC",
             "DIFFUSION RESTREINTE"
           ],
-          tip: "Les galeries photo, le plan tactique et le board relationnel sont mis en page A4 paysage ; les sections sans donnée sont automatiquement omises."
+          tip: "Les galeries photo sont en A4 paysage ; la page du plan suit la forme de la carte (portrait sur un téléphone). Une section courte suit la précédente sur la même page ; les sections sans donnée sont omises."
         },
         {
           title: "Réinitialiser toutes les données",

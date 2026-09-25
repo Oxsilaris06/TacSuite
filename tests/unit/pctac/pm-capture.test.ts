@@ -68,6 +68,8 @@ function makeFakeMap(container: HTMLElement, canvas: HTMLCanvasElement, opts: Fa
         getCanvas: () => canvas,
         isMoving: () => opts.isMoving ?? false,
         areTilesLoaded: () => opts.areTilesLoaded ?? true,
+        // Audit PDF 2026-09-25 (M7) : la chaîne attend aussi style et sources.
+        loaded: () => true,
         triggerRepaint: () => {},
         once: (_type: string, cb: () => void) => { cb(); },
         off: () => {},
