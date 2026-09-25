@@ -41,7 +41,7 @@ import {
 import { esc } from '@shared/ui-platform.js';
 import { toast } from '@shared/feedback.js';
 import { annotatePhoto } from '@pctac/photo-annotation.js';
-import { mergePersonIntoExisting } from '@pctac/fiche-merge.js';
+import { mergePersonIntoExisting, syncMergedGallery } from '@pctac/fiche-merge.js';
 import { choiceDialog } from '@pctac/choice-dialog.js';
 import { diffOpenFiche } from '@pctac/fiche-conflict.js';
 import type { PctacCollectionItem } from '@shared/types/contracts.js';
@@ -574,8 +574,9 @@ async function save(next: boolean): Promise<void> {
                     }
                     // B-2 — la fusion a recopié le blob `<id>_sync` ; l'entrée de
                     // galerie correspondante doit exister pour que la photo soit
-                    // visible dans l'onglet Photos.
-                    if (merged.hasImage) upsertGallerySync(side, merged);
+                    // visible dans l'onglet Photos. Même fonction que les fusions
+                    // de l'import d'archive et d'OI (C12).
+                    syncMergedGallery(side, candidateId, merged);
                     try {
                         await ImageStore.delete(candidateId);
                         await ImageStore.delete(`${candidateId}_sync`);
