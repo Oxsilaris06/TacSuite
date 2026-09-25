@@ -27,7 +27,7 @@ vi.mock('@pctac/image-store.js', () => ({
 import '@pctac/ui.js';
 import { openFiche } from '@pctac/fiche-sheet.js';
 import { Storage } from '@pctac/storage.js';
-import { PCTAC_MODE_KEY } from '@pctac/modes.js';
+import { persistModeId } from '@pctac/modes.js';
 import { installDialog, flush, setField, clickSave, storedFiche } from './fiche-helpers.js';
 
 const HOST = { id: 'h1', nom: 'Martin', prenom: 'Lucie', blessures: '', status: 'ok' };
@@ -70,7 +70,7 @@ describe('Forcené — le choix humain prime (constat 3)', () => {
 
 describe('TP et Ampleur — triage', () => {
   beforeEach(() => {
-    localStorage.setItem(PCTAC_MODE_KEY, 'tp');
+    persistModeId('tp');
     Storage.saveCollection('pcTacHostages', []);
   });
 

@@ -22,7 +22,7 @@ import { openFiche } from '@pctac/fiche-sheet.js';
 import { Storage } from '@pctac/storage.js';
 import { Utils } from '@pctac/utils.js';
 import { ImageStore } from '@pctac/image-store.js';
-import { PCTAC_MODE_KEY } from '@pctac/modes.js';
+import { persistModeId } from '@pctac/modes.js';
 import { installDialog, flush, setField, clickSave, storedFiche } from './fiche-helpers.js';
 
 const dialog = (): HTMLDialogElement => document.getElementById('ficheSheet') as HTMLDialogElement;
@@ -70,7 +70,7 @@ describe('création et modification', () => {
 
 describe('champs masqués : jamais effacés', () => {
   it('Recherche (témoin) : l’état saisi ailleurs survit à une modification', async () => {
-    localStorage.setItem(PCTAC_MODE_KEY, 'recherche');
+    persistModeId('recherche');
     Storage.saveCollection('pcTacHostages', [{ id: 'h1', nom: 'Roux', etat: 'Choqué', status: 'ok' }]);
     await openFiche('host', 'h1');
     expect(document.querySelector('[data-key="etat"]')).toBeNull();
@@ -83,7 +83,7 @@ describe('champs masqués : jamais effacés', () => {
   });
 
   it('Ampleur : passer en Phénomène masque le prénom saisi, sans le perdre', async () => {
-    localStorage.setItem(PCTAC_MODE_KEY, 'evenement');
+    persistModeId('evenement');
     await openFiche('adv');
     setField('prenom', 'Jean');
     document.querySelector<HTMLElement>('[data-key="type_menace"] .fiche-chip[data-chip="Phénomène"]')!.click();
@@ -205,7 +205,7 @@ describe('revue neuve (398b11e)', () => {
   });
 
   it('valeur illisible par le widget : jamais effacée par un enregistrement', async () => {
-    localStorage.setItem(PCTAC_MODE_KEY, 'recherche');
+    persistModeId('recherche');
     Storage.saveCollection('pcTacAdversaries', [{ id: 'a1', nom: 'A', quand: 'vers 14h', position_heure: '09:15', status: 'active' }]);
     Storage.saveCollection('pcTacHostages', [{ id: 'h1', nom: 'T', fiabilite: 'Moyenne', status: 'ok' }]);
     await openFiche('adv', 'a1');
@@ -233,7 +233,7 @@ describe('stockage plein (revue neuve)', () => {
   it('écriture refusée : rien n’est jeté, la fiche reste ouverte, la saisie part en brouillon', async () => {
     await openFiche('adv');
     setField('nom', 'QUOTA');
-    const spy = vi.spyOn(Storage, 'saveCollection').mockImplementation(() => undefined);
+    const spy = vi.spyOn(Storage, 'saveCollection').mockImplementation(() => false);
     try {
       await clickSave();
     } finally {
@@ -261,7 +261,7 @@ describe('cartes (revue neuve)', () => {
   });
 
   it('triage changé depuis la carte : sigle intact dans la main courante', async () => {
-    localStorage.setItem(PCTAC_MODE_KEY, 'tp');
+    persistModeId('tp');
     Storage.saveCollection('pcTacHostages', [{ id: 'h1', nom: 'Roux', status: 'nt' }]);
     await UI.renderHostages();
     const sel = document.querySelector<HTMLSelectElement>('#hostage-table-body [data-fiche-action="status"]')!;
