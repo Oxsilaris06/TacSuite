@@ -64,6 +64,8 @@ export interface MapOverlays {
     readonly state: Readonly<OverlayState>;
     /** Vrai pendant le tracé du carroyage : l'hôte ignore alors ses propres clics carte. */
     isCapturing(): boolean;
+    /** Geste de carroyage en cours (tracé ou déplacement), `null` sinon : le panneau affiche « Annuler ». */
+    captureMode(): 'draw' | 'move' | null;
     setGridOn(on: boolean): void;
     setMgrsOn(on: boolean): void;
     setPowerOn(on: boolean): void;
@@ -143,13 +145,17 @@ function src(map: MapLibreMap, id: string): GeoJSONSource | undefined {
 }
 
 function sanitize(raw: Partial<OverlayState> | null | undefined): OverlayState {
+    const grid = isTacticalGridSpec(raw?.grid) ? raw!.grid! : null;
+    const sizes = GRID_CELL_SIZES as readonly number[];
     const cell = Number(raw?.cellM);
     return {
         gridOn: !!raw?.gridOn,
         mgrsOn: !!raw?.mgrsOn,
         powerOn: !!raw?.powerOn,
-        grid: isTacticalGridSpec(raw?.grid) ? raw!.grid! : null,
-        cellM: (GRID_CELL_SIZES as readonly number[]).includes(cell) ? cell : GRID_DEFAULT_CELL,
+        grid,
+        // B7 — un carroyage posé (importé d'un OI ou d'une archive : les
+        // réglages ne voyagent pas) fait foi pour la maille affichée.
+        cellM: grid && sizes.includes(grid.cellM) ? grid.cellM : sizes.includes(cell) ? cell : GRID_DEFAULT_CELL,
     };
 }
 
@@ -470,6 +476,24 @@ export function createMapOverlays(map: MapLibreMap, opts: OverlayOptions): MapOv
         notifyStatus();
     }
 
+    /** Annule le tracé ou le déplacement en cours (Échap, bouton « Annuler » au tactile). */
+    function cancelCapture(): void {
+        if (!capture) return;
+        const mode = capture.mode;
+        endCapture();
+        toast(mode === 'move' ? 'Déplacement du carroyage annulé.' : 'Tracé du carroyage annulé.');
+    }
+
+    /**
+     * B1 — toute action du panneau (interrupteur, maille, couleur, taille,
+     * Effacer, relecture) termine le geste en cours : rotation ET capture. Sans
+     * quoi une capture orpheline bloquait la carte au doigt (pas d'Échap).
+     */
+    function endGestures(commitRotation: boolean): void {
+        finishRotate(commitRotation);
+        if (capture) endCapture();
+    }
+
     /**
      * Pose le carroyage depuis deux appuis ÉCRAN : A1 au coin haut-gauche de
      * la boîte englobante, colonnes et rangées tirées de ses dimensions, angle
@@ -485,9 +509,12 @@ export function createMapOverlays(map: MapLibreMap, opts: OverlayOptions): MapOv
         const { spec, clamped } = orientedGridFromCorners(tl, tr, bl, state.cellM, map.getBearing());
         state.grid = spec;
         state.gridOn = true;
-        endCapture();
         renderGrid();
+        // B3 — enregistrer AVANT de libérer la carte : la fin de capture notifie
+        // l'hôte, qui peut rejouer une relecture différée (autre onglet) ; elle
+        // doit relire le nouveau carroyage, pas l'ancien.
         changed();
+        endCapture();
         toast(
             clamped
                 ? `Carroyage borné à ${spec.cols} × ${spec.rows} cases : zone trop grande pour une maille de ${spec.cellM} m.`
@@ -524,15 +551,16 @@ export function createMapOverlays(map: MapLibreMap, opts: OverlayOptions): MapOv
     function finishRotate(commit: boolean): void {
         if (!rotate) return;
         const { original, dirty } = rotate;
-        endRotate();
-        if (!dirty) return;
-        if (commit && state.grid) {
+        // B3 — enregistrer (ou revenir) AVANT de libérer la carte : endRotate
+        // notifie l'hôte, qui peut rejouer une relecture différée.
+        if (dirty && commit && state.grid) {
             changed();
             toast(`Carroyage orienté à ${Math.round(state.grid.angle ?? 0)}°.`, 'success');
-        } else {
+        } else if (dirty) {
             state.grid = original;
             renderGrid();
         }
+        endRotate();
     }
 
     function endRotate(): void {
@@ -668,7 +696,8 @@ export function createMapOverlays(map: MapLibreMap, opts: OverlayOptions): MapOv
         swallowUntil = Date.now() + 500;
         const moved = Math.hypot(last.x - press.x, last.y - press.y) > TAP_SLOP_PX;
         if (capture.mode === 'move') {
-            if (moved || !state.grid) return;
+            if (moved) return;
+            if (!state.grid) { endCapture(); return; } // B1 — plus rien à déplacer : on libère la carte
             state.grid = { ...state.grid, west: press.at[0], north: press.at[1] };
             endCapture();
             renderGrid();
@@ -708,7 +737,7 @@ export function createMapOverlays(map: MapLibreMap, opts: OverlayOptions): MapOv
             toast('Rotation du carroyage annulée.');
             return;
         }
-        if (capture) { endCapture(); toast('Tracé du carroyage annulé.'); }
+        cancelCapture();
     };
     document.addEventListener('keydown', onKey);
 
@@ -718,8 +747,9 @@ export function createMapOverlays(map: MapLibreMap, opts: OverlayOptions): MapOv
     const api: MapOverlays = {
         get state() { return state; },
         isCapturing: () => capture !== null || rotate !== null || Date.now() < swallowUntil,
+        captureMode: () => capture?.mode ?? null,
         setGridOn(on) {
-            finishRotate(true);
+            endGestures(true);
             state.gridOn = on;
             renderGrid();
             changed();
@@ -741,7 +771,7 @@ export function createMapOverlays(map: MapLibreMap, opts: OverlayOptions): MapOv
             // Un carroyage posé change de maille : toutes les cases changent de
             // nom (« C4 » ne désigne plus le même endroit) — même confirmation
             // que « Tracer ».
-            finishRotate(true);
+            endGestures(true);
             if (state.grid && opts.confirm && !(await opts.confirm(`Passer la maille à ${m} m ? Toutes les cases changent de nom.`))) return false;
             state.cellM = m;
             // Même emprise, nouvelle maille : on repart du coin A1 existant, en
@@ -757,14 +787,14 @@ export function createMapOverlays(map: MapLibreMap, opts: OverlayOptions): MapOv
             return true;
         },
         setGridColor(c) {
-            finishRotate(true);
+            endGestures(true);
             if (!state.grid || !Object.hasOwn(GRID_COLORS, c) || gridColor(state.grid) === c) return;
             state.grid = { ...state.grid, color: c };
             renderGrid();
             changed();
         },
         setGridLabelSize(s) {
-            finishRotate(true);
+            endGestures(true);
             if (!state.grid || !Object.hasOwn(GRID_LABEL_SIZES, s) || gridLabelSize(state.grid) === s) return;
             state.grid = { ...state.grid, labelSize: s };
             renderGrid();
@@ -855,14 +885,14 @@ export function createMapOverlays(map: MapLibreMap, opts: OverlayOptions): MapOv
         },
         async clearGrid() {
             if (!state.grid) return;
-            finishRotate(false);
+            endGestures(false);
             if (opts.confirm && !(await opts.confirm('Effacer le carroyage ?'))) return;
             state.grid = null;
             state.gridOn = false;
             renderGrid();
             changed();
         },
-        cancelCapture: endCapture,
+        cancelCapture,
         cellAt: (lng, lat) => (state.grid ? gridCellAt(state.grid, lng, lat) : null),
         mgrsAt: (lng, lat) => mgrsOf(lng, lat),
         onChange: (l) => { listeners.add(l); },
@@ -871,7 +901,7 @@ export function createMapOverlays(map: MapLibreMap, opts: OverlayOptions): MapOv
         reload() {
             // Relecture (autre onglet, import) : une rotation en cours et non
             // enregistrée est abandonnée, le stockage fait foi (F3).
-            finishRotate(false);
+            endGestures(false);
             Object.assign(state, sanitize(opts.load()));
             renderAll();
             notifyStatus();
@@ -978,9 +1008,19 @@ export function mountOverlayControls(section: HTMLElement, ov: MapOverlays, cls:
     onView.addEventListener('click', () => void ov.placeGridOnView());
     const draw = fab('tac-overlay-tool', 'crop_free', 'Tracer le carroyage : glisser d’un coin à l’autre, ou toucher deux coins');
     draw.append(' Tracer');
-    draw.addEventListener('click', () => void ov.startGridDraw());
+    // B1 — pendant la capture, le bouton devient « Annuler » : au tactile, il
+    // n'y a pas d'Échap.
+    draw.addEventListener('click', () => { if (ov.captureMode() === 'draw') ov.cancelCapture(); else void ov.startGridDraw(); });
     const move = fab('tac-overlay-tool', 'open_with', 'Déplacer le carroyage (nouvel emplacement du coin A1)');
-    move.addEventListener('click', () => ov.startGridMove());
+    move.addEventListener('click', () => { if (ov.captureMode() === 'move') ov.cancelCapture(); else ov.startGridMove(); });
+    const relabel = (btn: HTMLButtonElement, icon: string, text: string, label: string): void => {
+        const i = btn.querySelector('.material-symbols-outlined');
+        if (i) i.textContent = icon;
+        const t = btn.lastChild;
+        if (t && t.nodeType === Node.TEXT_NODE) t.textContent = text;
+        btn.title = label;
+        btn.setAttribute('aria-label', label);
+    };
     const rotateBtn = fab('tac-overlay-tool', 'rotate_right', 'Tourner le carroyage autour de son centre');
     rotateBtn.append(' Tourner');
     rotateBtn.addEventListener('click', () => void ov.startGridRotate());
@@ -1012,7 +1052,13 @@ export function mountOverlayControls(section: HTMLElement, ov: MapOverlays, cls:
             colorSelect.value = gridColor(s.grid);
             sizeSelect.value = gridLabelSize(s.grid);
         }
-        move.disabled = !s.grid;
+        const cap = ov.captureMode();
+        if (cap === 'draw') relabel(draw, 'close', ' Annuler', 'Annuler le tracé du carroyage');
+        else relabel(draw, 'crop_free', ' Tracer', 'Tracer le carroyage : glisser d’un coin à l’autre, ou toucher deux coins');
+        if (cap === 'move') relabel(move, 'close', '', 'Annuler le déplacement du carroyage');
+        else relabel(move, 'open_with', '', 'Déplacer le carroyage (nouvel emplacement du coin A1)');
+        draw.disabled = cap === 'move';
+        move.disabled = !s.grid || cap === 'draw';
         rotateBtn.disabled = !s.grid;
         northBtn.disabled = !s.grid;
         clear.disabled = !s.grid;
