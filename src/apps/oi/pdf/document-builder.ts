@@ -767,25 +767,21 @@ function buildCover(ctx: BuildCtx): Content[] {
     const bgSrc = resolveBgSrc(ctx);
     const watermark: Content[] = bgSrc !== undefined ? [buildWatermark(bgSrc, ctx)] : [];
 
-    const opCard: Content = {
-        table: {
-            widths: [mm(60)],
-            body: [
-                [
-                    {
-                        stack: [
-                            { text: `OP : ${strOr(formData.nom_operation)}` },
-                            { text: `DATE : ${strOr(formData.date_op)}`, fontSize: 9 },
-                        ],
-                        bold: true,
-                        fillColor: p.cardAlt,
-                    },
-                ],
-            ],
-        },
+    // Case « OP » (décision 43, audit F19) : le nom de l'opération (champ
+    // facultatif de l'étape Situation) n'y figure que s'il est saisi, la date
+    // de même ; ni l'un ni l'autre, pas de case. Posée DANS la marge de
+    // sécurité : elle collait au bord haut et débordait de 3,5 mm à droite.
+    const opLines: Content[] = [
+        ...(isBlankOrDash(formData.nom_operation) ? [] : [{ text: `OP : ${str(formData.nom_operation).trim()}` }]),
+        ...(isBlankOrDash(formData.date_op) ? [] : [{ text: `DATE : ${strOr(formData.date_op)}`, fontSize: 9 }]),
+    ];
+    const opCardWidthPt = mm(60);
+    const opCard: Content[] = opLines.length === 0 ? [] : [{
+        table: { widths: [opCardWidthPt], body: [[{ stack: opLines, bold: true, fillColor: p.cardAlt }]] },
         layout: LAYOUT_BORDERED,
-        absolutePosition: { x: geo.widthPt - mm(60), y: mm(2) },
-    };
+        // Largeur hors tout : colonne + marges internes (4 + 4) + filets (1 + 1) de LAYOUT_BORDERED.
+        absolutePosition: { x: geo.widthPt - geo.marginsPt[2] - opCardWidthPt - 10, y: geo.marginsPt[1] },
+    }];
 
     // Palier de police adaptatif de la couverture (correctif PG.REFIX,
     // addendum § Pagination v2) — même mécanique que `adaptivePagePx` ailleurs
@@ -923,7 +919,7 @@ function buildCover(ctx: BuildCtx): Content[] {
     const coverPage: Content = {
         stack: [
             ...watermark,
-            opCard,
+            ...opCard,
             { stack: [h1('ORDRE INITIAL', p, { boxed: true })], margin: [0, mm(35), 0, mm(15)] },
             // Adversaires retirés (×) : la situation prend toute la largeur.
             { stack: [ciblesRemoved ? situationCard : grid2([situationCard], [ciblesCard])], fontSize: coverFontPx },
