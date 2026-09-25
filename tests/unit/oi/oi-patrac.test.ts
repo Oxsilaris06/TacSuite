@@ -22,8 +22,7 @@
  * Bonus (hors preuves mandatées, couverture complémentaire) : rendu
  * `updateMemberButtonVisuals`, structure `setupQuickEditPanel`,
  * `resetPatracdvrUI` respecte `confirm()`, fumée `generatePatracdvrPdf`
- * (pdf-lib est un calcul pur, s'exécute réellement sous jsdom — même
- * précédent que `tests/unit/pctac/pc-pdfexport.test.ts`).
+ * (rendu pdfmake simulé depuis la décision 43, cf. `vi.mock` plus bas).
  *
  * `vi.resetModules()` + import dynamique par test (même précédent que
  * `oi-drag-drop.test.ts`, `oi-store.test.ts`) : isolation de l'état de module
@@ -48,6 +47,16 @@ vi.mock('@shared/feedback.js', () => ({
     confirmDialog: confirmDialogSpy,
     toast: toastSpy,
     promptDialog: promptDialogSpy,
+}));
+
+// Décision 43 : le PDF PATRACDVR passe de pdf-lib au moteur pdfmake de l'OI,
+// dont la version navigateur (polices en base64, `getBlob`) ne tourne pas sous
+// jsdom — même précédent que `oi-pdf-engine-v3.test.ts`. Rendu simulé ici ; le
+// PDF réellement rendu est vérifié par `oi-patrac-pdf-bouton.test.ts` et
+// `pdf/oi-patrac-pdf.test.ts`.
+vi.mock('@oi/pdf/patrac-doc.js', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('@oi/pdf/patrac-doc.js')>()),
+    renderPatracPdfBlob: vi.fn(async () => new Blob(['%PDF-1.7'], { type: 'application/pdf' })),
 }));
 
 /** Remplace une assertion non-null `!` (interdite, règle commune §13.1.3) par une garde explicite. */
@@ -435,7 +444,7 @@ describe('Bonus — rendu et structure (hors preuves mandatées)', () => {
     });
 });
 
-describe('generatePatracdvrPdf — fumée (pdf-lib réel sous jsdom, même précédent que pc-pdfexport.test.ts)', () => {
+describe('generatePatracdvrPdf — fumée (rendu pdfmake simulé, cf. vi.mock en tête)', () => {
     beforeEach(() => {
         (URL as unknown as { createObjectURL: () => string }).createObjectURL = vi.fn(() => 'blob:mock-url');
         (URL as unknown as { revokeObjectURL: (u: string) => void }).revokeObjectURL = vi.fn();

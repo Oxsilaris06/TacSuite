@@ -74,12 +74,9 @@
  * classe `patrac-batch-mode` sur `document.body` (:523), lue SANS garde par
  * `handleTouchStart` de `drag-drop.ts` (`drag.js:25`) — invariant préservé
  * mot pour mot, aucun code supplémentaire requis côté `patrac.ts`.
- * `generatePatracdvrPdf` (:1098-1201) : `import * as PDFLib from 'pdf-lib'`
- * (npm, PAS le global CDN). `safe()` (:1119, neutralisation WinAnsi triviale
- * par regex `[^\x00-\xFF]` → `?`) VÉRIFIÉE structurellement DIFFÉRENTE de
- * `sanitizeWinAnsi` (`@pctac/pdf-export.ts:89`, table de translittération
- * ciblée guillemets/tirets courbes) : SIGNALÉ au gate comme demandé par la
- * mission, PAS de factorisation unilatérale (non identiques).
+ * `generatePatracdvrPdf` (:1098-1201) : le PDF pdf-lib d'origine (Helvetica
+ * standard, tout caractère au-delà de U+00FF changé en « ? ») est remplacé
+ * par le moteur de l'OI (`pdf/patrac-doc.ts`, décision 43).
  *
  * Adaptations de TYPAGE PUR (aucune restructuration de logique, même patron
  * que `articulation.ts`/`drag-drop.ts`, déjà portés) :
@@ -110,11 +107,7 @@
  *    dataset (mort-code verbatim — `addPatracdvrMember` ne pose jamais
  *    `dataset.id`) ; type `Partial<OiPatracMember> & { id?: string }` pour
  *    rendre la clé déletable sans changer le comportement (jamais présente).
- *  - `generatePatracdvrPdf` : `page`/`y` mutés par les fermetures `newPage`/
- *    `drawHeaderRow` (:1135-1157) — accesseur `pdfPage()` qui jette si
- *    l'invariant « toujours appelé après `newPage()` » était violé (jamais en
- *    pratique), même précédent que `@pctac/pdf-export.ts` (`pdfPage()`, cf.
- *    son en-tête). `catch (e)` (:1195) : `e instanceof Error ? e.message :
+ *  - `generatePatracdvrPdf` : `catch (e)` (:1195) : `e instanceof Error ? e.message :
  *    String(e)`, même précédent que `@pctac/main.ts:582,614`.
  *  - `saveUniteConfig` (:1074) : `ta.dataset.configKey` est un `string`
  *    quelconque côté typage ; `isMemberConfigKey()` (garde de type locale)
@@ -133,9 +126,9 @@ import { wireDraggableMember, wireDropContainer } from '@oi/drag-drop.js';
 import { memberConfig, multiSelectAttributes, quickEditMapping } from '@oi/init.js';
 import { oiState } from '@oi/state.js';
 import { acquirePdfLock, releasePdfLock } from '@oi/pdf/generation-lock.js';
+import { currentOiPdfOptions } from '@oi/pdf/options.js';
 import { confirmDialog, promptDialog, toast } from '@shared/feedback.js';
 import type { OiFormData, OiMemberConfig, OiPatracMember } from '@shared/types/contracts.js';
-import * as PDFLib from 'pdf-lib';
 
 // ==================== Patracdvr.js ====================
 
@@ -1384,136 +1377,50 @@ window.openUniteConfigModal = openUniteConfigModal;
 window.saveUniteConfig = saveUniteConfig;
 
 // ============================================================
-// PDF DU PATRACDVR — généré directement (pdf-lib), sans patracdvr.html
+// PDF DU PATRACDVR — moteur de l'OI (pdfmake), sans patracdvr.html
 // ============================================================
+const PATRAC_KEYS: readonly (keyof OiPatracMember)[] = ['trigramme', 'fonction', 'cellule', 'principales', 'secondaires',
+    'afis', 'grenades', 'equipement', 'equipement2', 'tenue', 'gpb', 'dir'];
+
+/** Membres affichés dans `root` (mêmes attributs que la sauvegarde, `formulaires.ts`). */
+function readPatracMembers(root: ParentNode): OiPatracMember[] {
+    return Array.from(root.querySelectorAll<HTMLElement>('.patracdvr-member-btn')).map((btn) => {
+        const m = {} as OiPatracMember;
+        PATRAC_KEYS.forEach((k) => { m[k] = btn.dataset[k] || ''; });
+        return m;
+    });
+}
+
 /**
- * patrac.js:1098-1201. `safe()` (:1119) est une neutralisation WinAnsi
- * TRIVIALE (regex `[^\x00-\xFF]` → `?`), STRUCTURELLEMENT DIFFÉRENTE de
- * `sanitizeWinAnsi` (`@pctac/pdf-export.ts:89`, table de translittération
- * ciblée guillemets/tirets courbes) — vérifiée non identique, PAS de
- * factorisation unilatérale (SPEC §11.5), signalé au gate.
+ * PDF PATRACDVR séparé (décision 43) : moteur, police et thème de l'OI,
+ * CONFIDENTIEL, unité, nom et date de l'opération, « n / N », colonnes
+ * adaptées, non assignés listés (`pdf/patrac-doc.ts`). Remplace le PDF pdf-lib
+ * (Helvetica standard : « ’ », « œ », « € » et cyrillique devenaient « ? »,
+ * audit du 2026-09-25, F15).
  */
 async function generatePatracdvrPdf(): Promise<void> {
-    // patrac.js:1099 — en ESM `PDFLib` n'est jamais `undefined` ; test de forme
-    // sur la classe réellement utilisée, message inchangé (même précédent que
-    // `@pctac/pdf-export.ts:177`).
-    if (typeof PDFLib?.PDFDocument !== 'function') {
-        toast('Bibliothèque PDF indisponible (réseau ?).', { kind: 'error' });
-        return;
-    }
     // Une génération à la fois (double clic, audit F23).
     const lockToken = acquirePdfLock('patrac');
     if (lockToken === null) return;
     try {
-        // Collecte depuis le DOM (mêmes classes que patracdvr.html).
-        const rowsData: { vehicle: string; members: Record<string, string | undefined>[] }[] = [];
-        document.querySelectorAll<HTMLElement>('#patracdvr_container .patracdvr-vehicle-row').forEach(row => {
-            const members = Array.from(row.querySelectorAll<HTMLElement>('.patracdvr-member-btn')).map(b => ({ ...b.dataset }));
-            rowsData.push({ vehicle: row.dataset.vehicleName || 'Véhicule', members });
-        });
-        const unassigned = Array.from(document.querySelectorAll<HTMLElement>('#unassigned_members_container .patracdvr-member-btn')).map(b => ({ ...b.dataset }));
-        if (unassigned.length) rowsData.push({ vehicle: 'NON ASSIGNÉS', members: unassigned });
-        if (!rowsData.length) { toast('Aucun membre dans le PATRACDVR.', { kind: 'error' }); return; }
+        const rows = Array.from(document.querySelectorAll<HTMLElement>('#patracdvr_container .patracdvr-vehicle-row'))
+            .map((row) => ({ vehicle: row.dataset.vehicleName || 'Véhicule', members: readPatracMembers(row) }));
+        const unassignedEl = document.getElementById('unassigned_members_container');
+        const unassigned = unassignedEl ? readPatracMembers(unassignedEl) : [];
+        if (!unassigned.length && !rows.some((r) => r.members.length)) { toast('Aucun membre dans le PATRACDVR.', { kind: 'error' }); return; }
 
-        const { PDFDocument, StandardFonts, rgb } = PDFLib;
-        const pdf = await PDFDocument.create();
-        const font = await pdf.embedFont(StandardFonts.Helvetica);
-        const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
-        // Helvetica standard = WinAnsi : on neutralise tout caractère non encodable.
-        // patrac.js:1119 — `v` accepte toute valeur de dataset (`string | undefined`)
-        // ou un littéral fixe (`'Véhicule'`, `'-'`…) : `unknown` en entrée, jamais
-        // d'autre forme en pratique (mêmes appelants que l'original).
-        const safe = (v: unknown): string => String(v == null ? '' : v).replace(/[^\x00-\xFF]/g, '?');
-
-        const A4L: [number, number] = [841.89, 595.28];
-        const M = 28;
-        const cols: { t: string; k: string; w: number }[] = [
-            { t: 'PAX', k: 'trigramme', w: 52 }, { t: 'Fct', k: 'fonction', w: 78 },
-            { t: 'Cel.', k: 'cellule', w: 56 }, { t: 'Arme P.', k: 'principales', w: 66 },
-            { t: 'Arme S.', k: 'secondaires', w: 56 }, { t: 'AFI', k: 'afis', w: 54 },
-            { t: 'Gren.', k: 'grenades', w: 56 }, { t: 'Equip 1', k: 'equipement', w: 92 },
-            { t: 'Equip 2', k: 'equipement2', w: 92 }, { t: 'Tenue', k: 'tenue', w: 56 },
-            { t: 'GPB', k: 'gpb', w: 56 }, { t: 'DIR', k: 'dir', w: 42 },
-        ];
-        const tableW = cols.reduce((s, c) => s + c.w, 0);
-        const cInk = rgb(0.1, 0.1, 0.12), cLine = rgb(0.62, 0.62, 0.66), cHead = rgb(0.85, 0.88, 0.95), cVeh = rgb(0.80, 0.86, 1);
-        const fs = 8, vehH = 16, headH = 18;
-
-        // patrac.js:1135 — `page`/`y` mutés par les fermetures `newPage`/
-        // `drawHeaderRow` ci-dessous ; accesseur `pdfPage()` qui jette si
-        // l'invariant « toujours appelé après newPage() » était violé (jamais
-        // en pratique) — même précédent que `@pctac/pdf-export.ts` (`pdfPage()`).
-        let page: PDFLib.PDFPage | null = null;
-        let y = 0;
-        const pdfPage = (): PDFLib.PDFPage => {
-            if (page === null) {
-                throw new Error('generatePatracdvrPdf: page PDF non initialisée (newPage() jamais appelé).');
-            }
-            return page;
-        };
-        const newPage = (): void => { page = pdf.addPage(A4L); y = A4L[1] - M; };
-        const wrap = (txt: unknown, w: number): string[] => {
-            const words = safe(txt).split(/\s+/).filter(Boolean); const lines: string[] = []; let cur = '';
-            for (const wd of words) {
-                const test = cur ? cur + ' ' + wd : wd;
-                if (font.widthOfTextAtSize(test, fs) > w - 6 && cur) { lines.push(cur); cur = wd; } else cur = test;
-            }
-            if (cur) lines.push(cur);
-            return lines.length ? lines : ['-'];
-        };
-        const drawHeaderRow = (): void => {
-            let x = M;
-            pdfPage().drawRectangle({ x: M, y: y - headH, width: tableW, height: headH, color: cHead });
-            cols.forEach(c => {
-                pdfPage().drawText(c.t, { x: x + 3, y: y - headH + 6, size: fs, font: bold, color: cInk });
-                pdfPage().drawLine({ start: { x, y }, end: { x, y: y - headH }, color: cLine, thickness: 0.5 });
-                x += c.w;
-            });
-            pdfPage().drawLine({ start: { x, y }, end: { x, y: y - headH }, color: cLine, thickness: 0.5 });
-            pdfPage().drawLine({ start: { x: M, y: y - headH }, end: { x: M + tableW, y: y - headH }, color: cLine, thickness: 0.5 });
-            y -= headH;
-        };
-
-        newPage();
-        pdfPage().drawText('PATRACDVR', { x: M, y: y - 14, size: 20, font: bold, color: rgb(0.18, 0.42, 0.85) });
-        pdfPage().drawText(new Date().toLocaleDateString('fr-FR'), { x: M + tableW - 70, y: y - 12, size: 10, font, color: cInk });
-        y -= 34;
-        drawHeaderRow();
-
-        for (const grp of rowsData) {
-            if (y - vehH - 6 < M) { newPage(); drawHeaderRow(); }
-            pdfPage().drawRectangle({ x: M, y: y - vehH, width: tableW, height: vehH, color: cVeh });
-            pdfPage().drawText('VEHICULE : ' + safe(grp.vehicle), { x: M + 4, y: y - vehH + 4, size: 9, font: bold, color: cInk });
-            y -= vehH;
-            for (const m of grp.members) {
-                // Choix multiples (`"GENL, MP7"`) : « Sans » écarté, valeurs séparées par « / »
-                // (décision 2026-09-24) ; une valeur unique reste inchangée.
-                const cellLines = cols.map(c => {
-                    const vals = String(m[c.k] || '').split(',').map(x => x.trim()).filter(x => x && x !== 'Sans');
-                    return wrap(vals.length ? vals.join(' / ') : '-', c.w);
-                });
-                const nLines = Math.max(1, ...cellLines.map(l => l.length));
-                const h = Math.max(vehH, nLines * (fs + 2) + 4);
-                if (y - h < M) { newPage(); drawHeaderRow(); }
-                let x = M;
-                cols.forEach((c, ci) => {
-                    pdfPage().drawLine({ start: { x, y }, end: { x, y: y - h }, color: cLine, thickness: 0.5 });
-                    (cellLines[ci] ?? []).forEach((ln, li) => pdfPage().drawText(ln, { x: x + 3, y: y - 11 - li * (fs + 2), size: fs, font, color: cInk }));
-                    x += c.w;
-                });
-                pdfPage().drawLine({ start: { x, y }, end: { x, y: y - h }, color: cLine, thickness: 0.5 });
-                pdfPage().drawLine({ start: { x: M, y: y - h }, end: { x: M + tableW, y: y - h }, color: cLine, thickness: 0.5 });
-                y -= h;
-            }
-        }
-
-        const bytes = await pdf.save();
-        // patrac.js:1187 — `Uint8Array<ArrayBufferLike>` (pdf-lib) vs `BlobPart`
-        // (lib.dom.d.ts) : cast, même précédent que `@pctac/pdf-export.ts:637`.
-        const blob = new Blob([bytes as BlobPart], { type: 'application/pdf' });
+        const field = (id: string): string => (document.getElementById(id) as HTMLInputElement | null)?.value.trim() ?? '';
+        const dateOp = field('date_op');
+        const { buildPatracDocDefinition, patracPdfFileName, renderPatracPdfBlob } = await import('@oi/pdf/patrac-doc.js');
+        const blob = await renderPatracPdfBlob(buildPatracDocDefinition({
+            rows, unassigned, dateOp,
+            unite: field('unite_redacteur'),
+            nomOperation: field('nom_operation'),
+            isDark: currentOiPdfOptions().theme === 'sombre',
+        }));
         const a = document.createElement('a');
         a.href = URL.createObjectURL(blob);
-        a.download = `PATRACDVR_${new Date().toISOString().slice(0, 10)}.pdf`;
+        a.download = patracPdfFileName(dateOp);
         document.body.appendChild(a); a.click(); document.body.removeChild(a);
         setTimeout(() => URL.revokeObjectURL(a.href), 2000);
         toast('PDF PATRACDVR généré', { kind: 'success' });
