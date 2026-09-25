@@ -289,12 +289,15 @@ function injectStyles(): void {
   gap: var(--tac-space-2, 8px);
   margin-top: var(--tac-space-5, 24px);
 }
+/* Pas de raccourci font : « font: 600 13.5px/1 inherit » était invalide
+   (inherit ne peut pas servir de famille) et donc ignoré ; les boutons
+   prennent la typographie de boutons de l'application, comme avant. */
 .tac-confirm-btn {
   appearance: none;
+  min-height: 44px;
   border: 1px solid var(--border-light);
   border-radius: var(--tac-radius-sm, 6px);
   padding: var(--tac-space-2, 8px) var(--tac-space-4, 16px);
-  font: 600 13.5px/1 inherit;
   cursor: pointer;
   background: transparent;
   color: var(--text-main);

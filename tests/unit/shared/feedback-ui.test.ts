@@ -10,7 +10,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { toast, undoableToast } from '../../../src/shared/feedback.js';
+import { confirmDialog, toast, undoableToast } from '../../../src/shared/feedback.js';
 
 function feedbackCss(): string {
   return document.getElementById('tac-feedback-styles')?.textContent ?? '';
@@ -128,5 +128,17 @@ describe('toasts sur téléphone', () => {
     document.body.appendChild(dock);
     toast('Fiche enregistrée');
     expect(document.getElementById('tac-toast-container')?.style.bottom).toBe('');
+  });
+});
+
+describe('fenêtres de confirmation et de saisie', () => {
+  it('les boutons font au moins 44 px de haut (mesuré : 38 px sur téléphone)', () => {
+    void confirmDialog({ message: 'Supprimer ?' });
+    expect(rule('.tac-confirm-btn')).toMatch(/min-height:\s*44px/);
+  });
+
+  it('pas de raccourci `font` invalide (`… inherit` en famille annule toute la déclaration)', () => {
+    void confirmDialog({ message: 'Supprimer ?' });
+    expect(rule('.tac-confirm-btn')).not.toMatch(/font:[^;]*\binherit\s*;/);
   });
 });
