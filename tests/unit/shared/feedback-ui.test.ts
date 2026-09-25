@@ -10,7 +10,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { toast } from '../../../src/shared/feedback.js';
+import { toast, undoableToast } from '../../../src/shared/feedback.js';
 
 function feedbackCss(): string {
   return document.getElementById('tac-feedback-styles')?.textContent ?? '';
@@ -21,6 +21,14 @@ function rule(selector: string): string {
   const css = feedbackCss();
   const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   return css.match(new RegExp(`(?:^|\\n)${escaped}\\s*\\{([^}]*)\\}`))?.[1] ?? '';
+}
+
+/** Pose un faux `matchMedia` qui répond `matches(query)`. */
+function stubMatchMedia(matches: (query: string) => boolean): void {
+  vi.stubGlobal('matchMedia', (query: string) => ({
+    matches: matches(query), media: query, onchange: null,
+    addListener: () => {}, removeListener: () => {}, addEventListener: () => {}, removeEventListener: () => {}, dispatchEvent: () => false,
+  }));
 }
 
 beforeEach(() => {
@@ -64,6 +72,25 @@ describe('toasts sur téléphone', () => {
   it('sans dock, la position par défaut de la feuille s’applique (aucun style en ligne)', () => {
     toast('Enregistré');
     expect(document.getElementById('tac-toast-container')?.style.bottom).toBe('');
+  });
+
+  it('sans pointeur fin (téléphone, tablette), l’annonce ne cite pas Ctrl+Z', () => {
+    // Constat 390 × 844 : « Fiche supprimée. Ctrl+Z pour annuler. » sur un
+    // téléphone, sans clavier : la moitié du message ne sert à rien.
+    stubMatchMedia(() => false);
+    undoableToast('Fiche supprimée.', { onUndo: () => {} });
+    const text = document.querySelector('.tac-toast')?.textContent ?? '';
+    expect(text).toContain('Fiche supprimée.');
+    expect(text).not.toContain('Ctrl+Z');
+    expect(text).not.toContain('Cmd+Z');
+    // Le bouton « Annuler » reste la voie d'annulation.
+    expect(document.querySelector('.tac-toast button')?.textContent).toBe('Annuler');
+  });
+
+  it('avec un pointeur fin (poste, tablette à clavier et pavé), le raccourci reste annoncé', () => {
+    stubMatchMedia((q) => q.includes('any-pointer: fine'));
+    undoableToast('Fiche supprimée.', { onUndo: () => {} });
+    expect(document.querySelector('.tac-toast')?.textContent).toMatch(/(Ctrl|Cmd)\+Z pour annuler/);
   });
 
   it('dock masqué (fiche plein écran, rien de rendu) : position par défaut', () => {

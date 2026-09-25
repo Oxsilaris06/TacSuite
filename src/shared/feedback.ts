@@ -647,14 +647,28 @@ function undoShortcutLabel(): string {
 }
 
 /**
- * Annonce accessible : « … supprimé. Ctrl+Z pour annuler. » (R12). Idempotent
- * si l'appelant a déjà mentionné le raccourci.
+ * Sans pointeur fin (téléphone, tablette tactile), aucun clavier n'est
+ * probable : citer Ctrl+Z n'apporte rien (constat UI-1 du 25/09). Sans
+ * `matchMedia` (jsdom), on garde l'annonce.
+ */
+function keyboardLikely(): boolean {
+  try {
+    return typeof window.matchMedia !== 'function' || window.matchMedia('(any-pointer: fine)').matches;
+  } catch {
+    return true;
+  }
+}
+
+/**
+ * Annonce accessible : « … supprimé. Ctrl+Z pour annuler. » (R12), réduite à
+ * « … supprimé. » sans clavier probable (le bouton « Annuler » reste).
+ * Idempotent si l'appelant a déjà mentionné le raccourci.
  */
 function undoMessageWithShortcut(message: string): string {
   const trimmed = message.trim();
   if (/pour annuler/i.test(trimmed)) return trimmed;
   const sentence = /[.!?…]\s*$/.test(trimmed) ? trimmed : `${trimmed}.`;
-  return `${sentence} ${undoShortcutLabel()} pour annuler.`;
+  return keyboardLikely() ? `${sentence} ${undoShortcutLabel()} pour annuler.` : sentence;
 }
 
 /* =========================================================================
