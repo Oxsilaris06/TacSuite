@@ -25,7 +25,7 @@ import {
   FICHE_DRAFT_KEY,
 } from '@pctac/config.js';
 import { currentModeId, scopedKey, type PctacModeId } from '@pctac/modes.js';
-import { GPX_INDEX_KEY } from '@pctac/planmap/constants.js';
+import { GPX_INDEX_KEY, PINS_KEY, SHAPES_KEY } from '@pctac/planmap/constants.js';
 import { Persist } from '@shared/persist.js';
 
 /**
@@ -49,6 +49,57 @@ export const SITUATION_KEYS: readonly string[] = [
   'pcTacPlanLocked',
   'pcTacDashboard',
 ];
+
+/**
+ * État de remplissage d'une situation (décision 28). Sert à ne POSER la
+ * question « Changer de situation ? » que lorsqu'il y a quelque chose à
+ * perdre de vue : une situation vide se quitte sans confirmation.
+ */
+export interface SituationDataCounts {
+  /** Fiches : adversaires (ou équivalents) + otages + amis. */
+  fiches: number;
+  /** Entrées de la main courante. */
+  journal: number;
+  /** Photos de la galerie. */
+  photos: number;
+  /** Vrai dès qu'un point ou un dessin existe sur le plan. */
+  plan: boolean;
+}
+
+/** Vrai si `counts` décrit une situation non vide. */
+export function hasSituationData(counts: SituationDataCounts): boolean {
+  return counts.fiches > 0 || counts.journal > 0 || counts.photos > 0 || counts.plan;
+}
+
+/**
+ * Compte ce que porte une situation (celle passée en argument, courante par
+ * défaut). Lecture best-effort : un stockage illisible compte pour vide.
+ */
+export function situationData(modeId: PctacModeId = currentModeId()): SituationDataCounts {
+  const list = (key: string): number =>
+    Persist.get<unknown[]>(scopedKey(key, modeId), { validator: isArray, fallback: [] }).length;
+  const nonEmpty = (key: string): boolean =>
+    Persist.get<unknown[]>(scopedKey(key, modeId), { validator: isArray, fallback: [] }).length > 0;
+  return {
+    fiches: list(ADVERSARIES_KEY) + list(HOSTAGES_KEY) + list(FRIENDS_KEY),
+    journal: list(LOCAL_STORAGE_KEY),
+    photos: list(PHOTOS_KEY),
+    plan: nonEmpty(PINS_KEY) || nonEmpty(SHAPES_KEY),
+  };
+}
+
+/**
+ * Décrit en français ce que contient une situation, pour la confirmation de
+ * changement. Rend une chaîne vide si la situation est vide.
+ */
+export function describeSituationData(counts: SituationDataCounts): string {
+  const parts: string[] = [];
+  if (counts.fiches > 0) parts.push(`${counts.fiches} fiche${counts.fiches > 1 ? 's' : ''}`);
+  if (counts.journal > 0) parts.push(`${counts.journal} entrée${counts.journal > 1 ? 's' : ''} de main courante`);
+  if (counts.photos > 0) parts.push(`${counts.photos} photo${counts.photos > 1 ? 's' : ''}`);
+  if (counts.plan) parts.push('un plan');
+  return parts.join(', ');
+}
 
 /**
  * Efface les données opérationnelles d'UNE situation (celle passée en

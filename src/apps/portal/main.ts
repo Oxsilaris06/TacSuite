@@ -25,6 +25,13 @@ import '@fontsource/inter/600.css';
 // (P4.B), cf. src/shared/register-sw.ts.
 import { registerServiceWorker } from '@shared/register-sw.js';
 
+// Bandeau d'annonce (décision 27) : contenu distant, validé et affiché par
+// `announce.ts`. Le module ne touche à aucune clé des applications.
+import { initAnnouncement } from './announce.js';
+
+// Badge « Prêt hors ligne » par application (décision 28).
+import { initOfflineBadges } from './offline-ready.js';
+
 type Theme = 'light' | 'dark';
 
 /** Clé de persistance du portail — distincte de la clé `theme` des applications. */
@@ -166,4 +173,9 @@ function initNetworkStatus(): void {
 initTheme();
 initDataBadges();
 initNetworkStatus();
+initAnnouncement();
+initOfflineBadges([
+  { badgeId: 'offline-pctac', pageUrl: new URL('./pctac/', location.href).href },
+  { badgeId: 'offline-oi', pageUrl: new URL('./oi/', location.href).href },
+]);
 registerServiceWorker('portal');
