@@ -57,6 +57,43 @@ export function pctacTutoData(): TutoData {
           tip: null
         },
         {
+          title: "Saisir une entrée : l'heure se fige à la frappe",
+          body: "Le formulaire de la main courante propose une heure pré-remplie avec l'heure courante, rafraîchie chaque minute. Dès la première frappe dans « Localisation » ou « Remarques », l'heure se fige et ne bouge plus pendant la saisie ; elle reprend automatiquement après « Ajouter au Log ».",
+          selector: null,
+          terms: [
+            "Ajouter au Log",
+            "Localisation",
+            "Remarques",
+            "Heure"
+          ],
+          tip: "C'est l'heure de l'APPAREIL qui est proposée ; si elle dérive, un bandeau d'horloge vous prévient (voir les bandeaux d'alerte)."
+        },
+        {
+          title: "Modifier une entrée du journal",
+          body: "Chaque ligne du journal a un bouton de modification qui ouvre « Modifier l'entrée ». La « Date » y est modifiable et l'« Heure » peut être corrigée ; Enregistrer applique la correction et affiche « Fiche mise à jour », Annuler referme sans changement.",
+          selector: null,
+          terms: [
+            "Modifier l'entrée",
+            "Date",
+            "Heure",
+            "Enregistrer",
+            "Annuler",
+            "Fiche mise à jour"
+          ],
+          tip: "Changer seulement l'heure garde la date de l'entrée ; la date n'est écrite que si elle est renseignée."
+        },
+        {
+          title: "Supprimer une entrée du journal",
+          body: "Le bouton de suppression d'une ligne demande « Supprimer cette entrée du journal ? ». Confirmée, l'entrée disparaît immédiatement et un bandeau « Entrée supprimée » propose « Annuler » pendant 10 secondes pour la remettre à sa place.",
+          selector: null,
+          terms: [
+            "Supprimer cette entrée du journal ?",
+            "Entrée supprimée",
+            "Annuler"
+          ],
+          tip: null
+        },
+        {
           title: `Onglets ${mode.adv.plural}, ${mode.host.plural}, Amis`,
           body: `Ces trois onglets ouvrent les repertoires de personnes : ${mode.adv.plural} (fiches des mis en cause), ${mode.host.plural} (personnes menacees) et Amis (forces amies engagees). Chaque onglet affiche son propre tableau de fiches et se remplit independamment.`,
           selector: null,
@@ -66,6 +103,30 @@ export function pctacTutoData(): TutoData {
             "Amis"
           ],
           tip: null
+        },
+        {
+          title: "Créer une fiche : les doublons sont signalés",
+          body: "À la création d'une fiche (bouton « + »), si une personne porte déjà le même nom et prénom (ou le même nom et la même date de naissance), la fenêtre « Une fiche existe déjà » propose « Ouvrir l'existante », « Fusionner » (les champs vides de l'existante sont complétés) ou « Créer quand même ».",
+          selector: null,
+          terms: [
+            "Une fiche existe déjà",
+            "Ouvrir l'existante",
+            "Fusionner",
+            "Créer quand même"
+          ],
+          tip: "Le même signalement revient à l'import d'une archive ou d'un Ordre Initial ; « Ouvrir l'existante » évite de saisir deux fois la même personne."
+        },
+        {
+          title: "Supprimer une fiche ou une photo : Annuler 10 s",
+          body: "Sur une fiche ou une photo, le bouton de suppression demande « Confirmer la suppression ? ». Confirmée, l'élément disparaît tout de suite de la liste et du stockage, et un bandeau « Fiche supprimée » ou « Photo supprimée » propose « Annuler » pendant 10 secondes. Passé ce délai, les images associées sont effacées pour de bon.",
+          selector: null,
+          terms: [
+            "Confirmer la suppression ?",
+            "Fiche supprimée",
+            "Photo supprimée",
+            "Annuler"
+          ],
+          tip: "Toutes les suppressions (fiche, photo, point du plan, entrée de main courante) suivent le même schéma : confirmation, disparition immédiate, « Annuler » pendant 10 s."
         },
         {
           title: "Onglets Photos, Plan et Liens",
@@ -123,6 +184,19 @@ export function pctacTutoData(): TutoData {
             "Plein écran"
           ],
           tip: null
+        },
+        {
+          title: "Les bandeaux d'alerte de l'application",
+          body: "Trois bandeaux persistants peuvent s'afficher en tête de page, chacun fermable par sa croix : « Nouvelle version prête. » avec l'action « Recharger » quand une mise à jour attend ; « Le stockage n'est pas persistant : le navigateur peut effacer vos données… » quand la persistance est refusée ; et « L’horloge de cet appareil a N min d'écart avec l'heure réelle… » quand l'heure de l'appareil dérive (les heures de la main courante seraient fausses).",
+          selector: null,
+          terms: [
+            "Nouvelle version prête.",
+            "Recharger",
+            "Le stockage n'est pas persistant",
+            "L’horloge de cet appareil a ",
+            "min d’écart"
+          ],
+          tip: "Le bandeau de mise à jour ne force jamais l'activation : vous rechargez quand vous voulez."
         }
       ]
     },
@@ -134,7 +208,7 @@ export function pctacTutoData(): TutoData {
       steps: [
         {
           title: "Rechercher une adresse ou des coordonnées",
-          body: "Dans la barre d'outils de la carte, le bouton loupe (titre « Recherche adresse / coordonnées GPS ») ouvre un bandeau. Tape une adresse puis Entrée : la recherche interroge d'abord la Base Adresse Nationale (IGN) et ne bascule sur Nominatim qu'en cas d'échec ou hors de France ; la carte se recentre (zoom 17) et pose un pointeur bleu pulsant. La saisie accepte aussi directement les coordonnées, sans réseau : décimal (« 48.8566, 2.3522 », virgule française comprise), DMS (« 48°51'24\"N 2°21'03\"E »), MGRS (« 31U DQ 52 12 ») et la case du carroyage actif (« C4 »). Une case demandée sans carroyage, ou hors du rectangle, est signalée ; des coordonnées hors plage sont refusées.",
+          body: "Dans la barre d'outils de la carte, le bouton loupe (titre « Recherche adresse / coordonnées GPS ») ouvre un bandeau. Tape une adresse puis Entrée : la recherche interroge d'abord la Base Adresse Nationale (IGN) et ne bascule sur Nominatim qu'en cas d'échec ou hors de France ; la carte se recentre (zoom 17) et pose un pointeur bleu pulsant. La saisie accepte aussi directement les coordonnées, sans réseau : décimal (« 48.8566, 2.3522 », virgule française comprise), DMS (« 48°51'24\"N 2°21'03\"E »), MGRS (« 31U DQ 52 12 ») et la case du carroyage actif (« C4 »). Sans carroyage actif, une saisie comme « D951 » ou « A7 » est traitée comme une adresse et part au géocodage ; une case hors du rectangle est signalée ; des coordonnées hors plage sont refusées.",
           selector: "#plan_btn_search",
           terms: [
             "Recherche adresse / coordonnées GPS",
@@ -380,12 +454,15 @@ export function pctacTutoData(): TutoData {
         },
         {
           title: "Supprimer un pin",
-          body: "L'option \"Supprimer\" (icone delete, rouge) de la roue d'options retire definitivement le pin de la carte.",
+          body: "L'option « Supprimer » (icône delete, rouge) de la roue d'options demande confirmation (« Supprimer ce point du plan ? ») puis retire le point de la carte. Un bandeau « Point supprimé » propose alors « Annuler » pendant 10 secondes : « Annuler » remet le point exactement là où il était (même position, mêmes propriétés). Passé ce délai, le retrait est définitif.",
           selector: null,
           terms: [
-            "Supprimer"
+            "Supprimer",
+            "Supprimer ce point du plan ?",
+            "Point supprimé",
+            "Annuler"
           ],
-          tip: null
+          tip: "Retirer un point d'entité (adversaire, otage, ami) journalise « Ping retiré » dans la main courante ; « Annuler » y ajoute « Ping rétabli »."
         }
       ]
     },
@@ -833,7 +910,8 @@ export function pctacTutoData(): TutoData {
           body: "Au-delà de six minutes sans nouvelle position, un opérateur passe « perdu » : son marqueur reste sur la carte, grisé, avec la mention « perdu depuis N min » mise à jour chaque minute. Il redevient normal dès qu'une nouvelle position arrive. Pour le faire disparaître de votre écran, appuyez sur « Retirer » (sur son marqueur ou dans la liste) — ou « Stop » pour arrêter tout le suivi.",
           terms: [
             "perdu depuis",
-            "Retirer"
+            "Retirer",
+            "Stop"
           ],
           selector: "#tl_ops",
           tip: "Cet opérateur perdu n'est jamais retiré tout seul : vous décidez de le garder sous les yeux ou de l'écarter."
@@ -842,7 +920,8 @@ export function pctacTutoData(): TutoData {
           title: "L'écran reste allumé pendant le suivi",
           body: "Tant qu'un suivi en direct (Tchap ou OsmAnd) est actif, PC Tac demande au navigateur de maintenir l'écran allumé, pour ne pas perdre la carte en pleine intervention. Le verrou est partagé par tous les suivis et relâché au dernier « Stop » ; si le navigateur refuse ou ne sait pas faire, un message unique vous prévient que l'écran peut s'éteindre.",
           terms: [
-            "L'écran peut se mettre en veille pendant le suivi"
+            "L'écran peut se mettre en veille pendant le suivi",
+            "Stop"
           ],
           selector: null,
           tip: "L'écran restant allumé consomme de la batterie : coupez le suivi dès que vous n'en avez plus besoin."
@@ -868,15 +947,18 @@ export function pctacTutoData(): TutoData {
           title: "Comprendre la sauvegarde automatique",
           body: "Il n'y a aucun bouton « Enregistrer » : chaque log, fiche, intervenant, point ou dessin du plan est écrit automatiquement dans le stockage local du navigateur, et les photos dans une base IndexedDB dédiée. Tout reste hors-ligne sur l'appareil ; si le stockage est saturé, l'écriture est abandonnée proprement sans planter l'application.",
           selector: null,
-          terms: [],
+          terms: [
+            "Enregistrer"
+          ],
           tip: "Ce stockage local est propre au navigateur et à l'appareil : effacer les données du site ou changer d'appareil perd l'opération. Exportez une archive pour la transporter."
         },
         {
           title: "Exporter une archive .pctac.zip",
-          body: "Dans le dock, le bouton à icône archive (infobulle « Exporter une archive .pctac.zip (données + photos) ») génère et télécharge un fichier unique portable nommé « PC-TAC-{horodatage}.pctac.zip » qui contient toute l'opération.",
+          body: "Dans le dock, le bouton à icône archive (infobulle « Exporter une archive .pctac.zip (données + photos) ») génère et télécharge un fichier unique portable nommé « PC-Tac_<Situation>_<AAAA-MM-JJ>_<HHhMM>.pctac.zip » (par exemple « PC-Tac_Forcene_2026-09-25_14h30.pctac.zip ») qui contient toute l'opération. Le nom ne porte jamais de nom de personne.",
           selector: "#exportJsonDockBtn",
           terms: [
-            "Exporter une archive .pctac.zip (données + photos)"
+            "Exporter une archive .pctac.zip (données + photos)",
+            "PC-Tac_"
           ],
           tip: "Nécessite la librairie JSZip chargée ; sinon le message « JSZip indisponible (réseau ?). Impossible de générer l'archive. » s'affiche."
         },
@@ -915,10 +997,11 @@ export function pctacTutoData(): TutoData {
         },
         {
           title: "Générer et télécharger le PDF",
-          body: "Le bouton à icône picture_as_pdf (infobulle « Générer et télécharger le PDF ») construit puis télécharge immédiatement un dossier de synthèse nommé « PC-TAC-EXPORT-{horodatage}.pdf ». Le PDF adopte automatiquement le thème actif (clair ou sombre).",
+          body: "Le bouton à icône picture_as_pdf (infobulle « Générer et télécharger le PDF ») construit puis télécharge immédiatement un dossier de synthèse nommé « PC-Tac_<Situation>_<AAAA-MM-JJ>_<HHhMM>.pdf » (mêmes principes que l'archive : situation et horodatage, jamais de nom de personne). Le PDF adopte automatiquement le thème actif (clair ou sombre).",
           selector: "#previewPdfDockBtn",
           terms: [
-            "Générer et télécharger le PDF"
+            "Générer et télécharger le PDF",
+            "PC-Tac_"
           ],
           tip: "Nécessite la librairie pdf-lib chargée ; sinon « Librairie pdf-lib non chargée (réseau ?). Réessaie dans quelques secondes. »."
         },
@@ -944,7 +1027,7 @@ export function pctacTutoData(): TutoData {
         },
         {
           title: "Réinitialiser toutes les données",
-          body: `Le bouton rouge à icône delete_forever (infobulle « Réinitialiser toutes les données ») ouvre la modale « RESET COMPLET », qui avertit que « toutes les données (logs, ${mode.adv.plural.toLowerCase()}, ${mode.host.plural.toLowerCase()}, photos) seront définitivement supprimées. Cette action est irréversible. ». « EXPORTER L'ARCHIVE PUIS EFFACER » télécharge d'abord l'archive .pctac.zip de la situation, puis efface tout (stockage local + photos) et recharge la page ; si l'export échoue, rien n'est effacé. « EFFACER SANS ARCHIVE », en rouge, efface sans sauvegarde ; « ANNULER » referme sans rien supprimer.`,
+          body: `Le bouton rouge à icône delete_forever (infobulle « Réinitialiser toutes les données ») ouvre la modale « RESET COMPLET », qui avertit que « toutes les données (logs, ${mode.adv.plural.toLowerCase()}, ${mode.host.plural.toLowerCase()}, photos) seront définitivement supprimées. Cette action est irréversible. ». Deux voies : « EXPORTER L'ARCHIVE PUIS EFFACER » télécharge d'abord l'archive .pctac.zip de la situation et ne vide le stockage qu'une fois l'archive enregistrée (si l'export échoue, rien n'est effacé) ; « EFFACER SANS ARCHIVE », en rouge, efface sans sauvegarde. « ANNULER » referme sans rien supprimer.`,
           selector: "#resetDataDockBtn",
           terms: [
             "Réinitialiser toutes les données",
