@@ -22,7 +22,7 @@ import { Persist } from '@shared/persist.js';
 import { scopedKey } from '@pctac/modes.js';
 import { ADVERSARIES_KEY, HOSTAGES_KEY, PHOTOS_KEY, DASHBOARD_KEY } from '@pctac/config.js';
 import { PINS_KEY } from '@pctac/planmap/constants.js';
-import { undoableToast } from '@shared/feedback.js';
+import { toast, undoableToast } from '@shared/feedback.js';
 
 export interface UndoableDeleteOptions {
     /** Clé de collection (`pcTacAdversaries`, `pcTacPhotos`…) ou clé de journal. */
@@ -60,13 +60,30 @@ export function undoableDelete(opts: UndoableDeleteOptions): boolean {
     undoableToast(opts.message, {
         onUndo: () => {
             const current = Storage.loadCollection(opts.key);
+            // C9 (R14) — l'élément a pu être RECRÉÉ sous le même id entre-temps
+            // (« Recréer en enregistrant » depuis un autre onglet) : le réinsérer
+            // créerait un doublon d'id, et une suppression ultérieure en perdrait
+            // un. « Annuler » ne remet donc que ce qui manque encore.
+            if (current.some((item) => item.id === removed.id)) {
+                const noun = opts.message.includes('Photo') ? 'Photo' : 'Fiche';
+                toast(`${noun} déjà recréée ailleurs`, { kind: 'info' });
+                return;
+            }
             // « Même position » : on borne l'index si la liste a rétréci depuis.
             const at = Math.min(index, current.length);
             current.splice(at, 0, removed as PctacCollectionItem);
             Storage.saveCollection(opts.key, current);
             run(opts.refresh);
         },
-        onCommit: () => { run(opts.onCommit); },
+        onCommit: () => {
+            // C9 (R14) — l'élément a pu être RECRÉÉ sous le même id avant
+            // l'échéance : purger effacerait alors sa photo, son entrée de
+            // galerie et ses liens, alors que la fiche recréée garde
+            // `hasImage:true` (photo perdue, carte cassée). On ne purge donc
+            // rien tant que l'id est de nouveau présent dans la collection.
+            if (Storage.loadCollection(opts.key).some((item) => item.id === removed.id)) return;
+            run(opts.onCommit);
+        },
     });
     return true;
 }
@@ -86,6 +103,9 @@ export function undoableDeleteLog(id: string, message: string, refresh: () => vo
     undoableToast(message, {
         onUndo: () => {
             const current = Storage.loadLogData();
+            // C9 (R14) — même garde que pour les collections : ne pas réinsérer
+            // une entrée dont l'id est de nouveau présent.
+            if (current.some((entry) => entry.id === removed.id)) return;
             const at = Math.min(index, current.length);
             current.splice(at, 0, removed as PctacLogEntry);
             Storage.saveLogData(current);
