@@ -55,8 +55,8 @@ import {
     filterImportKeys,
     importSummaryMessage,
     resolveDuplicateFiches,
-    transferMergedImages,
 } from '@pctac/archive.js';
+import { mergePersonIntoExisting } from '@pctac/fiche-merge.js';
 import { ImageStore } from '@pctac/image-store.js';
 import { Storage } from '@pctac/storage.js';
 import { PCTAC_MODE_KEY } from '@pctac/modes.js';
@@ -172,31 +172,38 @@ describe('exportZip — nom de fichier lisible (décision 32)', () => {
     });
 });
 
-describe('transferMergedImages — piège de mergeFicheFields', () => {
-    it('recopie la photo entrante vers l’id gardé quand hasImage est complété', async () => {
+describe('mergePersonIntoExisting — recopie UNIQUE des images de fusion (A-4/R4)', () => {
+    it('recopie la photo entrante vers l’id gardé quand l’existante n’en a pas', async () => {
         await ImageStore.put('remote1', 'data:image/png;base64,AAA=');
         await ImageStore.put('remote1_sync', 'data:image/png;base64,BBB=');
-        const merged = { id: 'local1', nom: 'X', hasImage: true } as Record<string, unknown>;
-        await transferMergedImages('local1', 'remote1', merged as never, ['hasImage']);
+        const { merged } = await mergePersonIntoExisting(
+            { id: 'local1', nom: 'X' },
+            { id: 'remote1', nom: 'X', hasImage: true },
+        );
+        expect(merged.hasImage).toBe(true);
         expect(await ImageStore.get('local1')).toBe('data:image/png;base64,AAA=');
         expect(await ImageStore.get('local1_sync')).toBe('data:image/png;base64,BBB=');
     });
 
-    it('recopie l’original quand annotations est complété, et le retire si absent', async () => {
-        await ImageStore.put('remote2_orig', 'data:image/png;base64,ORIG=');
-        await transferMergedImages('local2', 'remote2', { id: 'local2', annotations: '[{"type":"box"}]' } as never, ['annotations']);
-        expect(await ImageStore.get('local2_orig')).toBe('data:image/png;base64,ORIG=');
-
-        // Entrant annoté mais SANS original : l'annotation est retirée (invariant).
-        const stripped = { id: 'local3', annotations: '[{"type":"box"}]' } as Record<string, unknown>;
-        await transferMergedImages('local3', 'remote3', stripped as never, ['annotations']);
-        expect(stripped.annotations).toBeUndefined();
-        expect(await ImageStore.get('local3_orig')).toBeNull();
+    it('garde la photo de l’existante et ne prend NI l’original NI les annotations de l’entrante (R4)', async () => {
+        await ImageStore.put('local2', 'PHOTO_LOCALE');
+        await ImageStore.put('remote2', 'PHOTO_ENTRANTE');
+        await ImageStore.put('remote2_orig', 'ORIG_ENTRANT');
+        const { merged } = await mergePersonIntoExisting(
+            { id: 'local2', nom: 'X', hasImage: true },
+            { id: 'remote2', nom: 'X', hasImage: true, annotations: '[{"type":"box"}]' },
+        );
+        expect(merged.hasImage).toBe(true);
+        expect(merged.annotations).toBeUndefined();
+        expect(await ImageStore.get('local2')).toBe('PHOTO_LOCALE');
+        expect(await ImageStore.get('local2_orig')).toBeNull();
     });
 
     it('retire hasImage si la photo entrante est introuvable', async () => {
-        const merged = { id: 'local4', hasImage: true } as Record<string, unknown>;
-        await transferMergedImages('local4', 'remote4', merged as never, ['hasImage']);
+        const { merged } = await mergePersonIntoExisting(
+            { id: 'local4', nom: 'X' },
+            { id: 'remote4', nom: 'X', hasImage: true },
+        );
         expect(merged.hasImage).toBeUndefined();
     });
 });

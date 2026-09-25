@@ -27,7 +27,10 @@ async function copyImage(srcId: string, dstId: string): Promise<boolean> {
         const data = await ImageStore.get(srcId);
         if (!data) return false;
         await ImageStore.put(dstId, data);
-        await ImageStore.put(`${dstId}_sync`, data);
+        // `_sync` est la copie galerie de la photo affichée : on reprend celle
+        // de l'entrante quand elle existe, sinon on duplique l'image de base.
+        const sync = await ImageStore.get(`${srcId}_sync`);
+        await ImageStore.put(`${dstId}_sync`, sync ?? data);
         return true;
     } catch {
         return false;

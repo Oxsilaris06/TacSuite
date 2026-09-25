@@ -9,16 +9,16 @@
  * de PC-Tac) et choisit entre :
  *
  *   - FUSIONNER (par défaut) : les éléments de l'archive s'ajoutent aux siens ;
- *     un élément déjà présent, reconnu à son identifiant, est ignoré. Rien de
- *     local n'est perdu, et l'on peut importer plusieurs fois de suite sans
- *     accumuler de doublons.
+ *     sur un conflit d'identifiant, la version la plus RÉCENTE (`updatedAt`)
+ *     gagne (décision 32). Les remplacements sont récapitulés après coup.
  *   - REMPLACER : les catégories cochées sont vidées puis réécrites depuis
  *     l'archive. C'est la restauration de sauvegarde d'avant, restreinte aux
  *     catégories choisies.
  *
- * En cas de conflit d'identifiant en fusion, c'est la version LOCALE qui est
- * conservée. Celui qui importe a le contexte de son propre poste ; écraser sa
- * saisie avec une version venue d'ailleurs serait la surprise coûteuse.
+ * En cas de conflit d'identifiant en fusion, deux éléments non datés (ou de
+ * même date) : la version LOCALE est conservée. Celui qui importe a le contexte
+ * de son propre poste ; écraser sa saisie avec une version non plus récente
+ * serait la surprise coûteuse.
  *
  * Repli sans interface : quand `#importScopeModal` est absent du document
  * (suite de tests, gabarit réduit), `askImportScope()` retombe sur la
@@ -174,10 +174,30 @@ function incomingWins(local: Record<string, unknown>, incoming: Record<string, u
 export function mergeCollectionReport(localRaw: string | null, incomingRaw: string | undefined): CollectionMergeReport {
     if (incomingRaw === undefined) return { json: localRaw, added: [], replaced: [] };
 
+    // Rien en local : l'archive fait foi, quelle que soit la forme de sa valeur.
+    // C'est le comportement historique (`if (localRaw === null) return incomingRaw`)
+    // et il est INDISPENSABLE aux valeurs qui ne sont pas des listes — carroyage
+    // `pcTacPlanGrid`, tableau de liens `pcTacDashboard`, associations
+    // `pcTacTpAssoc`, cadrage `pcTacPlanView`, verrou `pcTacPlanLocked` : sans
+    // cette reprise, un poste neuf (ou une situation encore sans carroyage)
+    // perdait ces réglages à l'import en fusion.
+    if (localRaw === null) {
+        let incoming: unknown;
+        try {
+            incoming = JSON.parse(incomingRaw);
+        } catch {
+            return { json: null, added: [], replaced: [] };
+        }
+        const added = Array.isArray(incoming)
+            ? incoming.filter((i): i is Record<string, unknown> => !!i && typeof i === 'object')
+            : [];
+        return { json: incomingRaw, added, replaced: [] };
+    }
+
     let local: unknown;
     let incoming: unknown;
     try {
-        local = localRaw === null ? [] : JSON.parse(localRaw);
+        local = JSON.parse(localRaw);
         incoming = JSON.parse(incomingRaw);
     } catch {
         return { json: localRaw, added: [], replaced: [] };

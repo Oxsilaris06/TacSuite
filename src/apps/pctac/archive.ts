@@ -39,7 +39,8 @@ import {
 import { GPX_INDEX_KEY, GRID_KEY, OVERLAYS_KEY, PINS_KEY } from '@pctac/planmap/constants.js';
 import { isTacticalGridSpec } from '@shared/tactical-grid.js';
 import { PCTAC_MODES, SHARED_KEYS, currentModeId, persistModeId, scopedKey, type PctacModeId } from '@pctac/modes.js';
-import { findDuplicatePerson, mergeFicheFields } from '@pctac/fiche.js';
+import { findDuplicatePerson } from '@pctac/fiche.js';
+import { mergePersonIntoExisting } from '@pctac/fiche-merge.js';
 import { Utils } from '@pctac/utils.js';
 import {
     LOCAL_STORAGE_KEY, TP_ASSOC_KEY,
@@ -316,61 +317,26 @@ function gpxTrackIds(): string[] {
 }
 
 /**
- * Recopie vers l'id GARDÉ les images de la fiche entrante reprises par la
- * fusion (décision 32). `mergeFicheFields` complète aussi `hasImage` et
- * `annotations`, alors que les images de l'entrante vivent dans `ImageStore`
- * sous l'id ENTRANT : sans cette recopie, la fiche gardée pointerait vers des
- * blobs absents (photo cassée) — et l'invariant « `<id>_orig` seulement si la
- * fiche porte `annotations` » doit tenir (revue G9). Si l'image manque, on
- * retire le champ plutôt que de laisser un pointeur mort.
- */
-export async function transferMergedImages(
-    keptId: string,
-    incomingId: string,
-    merged: PctacCollectionItem,
-    filled: readonly string[],
-): Promise<void> {
-    if (filled.includes('hasImage')) {
-        const base = await ImageStore.get(incomingId);
-        if (base) {
-            await ImageStore.put(keptId, base);
-            const sync = await ImageStore.get(incomingId + '_sync');
-            if (sync) await ImageStore.put(keptId + '_sync', sync);
-        } else {
-            delete merged.hasImage;
-        }
-    }
-    let annotated = hasAnnotations(merged as Record<string, unknown>);
-    if (filled.includes('annotations') && annotated) {
-        const orig = await ImageStore.get(incomingId + '_orig');
-        if (orig) await ImageStore.put(keptId + '_orig', orig);
-        else {
-            // `annotations` sans original ferait dessiner sur l'image affichée :
-            // on retire l'annotation plutôt que de conserver l'incohérence.
-            delete merged.annotations;
-            annotated = false;
-        }
-    }
-    if (!annotated) {
-        try { await ImageStore.delete(keptId + '_orig'); } catch { /* best-effort */ }
-    }
-}
-
-/**
  * Signale et traite les doublons de personnes parmi les fiches AJOUTÉES par
  * l'import (id différent mais `findDuplicatePerson` positive). Pour chacune,
- * « Fusionner » complète la fiche existante (`mergeFicheFields`, champs vides
- * seulement) et retire l'importée — images recopiées vers l'id gardé —,
+ * « Fusionner » complète la fiche existante (`mergePersonIntoExisting`, champs
+ * vides seulement, images recopiées vers l'id gardé) et retire l'importée,
  * « Garder les deux » ne touche à rien. Rend les noms des fiches fusionnées.
+ *
+ * `modeId` est la situation CIBLE de l'archive : elle peut différer de celle
+ * affichée (décision 2). Lire ou écrire via la situation courante fusionnerait
+ * dans la mauvaise situation et effacerait les photos de la fiche importée
+ * (R1). La recopie d'images est UNIQUE (`fiche-merge.ts`, A-4).
  */
 export async function resolveDuplicateFiches(
     addedByKey: Record<string, Array<Record<string, unknown>>>,
+    modeId: PctacModeId = currentModeId(),
 ): Promise<string[]> {
     const mergedNames: string[] = [];
     for (const key of FICHE_KEYS) {
         const added = addedByKey[key] ?? [];
         if (!added.length) continue;
-        let list = Storage.loadCollection(key);
+        let list = Storage.loadCollection(key, modeId);
         for (const incoming of added) {
             if (!incoming || typeof incoming.id !== 'string') continue;
             const candidate = incoming as PctacCollectionItem;
@@ -386,16 +352,11 @@ export async function resolveDuplicateFiches(
                 cancelLabel: 'Garder les deux',
             });
             if (!merge) continue;
-            const { merged, filled } = mergeFicheFields(existing, candidate);
-            try {
-                await transferMergedImages(existing.id, candidate.id, merged, filled);
-            } catch (e) {
-                console.warn('[Archive] copie des images fusionnées échouée:', e);
-            }
+            const { merged } = await mergePersonIntoExisting(existing, candidate);
             list = list
                 .filter((it) => it.id !== candidate.id)
                 .map((it) => (it.id === existing.id ? merged : it));
-            Storage.saveCollection(key, list);
+            Storage.saveCollection(key, list, modeId);
             try { await ImageStore.deleteMany([candidate.id, candidate.id + '_sync', candidate.id + '_orig']); }
             catch { /* best-effort */ }
             mergedNames.push(name);
@@ -433,14 +394,67 @@ export function importSummaryMessage(
 }
 
 /**
- * Identifiant PC-Tac STABLE d'une photo d'OI, dérivé de son id OI (A6). Un
- * réimport du même OI retrouve donc la même entrée et la met à jour au lieu
- * d'en ajouter une seconde. Restreint aux caractères admis par `SAFE_ID`
- * (l'id finit dans des gestionnaires en ligne).
+ * Identifiant PC-Tac STABLE d'une photo d'OI, dérivé de son id OI (A6) ET de
+ * la situation (R5). Un réimport du même OI dans la MÊME situation retrouve la
+ * même entrée et la met à jour au lieu d'en ajouter une seconde ; la même
+ * photo importée dans une autre situation reçoit une clé DISTINCTE, car le
+ * magasin d'images est partagé entre situations : sans ce suffixe, un RESET,
+ * une suppression ou une annotation dans l'une cassait la photo de l'autre
+ * (décisions 1 et 3). Reste sous `SAFE_ID` (128 caractères).
  */
-export function stableOiPhotoId(imgId: string): string {
-    const safe = imgId.replace(/[^A-Za-z0-9_.:-]/g, '_').slice(0, 120);
-    return `oi_photo_${safe || 'sans_id'}`;
+export function stableOiPhotoId(imgId: string, modeId: PctacModeId = currentModeId()): string {
+    const safe = imgId.replace(/[^A-Za-z0-9_.:-]/g, '_').slice(0, 100);
+    const suffix = modeId === 'forcene' ? '' : `_${modeId}`;
+    return `oi_photo${suffix}_${safe || 'sans_id'}`;
+}
+
+/** Type MIME d'image accepté à la frontière de confiance. */
+const ALLOWED_IMAGE_MIMES = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif']);
+
+/**
+ * Assainit un data URL d'image venu d'une archive (R7). N'accepte QUE
+ * `data:image/<type>;base64,<base64>`. Un type hors liste blanche
+ * (`image/svg+xml`, `image/png" onerror=…`) est remplacé par `image/jpeg` :
+ * la charge utile reste une image inerte, jamais un attribut injecté dans
+ * `src="…"`. Rend `null` si le contenu n'est pas un data URL d'image valide.
+ */
+export function sanitizeImageDataUrl(raw: unknown): string | null {
+    if (typeof raw !== 'string') return null;
+    // Le préfixe DOIT être `data:image/…` ; le type déclaré peut contenir
+    // n'importe quoi (guillemet, espace) et mène alors à `image/jpeg`.
+    const m = /^data:(image\/[^;,]*);base64,([A-Za-z0-9+/=]+)$/i.exec(raw.trim());
+    if (!m) return null;
+    const declared = (m[1] ?? '').toLowerCase();
+    const b64 = m[2] ?? '';
+    return ALLOWED_IMAGE_MIMES.has(declared) ? `data:${declared};base64,${b64}` : `data:image/jpeg;base64,${b64}`;
+}
+
+/**
+ * Cherche dans `items` la fiche qui désigne la personne d'un adversaire OI.
+ * L'OI ne porte qu'un champ nom (`nom_adversaire`), alors que PC-Tac garde
+ * `nom` et `prenom` séparés : on compare donc le nom complet aux deux ordres
+ * possibles. Faute de certitude sur le découpage, on retombe sur `nom +
+ * date de naissance` (décision 32) quand la date est identique et que le nom
+ * ou le prénom de la fiche apparaît dans le champ unique.
+ */
+export function findOiDuplicatePerson(
+    items: readonly PctacCollectionItem[],
+    fullName: string,
+    dob: string,
+): PctacCollectionItem | null {
+    const full = _normName(fullName);
+    if (!full) return null;
+    const dobN = _normName(dob);
+    for (const item of items) {
+        const n = _normName(item.nom);
+        const p = _normName(item.prenom);
+        const nameMatch = full === [n, p].filter(Boolean).join(' ')
+            || full === [p, n].filter(Boolean).join(' ');
+        const dobMatch = !!dobN && _normName(item.dob) === dobN
+            && ((n !== '' && full.includes(n)) || (p !== '' && full.includes(p)));
+        if (nameMatch || dobMatch) return item;
+    }
+    return null;
 }
 
 /** Catégorie de l'onglet Photos la plus cohérente pour un contenant OI. */
@@ -727,6 +741,21 @@ export const Archive: ArchiveContract = {
                 return { ok: false, error: e };
             }
         }
+        // R3 : en import partiel, n'écrire une image que si son propriétaire a
+        // été AJOUTÉ ou REMPLACÉ par la fusion. Les images des fiches locales
+        // gardées (plus récentes) ne doivent jamais être écrasées par la
+        // version ancienne de l'archive. En restauration intégrale, tout est
+        // repris (l'état local vient d'être remplacé).
+        const acceptedBaseIds = new Set<string>();
+        if (!scope.full) {
+            const accept = (items: Array<Record<string, unknown>>): void => {
+                items.forEach((it) => { if (it && typeof it.id === 'string') acceptedBaseIds.add(it.id); });
+            };
+            Object.values(scopeReport.addedByKey).forEach(accept);
+            Object.values(scopeReport.replacedByKey).forEach(accept);
+        }
+        const baseImageId = (id: string): string => id.replace(/_(sync|orig)$/, '');
+
         const imagesFolder = scopeCarriesImages(scope) ? zip.folder('images') : null;
         if (imagesFolder) {
             const tasks: Promise<void>[] = [];
@@ -734,9 +763,15 @@ export const Archive: ArchiveContract = {
                 if (entry.dir) return;
                 // archive.js:218 — l'import accepte .txt ET .bin (l'export n'écrit que .txt).
                 const id = relPath.replace(/\.txt$/, '').replace(/\.bin$/, '');
+                if (!scope.full && !acceptedBaseIds.has(baseImageId(id))) return;
                 tasks.push(
                     entry.async('string')
-                        .then((dataUrl) => ImageStore.put(id, dataUrl))
+                        .then((dataUrl) => {
+                            // R7 : frontière de confiance — l'archive peut être forgée.
+                            const safe = sanitizeImageDataUrl(dataUrl);
+                            if (safe) return ImageStore.put(id, safe);
+                            return undefined;
+                        })
                         .catch((err: unknown) => { imgError = err; })
                 );
             });
@@ -795,7 +830,7 @@ export const Archive: ArchiveContract = {
 
         // 4) Doublons de personnes parmi les fiches AJOUTÉES par l'import
         // (décision 32) : signalés et fusionnables un par un.
-        const mergedFiches = await resolveDuplicateFiches(scopeReport.addedByKey);
+        const mergedFiches = await resolveDuplicateFiches(scopeReport.addedByKey, targetMode);
         const replacedFiches = replacedFicheNames(scopeReport.replacedByKey);
 
         // 5) Récapitulatif : fiches remplacées/fusionnées, clés ignorées.
@@ -983,8 +1018,11 @@ export const Archive: ArchiveContract = {
             if (!zipEntry) return null;
             try {
                 const b64 = await zipEntry.async('base64');
-                const mime = imageMeta[imgId] || 'image/jpeg';
-                return `data:${mime};base64,${b64}`;
+                // R7 : `images.json` vient de l'archive, donc du réseau. Seul un
+                // vrai type d'image passe ; tout le reste est ramené à JPEG.
+                const rawMime = imageMeta[imgId];
+                const mime = typeof rawMime === 'string' && rawMime.trim() !== '' ? rawMime.trim() : 'image/jpeg';
+                return sanitizeImageDataUrl(`data:${mime};base64,${b64}`);
             } catch (e) { console.warn('[OI→PCTAC] photo illisible:', imgId, e); return null; }
         };
 
@@ -1007,19 +1045,11 @@ export const Archive: ArchiveContract = {
         // --- 1) Adversaires → pcTacAdversaries (+ photo + galerie Photos) ---
         const advList = Storage.loadCollection(ADVERSARIES_KEY);
         const photoList = Storage.loadCollection(PHOTOS_KEY);
-        // a.nom / a.prenom : champs dynamiques de PctacCollectionItem, non typés (archive.js:382).
-        const existingAdvNames = new Set(
-            advList.map((a) => _normName(((a.nom as string | undefined) || '') + ' ' + ((a.prenom as string | undefined) || '')))
-        );
         let advAdded = 0, advPhotos = 0, advSkipped = 0;
         let seq = 0;
 
         for (const oa of adversaries) {
             const nom = (oa.nom_adversaire || '').toString().trim();
-            const key = _normName(nom);
-            if (key && existingAdvNames.has(key)) { advSkipped++; continue; }
-            if (key) existingAdvNames.add(key);
-
             const itemId = 'oi_adv_' + Date.now().toString(36) + '_' + (seq++);
             const item: PctacCollectionItem = {
                 id: itemId,
@@ -1044,6 +1074,7 @@ export const Archive: ArchiveContract = {
             Object.entries(extra).forEach(([k, v]) => { if (v) item[k] = v; });
 
             const dataUrl = await photoDataUrlForAdv(oa.id);
+            let photoStored = false;
             if (dataUrl) {
                 try {
                     // Décision 26 : la photo annotée dans l'OI arrive annotée,
@@ -1066,15 +1097,43 @@ export const Archive: ArchiveContract = {
                     advPhotos++;
                     // Copie automatique vers la galerie Photos (catégorie « Adversaire »),
                     // exactement comme une saisie manuelle PC TAC (id + "_sync").
-                    const syncId = itemId + '_sync';
-                    await ImageStore.put(syncId, shown);
-                    photoList.push({ id: syncId, title: nom || 'Adversaire OI', category: 'neutralized', status: 'active', hasImage: true });
+                    await ImageStore.put(itemId + '_sync', shown);
+                    photoStored = true;
                 } catch (e) { console.warn('[OI→PCTAC] enregistrement photo échoué:', e); }
+            }
+
+            // R9 : doublon signalé et fusionnable, comme à l'import d'archive
+            // (décision 32). L'OI ne porte qu'un champ nom, d'où la comparaison
+            // du nom complet aux deux ordres de `nom`/`prenom`, et le repli sur
+            // `nom + date de naissance`.
+            const existing = findOiDuplicatePerson(advList, nom, (oa.date_naissance || '').toString());
+            if (existing) {
+                const merge = await confirmDialog({
+                    title: 'Fiche en double',
+                    message:
+                        `La fiche « ${nom} » semble déjà exister. ` +
+                        "Fusionner les deux fiches (les champs vides de l'existante seront complétés), ou garder les deux ?",
+                    confirmLabel: 'Fusionner',
+                    cancelLabel: 'Garder les deux',
+                });
+                if (merge) {
+                    const { merged } = await mergePersonIntoExisting(existing, item);
+                    const at = advList.findIndex((a) => a.id === existing.id);
+                    if (at >= 0) advList[at] = merged;
+                    try { await ImageStore.deleteMany([itemId, itemId + '_sync', itemId + '_orig']); }
+                    catch { /* best-effort */ }
+                    advSkipped++;
+                    continue;
+                }
+            }
+
+            if (photoStored) {
+                photoList.push({ id: itemId + '_sync', title: nom || 'Adversaire OI', category: 'neutralized', status: 'active', hasImage: true });
             }
             advList.push(item);
             advAdded++;
         }
-        if (advAdded) Storage.saveCollection(ADVERSARIES_KEY, advList);
+        if (advAdded || advSkipped) Storage.saveCollection(ADVERSARIES_KEY, advList);
         if (advPhotos) Storage.saveCollection(PHOTOS_KEY, photoList);
 
         // --- 2) Équipe PATRACDVR → pcTacCustomPax (couleurs distinctes) ---
@@ -1131,6 +1190,20 @@ export const Archive: ArchiveContract = {
                 if (!dataUrl) continue; // photo illisible : les autres passent
 
                 const pcId = stableOiPhotoId(imgId);
+                const existing = photoById.get(pcId);
+                const derivedTitle = oiPhotoTitle(key, entry);
+
+                // R6 : le travail fait dans PC-Tac sur une photo d'OI (annotation,
+                // légende renommée — décisions 25/26) est NON destructif. Un
+                // réimport du même OI ne doit ni effacer l'annotation et son
+                // original, ni écraser la légende. On laisse donc l'entrée
+                // intacte dès qu'elle porte une trace d'édition locale.
+                const localEdited = !!existing && (
+                    hasAnnotations(existing as Record<string, unknown>)
+                    || (typeof existing.title === 'string' && existing.title.trim() !== '' && existing.title !== derivedTitle)
+                );
+                if (localEdited) continue;
+
                 const annotations = parseAnnotations(entry.annotations);
                 let shown = dataUrl;
                 let annotated = false;
@@ -1152,9 +1225,8 @@ export const Archive: ArchiveContract = {
                     continue;
                 }
 
-                const existing = photoById.get(pcId);
                 const item: PctacCollectionItem = existing ?? { id: pcId };
-                item.title = oiPhotoTitle(key, entry);
+                item.title = derivedTitle;
                 item.category = oiPhotoCategory(key);
                 item.hasImage = true;
                 if (annotated) item.annotations = JSON.stringify(annotations);
