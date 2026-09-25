@@ -214,32 +214,57 @@ function isModeId(value: unknown): value is PctacModeId {
 }
 
 /**
+ * Situation FIGÉE pour la vie de la page (décision 29). On la lit UNE fois ;
+ * un autre onglet qui change `localStorage` ne réoriente donc pas les écritures
+ * de celui-ci (qui continuerait sinon à écrire des données chargées pour une
+ * situation dans les clés d'une autre). `persistModeId` est le seul geste qui
+ * la change au sein de la page ; un rechargement repart d'une lecture neuve.
+ */
+let pinnedModeId: PctacModeId | null = null;
+
+/**
  * Situation courante. `forcene` par défaut — c'est le comportement historique
  * de PC-Tac, et un stockage illisible (quota, navigation privée, valeur
  * corrompue) ne doit jamais empêcher l'application de démarrer.
  */
 export function currentModeId(): PctacModeId {
-    try {
-        const stored = localStorage.getItem(PCTAC_MODE_KEY);
-        if (isModeId(stored)) return stored;
-    } catch {
-        // Stockage indisponible : on reste sur la situation par défaut.
+  if (pinnedModeId !== null) return pinnedModeId;
+  try {
+    const stored = localStorage.getItem(PCTAC_MODE_KEY);
+    if (isModeId(stored)) {
+      pinnedModeId = stored;
+      return stored;
     }
-    return 'forcene';
+  } catch {
+    // Stockage indisponible : on reste sur la situation par défaut.
+  }
+  pinnedModeId = 'forcene';
+  return 'forcene';
 }
 
 export function currentMode(): PctacMode {
-    return PCTAC_MODES[currentModeId()];
+  return PCTAC_MODES[currentModeId()];
 }
 
 /** Persiste la situation. Rend `false` si le stockage a refusé l'écriture. */
 export function persistModeId(id: PctacModeId): boolean {
-    try {
-        localStorage.setItem(PCTAC_MODE_KEY, id);
-        return true;
-    } catch {
-        return false;
-    }
+  pinnedModeId = id;
+  try {
+    localStorage.setItem(PCTAC_MODE_KEY, id);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Remet l'épinglage à zéro (réservé aux tests) : la prochaine lecture repart de
+ * `localStorage`. Appelé dans le `beforeEach` global (`tests/setup.ts`) pour que
+ * des tests qui posent `PCTAC_MODE_KEY` directement ne restent pas figés sur la
+ * situation d'un cas précédent.
+ */
+export function resetModePinForTests(): void {
+  pinnedModeId = null;
 }
 
 /** Clés `data-pax` des quatre pastilles historiques, dans l'ordre d'affichage. */

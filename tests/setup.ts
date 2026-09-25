@@ -65,7 +65,22 @@ installMemoryStorage('sessionStorage');
  * la fenêtre courante à la fin de CHAQUE test, avant que le test suivant ne
  * réinitialise les modules — no-op si aucun flush n'est en attente.
  */
-import { afterEach } from 'vitest';
+import { afterEach, beforeEach } from 'vitest';
+
+import { resetModePinForTests } from '../src/apps/pctac/modes.js';
+
+/**
+ * La situation PC-Tac est FIGÉE pour la vie de la page (décision 29) :
+ * `currentModeId()` mémorise sa première lecture. Un test qui pose
+ * `PCTAC_MODE_KEY` directement après un premier appel resterait sinon bloqué
+ * sur la situation du cas précédent. On repart donc d'un épinglage neuf avant
+ * CHAQUE test (les fichiers de test posent ensuite leur clé dans leur propre
+ * `beforeEach`).
+ */
+beforeEach(() => {
+  resetModePinForTests();
+});
+
 afterEach(() => {
   const win = globalThis as unknown as { Store?: { flush?: () => void } };
   try {

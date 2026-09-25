@@ -13,7 +13,7 @@ import JSZip from 'jszip';
 
 import { ADVERSARIES_KEY, LOCAL_STORAGE_KEY } from '@pctac/config.js';
 import { GPX_INDEX_KEY } from '@pctac/planmap/constants.js';
-import { PCTAC_MODE_KEY, SHARED_KEYS, scopedKey } from '@pctac/modes.js';
+import { PCTAC_MODE_KEY, SHARED_KEYS, persistModeId, scopedKey } from '@pctac/modes.js';
 import { Storage, clearSituationData } from '@pctac/storage.js';
 
 // --- Mock ImageStore : indexedDB absent sous jsdom.
@@ -86,10 +86,12 @@ describe('isolement des collections par situation', () => {
         localStorage.setItem(PCTAC_MODE_KEY, 'tp');
         Storage.saveCollection(ADVERSARIES_KEY, [{ id: 'tp1', nom: 'Ennemi' }]);
 
-        localStorage.setItem(PCTAC_MODE_KEY, 'forcene');
+        // Changement de situation DANS la page (autre onglet interdit) : c'est
+        // `persistModeId` qui réoriente les écritures.
+        persistModeId('forcene');
         expect(Storage.loadCollection(ADVERSARIES_KEY)).toEqual([]);
 
-        localStorage.setItem(PCTAC_MODE_KEY, 'tp');
+        persistModeId('tp');
         expect(Storage.loadCollection(ADVERSARIES_KEY).map((i) => i.id)).toEqual(['tp1']);
     });
 });
