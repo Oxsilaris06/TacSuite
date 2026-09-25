@@ -484,6 +484,7 @@ export const PinsMethods = {
         // ─── MAPLIBRE DRAG EVENTS (NATIF POUR MOBILE & DESKTOP) ───
         pinMarker.on('dragstart', this._safe(() => {
             gestures.notifyDragStart();
+            this._pinDragging = true;
             pinWrap.style.cursor = 'grabbing';
             pinWrap.style.opacity = '0.85';
             entry.labelEl.style.opacity = '0.5';
@@ -505,6 +506,8 @@ export const PinsMethods = {
             const ll = pinMarker.getLngLat();
             labelMarker.setLngLat(ll);
             const pinId = entry.pin.id;
+            // Relit le stockage PUIS applique le déplacement PUIS écrit : ce que
+            // l'autre onglet a ajouté pendant le glisser est conservé (décision 29).
             const allPins = this._loadPins();
             const target = allPins.find(p => p.id === pinId);
             if (target) {
@@ -514,6 +517,8 @@ export const PinsMethods = {
                 // Maintient entry.pin cohérent avec la nouvelle position.
                 entry.pin = target;
             }
+            this._pinDragging = false;
+            this._flushPendingRemoteReload();
             this._renderPinDecorations();
         }, 'pin:dragend'));
     },
