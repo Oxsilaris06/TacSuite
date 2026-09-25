@@ -563,13 +563,16 @@ export const PdfExport: PdfExportContract = {
                     if (remark) pdfPage().drawText(remark, { x: remarksX, y: context.y, size: 9, font, color: themeColors.text });
                 }
 
+                // `context.y` est la ligne de base de la DERNIÈRE ligne dessinée :
+                // le séparateur passe sous elle (jamais à travers le texte) et
+                // l'entrée suivante commence une ligne plus 10 pt plus bas.
                 pdfPage().drawLine({
-                    start: { x: context.margin, y: context.y + 2 },
-                    end: { x: context.pageWidth - context.margin, y: context.y + 2 },
+                    start: { x: context.margin, y: context.y - context.lineHeight + 2 },
+                    end: { x: context.pageWidth - context.margin, y: context.y - context.lineHeight + 2 },
                     thickness: 0.5, color: themeColors.line, opacity: 0.3
                 });
 
-                context.y -= 10;
+                context.y -= context.lineHeight + 10;
             }
 
             // --- 2 et 3. FICHES ADVERSE ET PROTÉGÉE (décisions 17 à 19) ---
@@ -902,9 +905,11 @@ export const PdfExport: PdfExportContract = {
                         if (line) pdfPage().drawText(sanitizeWinAnsi(line), { x: context.margin + 5 + cCols[0], y, size: 9, font, color: themeColors.text });
                         y -= context.lineHeight;
                     }
+                    // `y` est déjà une ligne sous la dernière ligne dessinée :
+                    // séparateur sous le texte, comme dans la main courante.
                     pdfPage().drawLine({
-                        start: { x: context.margin, y: y + context.lineHeight - 2 },
-                        end: { x: context.pageWidth - context.margin, y: y + context.lineHeight - 2 },
+                        start: { x: context.margin, y: y + 2 },
+                        end: { x: context.pageWidth - context.margin, y: y + 2 },
                         thickness: 0.5, color: themeColors.line, opacity: 0.3
                     });
                     context.y = y - 10;

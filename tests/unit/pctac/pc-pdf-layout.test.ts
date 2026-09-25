@@ -205,6 +205,48 @@ describe('blocs plus hauts qu’une page — découpe avec « (suite) » (M1)', 
     });
 });
 
+/** Ordonnée (pt, origine en bas) de chaque morceau de texte de la page 1. */
+async function textPositionsPage1(): Promise<{ str: string; y: number }[]> {
+    const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
+    const captured: { blob?: Blob } = {};
+    (URL as unknown as { createObjectURL: (b: Blob) => string }).createObjectURL = vi.fn((b: Blob) => {
+        captured.blob = b;
+        return 'blob:mock-url';
+    });
+    const { PdfExport } = await import('@pctac/pdf-export.js');
+    await PdfExport.buildPdf();
+    if (!captured.blob) throw new Error('buildPdf n’a produit aucun blob PDF');
+    const pdf = await pdfjs.getDocument({ data: new Uint8Array(await captured.blob.arrayBuffer()), useWorkerFetch: false, disableFontFace: true }).promise;
+    const content = await (await pdf.getPage(1)).getTextContent();
+    return content.items.flatMap((item) => ('str' in item && item.str.trim() ? [{ str: item.str, y: item.transform[5] as number }] : []));
+}
+
+describe('main courante — espacement des entrées (revue du CTO, régression du lot DeepSeek)', () => {
+    // Pas de ligne du rapport = 12 pt ; une entrée est suivie d'une marge de
+    // 10 pt : la suivante commence au moins 22 pt sous la dernière ligne.
+    it('deux entrées d’une ligne ne se touchent pas', async () => {
+        localStorage.setItem('pcTacLogData', JSON.stringify([
+            logEntry({ id: 'a', heure: '10:30', remarques: 'RAS.' }),
+            logEntry({ id: 'b', heure: '11:00', remarques: 'Bruit de verre.' }),
+        ]));
+        const items = await textPositionsPage1();
+        const y1 = items.find((i) => i.str.trim() === '10:30')?.y ?? NaN;
+        const y2 = items.find((i) => i.str.trim() === '11:00')?.y ?? NaN;
+        expect(y1 - y2).toBeGreaterThanOrEqual(22);
+    });
+
+    it('l’entrée suivante commence sous la DERNIÈRE ligne d’une entrée longue', async () => {
+        localStorage.setItem('pcTacLogData', JSON.stringify([
+            logEntry({ id: 'a', heure: '10:30', remarques: 'premiere\ndeuxieme\ntroisieme' }),
+            logEntry({ id: 'b', heure: '11:00', remarques: 'suivante' }),
+        ]));
+        const items = await textPositionsPage1();
+        const last = items.find((i) => i.str.includes('troisieme'))?.y ?? NaN;
+        const next = items.find((i) => i.str.trim() === '11:00')?.y ?? NaN;
+        expect(last - next).toBeGreaterThanOrEqual(22);
+    });
+});
+
 describe('main courante — lieu replié, plus de « … » (M3)', () => {
     it('affiche le lieu entier au lieu de le tronquer', async () => {
         localStorage.setItem('pcTacLogData', JSON.stringify([
