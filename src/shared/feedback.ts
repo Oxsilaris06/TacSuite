@@ -542,6 +542,20 @@ function buildToast(config: BuildToastConfig): HTMLElement {
   const container = ensureToastContainer();
 
   const visible = Array.from(container.children) as HTMLElement[];
+  // Même message déjà affiché, sans bouton : on relance son décompte au lieu
+  // d'empiler un doublon (trois « Événement ajouté » couvraient le bouton
+  // d'ajout, constat UI-1 du 25/09). Un toast à action n'est jamais fusionné.
+  if (!config.action) {
+    const same = visible.find((c) => !toastDone.has(c) && !c.querySelector('button')
+      && c.textContent === config.message && c.classList.contains(`tac-toast--${config.kind}`));
+    if (same) {
+      const timer = toastTimers.get(same);
+      if (timer) clearTimeout(timer.id);
+      toastTimers.delete(same);
+      if (config.duration > 0) startToastTimer(same, config.duration);
+      return same;
+    }
+  }
   if (visible.length >= MAX_VISIBLE_TOASTS) {
     const oldest = visible[0];
     // L'éviction d'un toast d'annulation vaut « commit » (décision 31).
