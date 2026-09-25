@@ -256,3 +256,17 @@ describe('mise à jour permanente', () => {
         log.mockRestore();
     });
 });
+
+describe('Revue du 25/09 — écritures sans rapport ignorées en écran scindé (B8)', () => {
+    it('la position de carte d’un autre onglet (pcTacPlanView) ne repeint pas les panneaux', () => {
+        toggleSplit();
+        const log = vi.spyOn(UI, 'renderLogTable');
+        log.mockClear();
+        document.dispatchEvent(new CustomEvent('pctac:data', { detail: { key: 'pcTacPlanView', remote: true } }));
+        document.dispatchEvent(new CustomEvent('pctac:data', { detail: { key: 'lastView', remote: true } }));
+        expect(log).not.toHaveBeenCalled();
+        document.dispatchEvent(new CustomEvent('pctac:data', { detail: { key: 'pcTacLogData', remote: true } }));
+        expect(log).toHaveBeenCalled();
+        log.mockRestore();
+    });
+});

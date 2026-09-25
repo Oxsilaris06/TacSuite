@@ -671,15 +671,24 @@ export const Archive: ArchiveContract = {
             // Garde ajoutée pour le typage strict : `folder(name: string)` est typé
             // `JSZip | null` bien qu'il ne renvoie jamais null pour un nom simple
             // (aucun changement de comportement observable).
+            let unreadable = 0;
             if (imagesFolder) {
                 for (const id of imgIds) {
                     try {
                         const dataUrl = await ImageStore.get(id);
                         if (dataUrl) imagesFolder.file(`${id}.txt`, dataUrl);
-                    } catch {
-                        console.warn('[Archive] image absente:', id);
+                    } catch (e) {
+                        unreadable += 1;
+                        console.warn('[Archive] image illisible:', id, e);
                     }
                 }
+            }
+            // A10 (revue du 25/09) — une photo ILLISIBLE (base d'images perdue) n'est
+            // pas une photo absente : l'archive serait incomplète, et le RESET
+            // effacerait sur cette foi. On refuse l'export et on le dit.
+            if (unreadable > 0) {
+                toast(`Archive incomplète : ${unreadable} photo${unreadable > 1 ? 's' : ''} illisible${unreadable > 1 ? 's' : ''}. Rien n'a été effacé ; rechargez la page et réessayez.`, { kind: 'error' });
+                return false;
             }
 
             // 2 bis) Traces GPX : même mécanique que les images, les coordonnées

@@ -57,3 +57,13 @@ export const SW_PROTOCOL_MARK_URL = '/__tacsuite_sw_protocol';
 export function shouldSkipWaitingOnInstall(hasActiveWorker: boolean, hasProtocolMark: boolean): boolean {
     return hasActiveWorker && !hasProtocolMark;
 }
+
+/**
+ * A13 (revue du 25/09) — navigation : faut-il servir la réponse réseau ?
+ * Une erreur SERVEUR (5xx : relais tombé derrière le Funnel, 502) n'est pas
+ * une page ; la copie précachée prend le relais, comme hors ligne. Un 404 ou
+ * un 304 restent des réponses légitimes.
+ */
+export function serveFromNetwork(status: number): boolean {
+    return status < 500;
+}

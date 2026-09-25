@@ -287,3 +287,16 @@ describe('Revue du 25/09 — écriture concurrente pendant un dialogue de doublo
         expect(list.find((f) => f.id === 'local1')).toMatchObject({ domicile: '3 rue' });
     });
 });
+
+describe('Revue du 25/09 — export incomplet (A10)', () => {
+    it('une photo illisible fait échouer l’export (rien ne sera effacé) et le dit', async () => {
+        localStorage.setItem(PCTAC_MODE_KEY, 'forcene');
+        Storage.saveCollection(ADVERSARIES_KEY, [{ id: 'a1', nom: 'X', hasImage: true }]);
+        vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:x');
+        vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
+        vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+        vi.spyOn(ImageStore, 'get').mockRejectedValue(new Error('IndexedDB perdu'));
+        await expect(Archive.exportZip()).resolves.toBe(false);
+        expect(toastSpy).toHaveBeenCalledWith(expect.stringContaining('illisible'), expect.objectContaining({ kind: 'error' }));
+    });
+});
