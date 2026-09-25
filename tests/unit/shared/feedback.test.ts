@@ -497,6 +497,14 @@ describe('bandeaux persistants', () => {
     expect(phone).toMatch(/\.tac-banner-action\s*\{[^}]*grid-column:\s*1\s*\/\s*-1/);
   });
 
+  it('les retours à la ligne du message sont respectés (note de version en liste), sans HTML', () => {
+    showBanner('b1', { message: 'Nouveautés :\n• un\n• <b>deux</b>', level: 'info' });
+    const msg = document.querySelector('[data-banner-id="b1"] .tac-banner-message') as HTMLElement;
+    expect(msg.textContent).toBe('Nouveautés :\n• un\n• <b>deux</b>');
+    expect(msg.querySelector('b')).toBeNull();
+    expect(feedbackCss()).toMatch(/\.tac-banner-message\s*\{[^}]*white-space:\s*pre-line/);
+  });
+
   it('F-2 : les jetons absents du portail ont un repli lisible', () => {
     showBanner('b1', { message: 'x', level: 'alert' });
     const css = feedbackCss();
