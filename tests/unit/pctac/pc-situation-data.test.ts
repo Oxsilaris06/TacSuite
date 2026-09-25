@@ -14,7 +14,7 @@ import { GPX_INDEX_KEY, PINS_KEY, SHAPES_KEY } from '@pctac/planmap/constants.js
 import { PCTAC_MODE_KEY, currentModeId, scopedKey } from '@pctac/modes.js';
 import { describeSituationData, hasSituationData, situationData } from '@pctac/storage.js';
 
-const confirmSpy = vi.hoisted(() => vi.fn(async (_opts: { message?: string } = {}) => true));
+const confirmSpy = vi.hoisted(() => vi.fn<(_opts?: { message?: string }) => Promise<boolean>>(async () => true));
 vi.mock('@shared/feedback.js', () => ({
     confirmDialog: confirmSpy,
     toast: vi.fn(),

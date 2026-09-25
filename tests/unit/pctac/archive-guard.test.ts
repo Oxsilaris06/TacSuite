@@ -128,7 +128,7 @@ describe('Archive.importFile — garde de sécurité manifest.appName (archive.j
 
     const result = await Archive.importFile(file);
 
-    expect(result).toEqual({ ok: true });
+    expect(result).toMatchObject({ ok: true });
     expect(Storage.loadCollection(ADVERSARIES_KEY)).toEqual([{ id: 'from-archive', nom: 'Importé' }]);
   });
 });

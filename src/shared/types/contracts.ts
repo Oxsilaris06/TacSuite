@@ -513,9 +513,19 @@ export interface LogManagerContract {
  * 8. PC-TAC — window.Archive  (modules/pctac/archive.js:459)
  * ========================================================================= */
 
+/** Récapitulatif d'un import d'archive (décision 32). */
+export interface ArchiveImportSummary {
+    /** Noms lisibles des fiches REMPLACÉES par l'archive (fusion par date). */
+    replacedFiches: string[];
+    /** Noms lisibles des fiches fusionnées avec une existante (doublon). */
+    mergedFiches: string[];
+    /** Clés inconnues (ou communes) de l'archive, ignorées à l'import. */
+    unknownKeys: number;
+}
+
 /** Résultat de `Archive.importFile` (archive.js:157, 199, 211, 233, 274). */
 export type ArchiveImportResult =
-    | { ok: true }
+    | ({ ok: true } & ArchiveImportSummary)
     /** L'utilisateur a annulé la confirmation d'écrasement. */
     | { ok: false; cancelled: true }
     | { ok: false; error: unknown };

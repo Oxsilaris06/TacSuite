@@ -127,39 +127,117 @@ function isFull(categories: string[], mode: ImportMode): boolean {
 }
 
 /**
- * Fusionne deux collections sérialisées en JSON, par identifiant, la version
- * LOCALE l'emportant sur un conflit. Rend la valeur locale inchangée si l'une
- * des deux n'est pas une liste d'objets identifiés (réglage, position de
- * caméra, verrou…) : fusionner n'a alors aucun sens, et écraser serait pire.
+ * Fusionne deux collections sérialisées en JSON, par identifiant. Sur un
+ * conflit d'identifiant, l'élément dont le `updatedAt` est le plus RÉCENT
+ * gagne (décision 32) ; à égalité, ou si l'un des deux n'est pas daté, la
+ * version LOCALE l'emporte — le comportement historique. Rend la valeur locale
+ * inchangée si l'une des deux n'est pas une liste d'objets identifiés
+ * (réglage, position de caméra, verrou…) : fusionner n'a alors aucun sens, et
+ * écraser serait pire.
  */
 export function mergeCollectionJson(localRaw: string | null, incomingRaw: string | undefined): string | null {
-    if (incomingRaw === undefined) return localRaw;
-    if (localRaw === null) return incomingRaw;
+    return mergeCollectionReport(localRaw, incomingRaw).json;
+}
+
+/** Détail d'une fusion de collection, pour le récapitulatif d'import. */
+export interface CollectionMergeReport {
+    json: string | null;
+    /** Éléments ajoutés (identifiant absent localement, ou sans identifiant). */
+    added: Array<Record<string, unknown>>;
+    /** Éléments qui ont REMPLACÉ un élément local (archive plus récente). */
+    replaced: Array<Record<string, unknown>>;
+}
+
+/** Horodatage `updatedAt` en ms, ou `NaN` si absent/illisible. */
+function updatedAtMs(item: unknown): number {
+    if (!item || typeof item !== 'object') return NaN;
+    const raw = (item as { updatedAt?: unknown }).updatedAt;
+    if (typeof raw !== 'string' || raw.trim() === '') return NaN;
+    const ms = Date.parse(raw);
+    return Number.isFinite(ms) ? ms : NaN;
+}
+
+/** Vrai si l'élément entrant doit remplacer l'élément local de même id. */
+function incomingWins(local: Record<string, unknown>, incoming: Record<string, unknown>): boolean {
+    const lu = updatedAtMs(local);
+    const iu = updatedAtMs(incoming);
+    if (Number.isNaN(lu) && Number.isNaN(iu)) return false; // aucun daté : local garde
+    if (Number.isNaN(iu)) return false; // entrant non daté : plus ancien que tout daté
+    if (Number.isNaN(lu)) return true; // local non daté : l'entrant daté gagne
+    return iu > lu; // égalité : local garde
+}
+
+/**
+ * Comme {@link mergeCollectionJson}, mais rend aussi les éléments ajoutés et
+ * remplacés. Ne jette jamais.
+ */
+export function mergeCollectionReport(localRaw: string | null, incomingRaw: string | undefined): CollectionMergeReport {
+    if (incomingRaw === undefined) return { json: localRaw, added: [], replaced: [] };
+
     let local: unknown;
     let incoming: unknown;
     try {
-        local = JSON.parse(localRaw);
+        local = localRaw === null ? [] : JSON.parse(localRaw);
         incoming = JSON.parse(incomingRaw);
     } catch {
-        return localRaw;
+        return { json: localRaw, added: [], replaced: [] };
     }
-    if (!Array.isArray(local) || !Array.isArray(incoming)) return localRaw;
+    if (!Array.isArray(incoming)) return { json: localRaw, added: [], replaced: [] };
+    if (!Array.isArray(local)) {
+        // Pas de liste locale : l'archive fait foi, tout est « ajouté ».
+        const added = incoming.filter((i): i is Record<string, unknown> => !!i && typeof i === 'object');
+        return { json: incomingRaw, added, replaced: [] };
+    }
 
-    const seen = new Set<string>();
-    const out: unknown[] = [];
-    const push = (item: unknown): void => {
+    const out: unknown[] = [...local];
+    const indexById = new Map<string, number>();
+    local.forEach((item, i) => {
         const id = (item && typeof item === 'object' && 'id' in item)
             ? String((item as { id: unknown }).id)
             : null;
-        if (id !== null) {
-            if (seen.has(id)) return;
-            seen.add(id);
+        if (id !== null) indexById.set(id, i);
+    });
+
+    const added: Array<Record<string, unknown>> = [];
+    const replaced: Array<Record<string, unknown>> = [];
+
+    incoming.forEach((item) => {
+        if (!item || typeof item !== 'object') {
+            out.push(item);
+            return;
         }
-        out.push(item);
-    };
-    local.forEach(push);
-    incoming.forEach(push);
-    return JSON.stringify(out);
+        const obj = item as Record<string, unknown>;
+        const id = 'id' in obj ? String(obj.id) : null;
+        if (id === null) {
+            added.push(obj);
+            out.push(obj);
+            return;
+        }
+        const at = indexById.get(id);
+        if (at === undefined) {
+            added.push(obj);
+            indexById.set(id, out.length);
+            out.push(obj);
+            return;
+        }
+        const current = out[at];
+        if (current && typeof current === 'object' && incomingWins(current as Record<string, unknown>, obj)) {
+            out[at] = obj;
+            replaced.push(obj);
+        }
+    });
+    return { json: JSON.stringify(out), added, replaced };
+}
+
+/**
+ * Détail d'une application de portée, pour le récapitulatif d'import.
+ */
+export interface ApplyScopeReport {
+    written: number;
+    /** Éléments ajoutés, par clé logique. */
+    addedByKey: Record<string, Array<Record<string, unknown>>>;
+    /** Éléments remplacés, par clé logique. */
+    replacedByKey: Record<string, Array<Record<string, unknown>>>;
 }
 
 /**
@@ -230,6 +308,17 @@ export async function askImportScope(targetMode?: PctacModeId): Promise<ImportSc
     });
 }
 
+/** Liste d'objets portée par une chaîne JSON, ou `[]` si illisible. */
+function parseIncomingList(raw: string | undefined): Array<Record<string, unknown>> {
+    if (raw === undefined) return [];
+    try {
+        const v: unknown = JSON.parse(raw);
+        return Array.isArray(v) ? v.filter((i): i is Record<string, unknown> => !!i && typeof i === 'object') : [];
+    } catch {
+        return [];
+    }
+}
+
 /**
  * Applique les clés retenues au localStorage, selon le mode choisi. Les
  * catégories NON cochées ne sont pas touchées — c'est tout l'intérêt.
@@ -239,10 +328,17 @@ export async function askImportScope(targetMode?: PctacModeId): Promise<ImportSc
  * compris son vide. En fusion, une clé absente laisse la valeur locale en
  * place.
  *
- * Rend le nombre de clés effectivement écrites (diagnostic, message de fin).
+ * Rend un rapport : nombre de clés écrites, et éléments ajoutés/remplacés par
+ * clé (pour le récapitulatif et la détection de doublons).
  */
-export function applyScope(dataJson: Record<string, string>, scope: ImportScope, modeId: PctacModeId = currentModeId()): number {
+export function applyScope(
+    dataJson: Record<string, string>,
+    scope: ImportScope,
+    modeId: PctacModeId = currentModeId(),
+): ApplyScopeReport {
     let written = 0;
+    const addedByKey: Record<string, Array<Record<string, unknown>>> = {};
+    const replacedByKey: Record<string, Array<Record<string, unknown>>> = {};
     scopeKeys(scope).forEach((key) => {
         // Clé PHYSIQUE de la situation cible : l'archive porte les clés LOGIQUES,
         // l'import les range sous le suffixe de la situation destinataire.
@@ -252,15 +348,21 @@ export function applyScope(dataJson: Record<string, string>, scope: ImportScope,
             if (incoming === undefined) localStorage.removeItem(physical);
             else localStorage.setItem(physical, incoming);
             written += 1;
+            // Catégorie remplacée : tout ce qu'elle apporte est « ajouté » du
+            // point de vue local (rien n'a été fusionné).
+            const list = parseIncomingList(incoming);
+            if (list.length) addedByKey[key] = list;
             return;
         }
-        const merged = mergeCollectionJson(localStorage.getItem(physical), incoming);
-        if (merged !== null) {
-            localStorage.setItem(physical, merged);
+        const report = mergeCollectionReport(localStorage.getItem(physical), incoming);
+        if (report.json !== null) {
+            localStorage.setItem(physical, report.json);
             written += 1;
         }
+        if (report.added.length) addedByKey[key] = report.added;
+        if (report.replaced.length) replacedByKey[key] = report.replaced;
     });
-    return written;
+    return { written, addedByKey, replacedByKey };
 }
 
 function escapeAttr(value: string): string {

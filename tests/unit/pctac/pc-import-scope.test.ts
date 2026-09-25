@@ -23,6 +23,7 @@ import {
     applyScope,
     askImportScope,
     mergeCollectionJson,
+    mergeCollectionReport,
     scopeCarriesGpx,
     scopeCarriesImages,
     scopeKeys,
@@ -101,6 +102,90 @@ describe('fusion', () => {
 
     it('laisse le local intact quand l\'archive ne porte pas la clé', () => {
         expect(mergeCollectionJson('[1]', undefined)).toBe('[1]');
+    });
+});
+
+describe('fusion — arbitrage par updatedAt (décision 32)', () => {
+    const withDate = (id: string, nom: string, updatedAt?: string): Record<string, string> => {
+        const item: Record<string, string> = { id, nom };
+        if (updatedAt !== undefined) item.updatedAt = updatedAt;
+        return item;
+    };
+
+    it('archive PLUS RÉCENTE : l’élément de l’archive remplace le local', () => {
+        const local = JSON.stringify([withDate('1', 'local', '2026-01-01T00:00:00.000Z')]);
+        const distant = JSON.stringify([withDate('1', 'archive', '2026-06-01T00:00:00.000Z')]);
+        const report = mergeCollectionReport(local, distant);
+        const out = JSON.parse(report.json as string) as Array<{ nom: string }>;
+        expect(out[0]?.nom).toBe('archive');
+        expect(report.replaced).toHaveLength(1);
+        expect(report.added).toHaveLength(0);
+    });
+
+    it('local PLUS RÉCENT : le local garde', () => {
+        const local = JSON.stringify([withDate('1', 'local', '2026-06-01T00:00:00.000Z')]);
+        const distant = JSON.stringify([withDate('1', 'archive', '2026-01-01T00:00:00.000Z')]);
+        const report = mergeCollectionReport(local, distant);
+        expect((JSON.parse(report.json as string) as Array<{ nom: string }>)[0]?.nom).toBe('local');
+        expect(report.replaced).toHaveLength(0);
+    });
+
+    it('égalité de date : le local gagne', () => {
+        const date = '2026-03-01T00:00:00.000Z';
+        const report = mergeCollectionReport(
+            JSON.stringify([withDate('1', 'local', date)]),
+            JSON.stringify([withDate('1', 'archive', date)]),
+        );
+        expect((JSON.parse(report.json as string) as Array<{ nom: string }>)[0]?.nom).toBe('local');
+    });
+
+    it('fiche sans date des deux côtés : le local gagne', () => {
+        const report = mergeCollectionReport(
+            JSON.stringify([withDate('1', 'local')]),
+            JSON.stringify([withDate('1', 'archive')]),
+        );
+        expect((JSON.parse(report.json as string) as Array<{ nom: string }>)[0]?.nom).toBe('local');
+    });
+
+    it('une seule des deux datée : la datée gagne', () => {
+        // Local non daté + archive datée → archive.
+        let report = mergeCollectionReport(
+            JSON.stringify([withDate('1', 'local')]),
+            JSON.stringify([withDate('1', 'archive', '2026-01-01T00:00:00.000Z')]),
+        );
+        expect((JSON.parse(report.json as string) as Array<{ nom: string }>)[0]?.nom).toBe('archive');
+        // Local daté + archive non datée → local.
+        report = mergeCollectionReport(
+            JSON.stringify([withDate('1', 'local', '2026-01-01T00:00:00.000Z')]),
+            JSON.stringify([withDate('1', 'archive')]),
+        );
+        expect((JSON.parse(report.json as string) as Array<{ nom: string }>)[0]?.nom).toBe('local');
+    });
+
+    it('un id absent localement est AJOUTÉ', () => {
+        const report = mergeCollectionReport('[{"id":"1","nom":"local"}]', '[{"id":"2","nom":"neuf"}]');
+        expect(report.added.map((i) => i.id)).toEqual(['2']);
+        expect((JSON.parse(report.json as string) as unknown[]).length).toBe(2);
+    });
+});
+
+describe('applyScope — rapport', () => {
+    it('signale les éléments remplacés par une archive plus récente', () => {
+        localStorage.setItem(ADVERSARIES_KEY, JSON.stringify([{ id: '1', nom: 'local', updatedAt: '2026-01-01T00:00:00.000Z' }]));
+        const report = applyScope(
+            { [ADVERSARIES_KEY]: JSON.stringify([{ id: '1', nom: 'archive', updatedAt: '2026-06-01T00:00:00.000Z' }]) },
+            scope(['adversaires'], 'merge'),
+        );
+        expect(report.replacedByKey[ADVERSARIES_KEY]?.map((i) => i.nom)).toEqual(['archive']);
+        expect(report.written).toBe(1);
+    });
+
+    it('en remplacement, tout ce qui est apporté est « ajouté »', () => {
+        const report = applyScope(
+            { [ADVERSARIES_KEY]: JSON.stringify([{ id: '1', nom: 'archive' }]) },
+            scope(['adversaires'], 'replace'),
+        );
+        expect(report.addedByKey[ADVERSARIES_KEY]).toHaveLength(1);
     });
 });
 
