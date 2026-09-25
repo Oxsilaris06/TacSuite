@@ -37,3 +37,11 @@ describe('wrapText — coupe dure des mots trop longs (M2)', () => {
         expect(wrapText('un deux trois', 1000, mono, 9)).toEqual(['un deux trois']);
     });
 });
+
+describe('wrapText — retours à la ligne saisis (M4)', () => {
+    it('respecte les sauts de ligne au lieu de les aplatir en espaces', async () => {
+        const { wrapText } = await import('@pctac/pdf-export.js');
+        const lines = wrapText('Ligne 1\nLigne 2\n\nParagraphe 3', 1000, mono, 9);
+        expect(lines).toEqual(['Ligne 1', 'Ligne 2', 'Paragraphe 3']);
+    });
+});
