@@ -228,33 +228,33 @@ let pinnedModeId: PctacModeId | null = null;
  * corrompue) ne doit jamais empêcher l'application de démarrer.
  */
 export function currentModeId(): PctacModeId {
-  if (pinnedModeId !== null) return pinnedModeId;
-  try {
-    const stored = localStorage.getItem(PCTAC_MODE_KEY);
-    if (isModeId(stored)) {
-      pinnedModeId = stored;
-      return stored;
+    if (pinnedModeId !== null) return pinnedModeId;
+    try {
+        const stored = localStorage.getItem(PCTAC_MODE_KEY);
+        if (isModeId(stored)) {
+            pinnedModeId = stored;
+            return stored;
+        }
+    } catch {
+        // Stockage indisponible : on reste sur la situation par défaut.
     }
-  } catch {
-    // Stockage indisponible : on reste sur la situation par défaut.
-  }
-  pinnedModeId = 'forcene';
-  return 'forcene';
+    pinnedModeId = 'forcene';
+    return 'forcene';
 }
 
 export function currentMode(): PctacMode {
-  return PCTAC_MODES[currentModeId()];
+    return PCTAC_MODES[currentModeId()];
 }
 
 /** Persiste la situation. Rend `false` si le stockage a refusé l'écriture. */
 export function persistModeId(id: PctacModeId): boolean {
-  pinnedModeId = id;
-  try {
-    localStorage.setItem(PCTAC_MODE_KEY, id);
-    return true;
-  } catch {
-    return false;
-  }
+    pinnedModeId = id;
+    try {
+        localStorage.setItem(PCTAC_MODE_KEY, id);
+        return true;
+    } catch {
+        return false;
+    }
 }
 
 /**
@@ -264,7 +264,7 @@ export function persistModeId(id: PctacModeId): boolean {
  * situation d'un cas précédent.
  */
 export function resetModePinForTests(): void {
-  pinnedModeId = null;
+    pinnedModeId = null;
 }
 
 /** Clés `data-pax` des quatre pastilles historiques, dans l'ordre d'affichage. */
