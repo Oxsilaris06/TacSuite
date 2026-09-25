@@ -351,8 +351,12 @@
         body.is-split .split-view {
             position: fixed;
             inset: var(--tac-zero);
+            /* S0 (revue du 25/09) : sous les bandeaux d'appareil (navigation
+               privée, horloge, mise à jour), jamais par-dessus. Hauteur publiée
+               par feedback.ts dans --tac-banner-h. */
+            top: var(--tac-banner-h, 0px);
             width: 100dvw;
-            height: 100dvh;
+            height: calc(100dvh - var(--tac-banner-h, 0px));
             max-width: none;
             margin: var(--tac-zero);
             z-index: var(--z-panel);
