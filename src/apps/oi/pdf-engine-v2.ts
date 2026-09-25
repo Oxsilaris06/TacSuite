@@ -45,6 +45,8 @@ import { dbManager, Store } from '@oi/init.js';
 import { OiPdfFitRefusalError, type OiPdfFormat } from '@oi/pdf/theme.js';
 import { attachEditableTextLayer, createEditMatchState, type EditMatchStats } from '@oi/pdf-preview-edit.js';
 import { toast } from '@shared/feedback.js';
+import { formatBytes, type PdfSortie } from '@shared/pdf-options.js';
+import { currentOiPdfOptions } from '@oi/pdf/options.js';
 
 // Mission « robustesse alignement » (édition en place, cf. JSDoc `pdf-preview-
 // edit.ts`) — hook de mesure, JAMAIS lu par le code applicatif : posé après
@@ -92,7 +94,7 @@ interface OiPdfRenderProgress {
  * jamais exécutée en test). */
 interface OiPdfBuildDeps {
     collect?: () => Promise<OiPdfCollectedData>;
-    buildBlob?: (data: OiPdfCollectedData, opts: { format: OiPdfFormat }) => Promise<Blob>;
+    buildBlob?: (data: OiPdfCollectedData, opts: { format: OiPdfFormat; sortie: PdfSortie }) => Promise<Blob>;
     /** `editAnchors` (mission « régression édition ») : n'existe QUE dans le
      * chemin réel (`defaultRenderPdf`) — jamais consommé par les faux
      * `renderPdf` de test (même précédent que `blob`/`container`, cf. JSDoc
@@ -103,7 +105,7 @@ interface OiPdfBuildDeps {
 /** Import dynamique de `buildOiPdfBlob` — isole `pdfmake`/`document-builder.ts`
  * dans leur propre chunk (même raison que `downloadOiPdfV3` important
  * dynamiquement `pdf-engine-v2.js` pour `collectAllData`, chunk mutuel). */
-async function defaultBuildBlob(data: OiPdfCollectedData, opts: { format: OiPdfFormat }): Promise<Blob> {
+async function defaultBuildBlob(data: OiPdfCollectedData, opts: { format: OiPdfFormat; sortie: PdfSortie }): Promise<Blob> {
     const { buildOiPdfBlob } = await import('@oi/pdf/engine-v3.js');
     return buildOiPdfBlob(data, opts);
 }
@@ -412,10 +414,13 @@ async function runOpenPreview(deps?: OiPdfBuildDeps): Promise<void> {
         updateStatus('Préparation des images…');
         updateStatus('Composition du document…');
         const buildBlob = deps?.buildBlob ?? defaultBuildBlob;
-        const blob = await buildBlob(data, { format });
+        const blob = await buildBlob(data, { format, sortie: currentOiPdfOptions().sortie });
         builtBlob = blob;
 
         if (isCancelled()) return;
+        // Décision 42 : poids annoncé sous les choix de sortie.
+        const weightNote = document.getElementById('pdfWeightNote');
+        if (weightNote) weightNote.textContent = `Poids du PDF : ${formatBytes(blob.size)}`;
 
         const pagesContainer = document.createElement('div');
         pagesContainer.className = 'pdf-preview-pages';
@@ -559,7 +564,7 @@ export const PDFEngineV2 = {
             updateStatus('Préparation des images…');
             updateStatus('Composition du document…');
             const buildBlob = deps?.buildBlob ?? defaultBuildBlob;
-            const blob = await buildBlob(data, { format });
+            const blob = await buildBlob(data, { format, sortie: currentOiPdfOptions().sortie });
 
             const url = URL.createObjectURL(blob);
             const win = window.open(url, '_blank');
@@ -650,10 +655,9 @@ export const PDFEngineV2 = {
         } catch (e) { console.warn("Erreur chargement fond personnalisé (PDF Engine):", e); }
 
         console.log(`📸 Fin collecte. ${Object.keys(photosBase64).length} photos prêtes pour le rendu.`);
-        return {
-            formData, photosBase64,
-            isDark: formData.pdf_theme === 'dark' || (formData.pdf_theme !== 'light' && document.body.classList.contains('dark-mode'))
-        };
+        // Décision 42 : thème choisi dans la fenêtre de génération (clair par
+        // défaut) — jamais le thème de l'application ni `pdf_theme` (audit F02).
+        return { formData, photosBase64, isDark: currentOiPdfOptions().theme === 'sombre' };
     },
 
     blobToBase64(blob: Blob): Promise<string> {

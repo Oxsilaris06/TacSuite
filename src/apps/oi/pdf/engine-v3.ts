@@ -21,75 +21,67 @@
 import type { TDocumentDefinitions } from 'pdfmake/interfaces';
 
 import { buildOiDocDefinition, oiPdfFileName } from './document-builder.js';
-import { OiPdfFitRefusalError } from './theme.js';
+import { OiPdfFitRefusalError, PDF_H2_BLOCK_PT, pageGeometry } from './theme.js';
 import { PDF_FONT_VFS, PDF_FONTS } from './fonts.js';
+import { currentOiPdfOptions } from './options.js';
 import { toast } from '@shared/feedback.js';
+import { PDF_IMAGE_PROFILES, formatBytes, type PdfSortie } from '@shared/pdf-options.js';
 import type { OiPdfFormat } from './theme.js';
 import type { OiPdfCollectedData } from '@shared/types/contracts.js';
 
 /**
- * Palier de qualité/résolution de ré-encodage photo — `quality` = qualité
- * JPEG (0-1, `canvas.toDataURL`/`OffscreenCanvas.convertToBlob`), `maxPx` =
- * plus grand côté (px) toléré pour une photo intégrée telle quelle.
+ * Passe de normalisation des photos (décision 42) : définition visée à la
+ * taille imprimée maximale (`ppi`), qualité JPEG, et, pour les passes de
+ * réduction de la sortie Partage, ré-encodage forcé (aucune image ne traverse
+ * telle quelle).
  */
-export interface PhotoBudgetStep {
+export interface PhotoPass {
+    readonly ppi: number;
     readonly quality: number;
-    readonly maxPx: number;
+    readonly forceReencode: boolean;
+}
+
+/** Plancher de définition d'une passe de réduction (lisible à l'écran). */
+const PHOTO_PPI_FLOOR = 72;
+/** Plancher de qualité JPEG d'une passe de réduction. */
+const PHOTO_QUALITY_FLOOR = 0.4;
+const PHOTO_QUALITY_STEP = 0.15;
+/** Passes au plus (la première comprise) : chaque passe redécode toutes les photos. */
+const PHOTO_MAX_PASSES = 5;
+/** Part du budget de la sortie laissée au reste du PDF (polices, texte, tracés). */
+export const PDF_NON_PHOTO_RESERVE_BYTES = 1024 * 1024;
+
+/** Première passe d'une sortie : son profil tel quel (`PDF_IMAGE_PROFILES`). */
+export function firstPhotoPass(sortie: PdfSortie): PhotoPass {
+    const profile = PDF_IMAGE_PROFILES[sortie];
+    return { ppi: profile.maxPpi, quality: profile.jpegQuality, forceReencode: false };
 }
 
 /**
- * Paliers dégressifs du budget photo total (directive Nico 2026-08-10,
- * mission P2 « photos et badges outils ») — « très bonne qualité » par
- * défaut (`0.92`/`2560px`, contre `0.85`/`2000px` avant cette mission), puis
- * repli en cascade si le budget total (`PHOTO_BUDGET_BYTES`) est dépassé une
- * fois toutes les photos normalisées au palier courant : qualité JPEG
- * d'abord (`0.92 → 0.85 → 0.78`), puis résolution (`2560 → 2000px`) en
- * dernier recours. `planPhotoBudget()` (pure, testée isolément) décide du
- * palier RETENU ; `normalizePhotos()` l'applique en ré-encodant TOUTES les
- * photos à ce palier (une seule repasse, jamais d'itération illimitée).
+ * Passe suivante quand les photos dépassent `budgetBytes` (sortie Partage) :
+ * le poids d'un JPEG suit à peu près son nombre de pixels, la définition
+ * baisse donc de la racine du rapport (avec 10 % de marge) ; au plancher de
+ * définition, c'est la qualité qui baisse. `null` : budget tenu, pas de
+ * plafond, ou tout au plancher (meilleur effort, jamais un refus).
  */
-export const PHOTO_BUDGET_STEPS: readonly PhotoBudgetStep[] = [
-    { quality: 0.92, maxPx: 2560 },
-    { quality: 0.85, maxPx: 2560 },
-    { quality: 0.78, maxPx: 2560 },
-    { quality: 0.78, maxPx: 2000 },
-];
-
-/** Budget total (octets) toléré pour l'ensemble des photos normalisées d'un
- *  PDF — directive Nico 2026-08-10 : « budget total 50 Mo ». */
-export const PHOTO_BUDGET_BYTES = 50 * 1024 * 1024;
+export function nextPhotoPass(pass: PhotoPass, totalBytes: number, budgetBytes: number | null): PhotoPass | null {
+    if (budgetBytes === null || totalBytes <= budgetBytes) return null;
+    const ppi = Math.max(PHOTO_PPI_FLOOR, Math.floor(pass.ppi * Math.sqrt(budgetBytes / totalBytes) * 0.9));
+    const quality = ppi < pass.ppi ? pass.quality : Math.max(PHOTO_QUALITY_FLOOR, Math.round((pass.quality - PHOTO_QUALITY_STEP) * 100) / 100);
+    if (ppi === pass.ppi && quality === pass.quality) return null;
+    return { ppi, quality, forceReencode: true };
+}
 
 /**
- * Décide du palier `PhotoBudgetStep` à appliquer étant données les tailles
- * (octets) déjà normalisées au palier DE BASE (`PHOTO_BUDGET_STEPS[0]`,
- * 0.92/2560px) — fonction PURE et testable isolément (aucun accès
- * DOM/canvas), cf. SPEC directive Nico : « fonction pure testable
- * `planPhotoBudget(sizes, budget)`. »
- *
- * Sous le budget -> palier de base inchangé (aucune dégradation si ce n'est
- * pas nécessaire). Au-dessus -> estime la taille totale à CHAQUE palier
- * suivant par un modèle physique simple (taille JPEG ≈ proportionnelle à la
- * qualité et au CARRÉ du nombre de pixels, cf. `maxPx²`) et retient le
- * PREMIER palier qui repasserait sous le budget. Aucun palier ne suffit
- * (volume de photos trop important même au plancher) -> dernier palier
- * (meilleur effort, jamais d'échec bloquant — l'appelant log/expose la
- * décision, ne refuse jamais de générer le PDF pour ce motif).
+ * Dimensions utiles (px) d'une image de `widthPx × heightPx` imprimée au plus
+ * grand dans `box` (points : zone utile de la page) à `ppi`. Jamais agrandie.
  */
-export function planPhotoBudget(sizesAtBaselineBytes: readonly number[], budgetBytes: number): PhotoBudgetStep {
-    const baseline = PHOTO_BUDGET_STEPS[0] as PhotoBudgetStep;
-    const baselineTotal = sizesAtBaselineBytes.reduce((a, b) => a + b, 0);
-    if (baselineTotal <= budgetBytes || sizesAtBaselineBytes.length === 0) {
-        return baseline;
-    }
-    for (const step of PHOTO_BUDGET_STEPS) {
-        const qualityRatio = step.quality / baseline.quality;
-        const pxRatio = (step.maxPx / baseline.maxPx) ** 2;
-        const estimatedTotal = baselineTotal * qualityRatio * pxRatio;
-        if (estimatedTotal <= budgetBytes) {
-            return step;
-        }
-    }
-    return PHOTO_BUDGET_STEPS[PHOTO_BUDGET_STEPS.length - 1] as PhotoBudgetStep;
+export function photoTargetSize(widthPx: number, heightPx: number, box: { width: number; height: number }, ppi: number): { width: number; height: number } {
+    const ratio = widthPx / heightPx;
+    const printedWidthPt = Math.min(box.width, box.height * ratio);
+    const maxWidth = Math.max(1, Math.ceil((printedWidthPt / 72) * ppi));
+    if (widthPx <= maxWidth) return { width: widthPx, height: heightPx };
+    return { width: maxWidth, height: Math.max(1, Math.round(maxWidth / ratio)) };
 }
 
 /** Taille approximative (octets) d'une data URL base64 — `atob().length`
@@ -124,46 +116,72 @@ export type PhotoNormalizeProgress = (done: number, total: number) => void;
 const PHOTO_CONCURRENCY = 5;
 
 /**
- * Calcule les dimensions cible (ratio préservé, plus grand côté ramené à
- * `maxPx`) — logique de décision PARTAGÉE entre la voie moderne
- * (`createImageBitmap`/`OffscreenCanvas`) et la voie de repli (`<canvas>`),
- * SPEC §3.5. `maxPx` vient du palier `PhotoBudgetStep` COURANT (directive
- * Nico 2026-08-10 : 2560px par défaut, repli 2000px si le budget total
- * l'exige, cf. `PHOTO_BUDGET_STEPS`/`planPhotoBudget`).
- */
-function computeTargetSize(width: number, height: number, maxPx: number): { width: number; height: number } {
-    const maxSide = Math.max(width, height);
-    const scale = maxSide > maxPx ? maxPx / maxSide : 1;
-    return {
-        width: Math.max(1, Math.round(width * scale)),
-        height: Math.max(1, Math.round(height * scale)),
-    };
-}
-
-/**
  * Identifiants dont les octets ne doivent JAMAIS traverser sans ré-encodage.
  *
  * Le fond PDF personnalisé est choisi comme un FICHIER, jamais saisi par un
  * champ photo : il n'a donc pas traversé le pipeline canvas qui retire les
- * métadonnées. Tant qu'il tenait sous `maxPx`, il partait OCTET POUR OCTET dans
- * le PDF, EXIF et coordonnées GPS compris (audit du 2026-09-25, F09 : les
- * coordonnées ont été relues dans l'image extraite du PDF). Il est désormais
- * ré-encodé à l'entrée (`medias.ts`, `formulaires.ts`) ET exempté ici : un fond
- * déjà enregistré dans une base existante est ainsi assaini au premier PDF
- * suivant, sans migration de données.
+ * métadonnées. Tant qu'il tenait sous la définition visée, il partait OCTET
+ * POUR OCTET dans le PDF, EXIF et coordonnées GPS compris (audit du
+ * 2026-09-25, F09 : les coordonnées ont été relues dans l'image extraite du
+ * PDF). Il est désormais ré-encodé à l'entrée (`medias.ts`, `formulaires.ts`)
+ * ET exempté ici : un fond déjà enregistré dans une base existante est ainsi
+ * assaini au premier PDF suivant, sans migration de données.
  */
 const PASSTHROUGH_EXEMPT_IDS = new Set(['custom_pdf_background']);
 
+/** Côté de la vignette sur laquelle la transparence est cherchée. */
+const ALPHA_PROBE_PX = 256;
+
+/** Au moins un pixel non opaque (vignette de `ALPHA_PROBE_PX` au plus). Tout
+ *  échec de lecture vaut « opaque » : l'image part alors en JPEG. */
+function hasTransparency(source: CanvasImageSource, width: number, height: number): boolean {
+    try {
+        const scale = Math.min(1, ALPHA_PROBE_PX / Math.max(width, height));
+        const w = Math.max(1, Math.round(width * scale));
+        const h = Math.max(1, Math.round(height * scale));
+        const ctx = typeof OffscreenCanvas === 'function'
+            ? new OffscreenCanvas(w, h).getContext('2d')
+            : Object.assign(document.createElement('canvas'), { width: w, height: h }).getContext('2d');
+        if (!ctx) return false;
+        ctx.drawImage(source, 0, 0, w, h);
+        const data = ctx.getImageData(0, 0, w, h).data;
+        for (let i = 3; i < data.length; i += 4) {
+            if ((data[i] ?? 255) < 255) return true;
+        }
+        return false;
+    } catch {
+        return false;
+    }
+}
+
 /**
- * Une entrée JPEG/PNG déjà dans le gabarit ET sous `maxPx` traverse SANS
- * ré-encodage (pass-through inchangé, SPEC §3.5) — décision PARTAGÉE entre
- * les deux voies. Sauf les identifiants de `PASSTHROUGH_EXEMPT_IDS` : ceux-là
- * doivent TOUJOURS être reconstruits par canvas.
+ * Décision de normalisation d'UNE image, partagée par les deux voies :
+ *  - `target` : dimensions utiles à sa taille imprimée maximale ;
+ *  - `png` : sortie PNG (seulement une image PNG réellement transparente —
+ *    une photo annotée, opaque, ressort en JPEG, environ 3 fois plus légère) ;
+ *  - `passthrough` : l'image traverse telle quelle (JPEG, ou PNG transparent,
+ *    déjà à la bonne définition, hors passe de réduction et hors fond).
  */
-function isPassthroughEligible(id: string, dataUrl: string, maxSide: number, maxPx: number): boolean {
-    if (PASSTHROUGH_EXEMPT_IDS.has(id)) return false;
-    const isDirectlySupported = dataUrl.startsWith('data:image/jpeg') || dataUrl.startsWith('data:image/png');
-    return isDirectlySupported && maxSide <= maxPx;
+interface PhotoPlan {
+    target: { width: number; height: number };
+    png: boolean;
+    passthrough: boolean;
+}
+
+function planPhoto(
+    id: string,
+    dataUrl: string,
+    size: { width: number; height: number },
+    transparent: () => boolean,
+    pass: PhotoPass,
+    box: { width: number; height: number },
+): PhotoPlan {
+    const target = photoTargetSize(size.width, size.height, box, pass.ppi);
+    const png = dataUrl.startsWith('data:image/png') && transparent();
+    const fits = target.width === size.width;
+    const encodedAsIs = dataUrl.startsWith('data:image/jpeg') || png;
+    const passthrough = fits && encodedAsIs && !pass.forceReencode && !PASSTHROUGH_EXEMPT_IDS.has(id);
+    return { target, png, passthrough };
 }
 
 /**
@@ -196,34 +214,26 @@ async function decodeImage(dataUrl: string): Promise<HTMLImageElement> {
     return img;
 }
 
-/**
- * Ré-encode une image en JPEG via `<canvas>`, ratio préservé, plus grand côté
- * ramené à `step.maxPx`, qualité `step.quality` — SPEC §3.5.
- */
-function reencodeViaCanvas(img: HTMLImageElement, step: PhotoBudgetStep): string {
-    const { width: targetW, height: targetH } = computeTargetSize(img.naturalWidth, img.naturalHeight, step.maxPx);
-
-    const canvas = document.createElement('canvas');
-    canvas.width = targetW;
-    canvas.height = targetH;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) {
-        throw new Error('Contexte canvas 2D indisponible.');
-    }
-    ctx.drawImage(img, 0, 0, targetW, targetH);
-    return canvas.toDataURL('image/jpeg', step.quality);
-}
-
 /** Voie de repli complète pour UNE photo — mêmes règles de décision que la
- * voie moderne, décodage/ré-encodage SYNCHRONES sur le thread principal. */
-async function normalizeOnePhotoLegacy(id: string, dataUrl: string, step: PhotoBudgetStep): Promise<string | null> {
+ * voie moderne (`planPhoto`), décodage/ré-encodage SYNCHRONES sur le thread
+ * principal. */
+async function normalizeOnePhotoLegacy(id: string, dataUrl: string, pass: PhotoPass, box: { width: number; height: number }): Promise<string | null> {
     try {
         const img = await decodeImage(dataUrl);
-        const maxSide = Math.max(img.naturalWidth, img.naturalHeight);
-        if (isPassthroughEligible(id, dataUrl, maxSide, step.maxPx)) {
+        const size = { width: img.naturalWidth, height: img.naturalHeight };
+        const plan = planPhoto(id, dataUrl, size, () => hasTransparency(img, size.width, size.height), pass, box);
+        if (plan.passthrough) {
             return dataUrl;
         }
-        return reencodeViaCanvas(img, step);
+        const canvas = document.createElement('canvas');
+        canvas.width = plan.target.width;
+        canvas.height = plan.target.height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+            throw new Error('Contexte canvas 2D indisponible.');
+        }
+        ctx.drawImage(img, 0, 0, plan.target.width, plan.target.height);
+        return plan.png ? canvas.toDataURL('image/png') : canvas.toDataURL('image/jpeg', pass.quality);
     } catch (e) {
         console.warn(`[PDF v3] photo ${id} ignorée (format non supporté ou illisible)`, e);
         return null;
@@ -233,8 +243,8 @@ async function normalizeOnePhotoLegacy(id: string, dataUrl: string, step: PhotoB
 // ---------------------------------------------------------------------------
 // Voie moderne (R4-c) — décodage ET ré-encodage HORS thread principal autant
 // que l'API le permet : `createImageBitmap` (décodage/redimensionnement
-// natif) + `OffscreenCanvas.convertToBlob` (encodage JPEG). Élimine le gel
-// UI perceptible à 50 photos pendant « Préparation des images… ».
+// natif) + `OffscreenCanvas.convertToBlob` (encodage). Élimine le gel UI
+// perceptible à 50 photos pendant « Préparation des images… ».
 // ---------------------------------------------------------------------------
 
 /** Convertit un `Blob` en data URL — seule sortie acceptée en aval
@@ -248,78 +258,64 @@ async function blobToDataUrl(blob: Blob): Promise<string> {
     });
 }
 
-/**
- * Ré-encode un `ImageBitmap` déjà décodé/redimensionné (via les options de
- * `createImageBitmap`) en JPEG via `OffscreenCanvas.convertToBlob` — même
- * qualité (`step.quality`) que la voie de repli.
- */
-async function reencodeViaOffscreenCanvas(bitmap: ImageBitmap, step: PhotoBudgetStep): Promise<string> {
-    const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
-    const ctx = canvas.getContext('2d');
-    if (!ctx) {
-        throw new Error('Contexte OffscreenCanvas 2D indisponible.');
-    }
-    ctx.drawImage(bitmap, 0, 0);
-    const blob = await canvas.convertToBlob({ type: 'image/jpeg', quality: step.quality });
-    return blobToDataUrl(blob);
-}
-
 /** Voie moderne complète pour UNE photo — mêmes règles de décision que la
  * voie de repli, décodage/redimensionnement/encodage délégués au navigateur
  * (hors thread principal autant que l'API le permet). */
-async function normalizeOnePhotoModern(id: string, dataUrl: string, step: PhotoBudgetStep): Promise<string | null> {
-    let probeBitmap: ImageBitmap | null = null;
+async function normalizeOnePhotoModern(id: string, dataUrl: string, pass: PhotoPass, box: { width: number; height: number }): Promise<string | null> {
+    let probe: ImageBitmap | null = null;
+    let resized: ImageBitmap | null = null;
     try {
         const sourceBlob = await (await fetch(dataUrl)).blob();
-
-        // 1er décodage — sonde les dimensions réelles (nécessaire pour décider
-        // pass-through vs ré-encodage, SPEC §3.5) ; décodage natif, hors thread
-        // principal côté navigateur.
-        probeBitmap = await createImageBitmap(sourceBlob);
-        const maxSide = Math.max(probeBitmap.width, probeBitmap.height);
-        if (isPassthroughEligible(id, dataUrl, maxSide, step.maxPx)) {
+        // 1er décodage : sonde des dimensions réelles (décision tel quel ou
+        // ré-encodage) ; décodage natif, hors thread principal côté navigateur.
+        probe = await createImageBitmap(sourceBlob);
+        const bitmap = probe;
+        const size = { width: bitmap.width, height: bitmap.height };
+        const plan = planPhoto(id, dataUrl, size, () => hasTransparency(bitmap, size.width, size.height), pass, box);
+        if (plan.passthrough) {
             return dataUrl;
         }
-
-        const { width: targetW, height: targetH } = computeTargetSize(probeBitmap.width, probeBitmap.height, step.maxPx);
-        probeBitmap.close();
-        probeBitmap = null;
-
-        // 2e décodage AVEC redimensionnement natif (`resizeWidth`/`resizeHeight`/
-        // `resizeQuality:'high'`) — le navigateur effectue le redimensionnement
-        // pendant le décodage, hors thread principal, plutôt qu'un
-        // `drawImage` manuel sur canvas plein format.
-        const resizedBitmap = await createImageBitmap(sourceBlob, {
-            resizeWidth: targetW,
-            resizeHeight: targetH,
-            resizeQuality: 'high',
-        });
-        try {
-            return await reencodeViaOffscreenCanvas(resizedBitmap, step);
-        } finally {
-            resizedBitmap.close();
+        // 2e décodage AVEC redimensionnement natif (`resizeQuality: 'high'`)
+        // seulement s'il faut réduire : le navigateur redimensionne pendant le
+        // décodage plutôt qu'un `drawImage` sur un canvas plein format.
+        if (plan.target.width !== size.width) {
+            resized = await createImageBitmap(sourceBlob, {
+                resizeWidth: plan.target.width,
+                resizeHeight: plan.target.height,
+                resizeQuality: 'high',
+            });
         }
+        const drawn = resized ?? bitmap;
+        const canvas = new OffscreenCanvas(drawn.width, drawn.height);
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+            throw new Error('Contexte OffscreenCanvas 2D indisponible.');
+        }
+        ctx.drawImage(drawn, 0, 0);
+        const blob = await canvas.convertToBlob(plan.png ? { type: 'image/png' } : { type: 'image/jpeg', quality: pass.quality });
+        return await blobToDataUrl(blob);
     } catch (e) {
         console.warn(`[PDF v3] photo ${id} ignorée (format non supporté ou illisible)`, e);
         return null;
     } finally {
-        probeBitmap?.close();
+        probe?.close();
+        resized?.close();
     }
 }
 
 /**
- * Normalise UNE photo — SPEC §3.5 : JPEG/PNG déjà dans le gabarit ⇒ conservée
- * telle quelle ; sinon ré-encodage JPEG au palier `step` (qualité/résolution,
- * cf. `PhotoBudgetStep`). Repli `null` (entrée OMISE par l'appelant) en cas
- * d'échec de décodage/ré-encodage. Choisit la voie moderne
- * (`createImageBitmap`/`OffscreenCanvas`, hors thread principal) si
- * disponible, sinon la voie de repli `<canvas>` (R4-c).
+ * Normalise UNE photo — décision 42 : JPEG (ou PNG réellement transparent)
+ * déjà à la définition visée ⇒ conservée telle quelle ; sinon ré-encodage à la
+ * définition de la passe (JPEG, PNG si transparent). Repli `null` (entrée
+ * OMISE par l'appelant) en cas d'échec de décodage/ré-encodage. Choisit la
+ * voie moderne (`createImageBitmap`/`OffscreenCanvas`, hors thread principal)
+ * si disponible, sinon la voie de repli `<canvas>` (R4-c).
  */
-async function normalizeOnePhoto(id: string, dataUrl: string, step: PhotoBudgetStep): Promise<string | null> {
+async function normalizeOnePhoto(id: string, dataUrl: string, pass: PhotoPass, box: { width: number; height: number }): Promise<string | null> {
     if (supportsModernPhotoPipeline()) {
-        return normalizeOnePhotoModern(id, dataUrl, step);
+        return normalizeOnePhotoModern(id, dataUrl, pass, box);
     }
-    return normalizeOnePhotoLegacy(id, dataUrl, step);
+    return normalizeOnePhotoLegacy(id, dataUrl, pass, box);
 }
 
 /**
@@ -349,64 +345,75 @@ async function runWithConcurrency<T, R>(
     return results;
 }
 
-/** Une repasse de normalisation de TOUTES les photos au palier `step` donné
- *  — factorisée entre la 1re passe (palier de base) et l'éventuelle 2e passe
- *  (palier dégradé décidé par `planPhotoBudget`, cf. `normalizePhotos`). */
-async function normalizePhotosAtStep(
+/** Une passe de normalisation de TOUTES les photos (première passe, puis
+ *  passes de réduction de la sortie Partage, cf. `normalizePhotos`). */
+async function normalizePhotosAtPass(
     entries: ReadonlyArray<[string, string]>,
-    step: PhotoBudgetStep,
+    pass: PhotoPass,
+    box: { width: number; height: number },
     onProgress: PhotoNormalizeProgress | undefined,
 ): Promise<Array<readonly [string, string] | null>> {
     const total = entries.length;
     let done = 0;
     return runWithConcurrency(entries, PHOTO_CONCURRENCY, async ([id, dataUrl]): Promise<readonly [string, string] | null> => {
-        const result = await normalizeOnePhoto(id, dataUrl, step);
+        const result = await normalizeOnePhoto(id, dataUrl, pass, box);
         done += 1;
         onProgress?.(done, total);
         return result !== null ? ([id, result] as const) : null;
     });
 }
 
+export interface NormalizePhotosOptions {
+    /** Sortie choisie dans la fenêtre de génération. @default 'impression' */
+    sortie?: PdfSortie;
+    /** Format de page : sa zone utile borne la taille imprimée. @default 'a4' */
+    format?: OiPdfFormat;
+}
+
 /**
  * Normalise l'ensemble des photos collectées AVANT construction du document —
  * garde OBLIGATOIRE (SPEC §1.5) : pdfkit (moteur sous-jacent de pdfmake)
  * n'accepte que JPEG/PNG ; une image WebP/AVIF non normalisée ferait échouer
- * TOUT le document. Concurrence BORNÉE (`PHOTO_CONCURRENCY`, R4-c) — remplace
- * l'ancien `Promise.all` illimité (pic mémoire à N décodages/canvases vivants
- * simultanément). `onProgress`, si fourni, est appelé après CHAQUE photo
- * traitée (i/N, succès ou échec).
+ * TOUT le document. Concurrence BORNÉE (`PHOTO_CONCURRENCY`, R4-c).
+ * `onProgress`, si fourni, est appelé après CHAQUE photo traitée (i/N, succès
+ * ou échec), à chaque passe.
  *
- * PIPELINE QUALITÉ/BUDGET (directive Nico 2026-08-10, mission P2) : 1re passe
- * TOUJOURS au palier de base (`PHOTO_BUDGET_STEPS[0]`, 0.92/2560px — « très
- * bonne qualité »). Si la taille totale résultante dépasse
- * `PHOTO_BUDGET_BYTES` (50 Mo), `planPhotoBudget()` (pure, cf. plus haut)
- * décide du palier dégradé à appliquer et une 2e passe RE-NORMALISE TOUTES
- * les photos à ce palier (jamais de mélange de paliers dans un même PDF). La
- * décision retenue est TOUJOURS loggée (`console.info`, exploitable côté UI
- * par lecture de la console — aucune modification de la remontée d'erreur de
- * `buildOiPdfBlob`/`downloadOiPdfV3`, hors périmètre de cette passe).
+ * PROFILS DE SORTIE (décision 42, `PDF_IMAGE_PROFILES`) : chaque image vise la
+ * définition du profil (250 ppi en Impression, 150 en Partage) à sa taille
+ * imprimée MAXIMALE (une page photo sous son titre) ; plus définie, elle est
+ * réduite.
+ * La sortie Partage a un plafond (10 Mo) : tant que les photos dépassent ce
+ * plafond, moins la part du reste du PDF, une passe de réduction
+ * (`nextPhotoPass`) repart des ORIGINAUX (jamais de perte cumulée), au plus
+ * `PHOTO_MAX_PASSES` passes. La décision est journalisée (`console.info`).
  */
 export async function normalizePhotos(
     photosBase64: Record<string, string>,
     onProgress?: PhotoNormalizeProgress,
+    options: NormalizePhotosOptions = {},
 ): Promise<Record<string, string>> {
     const entries = Object.entries(photosBase64);
-    const baselineStep = PHOTO_BUDGET_STEPS[0] as PhotoBudgetStep;
+    const sortie = options.sortie ?? 'impression';
+    // Plus grande place d'une image dans l'OI : une page photo, sous son titre.
+    const geo = pageGeometry(options.format ?? 'a4');
+    const box = { width: geo.contentWidthPt, height: geo.contentHeightPt - PDF_H2_BLOCK_PT };
+    const budgetBytes = PDF_IMAGE_PROFILES[sortie].budgetBytes;
+    const photoBudget = budgetBytes === null ? null : Math.max(0, budgetBytes - PDF_NON_PHOTO_RESERVE_BYTES);
 
-    let normalized = await normalizePhotosAtStep(entries, baselineStep, onProgress);
-    const baselineSizes = normalized.map((entry) => (entry !== null ? dataUrlSizeBytes(entry[1]) : 0));
-    const baselineTotalBytes = baselineSizes.reduce((a, b) => a + b, 0);
-
-    const plan = planPhotoBudget(baselineSizes, PHOTO_BUDGET_BYTES);
-    if (plan.quality !== baselineStep.quality || plan.maxPx !== baselineStep.maxPx) {
+    let pass = firstPhotoPass(sortie);
+    let normalized = await normalizePhotosAtPass(entries, pass, box, onProgress);
+    for (let passes = 1; passes < PHOTO_MAX_PASSES; passes++) {
+        const totalBytes = normalized.reduce((sum, entry) => sum + (entry ? dataUrlSizeBytes(entry[1]) : 0), 0);
+        const next = nextPhotoPass(pass, totalBytes, photoBudget);
+        if (!next) break;
         console.info(
-            `[PDF v3] budget photos dépassé (${(baselineTotalBytes / 1024 / 1024).toFixed(1)} Mo > ` +
-                `${(PHOTO_BUDGET_BYTES / 1024 / 1024).toFixed(0)} Mo) — repli qualité ${plan.quality}/${plan.maxPx}px`,
+            `[PDF v3] photos ${formatBytes(totalBytes)} > ${formatBytes(photoBudget ?? 0)} (sortie ${sortie}) — ` +
+                `réduction à ${next.ppi} ppi, qualité ${next.quality}`,
         );
-        normalized = await normalizePhotosAtStep(entries, plan, onProgress);
-    } else {
-        console.info(`[PDF v3] photos normalisées à ${baselineStep.quality}/${baselineStep.maxPx}px (budget respecté)`);
+        pass = next;
+        normalized = await normalizePhotosAtPass(entries, pass, box, onProgress);
     }
+    console.info(`[PDF v3] photos normalisées (sortie ${sortie}, ${pass.ppi} ppi, qualité ${pass.quality})`);
 
     const out: Record<string, string> = {};
     for (const entry of normalized) {
@@ -432,9 +439,12 @@ export async function normalizePhotos(
  */
 export async function buildOiPdfBlob(
     data: OiPdfCollectedData,
-    opts: { format: OiPdfFormat; onProgress?: PhotoNormalizeProgress },
+    opts: { format: OiPdfFormat; sortie?: PdfSortie; onProgress?: PhotoNormalizeProgress },
 ): Promise<Blob> {
-    const photosBase64 = await normalizePhotos(data.photosBase64, opts.onProgress);
+    const photosBase64 = await normalizePhotos(data.photosBase64, opts.onProgress, {
+        format: opts.format,
+        sortie: opts.sortie ?? 'impression',
+    });
     const docDefinition: TDocumentDefinitions = buildOiDocDefinition({ ...data, photosBase64 }, opts);
 
     const pdfMake = (await import('pdfmake')).default;
@@ -488,8 +498,10 @@ export async function downloadOiPdfV3(deps?: {
         const format: OiPdfFormat = window.pdfOutputFormat === '16:9' ? '16:9' : 'a4';
 
         updateStatus('Préparation des images…');
+        const { sortie } = currentOiPdfOptions();
         const blob = await buildOiPdfBlob(data, {
             format,
+            sortie,
             onProgress: (done, total) => {
                 if (total > 0) updateStatus(`Préparation des images… (${done}/${total})`);
             },
@@ -512,7 +524,15 @@ export async function downloadOiPdfV3(deps?: {
         setTimeout(() => URL.revokeObjectURL(objectUrl), 60000);
 
         console.log(`✅ [SUCCESS] PDF V3 généré en ${((Date.now() - startTime) / 1000).toFixed(2)}s`);
-        toast('PDF généré avec succès !', { kind: 'success' });
+        // Décision 42 : poids annoncé ; en Partage, dépassement du plafond dit.
+        const budget = PDF_IMAGE_PROFILES[sortie].budgetBytes;
+        const overBudget = budget !== null && blob.size > budget;
+        toast(
+            overBudget
+                ? `PDF généré : ${formatBytes(blob.size)}, au-delà des ${formatBytes(budget)} visés pour le partage (trop de photos).`
+                : `PDF généré : ${formatBytes(blob.size)}.`,
+            { kind: 'success', ...(overBudget ? { duration: 8000 } : {}) },
+        );
     } catch (error) {
         console.error('❌ [CRITICAL V3] PDF Engine Failed:', error);
         {
