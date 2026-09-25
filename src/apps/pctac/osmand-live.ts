@@ -21,7 +21,7 @@
 
 import { Persist } from '@shared/persist.js';
 
-import { registerRemoteOperator, upsert } from '@pctac/tchap-live.js';
+import { acquireScreenWakeLock, registerRemoteOperator, releaseScreenWakeLock, upsert } from '@pctac/tchap-live.js';
 
 const LS_KEY = 'pcTacOsmandRelay';
 const DEFAULT_URL = 'https://nico-ai-series-1.tailed318a.ts.net/osmand';
@@ -120,9 +120,14 @@ async function waitVisible(): Promise<void> {
 }
 
 function halt(): void {
+  const wasRunning = running;
   running = false;
   aborter?.abort();
   aborter = null;
+  // Ne relâche un verrou d'écran QUE si cette session OsmAnd en avait pris un :
+  // un `halt()` de réinitialisation avant démarrage ne doit pas couper le verrou
+  // d'un suivi Tchap simultané (même compteur partagé).
+  if (wasRunning) releaseScreenWakeLock();
   setButtons();
 }
 
@@ -202,6 +207,7 @@ export function start(): void {
   halt();
   running = true; since = 0; backoffIdx = 0; known.clear(); seenTs.clear();
   aborter = new AbortController();
+  acquireScreenWakeLock();
   setButtons();
   setStatus('Connexion au relais…');
   void loop();
