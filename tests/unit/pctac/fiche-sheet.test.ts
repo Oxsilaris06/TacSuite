@@ -711,3 +711,32 @@ describe('fiche ouverte changée dans un autre onglet (décision 29)', () => {
     expect(Storage.loadCollection('pcTacAdversaries')).toHaveLength(1);
   });
 });
+
+describe('Revue du 25/09 — modification distante silencieuse appliquée en place (B5)', () => {
+  it('valeur appliquée dans le champ, focus et section ouverte gardés, pas de re-rendu', async () => {
+    Storage.saveCollection('pcTacAdversaries', [{ id: 'a1', nom: 'A', status: 'active' }]);
+    await openFiche('adv', 'a1');
+    const antecedents = document.querySelector<HTMLTextAreaElement>('#ficheSheet [data-key="antecedents"]');
+    const domicile = document.querySelector<HTMLInputElement>('#ficheSheet [data-key="domicile"]');
+    expect(antecedents).not.toBeNull();
+    expect(domicile).not.toBeNull();
+    const section = antecedents!.closest<HTMLDetailsElement>('.fiche-section')!;
+    section.open = true;
+    antecedents!.focus();
+    setField('antecedents', 'Fiché S');
+    const formBefore = document.querySelector('#ficheSheet form');
+
+    // L'autre onglet renseigne le domicile (champ non touché ici).
+    Storage.saveCollection('pcTacAdversaries', [{ id: 'a1', nom: 'A', status: 'active', domicile: '3 rue TP' }]);
+    document.dispatchEvent(new CustomEvent('pctac:data', { detail: { key: 'pcTacAdversaries', remote: true } }));
+    await flush();
+
+    expect(document.querySelector<HTMLInputElement>('#ficheSheet [data-key="domicile"]')!.value).toBe('3 rue TP');
+    expect(document.activeElement).toBe(antecedents);
+    expect(section.open).toBe(true);
+    expect(document.querySelector('#ficheSheet form')).toBe(formBefore);
+    expect(antecedents!.value).toBe('Fiché S');
+    await clickSave();
+    expect(storedFiche('pcTacAdversaries', 'a1')).toMatchObject({ antecedents: 'Fiché S', domicile: '3 rue TP' });
+  });
+});

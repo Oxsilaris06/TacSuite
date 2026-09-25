@@ -777,7 +777,38 @@ async function handleRemoteFicheChangeInner(s: SheetState): Promise<void> {
     // une NOUVELLE divergence redemandera un choix (sinon la même question
     // était reposée à chaque écriture distante ultérieure).
     s.base = baseOf(fresh);
-    if (state === s) render();
+    if (state !== s) return;
+    // B5 (revue du 25/09) — appliquer EN PLACE : un re-rendu complet perdait le
+    // focus, refermait les sections et fermait le clavier en pleine frappe.
+    const keys = [...Object.keys(diff.silent), ...diff.conflicts.map((c) => c.key)];
+    applyValuesInPlace(keys);
+    // Le type de menace redessine les sections : re-rendu en gardant la saisie
+    // (le DOM porte déjà les valeurs venues d'ailleurs).
+    if (keys.includes(TYPE_MENACE_KEY)) rerenderKeepingInput();
+}
+
+/** B5 — pose dans le formulaire les valeurs de `state.item` pour `keys`, sans re-rendre. */
+function applyValuesInPlace(keys: readonly string[]): void {
+    const dlg = dialogEl();
+    if (!dlg || !state) return;
+    const mode = currentModeId();
+    const fields = [...headerFields(state.side, mode), ...ficheSections(state.side, mode, state.item).flatMap((s) => s.fields)];
+    for (const key of keys) {
+        const el = dlg.querySelector<HTMLElement>(`[data-key="${CSS.escape(key)}"]`);
+        if (!el) continue;
+        const value = state.item[key];
+        if (el.classList.contains('fiche-chips')) {
+            const field = fields.find((f) => f.key === key);
+            if (!field) continue;
+            const { selected, precision } = parseChips(value, field.chips ?? [], field);
+            el.querySelectorAll<HTMLElement>('.fiche-chip').forEach((b) => b.setAttribute('aria-pressed', String(selected.includes(b.dataset.chip ?? ''))));
+            const p = el.querySelector<HTMLInputElement>('.fiche-precision');
+            if (p) p.value = precision;
+        } else {
+            (el as HTMLInputElement).value = String(value ?? '');
+        }
+    }
+    updateCounts(dlg);
 }
 
 /** Photo enregistrée de la fiche (décision 25) : la fiche montre ensuite la version annotée. */
