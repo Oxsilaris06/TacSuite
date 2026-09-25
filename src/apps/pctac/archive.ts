@@ -45,7 +45,7 @@ import { Utils } from '@pctac/utils.js';
 import {
     LOCAL_STORAGE_KEY, TP_ASSOC_KEY,
     ADVERSARIES_KEY, HOSTAGES_KEY, FRIENDS_KEY, PHOTOS_KEY, CUSTOM_PAX_KEY,
-    FREE_MODE_COLORS, safeHexColor,
+    FREE_MODE_COLORS, safeHexColor, DELETED_KEY,
 } from '@pctac/config.js';
 
 // Clé localStorage de l'Ordre Initial (générateur 4.html). L'archive .oi.zip
@@ -253,6 +253,8 @@ function applyDeltas(
 const COLLECTION_KEYS = [
     LOCAL_STORAGE_KEY, TP_ASSOC_KEY,
     ADVERSARIES_KEY, HOSTAGES_KEY, FRIENDS_KEY, PHOTOS_KEY, CUSTOM_PAX_KEY,
+    // A7 : pierres tombales des suppressions, voyagent avec l'archive.
+    DELETED_KEY,
     'pcTacPlanPins', 'pcTacPlanShapes', 'pcTacPlanView',
     // Carroyage tactique : désigne les cases à la radio, doit voyager avec le plan.
     'pcTacPlanGrid',
@@ -488,10 +490,10 @@ export async function resolveDuplicateFiches(
 }
 
 /** Noms lisibles des fiches remplacées par l'archive (fusion). */
-function replacedFicheNames(replacedByKey: Record<string, Array<Record<string, unknown>>>): string[] {
+function ficheNamesByKey(byKey: Record<string, Array<Record<string, unknown>>>): string[] {
     const names: string[] = [];
     FICHE_KEYS.forEach((key) => {
-        (replacedByKey[key] ?? []).forEach((item) => names.push(ficheDisplayName(item)));
+        (byKey[key] ?? []).forEach((item) => names.push(ficheDisplayName(item)));
     });
     return names;
 }
@@ -501,13 +503,28 @@ export function importSummaryMessage(
     replacedFiches: readonly string[],
     mergedFiches: readonly string[],
     unknownKeys: number,
+    /** A7 — fiches ajoutées par l'import (hors fusions, déjà nommées). */
+    addedFiches: readonly string[] = [],
+    /** A7 — supprimés ici, non repris : fiches nommées, autres éléments comptés. */
+    skipped: { fiches: readonly string[]; others: number } = { fiches: [], others: 0 },
 ): string | null {
     const parts: string[] = [];
+    const pl = (n: number): string => (n > 1 ? 's' : '');
+    const names = (list: readonly string[]): string => (list.length > 6 ? `${list.slice(0, 6).join(', ')}…` : list.join(', '));
     if (replacedFiches.length) {
-        parts.push(`${replacedFiches.length} fiche${replacedFiches.length > 1 ? 's' : ''} remplacée${replacedFiches.length > 1 ? 's' : ''} : ${replacedFiches.join(', ')}`);
+        parts.push(`${replacedFiches.length} fiche${pl(replacedFiches.length)} remplacée${pl(replacedFiches.length)} : ${names(replacedFiches)}`);
     }
     if (mergedFiches.length) {
-        parts.push(`${mergedFiches.length} fiche${mergedFiches.length > 1 ? 's' : ''} fusionnée${mergedFiches.length > 1 ? 's' : ''} : ${mergedFiches.join(', ')}`);
+        parts.push(`${mergedFiches.length} fiche${pl(mergedFiches.length)} fusionnée${pl(mergedFiches.length)} : ${names(mergedFiches)}`);
+    }
+    if (addedFiches.length) {
+        parts.push(`${addedFiches.length} fiche${pl(addedFiches.length)} ajoutée${pl(addedFiches.length)} : ${names(addedFiches)}`);
+    }
+    if (skipped.fiches.length) {
+        parts.push(`${skipped.fiches.length} fiche${pl(skipped.fiches.length)} supprimée${pl(skipped.fiches.length)} ici, non reprise${pl(skipped.fiches.length)} : ${names(skipped.fiches)}`);
+    }
+    if (skipped.others > 0) {
+        parts.push(`${skipped.others} élément${pl(skipped.others)} supprimé${pl(skipped.others)} ici, non repris`);
     }
     if (unknownKeys > 0) {
         parts.push(`${unknownKeys} élément${unknownKeys > 1 ? 's' : ''} inconnu${unknownKeys > 1 ? 's' : ''} ignoré${unknownKeys > 1 ? 's' : ''}`);
@@ -841,7 +858,7 @@ export const Archive: ArchiveContract = {
         };
 
         // 1) localStorage (rollback intégral si une écriture jette, ex. quota).
-        let scopeReport: ApplyScopeReport = { written: 0, addedByKey: {}, replacedByKey: {} };
+        let scopeReport: ApplyScopeReport = { written: 0, addedByKey: {}, replacedByKey: {}, skippedByKey: {} };
         try {
             if (scope.full) {
                 // Restauration intégrale : on repart d'une situation vide.
@@ -970,10 +987,17 @@ export const Archive: ArchiveContract = {
         // 4) Doublons de personnes parmi les fiches AJOUTÉES par l'import
         // (décision 32) : signalés et fusionnables un par un.
         const mergedFiches = await resolveDuplicateFiches(scopeReport.addedByKey, targetMode);
-        const replacedFiches = replacedFicheNames(scopeReport.replacedByKey);
+        const replacedFiches = ficheNamesByKey(scopeReport.replacedByKey);
+        // A7 — ajouts nommés (hors restauration intégrale et hors fiches déjà
+        // fusionnées), et éléments supprimés ici, non repris.
+        const addedFiches = scope.full ? [] : ficheNamesByKey(scopeReport.addedByKey).filter((n) => !mergedFiches.includes(n));
+        const skippedFiches = ficheNamesByKey(scopeReport.skippedByKey);
+        const skippedOthers = Object.entries(scopeReport.skippedByKey)
+            .filter(([k]) => !FICHE_KEYS.includes(k))
+            .reduce((n, [, list]) => n + list.length, 0);
 
-        // 5) Récapitulatif : fiches remplacées/fusionnées, clés ignorées.
-        const summary = importSummaryMessage(replacedFiches, mergedFiches, unknownKeys);
+        // 5) Récapitulatif : fiches remplacées/fusionnées/ajoutées, non reprises, clés ignorées.
+        const summary = importSummaryMessage(replacedFiches, mergedFiches, unknownKeys, addedFiches, { fiches: skippedFiches, others: skippedOthers });
         if (summary !== null) toast(summary, { kind: 'info', duration: 8000 });
 
         // Si l'archive visait une AUTRE situation que celle affichée, on

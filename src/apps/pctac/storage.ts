@@ -64,6 +64,7 @@ export const SITUATION_KEYS: readonly string[] = [
   'pcTacLieuHistory',
   'pcTacPlanLocked',
   'pcTacDashboard',
+  'pcTacDeleted', // pierres tombales (A7), purgées avec la situation
 ];
 
 /**
@@ -219,15 +220,15 @@ export const Storage: PctacStorageContract = {
    * PIÈGE : trie le tableau EN PLACE (mutation), puis persiste via Persist.
    * (storage.js:24-31)
    */
-  saveLogData(logData: PctacLogEntry[]): boolean {
+  saveLogData(logData: PctacLogEntry[], modeId: PctacModeId = currentModeId()): boolean {
     // U15 — tri par (date, heure) avant de sauvegarder (mutation en place).
     // Les entrées legacy sans date (date ?? '') passent AVANT toute entrée
     // datée, dans un ordre stable entre elles (heure ASC comme avant).
     logData.sort(compareLogEntries);
-    const stored = Persist.get<PctacLogEntry[]>(scopedKey(LOCAL_STORAGE_KEY), { validator: isArray, fallback: [] });
+    const stored = Persist.get<PctacLogEntry[]>(scopedKey(LOCAL_STORAGE_KEY, modeId), { validator: isArray, fallback: [] });
     stampUpdatedAt(logData, stored);
     // Persist ne jette jamais sur quota : il émet 'pctac:quota' (non bloquant).
-    const result = Persist.set(scopedKey(LOCAL_STORAGE_KEY), logData);
+    const result = Persist.set(scopedKey(LOCAL_STORAGE_KEY, modeId), logData);
     announceChange(LOCAL_STORAGE_KEY);
     return result.ok;
   },
@@ -236,8 +237,8 @@ export const Storage: PctacStorageContract = {
    * Charge les données du journal.
    * (storage.js:37-39)
    */
-  loadLogData(): PctacLogEntry[] {
-    return Persist.get(scopedKey(LOCAL_STORAGE_KEY), { validator: isArray, fallback: [] });
+  loadLogData(modeId: PctacModeId = currentModeId()): PctacLogEntry[] {
+    return Persist.get(scopedKey(LOCAL_STORAGE_KEY, modeId), { validator: isArray, fallback: [] });
   },
 
   /**

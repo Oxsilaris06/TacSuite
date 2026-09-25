@@ -32,6 +32,7 @@ import {
     DASHBOARD_KEY,
     FRIENDS_KEY,
     HOSTAGES_KEY,
+    DELETED_KEY,
     LOCAL_STORAGE_KEY,
     PHOTOS_KEY,
     TP_ASSOC_KEY,
@@ -40,6 +41,7 @@ import { GPX_INDEX_KEY, PINS_KEY } from '@pctac/planmap/constants.js';
 import { PCTAC_MODES, currentModeId, scopedKey, type PctacModeId } from '@pctac/modes.js';
 import { confirmDialog } from '@shared/feedback.js';
 import { compareLogEntries } from '@pctac/storage.js';
+import { readTombstones, tombstoneMap } from '@pctac/tombstones.js';
 
 export type ImportMode = 'merge' | 'replace';
 
@@ -161,6 +163,8 @@ export interface CollectionMergeReport {
     added: Array<Record<string, unknown>>;
     /** Éléments qui ont REMPLACÉ un élément local (archive plus récente). */
     replaced: Array<Record<string, unknown>>;
+    /** A7 — éléments supprimés ici après leur dernière modification là-bas : non repris. */
+    skipped: Array<Record<string, unknown>>;
 }
 
 /** Horodatage `updatedAt` en ms, ou `NaN` si absent/illisible. */
@@ -186,8 +190,13 @@ function incomingWins(local: Record<string, unknown>, incoming: Record<string, u
  * Comme {@link mergeCollectionJson}, mais rend aussi les éléments ajoutés et
  * remplacés. Ne jette jamais.
  */
-export function mergeCollectionReport(localRaw: string | null, incomingRaw: string | undefined): CollectionMergeReport {
-    if (incomingRaw === undefined) return { json: localRaw, added: [], replaced: [] };
+export function mergeCollectionReport(
+    localRaw: string | null,
+    incomingRaw: string | undefined,
+    /** A7 — pierres tombales locales de cette clé : `id` → date de suppression (ms). */
+    tombstones?: ReadonlyMap<string, number>,
+): CollectionMergeReport {
+    if (incomingRaw === undefined) return { json: localRaw, added: [], replaced: [], skipped: [] };
 
     // Rien en local : l'archive fait foi, quelle que soit la forme de sa valeur.
     // C'est le comportement historique (`if (localRaw === null) return incomingRaw`)
@@ -201,12 +210,12 @@ export function mergeCollectionReport(localRaw: string | null, incomingRaw: stri
         try {
             incoming = JSON.parse(incomingRaw);
         } catch {
-            return { json: null, added: [], replaced: [] };
+            return { json: null, added: [], replaced: [], skipped: [] };
         }
         const added = Array.isArray(incoming)
             ? incoming.filter((i): i is Record<string, unknown> => !!i && typeof i === 'object')
             : [];
-        return { json: incomingRaw, added, replaced: [] };
+        return { json: incomingRaw, added, replaced: [], skipped: [] };
     }
 
     let local: unknown;
@@ -215,13 +224,13 @@ export function mergeCollectionReport(localRaw: string | null, incomingRaw: stri
         local = JSON.parse(localRaw);
         incoming = JSON.parse(incomingRaw);
     } catch {
-        return { json: localRaw, added: [], replaced: [] };
+        return { json: localRaw, added: [], replaced: [], skipped: [] };
     }
-    if (!Array.isArray(incoming)) return { json: localRaw, added: [], replaced: [] };
+    if (!Array.isArray(incoming)) return { json: localRaw, added: [], replaced: [], skipped: [] };
     if (!Array.isArray(local)) {
         // Pas de liste locale : l'archive fait foi, tout est « ajouté ».
         const added = incoming.filter((i): i is Record<string, unknown> => !!i && typeof i === 'object');
-        return { json: incomingRaw, added, replaced: [] };
+        return { json: incomingRaw, added, replaced: [], skipped: [] };
     }
 
     const out: unknown[] = [...local];
@@ -235,6 +244,7 @@ export function mergeCollectionReport(localRaw: string | null, incomingRaw: stri
 
     const added: Array<Record<string, unknown>> = [];
     const replaced: Array<Record<string, unknown>> = [];
+    const skipped: Array<Record<string, unknown>> = [];
 
     incoming.forEach((item) => {
         if (!item || typeof item !== 'object') {
@@ -250,6 +260,14 @@ export function mergeCollectionReport(localRaw: string | null, incomingRaw: stri
         }
         const at = indexById.get(id);
         if (at === undefined) {
+            // A7 — supprimé ici après sa dernière modification là-bas (ou jamais
+            // daté) : il ne revient pas. Modifié là-bas après la suppression : il
+            // revient (la plus récente gagne).
+            const deadAt = tombstones?.get(id);
+            if (deadAt !== undefined) {
+                const iu = updatedAtMs(obj);
+                if (Number.isNaN(iu) || iu <= deadAt) { skipped.push(obj); return; }
+            }
             added.push(obj);
             indexById.set(id, out.length);
             out.push(obj);
@@ -261,7 +279,7 @@ export function mergeCollectionReport(localRaw: string | null, incomingRaw: stri
             replaced.push(obj);
         }
     });
-    return { json: JSON.stringify(out), added, replaced };
+    return { json: JSON.stringify(out), added, replaced, skipped };
 }
 
 /**
@@ -273,6 +291,8 @@ export interface ApplyScopeReport {
     addedByKey: Record<string, Array<Record<string, unknown>>>;
     /** Éléments remplacés, par clé logique. */
     replacedByKey: Record<string, Array<Record<string, unknown>>>;
+    /** A7 — éléments supprimés ici, non repris, par clé logique. */
+    skippedByKey: Record<string, Array<Record<string, unknown>>>;
 }
 
 /**
@@ -374,6 +394,9 @@ export function applyScope(
     let written = 0;
     const addedByKey: Record<string, Array<Record<string, unknown>>> = {};
     const replacedByKey: Record<string, Array<Record<string, unknown>>> = {};
+    const skippedByKey: Record<string, Array<Record<string, unknown>>> = {};
+    // A7 — pierres tombales de la situation cible, lues une fois.
+    const stones = readTombstones(modeId);
     scopeKeys(scope).forEach((key) => {
         // Clé PHYSIQUE de la situation cible : l'archive porte les clés LOGIQUES,
         // l'import les range sous le suffixe de la situation destinataire.
@@ -389,7 +412,7 @@ export function applyScope(
             if (list.length) addedByKey[key] = list;
             return;
         }
-        const report = mergeCollectionReport(localStorage.getItem(physical), incoming);
+        const report = mergeCollectionReport(localStorage.getItem(physical), incoming, tombstoneMap(stones, key));
         if (report.json !== null) {
             // A4 — écriture directe (sans saveLogData) : la main courante
             // fusionnée doit rester chronologique, l'écran et le PDF ne trient pas.
@@ -398,8 +421,22 @@ export function applyScope(
         }
         if (report.added.length) addedByKey[key] = report.added;
         if (report.replaced.length) replacedByKey[key] = report.replaced;
+        if (report.skipped.length) skippedByKey[key] = report.skipped;
     });
-    return { written, addedByKey, replacedByKey };
+    // A7 — les pierres tombales de l'archive rejoignent les miennes (union, la
+    // plus récente gagne), quelles que soient les catégories : un troisième
+    // poste ne fera pas revenir ce que le deuxième a supprimé. Restauration
+    // intégrale : l'archive fait foi.
+    const incomingStones = dataJson[DELETED_KEY];
+    if (incomingStones !== undefined) {
+        const physical = scopedKey(DELETED_KEY, modeId);
+        if (scope.full) localStorage.setItem(physical, incomingStones);
+        else {
+            const union = mergeCollectionReport(localStorage.getItem(physical), incomingStones);
+            if (union.json !== null) localStorage.setItem(physical, union.json);
+        }
+    }
+    return { written, addedByKey, replacedByKey, skippedByKey };
 }
 
 function escapeAttr(value: string): string {

@@ -111,6 +111,11 @@ describe('importSummaryMessage', () => {
             .toBe('1 fiche remplacée : Dupont. 1 fiche fusionnée : Martin. 3 éléments inconnus ignorés.');
         expect(importSummaryMessage([], [], 0)).toBeNull();
     });
+
+    it('nomme les fiches ajoutées et les éléments supprimés ici non repris (A7)', () => {
+        expect(importSummaryMessage([], [], 0, ['Durand'], { fiches: ['Dupont'], others: 2 }))
+            .toBe('1 fiche ajoutée : Durand. 1 fiche supprimée ici, non reprise : Dupont. 2 éléments supprimés ici, non repris.');
+    });
 });
 
 describe('importFile — version (décision 32)', () => {
