@@ -3860,17 +3860,20 @@ function buildFooter(formData: OiFormData, p: OiPdfPalette): DynamicContent {
             return null;
         }
         return {
-            stack: [
-                {
-                    text: [
-                        { text: `OI - ${strOr(formData.trigramme_redacteur, 'N/A')} - ${strOr(formData.unite_redacteur, 'N/A')} - ` },
-                        { text: 'CONFIDENTIEL', color: p.danger, bold: true },
-                    ],
-                    alignment: 'center',
-                    fontSize: 9,
-                },
-                { text: `${currentPage} / ${pageCount}`, alignment: 'center', fontSize: 8 },
+            // UNE SEULE ligne (audit du 2026-09-25, F03). Le pied tenait sur
+            // deux lignes — bande à 9 pt, puis « n / N » à 8 pt — soit
+            // 4 + 17,2 + 15,3 = 36,5 pt pour les 31,2 pt de la marge basse de
+            // 11 mm (`theme.ts::pageGeometry`). pdfmake supprimait alors la
+            // SECONDE ligne sans erreur : la pagination promise par l'écart
+            // assumé E2 n'apparaissait sur aucune page. Tout sur une ligne
+            // tient en 21,2 pt.
+            text: [
+                { text: `OI - ${strOr(formData.trigramme_redacteur, 'N/A')} - ${strOr(formData.unite_redacteur, 'N/A')} - ` },
+                { text: 'CONFIDENTIEL', color: p.danger, bold: true },
+                { text: ` - ${currentPage} / ${pageCount}` },
             ],
+            alignment: 'center',
+            fontSize: 9,
             margin: [0, 4, 0, 0],
         };
     };
