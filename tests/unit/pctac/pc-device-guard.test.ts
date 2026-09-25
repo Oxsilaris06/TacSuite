@@ -130,6 +130,23 @@ describe('pastille du dock', () => {
         expect(dock.querySelectorAll(`#${STORAGE_BADGE_ID}`)).toHaveLength(1);
     });
 
+    it('se lit au survol et au toucher : bouton, infobulle active, explication au clic', () => {
+        const dock = document.createElement('div');
+        document.body.appendChild(dock);
+        const badge = mountStorageBadge(dock, false);
+        expect(badge?.tagName).toBe('BUTTON');
+        // Sans événements souris, l'infobulle `title` ne s'affiche jamais.
+        expect(badge?.style.pointerEvents).not.toBe('none');
+        badge?.click();
+        const shown = [...document.querySelectorAll('.tac-toast')].map((t) => t.textContent ?? '');
+        expect(shown.some((text) => text.includes('NON persistant'))).toBe(true);
+        // L'état suivi est celui du dernier appel, pas celui de la création.
+        mountStorageBadge(dock, true);
+        badge?.click();
+        const after = [...document.querySelectorAll('.tac-toast')].map((t) => t.textContent ?? '');
+        expect(after.some((text) => text.includes('Stockage persistant'))).toBe(true);
+    });
+
     it('ne fait rien sans dock', () => {
         expect(mountStorageBadge(null, true)).toBeNull();
     });
