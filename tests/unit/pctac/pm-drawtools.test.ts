@@ -74,6 +74,7 @@ function makeFakeState(map: FakeMap | null): PlanMapInternal {
         _circlePolygon: vi.fn((c: LngLatTuple, e: LngLatTuple) => [c, e]),
         _haversineMeters: vi.fn(() => 10),
         _formatDistance: vi.fn((m: number) => `${m} m`),
+        _flushPendingRemoteReload: vi.fn(),
     } as unknown as PlanMapInternal;
 }
 

@@ -99,7 +99,12 @@ function gestureDeps(self: PlanMapInternal, map: MapLibreMap): ShapeGestureDeps<
         refreshUndoRedoButtons: () => self._refreshUndoRedoButtons(),
         safe: <A extends unknown[], R>(fn: (...args: A) => R, label?: string) => self._safe(fn, label),
         getGesture: () => self._gesture,
-        setGesture: gesture => { self._gesture = gesture; },
+        setGesture: gesture => {
+            self._gesture = gesture;
+            // Fin de geste de forme : rejoue un rechargement distant différé
+            // (décision 29) — la sauvegarde du geste a déjà relu puis écrit.
+            if (!gesture) self._flushPendingRemoteReload();
+        },
         isLocked: () => self._locked,
         getSelectedShapeId: () => self._selectedShapeId,
         // Fin de drag : garde la forme sélectionnée pour l'édition immédiate (planMap.js:2944-2947).
