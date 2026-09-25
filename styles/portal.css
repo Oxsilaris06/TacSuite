@@ -239,6 +239,33 @@
     --footer-rule-color: var(--color-border-subtle);
     --footer-link-color: var(--color-text-secondary);
     --footer-link-disabled-color: var(--color-text-muted);
+
+    /* Note de version (bandeau d'annonce, decisions 27 et 40) */
+    --release-title-size: 1.2rem;
+    --release-title-weight: 600;
+    --release-title-tracking: 0.02em;
+    --release-title-leading: 1.15;
+    --release-body-leading: 1.45;
+    --release-body-measure: 70ch;
+    --release-list-gap: 0.45rem var(--tac-space-6);
+    --release-list-column: 15.5rem;
+    --release-bullet-size: 0.375rem;
+    --release-bullet-radius: 2px;
+    --release-bullet-inset: 1rem;
+    --release-bullet-offset: 0.58em;
+    --release-chip-dot: 0.45rem;
+    --release-close-size: 2.75rem;
+    --release-close-icon: 1.125rem;
+    --release-close-stroke: 2;
+    --release-close-pull: -0.375rem -0.5rem 0 0;
+    --release-close-press: scale(0.94);
+    --release-accent-border: 70%;
+    --release-accent-fill: 12%;
+    --release-ease: cubic-bezier(0.23, 1, 0.32, 1);
+    --release-in: 260ms;
+    --release-out: 220ms;
+    --release-rise: translateY(6px) scale(0.99);
+    --release-lift: translateY(-4px) scale(0.99);
 }
 
 /* ============================================================================
@@ -623,6 +650,211 @@ body {
    `display: inline-flex` ci-dessus l'emporterait sinon sur l'attribut hidden. */
 .offline-badge[hidden] {
     display: none;
+}
+
+/* --- Note de version (bandeau d'annonce, decisions 27 et 40) --------------
+   Variante A choisie par Nico le 09-25 : meme grammaire que les cartes
+   d'application (surface, bord, rayon, ombre), placee dans la colonne sous
+   l'en-tete. Pastille en capitales a chasse fixe comme « En ligne », titre en
+   Oswald comme les cartes, liste a puces alignees. Couleur d'accent selon le
+   niveau, jamais en barre laterale. */
+.release-card {
+    --release-accent: var(--color-primary);
+    --release-danger: var(--color-danger);
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: var(--tac-space-3) var(--tac-space-4);
+    align-items: start;
+    padding: var(--tac-space-4) var(--card-padding) var(--card-padding);
+    border: var(--card-border);
+    border-radius: var(--card-radius);
+    background: var(--card-bg);
+    box-shadow: var(--card-shadow), var(--card-inner-glow);
+    animation: release-card-in var(--release-in) var(--release-ease) both;
+}
+
+@media (prefers-color-scheme: light) {
+    :root:not([data-theme]) .release-card {
+        --release-danger: var(--tac-red-650);
+    }
+}
+
+:root[data-theme='light'] .release-card {
+    --release-danger: var(--tac-red-650);
+}
+
+.release-card[data-level='important'] {
+    --release-accent: var(--color-warning);
+}
+
+.release-card[data-level='alerte'] {
+    --release-accent: var(--release-danger);
+}
+
+/* Annonce remplacee en place : pas de nouvelle entree animee. */
+.release-card[data-settled] {
+    animation: none;
+}
+
+/* Sortie par le meme chemin que l'entree (220 ms, voir announce.ts). */
+.release-card[data-closing] {
+    animation: release-card-out var(--release-out) var(--release-ease) forwards;
+    pointer-events: none;
+}
+
+.release-card__head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--tac-space-2) var(--tac-space-3);
+    min-width: var(--tac-zero);
+}
+
+.release-card__chip {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--badge-gap);
+    padding: var(--badge-padding-block) var(--badge-padding-inline);
+    border: var(--tac-border-width) solid color-mix(in srgb, var(--release-accent) var(--release-accent-border), transparent);
+    border-radius: var(--badge-radius);
+    background: color-mix(in srgb, var(--release-accent) var(--release-accent-fill), transparent);
+    color: var(--release-accent);
+    font-family: var(--badge-font);
+    font-size: var(--badge-size);
+    letter-spacing: var(--status-tracking);
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+
+.release-card__chip::before {
+    content: '';
+    width: var(--release-chip-dot);
+    height: var(--release-chip-dot);
+    border-radius: var(--tac-radius-pill);
+    background: currentColor;
+}
+
+.release-card__title {
+    margin: var(--tac-zero);
+    font-family: var(--tac-font-title);
+    font-weight: var(--release-title-weight);
+    font-size: var(--release-title-size);
+    line-height: var(--release-title-leading);
+    letter-spacing: var(--release-title-tracking);
+    text-transform: uppercase;
+    color: var(--color-text);
+    text-wrap: balance;
+}
+
+.release-card__close {
+    appearance: none;
+    display: grid;
+    place-items: center;
+    width: var(--release-close-size);
+    height: var(--release-close-size);
+    margin: var(--release-close-pull);
+    border: var(--tac-zero);
+    border-radius: var(--tac-radius-pill);
+    background: transparent;
+    color: var(--color-text-muted);
+    cursor: pointer;
+    transition: background var(--tac-duration-fast) ease-out, color var(--tac-duration-fast) ease-out,
+        transform var(--tac-duration-fast) ease-out;
+}
+
+.release-card__close svg {
+    width: var(--release-close-icon);
+    height: var(--release-close-icon);
+    fill: none;
+    stroke: currentColor;
+    stroke-width: var(--release-close-stroke);
+    stroke-linecap: round;
+}
+
+.release-card__close:hover {
+    background: var(--color-surface-hover);
+    color: var(--color-text);
+}
+
+.release-card__close:active {
+    transform: var(--release-close-press);
+}
+
+.release-card__close:focus-visible {
+    outline: none;
+    box-shadow: var(--focus-ring);
+}
+
+.release-card__body {
+    grid-column: 1 / -1;
+    display: grid;
+    gap: var(--tac-space-2);
+    color: var(--color-text-secondary);
+    font-size: var(--tac-size-sm);
+    line-height: var(--release-body-leading);
+}
+
+.release-card__body p {
+    margin: var(--tac-zero);
+    max-width: var(--release-body-measure);
+    text-wrap: pretty;
+}
+
+.release-card__list {
+    margin: var(--tac-zero);
+    padding: var(--tac-zero);
+    list-style: none;
+    display: grid;
+    gap: var(--release-list-gap);
+    grid-template-columns: repeat(auto-fit, minmax(var(--release-list-column), 1fr));
+}
+
+.release-card__list li {
+    position: relative;
+    padding-left: var(--release-bullet-inset);
+    text-wrap: pretty;
+}
+
+.release-card__list li::before {
+    content: '';
+    position: absolute;
+    left: var(--tac-zero);
+    top: var(--release-bullet-offset);
+    width: var(--release-bullet-size);
+    height: var(--release-bullet-size);
+    border-radius: var(--release-bullet-radius);
+    background: var(--release-accent);
+}
+
+@keyframes release-card-in {
+    from { opacity: 0; transform: var(--release-rise); }
+    to { opacity: 1; transform: none; }
+}
+
+@keyframes release-card-out {
+    from { opacity: 1; transform: none; }
+    to { opacity: 0; transform: var(--release-lift); }
+}
+
+/* Mouvement reduit : fondus seuls, sans deplacement. */
+@media (prefers-reduced-motion: reduce) {
+    .release-card {
+        animation-name: release-card-fade-in;
+    }
+
+    .release-card[data-closing] {
+        animation-name: release-card-fade-out;
+    }
+}
+
+@keyframes release-card-fade-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+@keyframes release-card-fade-out {
+    from { opacity: 1; }
+    to { opacity: 0; }
 }
 
 .offline-badge__dot {

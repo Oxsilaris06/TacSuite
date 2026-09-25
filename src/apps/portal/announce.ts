@@ -7,7 +7,8 @@
  *
  *   - validé strictement avant tout affichage (longueur, niveau, expiration
  *     future bornée à 30 jours) ;
- *   - affiché par `showBanner`, qui pose le texte en `textContent` — jamais
+ *   - affiché dans une carte de note de version (`renderAnnouncementCard`), texte
+ *     posé ligne par ligne en `textContent` — jamais
  *     d'HTML, et AUCUNE action cliquable : le niveau « alerte » ne doit pas
  *     pouvoir transformer le portail en vecteur de lien ;
  *   - lu avec `cache: 'no-store'` et un délai de garde de 5 s, pour ne pas
@@ -24,8 +25,6 @@
  * l'efface : mieux vaut ne rien montrer qu'une consigne périmée.
  */
 
-import { hideBanner, showBanner } from '@shared/feedback.js';
-import type { BannerLevel } from '@shared/feedback.js';
 
 /** Gist secret, CORS ouvert (décision 27). Lu avec un paramètre à la minute : voir `fetchAnnouncement`. */
 export const ANNOUNCE_URL =
@@ -54,12 +53,132 @@ export interface Announcement {
     expire: string;
 }
 
-/** Correspondance niveau du Gist → niveau de bandeau partagé. */
-const BANNER_LEVEL: Record<AnnounceLevel, BannerLevel> = {
-    info: 'info',
-    important: 'important',
-    alerte: 'alert',
+/** Libellé de la pastille de la carte selon le niveau. */
+const CHIP_LABEL: Record<AnnounceLevel, string> = {
+    info: 'Nouveautés',
+    important: 'Important',
+    alerte: 'Alerte',
 };
+
+/** Durée de la sortie animée de la carte (voir `styles/portal.css`). */
+const CARD_EXIT_MS = 220;
+
+/**
+ * Découpe le texte en titre, liste et paragraphes (note de version) : une
+ * première ligne finie par « : » est le titre ; une ligne qui commence par
+ * « • », « - » ou « – » est un point de liste ; les autres, des paragraphes.
+ * Texte seul : pure mise en forme, rien n'est interprété comme HTML.
+ */
+export function announcementLayout(texte: string): { title: string | null; blocks: Array<{ kind: 'list'; items: string[] } | { kind: 'p'; text: string }> } {
+    const lines = texte.split('\n').map((l) => l.trim()).filter(Boolean);
+    let title: string | null = null;
+    if (lines.length > 1 && /:\s*$/.test(lines[0] ?? '')) title = (lines.shift() ?? '').replace(/\s*:\s*$/, '');
+    const blocks: Array<{ kind: 'list'; items: string[] } | { kind: 'p'; text: string }> = [];
+    for (const line of lines) {
+        const bullet = /^[•\-–]\s*/.exec(line);
+        if (bullet) {
+            const last = blocks[blocks.length - 1];
+            const item = line.slice(bullet[0].length);
+            if (last && last.kind === 'list') last.items.push(item);
+            else blocks.push({ kind: 'list', items: [item] });
+        } else {
+            blocks.push({ kind: 'p', text: line });
+        }
+    }
+    return { title, blocks };
+}
+
+function removeAnnouncementCard(animate: boolean): void {
+    if (typeof document === 'undefined') return;
+    const el = document.getElementById(ANNOUNCE_BANNER_ID);
+    if (!el) return;
+    if (!animate) { el.remove(); return; }
+    // Sortie par le même chemin que l'entrée (fondu, léger retrait), puis retrait.
+    el.dataset.closing = 'true';
+    el.setAttribute('aria-hidden', 'true');
+    setTimeout(() => el.remove(), CARD_EXIT_MS);
+}
+
+/**
+ * Carte de note de version (variante A choisie par Nico le 09-25) : même
+ * grammaire que les cartes d'application du portail, placée dans la colonne
+ * sous l'en-tête. DOM construit à la main, texte en `textContent`.
+ */
+function renderAnnouncementCard(a: Announcement, onDismiss: () => void): void {
+    if (typeof document === 'undefined') return;
+    const previous = document.getElementById(ANNOUNCE_BANNER_ID);
+    const card = document.createElement('section');
+    card.id = ANNOUNCE_BANNER_ID;
+    card.className = 'release-card';
+    card.dataset.level = a.niveau;
+    card.setAttribute('role', a.niveau === 'alerte' ? 'alert' : 'status');
+
+    const head = document.createElement('div');
+    head.className = 'release-card__head';
+    const chip = document.createElement('span');
+    chip.className = 'release-card__chip';
+    chip.textContent = CHIP_LABEL[a.niveau];
+    head.appendChild(chip);
+
+    const { title, blocks } = announcementLayout(a.texte);
+    if (title) {
+        const h = document.createElement('h2');
+        h.className = 'release-card__title';
+        h.id = `${ANNOUNCE_BANNER_ID}-title`;
+        h.textContent = title;
+        head.appendChild(h);
+        card.setAttribute('aria-labelledby', h.id);
+    } else {
+        card.setAttribute('aria-label', CHIP_LABEL[a.niveau]);
+    }
+
+    const close = document.createElement('button');
+    close.type = 'button';
+    close.className = 'release-card__close';
+    close.setAttribute('aria-label', 'Masquer l’annonce');
+    const svgNs = 'http://www.w3.org/2000/svg';
+    const svg = document.createElementNS(svgNs, 'svg');
+    svg.setAttribute('viewBox', '0 0 24 24');
+    svg.setAttribute('aria-hidden', 'true');
+    const path = document.createElementNS(svgNs, 'path');
+    path.setAttribute('d', 'M6 6l12 12M18 6L6 18');
+    svg.appendChild(path);
+    close.appendChild(svg);
+    close.addEventListener('click', () => {
+        removeAnnouncementCard(true);
+        onDismiss();
+    });
+
+    const body = document.createElement('div');
+    body.className = 'release-card__body';
+    for (const block of blocks) {
+        if (block.kind === 'p') {
+            const p = document.createElement('p');
+            p.textContent = block.text;
+            body.appendChild(p);
+        } else {
+            const ul = document.createElement('ul');
+            ul.className = 'release-card__list';
+            for (const item of block.items) {
+                const li = document.createElement('li');
+                li.textContent = item;
+                ul.appendChild(li);
+            }
+            body.appendChild(ul);
+        }
+    }
+
+    card.append(head, close, body);
+    if (previous) {
+        // Même annonce remplacée en place : pas de nouvelle entrée animée.
+        card.dataset.settled = 'true';
+        previous.replaceWith(card);
+        return;
+    }
+    const header = document.querySelector('.portal-header');
+    if (header) header.after(card);
+    else document.body.prepend(card);
+}
 
 /** Interface minimale de stockage (injectable en test). */
 export interface AnnounceStorage {
@@ -206,15 +325,10 @@ function applyAnnouncement(a: Announcement, opts: AnnounceOptions): void {
     const storage = opts.storage !== undefined ? opts.storage : defaultStorage();
     const fp = fingerprint(a);
     if (readDismissed(storage) === fp) {
-        hideBanner(ANNOUNCE_BANNER_ID);
+        removeAnnouncementCard(false);
         return;
     }
-    showBanner(ANNOUNCE_BANNER_ID, {
-        message: a.texte,
-        level: BANNER_LEVEL[a.niveau],
-        dismissible: true,
-        onDismiss: () => writeDismissed(storage, fp),
-    });
+    renderAnnouncementCard(a, () => writeDismissed(storage, fp));
 }
 
 /** Affiche la dernière annonce valide connue, si elle n'est pas expirée. */
@@ -227,7 +341,7 @@ export function applyCachedAnnouncement(opts: AnnounceOptions = {}): void {
     if (!fresh) {
         // Expirée : on l'efface pour ne jamais la remontrer.
         eraseCache(storage);
-        hideBanner(ANNOUNCE_BANNER_ID);
+        removeAnnouncementCard(false);
         return;
     }
     applyAnnouncement(fresh, opts);
@@ -285,7 +399,7 @@ export async function refreshAnnouncement(opts: AnnounceOptions = {}): Promise<v
     }
     if (outcome.kind === 'invalid') {
         eraseCache(storage);
-        hideBanner(ANNOUNCE_BANNER_ID);
+        removeAnnouncementCard(false);
         return;
     }
     writeCache(storage, outcome.ann);
