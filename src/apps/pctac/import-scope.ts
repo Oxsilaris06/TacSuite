@@ -39,6 +39,7 @@ import {
 import { GPX_INDEX_KEY, PINS_KEY } from '@pctac/planmap/constants.js';
 import { PCTAC_MODES, currentModeId, scopedKey, type PctacModeId } from '@pctac/modes.js';
 import { confirmDialog } from '@shared/feedback.js';
+import { compareLogEntries } from '@pctac/storage.js';
 
 export type ImportMode = 'merge' | 'replace';
 
@@ -105,6 +106,20 @@ export interface ImportScope {
     mode: ImportMode;
     /** Vrai quand TOUT est repris en remplacement : restauration intégrale. */
     full: boolean;
+}
+
+/** Journal fusionné remis dans l'ordre (date, heure) ; texte rendu tel quel s'il n'est pas une liste. */
+function sortedLogJson(json: string): string {
+    try {
+        const list = JSON.parse(json) as unknown;
+        if (!Array.isArray(list)) return json;
+        return JSON.stringify([...list].sort((a, b) => compareLogEntries(
+            (a && typeof a === 'object' ? a : {}) as { date?: string; heure?: string },
+            (b && typeof b === 'object' ? b : {}) as { date?: string; heure?: string },
+        )));
+    } catch {
+        return json;
+    }
 }
 
 export function scopeKeys(scope: ImportScope): string[] {
@@ -376,7 +391,9 @@ export function applyScope(
         }
         const report = mergeCollectionReport(localStorage.getItem(physical), incoming);
         if (report.json !== null) {
-            localStorage.setItem(physical, report.json);
+            // A4 — écriture directe (sans saveLogData) : la main courante
+            // fusionnée doit rester chronologique, l'écran et le PDF ne trient pas.
+            localStorage.setItem(physical, key === LOCAL_STORAGE_KEY ? sortedLogJson(report.json) : report.json);
             written += 1;
         }
         if (report.added.length) addedByKey[key] = report.added;
