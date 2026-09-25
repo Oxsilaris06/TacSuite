@@ -538,14 +538,13 @@ présumé de (Nom Adversaire 1) et (Nom Adversaire 2) après avoir bouclé celui
                             <span class="material-symbols-outlined">expand_more</span>
                         </div>
                         <div class="collapsible-content" style="display: flex; flex-direction: column; gap: 15px;">
-                            <p>Vous pouvez remplacer le fond par défaut (Grille Tactique) par une image de votre choix.
+                            <p>Image facultative (logo d'unité, photo) imprimée en filigrane discret au centre de la page de garde et de la dernière page du PDF. Sans image, le PDF n'a pas de fond.
                             </p>
                             <div style="display: flex; gap: 10px;">
                                 <button type="button" class="add-btn"
                                     data-action="trigger-file-input" data-target="custom_bg_input">📂 Choisir
                                     Image</button>
-                                <button type="button" class="remove-btn" data-action="remove-custom-background"><span class="material-symbols-outlined" aria-hidden="true">restore</span> Rétablir
-                                    Défaut</button>
+                                <button type="button" class="remove-btn" data-action="remove-custom-background"><span class="material-symbols-outlined" aria-hidden="true">delete</span> Retirer le fond</button>
                             </div>
                             <input type="file" id="custom_bg_input" class="photo-input sr-only-input"
                                 accept="image/jpeg, image/png, image/jpg" data-action="handle-custom-background-change">
