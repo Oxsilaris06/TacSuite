@@ -295,13 +295,18 @@ export class RadialMenu {
     this._extent = radius + btnSize / 2 + 10;
     const wrap = document.createElement('div');
     wrap.className = this.wrapperClassName;
+    // Mouvement réduit : fondu seul, ni rebond ni changement d'échelle.
+    let reduceMotion = false;
+    try {
+      reduceMotion = typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    } catch { /* préférence illisible : animation normale */ }
     wrap.style.cssText = `
             position: absolute;
             width: ${radius * 2 + btnSize + 36}px;
             height: ${radius * 2 + btnSize + 36}px;
-            transform: translate(-50%, -50%) scale(0.85);
+            transform: translate(-50%, -50%)${reduceMotion ? '' : ' scale(0.85)'};
             opacity: 0;
-            transition: transform 160ms cubic-bezier(.34,1.56,.64,1), opacity 140ms ease-out;
+            transition: ${reduceMotion ? 'opacity 140ms ease-out' : 'transform 160ms cubic-bezier(.34,1.56,.64,1), opacity 140ms ease-out'};
             z-index: 60;
             pointer-events: none;
         `;
