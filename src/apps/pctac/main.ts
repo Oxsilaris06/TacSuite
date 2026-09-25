@@ -74,7 +74,7 @@ if (!window.PocheTuto || !window.PocheTuto.mount) {
 import { Storage } from '@pctac/storage.js';
 import { UI } from '@pctac/ui.js';
 import { LogManager } from '@pctac/log-manager.js';
-import { PdfExport } from '@pctac/pdf-export.js';
+import { openPdfDialog } from '@pctac/pdf-export.js';
 import { showBusy, hideBusy } from '@pctac/busy.js';
 import { Utils } from '@pctac/utils.js';
 import { GpxStore, ImageStore } from '@pctac/image-store.js';
@@ -413,7 +413,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     // §5.3 étape 18 — Boutons dock : PDF, reset (+ confirm/cancel), création PAX,
     // éditions adversaire/otage/log.
     const previewPdfBtn = document.getElementById('previewPdfDockBtn');
-    if (previewPdfBtn) previewPdfBtn.onclick = () => { void PdfExport.buildPdf(); };
+    // Décision 42 — fenêtre de génération (rapport, thème, sortie) avant le PDF.
+    if (previewPdfBtn) previewPdfBtn.onclick = () => { void openPdfDialog(); };
 
     const resetBtn = document.getElementById('resetDataDockBtn');
     if (resetBtn) resetBtn.onclick = () => UI.showResetModal();

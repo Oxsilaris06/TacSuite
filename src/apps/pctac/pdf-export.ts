@@ -40,7 +40,14 @@ import { showBusy, hideBusy } from '@pctac/busy.js';
 import { capturePlanForPdf } from '@pctac/plan-capture-for-pdf.js';
 import { Utils } from '@pctac/utils.js';
 import { toast } from '@shared/feedback.js';
+import { askPdfOptions, loadPdfOptions, type PdfKindChoice, type PdfOptions } from '@shared/pdf-options.js';
 import type { PdfExportContract, PlanMapPinSummary } from '@shared/types/contracts.js';
+
+/** Rapports proposés par la fenêtre de génération (décisions 41 et 42). */
+export const PCTAC_PDF_KINDS: readonly PdfKindChoice[] = [
+    { id: 'complet', label: 'Rapport complet', hint: 'Toutes les pages, A4' },
+    { id: 'a3', label: 'Synthèse A3', hint: 'Une page A3 paysage' },
+];
 
 // FREE_MODE_COLORS : importé pour fidélité avec l'import original (pdfExport.js:3),
 // jamais consommé dans ce module (déjà le cas dans l'original). `void` évite
@@ -289,7 +296,10 @@ interface PdfExportContext {
 }
 
 export const PdfExport: PdfExportContract = {
-    async buildPdf(): Promise<void> {
+    async buildPdf(options?: PdfOptions): Promise<void> {
+        // Sans choix explicite (appel hors fenêtre) : derniers choix retenus.
+        const opts = options ?? loadPdfOptions('pctac', PCTAC_PDF_KINDS);
+        void opts;
         showBusy('Génération du PDF…');
         try {
             // pdfExport.js:97-99 — en ESM le namespace importé n'est jamais `undefined` ;
@@ -931,6 +941,21 @@ export const PdfExport: PdfExportContract = {
         }
     }
 };
+
+/**
+ * Bouton PDF du dock (décision 42) : fenêtre de génération (rapport, thème,
+ * sortie), puis le rapport complet ou la synthèse A3. « Annuler » = rien.
+ */
+export async function openPdfDialog(): Promise<void> {
+    const options = await askPdfOptions({ appKey: 'pctac', title: 'Générer le PDF', kinds: PCTAC_PDF_KINDS });
+    if (!options) return;
+    if (options.kind === 'a3') {
+        const { buildA3Pdf } = await import('@pctac/pdf-a3.js');
+        await buildA3Pdf(options);
+        return;
+    }
+    await PdfExport.buildPdf(options);
+}
 
 // Pose le global au scope module, comme l'original (pdfExport.js:596).
 window.PdfExport = PdfExport;
