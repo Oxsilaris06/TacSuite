@@ -540,9 +540,11 @@ export interface ArchiveOiImportResult {
 export interface ArchiveContract {
     /**
      * Export `.pctac.zip` (JSZip) : `manifest.json` + `data.json` +
-     * `images/<id>.txt`. `alert()` + retour anticipé si JSZip est absent.
+     * `images/<id>.txt`. `alert()`/toast + retour si JSZip est absent.
+     * Rend `true` quand le téléchargement a été déclenché, `false` sur toute
+     * sortie en échec (décision 32).
      */
-    exportZip(): Promise<void>;
+    exportZip(): Promise<boolean>;
     /**
      * Import `.pctac.zip` OU `.json` legacy (routage par extension).
      * Jette sur archive illisible / manifest d'une autre app.
