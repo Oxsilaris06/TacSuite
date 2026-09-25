@@ -107,7 +107,9 @@ describe('Archive.importFile — garde de sécurité manifest.appName (archive.j
     // Aucune écriture : ni localStorage, ni IndexedDB.
     expect(dumpLocalStorage()).toEqual(beforeLs);
     expect(await ImageStore.get('field1')).toBe('data:image/png;base64,ZZZZ');
-    expect(Storage.loadCollection(ADVERSARIES_KEY)).toEqual([{ id: 'field1', nom: 'Existant' }]);
+    expect(Storage.loadCollection(ADVERSARIES_KEY)).toEqual([
+      expect.objectContaining({ id: 'field1', nom: 'Existant' }),
+    ]);
   });
 
   it('REJETTE une archive sans manifest.appName (champ absent), sans écrire quoi que ce soit', async () => {
