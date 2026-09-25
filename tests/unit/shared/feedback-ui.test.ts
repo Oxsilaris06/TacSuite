@@ -93,6 +93,35 @@ describe('toasts sur téléphone', () => {
     expect(document.querySelector('.tac-toast')?.textContent).toMatch(/(Ctrl|Cmd)\+Z pour annuler/);
   });
 
+  it('un même message répété ne s’empile pas : un seul toast, décompte relancé', () => {
+    // Constat 390 × 844 : trois saisies rapides empilaient trois « Événement
+    // ajouté » par-dessus le bouton d'ajout et les cartes du journal.
+    vi.useFakeTimers();
+    toast('Événement ajouté', { kind: 'success' });
+    vi.advanceTimersByTime(3000);
+    toast('Événement ajouté', { kind: 'success' });
+    toast('Événement ajouté', { kind: 'success' });
+    expect(document.querySelectorAll('.tac-toast')).toHaveLength(1);
+    // Relancé au dernier appel : encore là 3,9 s après, parti après 4 s.
+    vi.advanceTimersByTime(3900);
+    expect(document.querySelectorAll('.tac-toast')).toHaveLength(1);
+    vi.advanceTimersByTime(400);
+    expect(document.querySelectorAll('.tac-toast')).toHaveLength(0);
+  });
+
+  it('messages ou genres différents : empilés comme avant', () => {
+    toast('Événement ajouté', { kind: 'success' });
+    toast('Événement ajouté', { kind: 'error' });
+    toast('Fiche enregistrée', { kind: 'success' });
+    expect(document.querySelectorAll('.tac-toast')).toHaveLength(3);
+  });
+
+  it('les toasts d’annulation ne sont jamais fusionnés (chacun porte sa suppression)', () => {
+    undoableToast('Photo supprimée.', { onUndo: () => {} });
+    undoableToast('Photo supprimée.', { onUndo: () => {} });
+    expect(document.querySelectorAll('.tac-toast')).toHaveLength(2);
+  });
+
   it('dock masqué (fiche plein écran, rien de rendu) : position par défaut', () => {
     const dock = document.createElement('div');
     dock.id = 'dockMenu';
