@@ -509,13 +509,25 @@ export const PdfExport: PdfExportContract = {
                 const paxX = heureX + colWidths[0];
                 const lieuX = paxX + colWidths[1];
                 const remarksX = lieuX + colWidths[2];
-                const rowTop = context.y;
+                let newPageHeader = false;
                 for (let i = 0; i < blockLines; i++) {
-                    if (i > 0) context.y -= context.lineHeight;
-                    if (i === 0) {
+                    // M1 — plus de place pour la ligne : on scinde le bloc sur
+                    // une nouvelle page avec « (suite) », au lieu de le dessiner
+                    // sous le pied de page et hors de la feuille.
+                    if (context.y < context.margin + context.lineHeight) {
+                        addNewPage("MAIN COURANTE (SUITE)");
+                        drawTableHeader();
+                        pdfPage().drawText(fitTextToWidth(sanitizeWinAnsi(`${entry.heure} (suite)`), fontBold, 8, colWidths[0] + colWidths[1] - 5), { x: context.margin + 5, y: context.y, size: 8, font: fontBold, color: themeColors.text });
+                        context.y -= context.lineHeight;
+                        newPageHeader = true;
+                    } else if (i > 0) {
+                        context.y -= context.lineHeight;
+                    }
+                    if (i === 0 || newPageHeader) {
                         pdfPage().drawText(fitTextToWidth(sanitizeWinAnsi(entry.heure), font, 9, colWidths[0] - 5), { x: heureX, y: context.y, size: 9, font, color: themeColors.text });
                         pdfPage().drawRectangle({ x: paxX - 2, y: context.y - 2, width: colWidths[1] - 5, height: 12, color: pColor });
                         pdfPage().drawText(fitTextToWidth(sanitizeWinAnsi(pText), fontBold, 8, colWidths[1] - 5), { x: paxX, y: context.y, size: 8, font: fontBold, color: textColor });
+                        newPageHeader = false;
                     }
                     const lieu = lieuLines[i];
                     if (lieu) pdfPage().drawText(lieu, { x: lieuX, y: context.y, size: 9, font, color: themeColors.text });
@@ -524,12 +536,12 @@ export const PdfExport: PdfExportContract = {
                 }
 
                 pdfPage().drawLine({
-                    start: { x: context.margin, y: rowTop - rowHeight + 12 },
-                    end: { x: context.pageWidth - context.margin, y: rowTop - rowHeight + 12 },
+                    start: { x: context.margin, y: context.y + 2 },
+                    end: { x: context.pageWidth - context.margin, y: context.y + 2 },
                     thickness: 0.5, color: themeColors.line, opacity: 0.3
                 });
 
-                context.y = rowTop - rowHeight;
+                context.y -= 10;
             }
 
             // --- 2 et 3. FICHES ADVERSE ET PROTÉGÉE (décisions 17 à 19) ---
@@ -844,18 +856,30 @@ export const PdfExport: PdfExportContract = {
                         context.y -= 18;
                     }
 
-                    pdfPage().drawText(sanitizeWinAnsi(entry.heure), { x: context.margin + 5, y: context.y, size: 9, font, color: themeColors.text });
-                    let ly = context.y;
-                    for (const line of lines) {
-                        pdfPage().drawText(sanitizeWinAnsi(line), { x: context.margin + 5 + cCols[0], y: ly, size: 9, font, color: themeColors.text });
-                        ly -= context.lineHeight;
+                    let y = context.y;
+                    const blockCount = Math.max(1, lines.length);
+                    for (let i = 0; i < blockCount; i++) {
+                        // M1 — action plus haute qu'une page : on la scinde avec
+                        // « (suite) » au lieu de perdre sa fin sous la feuille.
+                        if (y < context.margin + context.lineHeight) {
+                            addNewPage('JOURNAL DES ACTIONS PC-TAC (SUITE)');
+                            drawCarteHeader();
+                            pdfPage().drawText(sanitizeWinAnsi(entry.heure), { x: context.margin + 5, y: context.y, size: 9, font, color: themeColors.text });
+                            pdfPage().drawText('(suite)', { x: context.margin + 5 + cCols[0], y: context.y, size: 9, font: fontBold, color: themeColors.text });
+                            y = context.y;
+                        } else if (i === 0) {
+                            pdfPage().drawText(sanitizeWinAnsi(entry.heure), { x: context.margin + 5, y, size: 9, font, color: themeColors.text });
+                        }
+                        const line = lines[i];
+                        if (line) pdfPage().drawText(sanitizeWinAnsi(line), { x: context.margin + 5 + cCols[0], y, size: 9, font, color: themeColors.text });
+                        y -= context.lineHeight;
                     }
                     pdfPage().drawLine({
-                        start: { x: context.margin, y: context.y - rowHeight + 8 },
-                        end: { x: context.pageWidth - context.margin, y: context.y - rowHeight + 8 },
+                        start: { x: context.margin, y: y + context.lineHeight - 2 },
+                        end: { x: context.pageWidth - context.margin, y: y + context.lineHeight - 2 },
                         thickness: 0.5, color: themeColors.line, opacity: 0.3
                     });
-                    context.y -= rowHeight;
+                    context.y = y - 10;
                 }
             }
 

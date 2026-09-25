@@ -126,6 +126,28 @@ describe('Forces amies et points — plus de « … » (M3)', () => {
     });
 });
 
+describe('blocs plus hauts qu’une page — découpe avec « (suite) » (M1)', () => {
+    it('scinde un compte rendu de main courante sur plusieurs pages', async () => {
+        localStorage.setItem('pcTacLogData', JSON.stringify([
+            logEntry({ remarques: 'Compte rendu detaille '.repeat(300) }),
+        ]));
+        const { numPages, pages } = await buildAndReadPdf();
+        expect(numPages).toBeGreaterThanOrEqual(3);
+        const all = pages.join(' ').replace(/\s+/g, ' ');
+        expect(all).toContain('(suite)');
+    });
+
+    it('scinde une action du journal plus haute qu’une page', async () => {
+        localStorage.setItem('pcTacLogData', JSON.stringify([
+            logEntry({ auto: true, remarques: 'Action automatique detaillee '.repeat(300) }),
+        ]));
+        const { numPages, pages } = await buildAndReadPdf();
+        expect(numPages).toBeGreaterThanOrEqual(3);
+        const all = pages.join(' ').replace(/\s+/g, ' ');
+        expect(all).toContain('(suite)');
+    });
+});
+
 describe('main courante — lieu replié, plus de « … » (M3)', () => {
     it('affiche le lieu entier au lieu de le tronquer', async () => {
         localStorage.setItem('pcTacLogData', JSON.stringify([
