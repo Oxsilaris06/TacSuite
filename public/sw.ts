@@ -29,6 +29,8 @@ import { registerRoute } from 'workbox-routing';
 import { CacheFirst, StaleWhileRevalidate } from 'workbox-strategies';
 import { ExpirationPlugin } from 'workbox-expiration';
 
+import { isTileRequest } from '../src/apps/pctac/lotA-sw-routes.js';
+
 declare const self: ServiceWorkerGlobalScope;
 
 // ── 1. Précachage du manifest injecté (assets buildés). ─────────────
@@ -41,10 +43,11 @@ precacheAndRoute(self.__WB_MANIFEST);
 // Fournisseurs réels (cf. planmap/constants.ts et carto/constants.ts) :
 // arcgisonline (satellite), data.geopf.fr (ortho/BD TOPO), elevation-tiles
 // (relief), tiles.openfreemap.org (fond vecteur + polices glyphes).
-const TILE_HOSTS = /^https:\/\/(server\.arcgisonline\.com|data\.geopf\.fr|elevation-tiles-prod\.s3\.amazonaws\.com|tiles\.openfreemap\.org)\//;
-
+// La correspondance vit dans `lotA-sw-routes.ts` : `data.geopf.fr` y est
+// restreint aux chemins de tuiles, pour ne jamais cacher une recherche
+// d'adresse (`/geocodage/search`, décision 35).
 registerRoute(
-    ({ url }) => TILE_HOSTS.test(url.href),
+    ({ url }) => isTileRequest(url),
     new CacheFirst({
         cacheName: 'tacsuite-map-tiles',
         plugins: [
@@ -70,15 +73,15 @@ registerRoute(
     }),
 );
 
-// ── Cycle de vie : mise à jour immédiate (comme GStart-main/sw.js). ─
+// ── Cycle de vie : mise à jour SANS prise de main forcée (décision 28). ─
+// L'ancien `skipWaiting()` à l'installation faisait activer la nouvelle version
+// sous une page ouverte : ses imports dynamiques (archive, visionneuse photos)
+// visaient alors des fichiers purgés du cache. On laisse donc le nouveau worker
+// en ATTENTE ; la page propose « Recharger », et c'est ce message qui l'active.
 self.addEventListener('message', (event) => {
     if (event.data && event.data.type === 'SKIP_WAITING') {
         self.skipWaiting();
     }
-});
-
-self.addEventListener('install', () => {
-    self.skipWaiting();
 });
 
 self.addEventListener('activate', (event) => {
