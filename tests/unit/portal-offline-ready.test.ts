@@ -9,7 +9,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
+    hasIconFontCached,
     initOfflineBadges,
+    isAppReadyOffline,
     isPageReadyOffline,
     offlineCandidates,
     renderOfflineBadge,
@@ -99,6 +101,61 @@ describe('renderOfflineBadge', () => {
         const el = document.getElementById('offline-oi') as HTMLElement;
         expect(el.dataset.ready).toBe('false');
         expect(el.querySelector('.offline-badge__label')?.textContent).toBe('À ouvrir une fois en ligne avant départ');
+    });
+});
+
+function cachesWithFonts(hits: readonly string[], fontKeys: readonly string[]): CachesLike {
+    const base = fakeCaches(hits);
+    return {
+        match: base.match,
+        async open(name: string) {
+            if (name !== 'tacsuite-fonts') return { async keys() { return []; } };
+            return { async keys() { return fontKeys.map((url) => ({ url })); } };
+        },
+    };
+}
+
+describe('R11 — le badge dépend de l’application, pas seulement du portail', () => {
+    it('« Prêt » exige la police d’icônes en cache', async () => {
+        const deps = (cache: CachesLike): OfflineCheckDeps => ({ serviceWorker: { controller: {} }, caches: cache });
+        await expect(isAppReadyOffline('https://x/pctac/', deps(
+            cachesWithFonts(['https://x/pctac/'], ['https://x/assets/material-symbols-outlined-abc.woff2']),
+        ))).resolves.toBe(true);
+        await expect(isAppReadyOffline('https://x/pctac/', deps(
+            cachesWithFonts(['https://x/pctac/'], []),
+        ))).resolves.toBe(false);
+        // Sans possibilité d'inspecter le cache nommé, on ne conclut pas à tort.
+        await expect(hasIconFontCached(deps(fakeCaches(['https://x/pctac/'])))).resolves.toBeNull();
+        await expect(isAppReadyOffline('https://x/pctac/', deps(fakeCaches(['https://x/pctac/'])))).resolves.toBe(true);
+    });
+
+    it('renderOfflineBadge affiche « À ouvrir » quand la police manque', async () => {
+        document.body.innerHTML = `<span id="offline-pctac"><span class="offline-badge__label">x</span></span>`;
+        const ready = await renderOfflineBadge(
+            { badgeId: 'offline-pctac', pageUrl: 'https://x/pctac/' },
+            { serviceWorker: { controller: {} }, caches: cachesWithFonts(['https://x/pctac/'], []) },
+        );
+        expect(ready).toBe(false);
+        expect(document.querySelector('#offline-pctac .offline-badge__label')?.textContent)
+            .toBe('À ouvrir une fois en ligne avant départ');
+    });
+
+    it('réévalue les badges au controllerchange', async () => {
+        document.body.innerHTML = `<span id="offline-pctac"><span class="offline-badge__label"></span></span>`;
+        const listeners = new Map<string, Array<() => void>>();
+        const serviceWorker = {
+            controller: null as unknown,
+            addEventListener(type: string, cb: () => void): void {
+                listeners.set(type, [...(listeners.get(type) ?? []), cb]);
+            },
+        };
+        const cache = cachesWithFonts(['https://x/pctac/'], ['https://x/assets/material-symbols-outlined-abc.woff2']);
+        initOfflineBadges([{ badgeId: 'offline-pctac', pageUrl: 'https://x/pctac/' }], { serviceWorker, caches: cache });
+        await vi.waitFor(() => expect(document.getElementById('offline-pctac')?.dataset.ready).toBe('false'));
+        // Le SW prend la main : le badge doit être réévalué.
+        serviceWorker.controller = {};
+        listeners.get('controllerchange')?.forEach((cb) => cb());
+        await vi.waitFor(() => expect(document.getElementById('offline-pctac')?.dataset.ready).toBe('true'));
     });
 });
 

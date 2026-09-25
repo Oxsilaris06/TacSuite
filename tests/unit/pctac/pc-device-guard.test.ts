@@ -18,6 +18,7 @@ import {
     measureClockSkew,
     mountStorageBadge,
     runDeviceGuard,
+    showPersistenceBanner,
     type StorageManagerLike,
 } from '@pctac/device-guard.js';
 
@@ -54,6 +55,7 @@ function failingFetch(): typeof fetch {
 
 beforeEach(() => {
     document.body.innerHTML = '';
+    sessionStorage.clear();
 });
 
 describe('ensurePersistence', () => {
@@ -130,6 +132,32 @@ describe('pastille du dock', () => {
 
     it('ne fait rien sans dock', () => {
         expect(mountStorageBadge(null, true)).toBeNull();
+    });
+});
+
+describe('showPersistenceBanner — fermeture mémorisée pour la session (A-3)', () => {
+    function bannerShow() {
+        const calls: Array<{ id: string; onDismiss?: (() => void) | undefined }> = [];
+        const show = vi.fn((id: string, opts: { onDismiss?: () => void }) => { calls.push({ id, onDismiss: opts.onDismiss }); });
+        return { calls, show: show as never };
+    }
+
+    it('ne réaffiche pas le bandeau après fermeture dans la même session', () => {
+        const { calls, show } = bannerShow();
+        showPersistenceBanner({ show, isPersistBannerDismissed: () => sessionStorage.getItem('pcTacPersistBannerDismissed') === '1' });
+        expect(calls).toHaveLength(1);
+        calls[0]?.onDismiss?.();
+        expect(sessionStorage.getItem('pcTacPersistBannerDismissed')).toBe('1');
+
+        showPersistenceBanner({ show, isPersistBannerDismissed: () => sessionStorage.getItem('pcTacPersistBannerDismissed') === '1' });
+        expect(calls).toHaveLength(1);
+    });
+
+    it('utilise sessionStorage par défaut et saute si déjà fermé', () => {
+        sessionStorage.setItem('pcTacPersistBannerDismissed', '1');
+        const { calls, show } = bannerShow();
+        showPersistenceBanner({ show });
+        expect(calls).toHaveLength(0);
     });
 });
 
