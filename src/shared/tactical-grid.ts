@@ -128,13 +128,22 @@ export function gridLabelSize(spec: TacticalGridSpec): GridLabelSize {
 }
 
 /**
- * Rotation d'affichage d'une étiquette : elle suit les axes du carroyage sans
- * jamais se lire à l'envers. Au-delà de 90° et jusqu'à 270°, on la retourne de
- * 180° ; sinon on la laisse telle quelle (270…360 équivaut à −90…0 à l'écran).
+ * Rotation d'affichage d'une étiquette (`text-rotate`, alignée sur la CARTE) :
+ * elle suit les axes du carroyage sans jamais se lire à l'envers À L'ÉCRAN.
+ * L'étiquette tourne avec la carte : son orientation à l'écran vaut
+ * `angle − bearing`. Quand celle-ci est au-delà de 90° et jusqu'à 270°, on la
+ * retourne de 180° ; sinon on la laisse telle quelle.
  */
-export function gridLabelRotation(angle: number): number {
+export function gridLabelRotation(angle: number, bearing = 0): number {
     const a = ((angle % 360) + 360) % 360;
-    return a > 90 && a <= 270 ? a - 180 : a;
+    const onScreen = (((a - bearing) % 360) + 360) % 360;
+    return onScreen > 90 && onScreen <= 270 ? a - 180 : a;
+}
+
+/** Vrai quand, au cap `bearing`, les étiquettes du carroyage doivent être retournées. */
+export function gridLabelsFlipped(angle: number, bearing: number): boolean {
+    const a = ((angle % 360) + 360) % 360;
+    return gridLabelRotation(a, bearing) !== a;
 }
 
 /**
@@ -297,9 +306,9 @@ function fc<T extends GeoJSON.Feature>(features: T[]): GeoJSON.FeatureCollection
  * étiquette porte sa rotation d'affichage (`gridLabelRotation`), pour suivre
  * les axes sans jamais être à l'envers.
  */
-export function tacticalGridGeometry(spec: TacticalGridSpec): GridGeometry {
+export function tacticalGridGeometry(spec: TacticalGridSpec, bearing = 0): GridGeometry {
     const { cols, rows } = spec;
-    const rotation = gridLabelRotation(gridAngle(spec));
+    const rotation = gridLabelRotation(gridAngle(spec), bearing);
     const lines: LineFeature[] = [];
     for (let i = 0; i <= cols; i++) {
         lines.push({ type: 'Feature', properties: { kind: i === 0 || i === cols ? 'edge' : 'inner' }, geometry: { type: 'LineString', coordinates: [gridToGeo(spec, i, 0), gridToGeo(spec, i, rows)] } });
