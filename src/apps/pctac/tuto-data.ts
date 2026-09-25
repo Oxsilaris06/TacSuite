@@ -24,13 +24,12 @@ export function pctacTutoData(): TutoData {
       steps: [
         {
           title: "Lancer PC Tac et repérer l'en-tête",
-          body: "Au chargement, la page affiche le grand titre PC TAC en haut. Le badge BETA, en haut a gauche, signale la version beta et bascule vers la version classique (pctac.html) si on clique dessus. L'application s'installe comme PWA et reste utilisable hors-ligne.",
-          selector: "#version-toggle-btn",
+          body: "Au chargement, la page affiche le grand titre PC TAC en haut, suivi de la barre d'onglets. L'application s'installe comme PWA et reste utilisable hors-ligne. L'en-tête et le pied de page rappellent l'identité de l'outil.",
+          selector: null,
           terms: [
-            "PC TAC",
-            "BETA"
+            "PC TAC"
           ],
-          tip: "Le pied de page affiche « © PC Tac by G/ Maheux ». L'appli memorise votre theme et votre dernier onglet d'une session a l'autre."
+          tip: "Le pied de page affiche « © PC Tac by G/ Maheux ». L'appli mémorise votre thème et votre dernier onglet d'une session à l'autre."
         },
         {
           title: "Basculer entre les onglets",
@@ -70,14 +69,14 @@ export function pctacTutoData(): TutoData {
         },
         {
           title: "Onglets Photos, Plan et Liens",
-          body: "Photos ouvre la galerie d'images de l'intervention, Plan affiche la carte tactique, et Liens regroupe les OUTILS CARTOGRAPHIQUES externes ainsi que les raccourcis de COMMUNICATION vers TCHAP et WHATSAPP.",
+          body: "Photos ouvre la galerie d'images de l'intervention, Plan affiche la carte tactique, et Liens regroupe les outils cartographiques externes (Google Maps, Google Earth) ainsi que les liens externes vers TCHAP et WHATSAPP.",
           selector: null,
           terms: [
             "Photos",
             "Plan",
             "Liens",
-            "OUTILS CARTOGRAPHIQUES",
-            "COMMUNICATION",
+            "OUVRIR GOOGLE MAPS",
+            "LIENS EXTERNES",
             "TCHAP",
             "WHATSAPP"
           ],
@@ -134,29 +133,41 @@ export function pctacTutoData(): TutoData {
       summary: "Chercher un lieu, poser, deplacer et gerer des points, afficher rues, legende, capture et plein ecran.",
       steps: [
         {
-          title: "Rechercher une adresse ou des coordonnees GPS",
-          body: "Dans la barre d'outils de la carte, le bouton loupe (titre \"Recherche adresse / coordonnees GPS\") ouvre un bandeau avec le champ de saisie (placeholder \"Adresse ou coordonnees GPS (lat, lng)\"). Tape une adresse puis Entree ou le bouton loupe : la carte se recentre (zoom 17) et pose un pointeur bleu pulsant. Si tu entres des coordonnees decimales (ex \"48.8566, 2.3522\", la virgule decimale francaise est acceptee), le point est centre immediatement et affiche \"Point GPS centre : {lat}, {lng}\".",
+          title: "Rechercher une adresse ou des coordonnées",
+          body: "Dans la barre d'outils de la carte, le bouton loupe (titre « Recherche adresse / coordonnées GPS ») ouvre un bandeau. Tape une adresse puis Entrée : la recherche interroge d'abord la Base Adresse Nationale (IGN) et ne bascule sur Nominatim qu'en cas d'échec ou hors de France ; la carte se recentre (zoom 17) et pose un pointeur bleu pulsant. La saisie accepte aussi directement les coordonnées, sans réseau : décimal (« 48.8566, 2.3522 », virgule française comprise), DMS (« 48°51'24\"N 2°21'03\"E »), MGRS (« 31U DQ 52 12 ») et la case du carroyage actif (« C4 »). Une case demandée sans carroyage, ou hors du rectangle, est signalée ; des coordonnées hors plage sont refusées.",
           selector: "#plan_btn_search",
           terms: [
             "Recherche adresse / coordonnées GPS",
             "Adresse ou coordonnées GPS (lat, lng)",
-            "Ex : « 12 rue de la Paix, Paris » ou « 48.8566, 2.3522 »",
-            "Point GPS centré : {lat}, {lng}",
+            "Point GPS centré : ",
             "Recherche…",
             "Aucun résultat.",
-            "Erreur réseau. Vérifie ta connexion."
+            "Erreur réseau. Vérifie ta connexion.",
+            "Case du carroyage : ",
+            "Aucun carroyage actif",
+            "hors du carroyage",
+            "Coordonnées hors plage"
           ],
-          tip: "La recherche d'adresse passe par Nominatim (reseau requis) ; les coordonnees GPS, elles, fonctionnent hors-ligne. Le bouton croix ferme le bandeau."
+          tip: "La recherche d'adresse par BAN ou Nominatim exige le réseau ; les coordonnées (décimal, DMS, MGRS, case) fonctionnent hors-ligne. Le bouton croix ferme le bandeau."
         },
         {
           title: "Ajouter un point (clic long ou bouton Ping)",
-          body: "Deux facons de creer un point : soit un clic long (environ 0,5 s) directement sur la carte a l'endroit voulu, ou un cercle de progression apparait sous le doigt puis la roue de creation \"Nouveau ping\" s'ouvre a ce point ; soit le bouton \"Ajouter un point (entite ou libre)\" de la barre d'outils, qui ouvre la meme roue au centre de la vue courante.",
+          body: "Deux façons de créer un point : soit un clic long (environ 0,5 s) directement sur la carte à l'endroit voulu, où un cercle de progression apparaît sous le doigt puis la roue de création « Nouveau ping » s'ouvre à ce point ; soit le bouton « Ajouter un ping » de la barre d'outils, qui ouvre la même roue au centre de la vue courante.",
           selector: "#plan_btn_ping",
           terms: [
-            "Ajouter un point (entité ou libre)",
+            "Ajouter un ping",
             "Nouveau ping"
           ],
-          tip: "Pour le clic long, ne bouge pas le doigt : un deplacement de plus de ~8 px annule la creation. Le pincer-zoom l'annule aussi."
+          tip: "Pour le clic long, ne bouge pas le doigt : un déplacement de plus de ~8 px annule la création. Le pincer-zoom l'annule aussi."
+        },
+        {
+          title: "Point proposé par une photo géolocalisée",
+          body: "Quand une photo importée porte une position GPS (métadonnée EXIF), PC Tac propose de placer un point sur le plan. Acceptée, l'opération crée un point à l'icône photo avec le libellé reçu, que la carte soit déjà ouverte ou non, et confirme par « Point ajouté au plan ». La position n'est jamais conservée dans l'image.",
+          terms: [
+            "Point ajouté au plan"
+          ],
+          selector: null,
+          tip: "La photo elle-même reste intacte : seule une nouvelle épingle est ajoutée au plan."
         },
         {
           title: "Deplacer un pin",
@@ -174,7 +185,7 @@ export function pctacTutoData(): TutoData {
         },
         {
           title: "Verrouiller les positions",
-          body: "Dans le dock de dessin, le bouton cadenas (titre \"Verrouiller la position des pings/dessins\") fige d'un coup tous les pings et dessins : l'icone passe a lock, le titre devient \"Positions verrouillees (cliquer pour deverrouiller)\" et un message \"Positions verrouillees : pings et dessins figes\" apparait. Un second clic reaffiche \"Positions deverrouillees : deplacement reactive\".",
+          body: "Dans le dock de dessin, le bouton cadenas (titre \"Verrouiller la position des pings/dessins\") fige d'un coup tous les pings et dessins : l'icone passe a lock, le titre devient \"Positions verrouillées (cliquer pour déverrouiller)\" et un message \"Positions verrouillées : pings et dessins figés\" apparait. Un second clic reaffiche \"Positions deverrouillees : deplacement reactive\".",
           selector: "#plan_draw_lock",
           terms: [
             "Verrouiller la position des pings/dessins",
@@ -295,11 +306,11 @@ export function pctacTutoData(): TutoData {
         },
         {
           title: "Choisir une icone dans le Catalogue",
-          body: "Le segment \"Catalogue\" (icone apps) de la roue de creation ouvre un panneau de choix d'icone plus complet, avec un champ de filtre (placeholder \"Filtrer (police, pompier, drogue…)\") pour retrouver rapidement un symbole. La couleur du type reste appliquee. Le catalogue comprend notamment \"Derniere position connue\" (categorie Obs), \"Parking\" et \"Point de rassemblement des forces\" (categorie Lieu).",
+          body: "Le segment \"Catalogue\" (icone apps) de la roue de creation ouvre un panneau de choix d'icone plus complet, avec un champ de filtre (placeholder \"Filtrer (police, pompier…)\") pour retrouver rapidement un symbole. La couleur du type reste appliquee. Le catalogue comprend notamment \"Derniere position connue\" (categorie Obs), \"Parking\" et \"Point de rassemblement des forces\" (categorie Lieu).",
           selector: null,
           terms: [
             "Catalogue",
-            "Filtrer (police, pompier, drogue…)",
+            "Filtrer (police, pompier…)",
             "Dernière position connue",
             "Parking",
             "Point de rassemblement des forces"
@@ -308,23 +319,23 @@ export function pctacTutoData(): TutoData {
         },
         {
           title: "Copier les coordonnees",
-          body: "L'option \"Copier coords\" (icone my_location) copie dans le presse-papier les coordonnees du point en trois formats a la fois : decimal WGS84, DMS (degres/minutes/secondes) et MGRS. Un message \"Coordonnees copiees — {MGRS}\" confirme ; si la copie echoue, il affiche \"Copie impossible — {MGRS}\".",
+          body: "L'option \"Copier coords\" (icone my_location) copie dans le presse-papier les coordonnees du point en trois formats a la fois : decimal WGS84, DMS (degres/minutes/secondes) et MGRS. Un message \"Coordonnees copiees — {MGRS}\" confirme ; si la copie echoue, il affiche \"Copie impossible —\".",
           selector: null,
           terms: [
             "Copier coords",
-            "Coordonnées copiées — {MGRS}",
-            "Copie impossible — {MGRS}"
+            "Coordonnées copiées —",
+            "Copie impossible —"
           ],
           tip: "\"Copier coords\" est disponible a la fois dans la roue de creation (coords du point vise) et dans la roue d'options d'un pin existant (coords du pin)."
         },
         {
           title: "Ajouter ou modifier le texte d'un pin",
-          body: "Dans la roue d'options d'un pin, l'option texte affiche \"Ajouter texte\" (ou \"Modifier texte\" s'il en a deja) et ouvre un mini-panneau avec un champ (placeholder \"Texte du ping…\"), un bouton de validation (titre \"Enregistrer\") et un bouton (titre \"Effacer\") qui retire le texte.",
+          body: "Dans la roue d'options d'un pin, l'option texte affiche \"Ajouter texte\" (ou \"Modifier texte\" s'il en a deja) et ouvre un mini-panneau avec un champ (placeholder \"Intitulé du ping…\"), un bouton de validation (titre \"Enregistrer\") et un bouton (titre \"Effacer\") qui retire le texte.",
           selector: null,
           terms: [
             "Ajouter texte",
             "Modifier texte",
-            "Texte du ping…",
+            "Intitulé du ping…",
             "Enregistrer",
             "Effacer"
           ],
@@ -422,9 +433,9 @@ export function pctacTutoData(): TutoData {
         },
         {
           title: "Tracer une forme (souris ou mode precision)",
-          body: "Sur PC, glisse directement sur la carte pour tracer trait, rectangle ou cercle. Sur mobile/tactile, le mode precision s'active : un reticule de visee apparait au centre et une barre affiche 'Debuter trace', puis 'Valider' et 'Annuler'. On vise avec le reticule en deplacant la carte, puis on valide.",
+          body: "Sur PC, glisse directement sur la carte pour tracer trait, rectangle ou cercle. Sur mobile/tactile, le mode precision s'active : un reticule de visee apparait au centre et une barre affiche 'Débuter tracé', puis 'Valider' et 'Annuler'. On vise avec le reticule en deplacant la carte, puis on valide.",
           terms: [
-            "Debuter trace",
+            "Débuter tracé",
             "Valider",
             "Annuler"
           ],
@@ -441,7 +452,7 @@ export function pctacTutoData(): TutoData {
             "Ex : Cellule 1 - 4 pax, ZRA, etc.",
             "Couleur du texte",
             "Taille",
-            "Reduire",
+            "Réduire",
             "Agrandir",
             "Enregistrer",
             "Annuler"
@@ -451,18 +462,18 @@ export function pctacTutoData(): TutoData {
         },
         {
           title: "Modifier une forme via le menu radial",
-          body: "Un appui court sur une forme ouvre une roue contextuelle titree selon le type ('Trait', 'Rectangle', 'Cercle', 'Texte' ou 'Forme'). Elle propose 'Ajouter texte'/'Modifier texte', l'epaisseur du trait ('Epaisseur -' / 'Epaisseur +') ou la police ('Taille -' / 'Taille +'), 'Verrouiller'/'Deverrouiller' et 'Supprimer'. Sur un cercle apparait aussi 'Afficher diametre'/'Masquer diametre'.",
+          body: "Un appui court sur une forme ouvre une roue contextuelle titree selon le type ('Trait', 'Rectangle', 'Cercle', 'Texte' ou 'Forme'). Elle propose 'Ajouter texte'/'Modifier texte', l'epaisseur du trait ('Épaisseur -' / 'Épaisseur +') ou la police ('Taille -' / 'Taille +'), 'Verrouiller'/'Deverrouiller' et 'Supprimer'. Sur un cercle apparait aussi 'Afficher diamètre'/'Masquer diamètre'.",
           terms: [
             "Ajouter texte",
             "Modifier texte",
-            "Epaisseur -",
-            "Epaisseur +",
+            "Épaisseur -",
+            "Épaisseur +",
             "Taille -",
             "Taille +",
-            "Afficher diametre",
-            "Masquer diametre",
+            "Afficher diamètre",
+            "Masquer diamètre",
             "Verrouiller",
-            "Deverrouiller",
+            "Déverrouiller",
             "Supprimer",
             "Trait",
             "Rectangle",
@@ -485,10 +496,10 @@ export function pctacTutoData(): TutoData {
         },
         {
           title: "Annuler, retablir et tout effacer",
-          body: "Dans le dock, 'Annuler (Ctrl+Z)' revient en arriere et 'Retablir (Ctrl+Y)' rejoue l'action ; les boutons s'estompent quand l'historique est vide. 'Effacer tous les dessins' vide la carte apres la confirmation 'Effacer tous les dessins ?'.",
+          body: "Dans le dock, 'Annuler (Ctrl+Z)' revient en arriere et 'Rétablir (Ctrl+Y)' rejoue l'action ; les boutons s'estompent quand l'historique est vide. 'Effacer tous les dessins' vide la carte apres la confirmation 'Effacer tous les dessins ?'.",
           terms: [
             "Annuler (Ctrl+Z)",
-            "Retablir (Ctrl+Y)",
+            "Rétablir (Ctrl+Y)",
             "Effacer tous les dessins",
             "Effacer tous les dessins ?"
           ],
@@ -497,13 +508,13 @@ export function pctacTutoData(): TutoData {
         },
         {
           title: "Verrouiller les positions et gerer les diametres",
-          body: "Le bouton verrou fige pings et dessins : au repos 'Verrouiller la position des pings/dessins', une fois actif l'icone passe au cadenas ferme et le titre devient 'Positions verrouillees (cliquer pour deverrouiller)'. Le bouton diametre bascule entre 'Diametres affiches (cliquer pour masquer)' et 'Diametres masques (cliquer pour afficher)' pour les cercles.",
+          body: "Le bouton verrou fige pings et dessins : au repos 'Verrouiller la position des pings/dessins', une fois actif l'icone passe au cadenas ferme et le titre devient 'Positions verrouillées (cliquer pour déverrouiller)'. Le bouton diametre bascule entre 'Diamètres affichés (cliquer pour masquer)' et 'Diamètres masqués (cliquer pour afficher)' pour les cercles.",
           terms: [
             "Verrouiller la position des pings/dessins",
-            "Positions verrouillees (cliquer pour deverrouiller)",
-            "Diametres affiches (cliquer pour masquer)",
-            "Diametres masques (cliquer pour afficher)",
-            "Positions verrouillees : pings et dessins figes"
+            "Positions verrouillées (cliquer pour déverrouiller)",
+            "Diamètres affichés (cliquer pour masquer)",
+            "Diamètres masqués (cliquer pour afficher)",
+            "Positions verrouillées : pings et dessins figés"
           ],
           selector: "#plan_draw_lock",
           tip: "Le verrou global n'empeche pas de verrouiller une forme seule via son menu radial."
@@ -518,36 +529,37 @@ export function pctacTutoData(): TutoData {
       steps: [
         {
           title: "Mesurer distance et azimut",
-          body: "Active 'Mesurer distance / azimut' dans le dock puis pose des points sur la carte : chaque segment affiche sa distance et son azimut vrai (ex '045°') et le total est prefixe par 'Σ'. La barre flottante propose 'Point' (pose sous reticule), 'Annuler dernier', 'Terminer' et 'Quitter'. Un double-clic termine aussi la mesure.",
+          body: "Active 'Mesurer distance / azimut' dans le dock puis pose des points sur la carte : chaque segment affiche sa distance et son azimut en trois lectures constantes — nord vrai, nord magnétique (déclinaison WMM calculée hors ligne) et millièmes OTAN — par exemple « 123° V · 121° M · 2187 ‰ ». Le total est préfixé par 'Σ'. La barre flottante propose 'Point' (pose sous réticule), 'Annuler dernier', 'Terminer' et 'Quitter'. Un double-clic termine aussi la mesure.",
           terms: [
             "Mesurer distance / azimut",
             "Point",
             "Annuler dernier",
             "Terminer",
             "Quitter",
-            "Mesure : touche la carte pour poser des points. Double-clic ou « Terminer » pour finir."
+            "Mesure : touche la carte pour poser des points. Double-clic ou « Terminer » pour finir.",
+            "M indisponible"
           ],
           selector: "#plan_draw_dock",
           tip: "Sur tactile, vise avec le reticule central puis appuie 'Point' pour poser chaque sommet."
         },
         {
           title: "Poser des anneaux d'engagement",
-          body: "Un appui long sur l'outil mesure ('Mesurer distance / azimut — appui long : anneaux d'engagement 50/100/200 m') depose trois cercles concentriques autour du centre de la carte. Un message confirme 'Anneaux d'engagement poses : 50 / 100 / 200 m.'.",
+          body: "Un appui long sur l'outil mesure ('Mesurer distance / azimut') depose trois cercles concentriques autour du centre de la carte. Un message confirme 'Anneaux d'engagement'.",
           terms: [
-            "Mesurer distance / azimut — appui long : anneaux d'engagement 50/100/200 m",
-            "Anneaux d'engagement poses : 50 / 100 / 200 m."
+            "Mesurer distance / azimut",
+            "Anneaux d'engagement"
           ],
           selector: "#plan_draw_dock",
           tip: "Les anneaux reprennent la couleur de dessin active."
         },
         {
           title: "Telecharger une zone hors-ligne (AOI)",
-          body: "Le FAB 'Telecharger la carte d'une zone (hors-ligne)' arme un cadrage : trace un rectangle sur la carte ('Trace un rectangle sur la zone a telecharger (glisser-deposer). Echap pour annuler.'). Une confirmation resume l'emprise ('Telecharger la carte de cette zone pour usage hors-ligne ?', 'Zoom {minZ} → {maxZ}', nombre de tuiles et volume), puis une barre de progression avec un bouton 'Annuler' met les tuiles en cache.",
+          body: "Le FAB 'Télécharger la carte d'une zone (hors-ligne)' arme un cadrage : trace un rectangle sur la carte ('Trace un rectangle sur la zone à télécharger'). Une confirmation resume l'emprise ('Télécharger la carte de cette zone pour usage hors-ligne ?', 'Zoom ', nombre de tuiles et volume), puis une barre de progression avec un bouton 'Annuler' met les tuiles en cache.",
           terms: [
-            "Telecharger la carte d'une zone (hors-ligne)",
-            "Trace un rectangle sur la zone a telecharger (glisser-deposer). Echap pour annuler.",
-            "Telecharger la carte de cette zone pour usage hors-ligne ?",
-            "Zoom {minZ} → {maxZ}",
+            "Télécharger la carte d'une zone (hors-ligne)",
+            "Trace un rectangle sur la zone à télécharger",
+            "Télécharger la carte de cette zone pour usage hors-ligne ?",
+            "Zoom ",
             "Annuler"
           ],
           selector: "#plan_btn_aoi",
@@ -558,7 +570,7 @@ export function pctacTutoData(): TutoData {
           body: "Le FAB 'Basculer vue 2D / 3D relief' (icone 'deployed_code') active le relief : la camera s'incline a 60°, le terrain DEM et les batiments 3D apparaissent. Re-cliquer revient a plat (pitch 0, nord en haut). Si le reseau bloque, l'app previent 'Relief 3D indisponible (reseau ?).'.",
           terms: [
             "Basculer vue 2D / 3D relief",
-            "Relief 3D indisponible (reseau ?). Les tuiles d'elevation AWS sont peut-etre bloquees."
+            "Relief 3D indisponible"
           ],
           selector: "#plan_btn_3d",
           tip: "La vue 3D reste calee sur la zone visee : la camera est epinglee pendant le chargement du relief."
@@ -606,11 +618,11 @@ export function pctacTutoData(): TutoData {
         },
         {
           title: "Agir sur une trace",
-          body: "Sur chaque ligne : la pastille de couleur ouvre 'Changer la couleur de cette trace', l'oeil bascule 'Masquer cette trace' / 'Afficher cette trace', et la corbeille declenche 'Supprimer cette trace' apres la confirmation 'Supprimer la trace importee ? Cette action est irreversible.'.",
+          body: "Sur chaque ligne : la pastille de couleur ouvre 'Changer la couleur de cette trace', l'oeil bascule 'Supprimer cette trace' / 'Changer la couleur de cette trace', et la corbeille declenche 'Supprimer cette trace' apres la confirmation 'Supprimer la trace importee ? Cette action est irreversible.'.",
           terms: [
             "Changer la couleur de cette trace",
-            "Masquer cette trace",
-            "Afficher cette trace",
+            "Supprimer cette trace",
+            "Changer la couleur de cette trace",
             "Supprimer cette trace",
             "Supprimer"
           ],
@@ -661,8 +673,8 @@ export function pctacTutoData(): TutoData {
           terms: [
             "Tri et découpage des jours",
             "Ordre de la liste",
-            "Plus récentes d'abord",
-            "Plus anciennes d'abord",
+            "Plus récentes d",
+            "Plus anciennes d",
             "Début de la journée opérationnelle",
             "Une intervention de nuit reste entière dans le même jour. Mettre 0 pour retrouver le jour civil."
           ],
@@ -726,21 +738,21 @@ export function pctacTutoData(): TutoData {
         },
         {
           title: "Se connecter via ProConnect",
-          body: "Le bouton « Se connecter via ProConnect ↻ » lance l'authentification par device-code : le statut passe à « Authentification ProConnect… » et un encart affiche « Autorise PC-Tac via ProConnect : ouvre {verification_uri} et saisis le code {user_code} ». On ouvre le lien, on saisit le code, et la session se renouvelle ensuite automatiquement (elle survit aux rafraîchissements).",
+          body: "Le bouton « Se connecter via ProConnect ↻ » lance l'authentification par device-code : le statut passe à « Authentification ProConnect… » et un encart affiche « Autorise PC-Tac via ProConnect ». On ouvre le lien, on saisit le code, et la session se renouvelle ensuite automatiquement (elle survit aux rafraîchissements).",
           terms: [
             "Se connecter via ProConnect ↻",
             "Authentification ProConnect…",
-            "Autorise PC-Tac via ProConnect : ouvre {verification_uri} et saisis le code {user_code}"
+            "Autorise PC-Tac via ProConnect"
           ],
           selector: "#tl_oidc",
           tip: "En cas d'échec, le statut indique « Auth refusée — relance ProConnect. » ou « ProConnect échoué : {message} — repli token manuel possible. »."
         },
         {
           title: "Repli : token manuel et client_id",
-          body: "Déplier « Repli / avancé (token manuel, client_id) » pour coller un « Token manuel (repli — Tchap Web → Aide & à propos → Token, ~5 min, non renouvelé) » (préfixe mat_… ou syt_…), et éventuellement un « client_id OAuth (optionnel — fourni par l'admin DNUM si l'auto-enregistrement est bloqué) », puis cliquer sur « Token manuel ». Ce mode n'est pas renouvelé et expire vite.",
+          body: "Déplier « Repli / avancé (token manuel, client_id) » pour coller un « Token manuel (repli » (préfixe mat_… ou syt_…), et éventuellement un « client_id OAuth (optionnel — fourni par l'admin DNUM si l'auto-enregistrement est bloqué) », puis cliquer sur « Token manuel ». Ce mode n'est pas renouvelé et expire vite.",
           terms: [
             "Repli / avancé (token manuel, client_id)",
-            "Token manuel (repli — Tchap Web → Aide & à propos → Token, ~5 min, non renouvelé)",
+            "Token manuel (repli",
             "mat_… ou syt_…",
             "client_id OAuth (optionnel — fourni par l'admin DNUM si l'auto-enregistrement est bloqué)",
             "laisser vide pour auto-enregistrement",
@@ -751,14 +763,14 @@ export function pctacTutoData(): TutoData {
         },
         {
           title: "Suivre l'état de connexion et le journal",
-          body: "La ligne de statut sous les boutons affiche l'état courant : « Prêt. », puis « Connexion… », « Connecté : {user_id} », et en régime « À jour — {heure} · {n} opérateur(s) ». Le journal en bas horodate chaque événement, par exemple « connecté : {user_id} », « 👤 {nom} connecté » ou « token renouvelé automatiquement ».",
+          body: "La ligne de statut sous les boutons affiche l'état courant : « Prêt. », puis « Connexion… », « Connecté : », et en régime « À jour — ». Le journal en bas horodate chaque événement, par exemple « connecté : », « connecté » ou « token renouvelé automatiquement ».",
           terms: [
             "Prêt.",
             "Connexion…",
-            "Connecté : {user_id}",
-            "À jour — {heure} · {n} opérateur(s)",
-            "connecté : {user_id}",
-            "👤 {nom} connecté",
+            "Connecté :",
+            "À jour —",
+            "connecté :",
+            "connecté",
             "token renouvelé automatiquement"
           ],
           selector: "#tl_status",
@@ -766,11 +778,11 @@ export function pctacTutoData(): TutoData {
         },
         {
           title: "Lire les positions sur la carte",
-          body: "Chaque opérateur apparaît comme un marqueur animé libellé « [FONCTION] Nom », dont la couleur suit son état : « bleu=nouveau · vert=déplacement · gris=actif immobile · rouge=déconnexion imminente ». Le compteur affiche « {n} opérateur(s) » et le bouton « Centrer » recadre la carte sur l'ensemble des équipes visibles.",
+          body: "Chaque opérateur apparaît comme un marqueur animé libellé « [FONCTION] Nom », dont la couleur suit son état : « Code couleur des marqueurs : ». Le compteur affiche « opérateur(s) » et le bouton « Centrer » recadre la carte sur l'ensemble des équipes visibles.",
           terms: [
             "[FONCTION] Nom",
-            "bleu=nouveau · vert=déplacement · gris=actif immobile · rouge=déconnexion imminente",
-            "{n} opérateur(s)",
+            "Code couleur des marqueurs :",
+            "opérateur(s)",
             "Centrer"
           ],
           selector: "#tl_center",
@@ -791,45 +803,49 @@ export function pctacTutoData(): TutoData {
         },
         {
           title: "Affecter en lot (mode « Lot »)",
-          body: "Le bouton « Lot » (« Mode lot : affecter une fonction à plusieurs opérateurs ») fait apparaître une case à cocher par opérateur ; « Tout » (dé)sélectionne l'ensemble, le menu choisit la fonction, puis « Affecter ({n}) » l'applique aux sélectionnés. Le bandeau récapitule les états globaux : « Nouveau », « En mouvement », « Immobile », « Déco imminente ».",
+          body: "Le bouton « Lot » (« Mode lot : affecter une fonction à plusieurs opérateurs ») fait apparaître une case à cocher par opérateur ; « Tout » (dé)sélectionne l'ensemble, le menu choisit la fonction, puis « Affecter ( » l'applique aux sélectionnés. Le bandeau récapitule les états globaux : « Nouveau », « En mouvement », « Immobile », « Déco imminente ».",
           terms: [
             "Lot",
             "Mode lot : affecter une fonction à plusieurs opérateurs",
             "Tout",
-            "Affecter ({n})",
+            "Affecter (",
             "Nouveau",
             "En mouvement",
             "Immobile",
             "Déco imminente"
           ],
           selector: "#tl_ops",
-          tip: "Sans sélection : « aucun opérateur sélectionné » ; sinon « fonction « {val} » affectée à {n} opérateur(s) »."
+          tip: "Sans sélection : « aucun opérateur sélectionné » ; sinon « fonction « {val} » affectée à opérateur(s) »."
         },
         {
           title: "Arrêter le suivi (« Stop »)",
-          body: "Le bouton « Stop » coupe le flux, purge les marqueurs et l'état persisté, et le statut passe à « Arrêté. ». Sans Stop explicite, la session reprend seule après un rafraîchissement de page ; au démarrage, les dernières positions connues sont réaffichées en gris avec leur âge (« ↻ {n} position(s) réhydratée(s) (dernière connue, hors-ligne) »).",
+          body: "Le bouton « Stop » coupe le flux, purge les marqueurs et l'état persisté, et le statut passe à « Arrêté. ». Sans Stop explicite, la session reprend seule après un rafraîchissement de page ; au démarrage, les dernières positions connues sont réaffichées en gris avec leur âge (« position(s) réhydratée(s) »).",
           terms: [
             "Stop",
             "Arrêté.",
-            "↻ {n} position(s) réhydratée(s) (dernière connue, hors-ligne)"
+            "position(s) réhydratée(s)"
           ],
           selector: "#tl_stop",
           tip: "Onglet masqué : la boucle se met en pause (« En pause (onglet masqué) — reprise au retour… ») pour économiser batterie et données, puis reprend au retour."
         },
         {
-          title: "Synchroniser la main courante par QR (hors-réseau)",
-          body: "Indépendamment de Tchap, la modale « Export/Import (QR Local) » transfère les entrées de main courante entre deux appareils sans réseau. L'onglet « Exporter (QR Séquentiel) » affiche les QR paginés (« Page {index} sur {total} - {n} entrées. » avec les flèches de navigation), l'onglet « Importer (Scan) » ouvre la caméra pour les scanner. « Terminer » ferme la modale.",
+          title: "Opérateur perdu : gardé sur la carte",
+          body: "Au-delà de six minutes sans nouvelle position, un opérateur passe « perdu » : son marqueur reste sur la carte, grisé, avec la mention « perdu depuis N min » mise à jour chaque minute. Il redevient normal dès qu'une nouvelle position arrive. Pour le faire disparaître de votre écran, appuyez sur « Retirer » (sur son marqueur ou dans la liste) — ou « Stop » pour arrêter tout le suivi.",
           terms: [
-            "Export/Import (QR Local)",
-            "Exporter (QR Séquentiel)",
-            "Importer (Scan)",
-            "Page {index} sur {total} - {n} entrées.",
-            "{n} entrées prêtes au transfert.",
-            "Scanner les QR codes séquentiellement pour importer.",
-            "Terminer"
+            "perdu depuis",
+            "Retirer"
+          ],
+          selector: "#tl_ops",
+          tip: "Cet opérateur perdu n'est jamais retiré tout seul : vous décidez de le garder sous les yeux ou de l'écarter."
+        },
+        {
+          title: "L'écran reste allumé pendant le suivi",
+          body: "Tant qu'un suivi en direct (Tchap ou OsmAnd) est actif, PC Tac demande au navigateur de maintenir l'écran allumé, pour ne pas perdre la carte en pleine intervention. Le verrou est partagé par tous les suivis et relâché au dernier « Stop » ; si le navigateur refuse ou ne sait pas faire, un message unique vous prévient que l'écran peut s'éteindre.",
+          terms: [
+            "L'écran peut se mettre en veille pendant le suivi"
           ],
           selector: null,
-          tip: "Rien à envoyer affiche « Aucune donnée à transférer. » ; à l'import, une alerte confirme « {n} entrées ajoutées. » (les doublons d'identifiant sont ignorés)."
+          tip: "L'écran restant allumé consomme de la batterie : coupez le suivi dès que vous n'en avez plus besoin."
         }
       ]
     },
@@ -879,11 +895,11 @@ export function pctacTutoData(): TutoData {
         },
         {
           title: "Importer / restaurer une archive",
-          body: "Le bouton à icône unarchive (infobulle « Importer une archive .pctac.zip ») ouvre un sélecteur de fichier (.pctac.zip, ou un ancien journal .json). Une confirmation « Importer cette archive ? Les données actuelles seront remplacées. » apparaît ; après accord, l'opération courante est remplacée puis « Archive importée avec succès. » confirme la restauration.",
+          body: "Le bouton à icône unarchive (infobulle « Importer une archive .pctac.zip ») ouvre un sélecteur de fichier (.pctac.zip, ou un ancien journal .json). Une confirmation « Importer cette archive ? » apparaît ; après accord, l'opération courante est remplacée puis « Archive importée avec succès. » confirme la restauration.",
           selector: "#importJsonDockBtn",
           terms: [
             "Importer une archive .pctac.zip",
-            "Importer cette archive ? Les données actuelles seront remplacées.",
+            "Importer cette archive ?",
             "Archive importée avec succès."
           ],
           tip: "L'import est atomique : en cas de stockage insuffisant, un retour arrière restaure l'état précédent (message « Échec de l'import (stockage insuffisant). Vos données précédentes ont été conservées. »)."
@@ -908,7 +924,7 @@ export function pctacTutoData(): TutoData {
         },
         {
           title: "Comprendre le contenu du PDF",
-          body: `Le PDF enchaîne dans l'ordre : « MAIN COURANTE - JOURNAL D'INTERVENTION » (colonnes « Heure », « Pax », « Localisation », « Remarques »), « FICHIER ${mode.adv.plural.toUpperCase()} », « FICHIER ${mode.host.plural.toUpperCase()} », « FORCES AMIES / UNITÉS », les galeries « GALERIE : {CATÉGORIE} », le « PLAN TACTIQUE » avec sa « PLAN TACTIQUE - LISTE DES POINTS », et le « BOARD RELATIONNEL ». Chaque page porte en pied de page la mention « DIFFUSION RESTREINTE », l'horodatage d'export et la pagination.`,
+          body: `Le PDF enchaîne dans l'ordre : « MAIN COURANTE - JOURNAL D'INTERVENTION » (colonnes « Heure », « Pax », « Localisation », « Remarques »), « FICHIER ${mode.adv.plural.toUpperCase()} », « FICHIER ${mode.host.plural.toUpperCase()} », « FORCES AMIES / UNITÉS », les galeries « GALERIE : », le « PLAN TACTIQUE » avec sa « PLAN TACTIQUE - LISTE DES POINTS », et le « BOARD RELATIONNEL ». Chaque page porte en pied de page la mention « DIFFUSION RESTREINTE », l'horodatage d'export et la pagination.`,
           selector: null,
           terms: [
             "MAIN COURANTE - JOURNAL D'INTERVENTION",
@@ -916,10 +932,9 @@ export function pctacTutoData(): TutoData {
             "Pax",
             "Localisation",
             "Remarques",
-            `FICHIER ${mode.adv.plural.toUpperCase()}`,
-            `FICHIER ${mode.host.plural.toUpperCase()}`,
+            "FICHIER",
             "FORCES AMIES / UNITÉS",
-            "GALERIE : {CATÉGORIE}",
+            "GALERIE :",
             "PLAN TACTIQUE",
             "PLAN TACTIQUE - LISTE DES POINTS",
             "BOARD RELATIONNEL",
@@ -929,13 +944,13 @@ export function pctacTutoData(): TutoData {
         },
         {
           title: "Réinitialiser toutes les données",
-          body: `Le bouton rouge à icône delete_forever (infobulle « Réinitialiser toutes les données ») ouvre la modale « RESET COMPLET », qui avertit que « toutes les données (logs, ${mode.adv.plural.toLowerCase()}, ${mode.host.plural.toLowerCase()}, photos) seront définitivement supprimées. Cette action est irréversible. ». « CONFIRMER LE RESET » efface tout (stockage local + photos) puis recharge la page ; « ANNULER » referme sans rien supprimer.`,
+          body: `Le bouton rouge à icône delete_forever (infobulle « Réinitialiser toutes les données ») ouvre la modale « RESET COMPLET », qui avertit que « toutes les données (logs, ${mode.adv.plural.toLowerCase()}, ${mode.host.plural.toLowerCase()}, photos) seront définitivement supprimées. Cette action est irréversible. ». « CONFIRMER LE » efface tout (stockage local + photos) puis recharge la page ; « ANNULER » referme sans rien supprimer.`,
           selector: "#resetDataDockBtn",
           terms: [
             "Réinitialiser toutes les données",
             "RESET COMPLET",
-            `Attention, toutes les données (logs, ${mode.adv.plural.toLowerCase()}, ${mode.host.plural.toLowerCase()}, photos) seront définitivement supprimées. Cette action est irréversible.`,
-            "CONFIRMER LE RESET",
+            "seront définitivement supprimées. Cette action est irréversible.",
+            "CONFIRMER LE",
             "ANNULER"
           ],
           tip: "À faire de préférence après avoir exporté une archive .pctac.zip : la réinitialisation est définitive et sans corbeille."

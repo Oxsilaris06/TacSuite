@@ -148,6 +148,6 @@ describe('search — fetchWithTimeout', () => {
         const fetchImpl = vi.fn(() => Promise.resolve(jsonResponse(banBody([{ label: 'X', lng: 1, lat: 2 }]))));
         const r = await fetchWithTimeout('http://a', fetchImpl as unknown as FetchLike, 0);
         expect(r.ok).toBe(true);
-        expect(fetchImpl).toHaveBeenCalledWith('http://a', undefined);
+        expect(fetchImpl).toHaveBeenCalledWith('http://a');
     });
 });

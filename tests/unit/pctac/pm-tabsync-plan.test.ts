@@ -13,7 +13,7 @@ vi.mock('maplibre-gl', () => {
     class FakeMarker {
         private _lngLat = { lng: 0, lat: 0 };
         private _listeners = new Map<string, () => void>();
-        constructor(_opts: { element?: HTMLElement } = {}) { /* élément ignoré */ }
+        constructor() { /* options (élément) ignorées */ }
         setLngLat(ll: { lng: number; lat: number }): this { this._lngLat = ll; return this; }
         getLngLat(): { lng: number; lat: number } { return this._lngLat; }
         addTo(): this { return this; }
