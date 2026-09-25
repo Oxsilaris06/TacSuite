@@ -20,6 +20,7 @@
 
 import { PCTAC_MODES, type PctacModeId } from '@pctac/modes.js';
 import { ADV_STATUS, HOST_STATUS } from '@pctac/config.js';
+import type { PctacCollectionItem } from '@shared/types/contracts.js';
 
 export type FicheSide = 'adv' | 'host';
 
@@ -501,4 +502,81 @@ export function ficheCounters(
     hosts: readonly Record<string, unknown>[],
 ): { adv: string; host: string } {
     return { adv: countLine('adv', modeId, advs), host: countLine('host', modeId, hosts) };
+}
+
+// --- Doublons et fusion (décision 32) ----------------------------------------
+
+/** Normalisation d'une identité : casse, accents et espaces réduits. */
+function normalizePerson(value: unknown): string {
+    return String(value ?? '')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase()
+        .replace(/\s+/g, ' ')
+        .trim();
+}
+
+/** Une fiche « Phénomène » (Ampleur) n'est jamais une personne. */
+function isPhenomene(item: Record<string, unknown>): boolean {
+    return item[TYPE_MENACE_KEY] === 'Phénomène';
+}
+
+/**
+ * Cherche, parmi `items`, une fiche désignant la MÊME personne que `candidate` :
+ *   - même nom ET même prénom (les deux non vides et égaux), OU
+ *   - même nom ET même date de naissance (`dob`, les deux non vides et égaux),
+ * comparaison normalisée (casse, accents, espaces). Jamais `candidate` lui-même
+ * (même `id`). Une fiche « Phénomène » n'est jamais un doublon.
+ */
+export function findDuplicatePerson(
+    items: readonly PctacCollectionItem[],
+    candidate: PctacCollectionItem,
+): PctacCollectionItem | null {
+    if (isPhenomene(candidate)) return null;
+    const nom = normalizePerson(candidate.nom);
+    const prenom = normalizePerson(candidate.prenom);
+    const dob = normalizePerson(candidate.dob);
+    for (const item of items) {
+        if (item.id === candidate.id) continue;
+        if (isPhenomene(item)) continue;
+        const otherNom = normalizePerson(item.nom);
+        if (!nom || !otherNom || nom !== otherNom) continue;
+        const otherPrenom = normalizePerson(item.prenom);
+        if (prenom && otherPrenom && prenom === otherPrenom) return item;
+        const otherDob = normalizePerson(item.dob);
+        if (dob && otherDob && dob === otherDob) return item;
+    }
+    return null;
+}
+
+/** Champ vide : absent, `null`, chaîne vide (espaces compris) ou tableau vide. */
+function isEmptyField(value: unknown): boolean {
+    if (value === undefined || value === null) return true;
+    if (typeof value === 'string') return value.trim() === '';
+    if (Array.isArray(value)) return value.length === 0;
+    return false;
+}
+
+/**
+ * Fusionne `incoming` dans `existing` : chaque champ VIDE d'`existing` (absent,
+ * `''`, tableau vide) est complété par `incoming` ; aucun champ rempli n'est
+ * écrasé. `id` et `updatedAt` d'`existing` sont gardés. `filled` liste les clés
+ * complétées. Ne mute aucun des deux objets.
+ */
+export function mergeFicheFields(
+    existing: PctacCollectionItem,
+    incoming: PctacCollectionItem,
+): { merged: PctacCollectionItem; filled: string[] } {
+    const merged: PctacCollectionItem = { ...existing };
+    const filled: string[] = [];
+    for (const key of Object.keys(incoming)) {
+        if (key === 'id' || key === 'updatedAt') continue;
+        const value = incoming[key];
+        if (isEmptyField(value)) continue;
+        if (isEmptyField(merged[key])) {
+            merged[key] = value;
+            filled.push(key);
+        }
+    }
+    return { merged, filled };
 }

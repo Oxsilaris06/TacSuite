@@ -340,6 +340,12 @@ export interface PctacLogEntry {
     favori?: boolean | undefined;
     /** Champ legacy transporté par le flux QR (`QrSync`), absent des entrées créées aujourd'hui. */
     fenetrePorte?: string | undefined;
+    /**
+     * Date de dernière modification ISO 8601 (`new Date().toISOString()`),
+     * posée par `Storage.saveLogData` à chaque changement (décision 32). Sert
+     * d'arbitre de fusion à l'import : la plus récente gagne.
+     */
+    updatedAt?: string | undefined;
 }
 
 /**
@@ -350,6 +356,12 @@ export interface PctacCollectionItem {
     id: string;
     /** `true` quand l'image de l'item vit dans IndexedDB (`ImageStore`), pas en localStorage. */
     hasImage?: boolean | undefined;
+    /**
+     * Date de dernière modification ISO 8601 (`new Date().toISOString()`),
+     * posée par `Storage.saveCollection` à chaque changement (décision 32).
+     * Sert d'arbitre de fusion à l'import : la plus récente gagne.
+     */
+    updatedAt?: string | undefined;
     [key: string]: unknown;
 }
 
@@ -393,8 +405,12 @@ export interface PctacPaxColorEntry {
  * consommateur identifié — cf. docs/SPEC-CONTRATS.md).
  */
 export interface PctacStorageContract {
-    /** Trie par `heure` (mutation en place) puis persiste via `Persist.set`. */
-    saveLogData(logData: PctacLogEntry[]): void;
+    /**
+     * Trie par `(date, heure)` (mutation en place) puis persiste via
+     * `Persist.set`. Pose `updatedAt` sur les entrées nouvelles ou modifiées.
+     * Rend `false` si le stockage a refusé l'écriture (quota, indisponible).
+     */
+    saveLogData(logData: PctacLogEntry[]): boolean;
     loadLogData(): PctacLogEntry[];
     /**
      * Associations « Pax Libre ». ATTENTION : la map est indexée par COULEUR
@@ -402,7 +418,12 @@ export interface PctacStorageContract {
      */
     getTpAssociations(): Record<string, string>;
     saveTpAssociation(label: string, color: string): void;
-    saveCollection(key: string, data: readonly PctacCollectionItem[]): void;
+    /**
+     * Persiste une collection. Pose `updatedAt` sur les éléments nouveaux ou
+     * modifiés (comparaison JSON sans ce champ) ; ne mute pas `data`. Rend
+     * `false` si le stockage a refusé l'écriture (quota, indisponible).
+     */
+    saveCollection(key: string, data: readonly PctacCollectionItem[]): boolean;
     loadCollection(key: string): PctacCollectionItem[];
     /** Supprime les 14 clés listées dans `storage.js:84-102` (localStorage direct). */
     clearAllData(): void;
@@ -519,9 +540,11 @@ export interface ArchiveOiImportResult {
 export interface ArchiveContract {
     /**
      * Export `.pctac.zip` (JSZip) : `manifest.json` + `data.json` +
-     * `images/<id>.txt`. `alert()` + retour anticipé si JSZip est absent.
+     * `images/<id>.txt`. `alert()`/toast + retour si JSZip est absent.
+     * Rend `true` quand le téléchargement a été déclenché, `false` sur toute
+     * sortie en échec (décision 32).
      */
-    exportZip(): Promise<void>;
+    exportZip(): Promise<boolean>;
     /**
      * Import `.pctac.zip` OU `.json` legacy (routage par extension).
      * Jette sur archive illisible / manifest d'une autre app.

@@ -33,7 +33,7 @@ import { Persist } from '@shared/persist.js';
  * TOUTES à une situation (cf. `scopedKey`) : on ne supprime donc jamais que
  * celles de la situation visée, jamais celles des trois autres.
  */
-const SITUATION_KEYS: readonly string[] = [
+export const SITUATION_KEYS: readonly string[] = [
   LOCAL_STORAGE_KEY,
   TP_ASSOC_KEY,
   ADVERSARIES_KEY,
@@ -93,13 +93,66 @@ function announceChange(key: string): void {
   }
 }
 
+/* -------------------------------------------------------------------------
+ * Date de modification (décision 32)
+ *
+ * `updatedAt` arbitre la fusion à l'import : la fiche la plus récente gagne.
+ * On ne redate QUE ce qui a réellement changé, en comparant la valeur stockée
+ * sous le même `id` à la valeur entrante, `updatedAt` exclu. Un élément
+ * inchangé garde la date déjà stockée — même si l'appelant, qui garde une
+ * référence ancienne, le repasse sans ce champ.
+ * ------------------------------------------------------------------------- */
+
+/** Sérialisation stable d'une valeur, `updatedAt` (récursivement) exclu. */
+function stableWithoutUpdatedAt(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(stableWithoutUpdatedAt).join(',')}]`;
+  if (value !== null && typeof value === 'object') {
+    const obj = value as Record<string, unknown>;
+    const keys = Object.keys(obj)
+      .filter((k) => k !== 'updatedAt' && obj[k] !== undefined)
+      .sort();
+    return `{${keys.map((k) => `${JSON.stringify(k)}:${stableWithoutUpdatedAt(obj[k])}`).join(',')}}`;
+  }
+  return JSON.stringify(value) ?? 'undefined';
+}
+
+interface StampedItem {
+  id: string;
+  updatedAt?: string | undefined;
+}
+
+/**
+ * Pose `updatedAt` sur les éléments nouveaux ou modifiés, EN PLACE sur chaque
+ * élément (jamais sur le tableau : ni tri, ni ajout/retrait). La mutation des
+ * éléments est voulue : les appelants gardent des références vers ces objets et
+ * comparent ce qu'ils relisent (ex. `fiche-sheet.ts` détecte un stockage plein
+ * en comparant la fiche relue à la sienne) — les garder synchronisés évite de
+ * fausses alertes de quota. Un élément inchangé reçoit la date DÉJÀ stockée.
+ */
+function stampUpdatedAt<T extends StampedItem>(items: readonly T[], stored: readonly T[]): void {
+  const byId = new Map<string, T>();
+  stored.forEach((it) => {
+    if (it && typeof it.id === 'string') byId.set(it.id, it);
+  });
+  const now = new Date().toISOString();
+  items.forEach((item) => {
+    const previous = byId.get(item.id);
+    if (previous && stableWithoutUpdatedAt(item) === stableWithoutUpdatedAt(previous)) {
+      if (previous.updatedAt !== undefined) item.updatedAt = previous.updatedAt;
+      else delete item.updatedAt;
+      return;
+    }
+    item.updatedAt = now;
+  });
+}
+
 export const Storage: PctacStorageContract = {
   /**
    * Sauvegarde les données du journal.
    * PIÈGE : trie le tableau EN PLACE (mutation), puis persiste via Persist.
    * (storage.js:24-31)
    */
-  saveLogData(logData: PctacLogEntry[]): void {
+  saveLogData(logData: PctacLogEntry[]): boolean {
     // U15 — tri par (date, heure) avant de sauvegarder (mutation en place).
     // Les entrées legacy sans date (date ?? '') passent AVANT toute entrée
     // datée, dans un ordre stable entre elles (heure ASC comme avant).
@@ -110,9 +163,12 @@ export const Storage: PctacStorageContract = {
       if (a.heure === b.heure) return 0;
       return a.heure < b.heure ? -1 : 1;
     });
+    const stored = Persist.get<PctacLogEntry[]>(scopedKey(LOCAL_STORAGE_KEY), { validator: isArray, fallback: [] });
+    stampUpdatedAt(logData, stored);
     // Persist ne jette jamais sur quota : il émet 'pctac:quota' (non bloquant).
-    Persist.set(scopedKey(LOCAL_STORAGE_KEY), logData);
+    const result = Persist.set(scopedKey(LOCAL_STORAGE_KEY), logData);
     announceChange(LOCAL_STORAGE_KEY);
+    return result.ok;
   },
 
   /**
@@ -147,10 +203,15 @@ export const Storage: PctacStorageContract = {
    * Sauvegarde une collection générique.
    * (storage.js:62-68)
    */
-  saveCollection(key: string, data: readonly PctacCollectionItem[]): void {
+  saveCollection(key: string, data: readonly PctacCollectionItem[]): boolean {
+    const stored = Persist.get<PctacCollectionItem[]>(scopedKey(key), { validator: isArray, fallback: [] });
+    // `data` est en lecture seule : on ne touche jamais au tableau (ni tri, ni
+    // copie). Les éléments, eux, reçoivent leur date de modification.
+    stampUpdatedAt(data, stored);
     // Quota géré par Persist via l'évènement 'pctac:quota'.
-    Persist.set(scopedKey(key), data);
+    const result = Persist.set(scopedKey(key), data);
     announceChange(key);
+    return result.ok;
   },
 
   /**

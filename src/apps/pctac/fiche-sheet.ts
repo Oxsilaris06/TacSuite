@@ -104,11 +104,12 @@ try {
 const collectionKey = (side: FicheSide): string => (side === 'adv' ? ADVERSARIES_KEY : HOSTAGES_KEY);
 const slotOf = (side: FicheSide, id: string | null): string => `${side}:${id ?? 'new'}`;
 
-/** Empreinte d'une fiche pour son brouillon. Le statut et les annotations de
- *  la photo en sont exclus : ils changent depuis la carte ou l'annotation sans
- *  que la saisie en cours soit périmée pour autant. */
+/** Empreinte d'une fiche pour son brouillon. Le statut, les annotations de
+ *  la photo et `updatedAt` (date de modification, décision 32) en sont exclus :
+ *  ils changent depuis la carte ou l'annotation sans que la saisie en cours
+ *  soit périmée pour autant. */
 function baseOf(fiche: Record<string, unknown>): string {
-    return JSON.stringify({ ...fiche, status: undefined, annotations: undefined });
+    return JSON.stringify({ ...fiche, status: undefined, annotations: undefined, updatedAt: undefined });
 }
 
 // --- Brouillons -------------------------------------------------------------
