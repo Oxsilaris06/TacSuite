@@ -33,6 +33,22 @@ import { Persist } from '@shared/persist.js';
  * TOUTES à une situation (cf. `scopedKey`) : on ne supprime donc jamais que
  * celles de la situation visée, jamais celles des trois autres.
  */
+/**
+ * Ordre de la main courante : (date, heure). Les entrées legacy sans date
+ * passent AVANT toute entrée datée, dans un ordre stable entre elles (heure
+ * ASC). Partagé avec la fusion d'archive (A4) : toute écriture du journal
+ * doit le respecter, l'écran et le PDF ne trient pas.
+ */
+export function compareLogEntries(a: { date?: string | undefined; heure?: string | undefined }, b: { date?: string | undefined; heure?: string | undefined }): number {
+  const da = a.date ?? '';
+  const db = b.date ?? '';
+  if (da !== db) return da < db ? -1 : 1;
+  const ha = a.heure ?? '';
+  const hb = b.heure ?? '';
+  if (ha === hb) return 0;
+  return ha < hb ? -1 : 1;
+}
+
 export const SITUATION_KEYS: readonly string[] = [
   LOCAL_STORAGE_KEY,
   TP_ASSOC_KEY,
@@ -207,13 +223,7 @@ export const Storage: PctacStorageContract = {
     // U15 — tri par (date, heure) avant de sauvegarder (mutation en place).
     // Les entrées legacy sans date (date ?? '') passent AVANT toute entrée
     // datée, dans un ordre stable entre elles (heure ASC comme avant).
-    logData.sort((a, b) => {
-      const da = a.date ?? '';
-      const db = b.date ?? '';
-      if (da !== db) return da < db ? -1 : 1;
-      if (a.heure === b.heure) return 0;
-      return a.heure < b.heure ? -1 : 1;
-    });
+    logData.sort(compareLogEntries);
     const stored = Persist.get<PctacLogEntry[]>(scopedKey(LOCAL_STORAGE_KEY), { validator: isArray, fallback: [] });
     stampUpdatedAt(logData, stored);
     // Persist ne jette jamais sur quota : il émet 'pctac:quota' (non bloquant).

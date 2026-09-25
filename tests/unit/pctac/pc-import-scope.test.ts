@@ -233,3 +233,15 @@ describe('demande de portée', () => {
         expect(await askImportScope()).toBeNull();
     });
 });
+
+describe('Revue du 25/09 — fusion du journal (A4)', () => {
+    it('la main courante fusionnée reste chronologique (date, heure)', () => {
+        localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify([
+            { id: 'a', date: '2026-09-25', heure: '10:00' },
+            { id: 'c', date: '2026-09-25', heure: '12:00' },
+        ]));
+        applyScope({ [LOCAL_STORAGE_KEY]: JSON.stringify([{ id: 'b', date: '2026-09-25', heure: '11:00' }]) }, scope(['journal'], 'merge'));
+        const ids = (JSON.parse(localStorage.getItem(LOCAL_STORAGE_KEY) ?? '[]') as Array<{ id: string }>).map((e) => e.id);
+        expect(ids).toEqual(['a', 'b', 'c']);
+    });
+});
