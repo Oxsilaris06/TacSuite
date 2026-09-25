@@ -185,14 +185,16 @@ export const LogManager: LogManagerContract = {
    * indisponible), comme `addEntry`. L'appelant garde alors la modale ouverte
    * au lieu d'annoncer une mise à jour qui n'a pas eu lieu.
    *
-   * @returns `true` si l'entrée a été écrite (ou est introuvable : rien à faire)
+   * @returns `true` si l'entrée a été écrite ; `false` si le stockage est plein
+   * ou si l'entrée est introuvable (A5 : supprimée dans un autre onglet, rien
+   * n'est écrit et l'appelant le dit).
    */
   updateEntry(id: string, updatedData: Partial<PctacLogEntry>): boolean {
     const logData = Storage.loadLogData();
     const index = logData.findIndex((e) => e.id === id);
-    if (index === -1) return true;
+    if (index === -1) return false;
     const entry = logData[index];
-    if (!entry) return true;
+    if (!entry) return false;
     logData[index] = { ...entry, ...updatedData };
     return Storage.saveLogData(logData);
   },

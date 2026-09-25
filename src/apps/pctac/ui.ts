@@ -67,6 +67,8 @@ import { PDF_PAX_COLORS, FREE_MODE_COLORS, LONG_PRESS_DELAY, PHOTO_CATEGORIES, h
 import { Storage } from '@pctac/storage.js';
 import { ImageStore } from '@pctac/image-store.js';
 import { LogManager } from '@pctac/log-manager.js';
+import { choiceDialog } from '@pctac/choice-dialog.js';
+import { diffOpenFiche } from '@pctac/fiche-conflict.js';
 import { esc } from '@shared/ui-platform.js';
 import { confirmDialog, promptDialog, toast } from '@shared/feedback.js';
 import { currentMode, currentModeId } from '@pctac/modes.js';
@@ -399,6 +401,9 @@ function bindPaxArrowKeys(container: HTMLElement): void {
 /**
  * Gestionnaire de l'interface utilisateur PC TAC
  */
+/** A5 — entrée de main courante telle qu'à l'ouverture de « Modifier l'entrée » : base du diff. */
+let editBase: PctacLogEntry | null = null;
+
 export const UI: UIContract = {
   // Éléments du DOM (mis à jour à l'initialisation)
   elements: {},
@@ -728,6 +733,7 @@ export const UI: UIContract = {
     const logData = Storage.loadLogData();
     const entry = logData.find((e) => e.id === id);
     if (!entry) return;
+    editBase = { ...entry };
     (document.getElementById('edit_id') as HTMLInputElement).value = id;
     // Décision 30 — la date est modifiable, préremplie avec celle de l'entrée.
     (document.getElementById('edit_date') as HTMLInputElement).value = entry.date || '';
@@ -738,7 +744,7 @@ export const UI: UIContract = {
   },
 
   // ui.js:298-311
-  confirmEditLog(): void {
+  async confirmEditLog(): Promise<void> {
     const id = (document.getElementById('edit_id') as HTMLInputElement).value;
     if (!id) return;
     const heure = (document.getElementById('edit_heure') as HTMLInputElement).value;
@@ -749,18 +755,45 @@ export const UI: UIContract = {
     // Décision 30 — changer l'heure seule garde la date : on ne l'écrit que si
     // elle est renseignée (une entrée legacy sans date reste sans date).
     const date = (document.getElementById('edit_date') as HTMLInputElement).value;
-    const updated: Partial<PctacLogEntry> = {
+    const mine: Record<string, unknown> = {
       heure,
       lieu: (document.getElementById('edit_lieu') as HTMLInputElement).value.trim(),
       remarques: (document.getElementById('edit_remarques') as HTMLTextAreaElement).value.trim(),
       ...(date ? { date } : {}),
     };
+    // A5 (revue du 25/09, décision 29 appliquée au journal) — l'entrée a pu
+    // changer ou disparaître dans un autre onglet pendant que la fenêtre était
+    // ouverte : seuls les champs modifiés ICI sont écrits ; un même champ
+    // modifié des deux côtés se tranche ; une entrée supprimée ne se recrée pas.
+    const fresh = Storage.loadLogData().find((e) => e.id === id);
+    if (!fresh) {
+      toast('Entrée supprimée dans un autre onglet : modification NON enregistrée.', { kind: 'error' });
+      return;
+    }
+    const base: Record<string, unknown> = editBase && editBase.id === id ? editBase : fresh;
+    const norm = (v: unknown): string => String(v ?? '');
+    const updated: Record<string, unknown> = {};
+    for (const key of Object.keys(mine)) if (norm(mine[key]) !== norm(base[key])) updated[key] = mine[key];
+    const diff = diffOpenFiche(base, { ...mine, ...(date ? {} : { date: base.date }) }, fresh);
+    const labels: Record<string, string> = { heure: 'Heure', lieu: 'Lieu', remarques: 'Remarques', date: 'Date' };
+    for (const c of diff.conflicts) {
+      const choice = await choiceDialog({
+        title: 'Champ modifié dans un autre onglet',
+        message: `Champ « ${labels[c.key] ?? c.key} » : votre valeur « ${norm(c.mine)} » / autre onglet « ${norm(c.theirs)} ».`,
+        options: [
+          { value: 'mine', label: 'Garder la mienne' },
+          { value: 'theirs', label: "Prendre l'autre" },
+        ],
+      });
+      // « Prendre l'autre » : rien à écrire, la version distante est déjà en place.
+      if (choice === 'theirs') delete updated[c.key];
+    }
     // R22 — stockage plein : ne pas fermer la modale ni annoncer un succès.
-    if (!LogManager.updateEntry(id, updated)) {
+    if (Object.keys(updated).length && !LogManager.updateEntry(id, updated as Partial<PctacLogEntry>)) {
       toast('Stockage plein : modification NON enregistrée.', { kind: 'error' });
       return;
     }
-    if (updated.lieu) LogManager.addLieuToHistory(updated.lieu);
+    if (typeof updated.lieu === 'string' && updated.lieu) LogManager.addLieuToHistory(updated.lieu);
     this.renderLogTable(Storage.loadLogData());
     this.refreshLieuSuggestions();
     this.hideEditModal();
