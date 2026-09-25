@@ -151,3 +151,54 @@ describe('search — fetchWithTimeout', () => {
         expect(fetchImpl).toHaveBeenCalledWith('http://a');
     });
 });
+
+describe('Revue du 25/09 — BAN sous le seuil de score (B4)', () => {
+    const weakBan = (): unknown => ({
+        type: 'FeatureCollection',
+        features: [{ properties: { label: 'Rue Gaston Cornavin 18100 Vierzon', score: 0.4 }, geometry: { coordinates: [2.07, 47.22] } }],
+    });
+
+    it('score faible → Nominatim consulté, ses résultats rendus en premier, les BAN faibles derrière et marqués', async () => {
+        const calls: string[] = [];
+        const fetchImpl: FetchLike = (url) => {
+            calls.push(url);
+            if (url.includes('data.geopf.fr')) return Promise.resolve(jsonResponse(weakBan()));
+            return Promise.resolve(jsonResponse([{ display_name: 'Gare Cornavin, Genève', lon: '6.142', lat: '46.210' }]));
+        };
+        const hits = await geocodeAddress('Genève gare Cornavin', fetchImpl, 0);
+        expect(calls).toHaveLength(2);
+        expect(hits[0]).toMatchObject({ label: 'Gare Cornavin, Genève', source: 'nominatim' });
+        expect(hits[1]).toMatchObject({ source: 'ban', weak: true });
+        expect(hits.some((h) => h.weak)).toBe(true);
+    });
+
+    it('score faible et Nominatim vide → résultats BAN rendus, marqués faibles', async () => {
+        const fetchImpl: FetchLike = (url) => {
+            if (url.includes('data.geopf.fr')) return Promise.resolve(jsonResponse(weakBan()));
+            return Promise.resolve(jsonResponse([]));
+        };
+        const hits = await geocodeAddress('Genève gare Cornavin', fetchImpl, 0);
+        expect(hits).toHaveLength(1);
+        expect(hits[0]).toMatchObject({ source: 'ban', weak: true });
+    });
+
+    it('score faible et Nominatim en erreur → résultats BAN rendus plutôt qu’une erreur', async () => {
+        const fetchImpl: FetchLike = (url) => {
+            if (url.includes('data.geopf.fr')) return Promise.resolve(jsonResponse(weakBan()));
+            return Promise.reject(new Error('offline'));
+        };
+        const hits = await geocodeAddress('Genève gare Cornavin', fetchImpl, 0);
+        expect(hits[0]).toMatchObject({ source: 'ban', weak: true });
+    });
+
+    it('score fort → Nominatim jamais consulté, aucun marquage', async () => {
+        const calls: string[] = [];
+        const fetchImpl: FetchLike = (url) => {
+            calls.push(url);
+            return Promise.resolve(jsonResponse({ type: 'FeatureCollection', features: [{ properties: { label: 'Paris', score: 0.9 }, geometry: { coordinates: [2.35, 48.85] } }] }));
+        };
+        const hits = await geocodeAddress('Paris', fetchImpl, 0);
+        expect(calls).toHaveLength(1);
+        expect(hits[0]?.weak).toBeUndefined();
+    });
+});

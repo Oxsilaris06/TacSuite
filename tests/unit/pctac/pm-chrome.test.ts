@@ -510,3 +510,27 @@ describe('_placeSearchMarker — construit un vrai maplibregl.Marker sans jeter 
         expect(instance.searchMarker).not.toBeNull();
     });
 });
+
+describe('Revue du 25/09 — résultat approximatif (B4)', () => {
+    it('BAN faible et Nominatim vide : liste affichée, aucun vol ni marqueur automatique', async () => {
+        document.body.innerHTML = '<input id="plan_address_input" type="text" /><div id="plan_search_results"></div>';
+        const map = fakeMarkerMap();
+        const { instance, spies } = createFakePlanMap({ map });
+        const json = (body: unknown): Response => ({ ok: true, status: 200, json: () => Promise.resolve(body) } as unknown as Response);
+        vi.stubGlobal('fetch', (url: string | URL | Request) => {
+            const u = String(url);
+            if (u.includes('data.geopf.fr')) {
+                return Promise.resolve(json({ type: 'FeatureCollection', features: [{ properties: { label: 'Rue Gaston Cornavin 18100 Vierzon', score: 0.4 }, geometry: { coordinates: [2.07, 47.22] } }] }));
+            }
+            return Promise.resolve(json([]));
+        });
+        (document.getElementById('plan_address_input') as HTMLInputElement).value = 'Genève gare Cornavin';
+        await instance._searchAddress();
+        expect(map.flyTo).not.toHaveBeenCalled();
+        expect(spies.placeSearchMarker).not.toHaveBeenCalled();
+        const box = document.getElementById('plan_search_results')!;
+        expect(box.textContent).toContain('Vierzon');
+        expect(box.textContent).toContain('approximatif');
+        expect(box.textContent).toContain('Aucune correspondance sûre');
+    });
+});
