@@ -24,6 +24,7 @@ import { buildOiDocDefinition, oiPdfFileName } from './document-builder.js';
 import { OiPdfFitRefusalError, PDF_H2_BLOCK_PT, pageGeometry } from './theme.js';
 import { PDF_FONT_VFS, PDF_FONTS } from './fonts.js';
 import { currentOiPdfOptions } from './options.js';
+import { acquirePdfLock, releasePdfLock } from './generation-lock.js';
 import { toast } from '@shared/feedback.js';
 import { PDF_IMAGE_PROFILES, formatBytes, type PdfSortie } from '@shared/pdf-options.js';
 import type { OiPdfFormat } from './theme.js';
@@ -467,6 +468,9 @@ export async function buildOiPdfBlob(
 export async function downloadOiPdfV3(deps?: {
     collect?: () => Promise<OiPdfCollectedData>;
 }): Promise<void> {
+    // Verrou pris AVANT toute attente : un double clic ne lance qu'une génération.
+    const lockToken = acquirePdfLock('telechargement');
+    if (lockToken === null) return;
     console.group('🚀 [PDF ENGINE V3] - Démarrage de la génération');
     const startTime = Date.now();
 
@@ -554,5 +558,6 @@ export async function downloadOiPdfV3(deps?: {
     } finally {
         if (loader) loader.style.display = 'none';
         console.groupEnd();
+        releasePdfLock(lockToken);
     }
 }

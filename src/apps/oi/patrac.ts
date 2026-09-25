@@ -132,6 +132,7 @@
 import { wireDraggableMember, wireDropContainer } from '@oi/drag-drop.js';
 import { memberConfig, multiSelectAttributes, quickEditMapping } from '@oi/init.js';
 import { oiState } from '@oi/state.js';
+import { acquirePdfLock, releasePdfLock } from '@oi/pdf/generation-lock.js';
 import { confirmDialog, promptDialog, toast } from '@shared/feedback.js';
 import type { OiFormData, OiMemberConfig, OiPatracMember } from '@shared/types/contracts.js';
 import * as PDFLib from 'pdf-lib';
@@ -1400,6 +1401,9 @@ async function generatePatracdvrPdf(): Promise<void> {
         toast('Bibliothèque PDF indisponible (réseau ?).', { kind: 'error' });
         return;
     }
+    // Une génération à la fois (double clic, audit F23).
+    const lockToken = acquirePdfLock('patrac');
+    if (lockToken === null) return;
     try {
         // Collecte depuis le DOM (mêmes classes que patracdvr.html).
         const rowsData: { vehicle: string; members: Record<string, string | undefined>[] }[] = [];
@@ -1519,6 +1523,8 @@ async function generatePatracdvrPdf(): Promise<void> {
         // même précédent que `@pctac/main.ts:582,614`.
         const message = e instanceof Error ? e.message : String(e);
         toast('Erreur de génération PDF : ' + message, { kind: 'error' });
+    } finally {
+        releasePdfLock(lockToken);
     }
 }
 window.generatePatracdvrPdf = generatePatracdvrPdf;

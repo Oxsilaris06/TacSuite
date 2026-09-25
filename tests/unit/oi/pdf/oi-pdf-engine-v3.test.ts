@@ -665,6 +665,32 @@ describe('downloadOiPdfV3', () => {
         expect(loaderKo.style.display).toBe('none');
     });
 
+    it('double clic sur « Télécharger » : une seule génération, un seul fichier (verrou, audit F23)', async () => {
+        const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+        const { downloadOiPdfV3 } = await loadEngineV3();
+        const collect = vi.fn(() => Promise.resolve(makeCollectedData()));
+
+        await Promise.all([downloadOiPdfV3({ collect }), downloadOiPdfV3({ collect })]);
+
+        expect(collect).toHaveBeenCalledTimes(1);
+        expect(createPdfMock).toHaveBeenCalledTimes(1);
+        expect(clickSpy).toHaveBeenCalledTimes(1);
+        expect(toastSpy).toHaveBeenCalledWith(expect.stringContaining('déjà en cours'), expect.anything());
+
+        // Verrou rendu à la fin : un nouveau clic, plus tard, génère bien.
+        await downloadOiPdfV3({ collect });
+        expect(clickSpy).toHaveBeenCalledTimes(2);
+    });
+
+    it('verrou rendu aussi après un échec', async () => {
+        vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+        const { downloadOiPdfV3 } = await loadEngineV3();
+        await downloadOiPdfV3({ collect: () => Promise.reject(new Error('collecte impossible')) });
+        const collect = vi.fn(() => Promise.resolve(makeCollectedData()));
+        await downloadOiPdfV3({ collect });
+        expect(collect).toHaveBeenCalledTimes(1);
+    });
+
     it('annonce le poids du PDF produit (décision 42)', async () => {
         vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
         const { downloadOiPdfV3 } = await loadEngineV3();

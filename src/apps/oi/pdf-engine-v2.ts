@@ -47,6 +47,7 @@ import { attachEditableTextLayer, createEditMatchState, type EditMatchStats } fr
 import { toast } from '@shared/feedback.js';
 import { formatBytes, type PdfSortie } from '@shared/pdf-options.js';
 import { currentOiPdfOptions } from '@oi/pdf/options.js';
+import { acquirePdfLock, releasePdfLock } from '@oi/pdf/generation-lock.js';
 
 // Mission « robustesse alignement » (édition en place, cf. JSDoc `pdf-preview-
 // edit.ts`) — hook de mesure, JAMAIS lu par le code applicatif : posé après
@@ -352,6 +353,11 @@ function ensurePreviewCloseCleanup(modal: HTMLDialogElement): void {
 async function runOpenPreview(deps?: OiPdfBuildDeps): Promise<void> {
     const presentationContent = document.getElementById('presentation-content');
     if (!presentationContent) return;
+    // Une génération à la fois : un aperçu remplace un aperçu en cours, mais
+    // attend la fin d'un téléchargement, d'une présentation ou d'un PATRAC
+    // (verrou rendu dès le PDF construit, cf. plus bas).
+    const lockToken = acquirePdfLock('apercu');
+    if (lockToken === null) return;
 
     const modal = document.getElementById('presentationModal') as HTMLDialogElement | null;
     if (modal) ensurePreviewCloseCleanup(modal);
@@ -416,6 +422,10 @@ async function runOpenPreview(deps?: OiPdfBuildDeps): Promise<void> {
         const buildBlob = deps?.buildBlob ?? defaultBuildBlob;
         const blob = await buildBlob(data, { format, sortie: currentOiPdfOptions().sortie });
         builtBlob = blob;
+        // Le verrou couvre la construction (photos, pdfmake : le pic mémoire),
+        // pas l'affichage pdf.js : un lecteur bloqué ne doit jamais empêcher
+        // un téléchargement.
+        releasePdfLock(lockToken);
 
         if (isCancelled()) return;
         // Décision 42 : poids annoncé sous les choix de sortie.
@@ -507,6 +517,7 @@ async function runOpenPreview(deps?: OiPdfBuildDeps): Promise<void> {
         }
     } finally {
         if (!isCancelled() && loader) loader.style.display = 'none';
+        releasePdfLock(lockToken);
     }
 }
 
@@ -547,6 +558,8 @@ export const PDFEngineV2 = {
      * l'utilisateur avec un simple toast d'erreur.
      */
     async openPresentInPlace(deps?: OiPdfBuildDeps): Promise<void> {
+        const lockToken = acquirePdfLock('presentation');
+        if (lockToken === null) return;
         const loader = document.getElementById('pdfLoadingModal');
         const statusText = document.getElementById('pdfLoadingStatus');
         const updateStatus = (msg: string): void => {
@@ -571,6 +584,8 @@ export const PDFEngineV2 = {
             if (!win) {
                 URL.revokeObjectURL(url);
                 toast("La fenêtre de présentation a été bloquée par le navigateur (pop-up). Affichage dans l'aperçu intégré à la place.", { kind: 'error' });
+                // Le PDF est construit : l'aperçu de repli prend son propre verrou.
+                releasePdfLock(lockToken);
                 // Repli : même blob déjà construit, aucune recollecte/reconstruction.
                 // `exactOptionalPropertyTypes` : `renderPdf` omise plutôt que
                 // valant `undefined` si `deps` n'en fournit pas (couture de test).
@@ -594,6 +609,7 @@ export const PDFEngineV2 = {
             toast("Erreur lors de l'ouverture de la présentation.", { kind: 'error' });
         } finally {
             if (loader) loader.style.display = 'none';
+            releasePdfLock(lockToken);
         }
     },
 

@@ -464,4 +464,16 @@ describe('generatePatracdvrPdf — fumée (pdf-lib réel sous jsdom, même préc
         expect(URL.createObjectURL).toHaveBeenCalledTimes(1);
         expect(toastSpy).toHaveBeenCalledWith('PDF PATRACDVR généré', { kind: 'success' });
     });
+
+    it('double clic : un seul PDF PATRACDVR (verrou de génération, audit F23)', async () => {
+        setupDom();
+        await import('@oi/patrac.js');
+        window.syncDomToStore = vi.fn();
+        window.addPatracdvrRow('KODIAQ', [{ trigramme: 'AAA', cellule: 'India 1', fonction: 'Inter' }]);
+
+        await Promise.all([window.generatePatracdvrPdf(), window.generatePatracdvrPdf()]);
+
+        expect(URL.createObjectURL).toHaveBeenCalledTimes(1);
+        expect(toastSpy).toHaveBeenCalledWith(expect.stringContaining('déjà en cours'), expect.anything());
+    });
 });
