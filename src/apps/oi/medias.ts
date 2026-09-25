@@ -155,6 +155,10 @@ export async function handleFileChange(
         previewContainer.appendChild(progressEl);
         const total = files.length;
         let added = 0;
+        // Fichiers que le navigateur ne sait pas décoder, même convertis
+        // (HEIC) : refusés et nommés, jamais stockés (audit F10).
+        const refused: string[] = [];
+        let heicRefused = false;
         for (const file of Array.from(files)) {
             progressEl.textContent = `Import de la photo ${added + 1}/${total}…`;
             // Capture de carte (`carto/capture.ts`, fichier `carte_…`) : clé
@@ -173,6 +177,11 @@ export async function handleFileChange(
                         type: file.type === 'image/png' ? 'image/png' : 'image/jpeg'
                     });
                 } catch (compressErr) {
+                    if (compressErr instanceof Error && compressErr.name === 'ImageDecodeError') {
+                        refused.push(file.name);
+                        heicRefused ||= /HEIC/.test(compressErr.message);
+                        continue;
+                    }
                     console.warn("Compression échouée, stockage de l'original:", compressErr);
                     blobToStore = file;
                 }
@@ -229,6 +238,12 @@ export async function handleFileChange(
         previewContainer.removeAttribute('aria-busy');
         input.disabled = false;
         if (added > 0) toast(`${added} photo${added > 1 ? 's' : ''} ajoutée${added > 1 ? 's' : ''}`, { kind: 'success' });
+        if (refused.length) {
+            const why = heicRefused
+                ? 'Photo HEIC non convertible (hors ligne ?) ou image illisible.'
+                : 'Image illisible ou format non pris en charge.';
+            toast(`${refused.length > 1 ? `${refused.length} photos refusées` : 'Photo refusée'} : ${refused.join(', ')}. ${why}`, { kind: 'error', duration: 10000 });
+        }
     }
     syncAllThumbnails();
     if (input) input.value = '';
