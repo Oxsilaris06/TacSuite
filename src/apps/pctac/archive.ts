@@ -45,7 +45,7 @@ import { Utils } from '@pctac/utils.js';
 import {
     LOCAL_STORAGE_KEY, TP_ASSOC_KEY,
     ADVERSARIES_KEY, HOSTAGES_KEY, FRIENDS_KEY, PHOTOS_KEY, CUSTOM_PAX_KEY,
-    FREE_MODE_COLORS,
+    FREE_MODE_COLORS, safeHexColor,
 } from '@pctac/config.js';
 
 // Clé localStorage de l'Ordre Initial (générateur 4.html). L'archive .oi.zip
@@ -199,6 +199,37 @@ export function findUnsafeId(dataJson: Record<string, unknown>): string | null {
         }
     }
     return null;
+}
+
+/**
+ * A1 — frontière d'import : `paxColor` des entrées de main courante et `color`
+ * des intervenants personnalisés sont normalisés (`#rrggbb`, sinon couleur par
+ * défaut). Le rendu pose déjà la couleur par l'API DOM ; ici, on évite qu'une
+ * valeur forgée vive dans le stockage et reparte dans un export. Les valeurs
+ * qui ne sont pas un tableau JSON sont laissées à la liste blanche.
+ */
+export function sanitizeImportColors(dataJson: Record<string, string>): Record<string, string> {
+    const fallback = FREE_MODE_COLORS[0]?.hex ?? '';
+    const fix = (key: string, field: string): void => {
+        const raw = dataJson[key];
+        if (typeof raw !== 'string') return;
+        let list: unknown;
+        try { list = JSON.parse(raw); } catch { return; }
+        if (!Array.isArray(list)) return;
+        let changed = false;
+        for (const item of list) {
+            if (!item || typeof item !== 'object') continue;
+            const rec = item as Record<string, unknown>;
+            const value = rec[field];
+            if (value === undefined || value === '') continue;
+            const safe = safeHexColor(value, fallback);
+            if (safe !== value) { rec[field] = safe; changed = true; }
+        }
+        if (changed) dataJson[key] = JSON.stringify(list);
+    };
+    fix(LOCAL_STORAGE_KEY, 'paxColor');
+    fix(CUSTOM_PAX_KEY, 'color');
+    return dataJson;
 }
 
 const COLLECTION_KEYS = [
@@ -730,7 +761,9 @@ export const Archive: ArchiveContract = {
         // Liste blanche (décision 32) : seules les clés qu'un export produit
         // sont écrites ; le reste est ignoré et compté. Une clé commune n'est
         // JAMAIS écrite par un import.
-        const { allowed: dataJson, unknownKeys } = filterImportKeys(rawData);
+        const { allowed, unknownKeys } = filterImportKeys(rawData);
+        // A1 — les couleurs d'intervenant sont normalisées avant toute écriture.
+        const dataJson = sanitizeImportColors(allowed);
 
         // Frontière de confiance : un id hors format refuse l'archive entière,
         // AVANT tout effacement (rien n'est modifié).
@@ -998,6 +1031,8 @@ export const Archive: ArchiveContract = {
             : null;
         if (o && o.metadata && o.metadata.appName === 'PC Tac Log' && Array.isArray(o.logEntries)) {
             const logEntries = o.logEntries as PctacLogEntry[]; // structure best-effort, comme l'original
+            const fallback = FREE_MODE_COLORS[0]?.hex ?? '';
+            logEntries.forEach((e) => { if (e && e.paxColor) e.paxColor = safeHexColor(e.paxColor, fallback); }); // A1
             const key = scopedKey(LOCAL_STORAGE_KEY, 'forcene');
             const current: PctacLogEntry[] = readCollectionList(localStorage.getItem(key)) as unknown as PctacLogEntry[];
             const ids = new Set(current.map((l) => l.id));

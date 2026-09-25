@@ -33,7 +33,7 @@ import fontkit from '@pdf-lib/fontkit';
 import { PDF_FONT_VFS } from '@oi/pdf/fonts.js';
 import { Storage } from '@pctac/storage.js';
 import { ImageStore } from '@pctac/image-store.js';
-import { PDF_PAX_COLORS, PHOTO_CATEGORIES, FREE_MODE_COLORS } from '@pctac/config.js';
+import { PDF_PAX_COLORS, PHOTO_CATEGORIES, FREE_MODE_COLORS, safeHexColor } from '@pctac/config.js';
 import { currentMode, currentModeId } from '@pctac/modes.js';
 import { TYPE_MENACE_KEY, ficheCounters, ficheTitle, filledSections, sortFichesByPriority, statusChoices, statusMeta, type FicheSide } from '@pctac/fiche.js';
 import { showBusy, hideBusy } from '@pctac/busy.js';
@@ -459,7 +459,7 @@ export const PdfExport: PdfExportContract = {
                     const cfg = PDF_PAX_COLORS[entry.pax] ?? PDF_PAX_COLORS['Autre'];
                     if (cfg) hexColor = cfg.color;
                 } else {
-                    hexColor = entry.paxColor || '#888888';
+                    hexColor = safeHexColor(entry.paxColor, '#888888'); // A1
                 }
                 const r = parseInt(hexColor.slice(1,3), 16);
                 const g = parseInt(hexColor.slice(3,5), 16);

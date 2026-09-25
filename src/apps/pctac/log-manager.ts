@@ -26,7 +26,7 @@ import { Storage } from '@pctac/storage.js';
 import { Persist } from '@shared/persist.js';
 import { scopedKey } from '@pctac/modes.js';
 import { toast } from '@shared/feedback.js';
-import { FREE_MODE_COLORS, PDF_PAX_COLORS } from '@pctac/config.js';
+import { FREE_MODE_COLORS, PDF_PAX_COLORS, safeHexColor } from '@pctac/config.js';
 
 /**
  * Date d'opération (ISO `YYYY-MM-DD`, heure LOCALE) déduite de l'heure saisie
@@ -87,7 +87,8 @@ export const LogManager: LogManagerContract = {
       // mode === 'free'
       // logManager.js:29 — repli : pax || freePax.trim() || 'Pax Libre'
       paxName = pax || (freePax || '').trim() || 'Pax Libre';
-      paxColorHex = paxColor;
+      // A1 — frontière de saisie : couleur #rrggbb ou couleur par défaut.
+      paxColorHex = safeHexColor(paxColor, FREE_MODE_COLORS[0]?.hex ?? '');
       if (!paxName) {
         toast('Veuillez donner un nom à l\'intervenant.', { kind: 'error' });
         return null;

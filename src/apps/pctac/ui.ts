@@ -63,7 +63,7 @@
  */
 
 import type { PctacLogEntry, PctacPhotoCategory, UIContract } from '@shared/types/contracts.js';
-import { PDF_PAX_COLORS, FREE_MODE_COLORS, LONG_PRESS_DELAY, PHOTO_CATEGORIES, hostageStatusFromBlessures } from '@pctac/config.js';
+import { PDF_PAX_COLORS, FREE_MODE_COLORS, LONG_PRESS_DELAY, PHOTO_CATEGORIES, hostageStatusFromBlessures, safeHexColor } from '@pctac/config.js';
 import { Storage } from '@pctac/storage.js';
 import { ImageStore } from '@pctac/image-store.js';
 import { LogManager } from '@pctac/log-manager.js';
@@ -684,7 +684,9 @@ export const UI: UIContract = {
           : paxInfo.text;
         paxFontColor = paxInfo.fontColor;
       } else {
-        paxColor = entry.paxColor || (FREE_MODE_COLORS[0] ? FREE_MODE_COLORS[0].hex : '');
+        // A1 — couleur validée : une valeur forgée (archive, ancien export)
+        // retombe sur la couleur par défaut.
+        paxColor = safeHexColor(entry.paxColor, FREE_MODE_COLORS[0]?.hex ?? '');
         paxText = entry.pax;
         paxFontColor = this.getContrastYIQ(paxColor);
       }
@@ -709,10 +711,13 @@ export const UI: UIContract = {
                         </button>
                     </div>
                 </td>
-                <td style="width: 15%;"><span class="pax-cell" style="background-color: ${paxColor}; color: ${paxFontColor};">${esc(paxText)}</span></td>
+                <td style="width: 15%;"><span class="pax-cell">${esc(paxText)}</span></td>
                 <td style="width: 35%;">${esc(entry.lieu)}</td>
                 <td style="width: 35%;">${esc(entry.remarques)}</td>
             `;
+      // A1 — couleur posée par l'API DOM, jamais dans le HTML.
+      const paxCell = row.querySelector<HTMLElement>('.pax-cell');
+      if (paxCell) { paxCell.style.backgroundColor = paxColor; paxCell.style.color = paxFontColor; }
     });
     // U4 — drag&drop du journal SUPPRIMÉ : le tri chronologique de
     // Storage.saveLogData est la source de vérité de l'ordre.
@@ -882,7 +887,7 @@ export const UI: UIContract = {
     const addBtn = document.getElementById('openCreatePaxBtn');
     customPaxList.forEach((pax) => {
       const paxName = (pax.name as string | undefined) || '';
-      const paxColor = (pax.color as string | undefined) || '';
+      const paxColor = safeHexColor(pax.color, ''); // A1 — validée avant tout style
       // C9 — la pastille personnalisée est un bouton radio (utilisable au
       // clavier), mêmes classe et `dataset.pax` que les options statiques.
       const option = document.createElement('button');

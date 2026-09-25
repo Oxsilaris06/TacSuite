@@ -62,6 +62,19 @@ export const FREE_MODE_COLORS: PctacNamedColor[] = [
     { hex: '#ffffff', name: 'Blanc' },
 ];
 
+/**
+ * A1 (revue du 25/09) — une couleur d'intervenant ne doit jamais atteindre un
+ * attribut HTML telle quelle : n'accepte que `#rgb` ou `#rrggbb`, rendus en
+ * minuscules sur 6 chiffres ; tout le reste vaut `fallback`.
+ */
+export function safeHexColor(value: unknown, fallback: string): string {
+    if (typeof value !== 'string') return fallback;
+    const s = value.trim().toLowerCase();
+    if (/^#[0-9a-f]{6}$/.test(s)) return s;
+    if (/^#[0-9a-f]{3}$/.test(s)) return `#${s[1]}${s[1]}${s[2]}${s[2]}${s[3]}${s[3]}`;
+    return fallback;
+}
+
 // Couleurs statiques pour le PDF et l'affichage (Mode Standard)
 export const PDF_PAX_COLORS: Record<string, PctacPaxColorEntry> = {
     Adversaire: { text: 'Adversaire', color: '#be1b09', fontColor: '#ffffff' },
