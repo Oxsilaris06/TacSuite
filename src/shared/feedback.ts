@@ -804,6 +804,20 @@ export function hideBanner(id: string): void {
  * ========================================================================= */
 
 /**
+ * Clic sur le FOND d'une fenêtre modale : la cible est le `<dialog>` lui-même,
+ * mais un toucher dans son remplissage aussi. Seul un point HORS de sa boîte
+ * est le fond (constat UI-1 du 25/09 : un toucher à côté d'un bouton annulait
+ * la fenêtre, et la saisie en cours). Sans mise en page (jsdom, boîte nulle),
+ * on ne peut pas trancher : fond.
+ */
+function isBackdropClick(dialog: HTMLElement, e: MouseEvent): boolean {
+  if (e.target !== dialog) return false;
+  const r = dialog.getBoundingClientRect();
+  if (r.width === 0 && r.height === 0) return true;
+  return e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom;
+}
+
+/**
  * Ouvre une boîte de confirmation modale (`<dialog>` natif) et résout une
  * fois l'utilisateur·rice statué·e. Remplace `confirm()` — MÊME contrat
  * `Promise<boolean>` (true = confirmé, false = annulé/Escape/clic hors
@@ -905,7 +919,7 @@ export function confirmDialog(options: ConfirmDialogOptions): Promise<ConfirmDia
     // Clic sur le fond (le `<dialog>` lui-même, jamais un enfant) = annulation
     // — même piège documenté dans `src/apps/pctac/ui.ts` (backdrop natif).
     dialog.addEventListener('click', (e) => {
-      if (e.target === dialog) requestClose(false);
+      if (isBackdropClick(dialog, e)) requestClose(false);
     });
     // Escape natif (`<dialog>` réel) : on intercepte 'cancel' pour piloter la
     // fermeture nous-même plutôt que de laisser la UA fermer sans passer par
@@ -1045,7 +1059,7 @@ export function promptDialog(options: PromptDialogOptions): Promise<string | nul
     okBtn.addEventListener('click', () => requestClose(input.value));
     cancelBtn.addEventListener('click', () => requestClose(null));
     dialog.addEventListener('click', (e) => {
-      if (e.target === dialog) requestClose(null);
+      if (isBackdropClick(dialog, e)) requestClose(null);
     });
     dialog.addEventListener('cancel', (e) => {
       e.preventDefault();

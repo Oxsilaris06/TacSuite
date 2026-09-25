@@ -146,4 +146,31 @@ describe('fenêtres de confirmation et de saisie', () => {
     void promptDialog({ message: 'Nouveau titre :' });
     expect(rule('.tac-confirm-input')).toMatch(/min-height:\s*44px/);
   });
+
+  function withBox(dialog: HTMLElement): void {
+    vi.spyOn(dialog, 'getBoundingClientRect').mockReturnValue({ top: 300, bottom: 500, left: 16, right: 374, width: 358, height: 200, x: 16, y: 300, toJSON: () => ({}) });
+  }
+
+  it('un toucher dans le remplissage de la fenêtre ne l’annule pas ; un toucher sur le fond, si', async () => {
+    // Constat Chromium 390 × 844 : un toucher 8 px sous le bord haut de la
+    // fenêtre (son remplissage, cible = le <dialog> comme pour le fond)
+    // l'annulait.
+    const p = confirmDialog({ message: 'Supprimer cette entrée du journal ?', danger: true });
+    const dialog = document.querySelector<HTMLElement>('.tac-confirm-dialog')!;
+    withBox(dialog);
+    dialog.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: 190, clientY: 308 }));
+    expect(document.querySelector('.tac-confirm-dialog')).not.toBeNull();
+    dialog.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: 190, clientY: 700 }));
+    await expect(p).resolves.toBe(false);
+  });
+
+  it('même règle pour la saisie : le texte tapé n’est pas perdu sur un toucher à côté du champ', async () => {
+    const p = promptDialog({ message: 'Nouveau titre :', initial: 'Façade nord' });
+    const dialog = document.querySelector<HTMLElement>('.tac-confirm-dialog')!;
+    withBox(dialog);
+    dialog.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: 30, clientY: 400 }));
+    expect(document.querySelector('.tac-confirm-dialog')).not.toBeNull();
+    dialog.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: 5, clientY: 5 }));
+    await expect(p).resolves.toBeNull();
+  });
 });
