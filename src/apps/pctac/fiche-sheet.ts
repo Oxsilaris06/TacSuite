@@ -699,6 +699,9 @@ async function onChange(e: Event): Promise<void> {
     const owner = state;
     const job = (async (): Promise<void> => {
         try {
+            // Position GPS de l'original (décision 34) : question INDÉPENDANTE
+            // de l'enregistrement, jamais bloquante pour la compression.
+            void Utils.promptGpsPoint(file, ficheTitle(owner.side, currentModeId(), owner.item));
             const data = await Utils.compressImage(file, 800, 800, 0.7);
             if (state !== owner) return;
             owner.photo = data;
