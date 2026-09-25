@@ -338,7 +338,11 @@ describe('importOiArchive — passerelle OI → PC-Tac (archive.js:279-456)', ()
 
     expect(result.ok).toBe(true);
     expect(result.advAdded).toBe(1); // seul "Martin" est ajouté
-    expect(result.advSkipped).toBe(2); // Dupont (déjà présent) + Martin (doublon intra-batch)
+    // K2/C14 : une fusion n'est PAS un doublon ignoré. Les deux « Dupont » et
+    // « Martin » intra-batch sont FUSIONNÉS (le mock confirme « Fusionner ») ;
+    // plus aucun adversaire n'est compté ignoré.
+    expect(result.advMerged).toBe(2); // Dupont (déjà présent) + Martin intra-batch
+    expect(result.advSkipped).toBe(0);
     expect(result.paxAdded).toBe(1); // ABC
     expect(result.paxSkipped).toBe(2); // N/A + abc (doublon de ABC)
 

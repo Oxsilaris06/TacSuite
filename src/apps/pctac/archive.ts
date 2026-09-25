@@ -39,8 +39,8 @@ import {
 import { GPX_INDEX_KEY, GRID_KEY, OVERLAYS_KEY, PINS_KEY } from '@pctac/planmap/constants.js';
 import { isTacticalGridSpec } from '@shared/tactical-grid.js';
 import { PCTAC_MODES, SHARED_KEYS, currentModeId, persistModeId, scopedKey, type PctacModeId } from '@pctac/modes.js';
-import { findDuplicatePerson } from '@pctac/fiche.js';
-import { mergePersonIntoExisting } from '@pctac/fiche-merge.js';
+import { findDuplicatePerson, normalizeDob } from '@pctac/fiche.js';
+import { mergePersonIntoExisting, syncMergedGallery, type MergeGallerySide } from '@pctac/fiche-merge.js';
 import { Utils } from '@pctac/utils.js';
 import {
     LOCAL_STORAGE_KEY, TP_ASSOC_KEY,
@@ -232,6 +232,43 @@ const COLLECTION_KEYS = [
 /** Version de format d'archive écrite par `exportZip` (`manifest.version`). */
 export const ARCHIVE_VERSION = 1;
 
+/**
+ * K3 : nom RÉELLEMENT donné au dernier téléchargement d'archive réussi. Sert à
+ * la confirmation du RESET, qui nommait un fichier calculé avant l'export alors
+ * que le zip n'est écrit qu'après lecture des images et compression DEFLATE.
+ */
+let lastExportedName: string | null = null;
+
+/**
+ * R9 point 3 : fiche existante à OUVRIR une fois l'import terminé, quand
+ * l'opérateur a choisi « Ouvrir l'existante » dans le dialogue de doublon.
+ */
+let pendingOpenFiche: { side: MergeGallerySide; id: string } | null = null;
+
+function requestOpenFiche(side: MergeGallerySide, id: string): void {
+    pendingOpenFiche = { side, id };
+}
+
+/**
+ * Ouvre, une seule fois, la fiche demandée pendant l'import. Diffusé aussi en
+ * événement `pctac:open-fiche` pour tout observateur (UI, tests) ; l'import
+ * dynamique évite de lier `archive.ts` à l'écran des fiches au chargement.
+ */
+async function flushPendingOpenFiche(): Promise<void> {
+    const pending = pendingOpenFiche;
+    if (!pending) return;
+    pendingOpenFiche = null;
+    try {
+        document.dispatchEvent(new CustomEvent('pctac:open-fiche', { detail: pending }));
+    } catch { /* hors DOM : seul l'import ci-dessous compte */ }
+    try {
+        const mod = await import('@pctac/fiche-sheet.js');
+        await mod.openFiche(pending.side, pending.id);
+    } catch (e) {
+        console.warn('[Archive] ouverture de la fiche existante impossible:', e);
+    }
+}
+
 /** Clés qu'un import a le DROIT d'écrire : exactement celles que `exportZip` produit. */
 const IMPORT_WHITELIST: ReadonlySet<string> = new Set(COLLECTION_KEYS);
 
@@ -266,12 +303,17 @@ export function ficheDisplayName(item: Record<string, unknown>): string {
     return [prenom, nom].filter(Boolean).join(' ') || 'Sans nom';
 }
 
-/** Vrai si une fiche porte réellement des annotations (non vide). */
-function hasAnnotations(item: Record<string, unknown>): boolean {
-    const raw = item.annotations;
-    if (typeof raw !== 'string') return Array.isArray(raw) ? raw.length > 0 : false;
+/**
+ * Signature d'annotations, pour comparer ce que l'OI a FOURNI (champ
+ * `oiAnnotations` mémorisé) à ce que porte l'entrée (C2/R6). Une valeur vide,
+ * `[]`, `null` ou absente vaut « aucune annotation ».
+ */
+function annotationSignature(raw: unknown): string {
+    if (raw === undefined || raw === null) return '';
+    if (Array.isArray(raw)) return raw.length ? JSON.stringify(raw) : '';
+    if (typeof raw !== 'string') return '';
     const trimmed = raw.trim();
-    return trimmed !== '' && trimmed !== '[]' && trimmed !== 'null';
+    return trimmed === '' || trimmed === '[]' || trimmed === 'null' ? '' : trimmed;
 }
 
 /**
@@ -336,6 +378,10 @@ export async function resolveDuplicateFiches(
     for (const key of FICHE_KEYS) {
         const added = addedByKey[key] ?? [];
         if (!added.length) continue;
+        // Seules les fiches adversaire/protégée ont une copie galerie `_sync`.
+        const side: MergeGallerySide | null = key === ADVERSARIES_KEY ? 'adv'
+            : key === HOSTAGES_KEY ? 'host'
+            : null;
         let list = Storage.loadCollection(key, modeId);
         for (const incoming of added) {
             if (!incoming || typeof incoming.id !== 'string') continue;
@@ -343,20 +389,30 @@ export async function resolveDuplicateFiches(
             const existing = findDuplicatePerson(list, candidate);
             if (!existing) continue;
             const name = ficheDisplayName(incoming);
-            const merge = await confirmDialog({
+            const choice = await confirmDialog({
                 title: 'Fiche en double',
                 message:
                     `La fiche « ${name} » semble déjà exister. ` +
-                    "Fusionner les deux fiches (les champs vides de l'existante seront complétés), ou garder les deux ?",
+                    "Fusionner les deux fiches (les champs vides de l'existante seront complétés), garder les deux, ou ouvrir l'existante ?",
                 confirmLabel: 'Fusionner',
                 cancelLabel: 'Garder les deux',
+                extraLabel: "Ouvrir l'existante",
             });
-            if (!merge) continue;
+            // R9 point 3 : garder les deux fiches ET demander l'ouverture de
+            // l'existante une fois l'import fini.
+            if (choice === 'extra') {
+                if (side) requestOpenFiche(side, String(existing.id));
+                continue;
+            }
+            if (choice !== true) continue;
             const { merged } = await mergePersonIntoExisting(existing, candidate);
             list = list
                 .filter((it) => it.id !== candidate.id)
                 .map((it) => (it.id === existing.id ? merged : it));
             Storage.saveCollection(key, list, modeId);
+            // C4/C12 : la galerie suit la fusion (vignette morte retirée, photo
+            // reprise visible) — même fonction commune que l'import d'OI.
+            if (side) syncMergedGallery(side, candidate.id, merged, modeId);
             try { await ImageStore.deleteMany([candidate.id, candidate.id + '_sync', candidate.id + '_orig']); }
             catch { /* best-effort */ }
             mergedNames.push(name);
@@ -444,13 +500,13 @@ export function findOiDuplicatePerson(
 ): PctacCollectionItem | null {
     const full = _normName(fullName);
     if (!full) return null;
-    const dobN = _normName(dob);
+    const dobN = normalizeDob(dob);
     for (const item of items) {
         const n = _normName(item.nom);
         const p = _normName(item.prenom);
         const nameMatch = full === [n, p].filter(Boolean).join(' ')
             || full === [p, n].filter(Boolean).join(' ');
-        const dobMatch = !!dobN && _normName(item.dob) === dobN
+        const dobMatch = !!dobN && normalizeDob(item.dob) === dobN
             && ((n !== '' && full.includes(n)) || (p !== '' && full.includes(p)));
         if (nameMatch || dobMatch) return item;
     }
@@ -572,6 +628,9 @@ export const Archive: ArchiveContract = {
             a.href = URL.createObjectURL(blob);
             // Décision 32 : nom de fichier lisible, sans nom de personne.
             a.download = Utils.readableFileName(PCTAC_MODES[currentModeId()].label, new Date(), 'pctac.zip');
+            // K3 : mémoriser le nom RÉELLEMENT téléchargé (calculé ici, après la
+            // lecture des images et la compression), et non un nom anticipé.
+            lastExportedName = a.download;
             document.body.appendChild(a);
             a.click();
             document.body.removeChild(a);
@@ -582,6 +641,11 @@ export const Archive: ArchiveContract = {
             toast('Erreur d\'export : ' + (e instanceof Error ? e.message : String(e)), { kind: 'error' });
             return false;
         }
+    },
+
+    /** K3 : nom réellement téléchargé au dernier export réussi (ou `null`). */
+    lastExportFileName(): string | null {
+        return lastExportedName;
     },
 
     async importFile(file: File): Promise<ArchiveImportResult> {
@@ -763,7 +827,11 @@ export const Archive: ArchiveContract = {
                 if (entry.dir) return;
                 // archive.js:218 — l'import accepte .txt ET .bin (l'export n'écrit que .txt).
                 const id = relPath.replace(/\.txt$/, '').replace(/\.bin$/, '');
-                if (!scope.full && !acceptedBaseIds.has(baseImageId(id))) return;
+                // C1 : accepter l'image quand son id EXACT (ex. une entrée de
+                // galerie `a1_sync` importée seule) ou son id de base a été
+                // ajouté/remplacé. Ne regarder que l'id de base retirait le
+                // suffixe `_sync` et perdait la vignette des photos d'adversaire.
+                if (!scope.full && !acceptedBaseIds.has(id) && !acceptedBaseIds.has(baseImageId(id))) return;
                 tasks.push(
                     entry.async('string')
                         .then((dataUrl) => {
@@ -852,7 +920,15 @@ export const Archive: ArchiveContract = {
             }
         }
 
-        return { ok: true, replacedFiches, mergedFiches, unknownKeys };
+        // R9 point 3 : « Ouvrir l'existante » n'a de sens que si l'archive a
+        // atterri dans la situation AFFICHÉE (sinon on ouvrirait une fiche
+        // d'une autre situation, ou le rechargement ci-dessus a déjà eu lieu).
+        if (targetMode === currentModeId()) await flushPendingOpenFiche();
+
+        // K1 : `archive.ts` a parlé (avertissement d'échec partiel) — `main.ts`
+        // ne doit pas ajouter un succès générique qui le contredirait.
+        const warned = imgError !== null || gpxError !== null;
+        return { ok: true, replacedFiches, mergedFiches, unknownKeys, warned };
     },
 
     /**
@@ -1045,7 +1121,11 @@ export const Archive: ArchiveContract = {
         // --- 1) Adversaires → pcTacAdversaries (+ photo + galerie Photos) ---
         const advList = Storage.loadCollection(ADVERSARIES_KEY);
         const photoList = Storage.loadCollection(PHOTOS_KEY);
-        let advAdded = 0, advPhotos = 0, advSkipped = 0;
+        let advAdded = 0, advPhotos = 0, advMerged = 0;
+        let photoListDirty = false;
+        // C5/C12 : les fusions sont traitées APRÈS l'écriture de `photoList`, pour
+        // que la galerie lue par `syncMergedGallery` soit à jour.
+        const merges: Array<{ incomingId: string; merged: PctacCollectionItem }> = [];
         let seq = 0;
 
         for (const oa of adversaries) {
@@ -1094,7 +1174,6 @@ export const Archive: ArchiveContract = {
                     }
                     await ImageStore.put(itemId, shown);
                     item.hasImage = true;
-                    advPhotos++;
                     // Copie automatique vers la galerie Photos (catégorie « Adversaire »),
                     // exactement comme une saisie manuelle PC TAC (id + "_sync").
                     await ImageStore.put(itemId + '_sync', shown);
@@ -1108,33 +1187,42 @@ export const Archive: ArchiveContract = {
             // `nom + date de naissance`.
             const existing = findOiDuplicatePerson(advList, nom, (oa.date_naissance || '').toString());
             if (existing) {
-                const merge = await confirmDialog({
+                const choice = await confirmDialog({
                     title: 'Fiche en double',
                     message:
                         `La fiche « ${nom} » semble déjà exister. ` +
-                        "Fusionner les deux fiches (les champs vides de l'existante seront complétés), ou garder les deux ?",
+                        "Fusionner les deux fiches (les champs vides de l'existante seront complétés), garder les deux, ou ouvrir l'existante ?",
                     confirmLabel: 'Fusionner',
                     cancelLabel: 'Garder les deux',
+                    extraLabel: "Ouvrir l'existante",
                 });
-                if (merge) {
+                // R9 point 3 : garder les deux fiches et ouvrir l'existante.
+                if (choice === 'extra') requestOpenFiche('adv', String(existing.id));
+                if (choice === true) {
                     const { merged } = await mergePersonIntoExisting(existing, item);
                     const at = advList.findIndex((a) => a.id === existing.id);
                     if (at >= 0) advList[at] = merged;
+                    // K2 : une photo n'est comptée que réellement GARDÉE — pas de
+                    // fusion dans une existante qui avait déjà la sienne.
+                    if (photoStored && !existing.hasImage && merged.hasImage) advPhotos++;
+                    merges.push({ incomingId: itemId, merged });
                     try { await ImageStore.deleteMany([itemId, itemId + '_sync', itemId + '_orig']); }
                     catch { /* best-effort */ }
-                    advSkipped++;
+                    advMerged++;
                     continue;
                 }
             }
 
             if (photoStored) {
                 photoList.push({ id: itemId + '_sync', title: nom || 'Adversaire OI', category: 'neutralized', status: 'active', hasImage: true });
+                advPhotos++;
+                photoListDirty = true;
             }
             advList.push(item);
             advAdded++;
         }
-        if (advAdded || advSkipped) Storage.saveCollection(ADVERSARIES_KEY, advList);
-        if (advPhotos) Storage.saveCollection(PHOTOS_KEY, photoList);
+        if (advAdded || advMerged) Storage.saveCollection(ADVERSARIES_KEY, advList);
+        if (photoListDirty) Storage.saveCollection(PHOTOS_KEY, photoList);
 
         // --- 2) Équipe PATRACDVR → pcTacCustomPax (couleurs distinctes) ---
         const paxList = Storage.loadCollection(CUSTOM_PAX_KEY);
@@ -1180,7 +1268,7 @@ export const Archive: ArchiveContract = {
         // l'id OI de la photo : réimporter le même OI met à jour l'entrée au
         // lieu d'en ajouter une seconde.
         const photoById = new Map(photoList.map((p) => [p.id, p]));
-        let galleryAdded = 0, galleryUpdated = 0;
+        let galleryAdded = 0, galleryUpdated = 0, galleryPreserved = 0;
         for (const [key, entries] of Object.entries(dynPhotos)) {
             if (key.startsWith('photo_main_') || !Array.isArray(entries)) continue;
             for (const entry of entries) {
@@ -1192,19 +1280,27 @@ export const Archive: ArchiveContract = {
                 const pcId = stableOiPhotoId(imgId);
                 const existing = photoById.get(pcId);
                 const derivedTitle = oiPhotoTitle(key, entry);
-
-                // R6 : le travail fait dans PC-Tac sur une photo d'OI (annotation,
-                // légende renommée — décisions 25/26) est NON destructif. Un
-                // réimport du même OI ne doit ni effacer l'annotation et son
-                // original, ni écraser la légende. On laisse donc l'entrée
-                // intacte dès qu'elle porte une trace d'édition locale.
-                const localEdited = !!existing && (
-                    hasAnnotations(existing as Record<string, unknown>)
-                    || (typeof existing.title === 'string' && existing.title.trim() !== '' && existing.title !== derivedTitle)
-                );
-                if (localEdited) continue;
-
                 const annotations = parseAnnotations(entry.annotations);
+                const importedAnnotationSig = annotations.length ? JSON.stringify(annotations) : '';
+
+                // R6/C2 : le travail fait dans PC-Tac (annotation — décisions
+                // 25/26 — ou légende renommée) est NON destructif. On ne tient
+                // une entrée pour modifiée localement QUE si son titre diffère
+                // de ce que l'OI avait FOURNI (`oiTitle`) ou si ses annotations
+                // diffèrent de celles fournies par l'OI (`oiAnnotations`) : une
+                // annotation posée par l'OI n'est PAS une édition locale.
+                const oiTitleRef = existing && typeof existing.oiTitle === 'string' ? existing.oiTitle : derivedTitle;
+                const titleEdited = !!existing
+                    && typeof existing.title === 'string' && existing.title.trim() !== ''
+                    && existing.title !== oiTitleRef;
+                const annotationsEdited = !!existing
+                    && annotationSignature(existing.annotations) !== annotationSignature(existing.oiAnnotations);
+                if (titleEdited || annotationsEdited) {
+                    // Édition locale : on ne touche à rien, mais on le DIT.
+                    galleryPreserved++;
+                    continue;
+                }
+
                 let shown = dataUrl;
                 let annotated = false;
                 if (annotations.length) {
@@ -1227,15 +1323,25 @@ export const Archive: ArchiveContract = {
 
                 const item: PctacCollectionItem = existing ?? { id: pcId };
                 item.title = derivedTitle;
+                item.oiTitle = derivedTitle;
                 item.category = oiPhotoCategory(key);
                 item.hasImage = true;
-                if (annotated) item.annotations = JSON.stringify(annotations);
-                else delete item.annotations;
+                if (annotated) {
+                    item.annotations = importedAnnotationSig;
+                    item.oiAnnotations = importedAnnotationSig;
+                } else {
+                    delete item.annotations;
+                    delete item.oiAnnotations;
+                }
                 if (existing) galleryUpdated++;
                 else { photoList.push(item); photoById.set(pcId, item); galleryAdded++; }
             }
         }
         if (galleryAdded || galleryUpdated) Storage.saveCollection(PHOTOS_KEY, photoList);
+        // C5/C12 : la photo reprise d'une fusion a son entrée de galerie. Traité
+        // APRÈS la dernière écriture de `photoList` : `syncMergedGallery` relit
+        // le stockage et ne doit pas être écrasé par un `photoList` périmé.
+        for (const m of merges) syncMergedGallery('adv', m.incomingId, m.merged);
 
         // --- 3) Carroyage de la carto OI → plan de la situation courante ---
         // L'OI fait foi (décision Nico 2026-09-24) : tout le monde doit appeler
@@ -1253,7 +1359,14 @@ export const Archive: ArchiveContract = {
             } catch (e) { console.warn('[OI→PCTAC] carroyage non enregistré:', e); }
         }
 
-        return { ok: true, advAdded, advPhotos, advSkipped, paxAdded, paxSkipped, gridImported, galleryAdded, galleryUpdated };
+        // R9 point 3 : ouvrir la fiche existante choisie pendant l'import.
+        await flushPendingOpenFiche();
+
+        // K2/C14 : plus AUCUN adversaire n'est « ignoré » — une fusion n'est pas
+        // un doublon ignoré (elle est comptée `advMerged`), et « garder les
+        // deux »/« ouvrir l'existante » conservent la fiche. Le champ reste à 0
+        // pour ne pas casser le message de `main.ts` (paxSkipped, lui, compte).
+        return { ok: true, advAdded, advPhotos, advSkipped: 0, advMerged, paxAdded, paxSkipped, gridImported, galleryAdded, galleryUpdated, galleryPreserved };
     },
 };
 
