@@ -117,6 +117,7 @@ afterEach(() => {
 describe('OsmandLive — sondage du relais', () => {
   it('pousse chaque point par upsert(osmand:<id>) avec nom, fonction et libellé, puis avance `since`', async () => {
     vi.useFakeTimers();
+    vi.setSystemTime(OP_A.ts);
     seedDom();
     stubPlanMap();
     responses = [
