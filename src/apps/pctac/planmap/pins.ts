@@ -44,7 +44,7 @@ import maplibregl from 'maplibre-gl';
 import type { GeoJSONSource, LngLat, MapMouseEvent } from 'maplibre-gl';
 
 import { Storage } from '@pctac/storage.js';
-import { ADVERSARIES_KEY, FRIENDS_KEY, HOSTAGES_KEY } from '@pctac/config.js';
+import { ADVERSARIES_KEY, FRIENDS_KEY, HOSTAGES_KEY, PIN_ICONS } from '@pctac/config.js';
 import { confirmDialog, toast, undoableToast } from '@shared/feedback.js';
 import { attachPinGestures } from '@shared/pin-gestures.js';
 
@@ -72,6 +72,34 @@ function logMapAction(remarques: string): void {
         const heure = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
         lm.addEntry({ mode: 'free', pax: 'Carte', heure, remarques, auto: true });
     } catch { /* silencieux — cf. ci-dessus */ }
+}
+
+/** Couleur de repli d'un pin quand la donnée est absente ou invalide. */
+const DEFAULT_PIN_COLOR = '#3b82f6';
+
+/**
+ * R18 — n'accepte qu'une couleur CSS simple (hex ou rgb/rgba). Toute autre
+ * valeur (forgée dans une archive) retombe sur la couleur par défaut. La
+ * couleur est toujours posée par `style`/attribut, jamais via `innerHTML`.
+ */
+function safePinColor(color: string | undefined): string {
+    const c = (color ?? '').trim();
+    if (/^#[0-9a-f]{3}(?:[0-9a-f]{3})?$/i.test(c)) return c;
+    if (/^rgba?\(\s*\d{1,3}%?(?:\s*,\s*\d{1,3}%?){2}(?:\s*,\s*(?:0|1|0?\.\d+))?\s*\)$/i.test(c)) return c;
+    return DEFAULT_PIN_COLOR;
+}
+
+/**
+ * R18 — glyph Material Symbols d'un pin : `icon` n'est retenu que s'il est un
+ * id du catalogue `PIN_ICONS` (donc choisi par la roue). Sinon on retombe sur
+ * l'icône par défaut (voiture pour un véhicule, repère sinon) ; `null` quand le
+ * pin n'a pas d'icône du tout (rendu en goutte SVG).
+ */
+function safePinGlyph(icon: string | undefined, isVehicle: boolean): string | null {
+    const raw = icon && icon.trim();
+    if (!raw) return isVehicle ? 'directions_car' : null;
+    if (PIN_ICONS.some((i) => i.id === raw)) return raw;
+    return isVehicle ? 'directions_car' : 'flag';
 }
 
 export const PinsMethods = {
@@ -157,6 +185,11 @@ export const PinsMethods = {
                 list.push(snapshot);
                 this._savePins(list);
                 this._renderPins();
+                // R27 : le retrait a déjà été journalisé au moment de la
+                // suppression ; comme « Annuler » le rétablit, on journalise le
+                // rétablissement — sinon la main courante (et le PDF) affirmerait
+                // un « Ping retiré » qui n'a pas eu lieu.
+                if (snapshot.entityRef) logMapAction(`Ping rétabli : ${this._resolvePin(snapshot).label}`);
             },
         });
     },
@@ -293,40 +326,53 @@ export const PinsMethods = {
         // pdf-export.ts / `otanColor` dans wheels.ts, cf. SPEC-PCTAC-CONVERSION.md §9).
         void kind;
         const isVehicle = (pin.kind === 'Vehicule');
-        const customIcon = pin.icon && pin.icon.trim();
+        const glyph = safePinGlyph(pin.icon, isVehicle);
+        const pinColor = safePinColor(color);
         const pinWrap = entry.pinWrap;
         let labelOffset: [number, number];
 
         const locked = !!pin.locked;
         const cursor = (locked || this._locked) ? 'pointer' : 'grab';
-        if (customIcon || isVehicle) {
-            const glyph = customIcon || 'directions_car';
+        if (glyph) {
             // NB : pas de `position` inline ici — l'élément du marqueur est déjà
             // `position:absolute` via la classe .maplibregl-marker. L'écraser (relative)
             // casse le positionnement carte (dérive au zoom + décalage du label).
             // Le badge cadenas (position:absolute) s'ancre donc déjà sur ce wrap.
             pinWrap.style.cssText = `min-width: 44px; min-height: 44px; width: 44px; height: 44px; cursor: ${cursor}; display: flex; align-items: center; justify-content: center; touch-action: none;`;
-            pinWrap.innerHTML = `
-                <span class="material-symbols-outlined" style="
-                    font-size: 36px;
-                    color: ${color};
-                    text-shadow:
-                        0 0 2px #fff, 0 0 2px #fff, 0 0 2px #fff, 0 0 2px #fff,
-                        0 2px 4px rgba(0,0,0,0.6);
-                    line-height: 1;
-                    font-variation-settings: 'FILL' 1;
-                ">${glyph}</span>
-            `;
+            // R18 : glyph et couleur peuvent venir d'une archive forgée — posés
+            // par textContent/style, JAMAIS par innerHTML.
+            const span = document.createElement('span');
+            span.className = 'material-symbols-outlined';
+            span.textContent = glyph;
+            span.style.fontSize = '36px';
+            span.style.color = pinColor;
+            span.style.textShadow = '0 0 2px #fff, 0 0 2px #fff, 0 0 2px #fff, 0 0 2px #fff, 0 2px 4px rgba(0,0,0,0.6)';
+            span.style.lineHeight = '1';
+            span.style.fontVariationSettings = "'FILL' 1";
+            pinWrap.replaceChildren(span);
             labelOffset = [0, 22]; // sous l'icône
         } else {
             pinWrap.style.cssText = `min-width: 44px; min-height: 44px; width: 44px; height: 44px; cursor: ${cursor}; display: flex; align-items: center; justify-content: center; touch-action: none;`;
-            pinWrap.innerHTML = `
-                <svg width="26" height="36" viewBox="0 0 22 30" style="display: block; filter: drop-shadow(0 2px 3px rgba(0,0,0,0.5));">
-                    <path d="M11,0 C5,0 0,5 0,11 C0,18 11,30 11,30 C11,30 22,18 22,11 C22,5 17,0 11,0 Z"
-                          fill="${color}" stroke="#fff" stroke-width="2"/>
-                    <circle cx="11" cy="11" r="4" fill="#fff"/>
-                </svg>
-            `;
+            const svgNs = 'http://www.w3.org/2000/svg';
+            const svg = document.createElementNS(svgNs, 'svg');
+            svg.setAttribute('width', '26');
+            svg.setAttribute('height', '36');
+            svg.setAttribute('viewBox', '0 0 22 30');
+            svg.style.display = 'block';
+            svg.style.filter = 'drop-shadow(0 2px 3px rgba(0,0,0,0.5))';
+            const path = document.createElementNS(svgNs, 'path');
+            path.setAttribute('d', 'M11,0 C5,0 0,5 0,11 C0,18 11,30 11,30 C11,30 22,18 22,11 C22,5 17,0 11,0 Z');
+            path.setAttribute('fill', pinColor);
+            path.setAttribute('stroke', '#fff');
+            path.setAttribute('stroke-width', '2');
+            const dot = document.createElementNS(svgNs, 'circle');
+            dot.setAttribute('cx', '11');
+            dot.setAttribute('cy', '11');
+            dot.setAttribute('r', '4');
+            dot.setAttribute('fill', '#fff');
+            svg.appendChild(path);
+            svg.appendChild(dot);
+            pinWrap.replaceChildren(svg);
             labelOffset = [0, 5];
         }
 
@@ -365,7 +411,7 @@ export const PinsMethods = {
         }
 
         // L'ancre dépend du type → si elle change, on doit la réappliquer.
-        const anchor = (customIcon || isVehicle) ? 'center' : 'bottom';
+        const anchor = glyph ? 'center' : 'bottom';
         if (entry.pinMarker && entry._anchor !== anchor) {
             try { entry.pinMarker.setOffset([0, 0]); } catch { /* API MapLibre selon état du style */ }
             // maplibre n'expose pas setAnchor ; l'ancre est figée à la création.
@@ -387,7 +433,7 @@ export const PinsMethods = {
             font-family: var(--font-ui);
             font-size: 13px;
             line-height: 1.2;
-            border-left: 4px solid ${color};
+            border-left: 4px solid ${pinColor};
             border-radius: 3px;
             white-space: nowrap;
             box-shadow: 0 1px 3px rgba(0,0,0,0.6);
@@ -555,8 +601,7 @@ export const PinsMethods = {
                 entry = { pin, pinWrap, labelEl, pinMarker: null, labelMarker: null, sig: null, _anchor: null };
 
                 const isVehicle = (pin.kind === 'Vehicule');
-                const customIcon = pin.icon && pin.icon.trim();
-                const anchor = (customIcon || isVehicle) ? 'center' : 'bottom';
+                const anchor = safePinGlyph(pin.icon, isVehicle) ? 'center' : 'bottom';
 
                 const labelOffset = this._buildPinVisual(entry);
                 entry._anchor = anchor;
