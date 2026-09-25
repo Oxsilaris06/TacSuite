@@ -35,11 +35,12 @@ import { Storage } from '@pctac/storage.js';
 import { ImageStore } from '@pctac/image-store.js';
 import { PDF_PAX_COLORS, PHOTO_CATEGORIES, FREE_MODE_COLORS, safeHexColor } from '@pctac/config.js';
 import { currentMode, currentModeId, paxChipLabel, photoCategoryLabel } from '@pctac/modes.js';
-import { TYPE_MENACE_KEY, ficheCounters, ficheTitle, filledSections, sortFichesByPriority, statusChoices, statusMeta, type FicheSide } from '@pctac/fiche.js';
+import { TYPE_MENACE_KEY, defaultStatus, ficheCounters, ficheTitle, filledSections, sortFichesByPriority, statusChoices, statusMeta, type FicheSide } from '@pctac/fiche.js';
 import { showBusy, hideBusy, setBusyMessage } from '@pctac/busy.js';
 import { capturePlanForPdf, imageSizeFromDataUrl, type PlanPrintCapture } from '@pctac/plan-capture-for-pdf.js';
 import { Utils } from '@pctac/utils.js';
 import { toast } from '@shared/feedback.js';
+import { layoutGallery } from '@shared/photo-layout.js';
 import {
     PDF_IMAGE_PROFILES,
     askPdfOptions,
@@ -347,9 +348,9 @@ export async function renderWithinBudget(
 }
 
 /**
- * Ré-encode une image en JPEG à la taille donnée, sur fond blanc. `null` si
- * c'est impossible (pas de canvas 2D, image illisible) : l'appelant garde
- * alors l'original.
+ * Ré-encode une image en JPEG à la taille donnée (taille native si 0), sur
+ * fond blanc. `null` si c'est impossible (pas de canvas 2D, image illisible) :
+ * l'appelant garde alors l'original.
  */
 async function reencodeJpeg(dataUrl: string, widthPx: number, heightPx: number, quality: number): Promise<string | null> {
     const canvas = document.createElement('canvas');
@@ -364,12 +365,16 @@ async function reencodeJpeg(dataUrl: string, widthPx: number, heightPx: number, 
             img.onerror = () => { clearTimeout(timer); reject(new Error('image illisible')); };
             img.src = dataUrl;
         });
-        canvas.width = widthPx;
-        canvas.height = heightPx;
+        // Taille nulle : taille native (conversion de format seule).
+        const w = widthPx > 0 ? widthPx : img.naturalWidth;
+        const h = heightPx > 0 ? heightPx : img.naturalHeight;
+        if (!w || !h) return null;
+        canvas.width = w;
+        canvas.height = h;
         ctx.fillStyle = '#ffffff';
-        ctx.fillRect(0, 0, widthPx, heightPx);
+        ctx.fillRect(0, 0, w, h);
         ctx.imageSmoothingQuality = 'high';
-        ctx.drawImage(img, 0, 0, widthPx, heightPx);
+        ctx.drawImage(img, 0, 0, w, h);
         const out = canvas.toDataURL('image/jpeg', quality);
         return out.startsWith('data:image/jpeg') ? out : null;
     } catch {
@@ -379,6 +384,25 @@ async function reencodeJpeg(dataUrl: string, widthPx: number, heightPx: number, 
         canvas.width = 0;
         canvas.height = 0;
     }
+}
+
+/** Définition minimale d'une photo imprimée : jamais agrandie en deçà (décision 44). */
+const MIN_PRINT_PPI = 150;
+
+interface ReadableImage { dataUrl: string; widthPx: number; heightPx: number }
+
+/**
+ * Image utilisable par le PDF : PNG ou JPEG, taille lue dans l'en-tête ; un
+ * autre format venu d'une archive (WebP…) est converti en JPEG. `null` si
+ * l'image manque ou reste illisible : l'appelant le DIT dans le PDF (Mo1).
+ */
+async function readableImage(source: unknown): Promise<ReadableImage | null> {
+    if (typeof source !== 'string' || !source.startsWith('data:image')) return null;
+    const size = imageSizeFromDataUrl(source);
+    if (size) return { dataUrl: source, ...size };
+    const jpeg = await reencodeJpeg(source, 0, 0, 0.9);
+    const converted = jpeg ? imageSizeFromDataUrl(jpeg) : null;
+    return jpeg && converted ? { dataUrl: jpeg, ...converted } : null;
 }
 
 /** Largeur imprimée du plan tactique (A4 paysage, marges de 40 pt). */
@@ -554,35 +578,51 @@ async function renderReport(data: ReportData, settings: RenderSettings): Promise
         return jpeg && jpeg.length < dataUrl.length ? jpeg : dataUrl;
     };
 
-    const drawImageSafe = async (page: PDFLib.PDFPage, source: unknown, x: number, y: number, maxWidth: number, maxHeight: number): Promise<number> => {
+    /** Embarque une image à la définition d'impression de sa place ; `null` si illisible. */
+    const embedImage = async (img: ReadableImage, printedWidth: number, printedHeight: number): Promise<PDFLib.PDFImage | null> => {
         try {
-            if (!source || typeof source !== 'string' || !source.startsWith('data:image')) return y;
-            const dataUrl = await printable(source, maxWidth, maxHeight);
-            const ab = await fetch(dataUrl).then(res => res.arrayBuffer());
+            const dataUrl = await printable(img.dataUrl, printedWidth, printedHeight);
+            const ab = await fetch(dataUrl).then((res) => res.arrayBuffer());
             const imgBytes = new Uint8Array(ab); // pdf-lib préfère Uint8Array
-
             // Validation simple du header JPEG/PNG
-            const b0 = imgBytes[0] ?? 0;
-            const b1 = imgBytes[1] ?? 0;
-            const isPng  = b0 === 0x89 && b1 === 0x50;
-            const isJpeg = b0 === 0xFF && b1 === 0xD8;
-
-            let img: PDFLib.PDFImage;
-            if (isPng) img = await pdfDoc.embedPng(imgBytes);
-            else if (isJpeg) img = await pdfDoc.embedJpg(imgBytes);
-            else throw new Error("Format image non supporté ou corrompu");
-
-            const dims = img.scale(1);
-            const ratio = Math.min(maxWidth / dims.width, maxHeight / dims.height);
-            const finalWidth = dims.width * ratio;
-            const finalHeight = dims.height * ratio;
-
-            page.drawImage(img, { x, y: y - finalHeight, width: finalWidth, height: finalHeight });
-            return y - finalHeight - 10;
+            if (imgBytes[0] === 0x89 && imgBytes[1] === 0x50) return await pdfDoc.embedPng(imgBytes);
+            if (imgBytes[0] === 0xFF && imgBytes[1] === 0xD8) return await pdfDoc.embedJpg(imgBytes);
+            throw new Error('Format image non supporté ou corrompu');
         } catch (e) {
-            console.error("PDF Image Embed Error:", e);
-            page.drawText("[Image Erreur]", { x, y: y - 15, size: 8, font, color: pdfRgb(0.7, 0, 0) });
+            console.error('PDF Image Embed Error:', e);
+            return null;
+        }
+    };
+
+    /**
+     * Image posée en haut à gauche (`x`, `y` = haut), ajustée à sa place.
+     * Décision 44 — une photo n'est jamais agrandie au-delà de 150 ppi ; le
+     * plan (`capPpi` faux) remplit toujours sa page. Rend l'ordonnée sous
+     * l'image ; une image illisible est dite, jamais un blanc muet.
+     */
+    const drawImageSafe = async (page: PDFLib.PDFPage, source: unknown, x: number, y: number, maxWidth: number, maxHeight: number, capPpi = true): Promise<number> => {
+        if (!source || typeof source !== 'string' || !source.startsWith('data:image')) return y;
+        const img = await readableImage(source);
+        const fit = img ? Math.min(maxWidth / img.widthPx, maxHeight / img.heightPx, capPpi ? 72 / MIN_PRINT_PPI : Infinity) : 0;
+        const width = img ? img.widthPx * fit : 0;
+        const height = img ? img.heightPx * fit : 0;
+        const embedded = img ? await embedImage(img, width, height) : null;
+        if (!embedded) {
+            page.drawText('[Image illisible]', { x, y: y - 15, size: 8, font, color: pdfRgb(0.7, 0, 0) });
             return y - 20;
+        }
+        page.drawImage(embedded, { x, y: y - height, width, height });
+        return y - height - 10;
+    };
+
+    /** Cadre gris à la place d'une photo absente ou illisible (Mo1). */
+    const drawMissingFrame = (x: number, yTop: number, width: number, height: number, label: string): void => {
+        pdfPage().drawRectangle({ x, y: yTop - height, width, height, color: themeColors.headerBg, borderColor: themeColors.line, borderWidth: 1 });
+        const lines = wrapText(label, width - 16, fontBold, 10);
+        let ly = yTop - height / 2 + ((lines.length - 1) * 12) / 2 - 3;
+        for (const line of lines) {
+            pdfPage().drawText(line, { x: x + (width - fontBold.widthOfTextAtSize(line, 10)) / 2, y: ly, size: 10, font: fontBold, color: themeColors.text });
+            ly -= 12;
         }
     };
 
@@ -844,39 +884,80 @@ async function renderReport(data: ReportData, settings: RenderSettings): Promise
         }
     }
 
-    // --- 5. PHOTOS PAR CATÉGORIE ---
+    // --- 5. PHOTOS PAR CATÉGORIE (décision 44 : galerie adaptative) ---
+    // Mo4 — une photo d'une autre catégorie (logo d'unité importé d'un OI,
+    // `other`) a sa galerie « Autre », comme le libellé de l'écran.
     const categories = PHOTO_CATEGORIES.filter(c => c.id !== 'all');
-    const photoTotal = photos.filter((p) => categories.some((c) => c.id === p.category)).length;
+    const galleries = [
+        ...categories.map((cat) => ({ label: photoCategoryLabel(cat, mode), items: photos.filter((p) => p.category === cat.id) })),
+        { label: 'Autre', items: photos.filter((p) => !categories.some((c) => c.id === p.category)) },
+    ].filter((g) => g.items.length > 0);
+    const photoTotal = galleries.reduce((n, g) => n + g.items.length, 0);
     let photoDone = 0;
-    const photoStep = (): void => { photoDone++; step(`photos (${photoDone}/${photoTotal})`); };
-    for (const cat of categories) {
-        const catPhotos = photos.filter(p => p.category === cat.id);
-        if (catPhotos.length === 0) continue;
-
-        addNewPage(`GALERIE : ${photoCategoryLabel(cat, mode).toUpperCase()}`, true); // Mode PAYSAGE
-        for (let i = 0; i < catPhotos.length; i += 2) {
-            // Une page paysage par paire de photos (toute la hauteur dispo).
-            if (i > 0) addNewPage(`GALERIE : ${photoCategoryLabel(cat, mode).toUpperCase()} (SUITE)`, true);
-
-            const photoWidth = (context.pageWidth - 3 * context.margin) / 2;
-            const photoHeightMax = context.pageHeight - 2 * context.margin - 40; // Presque toute la hauteur
-
-            const p1 = catPhotos[i];
-            if (!p1) continue; // invariant : i < catPhotos.length (TypeScript ne suit pas la borne de boucle)
-            photoStep();
-            pdfPage().drawText(sanitizeWinAnsi(p1.title), { x: context.margin, y: context.y, size: 10, font: fontBold, color: themeColors.text });
-            const y1 = await drawImageSafe(pdfPage(), p1.data, context.margin, context.y - 10, photoWidth, photoHeightMax);
-
-            let y2 = context.y;
-            if (i + 1 < catPhotos.length) {
-                const p2 = catPhotos[i+1];
-                if (p2) {
-                    photoStep();
-                    pdfPage().drawText(sanitizeWinAnsi(p2.title), { x: context.margin + photoWidth + context.margin, y: context.y, size: 10, font: fontBold, color: themeColors.text });
-                    y2 = await drawImageSafe(pdfPage(), p2.data, context.margin + photoWidth + context.margin, context.y - 10, photoWidth, photoHeightMax);
+    // Statut affiché à l'écran sous la photo (piégeage, adversaire, victime).
+    // Une clé étrangère au côté (« active » posé par défaut sur une photo de
+    // victime) n'est pas un statut : rien n'est imprimé plutôt qu'un code brut.
+    const photoStatus = (p: Record<string, unknown>): string => {
+        const status = String(p.status || '');
+        if (p.category === 'trap') return `Statut : ${status === 'neutralized' ? 'Neutralisé' : 'Actif'}`;
+        const side: FicheSide | null = p.category === 'neutralized' ? 'adv' : p.category === 'hostage' ? 'host' : null;
+        if (!side) return '';
+        const choice = statusChoices(side, modeId).find((c) => c.key === (status || defaultStatus(side, modeId)));
+        return choice ? `Statut : ${choice.label}` : '';
+    };
+    const GALLERY_GAP = 14;
+    const CAPTION_LINE = 11;
+    // Légende : deux lignes de titre au plus, puis statut / définition.
+    const CAPTION_HEIGHT = 2 + 2 * CAPTION_LINE + 10 + 4;
+    // Cadre d'une image absente : format portrait, pour partager sa page.
+    const ABSENT_SIZE = { widthPx: 600, heightPx: 800 };
+    const galleryBox = { width: A4_LANDSCAPE[0] - 2 * context.margin, height: A4_LANDSCAPE[1] - 2 * context.margin - 30 };
+    for (const gallery of galleries) {
+        const title = `GALERIE : ${gallery.label.toUpperCase()}`;
+        // Tailles lues (formats convertis) AVANT la mise en page.
+        const readable = await Promise.all(gallery.items.map((p) => readableImage(p.data)));
+        const layout = layoutGallery(
+            gallery.items.map((_, k) => ({ id: String(k), ...(readable[k] ?? ABSENT_SIZE) })),
+            galleryBox,
+            { gap: GALLERY_GAP, captionHeight: CAPTION_HEIGHT, maxUpscalePpi: MIN_PRINT_PPI },
+        );
+        for (const [pageIndex, slots] of layout.entries()) {
+            addNewPage(pageIndex === 0 ? title : `${title} (SUITE)`, true); // Mode PAYSAGE
+            const top = context.y;
+            for (const slot of slots) {
+                const k = Number(slot.id);
+                const photo = gallery.items[k];
+                if (!photo) continue;
+                const img = readable[k] ?? null;
+                photoDone++;
+                step(`photos (${photoDone}/${photoTotal})`);
+                const x = context.margin + slot.x;
+                const yTop = top - slot.y;
+                const embedded = img ? await embedImage(img, slot.width, slot.height) : null;
+                if (embedded) {
+                    pdfPage().drawImage(embedded, { x, y: yTop - slot.height, width: slot.width, height: slot.height });
+                } else {
+                    drawMissingFrame(x, yTop, slot.width, slot.height, typeof photo.data === 'string' && photo.data ? 'Image illisible' : 'Image absente de la base');
                 }
+                // Mo3 — légende bornée à la colonne de la photo et repliée
+                // (deux lignes de titre au plus) : plus de chevauchement.
+                // Largeur : celle de l'image, au moins 240 pt (petite image),
+                // jamais plus que sa colonne ; centrée sous l'image.
+                const rowCount = slots.filter((o) => Math.abs(o.y - slot.y) < 0.5).length;
+                const cellWidth = (galleryBox.width - (rowCount - 1) * GALLERY_GAP) / rowCount;
+                const captionWidth = Math.max(slot.width, Math.min(cellWidth, 240));
+                const captionX = context.margin + Math.min(Math.max(0, slot.x + slot.width / 2 - captionWidth / 2), galleryBox.width - captionWidth);
+                let cy = top - slot.captionY - 8;
+                const titleLines = wrapText(photo.title ?? '', captionWidth, fontBold, 9);
+                const shown = titleLines.slice(0, 2);
+                if (titleLines.length > 2) shown[1] = fitTextToWidth(titleLines.slice(1).join(' '), fontBold, 9, captionWidth);
+                for (const line of shown) {
+                    pdfPage().drawText(line, { x: captionX, y: cy, size: 9, font: fontBold, color: themeColors.text });
+                    cy -= CAPTION_LINE;
+                }
+                const meta = [photoStatus(photo), embedded && slot.lowRes ? 'basse définition' : ''].filter(Boolean).join(' · ');
+                if (meta) pdfPage().drawText(fitTextToWidth(sanitizeWinAnsi(meta), font, 8, captionWidth), { x: captionX, y: cy, size: 8, font, color: themeColors.text });
             }
-            context.y = Math.min(y1, y2) - 30;
         }
     }
 
@@ -891,7 +972,7 @@ async function renderReport(data: ReportData, settings: RenderSettings): Promise
             if (capture) {
                 const imgMaxWidth = context.pageWidth - 2 * context.margin;
                 const imgMaxHeight = context.pageHeight - 2 * context.margin - 30;
-                await drawImageSafe(pdfPage(), capture.dataUrl, context.margin, context.y - 5, imgMaxWidth, imgMaxHeight);
+                await drawImageSafe(pdfPage(), capture.dataUrl, context.margin, context.y - 5, imgMaxWidth, imgMaxHeight, false);
             } else {
                 // Plus JAMAIS d'absence silencieuse : on le dit dans le PDF.
                 pdfPage().drawText(
