@@ -38,6 +38,7 @@ import type { Map as MapLibreMap } from 'maplibre-gl';
 import type { PctacModeId } from '@pctac/modes.js';
 import type { TutoChapter, TutoData, TutoFlatStep } from './tuto.js';
 import type { TacticalGridSpec } from '@shared/tactical-grid.js';
+import type { PdfOptions } from '@shared/pdf-options.js';
 
 /* =========================================================================
  * 1. CONTRAT PARTAGÉ — window.UIPlatform  (shared/ui-platform.js, 319 LOC)
@@ -619,8 +620,10 @@ export interface PdfExportContract {
      * Génère et TÉLÉCHARGE `PC-TAC-EXPORT-<timestamp>.pdf` (pdf-lib).
      * Ne jette jamais : `alert()` si pdf-lib absent ou en cas d'erreur.
      * Aucune valeur retournée (le blob est consommé en interne).
+     * `options` : choix de la fenêtre de génération (décision 42 : thème,
+     * sortie Impression / Partage) ; absents = derniers choix retenus.
      */
-    buildPdf(): Promise<void>;
+    buildPdf(options?: PdfOptions): Promise<void>;
 }
 
 /* =========================================================================
@@ -841,8 +844,10 @@ export interface PlanMapContract {
      * CONTRAT C2 — compose canvas WebGL + overlays et retourne un PNG en dataURL.
      * `null` si : carte non initialisée, html2canvas absent, vue Plan masquée,
      * canvas de largeur 0 après deux rAF, ou capture déjà en cours (`_captureBusy`).
+     * `options.targetWidthPx` : définition voulue pour l'impression (profils
+     * `PDF_IMAGE_PROFILES`), respectée dans les limites de la carte graphique.
      */
-    captureToDataUrl(): Promise<string | null>;
+    captureToDataUrl(options?: { targetWidthPx?: number }): Promise<string | null>;
 }
 
 /* =========================================================================
