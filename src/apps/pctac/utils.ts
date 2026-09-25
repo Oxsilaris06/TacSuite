@@ -44,6 +44,12 @@ function compressViaCanvas(
             canvas.height = height;
             const ctx = canvas.getContext('2d');
             if (!ctx) { reject(new Error('Failed to get canvas context')); return; }
+            // M6 — un PNG à fond TRANSPARENT (plan de bâtiment, capture d'outil
+            // de dessin) rend la transparence en noir au passage en JPEG, ET
+            // l'original est perdu dès l'import. On remplit donc le fond en
+            // blanc AVANT de dessiner, comme le fait déjà dataUrlToJpeg côté PDF.
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, width, height);
             ctx.drawImage(img, 0, 0, width, height);
             // Sortie TOUJOURS en image/jpeg ; le canvas retire l'EXIF (aucune
             // position GPS ne survit donc dans l'image enregistrée).

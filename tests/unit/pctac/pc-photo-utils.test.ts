@@ -39,7 +39,7 @@ beforeEach(() => {
   attempts = 0;
   vi.stubGlobal('Image', FakeImage);
   vi.spyOn(HTMLCanvasElement.prototype, 'getContext')
-    .mockReturnValue({ drawImage: () => {} } as unknown as CanvasRenderingContext2D);
+    .mockReturnValue({ fillStyle: '', fillRect: () => {}, drawImage: () => {} } as unknown as CanvasRenderingContext2D);
   vi.spyOn(HTMLCanvasElement.prototype, 'toDataURL').mockReturnValue('data:image/jpeg;base64,OUT');
   (URL as unknown as { createObjectURL: () => string }).createObjectURL = () => 'blob:fake';
   (URL as unknown as { revokeObjectURL: () => void }).revokeObjectURL = () => {};
@@ -82,6 +82,28 @@ describe('Utils.compressImage — HEIC/HEIF (décision 34)', () => {
     heicToMock.mockRejectedValueOnce(new Error('offline'));
     const file = new File(['x'], 'photo.heic', { type: '' });
     await expect(Utils.compressImage(file)).rejects.toThrow(/HEIC illisible/);
+  });
+});
+
+describe('Utils.compressImage — fond blanc avant JPEG (M6)', () => {
+  it('remplit le canvas en blanc AVANT de dessiner : un PNG transparent ne devient plus noir', async () => {
+    const calls: string[] = [];
+    const ctx = {
+      set fillStyle(value: string) { calls.push(`fillStyle:${value}`); },
+      fillRect: () => { calls.push('fillRect'); },
+      drawImage: () => { calls.push('drawImage'); },
+    };
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext')
+      .mockReturnValue(ctx as unknown as CanvasRenderingContext2D);
+
+    const file = new File(['x'], 'plan.png', { type: 'image/png' });
+    await Utils.compressImage(file);
+
+    expect(calls).toContain('fillStyle:#ffffff');
+    const fill = calls.indexOf('fillRect');
+    const draw = calls.indexOf('drawImage');
+    expect(fill).toBeGreaterThanOrEqual(0);
+    expect(fill).toBeLessThan(draw);
   });
 });
 
