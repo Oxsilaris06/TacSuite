@@ -27,6 +27,8 @@
  */
 
 import { Storage } from '@pctac/storage.js';
+import { ADVERSARIES_KEY, CUSTOM_PAX_KEY, DASHBOARD_KEY, FRIENDS_KEY, HOSTAGES_KEY, LOCAL_STORAGE_KEY, PHOTOS_KEY, TP_ASSOC_KEY } from '@pctac/config.js';
+import { GPX_INDEX_KEY, PINS_KEY, SHAPES_KEY } from '@pctac/planmap/constants.js';
 import { UI } from '@pctac/ui.js';
 import { closeFicheIfInView } from '@pctac/fiche-sheet.js';
 import { toast } from '@shared/feedback.js';
@@ -96,7 +98,7 @@ let viewsHome: HTMLElement | null = null;
  * remonté), et sans ce retrait les écouteurs s'empileraient — un seul Échap
  * fermerait puis rouvrirait l'écran selon la parité du nombre d'écouteurs.
  */
-let onData: (() => void) | null = null;
+let onData: ((e: Event) => void) | null = null;
 let onResize: (() => void) | null = null;
 let onKeydown: ((e: KeyboardEvent) => void) | null = null;
 let onFullscreenChange: (() => void) | null = null;
@@ -121,6 +123,12 @@ function refreshView(viewId: string): void {
         default: break;
     }
 }
+
+/** Clés dont l'écriture change ce qu'un panneau affiche (B8). */
+const SPLIT_DATA_KEYS: ReadonlySet<string> = new Set([
+    LOCAL_STORAGE_KEY, TP_ASSOC_KEY, ADVERSARIES_KEY, HOSTAGES_KEY, FRIENDS_KEY, PHOTOS_KEY, CUSTOM_PAX_KEY,
+    PINS_KEY, SHAPES_KEY, 'pcTacPlanGrid', GPX_INDEX_KEY, DASHBOARD_KEY,
+]);
 
 function refreshBoth(): void {
     if (!state.on) return;
@@ -362,7 +370,15 @@ export function initSplitView(): void {
 
     // Réinstallation propre des écouteurs globaux (cf. commentaire des `on*`).
     if (onData) document.removeEventListener('pctac:data', onData);
-    onData = () => refreshBoth();
+    // B8 (revue du 25/09) — seules les clés de DONNÉES repeignent : la position
+    // de carte (pcTacPlanView, à chaque déplacement dans un autre onglet) ou la
+    // dernière vue consultée détruisaient les listes (cartes repliées, menu de
+    // statut fermé) et faisaient relire les GPX.
+    onData = (e: Event) => {
+        const key = String((e as CustomEvent<{ key?: string }>).detail?.key ?? '').split('@')[0] ?? '';
+        if (key && !SPLIT_DATA_KEYS.has(key)) return;
+        refreshBoth();
+    };
     document.addEventListener('pctac:data', onData);
 
     if (onResize) window.removeEventListener('resize', onResize);

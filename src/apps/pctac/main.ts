@@ -316,7 +316,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             const [nom, prenom, unite, tph, mission] = values;
             const list = Storage.loadCollection(FRIENDS_KEY);
             list.push({ id: Date.now().toString(), nom, prenom, unite, tph, mission });
-            Storage.saveCollection(FRIENDS_KEY, list);
+            // A12 (revue du 25/09) — stockage plein : rien d'écrit, la saisie reste.
+            if (!Storage.saveCollection(FRIENDS_KEY, list)) { toast('Stockage plein : fiche NON enregistrée.', { kind: 'error' }); return; }
             friendFields.forEach((id) => { (document.getElementById(id) as HTMLInputElement).value = ''; });
             UI.renderFriends();
             toast('Fiche ajoutée', { kind: 'success' }); // U12
@@ -346,7 +347,13 @@ document.addEventListener('DOMContentLoaded', async () => {
                 await ImageStore.put(photoId, compressedData);
                 const list = Storage.loadCollection(PHOTOS_KEY);
                 list.push({ id: photoId, title, category, status: 'active', hasImage: true });
-                Storage.saveCollection(PHOTOS_KEY, list);
+                // A12 (revue du 25/09) — stockage plein : l'entrée n'est pas écrite,
+                // le blob ne doit pas rester orphelin, la saisie reste.
+                if (!Storage.saveCollection(PHOTOS_KEY, list)) {
+                    try { await ImageStore.delete(photoId); } catch { /* blob orphelin, sans effet visible */ }
+                    toast('Stockage plein : photo NON enregistrée.', { kind: 'error' });
+                    return;
+                }
                 (document.getElementById('photo_title') as HTMLInputElement).value = '';
                 fileInput.value = '';
                 await UI.renderPhotos();

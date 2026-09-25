@@ -8,7 +8,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { isTileRequest, shouldSkipWaitingOnInstall } from '@shared/sw-routes.js';
+import { isTileRequest, serveFromNetwork, shouldSkipWaitingOnInstall } from '@shared/sw-routes.js';
 
 describe('isTileRequest', () => {
     it('accepte les chemins de tuiles de data.geopf.fr', () => {
@@ -44,5 +44,16 @@ describe('shouldSkipWaitingOnInstall — transition depuis l’ancien SW (A-2)',
         // Première installation : rien à remplacer.
         expect(shouldSkipWaitingOnInstall(false, false)).toBe(false);
         expect(shouldSkipWaitingOnInstall(false, true)).toBe(false);
+    });
+});
+
+describe('serveFromNetwork — navigation (revue du 25/09, A13)', () => {
+    it('sert la réponse réseau sauf erreur serveur (5xx) : la copie précachée prend le relais', () => {
+        expect(serveFromNetwork(200)).toBe(true);
+        expect(serveFromNetwork(304)).toBe(true);
+        expect(serveFromNetwork(404)).toBe(true);
+        expect(serveFromNetwork(500)).toBe(false);
+        expect(serveFromNetwork(502)).toBe(false);
+        expect(serveFromNetwork(503)).toBe(false);
     });
 });

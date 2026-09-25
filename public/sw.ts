@@ -34,6 +34,7 @@ import {
     SW_PROTOCOL_MARK_URL,
     isTileRequest,
     shouldSkipWaitingOnInstall,
+    serveFromNetwork,
 } from '../src/shared/sw-routes.js';
 
 declare const self: ServiceWorkerGlobalScope;
@@ -154,8 +155,12 @@ self.addEventListener('fetch', (event) => {
             try {
                 // navigationPreload : réponse pré-lancée par le navigateur en parallèle.
                 const preloadResp = await event.preloadResponse;
-                if (preloadResp) return preloadResp;
-                return await fetch(req);
+                // A13 — une erreur serveur (5xx) n'est pas une page : la copie
+                // précachée prend le relais, comme hors ligne.
+                if (preloadResp && serveFromNetwork(preloadResp.status)) return preloadResp;
+                const net = await fetch(req);
+                if (serveFromNetwork(net.status)) return net;
+                throw new Error(`HTTP ${net.status}`);
             } catch {
                 // Hors-ligne : sert la page précachée correspondant à l'URL demandée
                 // (matchPrecache résout '/pctac/' → 'pctac/index.html', etc.), avec
