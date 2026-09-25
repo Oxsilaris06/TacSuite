@@ -112,6 +112,27 @@ describe('buildA3Pdf', () => {
         expect(text).toContain('DURAND ?');
     });
 
+    it('l’animation de chargement s’arrête après la génération, et après une annulation', async () => {
+        document.body.insertAdjacentHTML('beforeend', '<div id="pctacBusyOverlay" style="display:none"><canvas id="pctacBusyOrb"></canvas><div id="pctacBusyMessage"></div></div>');
+        const overlay = (): HTMLElement => document.getElementById('pctacBusyOverlay')!;
+        seed();
+        const { buildA3Pdf } = await import('@pctac/pdf-a3.js');
+        await expect(buildA3Pdf(OPTIONS)).resolves.toBe(true);
+        expect(overlay().style.display).toBe('none');
+        // Annulation à la fenêtre des caractères non imprimables.
+        seed({ advNom: 'DURAND 王' });
+        const pending = buildA3Pdf(OPTIONS);
+        await vi.waitFor(() => expect(document.querySelector('dialog')).not.toBeNull());
+        document.querySelector<HTMLElement>('[data-tac-confirm="cancel"]')!.click();
+        await expect(pending).resolves.toBe(false);
+        expect(overlay().style.display).toBe('none');
+        // Le compteur est revenu à zéro : un seul hideBusy suffit après un showBusy.
+        const { showBusy, hideBusy } = await import('@pctac/busy.js');
+        showBusy('test');
+        hideBusy();
+        expect(overlay().style.display).toBe('none');
+    });
+
     it('un nom arabe est imprimé sans « ? » (police de repli)', async () => {
         seed({ advNom: 'بن محمد' });
         const { buildA3Pdf } = await import('@pctac/pdf-a3.js');

@@ -26,7 +26,7 @@ import { Storage } from '@pctac/storage.js';
 import { ImageStore } from '@pctac/image-store.js';
 import { currentMode, currentModeId, paxChipLabel } from '@pctac/modes.js';
 import { filledSections, ficheTitle, sortFichesByPriority, statusMeta, summaryRows, type FicheSide } from '@pctac/fiche.js';
-import { showBusy, hideBusy } from '@pctac/busy.js';
+import { showBusy, hideBusy, setBusyMessage } from '@pctac/busy.js';
 import { Utils } from '@pctac/utils.js';
 import { situationPeriod } from '@pctac/pdf-export.js';
 import { capturePlanForPdf, imageSizeFromDataUrl, type PlanPrintCapture } from '@pctac/plan-capture-for-pdf.js';
@@ -446,7 +446,16 @@ export async function buildA3Pdf(options: PdfOptions): Promise<boolean> {
         return false;
     }
     busy = true;
-    showBusy('Synthèse A3 : collecte des données…');
+    // UNE seule ouverture de l'overlay (compteur de `busy.ts`) : les étapes
+    // ne changent que le message ; il est masqué le temps d'une fenêtre de
+    // dialogue, puis rouvert. `overlayShown` garantit une fermeture et une seule.
+    let overlayShown = false;
+    const overlay = (message: string | null): void => {
+        if (message === null) { if (overlayShown) { hideBusy(); overlayShown = false; } return; }
+        if (overlayShown) setBusyMessage(message);
+        else { showBusy(message); overlayShown = true; }
+    };
+    overlay('Synthèse A3 : collecte des données…');
     try {
         const collected = await collect();
         const fontBytes = await loadFontBytes();
@@ -457,10 +466,10 @@ export async function buildA3Pdf(options: PdfOptions): Promise<boolean> {
             .map((t) => ({ where: t.where, chars: findUnsupported(t.text, bodyChain) }))
             .filter((u) => u.chars.length > 0);
         if (unsupported.length) {
-            hideBusy();
+            overlay(null);
             const go = await confirmUnsupportedChars(unsupported);
-            showBusy('Synthèse A3 : mise en page…');
             if (!go) return false;
+            overlay('Synthèse A3 : mise en page…');
         }
         const clean = (s: string): string => replaceUnsupported(s, bodyChain);
         const cleanFiche = (fi: A3Fiche): A3Fiche => ({ ...fi, title: clean(fi.title), full: clean(fi.full), short: clean(fi.short) });
@@ -479,21 +488,21 @@ export async function buildA3Pdf(options: PdfOptions): Promise<boolean> {
 
         // Plan capturé à la définition de la sortie choisie.
         const planRequested = !!(window as unknown as { PlanMap?: { captureToDataUrl?: unknown } }).PlanMap?.captureToDataUrl;
-        showBusy('Synthèse A3 : capture du plan…');
+        overlay('Synthèse A3 : capture du plan…');
         const plan = planRequested
             ? await capturePlanForPdf({ targetWidthPx: targetPixels(PHOTO_COLUMN_MM * MM, options.sortie), jpegQuality: PDF_IMAGE_PROFILES[options.sortie].jpegQuality })
             : null;
         input.plan = plan ? { widthPx: plan.widthPx, heightPx: plan.heightPx } : null;
 
         // Mesure avec la vraie chaîne de polices (document jetable).
-        showBusy('Synthèse A3 : mise en page…');
+        overlay('Synthèse A3 : mise en page…');
         const measureDoc = await PDFLib.PDFDocument.create();
         const measureFonts = await embedFonts(measureDoc, fontBytes, needArabic);
         const measure: A3Measure = (text, bold, size) => widthOf(text, bold ? measureFonts.boldChain : measureFonts.bodyChain, measureFonts, size);
         const layout = layoutA3(input, measure);
 
         if (layout.refused) {
-            hideBusy();
+            overlay(null);
             const full = await confirmDialog({
                 title: 'Synthèse A3 impossible',
                 message: `Même réduite, la situation ne tient pas sur une page A3 :\n\n${layout.refused.map((r) => `• ${r}`).join('\n')}\n\nLe rapport complet contient tout.`,
@@ -507,7 +516,7 @@ export async function buildA3Pdf(options: PdfOptions): Promise<boolean> {
             return false;
         }
 
-        showBusy('Synthèse A3 : dessin…');
+        overlay('Synthèse A3 : dessin…');
         const ctx: RenderContext = { collected: { ...collected, input }, layout, plan, planRequested, options, fontBytes, needArabic, squeeze: 1 };
         let bytes = await render(ctx);
         const budget = PDF_IMAGE_PROFILES[options.sortie].budgetBytes;
@@ -528,6 +537,6 @@ export async function buildA3Pdf(options: PdfOptions): Promise<boolean> {
         return false;
     } finally {
         busy = false;
-        hideBusy();
+        overlay(null);
     }
 }
