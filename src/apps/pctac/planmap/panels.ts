@@ -18,6 +18,7 @@
  */
 
 import type { InlinePanelElement, InlinePanelOptions, LngLatObj, PlanEntityKind, PlanMapInternal } from './types.js';
+import { safePinColor, safePinGlyph } from './pin-safe.js';
 import { ADVERSARIES_KEY, FRIENDS_KEY, HOSTAGES_KEY, PHOTOS_KEY, PIN_ICONS, suggestPinIcons } from '@pctac/config.js';
 import { Storage } from '@pctac/storage.js';
 import { ImageStore } from '@pctac/image-store.js';
@@ -537,13 +538,18 @@ export const PanelsMethods = {
     _openIconCatalogPanelForEdit(this: PlanMapInternal, pinId: string): void {
         const p = this._loadPins().find((x) => x.id === pinId);
         if (!p) return;
+        // V1 (revue neuve du 25/09) — couleur et icône passent par les mêmes gardes
+        // que le marqueur : ce HTML est inséré par innerHTML, un point forgé
+        // dans une archive exécutait du JavaScript.
+        const pinColor = safePinColor(p.color);
+        const pinGlyph = safePinGlyph(p.icon, p.kind === 'Vehicule') ?? 'place';
         const ll = { lng: p.lng, lat: p.lat };
         try { if (this.map) this.map.easeTo({ center: [ll.lng, ll.lat], duration: 300 }); } catch { /* best-effort */ }
         const html = `
             <div style="display: flex; flex-direction: column; gap: 8px; width: 360px; max-width: 100%; max-height: 100%; box-sizing: border-box; overflow: hidden;">
                 <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 6px; flex: 0 0 auto;">
                     <div style="display: flex; align-items: center; gap: 6px;">
-                        <span class="material-symbols-outlined" style="font-size: 20px; color: ${p.color || '#fff'};">${p.icon || 'place'}</span>
+                        <span class="material-symbols-outlined" style="font-size: 20px; color: ${pinColor};">${pinGlyph}</span>
                         <strong style="font-size: 13px;">Icône actuelle</strong>
                     </div>
                     <input type="text" id="cat-edit-filter" placeholder="Filtrer…" autocomplete="off"
@@ -572,8 +578,8 @@ export const PanelsMethods = {
                         <button type="button" class="cat-edit-ic" data-id="${ic.id}" title="${ic.label}"
                             style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
                                    min-height: 52px; padding: 6px 4px; border-radius: 8px;
-                                   background: ${ic.id === p.icon ? p.color + '40' : 'rgba(255,255,255,0.06)'};
-                                   border: 1px solid ${ic.id === p.icon ? p.color : 'rgba(255,255,255,0.18)'};
+                                   background: ${ic.id === p.icon ? pinColor + '40' : 'rgba(255,255,255,0.06)'};
+                                   border: 1px solid ${ic.id === p.icon ? pinColor : 'rgba(255,255,255,0.18)'};
                                    color: #fff; cursor: pointer;">
                             <span class="material-symbols-outlined" aria-hidden="true" style="font-size: 22px;">${ic.id}</span>
                             <span style="font-size: 0.68em; text-align: center; line-height: 1.05; word-break: break-word;">${ic.label}</span>

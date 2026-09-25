@@ -770,12 +770,14 @@ export const UI: UIContract = {
       toast('Entrée supprimée dans un autre onglet : modification NON enregistrée.', { kind: 'error' });
       return;
     }
-    const asRecord = (e: PctacLogEntry): Record<string, unknown> => e as unknown as Record<string, unknown>;
-    const base = asRecord(editBase && editBase.id === id ? editBase : fresh);
+    // V7 — seuls les champs de la fenêtre entrent dans le diff : un favori ou
+    // une pastille changés ailleurs ne sont pas des conflits.
+    const formOf = (e: PctacLogEntry): Record<string, unknown> => ({ heure: e.heure, lieu: e.lieu, remarques: e.remarques, date: e.date });
+    const base = formOf(editBase && editBase.id === id ? editBase : fresh);
     const norm = (v: unknown): string => String(v ?? '');
     const updated: Record<string, unknown> = {};
     for (const key of Object.keys(mine)) if (norm(mine[key]) !== norm(base[key])) updated[key] = mine[key];
-    const diff = diffOpenFiche(base, { ...mine, ...(date ? {} : { date: base.date }) }, asRecord(fresh));
+    const diff = diffOpenFiche(base, { ...mine, ...(date ? {} : { date: base.date }) }, formOf(fresh));
     const labels: Record<string, string> = { heure: 'Heure', lieu: 'Lieu', remarques: 'Remarques', date: 'Date' };
     for (const c of diff.conflicts) {
       const choice = await choiceDialog({
@@ -788,6 +790,11 @@ export const UI: UIContract = {
       });
       // « Prendre l'autre » : rien à écrire, la version distante est déjà en place.
       if (choice === 'theirs') delete updated[c.key];
+    }
+    // V7 — l'entrée a pu être supprimée pendant la fenêtre de conflit.
+    if (diff.conflicts.length && !Storage.loadLogData().some((e) => e.id === id)) {
+      toast('Entrée supprimée dans un autre onglet : modification NON enregistrée.', { kind: 'error' });
+      return;
     }
     // R22 — stockage plein : ne pas fermer la modale ni annoncer un succès.
     if (Object.keys(updated).length && !LogManager.updateEntry(id, updated as Partial<PctacLogEntry>)) {

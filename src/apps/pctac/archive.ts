@@ -37,6 +37,8 @@ import {
     type ApplyScopeReport,
 } from '@pctac/import-scope.js';
 import { GPX_INDEX_KEY, GRID_KEY, OVERLAYS_KEY, PINS_KEY } from '@pctac/planmap/constants.js';
+import { safePinColor, safePinIcon } from '@pctac/planmap/pin-safe.js';
+import { recordTombstone } from '@pctac/tombstones.js';
 import { isTacticalGridSpec } from '@shared/tactical-grid.js';
 import { PCTAC_MODES, SHARED_KEYS, currentModeId, persistModeId, scopedKey, type PctacModeId } from '@pctac/modes.js';
 import { findDuplicatePerson, normalizeDob } from '@pctac/fiche.js';
@@ -229,6 +231,31 @@ export function sanitizeImportColors(dataJson: Record<string, string>): Record<s
     };
     fix(LOCAL_STORAGE_KEY, 'paxColor');
     fix(CUSTOM_PAX_KEY, 'color');
+    // V1 (revue neuve du 25/09) — points du plan : couleur hex/rgb, icône du
+    // catalogue seulement (sinon retirée) ; le panneau « Changer icône » les
+    // insérait tels quels dans un innerHTML.
+    const rawPins = dataJson[PINS_KEY];
+    if (typeof rawPins === 'string') {
+        try {
+            const list = JSON.parse(rawPins) as unknown;
+            if (Array.isArray(list)) {
+                let changed = false;
+                for (const item of list) {
+                    if (!item || typeof item !== 'object') continue;
+                    const rec = item as Record<string, unknown>;
+                    if (rec.color !== undefined) {
+                        const safe = safePinColor(typeof rec.color === 'string' ? rec.color : undefined);
+                        if (safe !== rec.color) { rec.color = safe; changed = true; }
+                    }
+                    if (rec.icon !== undefined) {
+                        const safe = safePinIcon(rec.icon);
+                        if (safe !== rec.icon) { if (safe === undefined) delete rec.icon; else rec.icon = safe; changed = true; }
+                    }
+                }
+                if (changed) dataJson[PINS_KEY] = JSON.stringify(list);
+            }
+        } catch { /* liste illisible : la liste blanche et findUnsafeId font le reste */ }
+    }
     return dataJson;
 }
 
@@ -478,6 +505,9 @@ export async function resolveDuplicateFiches(
                 .map((it) => (it.id === existing.id ? merged : it));
             if (!list.some((it) => it.id === existing.id)) list.push(merged);
             Storage.saveCollection(key, list, modeId);
+            // V5 — la fiche entrante fondue dans l'existante ne doit pas revenir
+            // au réimport de la même archive (ni reposer la question du doublon).
+            recordTombstone(key, String(candidate.id), modeId);
             // C4/C12 : la galerie suit la fusion (vignette morte retirée, photo
             // reprise visible) — même fonction commune que l'import d'OI.
             if (side) syncMergedGallery(side, candidate.id, merged, { photoTaken, modeId });
@@ -667,6 +697,18 @@ export const Archive: ArchiveContract = {
                 Storage.loadCollection(k).forEach((item) => { if (item.annotations) imgIds.add(item.id + '_orig'); });
             });
 
+            // V4 (revue neuve du 25/09) — seules les images ATTENDUES (fiche ou photo
+            // avec `hasImage`) comptent comme illisibles : une base d'images en
+            // panne sans aucune photo ne doit pas bloquer l'export.
+            const expectedIds = new Set<string>();
+            [ADVERSARIES_KEY, HOSTAGES_KEY, PHOTOS_KEY].forEach((k) => {
+                Storage.loadCollection(k).forEach((item) => {
+                    if (!item.hasImage) return;
+                    expectedIds.add(String(item.id));
+                    if (k !== PHOTOS_KEY) expectedIds.add(`${item.id}_sync`);
+                    if (item.annotations) expectedIds.add(`${item.id}_orig`);
+                });
+            });
             const imagesFolder = zip.folder('images');
             // Garde ajoutée pour le typage strict : `folder(name: string)` est typé
             // `JSZip | null` bien qu'il ne renvoie jamais null pour un nom simple
@@ -678,17 +720,10 @@ export const Archive: ArchiveContract = {
                         const dataUrl = await ImageStore.get(id);
                         if (dataUrl) imagesFolder.file(`${id}.txt`, dataUrl);
                     } catch (e) {
-                        unreadable += 1;
+                        if (expectedIds.has(id)) unreadable += 1;
                         console.warn('[Archive] image illisible:', id, e);
                     }
                 }
-            }
-            // A10 (revue du 25/09) — une photo ILLISIBLE (base d'images perdue) n'est
-            // pas une photo absente : l'archive serait incomplète, et le RESET
-            // effacerait sur cette foi. On refuse l'export et on le dit.
-            if (unreadable > 0) {
-                toast(`Archive incomplète : ${unreadable} photo${unreadable > 1 ? 's' : ''} illisible${unreadable > 1 ? 's' : ''}. Rien n'a été effacé ; rechargez la page et réessayez.`, { kind: 'error' });
-                return false;
             }
 
             // 2 bis) Traces GPX : même mécanique que les images, les coordonnées
@@ -713,6 +748,8 @@ export const Archive: ArchiveContract = {
                 version: 1,
                 situation: currentModeId(),
                 createdAt: new Date().toISOString(),
+                // V4 — archive PARTIELLE (photos illisibles) : marquée, l'opérateur garde tout le reste.
+                ...(unreadable > 0 ? { incomplete: unreadable } : {}),
             }, null, 2));
 
             const blob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE', compressionOptions: { level: 6 } });
@@ -727,6 +764,14 @@ export const Archive: ArchiveContract = {
             a.click();
             document.body.removeChild(a);
             setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+            // A10/V4 — une photo ILLISIBLE (base d'images perdue ou corrompue) n'est
+            // pas une photo absente : l'archive partielle est téléchargée (main
+            // courante, fiches, autres photos), mais l'export est déclaré incomplet,
+            // et le RESET n'efface rien sur cette foi.
+            if (unreadable > 0) {
+                toast(`Archive INCOMPLÈTE téléchargée : ${unreadable} photo${unreadable > 1 ? 's' : ''} illisible${unreadable > 1 ? 's' : ''}. Rien n'a été effacé.`, { kind: 'error', duration: 8000 });
+                return false;
+            }
             return true;
         } catch (e) {
             console.error('[Archive] export échec:', e);

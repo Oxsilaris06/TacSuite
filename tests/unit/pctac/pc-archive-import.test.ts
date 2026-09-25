@@ -294,9 +294,31 @@ describe('Revue du 25/09 — export incomplet (A10)', () => {
         Storage.saveCollection(ADVERSARIES_KEY, [{ id: 'a1', nom: 'X', hasImage: true }]);
         vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:x');
         vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
-        vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+        const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
         vi.spyOn(ImageStore, 'get').mockRejectedValue(new Error('IndexedDB perdu'));
         await expect(Archive.exportZip()).resolves.toBe(false);
         expect(toastSpy).toHaveBeenCalledWith(expect.stringContaining('illisible'), expect.objectContaining({ kind: 'error' }));
+        // V4 : l'archive PARTIELLE est quand même téléchargée (main courante, fiches).
+        expect(click).toHaveBeenCalledTimes(1);
+    });
+
+    it('V4 : une base d’images en panne sans aucune photo attendue n’empêche pas l’export', async () => {
+        localStorage.setItem(PCTAC_MODE_KEY, 'forcene');
+        Storage.saveCollection(ADVERSARIES_KEY, [{ id: 'a1', nom: 'X' }]);
+        vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:x');
+        vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
+        vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+        vi.spyOn(ImageStore, 'get').mockRejectedValue(new Error('IndexedDB perdu'));
+        await expect(Archive.exportZip()).resolves.toBe(true);
+    });
+
+    it('V5 : une fiche entrante fusionnée dans une existante reçoit une pierre (réimport sans doublon)', async () => {
+        const { readTombstones } = await import('@pctac/tombstones.js');
+        Storage.saveCollection(ADVERSARIES_KEY, [
+            { id: 'local1', nom: 'Dupont', prenom: 'Jean' },
+            { id: 'remote1', nom: 'Dupont', prenom: 'Jean', domicile: '3 rue' },
+        ]);
+        await resolveDuplicateFiches({ [ADVERSARIES_KEY]: [{ id: 'remote1', nom: 'Dupont', prenom: 'Jean', domicile: '3 rue' }] });
+        expect(readTombstones('forcene').map((t) => t.itemId)).toEqual(['remote1']);
     });
 });

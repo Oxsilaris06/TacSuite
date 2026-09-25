@@ -52,3 +52,22 @@ describe('tombstoneMap', () => {
     expect(map.get('a1')).toBe(Date.parse('2026-09-25T10:00:00Z'));
   });
 });
+
+describe('Revue neuve du 25/09 — V6 : normalisation des pierres reçues', () => {
+  it('borne une date future à maintenant, écarte les entrées invalides, plafonne', async () => {
+    const { normalizeTombstones } = await import('@pctac/tombstones.js');
+    const now = Date.parse('2026-09-25T12:00:00Z');
+    const list = [
+      { id: 'k:a', key: 'k', itemId: 'a', deletedAt: '9999-01-01T00:00:00Z', updatedAt: '9999-01-01T00:00:00Z' },
+      { id: 'k:b', key: 'k', itemId: 'b', deletedAt: '2026-09-25T10:00:00Z', updatedAt: '2026-09-25T10:00:00Z' },
+      { id: 'k:c', key: 'k', itemId: 'c', deletedAt: 'pas une date', updatedAt: 'x' },
+      null,
+    ];
+    const out = normalizeTombstones(list, now);
+    expect(out.map((t) => t.itemId)).toEqual(['b', 'a']);
+    expect(out[1]?.deletedAt).toBe('2026-09-25T12:00:00.000Z');
+    expect(out[1]?.updatedAt).toBe('2026-09-25T12:00:00.000Z');
+    const many = Array.from({ length: TOMBSTONES_MAX + 3 }, (_, i) => ({ id: `k:${i}`, key: 'k', itemId: `${i}`, deletedAt: new Date(1_700_000_000_000 + i).toISOString(), updatedAt: new Date(1_700_000_000_000 + i).toISOString() }));
+    expect(normalizeTombstones(many, now)).toHaveLength(TOMBSTONES_MAX);
+  });
+});

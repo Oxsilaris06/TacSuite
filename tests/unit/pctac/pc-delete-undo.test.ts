@@ -154,7 +154,7 @@ describe('Revue du 25/09 — pierres tombales, situation figée, stockage plein 
     expect(readTombstones('forcene')).toEqual([]);
     undoableDelete({ key: ADVERSARIES_KEY, id: 'b', message: 'Fiche supprimée', refresh: () => {} });
     vi.runOnlyPendingTimers();
-    expect(readTombstones('forcene').map((t) => t.itemId)).toEqual(['b']);
+    expect(readTombstones('forcene').filter((t) => t.key === ADVERSARIES_KEY).map((t) => t.itemId)).toEqual(['b']);
   });
 
   it('A7 : une entrée de main courante supprimée reçoit aussi sa pierre à l’échéance', async () => {
@@ -194,5 +194,17 @@ describe('Revue du 25/09 — pierres tombales, situation figée, stockage plein 
     // Un toast d'annulation est de nouveau proposé : second essai, place libérée.
     [...document.querySelectorAll<HTMLButtonElement>('.tac-toast button[data-tac-toast-action="undo"]')].at(-1)?.click();
     expect(Storage.loadCollection(PHOTOS_KEY).map((i) => i.id)).toEqual(['a', 'b']);
+  });
+});
+
+describe('Revue neuve du 25/09 — V3 : la photo _sync d’une fiche supprimée reçoit sa pierre', () => {
+  it('à l’échéance, pcTacPhotos:<id>_sync est aussi marquée supprimée', async () => {
+    const { readTombstones } = await import('../../../src/apps/pctac/tombstones.js');
+    Storage.saveCollection(ADVERSARIES_KEY, [{ id: 'a1', hasImage: true }]);
+    Storage.saveCollection(PHOTOS_KEY, [{ id: 'a1_sync', hasImage: true }]);
+    undoableDelete({ key: ADVERSARIES_KEY, id: 'a1', message: 'Fiche supprimée', refresh: () => {} });
+    vi.runOnlyPendingTimers();
+    const ids = readTombstones('forcene').map((t) => `${t.key}:${t.itemId}`).sort();
+    expect(ids).toEqual([`${ADVERSARIES_KEY}:a1`, `${PHOTOS_KEY}:a1_sync`]);
   });
 });

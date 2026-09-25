@@ -44,11 +44,14 @@ import maplibregl from 'maplibre-gl';
 import type { GeoJSONSource, LngLat, MapMouseEvent } from 'maplibre-gl';
 
 import { Storage } from '@pctac/storage.js';
-import { ADVERSARIES_KEY, FRIENDS_KEY, HOSTAGES_KEY, PIN_ICONS } from '@pctac/config.js';
+import { ADVERSARIES_KEY, FRIENDS_KEY, HOSTAGES_KEY } from '@pctac/config.js';
 import { confirmDialog, toast, undoableToast } from '@shared/feedback.js';
 import { attachPinGestures } from '@shared/pin-gestures.js';
 
-import { ENTITY_COLORS } from './constants.js';
+import { ENTITY_COLORS, PINS_KEY } from './constants.js';
+import { safePinColor, safePinGlyph } from './pin-safe.js';
+import { currentModeId } from '@pctac/modes.js';
+import { recordTombstone } from '@pctac/tombstones.js';
 import type {
     LngLatTuple,
     PinCircleFeature,
@@ -74,40 +77,6 @@ function logMapAction(remarques: string): void {
     } catch { /* silencieux — cf. ci-dessus */ }
 }
 
-/** Couleur de repli d'un pin quand la donnée est absente ou invalide. */
-const DEFAULT_PIN_COLOR = '#3b82f6';
-
-/**
- * R18 — n'accepte qu'une couleur CSS simple (hex ou rgb/rgba). Toute autre
- * valeur (forgée dans une archive) retombe sur la couleur par défaut. La
- * couleur est toujours posée par `style`/attribut, jamais via `innerHTML`.
- */
-function safePinColor(color: string | undefined): string {
-    const c = (color ?? '').trim();
-    if (/^#[0-9a-f]{3}(?:[0-9a-f]{3})?$/i.test(c)) return c;
-    if (/^rgba?\(\s*\d{1,3}%?(?:\s*,\s*\d{1,3}%?){2}(?:\s*,\s*(?:0|1|0?\.\d+))?\s*\)$/i.test(c)) return c;
-    return DEFAULT_PIN_COLOR;
-}
-
-/**
- * Icônes hors catalogue produites par le code : la roue OTAN pose le segment
- * « Inconnu » avec `help`, absent de `PIN_ICONS`. On les garde pour ne pas
- * changer l'aspect d'un pin légitime.
- */
-const EXTRA_PIN_GLYPHS: readonly string[] = ['help'];
-
-/**
- * R18 — glyph Material Symbols d'un pin : `icon` n'est retenu que s'il est un
- * id du catalogue `PIN_ICONS` (donc choisi par la roue), sinon `EXTRA_PIN_GLYPHS`.
- * À défaut on retombe sur l'icône par défaut (voiture pour un véhicule, repère
- * sinon) ; `null` quand le pin n'a pas d'icône du tout (rendu en goutte SVG).
- */
-function safePinGlyph(icon: string | undefined, isVehicle: boolean): string | null {
-    const raw = icon && icon.trim();
-    if (!raw) return isVehicle ? 'directions_car' : null;
-    if (PIN_ICONS.some((i) => i.id === raw) || EXTRA_PIN_GLYPHS.includes(raw)) return raw;
-    return isVehicle ? 'directions_car' : 'flag';
-}
 
 export const PinsMethods = {
     // planMap.js:1156-1188
@@ -184,8 +153,15 @@ export const PinsMethods = {
         });
         if (!ok) return;
         const snapshot: PlanPin = { ...target };
+        const modeId = currentModeId(); // situation figée à la suppression
         this._removePin(id);
         undoableToast('Point supprimé', {
+            // V5 (revue neuve du 25/09) — à l'échéance, le point supprimé ne
+            // reviendra pas par une fusion d'archive (pierre tombale).
+            onCommit: () => {
+                if (this._loadPins().some((p) => p.id === snapshot.id)) return;
+                recordTombstone(PINS_KEY, snapshot.id, modeId);
+            },
             onUndo: () => {
                 const list = this._loadPins();
                 if (list.some(p => p.id === snapshot.id)) return; // déjà remis (double annulation)

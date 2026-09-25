@@ -1418,6 +1418,17 @@ export function releaseSweep(): void { sweepHolders = Math.max(0, sweepHolders -
 /** Retire les marqueurs d'une source (préfixe de `sender`, ex. `osmand:`). */
 export function removeRemoteMembers(prefix: string): void {
   for (const s of [...members.keys()]) if (s.startsWith(prefix)) removeMember(s);
+  // V8 (revue neuve du 25/09) — l'état persisté (dernière position connue)
+  // part aussi : sinon une réhydratation les remettait en gris jusqu'à 30 min.
+  tlWithStore('readwrite', (store) => {
+    const req = store.openCursor();
+    req.onsuccess = () => {
+      const cur = req.result;
+      if (!cur) return;
+      if (String(cur.key).startsWith(prefix)) cur.delete();
+      cur.continue();
+    };
+  }).catch(() => { /* best-effort */ });
 }
 
 /* ─── câblage UI ────────────────────────────────────────────────────────── */

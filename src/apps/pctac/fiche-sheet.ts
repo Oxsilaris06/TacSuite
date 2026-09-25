@@ -808,8 +808,15 @@ function applyValuesInPlace(keys: readonly string[]): void {
             el.querySelectorAll<HTMLElement>('.fiche-chip').forEach((b) => b.setAttribute('aria-pressed', String(selected.includes(b.dataset.chip ?? ''))));
             const p = el.querySelector<HTMLInputElement>('.fiche-precision');
             if (p) p.value = precision;
+        } else if (el instanceof HTMLSelectElement) {
+            // V2 — le menu « Lien » : l'option peut viser une fiche créée après
+            // l'ouverture ; sans elle, poser la valeur l'effaçait.
+            el.innerHTML = linkOptions(String(value ?? ''));
+            el.value = String(value ?? '');
         } else {
             (el as HTMLInputElement).value = String(value ?? '');
+            const hint = dlg.querySelector(`[data-age-for="${CSS.escape(key)}"]`);
+            if (hint) { const age = ageFromDob(String(value ?? '')); hint.textContent = age === null ? '' : `${age} ans`; }
         }
     }
     updateCounts(dlg);

@@ -41,7 +41,7 @@ import { GPX_INDEX_KEY, PINS_KEY } from '@pctac/planmap/constants.js';
 import { PCTAC_MODES, currentModeId, scopedKey, type PctacModeId } from '@pctac/modes.js';
 import { confirmDialog } from '@shared/feedback.js';
 import { compareLogEntries } from '@pctac/storage.js';
-import { readTombstones, tombstoneMap } from '@pctac/tombstones.js';
+import { normalizeTombstones, readTombstones, tombstoneMap } from '@pctac/tombstones.js';
 
 export type ImportMode = 'merge' | 'replace';
 
@@ -430,10 +430,17 @@ export function applyScope(
     const incomingStones = dataJson[DELETED_KEY];
     if (incomingStones !== undefined) {
         const physical = scopedKey(DELETED_KEY, modeId);
-        if (scope.full) localStorage.setItem(physical, incomingStones);
-        else {
+        // V6 — pierres reçues normalisées (dates futures bornées, plafond).
+        const normalized = (json: string): string | null => {
+            try { return JSON.stringify(normalizeTombstones(JSON.parse(json) as unknown)); } catch { return null; }
+        };
+        if (scope.full) {
+            const json = normalized(incomingStones);
+            if (json !== null) localStorage.setItem(physical, json);
+        } else {
             const union = mergeCollectionReport(localStorage.getItem(physical), incomingStones);
-            if (union.json !== null) localStorage.setItem(physical, union.json);
+            const json = union.json !== null ? normalized(union.json) : null;
+            if (json !== null) localStorage.setItem(physical, json);
         }
     }
     return { written, addedByKey, replacedByKey, skippedByKey };
