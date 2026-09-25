@@ -607,3 +607,70 @@ describe('doublon de personne à la création (décision 32)', () => {
     expect(Storage.loadCollection('pcTacAdversaries')).toHaveLength(1);
   });
 });
+
+describe('fiche ouverte changée dans un autre onglet (décision 29)', () => {
+  const seedOne = (): void => {
+    Storage.saveCollection('pcTacAdversaries', [{ id: 'a1', nom: 'ALPHA', prenom: 'Alain', status: 'active' }]);
+  };
+  const remoteData = (): void => {
+    document.dispatchEvent(new CustomEvent('pctac:data', { detail: { key: 'pcTacAdversaries', remote: true } }));
+  };
+  afterEach(() => { vi.restoreAllMocks(); });
+
+  it('champ changé ailleurs et pas ici : mis à jour sans bruit', async () => {
+    seedOne();
+    await openFiche('adv', 'a1');
+    const list = Storage.loadCollection('pcTacAdversaries');
+    list[0]!.antecedents = 'Fiché S';
+    Storage.saveCollection('pcTacAdversaries', list);
+
+    remoteData();
+    await flush();
+    expect(document.querySelector<HTMLInputElement>('#ficheSheet [data-key="antecedents"]')?.value).toBe('Fiché S');
+    expect(document.querySelector('.tac-choice-dialog')).toBeNull();
+  });
+
+  it('champ changé des deux côtés différemment : fenêtre de choix, « Prendre l\'autre » applique', async () => {
+    seedOne();
+    await openFiche('adv', 'a1');
+    setField('antecedents', 'LOCAL');
+    const list = Storage.loadCollection('pcTacAdversaries');
+    list[0]!.antecedents = 'AUTRE ONGLET';
+    Storage.saveCollection('pcTacAdversaries', list);
+
+    remoteData();
+    await flush();
+    const dialogChoice = document.querySelector('.tac-choice-dialog');
+    expect(dialogChoice).not.toBeNull();
+    document.querySelector<HTMLElement>('[data-choice="theirs"]')!.click();
+    await flush();
+    expect(document.querySelector<HTMLInputElement>('#ficheSheet [data-key="antecedents"]')?.value).toBe('AUTRE ONGLET');
+  });
+
+  it('fiche supprimée ailleurs : propose « Recréer en enregistrant » ou « Fermer »', async () => {
+    seedOne();
+    await openFiche('adv', 'a1');
+    Storage.saveCollection('pcTacAdversaries', []);
+
+    remoteData();
+    await flush();
+    const labels = [...document.querySelectorAll('.tac-choice-dialog [data-choice]')].map((b) => b.textContent);
+    expect(labels).toEqual(['Recréer en enregistrant', 'Fermer']);
+    document.querySelector<HTMLElement>('[data-choice="close"]')!.click();
+    await flush();
+    expect(dialog().open).toBe(false);
+  });
+
+  it('« Recréer en enregistrant » : enregistrer recrée la fiche', async () => {
+    seedOne();
+    await openFiche('adv', 'a1');
+    Storage.saveCollection('pcTacAdversaries', []);
+
+    remoteData();
+    await flush();
+    document.querySelector<HTMLElement>('[data-choice="recreate"]')!.click();
+    await flush();
+    await clickSave();
+    expect(Storage.loadCollection('pcTacAdversaries')).toHaveLength(1);
+  });
+});

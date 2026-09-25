@@ -43,6 +43,7 @@ import { toast } from '@shared/feedback.js';
 import { annotatePhoto } from '@pctac/photo-annotation.js';
 import { mergePersonIntoExisting } from '@pctac/fiche-merge.js';
 import { choiceDialog } from '@pctac/choice-dialog.js';
+import { diffOpenFiche } from '@pctac/fiche-conflict.js';
 import type { PctacCollectionItem } from '@shared/types/contracts.js';
 
 interface Draft {
@@ -67,6 +68,8 @@ interface SheetState {
     pendingDraft: boolean;
     /** Compression photo en cours : l'enregistrement l'attend. */
     photoPending: Promise<void> | null;
+    /** La fiche a été supprimée dans un autre onglet : « Enregistrer » la recrée. */
+    recreate?: boolean;
 }
 
 let state: SheetState | null = null;
@@ -77,6 +80,7 @@ let historyPushed = false;
 /** Dialogue déjà câblé (un gabarit rechargé en crée un neuf). */
 let boundTo: HTMLDialogElement | null = null;
 let popstateBound = false;
+let remoteBound = false;
 
 /** Même seuil que le CSS : téléphone, ou téléphone en paysage. */
 const FULLSCREEN_MQ = '(max-width: 640px), (max-height: 500px)';
@@ -437,7 +441,7 @@ async function save(next: boolean): Promise<void> {
         const key = collectionKey(side);
         const list = Storage.loadCollection(key);
         let item = id ? list.find((i) => i.id === id) : undefined;
-        if (id && !item) {
+        if (id && !item && !s.recreate) {
             // Supprimée ailleurs (autre onglet) : la saisie devient le brouillon
             // d'une NOUVELLE fiche, proposé au prochain « + ».
             const drafts = readDrafts();
@@ -588,6 +592,52 @@ async function save(next: boolean): Promise<void> {
         saving = false;
         buttons.forEach((b) => { b.disabled = false; });
     }
+}
+
+/**
+ * Décision 29 — la même fiche change dans un autre onglet pendant qu'elle est
+ * ouverte : appliquer sans bruit les champs changés là-bas et pas ici, faire
+ * trancher champ par champ les divergences, ou proposer de recréer la fiche si
+ * elle a été supprimée ailleurs.
+ */
+async function handleRemoteFicheChange(): Promise<void> {
+    const s = state;
+    if (!s || !s.id) return;
+    const key = collectionKey(s.side);
+    const fresh = Storage.loadCollection(key).find((i) => i.id === s.id);
+    if (!fresh) {
+        const choice = await choiceDialog({
+            title: 'Fiche supprimée ailleurs',
+            message: 'Cette fiche a été supprimée dans un autre onglet. Que faire ?',
+            options: [
+                { value: 'recreate', label: 'Recréer en enregistrant' },
+                { value: 'close', label: 'Fermer' },
+            ],
+        });
+        if (choice === 'recreate') { s.recreate = true; return; }
+        close();
+        return;
+    }
+    const mine = { ...s.item, ...collect() };
+    const base = s.base ? JSON.parse(s.base) as Record<string, unknown> : null;
+    const diff = diffOpenFiche(base, mine, fresh);
+    if (diff.conflicts.length === 0 && Object.keys(diff.silent).length === 0) return;
+    // Les saisies locales priment avant d'appliquer ; les silencieux écrasent
+    // les valeurs non touchées ici uniquement.
+    s.item = { ...s.item, ...mine, ...diff.silent };
+    for (const conflict of diff.conflicts) {
+        const choice = await choiceDialog({
+            title: 'Champ modifié dans un autre onglet',
+            message: `Champ « ${conflict.key} » : votre valeur « ${String(conflict.mine ?? '')} » `
+                + `/ autre onglet « ${String(conflict.theirs ?? '')} ».`,
+            options: [
+                { value: 'mine', label: 'Garder la mienne' },
+                { value: 'theirs', label: "Prendre l'autre" },
+            ],
+        });
+        if (choice === 'theirs') s.item[conflict.key] = conflict.theirs;
+    }
+    if (state === s) render();
 }
 
 /** Photo enregistrée de la fiche (décision 25) : la fiche montre ensuite la version annotée. */
@@ -788,6 +838,16 @@ function bind(dlg: HTMLDialogElement): void {
     dlg.addEventListener('keydown', onKeydown);
     // Filet : aucune soumission de formulaire, quelle qu'en soit l'origine.
     dlg.addEventListener('submit', (e) => { e.preventDefault(); });
+    // Décision 29 — la même fiche change dans un autre onglet (écouteur unique).
+    if (!remoteBound) {
+        remoteBound = true;
+        document.addEventListener('pctac:data', (e) => {
+            const detail = (e as CustomEvent<{ key?: unknown; remote?: unknown }>).detail;
+            if (!detail || detail.remote !== true || !state || !state.id) return;
+            if (detail.key !== collectionKey(state.side)) return;
+            void handleRemoteFicheChange();
+        });
+    }
     // Fermeture par Échap ou `close()` : on rend l'entrée d'historique.
     dlg.addEventListener('close', () => {
         const closed = state;

@@ -101,6 +101,7 @@ import { scopedKey } from '@pctac/modes.js';
 import { initImportScopeModal } from '@pctac/import-scope.js';
 import { initSplitView } from '@pctac/split-view.js';
 import { initTabSync } from '@pctac/tab-sync.js';
+import { initTabSyncViews } from '@pctac/tab-sync-views.js';
 import { applyLexicon, initModeSelector, onModeChange } from '@pctac/mode-ui.js';
 import { openFiche } from '@pctac/fiche-sheet.js';
 
@@ -183,6 +184,16 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Lot B (constat 10) — suggestions du lien adversaire disponibles dès
     // l'ouverture, sans attendre un premier rendu de la vue Otages.
     UI.refreshOtagesSuggestions();
+
+    // Décision 29 — repeindre les listes quand un AUTRE onglet change les
+    // données de la situation. Ne referme pas une fiche ouverte (hors liste).
+    initTabSyncViews({
+        log: () => UI.renderLogTable(Storage.loadLogData()),
+        adversaries: () => { void UI.renderAdversaries(); },
+        hostages: () => { void UI.renderHostages(); },
+        friends: () => UI.renderFriends(),
+        photos: () => { void UI.renderPhotos(); },
+    });
 
     // §5.3 étape 8 — Initialiser les écouteurs d'onglets.
     document.querySelectorAll('.tab-btn').forEach((btnEl) => {

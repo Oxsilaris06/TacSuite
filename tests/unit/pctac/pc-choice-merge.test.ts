@@ -11,6 +11,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { choiceDialog } from '../../../src/apps/pctac/choice-dialog.js';
 import { mergePersonIntoExisting } from '../../../src/apps/pctac/fiche-merge.js';
+import { diffOpenFiche } from '../../../src/apps/pctac/fiche-conflict.js';
 import { ImageStore } from '../../../src/apps/pctac/image-store.js';
 
 beforeEach(() => {
@@ -113,5 +114,35 @@ describe('mergePersonIntoExisting', () => {
     expect(merged.hasImage).toBe(true);
     expect(merged.annotations).toBeUndefined();
     expect(del).toHaveBeenCalledWith('a_orig');
+  });
+});
+
+describe('diffOpenFiche — conflits d\'une fiche ouverte (décision 29)', () => {
+  it('champ changé ailleurs et pas ici : silencieux', () => {
+    const diff = diffOpenFiche({ prenom: '', telephone: '' }, { prenom: '', telephone: '' }, { prenom: '', telephone: '06' });
+    expect(diff.silent).toEqual({ telephone: '06' });
+    expect(diff.conflicts).toEqual([]);
+  });
+
+  it('champ changé des deux côtés différemment : conflit', () => {
+    const diff = diffOpenFiche({ prenom: 'A' }, { prenom: 'Jean' }, { prenom: 'Paul' });
+    expect(diff.conflicts).toEqual([{ key: 'prenom', mine: 'Jean', theirs: 'Paul' }]);
+  });
+
+  it('même changement des deux côtés : aucun bruit', () => {
+    const diff = diffOpenFiche({ prenom: '' }, { prenom: 'Jean' }, { prenom: 'Jean' });
+    expect(diff.silent).toEqual({});
+    expect(diff.conflicts).toEqual([]);
+  });
+
+  it('le statut est ignoré (géré par statusTouched)', () => {
+    const diff = diffOpenFiche({ status: 'active' }, { status: 'active' }, { status: 'neutralized' });
+    expect(diff.conflicts).toEqual([]);
+  });
+
+  it('aucun changement ailleurs : rien à faire', () => {
+    const diff = diffOpenFiche({ prenom: 'A' }, { prenom: 'B' }, { prenom: 'A' });
+    expect(diff.silent).toEqual({});
+    expect(diff.conflicts).toEqual([]);
   });
 });
