@@ -454,8 +454,15 @@ export const PdfExport: PdfExportContract = {
 
             let prevDate: string | undefined;
             for (const entry of logData) {
+                // M3 — le lieu est replié (retour à la ligne) au lieu d'être
+                // tronqué par « … » : la main courante fait foi, une information
+                // saisie ne doit pas disparaître à l'impression. M4 — les
+                // remarques respectent leurs sauts de ligne (wrapText).
                 const remarksLines = wrapText(entry.remarques, colWidths[3] - 10, font, 9);
-                const rowHeight = Math.max(1, remarksLines.length) * context.lineHeight + 10;
+                const lieuLines = wrapText(entry.lieu, colWidths[2] - 5, font, 9);
+                // La rangée prend la hauteur du plus long des deux blocs.
+                const blockLines = Math.max(1, remarksLines.length, lieuLines.length);
+                const rowHeight = blockLines * context.lineHeight + 10;
 
                 // U15 — en-tête de jour quand la date change : lève l'ambiguïté
                 // minuit sans colonne supplémentaire (les entrées legacy sans
@@ -474,10 +481,6 @@ export const PdfExport: PdfExportContract = {
                     });
                     context.y -= 18;
                 }
-
-                let currentX = context.margin + 5;
-                pdfPage().drawText(fitTextToWidth(sanitizeWinAnsi(entry.heure), font, 9, colWidths[0] - 5), { x: currentX, y: context.y, size: 9, font, color: themeColors.text });
-                currentX += colWidths[0];
 
                 // Style Pax (Couleur). Le libellé suit la situation (« Inter »
                 // devient « Recherches » en Recherche de personnes) ; la clé
@@ -500,24 +503,33 @@ export const PdfExport: PdfExportContract = {
                 const yiq = ((r * 299) + (g * 587) + (b * 114)) / 1000;
                 const textColor = (yiq >= 128) ? pdfRgb(0, 0, 0) : pdfRgb(1, 1, 1);
 
-                pdfPage().drawRectangle({ x: currentX - 2, y: context.y - 2, width: colWidths[1] - 5, height: 12, color: pColor });
-                pdfPage().drawText(fitTextToWidth(sanitizeWinAnsi(pText), fontBold, 8, colWidths[1] - 5), { x: currentX, y: context.y, size: 8, font: fontBold, color: textColor });
-                currentX += colWidths[1];
-
-                pdfPage().drawText(fitTextToWidth(sanitizeWinAnsi(entry.lieu), font, 9, colWidths[2] - 5), { x: currentX, y: context.y, size: 9, font, color: themeColors.text });
-                currentX += colWidths[2];
-
-                remarksLines.forEach((line, idx) => {
-                    pdfPage().drawText(line, { x: currentX, y: context.y - (idx * context.lineHeight), size: 9, font, color: themeColors.text });
-                });
+                // Colonnes à position fixe, dessinées ligne à ligne : le lieu et
+                // les remarques peuvent occuper plusieurs lignes.
+                const heureX = context.margin + 5;
+                const paxX = heureX + colWidths[0];
+                const lieuX = paxX + colWidths[1];
+                const remarksX = lieuX + colWidths[2];
+                const rowTop = context.y;
+                for (let i = 0; i < blockLines; i++) {
+                    if (i > 0) context.y -= context.lineHeight;
+                    if (i === 0) {
+                        pdfPage().drawText(fitTextToWidth(sanitizeWinAnsi(entry.heure), font, 9, colWidths[0] - 5), { x: heureX, y: context.y, size: 9, font, color: themeColors.text });
+                        pdfPage().drawRectangle({ x: paxX - 2, y: context.y - 2, width: colWidths[1] - 5, height: 12, color: pColor });
+                        pdfPage().drawText(fitTextToWidth(sanitizeWinAnsi(pText), fontBold, 8, colWidths[1] - 5), { x: paxX, y: context.y, size: 8, font: fontBold, color: textColor });
+                    }
+                    const lieu = lieuLines[i];
+                    if (lieu) pdfPage().drawText(lieu, { x: lieuX, y: context.y, size: 9, font, color: themeColors.text });
+                    const remark = remarksLines[i];
+                    if (remark) pdfPage().drawText(remark, { x: remarksX, y: context.y, size: 9, font, color: themeColors.text });
+                }
 
                 pdfPage().drawLine({
-                    start: { x: context.margin, y: context.y - rowHeight + 12 },
-                    end: { x: context.pageWidth - context.margin, y: context.y - rowHeight + 12 },
+                    start: { x: context.margin, y: rowTop - rowHeight + 12 },
+                    end: { x: context.pageWidth - context.margin, y: rowTop - rowHeight + 12 },
                     thickness: 0.5, color: themeColors.line, opacity: 0.3
                 });
 
-                context.y -= rowHeight;
+                context.y = rowTop - rowHeight;
             }
 
             // --- 2 et 3. FICHES ADVERSE ET PROTÉGÉE (décisions 17 à 19) ---
