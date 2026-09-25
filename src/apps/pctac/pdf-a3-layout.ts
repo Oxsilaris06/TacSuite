@@ -14,8 +14,9 @@
  *  - colonne C : faits marquants, points du plan, forces amies.
  *
  * « Jamais dépasser » : chaque zone est placée par mesure, avec des paliers de
- * corps de 8 à 5,5 pt. Quand même 5,5 pt ne suffit pas, RÉDUCTION GRADUÉE
- * ANNONCÉE (un bandeau rouge liste ce qui a été réduit), zone par zone :
+ * corps de 10 à 5,5 pt (le plus grand qui tient). Quand même 5,5 pt ne
+ * suffit pas, RÉDUCTION GRADUÉE ANNONCÉE (un bandeau rouge liste ce qui a été
+ * réduit), zone par zone :
  *  1. fiches ramenées à leurs 3 faits clés ;
  *  2. photos en vignettes carrées (18 à 12 mm, sans légende) ;
  *  3. faits marquants : les plus récents, le nombre d'antérieurs annoncé.
@@ -31,7 +32,7 @@ const GAP = 4;
 const COL_GAP = 3;
 const BANNER_H = 5;
 const A_WIDTH = 175;
-const TIERS = [8, 7.5, 7, 6.5, 6, 5.5] as const;
+const TIERS = [10, 9.5, 9, 8.5, 8, 7.5, 7, 6.5, 6, 5.5] as const;
 const PHOTO_MIN_H = 18;
 const SQUARE_MAX = 18;
 const SQUARE_MIN = 12;
@@ -58,7 +59,7 @@ export interface A3Input {
     adv: { header: string; fiches: A3Fiche[] };
     host: { header: string; fiches: A3Fiche[] };
     /** Faits marquants, dans l'ordre chronologique (le plus ancien d'abord). */
-    faits: { header: string; entries: string[] };
+    faits: { header: string; legend?: string; entries: string[] };
     points: { header: string; items: string[] };
     amis: { header: string; items: string[] };
 }
@@ -325,13 +326,13 @@ export function layoutA3(input: A3Input, measure: A3Measure): A3Layout {
             const kept = input.faits.entries.slice(input.faits.entries.length - n);
             const skipped = input.faits.entries.length - n;
             return [
-                { title: input.faits.header },
+                { title: input.faits.header, body: input.faits.legend },
                 ...(skipped > 0 ? [{ body: `+ ${skipped} antérieurs au rapport complet` }] : []),
                 ...kept.map((e) => ({ body: e })),
                 { title: input.points.header },
-                ...(input.points.items.length ? [{ body: input.points.items.join(' · ') }] : []),
+                ...input.points.items.map((i) => ({ body: i })),
                 { title: input.amis.header },
-                ...(input.amis.items.length ? [{ body: input.amis.items.join(' · ') }] : []),
+                ...input.amis.items.map((i) => ({ body: i })),
             ];
         };
         const total = input.faits.entries.length;

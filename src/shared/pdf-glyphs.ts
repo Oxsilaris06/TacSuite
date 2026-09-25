@@ -36,7 +36,7 @@ export interface TextRun {
 
 const STRONG = /[\p{L}\p{M}]/u;
 const WHITESPACE = /\s/u;
-const EMOJI_SEQUENCE = /\p{Extended_Pictographic}(?:️|[\u{1F3FB}-\u{1F3FF}]|‍\p{Extended_Pictographic}️?)*/gu;
+const EMOJI_SEQUENCE = /\p{Extended_Pictographic}(?:\uFE0F|[\u{1F3FB}-\u{1F3FF}]|\u200D\p{Extended_Pictographic}\uFE0F?)*/gu;
 
 export function isRtlCodePoint(cp: number): boolean {
     return (cp >= 0x0590 && cp <= 0x08ff) || (cp >= 0xfb1d && cp <= 0xfdff) || (cp >= 0xfe70 && cp <= 0xfeff);
@@ -59,23 +59,32 @@ function covers(fontId: string | null, cp: number, chain: readonly FontCandidate
 interface Resolved { ch: string; fontId: string | null; rtl: boolean }
 
 export function splitFontRuns(text: string, chain: readonly FontCandidate[]): TextRun[] {
+    if (!text) return [];
     const chars = Array.from(text);
-    const resolved: (Resolved | null)[] = chars.map((ch) => {
-        if (!STRONG.test(ch)) return null; // neutre : résolu au second passage
-        const cp = codePoint(ch);
-        return { ch, fontId: firstCovering(cp, chain), rtl: isRtlCodePoint(cp) };
-    });
+    const cps = chars.map(codePoint);
+    // Chemin rapide : la première police couvre tout (cas du texte latin).
+    const first = chain[0];
+    if (first && cps.every((cp) => first.has(cp) && !isRtlCodePoint(cp))) {
+        return [{ text, fontId: first.id, rtl: false }];
+    }
+    const strong = chars.map((ch) => STRONG.test(ch));
+    const resolved: (Resolved | null)[] = chars.map((ch, i) => (strong[i]
+        ? { ch, fontId: firstCovering(cps[i]!, chain), rtl: isRtlCodePoint(cps[i]!) }
+        : null)); // neutre : résolu au second passage
+
+    // Lettres fortes voisines de chaque position, en deux passes linéaires.
+    const prevStrong: (Resolved | null)[] = new Array(chars.length).fill(null);
+    const nextStrong: (Resolved | null)[] = new Array(chars.length).fill(null);
+    for (let i = 1; i < chars.length; i++) prevStrong[i] = strong[i - 1] ? resolved[i - 1]! : prevStrong[i - 1]!;
+    for (let i = chars.length - 2; i >= 0; i--) nextStrong[i] = strong[i + 1] ? resolved[i + 1]! : nextStrong[i + 1]!;
 
     // Second passage : les neutres (espaces, ponctuation, chiffres, symboles).
     for (let i = 0; i < chars.length; i++) {
         if (resolved[i]) continue;
         const ch = chars[i]!;
-        const cp = codePoint(ch);
-        let prev: Resolved | null = null;
-        for (let j = i - 1; j >= 0 && !prev; j--) if (resolved[j] && STRONG.test(chars[j]!)) prev = resolved[j]!;
-        let next: Resolved | null = null;
-        for (let j = i + 1; j < chars.length && !next; j++) if (resolved[j] && STRONG.test(chars[j]!)) next = resolved[j]!;
-
+        const cp = cps[i]!;
+        const prev = prevStrong[i] ?? null;
+        const next = nextStrong[i] ?? null;
         if (prev?.rtl && next?.rtl && covers(prev.fontId, cp, chain)) {
             resolved[i] = { ch, fontId: prev.fontId, rtl: true };
             continue;
@@ -110,7 +119,7 @@ export function findUnsupported(text: string, chain: readonly FontCandidate[]): 
 
 /** Retire les émoji et remplace tout autre caractère sans police par « ? ». */
 export function replaceUnsupported(text: string, chain: readonly FontCandidate[]): string {
-    const sansEmoji = text.replace(EMOJI_SEQUENCE, '').replace(/[‍️]/gu, '');
+    const sansEmoji = text.replace(EMOJI_SEQUENCE, '').replace(/[\u200D\uFE0F]/gu, '');
     let out = '';
     for (const ch of Array.from(sansEmoji)) {
         const cp = codePoint(ch);
