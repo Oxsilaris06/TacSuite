@@ -64,3 +64,32 @@ ${FONT_MAPPING.map(([vfsKey]) => `  '${vfsKey}': '${vfs[vfsKey]}',`).join('\n')}
   console.error('❌ Erreur lors de la génération :', err.message);
   process.exit(1);
 }
+
+// ── Polices de repli et du corps de la synthèse A3 (décisions 41 et 44) ─────
+// Module À PART, importé dynamiquement (`src/shared/pdf-fonts/index.ts`) :
+// ~550 Ko de base64 qui ne pèsent pas sur le démarrage des applications.
+const EXTRA_DIR = resolve(import.meta.dirname, '../src/shared/pdf-fonts');
+const EXTRA_OUTPUT = resolve(EXTRA_DIR, 'fonts-extra.generated.ts');
+const EXTRA_MAPPING = [
+  ['NotoSans-400.ttf', 'noto_sans_regular.ttf'],
+  ['NotoSans-700.ttf', 'noto_sans_bold.ttf'],
+  ['NotoSansArabic-400.ttf', 'noto_sans_arabic_regular.ttf'],
+];
+try {
+  const entries = EXTRA_MAPPING.map(([key, file]) => {
+    const base64 = readFileSync(join(EXTRA_DIR, file)).toString('base64');
+    console.log(`✓ ${file} → base64 (${base64.length} car.)`);
+    return `  '${key}': '${base64}',`;
+  });
+  writeFileSync(EXTRA_OUTPUT, `// FICHIER GÉNÉRÉ par scripts/gen-pdf-fonts.mjs — NE PAS ÉDITER À LA MAIN.
+// Régénérer avec :  npm run gen:pdf-fonts
+
+export const EXTRA_FONT_VFS: Record<string, string> = {
+${entries.join('\n')}
+};
+`, 'utf8');
+  console.log(`✓ Fichier généré : ${EXTRA_OUTPUT}`);
+} catch (err) {
+  console.error('❌ Erreur (polices de repli) :', err.message);
+  process.exit(1);
+}

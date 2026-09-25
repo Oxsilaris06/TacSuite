@@ -105,6 +105,11 @@ const TOP_Z = 2147483000;
 /** Compteur d'identifiants de titre : deux dialogues peuvent coexister (cf. tests), l'`id` ciblé par `aria-labelledby` doit rester unique. */
 let dialogUid = 0;
 
+/** Pose les styles des toasts, bandeaux et fenêtres (idempotent) ; exporté pour les fenêtres bâties ailleurs sur le même socle. */
+export function ensureFeedbackStyles(): void {
+  injectStyles();
+}
+
 function injectStyles(): void {
   if (document.getElementById(STYLE_ID)) return;
   const style = document.createElement('style');
