@@ -646,12 +646,25 @@ function bannerContainer(): HTMLElement {
     el.className = 'tac-banner-container';
     // EN TÊTE de <body>, DANS LE FLUX : le contenu de l'app est poussé vers le
     // bas, jamais recouvert (exigence : aucune commande masquée). PC-Tac, l'OI
-    // et le portail défilent en flux normal ; les rares panneaux
-    // `position: fixed` plein écran (écran scindé PC-Tac) recouvriraient le
-    // bandeau, mais ils ne cohabitent pas avec un bandeau d'application.
+    // et le portail défilent en flux normal ; les panneaux `position: fixed`
+    // plein écran (écran scindé PC-Tac) se décalent sous le conteneur grâce à
+    // `--tac-banner-h` (S0, revue du 25/09 : les bandeaux d'appareil de PC-Tac
+    // étaient recouverts en écran scindé).
     document.body.insertBefore(el, document.body.firstChild);
+    if (typeof ResizeObserver === 'function') new ResizeObserver(publishBannerHeight).observe(el);
   }
   return el;
+}
+
+/**
+ * Hauteur du conteneur publiée en variable CSS (`--tac-banner-h`) sur
+ * `<html>` : les panneaux plein écran en position fixe s'y décalent au lieu
+ * de recouvrir les bandeaux.
+ */
+function publishBannerHeight(): void {
+  const el = document.getElementById('tac-banner-container');
+  const h = el && el.childElementCount ? el.offsetHeight : 0;
+  document.documentElement.style.setProperty('--tac-banner-h', `${h}px`);
 }
 
 function removeBanner(id: string): void {
@@ -659,6 +672,7 @@ function removeBanner(id: string): void {
   if (!el) return;
   el.remove();
   BANNERS.delete(id);
+  publishBannerHeight();
 }
 
 /**
@@ -718,6 +732,7 @@ export function showBanner(id: string, options: BannerOptions): void {
     container.appendChild(el);
   }
   BANNERS.set(id, el);
+  publishBannerHeight();
 }
 
 /** Retire le bandeau `id` (retrait programmatique : n'appelle pas `onDismiss`). */

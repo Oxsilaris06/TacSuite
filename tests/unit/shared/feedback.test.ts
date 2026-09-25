@@ -513,3 +513,23 @@ describe('bandeaux persistants', () => {
     expect(css).toContain('var(--color-danger');
   });
 });
+
+describe('Revue du 25/09 — hauteur des bandeaux publiée pour l’écran scindé (S0)', () => {
+  let heightSpy: ReturnType<typeof vi.spyOn> | null = null;
+  beforeEach(() => {
+    heightSpy = vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockImplementation(function (this: HTMLElement) {
+      return this.id === 'tac-banner-container' && this.childElementCount ? 48 : 0;
+    });
+  });
+  afterEach(() => {
+    heightSpy?.mockRestore();
+    document.documentElement.style.removeProperty('--tac-banner-h');
+  });
+
+  it('--tac-banner-h suit la hauteur du conteneur : 48px avec un bandeau, 0px sans', () => {
+    showBanner('b1', { message: 'Navigation privée : tout sera perdu à la fermeture.', level: 'alert' });
+    expect(document.documentElement.style.getPropertyValue('--tac-banner-h')).toBe('48px');
+    hideBanner('b1');
+    expect(document.documentElement.style.getPropertyValue('--tac-banner-h')).toBe('0px');
+  });
+});
