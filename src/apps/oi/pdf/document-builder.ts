@@ -78,6 +78,7 @@ import {
     type OiPdfPalette,
 } from './theme.js';
 import { breakLongTokens } from './text-utils.js';
+import { dateFr, oiModeLabel, oiPdfInfo } from './document-meta.js';
 import { applySectionRemovals, currentOiMode, isSectionRemoved, OI_EXPRESS_PHOTO_CONTAINERS, pdfSectionTitle } from '@oi/sections.js';
 import type {
     OiAdversary,
@@ -803,7 +804,7 @@ function buildCover(ctx: BuildCtx): Content[] {
     // sécurité : elle collait au bord haut et débordait de 3,5 mm à droite.
     const opLines: Content[] = [
         ...(isBlankOrDash(formData.nom_operation) ? [] : [{ text: `OP : ${str(formData.nom_operation).trim()}` }]),
-        ...(isBlankOrDash(formData.date_op) ? [] : [{ text: `DATE : ${strOr(formData.date_op)}`, fontSize: 9 }]),
+        ...(isBlankOrDash(formData.date_op) ? [] : [{ text: `DATE : ${dateFr(str(formData.date_op))}`, fontSize: 9 }]),
     ];
     const opCardWidthPt = mm(60);
     const opCard: Content[] = opLines.length === 0 ? [] : [{
@@ -2609,14 +2610,14 @@ function effractionMeasuresBody(ctx: BuildCtx, block: OiEffractionBlock, rightCo
     ].filter((c): c is Content => c !== null);
     const gridTop: Content[] = leftItems.length > 0 || rightItems.length > 0 ? [grid2(leftItems, rightItems)] : [];
 
-    const hPorteItem: Content[] = !isEffractionMeasureBlank(block.h_porte) ? [mv('H. Porte', block.h_porte, 'h-porte')] : [];
-    const hMarcheItem: Content[] = !isEffractionMeasureBlank(block.h_marche) ? [mv('H. Marche', block.h_marche, 'h-marche')] : [];
+    const hPorteItem: Content[] = !isEffractionMeasureBlank(block.h_porte) ? [mv('H. Porte', `${block.h_porte} mm`, 'h-porte')] : [];
+    const hMarcheItem: Content[] = !isEffractionMeasureBlank(block.h_marche) ? [mv('H. Marche', `${block.h_marche} mm`, 'h-marche')] : [];
     const gridH: Content[] = hPorteItem.length > 0 || hMarcheItem.length > 0 ? [grid2(hPorteItem, hMarcheItem)] : [];
 
     // Champ fantôme #3 (`prof_marche`/`prof_moulure`, `OrderHtmlArticulation.kt:289-290`)
     // — dernières lignes des mesures, même ordre que strategica.
     const profMarcheItem: Content[] = !isEffractionMeasureBlank(block.prof_marche) ? [mv('Prof. Marche', `${block.prof_marche} mm`, 'prof-marche')] : [];
-    const profBatiItem: Content[] = !isEffractionMeasureBlank(block.prof_bati) ? [mv('Prof. Bâti', block.prof_bati, 'prof-bati')] : [];
+    const profBatiItem: Content[] = !isEffractionMeasureBlank(block.prof_bati) ? [mv('Prof. Bâti', `${block.prof_bati} mm`, 'prof-bati')] : [];
     const gridProf: Content[] = profMarcheItem.length > 0 || profBatiItem.length > 0 ? [grid2(profMarcheItem, profBatiItem)] : [];
 
     const profMoulure: Content[] = !isEffractionMeasureBlank(block.prof_moulure) ? [mv('Prof. Moulure', `${block.prof_moulure} mm`, 'prof-moulure')] : [];
@@ -3977,13 +3978,18 @@ export const PAGE_CAPACITY = {
 };
 
 /**
- * Nom de fichier — port EXACT de `pdf-engine-v2.ts:442-444` (contrat E2E,
- * `tests/e2e/oi.spec.ts:968` attend `/^OI_.*\.pdf$/`). Replis `SANS_DATE`/`RED`.
+ * Nom de fichier (contrat E2E, `tests/e2e/oi.spec.ts:968` attend
+ * `/^OI_.*\.pdf$/`) : `OI_Complet_…` ou `OI_Express_…`, date de l'opération,
+ * HEURE de génération, trigramme (audit F23 : l'express et le complet
+ * portaient le même nom, deux versions successives aussi). Replis
+ * `SANS_DATE`/`RED` ; caractères interdits dans un nom de fichier remplacés.
  */
-export function oiPdfFileName(formData: OiFormData): string {
+export function oiPdfFileName(formData: OiFormData, at: Date = new Date()): string {
+    const safe = (s: string): string => s.replace(/[\\/:*?"<>|\s]+/g, '-');
     const dateOp = (formData.date_op as string | undefined) || 'SANS_DATE';
     const trigramme = (formData.trigramme_redacteur as string | undefined) || 'RED';
-    return `OI_${dateOp.replace(/\//g, '-')}_${trigramme}.pdf`;
+    const heure = `${String(at.getHours()).padStart(2, '0')}h${String(at.getMinutes()).padStart(2, '0')}`;
+    return `OI_${oiModeLabel(formData)}_${safe(dateOp)}_${heure}_${safe(trigramme)}.pdf`;
 }
 
 /**
@@ -4363,6 +4369,23 @@ const OI_PDF_SECTION_FORM_ID: Record<string, string> = {
     articulation: 'articulation',
 };
 
+/**
+ * Sections ENTIÈREMENT vides (audit PDF du 2026-09-25, F27) : omises comme
+ * une section retirée, sans page ni numéro — un OI vide imprimait 5 pages de
+ * « LIBELLÉ : - ». Même règle que les CAT, le PATRACDVR et le transport,
+ * déjà omis sans donnée. Une seule valeur saisie garde la section entière.
+ */
+const OI_PDF_SECTION_IS_EMPTY: Record<string, (fd: OiFormData) => boolean> = {
+    environnement: (fd) => ENV_FIELD_SLOTS.every(([, key]) => isBlankOrDash(fd[key])),
+    'mission-execution': (fd) =>
+        ['missions_psig', 'date_execution', 'heure_execution', 'action_body_text'].every((key) => isBlankOrDash(fd[key])) &&
+        (fd.time_events ?? []).every((e) => isBlankOrDash(e.hour) && isBlankOrDash(e.description)) &&
+        (fd.hypotheses ?? []).every((h) => isBlankOrDash(h)),
+    articulation: (fd) =>
+        [fd.rame_vl_order, fd.colonne_progression_order, fd.ordre_penetration_order, fd.moicp_blocks, fd.zmspcp_blocks, fd.effraction_blocks]
+            .every((list) => (list ?? []).length === 0) && isBlankOrDash(fd.place_chef),
+};
+
 export const OI_PDF_DEFAULT_SECTION_ORDER: string[] = OI_PDF_SECTIONS.map((s) => s.id);
 
 /** Libellés humains NUS par id de section — affichés par l'IHM de réordonnancement (`pdf-section-order.ts`). */
@@ -4481,15 +4504,17 @@ export function buildOiDocDefinition(data: OiPdfCollectedData, opts: { format: O
         pushPages(pages, buildCover(ctx));
         // Baseline 3 : slots 1 (garde) et 2 (adversaires, numérotation fixe
         // « 2.<index> » hors compteur) réservés — cf. JSDoc `OI_PDF_SECTIONS`.
-        // Adversaires retirés (×) : leur créneau « 2. » est libéré, la
-        // numérotation dérivée commence à 2.
-        const num = makeSectionNumberer(isSectionRemoved(formData, 'adversaires') ? 2 : 3);
+        // Adversaires retirés (×) ou aucun adversaire saisi (audit F18) : leur
+        // créneau « 2. » est libéré, la numérotation dérivée commence à 2
+        // (`applySectionRemovals` a vidé la liste d'une section retirée).
+        const num = makeSectionNumberer((formData.adversaries ?? []).length === 0 ? 2 : 3);
         const sectionOrder = resolveOiPdfSectionOrder(formData.pdf_section_order);
         for (const id of sectionOrder) {
             const section = OI_PDF_SECTIONS.find((s) => s.id === id);
             // Section retirée (×) : jamais construite, donc aucun numéro consommé.
             const formSection = OI_PDF_SECTION_FORM_ID[id];
             if (formSection !== undefined && isSectionRemoved(formData, formSection)) continue;
+            if (OI_PDF_SECTION_IS_EMPTY[id]?.(formData)) continue;
             if (section) {
                 pushPages(pages, section.build(ctx, num));
             }
@@ -4524,6 +4549,8 @@ export function buildOiDocDefinition(data: OiPdfCollectedData, opts: { format: O
         // recolorée — port de `body{color:${p.text}}` (print-style.ts:49).
         defaultStyle: { font: 'JetBrainsMono', fontSize: baseFontSize, lineHeight: 1.45, color: p.text },
         footer: buildFooter(formData, p),
+        // Métadonnées (audit F28) : type d'OI et date, jamais de nom de personne.
+        info: oiPdfInfo(formData),
         // D1 (`pdfv3-design-fix/DEFAUTS.md`) : fond de page jamais peint — sans ce
         // callback, pdfmake retombe sur SON propre blanc par défaut quel que soit
         // `isDark`. Port de `body{background:${p.bg}}` (print-style.ts:49), même

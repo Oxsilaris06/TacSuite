@@ -113,6 +113,10 @@ function makeRichFormData(): OiFormData {
     return {
         date_op: '2026-05-15',
         trigramme_redacteur: 'REF',
+        // Environnement et mission renseignés : une section ENTIÈREMENT vide
+        // n'est plus imprimée (audit PDF du 2026-09-25, F27).
+        amies: 'BAC de nuit',
+        missions_psig: 'INTERPELLER',
         adversaries: [{ id: 'adv1', nom_adversaire: 'DUPONT', me_list: [], etat_esprit_list: [], volume_list: [], vehicules_list: [] }],
         dynamic_photos: {
             photo_container_transport_pr_preview_container: [
@@ -149,7 +153,7 @@ describe('buildOiDocDefinition — ordre des sections (SPEC-2026-08-18-pdf-et-ch
         const markers = [
             'ORDRE INITIAL',
             '1. SITUATION GLOBALE',
-            'CIBLES(S)',
+            'CIBLE(S)',
             '2.1 FICHE ADVERSAIRE : DUPONT',
             '3. ENVIRONNEMENT ET AMIS',
             '4. TRANSPORT',
@@ -194,7 +198,7 @@ describe('buildOiDocDefinition — ordre des sections (SPEC-2026-08-18-pdf-et-ch
         expect(json).not.toContain('8. CONDUITES À TENIR GÉNÉRALES');
     });
 
-    it("sans aucun adversaire, la section CIBLES(S) affiche le repli et aucune fiche adversaire n'apparaît", () => {
+    it("sans aucun adversaire, la section CIBLE(S) affiche le repli et aucune fiche adversaire n'apparaît", () => {
         const json = JSON.stringify(buildOiDocDefinition(collect({}), { format: 'a4' }));
 
         expect(json).toContain('Aucune cible renseignée.');
@@ -600,25 +604,29 @@ describe('buildOiDocDefinition — ordre des photos', () => {
 // ===========================================================================
 // oiPdfFileName — port exact de pdf-engine-v2.ts:442-444 (contrat E2E).
 // ===========================================================================
+// Audit PDF du 2026-09-25 (F23) : `OI_Complet_…` / `OI_Express_…` et heure
+// de génération — les attentes ci-dessous sont recalées sur ce format.
 describe('oiPdfFileName (pdf-engine-v2.ts:442-444, contrat E2E oi.spec.ts:968)', () => {
+    const at = new Date(2026, 4, 15, 6, 5);
+
     it('cas nominal', () => {
-        expect(oiPdfFileName({ date_op: '2026-05-15', trigramme_redacteur: 'REF' })).toBe('OI_2026-05-15_REF.pdf');
+        expect(oiPdfFileName({ date_op: '2026-05-15', trigramme_redacteur: 'REF' }, at)).toBe('OI_Complet_2026-05-15_06h05_REF.pdf');
     });
 
     it("remplace les '/' du date_op par des '-'", () => {
-        expect(oiPdfFileName({ date_op: '15/05/2026', trigramme_redacteur: 'ABC' })).toBe('OI_15-05-2026_ABC.pdf');
+        expect(oiPdfFileName({ date_op: '15/05/2026', trigramme_redacteur: 'ABC' }, at)).toBe('OI_Complet_15-05-2026_06h05_ABC.pdf');
     });
 
     it("date_op absent -> repli 'SANS_DATE'", () => {
-        expect(oiPdfFileName({ trigramme_redacteur: 'ABC' })).toBe('OI_SANS_DATE_ABC.pdf');
+        expect(oiPdfFileName({ trigramme_redacteur: 'ABC' }, at)).toBe('OI_Complet_SANS_DATE_06h05_ABC.pdf');
     });
 
     it("trigramme_redacteur absent -> repli 'RED'", () => {
-        expect(oiPdfFileName({ date_op: '2026-05-15' })).toBe('OI_2026-05-15_RED.pdf');
+        expect(oiPdfFileName({ date_op: '2026-05-15' }, at)).toBe('OI_Complet_2026-05-15_06h05_RED.pdf');
     });
 
     it('les deux absents', () => {
-        expect(oiPdfFileName({})).toBe('OI_SANS_DATE_RED.pdf');
+        expect(oiPdfFileName({}, at)).toBe('OI_Complet_SANS_DATE_06h05_RED.pdf');
     });
 });
 
@@ -1891,13 +1899,13 @@ describe('internPhotoImages — D4 : internement/déduplication des images (poid
 
 // ===========================================================================
 // RÉGRESSION (campagne de mesure, 2 pertes de données silencieuses) —
-// anomalie CRITIQUE #1 : la carte CIBLES(S) de la page de garde disparaît
+// anomalie CRITIQUE #1 : la carte CIBLE(S) de la page de garde disparaît
 // (`ciblesCard` restait `unbreakable:true` par défaut, pdfmake supprime
 // SILENCIEUSEMENT un bloc insécable qui excède une page) au-delà d'un petit
 // nombre d'adversaires — page 2 restant blanche. Couvre 1/5/8/15/30
 // adversaires, A4 et 16:9 (mêmes seuils que la campagne de mesure).
 // ===========================================================================
-describe('buildOiDocDefinition — RÉGRESSION anomalie #1 : carte CIBLES(S) de la page de garde', () => {
+describe('buildOiDocDefinition — RÉGRESSION anomalie #1 : carte CIBLE(S) de la page de garde', () => {
     function makeAdversaries(count: number): OiAdversary[] {
         return Array.from({ length: count }, (_, i) => ({
             id: `adv${i + 1}`,
@@ -1923,7 +1931,7 @@ describe('buildOiDocDefinition — RÉGRESSION anomalie #1 : carte CIBLES(S) de 
      * (`tests/pdf/generate-from-fixture.mjs` + `pdftotext`/`verify-structure.mjs`,
      * cf. rapport de mission). Ce que CE test unitaire peut et doit vérifier
      * directement, c'est la CAUSE structurelle : plus aucun `card()` portant
-     * « CIBLES(S) » ne doit rester `unbreakable:true` (`blocks.ts::card`,
+     * « CIBLE(S) » ne doit rester `unbreakable:true` (`blocks.ts::card`,
      * défaut historique qui faisait disparaître la carte).
      */
     function collectUnbreakableCardsContaining(node: unknown, needle: string, found: boolean[]): void {
@@ -1944,13 +1952,13 @@ describe('buildOiDocDefinition — RÉGRESSION anomalie #1 : carte CIBLES(S) de 
     }
 
     it.each([1, 5, 8, 15, 30])(
-        '%d adversaire(s) : la carte CIBLES(S) est TOUJOURS présente, chaque cible nommée apparaît, jamais de page top-level vide (A4 et 16:9)',
+        '%d adversaire(s) : la carte CIBLE(S) est TOUJOURS présente, chaque cible nommée apparaît, jamais de page top-level vide (A4 et 16:9)',
         (count) => {
             for (const format of ['a4', '16:9'] as const) {
                 const dd = buildOiDocDefinition(collect({ adversaries: makeAdversaries(count) }), { format });
                 const json = JSON.stringify(dd);
 
-                expect(json, `« CIBLES(S) » doit apparaître (${count} adv., ${format})`).toContain('CIBLES(S)');
+                expect(json, `« CIBLE(S) » doit apparaître (${count} adv., ${format})`).toContain('CIBLE(S)');
                 for (let i = 1; i <= count; i++) {
                     expect(json, `cible ${i} doit apparaître (${count} adv., ${format})`).toContain(
                         `CIBLE ${String(i).padStart(2, '0')} REGRESSION`,
@@ -1966,33 +1974,33 @@ describe('buildOiDocDefinition — RÉGRESSION anomalie #1 : carte CIBLES(S) de 
                     expect(/"text"/.test(pageJson), `page top-level ${idx} doit porter du texte (${count} adv., ${format})`).toBe(true);
                 });
 
-                // La CAUSE de l'anomalie #1 : aucun `card()` contenant « CIBLES(S) »
+                // La CAUSE de l'anomalie #1 : aucun `card()` contenant « CIBLE(S) »
                 // ne doit rester `unbreakable:true` (cf. JSDoc `collectUnbreakableCardsContaining`).
                 const unbreakableFlags: boolean[] = [];
-                collectUnbreakableCardsContaining(dd.content, 'CIBLES(S)', unbreakableFlags);
-                expect(unbreakableFlags.length, `au moins une carte CIBLES(S) attendue (${count} adv., ${format})`).toBeGreaterThan(0);
+                collectUnbreakableCardsContaining(dd.content, 'CIBLE(S)', unbreakableFlags);
+                expect(unbreakableFlags.length, `au moins une carte CIBLE(S) attendue (${count} adv., ${format})`).toBeGreaterThan(0);
                 expect(
                     unbreakableFlags.some(Boolean),
-                    `aucune carte CIBLES(S) ne doit être unbreakable:true (${count} adv., ${format})`,
+                    `aucune carte CIBLE(S) ne doit être unbreakable:true (${count} adv., ${format})`,
                 ).toBe(false);
             }
         },
     );
 
-    it("au-delà du seuil de la page 1, le débordement va sur des pages « CIBLES(S) — <plage> » AUTONOMES, JAMAIS « (SUITE) » (guardrail C1)", () => {
+    it("au-delà du seuil de la page 1, le débordement va sur des pages « CIBLE(S) — <plage> » AUTONOMES, JAMAIS « (SUITE) » (guardrail C1)", () => {
         const dd = buildOiDocDefinition(collect({ adversaries: makeAdversaries(30) }), { format: 'a4' });
         const json = JSON.stringify(dd);
 
         expect(json).not.toContain('(SUITE)');
         expect(json).not.toContain('(suite)');
-        expect(json).toMatch(/CIBLES\(S\) — \d+(-\d+)?/);
+        expect(json).toMatch(/CIBLE\(S\) — \d+(-\d+)?/);
     });
 
     /**
      * RÉGRESSION guardrail B1 (mesure `tests/pdf/verify-structure.mjs`,
      * fixture `tests/pdf/fixtures/blind-a-combined-stress.json`, A4, 5
      * adversaires) : le paqueteur glouton `packHypotheses` fait hériter le
-     * DERNIER groupe de débordement d'UN SEUL adversaire (page « CIBLES(S)
+     * DERNIER groupe de débordement d'UN SEUL adversaire (page « CIBLE(S)
      * — 5 » orpheline, 77 caractères non blancs — sous le seuil 120 de B1)
      * quand le groupe 0 (page 1, grid2) absorbe tout le reste. Le rééquilibrage
      * `rebalanceLastGroup` (JSDoc ci-dessus, guardrail préexistant) ne peut
@@ -2001,19 +2009,19 @@ describe('buildOiDocDefinition — RÉGRESSION anomalie #1 : carte CIBLES(S) de 
      * du débordement pour piocher). Le correctif rééquilibre la frontière
      * groupe 0 ↔ débordement elle-même — ce test vérifie sa signature
      * structurelle directement observable au niveau JSON (sans rendu PDF
-     * réel) : plus AUCUNE page « CIBLES(S) — <N> » (plage à un seul numéro,
+     * réel) : plus AUCUNE page « CIBLE(S) — <N> » (plage à un seul numéro,
      * jamais une plage « <N>-<M> ») n'apparaît, quel que soit le nombre
      * total d'adversaires (2 à 30, un seul adversaire ne produit jamais de
      * débordement) — un débordement à 1 seule cible serait TOUJOURS
      * signalé par un tel titre à numéro unique.
      */
     it.each([2, 3, 4, 5, 6, 7, 8, 9, 10, 15, 30])(
-        '%d adversaire(s) : aucune page « CIBLES(S) — <N> » à un seul numéro (débordement à 1 seule cible), A4 et 16:9',
+        '%d adversaire(s) : aucune page « CIBLE(S) — <N> » à un seul numéro (débordement à 1 seule cible), A4 et 16:9',
         (count) => {
             for (const format of ['a4', '16:9'] as const) {
                 const dd = buildOiDocDefinition(collect({ adversaries: makeAdversaries(count) }), { format });
                 const json = JSON.stringify(dd);
-                const overflowTitles = json.match(/CIBLES\(S\) — \d+(-\d+)?/g) ?? [];
+                const overflowTitles = json.match(/CIBLE\(S\) — \d+(-\d+)?/g) ?? [];
                 const singleEntryTitles = overflowTitles.filter((title) => !/-\d+/.test(title));
 
                 expect(
@@ -2179,7 +2187,7 @@ describe('buildOiDocDefinition — anomalie A : repli « Mission + Exécution »
 // code laissait pdfmake déborder NATURELLEMENT (`unbreakable:false`, sans
 // budget) sur autant de pages que nécessaire, chacune ne portant QUE l'en-
 // tête de tableau répété (« Heure »/« Événement »), SANS AUCUN TITRE —
-// rompant le principe « une page porte son titre » que CIBLES(S)/
+// rompant le principe « une page porte son titre » que CIBLE(S)/
 // PATRACDVR/ARTICULATION/ENVIRONNEMENT respectent déjà. AVANT correctif, le
 // test ci-dessous échouait : `content` ne contenait alors qu'UN SEUL élément
 // « EXÉCUTION » (jamais de page « — CHRONOLOGIE <plage> » distincte), la
@@ -2446,6 +2454,8 @@ describe('buildOiDocDefinition — sections retirées et titres personnalisés',
     function base(removed: string[], titles: Record<string, string> = {}): OiFormData {
         return {
             oi_sections: { complete: { removed, titles } },
+            // Environnement renseigné : une section entièrement vide n'est plus imprimée (F27).
+            amies: 'BAC de nuit',
             patracdvr_rows: [{ vehicle: 'VL1', members: [member] }],
             rame_vl_order: ['VL1'],
             colonne_progression_order: ['ABC'],
@@ -2477,14 +2487,15 @@ describe('buildOiDocDefinition — sections retirées et titres personnalisés',
     });
 
     it('Environnement retiré : page absente, numérotation recalée', () => {
+        // Sans adversaire, la numérotation dérivée commence à 2 (audit F18).
         const json = render(base(['environnement']));
         expect(json).not.toContain('ENVIRONNEMENT ET AMIS');
-        expect(json).toContain("3. MISSION DE L'UNITÉ");
+        expect(json).toContain("2. MISSION DE L'UNITÉ");
     });
 
     it('titre renommé : remplace le titre d’origine, en capitales pour un titre de page', () => {
         const json = render(base([], { environnement: 'Terrain et amis', rame: 'Ordre des VL' }));
-        expect(json).toContain('3. TERRAIN ET AMIS');
+        expect(json).toContain('2. TERRAIN ET AMIS');
         expect(json).not.toContain('ENVIRONNEMENT ET AMIS');
         expect(json).toContain('"text":"Ordre des VL"');
     });
@@ -2514,14 +2525,15 @@ describe('buildOiDocDefinition — sections retirées et titres personnalisés',
     });
 
     it('Adversaires retirés : la numérotation se recale (« 2. » passe à la section suivante)', () => {
-        const json = render(base(['adversaires']));
+        // Un adversaire SAISI puis retiré (×) : sans lui, la base n'en a aucun.
+        const json = render({ ...base(['adversaires']), adversaries: [{ id: 'a1', nom_adversaire: 'X', me_list: [], etat_esprit_list: [], volume_list: [], vehicules_list: [] }] });
         expect(json).toContain('2. ENVIRONNEMENT ET AMIS');
         expect(json).not.toContain('3. ENVIRONNEMENT ET AMIS');
     });
 
-    it('Adversaires retirés : plus de carte CIBLES(S) sur la garde', () => {
+    it('Adversaires retirés : plus de carte CIBLE(S) sur la garde', () => {
         const json = render({ ...base(['adversaires']), adversaries: [{ id: 'a1', nom: 'X' }] as unknown as OiFormData['adversaries'] });
-        expect(json).not.toContain('CIBLES(S)');
+        expect(json).not.toContain('CIBLE(S)');
     });
 
     it('le mode express a ses propres sections retirées : un retrait fait en complète ne le touche pas', () => {
@@ -2563,7 +2575,7 @@ describe('buildOiDocDefinition — OI express', () => {
         expect(json).toContain('TOP ACTION');
         // PATRACDVR express condensé : une ligne par membre, armes jointes par « / ».
         expect(json).toContain('"text":"UMP9 / G36 / PSA"');
-        for (const absent of ['ORDRE INITIAL', 'ENVIRONNEMENT ET AMIS', 'CONDUITES À TENIR', 'CIBLES(S)', 'ARTICULATION']) {
+        for (const absent of ['ORDRE INITIAL', 'ENVIRONNEMENT ET AMIS', 'CONDUITES À TENIR', 'CIBLE(S)', 'ARTICULATION']) {
             expect(json).not.toContain(absent);
         }
         expect((dd.content as unknown[]).length).toBe(1);
