@@ -393,6 +393,8 @@ function ensureUndoShortcut(): void {
   if (typeof window === 'undefined' || typeof window.addEventListener !== 'function') return;
   window.addEventListener('keydown', (event) => {
     if (!(event.ctrlKey || event.metaKey)) return;
+    // Ctrl+Maj+Z (rétablir) n'est PAS une annulation de suppression.
+    if (event.shiftKey || event.altKey) return;
     if (event.key !== 'z' && event.key !== 'Z') return;
     if (isEditableTarget(event.target)) return;
     const el = lastUndoableToast();
