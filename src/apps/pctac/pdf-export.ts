@@ -261,6 +261,25 @@ export function wrapText(text: unknown, width: number, font: PDFLib.PDFFont, siz
     return lines;
 }
 
+/**
+ * Période couverte par le journal (Mo5) : première et dernière entrée, au
+ * format `JJ/MM/AAAA HH:MM`. Les entrées legacy sans date n'affichent que
+ * leur heure. Rend « — » si le journal est vide.
+ */
+export function situationPeriod(logs: readonly { date?: string | undefined; heure?: string | undefined }[]): string {
+    const first = logs[0];
+    const last = logs[logs.length - 1];
+    if (!first || !last) return '—';
+    const fmt = (e: { date?: string | undefined; heure?: string | undefined }): string => {
+        const [y, m, d] = (e.date ?? '').split('-');
+        const heure = e.heure ?? '';
+        return (d && m && y) ? `${d}/${m}/${y} ${heure}`.trim() : heure;
+    };
+    const a = fmt(first);
+    const b = fmt(last);
+    return a === b ? a : `${a} → ${b}`;
+}
+
 /** Palette de couleurs du thème courant, calculée une fois par export (pdfExport.js:118-124). */
 interface PdfThemeColors {
     background: PDFLib.RGB;
@@ -339,6 +358,9 @@ export const PdfExport: PdfExportContract = {
             // Lot B (constat 8) — le PDF suit la situation : titres et libellés
             // de lien dérivés de la situation courante au moment de l'export.
             const mode = currentMode();
+            // Mo5 — le document doit s'identifier seul (nom de fichier mis à
+            // part) : nom de la situation et période figurent en tête de page 1.
+            const periode = situationPeriod(allLogs);
 
             // Détection du thème
             const isDarkMode = document.body.classList.contains('dark-mode');
@@ -429,6 +451,12 @@ export const PdfExport: PdfExportContract = {
 
             // --- 1. MAIN COURANTE ---
             addNewPage("MAIN COURANTE - JOURNAL D'INTERVENTION");
+            // Mo5 — bandeau d'identification sous le titre : situation et période.
+            pdfPage().drawText(
+                fitTextToWidth(sanitizeWinAnsi(`Situation : ${mode.label} — Période : ${periode}`), fontBold, 9, context.pageWidth - 2 * context.margin),
+                { x: context.margin, y: context.y, size: 9, font: fontBold, color: themeColors.text }
+            );
+            context.y -= 18;
             const colWidths: [number, number, number, number] = [50, 70, 150, 245]; // Heure, Pax, Localisation, Remarques
             const headers = ["Heure", "Pax", "Localisation", "Remarques"];
 
