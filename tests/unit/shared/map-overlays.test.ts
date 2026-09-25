@@ -7,7 +7,26 @@
  * aux bords de l'écran, A1 au coin haut-gauche.
  */
 import { describe, expect, it, vi } from 'vitest';
-import { createMapOverlays } from '@shared/map-overlays.js';
+
+vi.mock('maplibre-gl', () => {
+    class FakeMarker {
+        private _element: HTMLElement;
+        private _lngLat: unknown = null;
+        constructor(opts: { element?: HTMLElement } = {}) { this._element = opts.element ?? document.createElement('div'); }
+        setLngLat(ll: unknown): this { this._lngLat = ll; return this; }
+        addTo(): this { return this; }
+        remove(): this { return this; }
+        getElement(): HTMLElement { return this._element; }
+        getLngLat(): unknown { return this._lngLat; }
+    }
+    (globalThis as { __fakeMarkers?: FakeMarker[] }).__fakeMarkers = [];
+    class RecordingMarker extends FakeMarker {
+        constructor(opts: { element?: HTMLElement } = {}) { super(opts); (globalThis as { __fakeMarkers?: FakeMarker[] }).__fakeMarkers?.push(this); }
+    }
+    return { Marker: RecordingMarker, default: { Marker: RecordingMarker } };
+});
+
+import { createMapOverlays, gridAngleFromScreen, snapGridAngle } from '@shared/map-overlays.js';
 import { geoToGrid, gridToGeo, metersPerDegree, type TacticalGridSpec } from '@shared/tactical-grid.js';
 
 const CENTER_LAT = 47.9;
@@ -168,5 +187,82 @@ describe('tracé du carroyage à l’orientation de l’écran', () => {
         const g = geoToGrid(spec, a1[0], a1[1]);
         expect(g.x).toBeCloseTo(0, 9);
         expect(g.y).toBeCloseTo(0, 9);
+    });
+});
+
+function fakeMarkers(): Array<{ getElement(): HTMLElement }> {
+    return (globalThis as { __fakeMarkers?: Array<{ getElement(): HTMLElement }> }).__fakeMarkers ?? [];
+}
+
+function emitPointer(type: string, x: number, y: number): void {
+    document.dispatchEvent(new MouseEvent(type, { clientX: x, clientY: y, bubbles: true }));
+}
+
+describe('rotation du carroyage (décision 39, G3)', () => {
+    it('angle depuis un pointeur écran, aimanté tous les 5°', () => {
+        const center = { x: 100, y: 100 };
+        // Pointeur à droite du centre, carte au nord → 90°.
+        expect(snapGridAngle(gridAngleFromScreen(0, center, { x: 200, y: 100 }))).toBe(90);
+        // Carte déjà tournée de 30° : le nord géo (0°) est à −30° à l'écran.
+        expect(snapGridAngle(gridAngleFromScreen(30, center, { x: 50, y: 13 }))).toBe(0);
+        // 47° → 45°.
+        expect(snapGridAngle(gridAngleFromScreen(0, center, { x: 170, y: 30 }))).toBe(45);
+        // 0°/360° : jamais 360.
+        expect(snapGridAngle(359.9)).toBe(0);
+    });
+
+    it('la poignée tourne autour du centre, se cale au 5°, et enregistre au relâcher', async () => {
+        const helper = makeRotatingMap(0);
+        const toast = vi.fn();
+        const api = makeApi(helper, toast);
+        await api.placeGridOnView();
+        const before = api.state.grid as TacticalGridSpec;
+        const centerGeo = gridToGeo(before, before.cols / 2, before.rows / 2);
+        const centerPx = helper.project(centerGeo);
+
+        await api.startGridRotate();
+        const el = fakeMarkers().at(-1)?.getElement();
+        expect(el).toBeTruthy();
+        el!.dispatchEvent(new MouseEvent('pointerdown', { clientX: centerPx.x + 90, clientY: centerPx.y, bubbles: true }));
+        // Direction ~47° (haut-droite) → aimant 45°.
+        emitPointer('pointermove', centerPx.x + 70, centerPx.y - 66);
+        emitPointer('pointerup', centerPx.x + 70, centerPx.y - 66);
+
+        const after = api.state.grid as TacticalGridSpec;
+        expect(after.angle).toBe(45);
+        const centerAfter = gridToGeo(after, after.cols / 2, after.rows / 2);
+        expect(centerAfter[0]).toBeCloseTo(centerGeo[0], 9);
+        expect(centerAfter[1]).toBeCloseTo(centerGeo[1], 9);
+        expect(toast).toHaveBeenCalledWith(expect.stringContaining('orienté à 45°'), 'success');
+    });
+
+    it('Échap pendant la rotation : rien ne change', async () => {
+        const helper = makeRotatingMap(0);
+        const api = makeApi(helper, vi.fn());
+        await api.placeGridOnView();
+        const before = api.state.grid as TacticalGridSpec;
+        await api.startGridRotate();
+        const el = fakeMarkers().at(-1)!.getElement();
+        const centerPx = helper.project(gridToGeo(before, before.cols / 2, before.rows / 2));
+        el.dispatchEvent(new MouseEvent('pointerdown', { clientX: centerPx.x + 90, clientY: centerPx.y, bubbles: true }));
+        emitPointer('pointermove', centerPx.x + 70, centerPx.y - 66);
+        expect((api.state.grid as TacticalGridSpec).angle).toBe(45);
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+        expect((api.state.grid as TacticalGridSpec).angle).toBe(before.angle);
+    });
+
+    it('« Nord en haut » remet l’angle à 0 autour du centre', async () => {
+        const helper = makeRotatingMap(30);
+        const api = makeApi(helper, vi.fn());
+        await api.startGridDraw();
+        drag(helper, [100, 100], [300, 250]);
+        const before = api.state.grid as TacticalGridSpec;
+        const centerGeo = gridToGeo(before, before.cols / 2, before.rows / 2);
+        api.gridNorthUp();
+        const after = api.state.grid as TacticalGridSpec;
+        expect(after.angle).toBe(0);
+        const centerAfter = gridToGeo(after, after.cols / 2, after.rows / 2);
+        expect(centerAfter[0]).toBeCloseTo(centerGeo[0], 9);
+        expect(centerAfter[1]).toBeCloseTo(centerGeo[1], 9);
     });
 });
