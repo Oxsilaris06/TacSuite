@@ -21,9 +21,11 @@ import {
     GRID_DEFAULT_COLOR,
     GRID_DEFAULT_LABEL_SIZE,
     GRID_LABEL_SIZES,
+    gridAngle,
     gridCellAt,
     gridColor,
     gridLabelSize,
+    gridLabelsFlipped,
     gridToGeo,
     isTacticalGridSpec,
     makeOrientedGrid,
@@ -299,7 +301,14 @@ export function createMapOverlays(map: MapLibreMap, opts: OverlayOptions): MapOv
         centerGeo: LngLat;
         centerPx: { x: number; y: number };
         dirty: boolean;
+        /** Pointeur qui tient la poignée (F6) : les autres sont ignorés. */
+        pointerId?: number | undefined;
+        /** Angle du pointeur et du carroyage à la saisie : la rotation est RELATIVE (F4). */
+        grabPointerAngle?: number | undefined;
+        grabGridAngle?: number | undefined;
     } = null;
+    // Étiquettes retournées au cap courant (F1) : on ne repeint qu'au changement.
+    let labelsFlipped = false;
     let rotateCleanup: (() => void) | null = null;
     let rotateDragWasOn = true;
     let rotateActive = false;
@@ -328,7 +337,9 @@ export function createMapOverlays(map: MapLibreMap, opts: OverlayOptions): MapOv
 
     function renderGrid(): void {
         if (!ready) return;
-        const g = state.gridOn && state.grid ? tacticalGridGeometry(state.grid) : null;
+        const bearing = map.getBearing();
+        const g = state.gridOn && state.grid ? tacticalGridGeometry(state.grid, bearing) : null;
+        labelsFlipped = !!state.grid && gridLabelsFlipped(gridAngle(state.grid), bearing);
         src(map, 'tac-grid')?.setData(g ? g.lines : EMPTY);
         src(map, 'tac-grid-labels')?.setData(g ? g.labels : EMPTY);
         // Couleur et taille choisies (décision 39, G4) : elles s'appliquent aux
@@ -408,6 +419,16 @@ export function createMapOverlays(map: MapLibreMap, opts: OverlayOptions): MapOv
     }
 
     const toLngLat = (p: { lng: number; lat: number }): LngLat => [p.lng, p.lat];
+    /**
+     * Position ÉCRAN actuelle d'un appui, reprojetée depuis son point AU SOL
+     * (F2) : un pincement ou la molette entre les deux touchers d'un tracé ne
+     * déplace pas le premier coin. Pendant un glisser, la vue est figée : la
+     * reprojection redonne le pixel de l'appui.
+     */
+    const screenOf = (p: ScreenPoint): { x: number; y: number } => {
+        const q = map.project({ lng: p.at[0], lat: p.at[1] });
+        return Number.isFinite(q?.x) && Number.isFinite(q?.y) ? q : { x: p.x, y: p.y };
+    };
 
     /**
      * Aperçu du rectangle À L'ÉCRAN : on reprojette les quatre coins de la
@@ -415,8 +436,9 @@ export function createMapOverlays(map: MapLibreMap, opts: OverlayOptions): MapOv
      * exactement le doigt, même sur une carte tournée.
      */
     function setPreviewScreen(p: ScreenPoint, q: ScreenPoint): void {
-        const x0 = Math.min(p.x, q.x), x1 = Math.max(p.x, q.x);
-        const y0 = Math.min(p.y, q.y), y1 = Math.max(p.y, q.y);
+        const [pp, qq] = [screenOf(p), screenOf(q)];
+        const x0 = Math.min(pp.x, qq.x), x1 = Math.max(pp.x, qq.x);
+        const y0 = Math.min(pp.y, qq.y), y1 = Math.max(pp.y, qq.y);
         const ring: LngLat[] = [
             toLngLat(map.unproject([x0, y0])),
             toLngLat(map.unproject([x1, y0])),
@@ -454,8 +476,9 @@ export function createMapOverlays(map: MapLibreMap, opts: OverlayOptions): MapOv
      * = orientation de la carte au moment du tracé (décision 39).
      */
     function commitGridFromScreen(p: ScreenPoint, q: ScreenPoint): void {
-        const x0 = Math.min(p.x, q.x), x1 = Math.max(p.x, q.x);
-        const y0 = Math.min(p.y, q.y), y1 = Math.max(p.y, q.y);
+        const [pp, qq] = [screenOf(p), screenOf(q)];
+        const x0 = Math.min(pp.x, qq.x), x1 = Math.max(pp.x, qq.x);
+        const y0 = Math.min(pp.y, qq.y), y1 = Math.max(pp.y, qq.y);
         const tl = toLngLat(map.unproject([x0, y0]));
         const tr = toLngLat(map.unproject([x1, y0]));
         const bl = toLngLat(map.unproject([x0, y1]));
@@ -482,11 +505,34 @@ export function createMapOverlays(map: MapLibreMap, opts: OverlayOptions): MapOv
     /** Positionne la poignée sur l'axe « haut » du carroyage, à distance fixe du centre. */
     function placeRotateHandle(): void {
         if (!rotate || !state.grid) return;
+        rotate.centerPx = map.project({ lng: rotate.centerGeo[0], lat: rotate.centerGeo[1] });
         const phi = (((state.grid.angle ?? 0) - map.getBearing()) * Math.PI) / 180;
         const hx = rotate.centerPx.x + ROTATE_HANDLE_PX * Math.sin(phi);
         const hy = rotate.centerPx.y - ROTATE_HANDLE_PX * Math.cos(phi);
         rotate.marker.setLngLat(map.unproject([hx, hy]));
-        rotate.label.textContent = `${Math.round(state.grid.angle ?? 0)}°`;
+        const deg = Math.round(state.grid.angle ?? 0);
+        rotate.label.textContent = `${deg}°`;
+        rotate.el.setAttribute('aria-valuenow', String(deg));
+        rotate.el.setAttribute('aria-valuetext', `${deg} degrés`);
+    }
+
+    /**
+     * Termine le mode rotation. `commit` : une rotation appliquée (au clavier,
+     * par exemple) et pas encore enregistrée l'est ; sinon le carroyage revient
+     * à son état de départ, qui est l'état enregistré (F3, F6).
+     */
+    function finishRotate(commit: boolean): void {
+        if (!rotate) return;
+        const { original, dirty } = rotate;
+        endRotate();
+        if (!dirty) return;
+        if (commit && state.grid) {
+            changed();
+            toast(`Carroyage orienté à ${Math.round(state.grid.angle ?? 0)}°.`, 'success');
+        } else {
+            state.grid = original;
+            renderGrid();
+        }
     }
 
     function endRotate(): void {
@@ -501,59 +547,90 @@ export function createMapOverlays(map: MapLibreMap, opts: OverlayOptions): MapOv
         notifyStatus();
     }
 
-    function rotationPointerPx(e: MouseEvent | TouchEvent): { x: number; y: number } {
+    function rotationPointerPx(e: MouseEvent): { x: number; y: number } {
         const r = map.getCanvas().getBoundingClientRect();
-        const t = 'touches' in e ? e.touches[0] : e;
-        return { x: (t?.clientX ?? 0) - r.left, y: (t?.clientY ?? 0) - r.top };
+        return { x: (e.clientX ?? 0) - r.left, y: (e.clientY ?? 0) - r.top };
     }
 
-    /** Geste de la poignée : glisser fait tourner autour du centre, en direct, aimanté au 5°. */
+    /** Applique un angle (aimanté) autour du centre, en direct, sans enregistrer. */
+    function applyRotation(angle: number): void {
+        if (!rotate) return;
+        const a = ((angle % 360) + 360) % 360;
+        if (state.grid && gridAngle(state.grid) === a) return;
+        state.grid = { ...rotateTacticalGrid(rotate.original, a), color: state.grid?.color ?? rotate.original.color, labelSize: state.grid?.labelSize ?? rotate.original.labelSize };
+        rotate.dirty = true;
+        renderGrid();
+        placeRotateHandle();
+    }
+
+    /**
+     * Geste de la poignée (décision 39) : glisser fait tourner autour du centre,
+     * en direct, aimanté au 5°. La rotation est RELATIVE à la saisie : saisir la
+     * poignée sans bouger ne change rien (F4). Seul le pointeur qui a saisi la
+     * poignée compte ; `pointercancel` annule (F6). Au clavier : flèches ±5°,
+     * Entrée enregistre, Échap annule (F7).
+     */
     function beginRotateGesture(): void {
         if (!rotate) return;
         const el = rotate.el;
-        const onDown = (ev: MouseEvent | TouchEvent): void => {
+        const pointerIdOf = (ev: Event): number | undefined => (ev as PointerEvent).pointerId;
+        const samePointer = (ev: Event): boolean => !rotate || rotate.pointerId === undefined || pointerIdOf(ev) === undefined || pointerIdOf(ev) === rotate.pointerId;
+        const onDown = (ev: MouseEvent): void => {
+            if (!rotate) return;
             ev.preventDefault();
             ev.stopPropagation();
             rotateActive = true;
+            rotate.pointerId = pointerIdOf(ev);
+            placeRotateHandle();
+            rotate.grabPointerAngle = gridAngleFromScreen(map.getBearing(), rotate.centerPx, rotationPointerPx(ev));
+            rotate.grabGridAngle = state.grid ? gridAngle(state.grid) : 0;
             map.getCanvas().style.cursor = 'grabbing';
         };
-        const onMove = (ev: MouseEvent | TouchEvent): void => {
-            if (!rotate || !rotateActive) return;
+        const onMove = (ev: MouseEvent): void => {
+            if (!rotate || !rotateActive || !samePointer(ev)) return;
             ev.preventDefault();
-            const p = rotationPointerPx(ev);
-            const angle = snapGridAngle(gridAngleFromScreen(map.getBearing(), rotate.centerPx, p));
-            state.grid = rotateTacticalGrid(rotate.original, angle);
-            rotate.dirty = true;
-            renderGrid();
-            placeRotateHandle();
+            rotate.centerPx = map.project({ lng: rotate.centerGeo[0], lat: rotate.centerGeo[1] });
+            const now = gridAngleFromScreen(map.getBearing(), rotate.centerPx, rotationPointerPx(ev));
+            const delta = ((now - (rotate.grabPointerAngle ?? now) + 540) % 360) - 180;
+            if (Math.abs(delta) < 0.5 && !rotate.dirty) return;
+            applyRotation(snapGridAngle((rotate.grabGridAngle ?? 0) + delta));
         };
-        const onUp = (): void => {
-            if (!rotate || !rotateActive) return;
-            const angle = state.grid ? (state.grid.angle ?? 0) : 0;
-            const dirty = rotate.dirty;
-            endRotate();
-            if (dirty) {
-                changed();
-                toast(`Carroyage orienté à ${Math.round(angle)}°.`, 'success');
+        const onUp = (ev: Event): void => {
+            if (!rotate || !rotateActive || !samePointer(ev)) return;
+            rotateActive = false;
+            finishRotate(true);
+        };
+        const onCancel = (ev: Event): void => {
+            if (!rotate || !rotateActive || !samePointer(ev)) return;
+            rotateActive = false;
+            finishRotate(false);
+            toast('Rotation du carroyage annulée.');
+        };
+        const onKeyDown = (ev: KeyboardEvent): void => {
+            if (!rotate || !state.grid) return;
+            const step = ev.key === 'ArrowRight' || ev.key === 'ArrowUp' ? GRID_ROTATE_SNAP : ev.key === 'ArrowLeft' || ev.key === 'ArrowDown' ? -GRID_ROTATE_SNAP : 0;
+            if (step) {
+                ev.preventDefault();
+                applyRotation(snapGridAngle(gridAngle(state.grid) + step));
+            } else if (ev.key === 'Enter') {
+                ev.preventDefault();
+                finishRotate(true);
             }
         };
+        const onMapMove = (): void => placeRotateHandle();
         el.addEventListener('pointerdown', onDown);
-        el.addEventListener('touchstart', onDown, { passive: false });
+        el.addEventListener('keydown', onKeyDown);
         document.addEventListener('pointermove', onMove);
         document.addEventListener('pointerup', onUp);
-        document.addEventListener('pointercancel', onUp);
-        document.addEventListener('touchmove', onMove, { passive: false });
-        document.addEventListener('touchend', onUp);
-        document.addEventListener('touchcancel', onUp);
+        document.addEventListener('pointercancel', onCancel);
+        map.on('move', onMapMove);
         rotateCleanup = () => {
             el.removeEventListener('pointerdown', onDown);
-            el.removeEventListener('touchstart', onDown);
+            el.removeEventListener('keydown', onKeyDown);
             document.removeEventListener('pointermove', onMove);
             document.removeEventListener('pointerup', onUp);
-            document.removeEventListener('pointercancel', onUp);
-            document.removeEventListener('touchmove', onMove);
-            document.removeEventListener('touchend', onUp);
-            document.removeEventListener('touchcancel', onUp);
+            document.removeEventListener('pointercancel', onCancel);
+            try { map.off('move', onMapMove); } catch { /* carte détruite */ }
         };
     }
 
@@ -615,6 +692,10 @@ export function createMapOverlays(map: MapLibreMap, opts: OverlayOptions): MapOv
     map.on('mouseup', onUp);
     map.on('touchend', onUp);
     map.on('touchcancel', () => { if (capture) capture.press = undefined; });
+    map.on('rotate', () => {
+        if (!state.grid || !state.gridOn) return;
+        if (gridLabelsFlipped(gridAngle(state.grid), map.getBearing()) !== labelsFlipped) renderGrid();
+    });
     map.on('moveend', () => {
         if (moveTimer !== null) clearTimeout(moveTimer);
         moveTimer = setTimeout(() => { moveTimer = null; renderMgrs(); void renderPower(); }, 350);
@@ -622,10 +703,8 @@ export function createMapOverlays(map: MapLibreMap, opts: OverlayOptions): MapOv
     const onKey = (e: KeyboardEvent): void => {
         if (e.key !== 'Escape') return;
         if (rotate) {
-            const original = rotate.original;
-            endRotate();
-            state.grid = original;
-            renderGrid();
+            rotateActive = false;
+            finishRotate(false);
             toast('Rotation du carroyage annulée.');
             return;
         }
@@ -640,6 +719,7 @@ export function createMapOverlays(map: MapLibreMap, opts: OverlayOptions): MapOv
         get state() { return state; },
         isCapturing: () => capture !== null || rotate !== null || Date.now() < swallowUntil,
         setGridOn(on) {
+            finishRotate(true);
             state.gridOn = on;
             renderGrid();
             changed();
@@ -661,6 +741,7 @@ export function createMapOverlays(map: MapLibreMap, opts: OverlayOptions): MapOv
             // Un carroyage posé change de maille : toutes les cases changent de
             // nom (« C4 » ne désigne plus le même endroit) — même confirmation
             // que « Tracer ».
+            finishRotate(true);
             if (state.grid && opts.confirm && !(await opts.confirm(`Passer la maille à ${m} m ? Toutes les cases changent de nom.`))) return false;
             state.cellM = m;
             // Même emprise, nouvelle maille : on repart du coin A1 existant, en
@@ -668,7 +749,7 @@ export function createMapOverlays(map: MapLibreMap, opts: OverlayOptions): MapOv
             if (state.grid) {
                 const g = state.grid;
                 const { spec, clamped } = makeOrientedGrid([g.west, g.north], g.cols * g.cellM, g.rows * g.cellM, m, g.angle ?? 0);
-                state.grid = spec;
+                state.grid = { ...spec, color: gridColor(g), labelSize: gridLabelSize(g) };
                 renderGrid();
                 if (clamped) toast(`Carroyage borné à ${spec.cols} × ${spec.rows} cases : l'emprise d'origine est trop grande pour une maille de ${m} m.`);
             }
@@ -676,12 +757,14 @@ export function createMapOverlays(map: MapLibreMap, opts: OverlayOptions): MapOv
             return true;
         },
         setGridColor(c) {
+            finishRotate(true);
             if (!state.grid || !Object.hasOwn(GRID_COLORS, c) || gridColor(state.grid) === c) return;
             state.grid = { ...state.grid, color: c };
             renderGrid();
             changed();
         },
         setGridLabelSize(s) {
+            finishRotate(true);
             if (!state.grid || !Object.hasOwn(GRID_LABEL_SIZES, s) || gridLabelSize(state.grid) === s) return;
             state.grid = { ...state.grid, labelSize: s };
             renderGrid();
@@ -716,6 +799,9 @@ export function createMapOverlays(map: MapLibreMap, opts: OverlayOptions): MapOv
             el.className = 'tac-grid-rotate-handle';
             el.setAttribute('role', 'slider');
             el.setAttribute('aria-label', 'Tourner le carroyage');
+            el.tabIndex = 0;
+            el.setAttribute('aria-valuemin', '0');
+            el.setAttribute('aria-valuemax', '355');
             el.style.cssText = 'width:44px;height:44px;border-radius:50%;background:rgba(11,13,18,0.85);border:2px solid #fff;color:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:grab;touch-action:none;user-select:none;-webkit-user-select:none;box-shadow:0 1px 6px rgba(0,0,0,0.5);font:600 11px Inter,system-ui,sans-serif;';
             const icon = document.createElement('span');
             icon.textContent = '⟳';
@@ -731,6 +817,14 @@ export function createMapOverlays(map: MapLibreMap, opts: OverlayOptions): MapOv
                 MarkerCtor = undefined;
             }
             if (!MarkerCtor) { toast('Rotation du carroyage indisponible sur cette carte.', 'error'); return; }
+            // F4 : centre hors de la vue (zoom sur un coin) : la carte s'y recentre
+            // d'abord, sinon la poignée naîtrait hors de l'écran, pan coupé.
+            const c0 = map.project({ lng: centerGeo[0], lat: centerGeo[1] });
+            const cv = map.getCanvas();
+            const cw = cv.clientWidth || cv.width, ch = cv.clientHeight || cv.height;
+            if (!(c0.x >= 0 && c0.x <= cw && c0.y >= 0 && c0.y <= ch)) {
+                try { (map as unknown as { jumpTo(o: { center: [number, number] }): unknown }).jumpTo({ center: centerGeo }); } catch { /* carte sans recentrage */ }
+            }
             const marker = new MarkerCtor({ element: el, anchor: 'center' });
             marker.setLngLat({ lng: centerGeo[0], lat: centerGeo[1] }).addTo(map);
             rotate = {
@@ -747,6 +841,7 @@ export function createMapOverlays(map: MapLibreMap, opts: OverlayOptions): MapOv
             map.getCanvas().style.cursor = 'grab';
             placeRotateHandle();
             beginRotateGesture();
+            try { el.focus({ preventScroll: true }); } catch { /* élément pas encore dans la page */ }
             notifyStatus();
             toast('Glissez la poignée pour tourner le carroyage (Échap pour annuler).');
         },
@@ -760,6 +855,7 @@ export function createMapOverlays(map: MapLibreMap, opts: OverlayOptions): MapOv
         },
         async clearGrid() {
             if (!state.grid) return;
+            finishRotate(false);
             if (opts.confirm && !(await opts.confirm('Effacer le carroyage ?'))) return;
             state.grid = null;
             state.gridOn = false;
@@ -773,6 +869,9 @@ export function createMapOverlays(map: MapLibreMap, opts: OverlayOptions): MapOv
         powerStatus: () => power,
         mgrsNeedsZoom: () => mgrsZoom,
         reload() {
+            // Relecture (autre onglet, import) : une rotation en cours et non
+            // enregistrée est abandonnée, le stockage fait foi (F3).
+            finishRotate(false);
             Object.assign(state, sanitize(opts.load()));
             renderAll();
             notifyStatus();

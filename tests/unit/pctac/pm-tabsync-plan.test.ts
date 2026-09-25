@@ -98,6 +98,17 @@ describe('_onRemotePlanData — recharger, sauf pendant un geste', () => {
         expect(fake._pendingRemoteReload).toBe(false);
     });
 
+    it('carroyage en rotation (ou en tracé) : différé jusqu’à la fin du geste (revue finale, F3)', () => {
+        const reload = vi.fn();
+        let capturing = true;
+        const fake = makeFakeThis({ _reloadPlanFromStorage: reload, overlays: { isCapturing: () => capturing } as unknown as PlanMapInternal['overlays'] });
+        fake._onRemotePlanData('pcTacPlanGrid');
+        expect(reload).not.toHaveBeenCalled();
+        capturing = false;
+        fake._flushPendingRemoteReload();
+        expect(reload).toHaveBeenCalledTimes(1);
+    });
+
     it('glisser d’un point en cours : différé jusqu’au relâcher', () => {
         const reload = vi.fn();
         const fake = makeFakeThis({ _reloadPlanFromStorage: reload, _pinDragging: true });

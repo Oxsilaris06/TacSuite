@@ -225,7 +225,9 @@ describe('rotation du carroyage (décision 39, G3)', () => {
         await api.startGridRotate();
         const el = fakeMarkers().at(-1)?.getElement();
         expect(el).toBeTruthy();
-        el!.dispatchEvent(new MouseEvent('pointerdown', { clientX: centerPx.x + 90, clientY: centerPx.y, bubbles: true }));
+        // Saisie à la place réelle de la poignée (axe « haut » du carroyage, 0°) :
+        // la rotation est relative à la saisie (revue finale, F4).
+        el!.dispatchEvent(new MouseEvent('pointerdown', { clientX: centerPx.x, clientY: centerPx.y - 90, bubbles: true }));
         // Direction ~47° (haut-droite) → aimant 45°.
         emitPointer('pointermove', centerPx.x + 70, centerPx.y - 66);
         emitPointer('pointerup', centerPx.x + 70, centerPx.y - 66);
@@ -246,7 +248,7 @@ describe('rotation du carroyage (décision 39, G3)', () => {
         await api.startGridRotate();
         const el = fakeMarkers().at(-1)!.getElement();
         const centerPx = helper.project(gridToGeo(before, before.cols / 2, before.rows / 2));
-        el.dispatchEvent(new MouseEvent('pointerdown', { clientX: centerPx.x + 90, clientY: centerPx.y, bubbles: true }));
+        el.dispatchEvent(new MouseEvent('pointerdown', { clientX: centerPx.x, clientY: centerPx.y - 90, bubbles: true }));
         emitPointer('pointermove', centerPx.x + 70, centerPx.y - 66);
         expect((api.state.grid as TacticalGridSpec).angle).toBe(45);
         document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));

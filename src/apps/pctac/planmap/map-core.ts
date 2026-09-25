@@ -627,6 +627,9 @@ export const MapCoreMethods = {
         const section = Array.from(document.querySelectorAll<HTMLElement>('#plan_layers_panel .plan-layers-section'))
             .find((s) => s.querySelector('.tac-layers-section-title')?.textContent?.trim() === 'Surimpressions');
         if (section) mountOverlayControls(section, this.overlays, { row: 'plan-layers-row', fab: 'plan-tool-fab', label: 'plan-layers-label' });
+        // Fin d'un tracé ou d'une rotation du carroyage : rejouer une relecture
+        // venue d'un autre onglet pendant le geste (F3).
+        this.overlays.onChange(() => this._flushPendingRemoteReload());
         // Carroyage arrivé par la passerelle OI ou une archive : on le relit.
         // Décision 29 (C8) : on traite aussi points et formes (+ rechargement
         // différé pendant un geste) via `_onRemotePlanData`.
@@ -653,7 +656,9 @@ export const MapCoreMethods = {
 
     /** Vrai tant qu'un geste/dessin en cours ne doit pas subir de rechargement. */
     _planGestureActive(this: PlanMapInternal): boolean {
-        return !!(this.drawState || this._gesture || this.moveState || this._pinDragging);
+        // Tracé ou rotation du carroyage en cours (revue finale, F3) : une
+        // relecture écraserait le geste, elle attend sa fin comme les autres.
+        return !!(this.drawState || this._gesture || this.moveState || this._pinDragging || this.overlays?.isCapturing?.());
     },
 
     /** Relit le stockage et repeint points, formes et carroyage. */
