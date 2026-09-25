@@ -84,7 +84,16 @@ export interface ConfirmDialogOptions {
   cancelLabel?: string;
   /** Action destructive (reset/suppression/purge) : bouton OK en rouge, focus initial sur Annuler. @default false */
   danger?: boolean;
+  /**
+   * Troisième voie optionnelle (R9 point 3) : un bouton neutre supplémentaire.
+   * `confirmDialog` rend alors `'extra'` quand il est choisi, `true` pour OK,
+   * `false` pour Annuler / Échap / clic sur le fond.
+   */
+  extraLabel?: string;
 }
+
+/** Résultat d'un `confirmDialog` : `true` (OK), `false` (annulé) ou `'extra'`. */
+export type ConfirmDialogResult = boolean | 'extra';
 
 /* =========================================================================
  * Styles injectés (une seule fois, à la première utilisation)
@@ -324,6 +333,12 @@ interface ToastTimer {
   remaining: number;
   /** Instant de départ du décompte en cours. */
   startedAt: number;
+  /** Pointeur posé sur le toast (R12) : suspend le décompte. */
+  hovered: boolean;
+  /** Focus clavier dans le toast (R12) : suspend le décompte. */
+  focused: boolean;
+  /** Vrai quand le minuteur est actuellement suspendu. */
+  paused: boolean;
 }
 
 const toastTimers = new WeakMap<HTMLElement, ToastTimer>();
@@ -343,27 +358,48 @@ let undoShortcutInstalled = false;
 /** Démarre (ou redémarre) le décompte d'un toast. */
 function startToastTimer(el: HTMLElement, duration: number): void {
   const id = setTimeout(() => removeToast(el), duration);
-  toastTimers.set(el, { id, remaining: duration, startedAt: Date.now() });
+  toastTimers.set(el, { id, remaining: duration, startedAt: Date.now(), hovered: false, focused: false, paused: false });
 }
 
 /**
- * Met le décompte en pause (survol, focus). Le temps déjà écoulé est retiré du
- * restant, pour qu'un toast d'annulation ne disparaisse pas sous le doigt de
- * l'utilisateur qui s'apprête à cliquer « Annuler » (WCAG 2.2.1, R12).
+ * Recalcule l'état de pause d'un toast (R12). Deux causes indépendantes — le
+ * pointeur (`hovered`) et le focus clavier (`focused`) — mais UN SEUL décompte :
+ * on ne retranche le temps écoulé qu'au passage de « aucune cause » à « au moins
+ * une », et on ne reprend que quand les DEUX sont fausses. Sans cela, deux
+ * pauses successives retranchaient deux fois le temps et un `pointerleave`
+ * relançait le minuteur alors que le focus était toujours dessus (C7).
  */
-function pauseToastTimer(el: HTMLElement): void {
+function applyPauseState(el: HTMLElement): void {
   const timer = toastTimers.get(el);
   if (!timer) return;
-  clearTimeout(timer.id);
-  timer.remaining = Math.max(0, timer.remaining - (Date.now() - timer.startedAt));
+  const shouldPause = timer.hovered || timer.focused;
+  if (shouldPause && !timer.paused) {
+    clearTimeout(timer.id);
+    timer.remaining = Math.max(0, timer.remaining - (Date.now() - timer.startedAt));
+    timer.paused = true;
+    return;
+  }
+  if (!shouldPause && timer.paused) {
+    timer.startedAt = Date.now();
+    timer.id = setTimeout(() => removeToast(el), timer.remaining);
+    timer.paused = false;
+  }
 }
 
-/** Reprend le décompte mis en pause. */
-function resumeToastTimer(el: HTMLElement): void {
+/** Le pointeur entre sur le toast (`true`) ou en sort (`false`). */
+function setToastHovered(el: HTMLElement, hovered: boolean): void {
   const timer = toastTimers.get(el);
   if (!timer) return;
-  timer.startedAt = Date.now();
-  timer.id = setTimeout(() => removeToast(el), timer.remaining);
+  timer.hovered = hovered;
+  applyPauseState(el);
+}
+
+/** Le focus clavier entre dans le toast (`true`) ou en sort (`false`). */
+function setToastFocused(el: HTMLElement, focused: boolean): void {
+  const timer = toastTimers.get(el);
+  if (!timer) return;
+  timer.focused = focused;
+  applyPauseState(el);
 }
 
 /** Dernier toast d'annulation encore ouvert (annulé par Ctrl+Z). */
@@ -392,6 +428,10 @@ function ensureUndoShortcut(): void {
   undoShortcutInstalled = true;
   if (typeof window === 'undefined' || typeof window.addEventListener !== 'function') return;
   window.addEventListener('keydown', (event) => {
+    // K4/C3 : un Ctrl+Z DÉJÀ traité (ex. l'annulation de dessin du Plan, qui
+    // pose `preventDefault`) ne doit pas annuler en plus la dernière
+    // suppression : une frappe = une action.
+    if (event.defaultPrevented) return;
     if (!(event.ctrlKey || event.metaKey)) return;
     // Ctrl+Maj+Z (rétablir) n'est PAS une annulation de suppression.
     if (event.shiftKey || event.altKey) return;
@@ -513,10 +553,10 @@ function buildToast(config: BuildToastConfig): HTMLElement {
   // R12 : un toast d'annulation ne doit pas s'évanouir pendant que
   // l'utilisateur le vise ou l'a au clavier.
   if (config.actionVariant === 'undo') {
-    el.addEventListener('pointerenter', () => pauseToastTimer(el));
-    el.addEventListener('pointerleave', () => resumeToastTimer(el));
-    el.addEventListener('focusin', () => pauseToastTimer(el));
-    el.addEventListener('focusout', () => resumeToastTimer(el));
+    el.addEventListener('pointerenter', () => setToastHovered(el, true));
+    el.addEventListener('pointerleave', () => setToastHovered(el, false));
+    el.addEventListener('focusin', () => setToastFocused(el, true));
+    el.addEventListener('focusout', () => setToastFocused(el, false));
   }
   return el;
 }
@@ -690,17 +730,20 @@ export function hideBanner(id: string): void {
  * `Promise<boolean>` (true = confirmé, false = annulé/Escape/clic hors
  * boîte), mais non bloquant pour le thread principal.
  */
-export function confirmDialog(options: ConfirmDialogOptions): Promise<boolean> {
+export function confirmDialog(options: ConfirmDialogOptions & { extraLabel: string }): Promise<ConfirmDialogResult>;
+export function confirmDialog(options: ConfirmDialogOptions): Promise<boolean>;
+export function confirmDialog(options: ConfirmDialogOptions): Promise<ConfirmDialogResult> {
   const {
     title,
     message,
     confirmLabel = 'Confirmer',
     cancelLabel = 'Annuler',
     danger = false,
+    extraLabel,
   } = options;
   injectStyles();
 
-  return new Promise<boolean>((resolve) => {
+  return new Promise<ConfirmDialogResult>((resolve) => {
     const dialog = document.createElement('dialog');
     dialog.className = 'tac-confirm-dialog';
 
@@ -736,22 +779,33 @@ export function confirmDialog(options: ConfirmDialogOptions): Promise<boolean> {
     okBtn.textContent = confirmLabel;
     okBtn.dataset.tacConfirm = 'ok';
 
+    // R9 point 3 : 3e voie optionnelle, neutre, entre « Annuler » et l'action.
+    let extraBtn: HTMLButtonElement | null = null;
+    if (extraLabel) {
+      extraBtn = document.createElement('button');
+      extraBtn.type = 'button';
+      extraBtn.className = 'tac-confirm-btn tac-confirm-btn--extra';
+      extraBtn.textContent = extraLabel;
+      extraBtn.dataset.tacConfirm = 'extra';
+    }
+
     actions.appendChild(cancelBtn);
+    if (extraBtn) actions.appendChild(extraBtn);
     actions.appendChild(okBtn);
     dialog.appendChild(actions);
     document.body.appendChild(dialog);
 
     let settled = false;
-    let pendingResult = false; // Escape (cancel natif) => false par défaut, sans action explicite.
+    let pendingResult: ConfirmDialogResult = false; // Escape (cancel natif) => false par défaut, sans action explicite.
 
-    function settle(result: boolean): void {
+    function settle(result: ConfirmDialogResult): void {
       if (settled) return;
       settled = true;
       dialog.remove();
       resolve(result);
     }
 
-    function requestClose(result: boolean): void {
+    function requestClose(result: ConfirmDialogResult): void {
       pendingResult = result;
       if (typeof dialog.close === 'function') {
         try {
@@ -768,6 +822,7 @@ export function confirmDialog(options: ConfirmDialogOptions): Promise<boolean> {
 
     okBtn.addEventListener('click', () => requestClose(true));
     cancelBtn.addEventListener('click', () => requestClose(false));
+    if (extraBtn) extraBtn.addEventListener('click', () => requestClose('extra'));
     // Clic sur le fond (le `<dialog>` lui-même, jamais un enfant) = annulation
     // — même piège documenté dans `src/apps/pctac/ui.ts` (backdrop natif).
     dialog.addEventListener('click', (e) => {
