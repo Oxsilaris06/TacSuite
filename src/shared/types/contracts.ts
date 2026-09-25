@@ -503,8 +503,8 @@ export interface LogManagerContract {
     getLieuHistory(): string[];
     /** Retourne le journal APRÈS suppression. */
     deleteEntry(id: string): PctacLogEntry[];
-    /** Retourne le journal APRÈS mise à jour (inchangé si `id` introuvable). */
-    updateEntry(id: string, updatedData: Partial<PctacLogEntry>): PctacLogEntry[];
+    /** `false` si le stockage a refusé l'écriture (quota), `true` sinon. */
+    updateEntry(id: string, updatedData: Partial<PctacLogEntry>): boolean;
     /** Jette `Error('Fichier JSON invalide.')` si le format n'est pas reconnu. */
     importJson(jsonContent: PctacLegacyLogJson): PctacImportJsonResult;
 }
@@ -674,8 +674,12 @@ export interface UIContract {
     initPaxModeAndColors(): void;
 
     /* --- navigation / thème / chrome --- */
-    /** Bascule d'onglet + persistance `lastView` (échec de quota toléré). */
-    switchMainView(viewId: string): void;
+    /**
+     * Bascule d'onglet + persistance `lastView` (échec de quota toléré).
+     * `keepFiche` (R25) : ne pas fermer la fiche ouverte (capture PDF qui
+     * bascule temporairement sur le Plan).
+     */
+    switchMainView(viewId: string, options?: { keepFiche?: boolean }): void;
     toggleFullscreen(): void;
     updateFullscreenIcon(): void;
     /** Bascule `dark-mode`/`light-mode` + persiste `theme`. */

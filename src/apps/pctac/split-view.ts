@@ -28,6 +28,7 @@
 
 import { Storage } from '@pctac/storage.js';
 import { UI } from '@pctac/ui.js';
+import { closeFicheIfInView } from '@pctac/fiche-sheet.js';
 import { toast } from '@shared/feedback.js';
 
 const SPLIT_KEY = 'pcTacSplit';
@@ -167,6 +168,9 @@ function unmountViews(): void {
 }
 
 export function setPaneView(side: 'left' | 'right', viewId: string): void {
+    // R25 — la vue qui quitte le panneau referme la fiche qu'elle contient.
+    const previous = side === 'left' ? state.left : state.right;
+    if (previous !== viewId) closeFicheIfInView(previous);
     const other = side === 'left' ? state.right : state.left;
     if (viewId === other) {
         // Deux panneaux sur la même vue est impossible sans la dupliquer : on
