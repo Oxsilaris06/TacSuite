@@ -367,8 +367,15 @@ export const ChromeMethods = {
         const seq = (this._searchSeq = (this._searchSeq || 0) + 1);
 
         // 1) Coordonnées directes (décimal, DMS, MGRS, case) → centre immédiat.
+        // C17 : une saisie qui RESSEMBLE à une case mais tombe HORS du rectangle
+        // du carroyage est très probablement un nom de route / d'axe (« D951 »,
+        // « N7 ») : on ne bloque plus le géocodage, on garde l'indication « hors
+        // du carroyage » en tête des résultats.
+        let gridHint: string | null = null;
         const coord = parseCoordinateInput(q, this.overlays?.state?.grid ?? null);
-        if (coord) {
+        if (coord && coord.kind === 'cell-out-of-grid') {
+            gridHint = `<em style="color: var(--text-muted);">Case ${escHtml(coord.cell)} hors du carroyage.</em>`;
+        } else if (coord) {
             const centered = (lng: number, lat: number, label: string | null): void => {
                 if (this.map) this.map.flyTo({ center: [lng, lat], zoom: 17, speed: 1.4 });
                 this._placeSearchMarker(lng, lat, label);
@@ -379,10 +386,6 @@ export const ChromeMethods = {
             }
             if (coord.kind === 'cell-no-grid') {
                 resultsBox.innerHTML = '<em style="color: var(--text-muted);">Aucun carroyage actif : tracez-en un pour saisir une case.</em>';
-                return;
-            }
-            if (coord.kind === 'cell-out-of-grid') {
-                resultsBox.innerHTML = `<em style="color: var(--text-muted);">Case ${escHtml(coord.cell)} hors du carroyage.</em>`;
                 return;
             }
             if (coord.kind === 'cell') {
@@ -414,14 +417,14 @@ export const ChromeMethods = {
             const hits = await geocodeAddress(q);
             if (seq !== this._searchSeq) return; // réponse périmée : ignorer
             if (!hits.length) {
-                resultsBox.innerHTML = '<em style="color: var(--text-muted);">Aucun résultat.</em>';
+                resultsBox.innerHTML = (gridHint ?? '') + '<em style="color: var(--text-muted);">Aucun résultat.</em>';
                 return;
             }
             const first = hits[0];
             if (!first) return;
             if (this.map) this.map.flyTo({ center: [first.lng, first.lat], zoom: 17, speed: 1.4 });
             this._placeSearchMarker(first.lng, first.lat, first.label);
-            resultsBox.innerHTML = hits.map((item: GeocodeHit, i: number) => `
+            resultsBox.innerHTML = (gridHint ?? '') + hits.map((item: GeocodeHit, i: number) => `
                 <div class="plan-search-result" data-idx="${i}" style="padding: 6px 8px; cursor: pointer; border-bottom: 1px solid var(--border-glass);">
                     ${escHtml(item.label)}
                 </div>
@@ -441,7 +444,7 @@ export const ChromeMethods = {
         } catch (e) {
             if (seq !== this._searchSeq) return; // échec d'une requête périmée : ignorer
             console.error('[PlanMap] Géocodage échec:', e);
-            resultsBox.innerHTML = '<em style="color: var(--danger-red);">Erreur réseau. Vérifie ta connexion.</em>';
+            resultsBox.innerHTML = (gridHint ?? '') + '<em style="color: var(--danger-red);">Erreur réseau. Vérifie ta connexion.</em>';
             // On purge le pointeur précédent pour éviter une localisation périmée
             if (this.searchMarker) { this.searchMarker.remove(); this.searchMarker = null; }
         }
