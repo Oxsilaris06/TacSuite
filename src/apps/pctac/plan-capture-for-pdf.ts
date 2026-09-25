@@ -10,7 +10,13 @@
  *
  * `targetWidthPx` exprime la définition voulue pour l'impression (profils
  * `PDF_IMAGE_PROFILES`) ; la chaîne de capture la respecte dans les limites
- * de la carte graphique (voir `planmap/capture.ts`).
+ * de la carte graphique (voir `planmap/capture.ts`). `targetWidthPxFor` la
+ * calcule d'après la forme de la carte, quand la page du PDF s'oriente comme
+ * elle (portrait de téléphone : page portrait).
+ *
+ * Audit PDF 2026-09-25 (M7) : plus d'attente fixe de 450 ms ; la capture
+ * attend elle-même la carte prête (style, sources, `idle`, borné), y compris
+ * quand l'onglet Plan n'avait jamais été ouvert.
  */
 
 export interface PlanPrintCapture {
@@ -29,7 +35,12 @@ export interface PlanPrintCapture {
 export interface PlanCaptureRequest {
     /** Largeur voulue en pixels pour l'impression (indicative). */
     targetWidthPx?: number;
-    /** Attente après la bascule de vue, en ms (tests : 0). @default 450 */
+    /**
+     * Largeur voulue selon le rapport largeur/hauteur de la carte à l'écran ;
+     * prime sur `targetWidthPx` quand la carte est mesurable.
+     */
+    targetWidthPxFor?: (aspect: number) => number;
+    /** Mise en page de la vue après la bascule, en ms (tests : 0). @default 100 */
     settleMs?: number;
     /** Qualité JPEG de l'image rendue. @default 0.85 */
     jpegQuality?: number;
@@ -37,7 +48,7 @@ export interface PlanCaptureRequest {
 
 interface PlanMapForCapture {
     captureToDataUrl?: (options?: { targetWidthPx?: number }) => Promise<string | null>;
-    map?: { resize?: () => void; getBearing?: () => number } | null;
+    map?: { resize?: () => void; getBearing?: () => number; getContainer?: () => HTMLElement } | null;
 }
 
 /** Taille d'une image PNG ou JPEG lue dans ses en-têtes, sans décodage. */
@@ -125,9 +136,15 @@ export async function capturePlanForPdf(request: PlanCaptureRequest = {}): Promi
         if (planHidden && canSwitch) {
             ui.switchMainView!('view-plan', { keepFiche: true });
             try { planMap.map?.resize?.(); } catch { /* sans effet */ }
-            await new Promise((r) => setTimeout(r, request.settleMs ?? 450));
+            await new Promise((r) => setTimeout(r, request.settleMs ?? 100));
         }
-        dataUrl = await planMap.captureToDataUrl(request.targetWidthPx ? { targetWidthPx: request.targetWidthPx } : undefined);
+        let aspect = 0;
+        try {
+            const container = planMap.map?.getContainer?.();
+            if (container && container.clientHeight > 0) aspect = container.clientWidth / container.clientHeight;
+        } catch { aspect = 0; }
+        const targetWidthPx = request.targetWidthPxFor && aspect > 0 ? request.targetWidthPxFor(aspect) : request.targetWidthPx;
+        dataUrl = await planMap.captureToDataUrl(targetWidthPx ? { targetWidthPx } : undefined);
         try { bearingDeg = planMap.map?.getBearing?.() ?? 0; } catch { bearingDeg = 0; }
         attribution = mapText('.maplibregl-ctrl-attrib-inner');
         scaleText = mapText('.maplibregl-ctrl-scale') || null;
