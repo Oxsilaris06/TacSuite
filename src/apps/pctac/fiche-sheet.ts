@@ -472,6 +472,10 @@ async function syncPhoto(side: FicheSide, item: Record<string, unknown>, dataUrl
     }
     delete item.photo;
     item.hasImage = true;
+    // A6 (revue du 25/09) — l'image n'est pas dans le JSON comparé par
+    // saveCollection : sans marqueur, remplacer la photo ne datait pas la fiche
+    // et la fusion d'archive sur un autre poste ne la reprenait jamais.
+    item.imageRev = Date.now();
     // Nouvelle photo : l'annotation de l'ancienne ne la concerne plus (décision
     // 25), ni un original resté seul (import partiel, écriture interrompue).
     delete item.annotations;

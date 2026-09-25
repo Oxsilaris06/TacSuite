@@ -740,3 +740,34 @@ describe('Revue du 25/09 — modification distante silencieuse appliquée en pla
     expect(storedFiche('pcTacAdversaries', 'a1')).toMatchObject({ antecedents: 'Fiché S', domicile: '3 rue TP' });
   });
 });
+
+describe('Revue du 25/09 — remplacer la photo date la fiche (A6)', () => {
+  afterEach(() => { vi.restoreAllMocks(); vi.useRealTimers(); });
+
+  async function attach(data: string): Promise<void> {
+    vi.spyOn(Utils, 'compressImage').mockResolvedValue(data);
+    vi.spyOn(Utils, 'promptGpsPoint').mockResolvedValue(undefined as never);
+    const input = dialog().querySelector<HTMLInputElement>('.fiche-photo-input')!;
+    Object.defineProperty(input, 'files', { value: [new File(['x'], 'p.jpg', { type: 'image/jpeg' })], configurable: true });
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    await flush();
+  }
+
+  it('updatedAt change quand seule la photo est remplacée (la fusion d’archive la reprendra)', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-09-25T10:00:00Z'));
+    Storage.saveCollection('pcTacAdversaries', [{ id: 'a1', nom: 'A', status: 'active' }]);
+    await openFiche('adv', 'a1');
+    await attach('data:image/jpeg;base64,AAA');
+    await clickSave();
+    const first = storedFiche('pcTacAdversaries', 'a1') as { updatedAt?: string; hasImage?: boolean };
+    expect(first.hasImage).toBe(true);
+
+    vi.setSystemTime(new Date('2026-09-25T10:05:00Z'));
+    await openFiche('adv', 'a1');
+    await attach('data:image/jpeg;base64,BBB');
+    await clickSave();
+    const second = storedFiche('pcTacAdversaries', 'a1') as { updatedAt?: string };
+    expect(second.updatedAt).not.toBe(first.updatedAt);
+  });
+});
