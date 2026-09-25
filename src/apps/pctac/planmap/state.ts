@@ -56,6 +56,10 @@ export function createPlanMapState(): PlanMapState {
         _gpxCoords: {},          // id de trace -> segments, chargés depuis IndexedDB
         _measureLabelMarkers: [],     // labels HTML live de la mesure en cours
         _committedMeasureMarkers: [], // labels HTML des mesures persistées
+        // Décision 29 (C8) : un changement distant reçu pendant un geste/ un
+        // tracé est DIFFÉRÉ puis rejoué à la fin du geste.
+        _pendingRemoteReload: false,
+        _pinDragging: false,
 
         /* --- 28 propriétés créées à l'exécution (hors littéral) ---
          * Règle d'initialisation opposable (SPEC-PLANMAP-SPLIT §3.2) : `null`

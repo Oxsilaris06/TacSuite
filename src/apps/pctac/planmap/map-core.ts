@@ -67,8 +67,10 @@ import {
     LIDAR_OPACITY_OVER_IMAGERY,
     LIDAR_OPACITY_OVER_TOPO,
     OVERLAYS_KEY,
+    PINS_KEY,
     PLANIGN_KEY,
     RASTER_STYLE,
+    SHAPES_KEY,
     VIEW_KEY,
 } from './constants.js';
 import { prefetchFranceTiles } from './tiles.js';
@@ -626,10 +628,47 @@ export const MapCoreMethods = {
             .find((s) => s.querySelector('.tac-layers-section-title')?.textContent?.trim() === 'Surimpressions');
         if (section) mountOverlayControls(section, this.overlays, { row: 'plan-layers-row', fab: 'plan-tool-fab', label: 'plan-layers-label' });
         // Carroyage arrivé par la passerelle OI ou une archive : on le relit.
+        // Décision 29 (C8) : on traite aussi points et formes (+ rechargement
+        // différé pendant un geste) via `_onRemotePlanData`.
         document.addEventListener('pctac:data', (e) => {
             const key = (e as CustomEvent<{ key?: string }>).detail?.key ?? '';
-            if (key === GRID_KEY || key === scopedKey(GRID_KEY)) this.overlays?.reload();
+            this._onRemotePlanData(key);
         });
+    },
+
+    /**
+     * Changement de donnée du plan annoncé par un autre onglet (décision 29).
+     * La VUE n'est jamais synchronisée (chaque onglet garde son cadrage).
+     * Pendant un geste (glisser un point, tracer une forme) le rechargement est
+     * DIFFÉRÉ : `_flushPendingRemoteReload` le rejoue à la fin du geste, qui
+     * relit le stockage puis applique puis écrit (le dernier geste gagne par
+     * objet, jamais d'écrasement de ce que l'autre onglet a ajouté).
+     */
+    _onRemotePlanData(this: PlanMapInternal, key: string): void {
+        const logical = (k: string): boolean => key === k || key === scopedKey(k);
+        if (!logical(PINS_KEY) && !logical(SHAPES_KEY) && !logical(GRID_KEY)) return; // la vue n'est jamais synchronisée
+        if (this._planGestureActive()) { this._pendingRemoteReload = true; return; }
+        this._reloadPlanFromStorage();
+    },
+
+    /** Vrai tant qu'un geste/dessin en cours ne doit pas subir de rechargement. */
+    _planGestureActive(this: PlanMapInternal): boolean {
+        return !!(this.drawState || this._gesture || this.moveState || this._pinDragging);
+    },
+
+    /** Relit le stockage et repeint points, formes et carroyage. */
+    _reloadPlanFromStorage(this: PlanMapInternal): void {
+        this._renderPins();
+        this._renderShapes();
+        this.overlays?.reload();
+    },
+
+    /** Rejoue un rechargement différé (fin de geste). Sans geste restant. */
+    _flushPendingRemoteReload(this: PlanMapInternal): void {
+        if (!this._pendingRemoteReload) return;
+        if (this._planGestureActive()) return;
+        this._pendingRemoteReload = false;
+        this._reloadPlanFromStorage();
     },
 
     /** Restaure les deux bascules persistées au chargement de la carte. */

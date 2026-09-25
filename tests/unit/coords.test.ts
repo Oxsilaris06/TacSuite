@@ -13,6 +13,11 @@ import {
   formatCoordsClipboard,
   latLngToMgrs,
   latLngToUtm,
+  parseCoordinateInput,
+  parseDecimalCoords,
+  parseDmsCoords,
+  parseGridCell,
+  parseMgrsCoords,
   shortMgrs,
 } from '../../src/shared/coords';
 import fixtures from './fixtures/coords.fixtures.json';
@@ -89,5 +94,154 @@ describe('coords — normalisation de longitude', () => {
   it('180° et -180° produisent le même résultat (repli sur -180)', () => {
     expect(latLngToUtm(10, 180)).toEqual(latLngToUtm(10, -180));
     expect(formatCoordsClipboard(180, 10)).toBe(formatCoordsClipboard(-180, 10));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// SAISIE DE COORDONNÉES (décision 35, lot C) — parseurs purs
+// ---------------------------------------------------------------------------
+
+describe('coords — parseDecimalCoords', () => {
+  it('virgule décimale française', () => {
+    expect(parseDecimalCoords('48,8566 ; 2,3522')).toEqual({ lat: 48.8566, lng: 2.3522 });
+  });
+  it('séparateur virgule et espace', () => {
+    expect(parseDecimalCoords('48.85, 2.35')).toEqual({ lat: 48.85, lng: 2.35 });
+    expect(parseDecimalCoords('48.85 2.35')).toEqual({ lat: 48.85, lng: 2.35 });
+  });
+  it('négatifs (S/W)', () => {
+    expect(parseDecimalCoords('-33.9, 18.4')).toEqual({ lat: -33.9, lng: 18.4 });
+  });
+  it('hors bornes → bad-range', () => {
+    expect(parseDecimalCoords('95.0, 2.35')).toBe('bad-range');
+    expect(parseDecimalCoords('48.85, 200')).toBe('bad-range');
+  });
+  it('non décimal → null', () => {
+    expect(parseDecimalCoords('Paris')).toBeNull();
+    expect(parseDecimalCoords('48.85')).toBeNull();
+  });
+});
+
+describe('coords — parseDmsCoords', () => {
+  it('DMS classique avec symboles', () => {
+    const r = parseDmsCoords(`48°51'24"N 2°21'03"E`);
+    expect(r).not.toBeNull();
+    expect(r).not.toBe('bad-range');
+    const v = r as { lat: number; lng: number };
+    expect(v.lat).toBeCloseTo(48.856666, 5);
+    expect(v.lng).toBeCloseTo(2.350833, 5);
+  });
+
+  it('DMS sans symboles (nombres séparés) et hémisphères en queue', () => {
+    const r = parseDmsCoords('48 51 24 N 2 21 03 E');
+    const v = r as { lat: number; lng: number };
+    expect(v.lat).toBeCloseTo(48.856666, 5);
+    expect(v.lng).toBeCloseTo(2.350833, 5);
+  });
+
+  it('symboles prime/double-prime typographiques et hémisphères en tête', () => {
+    const r = parseDmsCoords('N48°51.4′ E2°21.05′');
+    const v = r as { lat: number; lng: number };
+    expect(v.lat).toBeCloseTo(48 + 51.4 / 60, 5);
+    expect(v.lng).toBeCloseTo(2 + 21.05 / 60, 5);
+  });
+
+  it('hémisphères S et W → négatifs', () => {
+    const r = parseDmsCoords(`33°52'00"S 18°25'00"W`);
+    const v = r as { lat: number; lng: number };
+    expect(v.lat).toBeCloseTo(-33.866666, 5);
+    expect(v.lng).toBeCloseTo(-18.416666, 5);
+  });
+
+  it('minutes/secondes ≥ 60 → non reconnu', () => {
+    expect(parseDmsCoords(`48°75'00"N 2°21'03"E`)).toBeNull();
+  });
+
+  it('hors bornes → bad-range', () => {
+    expect(parseDmsCoords(`95°00'00"N 2°21'03"E`)).toBe('bad-range');
+  });
+
+  it('sans lettre d’hémisphère → null (ambigu avec le décimal)', () => {
+    expect(parseDmsCoords('48 51 24 2 21 3')).toBeNull();
+  });
+});
+
+describe('coords — parseMgrsCoords', () => {
+  it('avec espaces, centre de case', () => {
+    const r = parseMgrsCoords('31U DQ 52 12');
+    expect(r).not.toBeNull();
+    expect(r?.lat).toBeCloseTo(48.8636, 3);
+    expect(r?.lng).toBeCloseTo(2.3523, 3);
+  });
+
+  it('sans espaces, précision 1 m', () => {
+    const r = parseMgrsCoords('31UDQ5248411718');
+    expect(r).not.toBeNull();
+    expect(r?.lat).toBeCloseTo(48.8566, 3);
+    expect(r?.lng).toBeCloseTo(2.3522, 3);
+  });
+
+  it('coordonnées décimales → null (pas du MGRS)', () => {
+    expect(parseMgrsCoords('48.85, 2.35')).toBeNull();
+  });
+});
+
+describe('coords — parseGridCell', () => {
+  const grid = { west: 2.0, north: 49.0, dLon: 0.001, dLat: 0.001, cols: 10, rows: 10 };
+
+  it('case valide → centre', () => {
+    const r = parseGridCell('C4', grid);
+    expect(r?.kind).toBe('cell');
+    if (r?.kind === 'cell') {
+      expect(r.cell).toBe('C4');
+      expect(r.lat).toBeCloseTo(48.9965, 9);
+      expect(r.lng).toBeCloseTo(2.0025, 9);
+    }
+  });
+
+  it('sans carroyage → cell-no-grid', () => {
+    expect(parseGridCell('A1', null)).toEqual({ kind: 'cell-no-grid' });
+  });
+
+  it('hors du carroyage → cell-out-of-grid', () => {
+    expect(parseGridCell('Z9', grid)).toEqual({ kind: 'cell-out-of-grid', cell: 'Z9' });
+  });
+});
+
+describe('coords — parseCoordinateInput (avant tout géocodage)', () => {
+  const grid = { west: 2.0, north: 49.0, dLon: 0.001, dLat: 0.001, cols: 10, rows: 10 };
+
+  it('décimal prioritaire : « 48.85, 2.35 » n’est PAS une case', () => {
+    const r = parseCoordinateInput('48.85, 2.35', grid);
+    expect(r).toEqual({ kind: 'point', lat: 48.85, lng: 2.35, format: 'decimal', label: '48.85000, 2.35000' });
+  });
+
+  it('« 31U DQ 52 12 » est du MGRS', () => {
+    const r = parseCoordinateInput('31U DQ 52 12', grid);
+    expect(r?.kind).toBe('point');
+    if (r?.kind === 'point') expect(r.format).toBe('mgrs');
+  });
+
+  it('« A1 » est une case', () => {
+    const r = parseCoordinateInput('A1', grid);
+    expect(r?.kind).toBe('cell');
+    if (r?.kind === 'cell') {
+      expect(r.cell).toBe('A1');
+      expect(r.lat).toBeCloseTo(48.9995, 9);
+      expect(r.lng).toBeCloseTo(2.0005, 9);
+    }
+  });
+
+  it('case sans carroyage actif → cell-no-grid', () => {
+    expect(parseCoordinateInput('C4', null)).toEqual({ kind: 'cell-no-grid' });
+  });
+
+  it('latitude hors bornes → bad-range', () => {
+    expect(parseCoordinateInput('95.0, 2.35', grid)).toEqual({ kind: 'bad-range' });
+  });
+
+  it('adresse ordinaire → null (géocodage)', () => {
+    expect(parseCoordinateInput('12 rue de Rivoli, Paris', grid)).toBeNull();
+    expect(parseCoordinateInput('', grid)).toBeNull();
   });
 });

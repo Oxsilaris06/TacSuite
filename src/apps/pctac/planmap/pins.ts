@@ -45,6 +45,7 @@ import type { GeoJSONSource, LngLat, MapMouseEvent } from 'maplibre-gl';
 
 import { Storage } from '@pctac/storage.js';
 import { ADVERSARIES_KEY, FRIENDS_KEY, HOSTAGES_KEY } from '@pctac/config.js';
+import { confirmDialog, toast, undoableToast } from '@shared/feedback.js';
 import { attachPinGestures } from '@shared/pin-gestures.js';
 
 import { ENTITY_COLORS } from './constants.js';
@@ -130,6 +131,34 @@ export const PinsMethods = {
         this._renderPins();
         // C5 : suppression d'un pin d'entité → main courante (jamais bloquant).
         if (gone?.entityRef) logMapAction(`Ping retiré : ${this._resolvePin(gone).label}`);
+    },
+
+    /**
+     * Suppression d'un point du plan par l'utilisateur (décision 31) :
+     * confirmation PUIS retrait immédiat PUIS toast d'annulation pendant 10 s
+     * (« Annuler » remet le point à l'identique). Appelée par la roue
+     * contextuelle du ping ; `_removePin` reste le retrait pur.
+     */
+    async _requestRemovePin(this: PlanMapInternal, id: string): Promise<void> {
+        const target = this._loadPins().find(p => p.id === id);
+        if (!target) return;
+        const ok = await confirmDialog({
+            message: 'Supprimer ce point du plan ?',
+            confirmLabel: 'Supprimer',
+            danger: true,
+        });
+        if (!ok) return;
+        const snapshot: PlanPin = { ...target };
+        this._removePin(id);
+        undoableToast('Point supprimé', {
+            onUndo: () => {
+                const list = this._loadPins();
+                if (list.some(p => p.id === snapshot.id)) return; // déjà remis (double annulation)
+                list.push(snapshot);
+                this._savePins(list);
+                this._renderPins();
+            },
+        });
     },
 
     // planMap.js:1203-1207
@@ -455,6 +484,7 @@ export const PinsMethods = {
         // ─── MAPLIBRE DRAG EVENTS (NATIF POUR MOBILE & DESKTOP) ───
         pinMarker.on('dragstart', this._safe(() => {
             gestures.notifyDragStart();
+            this._pinDragging = true;
             pinWrap.style.cursor = 'grabbing';
             pinWrap.style.opacity = '0.85';
             entry.labelEl.style.opacity = '0.5';
@@ -476,6 +506,8 @@ export const PinsMethods = {
             const ll = pinMarker.getLngLat();
             labelMarker.setLngLat(ll);
             const pinId = entry.pin.id;
+            // Relit le stockage PUIS applique le déplacement PUIS écrit : ce que
+            // l'autre onglet a ajouté pendant le glisser est conservé (décision 29).
             const allPins = this._loadPins();
             const target = allPins.find(p => p.id === pinId);
             if (target) {
@@ -485,6 +517,8 @@ export const PinsMethods = {
                 // Maintient entry.pin cohérent avec la nouvelle position.
                 entry.pin = target;
             }
+            this._pinDragging = false;
+            this._flushPendingRemoteReload();
             this._renderPinDecorations();
         }, 'pin:dragend'));
     },
@@ -738,3 +772,42 @@ export const PinsMethods = {
         }
     },
 };
+
+/* ─── Point proposé par une photo (décision 34, C9) ────────────────────────
+ * Une photo portant une position GPS émet `pctac:add-point`
+ * `{ lat, lon, label }` (lot B). On crée un point du plan (icône photo,
+ * libellé reçu) que la carte soit déjà ouverte ou non : `_addPin` écrit dans
+ * le stockage du plan, et `_renderPins` ne fait rien tant qu'il n'y a pas de
+ * carte. Coordonnées invalides : ignorées. */
+export const PHOTO_POINT_ICON = 'photo_camera';
+
+/** Crée le point du plan depuis un détail d'évènement ; `false` si ignoré. */
+export function addPhotoPoint(detail: { lat?: unknown; lon?: unknown; label?: unknown } | undefined): boolean {
+    const lat = Number(detail?.lat);
+    const lon = Number(detail?.lon);
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return false;
+    if (lat < -90 || lat > 90 || lon < -180 || lon > 180) return false;
+    const raw = detail?.label;
+    const label = typeof raw === 'string' && raw.trim() ? raw.trim().slice(0, 80) : 'Photo';
+    const pm = (window as unknown as { PlanMap?: PlanMapInternal }).PlanMap;
+    if (!pm || typeof pm._addPin !== 'function') return false;
+    pm._addPin({
+        id: `photo_${Date.now()}_${Math.floor(Math.random() * 100000)}`,
+        lng: lon,
+        lat,
+        label,
+        kind: 'libre',
+        icon: PHOTO_POINT_ICON,
+        color: '#0ea5e9',
+    });
+    try { toast('Point ajouté au plan', { kind: 'success' }); } catch { /* jamais bloquant */ }
+    return true;
+}
+
+if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
+    document.addEventListener('pctac:add-point', (ev) => {
+        try {
+            addPhotoPoint((ev as CustomEvent<{ lat?: unknown; lon?: unknown; label?: unknown }>).detail);
+        } catch { /* un évènement malformé ne doit jamais casser l'application */ }
+    });
+}

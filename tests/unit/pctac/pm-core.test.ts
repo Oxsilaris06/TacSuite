@@ -24,7 +24,7 @@ import { SafeMethods, createPlanMapState } from '../../../src/apps/pctac/planmap
 import type { PlanMapInternal } from '../../../src/apps/pctac/planmap/types.js';
 
 describe('state.ts — createPlanMapState() (planMap.js:301-328 + ad hoc §3.2)', () => {
-    it('retourne exactement les 62 clés attendues, avec les bonnes valeurs initiales', () => {
+    it('retourne exactement les 64 clés attendues, avec les bonnes valeurs initiales', () => {
         const s = createPlanMapState();
 
         // Décompte exhaustif : 27 (littéral, planMap.js:302-328 — vérifié par lecture
@@ -67,6 +67,9 @@ describe('state.ts — createPlanMapState() (planMap.js:301-328 + ad hoc §3.2)'
                 '_gpxCoords',
                 '_measureLabelMarkers',
                 '_committedMeasureMarkers',
+                // Décision 29 (C8) : rechargement distant différé pendant un geste
+                '_pendingRemoteReload',
+                '_pinDragging',
                 // 28 propriétés ad hoc
                 '_searchSeq',
                 'pendingEntityPin',
@@ -106,7 +109,7 @@ describe('state.ts — createPlanMapState() (planMap.js:301-328 + ad hoc §3.2)'
                 'contoursOn',
             ].sort(),
         );
-        expect(Object.keys(s)).toHaveLength(62);
+        expect(Object.keys(s)).toHaveLength(64);
     });
 
     it('`persistence` : adapter fonctionnel posé par défaut (mission R3-c) — round-trip pins/shapes via localStorage', () => {
