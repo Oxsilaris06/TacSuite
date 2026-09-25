@@ -111,8 +111,49 @@ export function getDragAfterElement(container: HTMLElement, y: number): HTMLElem
         }, { offset: Number.NEGATIVE_INFINITY }).element;
 }
 
-// outils.js:136-188
+/**
+ * Image que le navigateur ne sait pas décoder (format inconnu, fichier abîmé,
+ * HEIC non convertible) : l'appelant la REFUSE plutôt que de la stocker, elle
+ * n'apparaîtrait jamais dans le PDF (audit PDF du 2026-09-25, F10). Reconnue
+ * par son `name` (sûr même à travers les doubles de test d'un module).
+ */
+export class ImageDecodeError extends Error {
+    override name = 'ImageDecodeError';
+}
+
+/** HEIC/HEIF par type MIME, ou par extension quand le type est vide — même règle que PC-Tac (`pctac/utils.ts`). */
+function looksLikeHeic(blob: Blob): boolean {
+    const type = (blob.type || '').toLowerCase();
+    if (type === 'image/heic' || type === 'image/heif') return true;
+    if (type) return false;
+    const name = blob instanceof File ? blob.name.toLowerCase() : '';
+    return name.endsWith('.heic') || name.endsWith('.heif');
+}
+
+/**
+ * Compresse une image par canvas (JPEG, ou PNG si la source l'est). HEIC/HEIF
+ * (décision 34, comme PC-Tac) : décodage natif d'abord (Safari sait), sinon
+ * conversion en JPEG par `heic-to`, chargé À LA DEMANDE. Lève
+ * `ImageDecodeError` si l'image reste illisible.
+ */
 export async function compressImage(imageBlob: Blob, quality: number, maxDimension: number = 1920): Promise<ArrayBuffer> {
+    try {
+        return await compressViaCanvas(imageBlob, quality, maxDimension);
+    } catch (e) {
+        if (!(e instanceof ImageDecodeError) || !looksLikeHeic(imageBlob)) throw e;
+    }
+    let jpeg: Blob;
+    try {
+        const { heicTo } = await import('heic-to');
+        jpeg = await heicTo({ blob: imageBlob, type: 'image/jpeg', quality: 0.9 });
+    } catch {
+        throw new ImageDecodeError('Photo HEIC illisible : conversion impossible (hors ligne ou fichier abîmé).');
+    }
+    return compressViaCanvas(jpeg, quality, maxDimension);
+}
+
+// outils.js:136-188
+function compressViaCanvas(imageBlob: Blob, quality: number, maxDimension: number): Promise<ArrayBuffer> {
     return new Promise<ArrayBuffer>((resolve, reject) => {
         const img = new Image();
         const objectURL = URL.createObjectURL(imageBlob);
@@ -170,7 +211,7 @@ export async function compressImage(imageBlob: Blob, quality: number, maxDimensi
         };
         img.onerror = () => {
             URL.revokeObjectURL(objectURL);
-            reject(new Error("Échec du chargement du Blob de l'image dans l'élément Image."));
+            reject(new ImageDecodeError("Échec du chargement du Blob de l'image dans l'élément Image."));
         };
     });
 }

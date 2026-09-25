@@ -29,6 +29,7 @@ import { toast } from '@shared/feedback.js';
 import { PDF_IMAGE_PROFILES, formatBytes, type PdfSortie } from '@shared/pdf-options.js';
 import type { OiPdfFormat } from './theme.js';
 import type { OiPdfCollectedData } from '@shared/types/contracts.js';
+import { confirmPhotoBilan, notePhotoIssue, resetPhotoBilan } from '@oi/photo-bilan.js';
 
 /**
  * Passe de normalisation des photos (décision 42) : définition visée à la
@@ -422,6 +423,8 @@ export async function normalizePhotos(
             out[entry[0]] = entry[1];
         }
     }
+    // Point 11 : image illisible à la préparation, relevée pour le bilan avant téléchargement.
+    for (const [id] of entries) if (!(id in out)) notePhotoIssue(id, 'illisible');
     return out;
 }
 
@@ -471,6 +474,7 @@ export async function downloadOiPdfV3(deps?: {
     // Verrou pris AVANT toute attente : un double clic ne lance qu'une génération.
     const lockToken = acquirePdfLock('telechargement');
     if (lockToken === null) return;
+    resetPhotoBilan();
     console.group('🚀 [PDF ENGINE V3] - Démarrage de la génération');
     const startTime = Date.now();
 
@@ -515,6 +519,8 @@ export async function downloadOiPdfV3(deps?: {
 
         updateStatus('Assemblage final…');
 
+        // Point 11 : bilan des photos non intégrées, montré AVANT le téléchargement.
+        if (!(await confirmPhotoBilan(data.formData))) return;
         // TÉLÉCHARGEMENT AUTOMATIQUE NOMMÉ — CONTRAT E2E
         // (tests/e2e/oi.spec.ts:960-968 attend un événement `download` avec un
         // nom `/^OI_.*\.pdf$/`).
