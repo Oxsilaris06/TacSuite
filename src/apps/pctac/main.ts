@@ -324,6 +324,9 @@ document.addEventListener('DOMContentLoaded', async () => {
             const submitBtn = UI.elements.photoForm?.querySelector<HTMLButtonElement>('button[type="submit"]');
             if (submitBtn) submitBtn.disabled = true;
             try {
+                // Position GPS de l'original (décision 34) : question indépendante
+                // de l'ajout, jamais bloquante pour la compression.
+                void Utils.promptGpsPoint(file, title);
                 const compressedData = await Utils.compressImage(file, 1024, 1024, 0.7);
                 const photoId = Date.now().toString();
                 await ImageStore.put(photoId, compressedData);
