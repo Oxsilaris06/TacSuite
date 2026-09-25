@@ -749,7 +749,7 @@ export interface UIContract {
     toggleLogFavorisFilter(): void;
     renderLogTable(logData: readonly PctacLogEntry[]): void;
     openEditModal(id: string): void;
-    confirmEditLog(): void;
+    confirmEditLog(): Promise<void>;
     hideEditModal(): void;
     toggleSearchMode(): void;
     closeSearchMode(): void;
