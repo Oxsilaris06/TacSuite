@@ -347,6 +347,59 @@ describe('undoableToast()', () => {
     document.querySelector<HTMLButtonElement>('.tac-toast button')!.click();
     expect(onUndo).toHaveBeenCalledTimes(1);
   });
+
+  it('annonce le raccourci d’annulation (R12)', () => {
+    undoableToast('Photo supprimée.', { onUndo: () => {} });
+    expect(document.querySelector('.tac-toast')?.textContent).toContain('pour annuler');
+  });
+
+  it('met le décompte en pause au survol, le reprend au départ (R12)', () => {
+    const onCommit = vi.fn();
+    undoableToast('Supprimé.', { onUndo: () => {}, onCommit });
+    const el = document.querySelector<HTMLElement>('.tac-toast')!;
+    vi.advanceTimersByTime(9_000);
+    el.dispatchEvent(new Event('pointerenter'));
+    vi.advanceTimersByTime(60_000);
+    expect(onCommit).not.toHaveBeenCalled();
+    el.dispatchEvent(new Event('pointerleave'));
+    vi.advanceTimersByTime(1_000);
+    expect(onCommit).toHaveBeenCalledTimes(1);
+  });
+
+  it('met le décompte en pause au focus clavier, le reprend à la sortie (R12)', () => {
+    const onCommit = vi.fn();
+    undoableToast('Supprimé.', { onUndo: () => {}, onCommit });
+    const el = document.querySelector<HTMLElement>('.tac-toast')!;
+    vi.advanceTimersByTime(9_500);
+    el.dispatchEvent(new Event('focusin'));
+    vi.advanceTimersByTime(60_000);
+    expect(onCommit).not.toHaveBeenCalled();
+    el.dispatchEvent(new Event('focusout'));
+    vi.advanceTimersByTime(500);
+    expect(onCommit).toHaveBeenCalledTimes(1);
+  });
+
+  it('Ctrl+Z annule la DERNIÈRE suppression, pas les précédentes (R12)', () => {
+    const onUndoA = vi.fn();
+    const onUndoB = vi.fn();
+    undoableToast('A supprimé.', { onUndo: onUndoA });
+    undoableToast('B supprimé.', { onUndo: onUndoB });
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'z', ctrlKey: true }));
+    expect(onUndoB).toHaveBeenCalledTimes(1);
+    expect(onUndoA).not.toHaveBeenCalled();
+  });
+
+  it('Ctrl+Z ne vole pas l’annulation de frappe d’un champ éditable (R12)', () => {
+    const onUndo = vi.fn();
+    undoableToast('Supprimé.', { onUndo });
+    const input = document.createElement('input');
+    document.body.appendChild(input);
+    input.focus();
+    const ev = new KeyboardEvent('keydown', { key: 'z', ctrlKey: true, bubbles: true, cancelable: true });
+    input.dispatchEvent(ev);
+    expect(onUndo).not.toHaveBeenCalled();
+    expect(ev.defaultPrevented).toBe(false);
+  });
 });
 
 describe('bandeaux persistants', () => {
@@ -425,5 +478,21 @@ describe('bandeaux persistants', () => {
     expect(document.querySelector('[data-banner-id="b2"]')).not.toBeNull();
     hideBanner('b2');
     expect(document.querySelector('[data-banner-id="b2"]')).toBeNull();
+  });
+
+  it('F-1 : sous 560 px, le message prend toute la largeur et les actions passent dessous', () => {
+    showBanner('b1', { message: 'x', level: 'info' });
+    const css = feedbackCss();
+    expect(css).toContain('@media (max-width: 560px)');
+    expect(css).toContain('flex-wrap: wrap');
+    expect(css).toMatch(/\.tac-banner-message\s*\{\s*flex:\s*1 1 100%/);
+  });
+
+  it('F-2 : les jetons absents du portail ont un repli lisible', () => {
+    showBanner('b1', { message: 'x', level: 'alert' });
+    const css = feedbackCss();
+    expect(css).toContain('var(--color-surface');
+    expect(css).toContain('var(--color-text');
+    expect(css).toContain('var(--color-danger');
   });
 });
