@@ -8,7 +8,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { isTileRequest } from '@pctac/lotA-sw-routes.js';
+import { isTileRequest, shouldSkipWaitingOnInstall } from '@shared/sw-routes.js';
 
 describe('isTileRequest', () => {
     it('accepte les chemins de tuiles de data.geopf.fr', () => {
@@ -33,5 +33,16 @@ describe('isTileRequest', () => {
     it('refuse tout autre hôte', () => {
         expect(isTileRequest(new URL('https://gist.githubusercontent.com/x/raw/annonce.json'))).toBe(false);
         expect(isTileRequest(new URL('https://example.com/wmts'))).toBe(false);
+    });
+});
+
+describe('shouldSkipWaitingOnInstall — transition depuis l’ancien SW (A-2)', () => {
+    it('force l’activation seulement si un worker actif existe ET que la marque manque', () => {
+        expect(shouldSkipWaitingOnInstall(true, false)).toBe(true);
+        // Marque présente : le worker actif sait attendre, on ne force plus.
+        expect(shouldSkipWaitingOnInstall(true, true)).toBe(false);
+        // Première installation : rien à remplacer.
+        expect(shouldSkipWaitingOnInstall(false, false)).toBe(false);
+        expect(shouldSkipWaitingOnInstall(false, true)).toBe(false);
     });
 });

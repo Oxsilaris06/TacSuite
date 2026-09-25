@@ -22,9 +22,16 @@ export function offlineCandidates(pageUrl: string): string[] {
     return out;
 }
 
+/** Surface minimale d'un cache nommé (`caches.open(...)`). */
+export interface CacheLike {
+    keys(): Promise<Array<{ url?: string } | string>>;
+}
+
 /** Surface minimale de `caches` réellement utilisée. */
 export interface CachesLike {
     match(request: string, options?: { ignoreSearch?: boolean }): Promise<unknown>;
+    /** Optionnel : son absence empêche seulement de vérifier la police. */
+    open?(name: string): Promise<CacheLike>;
 }
 
 export interface OfflineCheckDeps {
@@ -33,6 +40,11 @@ export interface OfflineCheckDeps {
     /** `caches` (simulé en test). */
     caches?: CachesLike | null;
 }
+
+/** Cache des polices (runtime `StaleWhileRevalidate`, cf. public/sw.ts). */
+export const FONT_CACHE_NAME = 'tacsuite-fonts';
+/** Une entrée de ce cache porte le nom du fichier de la police d'icônes. */
+const ICON_FONT_RE = /material-symbols/i;
 
 /** Vrai si la page est servie hors ligne : SW actif + page précachée. */
 export async function isPageReadyOffline(pageUrl: string, deps: OfflineCheckDeps = {}): Promise<boolean> {
@@ -57,6 +69,43 @@ export async function isPageReadyOffline(pageUrl: string, deps: OfflineCheckDeps
     return false;
 }
 
+/**
+ * La police d'icônes Material Symbols est-elle en cache ? Elles vit dans
+ * `tacsuite-fonts`, alimenté à la PREMIÈRE ouverture de PC-Tac ou de l'OI
+ * (elle est exclue du précache, cf. vite.config.ts). Tant qu'elle manque,
+ * l'application s'ouvre hors ligne mais tous les boutons à icône seule
+ * affichent le mot de ligature (« delete », « edit »…).
+ *
+ * Rend `null` si l'API ne permet pas de conclure (pas de `caches.open`) : on
+ * retombe alors sur l'ancien critère page + contrôleur, pour ne pas bloquer à
+ * tort un navigateur qui ne sait pas inspecter le cache nommé.
+ */
+export async function hasIconFontCached(deps: OfflineCheckDeps = {}): Promise<boolean | null> {
+    const cache = deps.caches !== undefined
+        ? deps.caches
+        : (typeof caches !== 'undefined' ? caches : null);
+    if (!cache || typeof cache.open !== 'function') return null;
+    try {
+        const fontCache = await cache.open(FONT_CACHE_NAME);
+        if (!fontCache || typeof fontCache.keys !== 'function') return null;
+        const keys = await fontCache.keys();
+        return keys.some((k) => ICON_FONT_RE.test(typeof k === 'string' ? k : (k.url ?? '')));
+    } catch {
+        return null;
+    }
+}
+
+/**
+ * Vrai si l'APPLICATION est réellement prête hors ligne : page précachée ET
+ * police d'icônes présente. C'est ce critère qui pilote le badge du portail
+ * (R11) : sans la police, l'appli « prête » s'afficherait sans ses icônes.
+ */
+export async function isAppReadyOffline(pageUrl: string, deps: OfflineCheckDeps = {}): Promise<boolean> {
+    if (!(await isPageReadyOffline(pageUrl, deps))) return false;
+    const icons = await hasIconFontCached(deps);
+    return icons !== false;
+}
+
 export interface OfflineBadgeApp {
     /** Id de l'élément badge dans le portail. */
     badgeId: string;
@@ -69,7 +118,7 @@ const NOT_READY_LABEL = 'À ouvrir une fois en ligne avant départ';
 
 /** Met à jour un badge et rend l'état calculé. */
 export async function renderOfflineBadge(app: OfflineBadgeApp, deps: OfflineCheckDeps = {}): Promise<boolean> {
-    const ready = await isPageReadyOffline(app.pageUrl, deps);
+    const ready = await isAppReadyOffline(app.pageUrl, deps);
     const el = typeof document !== 'undefined' ? document.getElementById(app.badgeId) : null;
     if (el) {
         el.dataset.ready = String(ready);
@@ -84,5 +133,16 @@ export async function renderOfflineBadge(app: OfflineBadgeApp, deps: OfflineChec
 
 /** Renseigne les badges des applications du portail (fire-and-forget). */
 export function initOfflineBadges(apps: readonly OfflineBadgeApp[], deps: OfflineCheckDeps = {}): void {
-    apps.forEach((app) => { void renderOfflineBadge(app, deps); });
+    const refresh = (): void => apps.forEach((app) => { void renderOfflineBadge(app, deps); });
+    refresh();
+
+    // R11 : réévaluer à la prise de contrôle par le service worker. À la toute
+    // première visite, le badge restait « À ouvrir » même après `controllerchange`.
+    const sw = deps.serviceWorker !== undefined
+        ? deps.serviceWorker
+        : (typeof navigator !== 'undefined' ? navigator.serviceWorker : null);
+    const target = sw as { addEventListener?: (type: string, cb: () => void) => void } | null;
+    if (target && typeof target.addEventListener === 'function') {
+        target.addEventListener('controllerchange', refresh);
+    }
 }

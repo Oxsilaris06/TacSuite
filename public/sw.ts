@@ -29,7 +29,12 @@ import { registerRoute } from 'workbox-routing';
 import { CacheFirst, StaleWhileRevalidate } from 'workbox-strategies';
 import { ExpirationPlugin } from 'workbox-expiration';
 
-import { isTileRequest } from '../src/apps/pctac/lotA-sw-routes.js';
+import {
+    SW_PROTOCOL_CACHE,
+    SW_PROTOCOL_MARK_URL,
+    isTileRequest,
+    shouldSkipWaitingOnInstall,
+} from '../src/shared/sw-routes.js';
 
 declare const self: ServiceWorkerGlobalScope;
 
@@ -43,7 +48,7 @@ precacheAndRoute(self.__WB_MANIFEST);
 // Fournisseurs réels (cf. planmap/constants.ts et carto/constants.ts) :
 // arcgisonline (satellite), data.geopf.fr (ortho/BD TOPO), elevation-tiles
 // (relief), tiles.openfreemap.org (fond vecteur + polices glyphes).
-// La correspondance vit dans `lotA-sw-routes.ts` : `data.geopf.fr` y est
+// La correspondance vit dans `src/shared/sw-routes.ts` : `data.geopf.fr` y est
 // restreint aux chemins de tuiles, pour ne jamais cacher une recherche
 // d'adresse (`/geocodage/search`, décision 35).
 registerRoute(
@@ -78,6 +83,33 @@ registerRoute(
 // sous une page ouverte : ses imports dynamiques (archive, visionneuse photos)
 // visaient alors des fichiers purgés du cache. On laisse donc le nouveau worker
 // en ATTENTE ; la page propose « Recharger », et c'est ce message qui l'active.
+//
+// EXCEPTION de transition (A-2) : un appareil qui tourne encore sur l'ancien
+// SW (installé avant ce protocole) n'a pas de bandeau « Recharger » dans son
+// code de page. À l'installation, si un worker est DÉJÀ actif et que la marque
+// de protocole est absente, on force l'activation UNE DERNIÈRE FOIS. La marque
+// est posée à l'activation : les mises à jour suivantes attendront le clic.
+self.addEventListener('install', (event) => {
+    event.waitUntil(
+        (async () => {
+            const hasActive = !!self.registration.active;
+            let hasMark = false;
+            try {
+                hasMark = !!(await caches.match(SW_PROTOCOL_MARK_URL));
+            } catch {
+                // Cache illisible : on suppose la marque absente, sans échec.
+            }
+            if (shouldSkipWaitingOnInstall(hasActive, hasMark)) {
+                try {
+                    await self.skipWaiting();
+                } catch {
+                    // Best-effort : l'activation normale reste possible.
+                }
+            }
+        })(),
+    );
+});
+
 self.addEventListener('message', (event) => {
     if (event.data && event.data.type === 'SKIP_WAITING') {
         self.skipWaiting();
@@ -87,6 +119,15 @@ self.addEventListener('message', (event) => {
 self.addEventListener('activate', (event) => {
     event.waitUntil(
         (async () => {
+            // Marque de protocole (A-2) : sa présence indique à la prochaine
+            // installation que le worker actif SAIT attendre le clic.
+            try {
+                const cache = await caches.open(SW_PROTOCOL_CACHE);
+                await cache.put(SW_PROTOCOL_MARK_URL, new Response('1'));
+            } catch {
+                // Best-effort : sans marque, une prochaine mise à jour forcera
+                // l'activation — dégradation acceptable.
+            }
             if (self.registration.navigationPreload) {
                 try {
                     await self.registration.navigationPreload.enable();
