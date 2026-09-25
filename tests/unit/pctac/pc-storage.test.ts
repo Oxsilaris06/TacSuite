@@ -13,9 +13,9 @@
  *   - utils.js:38-46 — compressImage accepte File OU dataURL → toujours image/jpeg
  */
 
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { PctacLogEntry } from '../../../src/shared/types/contracts.js';
+import type { PctacCollectionItem, PctacLogEntry } from '../../../src/shared/types/contracts.js';
 
 // Imports des modules à tester (sera créés)
 import { Storage, clearSituationData } from '../../../src/apps/pctac/storage.js';
@@ -251,6 +251,97 @@ describe('Storage — loadLogData sur stockage vide ou corrompu', () => {
     const loaded = Storage.loadLogData();
     expect(loaded).toEqual([]);
   });
+});
+
+describe('Storage — updatedAt et résultat d’écriture (décision 32)', () => {
+    beforeEach(() => {
+        localStorage.clear();
+        vi.useFakeTimers();
+    });
+    afterEach(() => {
+        vi.useRealTimers();
+    });
+
+    it('saveCollection date un élément NOUVEAU et rend true', () => {
+        vi.setSystemTime(new Date('2026-09-25T09:05:00.000Z'));
+        const ok = Storage.saveCollection(ADVERSARIES_KEY, [{ id: 'a1', nom: 'Un' }]);
+        expect(ok).toBe(true);
+        const [a] = Storage.loadCollection(ADVERSARIES_KEY);
+        expect(a?.updatedAt).toBe('2026-09-25T09:05:00.000Z');
+    });
+
+    it('un élément INCHANGÉ garde sa date stockée, même passé sans updatedAt', () => {
+        vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
+        Storage.saveCollection(ADVERSARIES_KEY, [{ id: 'a1', nom: 'Un' }]);
+
+        // L'appelant garde une référence ancienne, donc sans updatedAt.
+        vi.setSystemTime(new Date('2026-06-06T00:00:00.000Z'));
+        Storage.saveCollection(ADVERSARIES_KEY, [{ id: 'a1', nom: 'Un' }]);
+
+        const [a] = Storage.loadCollection(ADVERSARIES_KEY);
+        expect(a?.updatedAt).toBe('2026-01-01T00:00:00.000Z');
+    });
+
+    it('un élément MODIFIÉ est redaté', () => {
+        vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
+        Storage.saveCollection(ADVERSARIES_KEY, [{ id: 'a1', nom: 'Un' }]);
+
+        vi.setSystemTime(new Date('2026-07-07T00:00:00.000Z'));
+        Storage.saveCollection(ADVERSARIES_KEY, [{ id: 'a1', nom: 'Deux' }]);
+
+        const [a] = Storage.loadCollection(ADVERSARIES_KEY);
+        expect(a?.nom).toBe('Deux');
+        expect(a?.updatedAt).toBe('2026-07-07T00:00:00.000Z');
+    });
+
+    it('ne mute PAS le tableau (même instance, même ordre) et date son élément', () => {
+        vi.setSystemTime(new Date('2026-05-05T00:00:00.000Z'));
+        const items: PctacCollectionItem[] = [{ id: 'a1', nom: 'Un' }];
+        const ref = items;
+        Storage.saveCollection(ADVERSARIES_KEY, items);
+        // Le tableau lui-même n'est ni remplacé, ni réordonné.
+        expect(items).toBe(ref);
+        expect(items).toHaveLength(1);
+        // Les éléments, eux, reçoivent leur date (les appelants gardent leurs
+        // références et les relisent : `fiche-sheet.ts` compare les deux).
+        expect(items[0]?.updatedAt).toBe('2026-05-05T00:00:00.000Z');
+    });
+
+    it('saveLogData date les nouvelles, garde les inchangées et rend true', () => {
+        vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
+        const first: PctacLogEntry[] = [
+            { id: 'l1', heure: '10:00', pax: 'A', paxMode: 'standard', lieu: '', remarques: '' },
+        ];
+        expect(Storage.saveLogData(first)).toBe(true);
+
+        vi.setSystemTime(new Date('2026-02-02T00:00:00.000Z'));
+        // Entrée l1 inchangée (passée sans updatedAt) + l2 nouvelle.
+        const second: PctacLogEntry[] = [
+            { id: 'l2', heure: '09:00', pax: 'B', paxMode: 'standard', lieu: '', remarques: '' },
+            { id: 'l1', heure: '10:00', pax: 'A', paxMode: 'standard', lieu: '', remarques: '' },
+        ];
+        Storage.saveLogData(second);
+        const loaded = Storage.loadLogData();
+        const byId = (id: string) => loaded.find((e) => e.id === id);
+        expect(byId('l1')?.updatedAt).toBe('2026-01-01T00:00:00.000Z');
+        expect(byId('l2')?.updatedAt).toBe('2026-02-02T00:00:00.000Z');
+    });
+
+    it('rend false sur quota (setItem sur l’instance) et ne jette pas', () => {
+        const spy = vi.spyOn(localStorage, 'setItem').mockImplementation(() => {
+            const err = new Error('quota plein');
+            err.name = 'QuotaExceededError';
+            throw err;
+        });
+        try {
+            expect(Storage.saveCollection(ADVERSARIES_KEY, [{ id: 'a1', nom: 'Un' }])).toBe(false);
+            expect(Storage.saveLogData([
+                { id: 'l1', heure: '10:00', pax: 'A', paxMode: 'standard', lieu: '', remarques: '' },
+            ])).toBe(false);
+        } finally {
+            spy.mockRestore();
+        }
+    });
 });
 
 describe('Utils — compressImage (utils.js:38-46)', () => {
