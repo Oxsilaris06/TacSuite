@@ -49,6 +49,15 @@ export function showBusy(message = 'Chargement…'): void {
     if (!orb) orb = mountOrb(document.getElementById('pctacBusyOrb') as HTMLCanvasElement | null);
 }
 
+/**
+ * Change le message de l'overlay déjà affiché (étape d'une opération longue :
+ * « photos (3/12) »), sans empiler un niveau comme `showBusy()`.
+ */
+export function setBusyMessage(message: string): void {
+    const messageEl = getMessageEl();
+    if (messageEl) messageEl.textContent = message;
+}
+
 /** Masque l'overlay busy. Sûr à appeler même sans `showBusy()` préalable. */
 export function hideBusy(): void {
     depth = Math.max(0, depth - 1);
