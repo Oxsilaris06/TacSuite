@@ -180,19 +180,20 @@ export const LogManager: LogManagerContract = {
    * Met à jour une entrée existante.
    * logManager.js:92-100
    *
-   * @returns le journal APRÈS mise à jour (inchangé si id introuvable)
+   * R22 — rend `false` quand le stockage a refusé l'écriture (quota,
+   * indisponible), comme `addEntry`. L'appelant garde alors la modale ouverte
+   * au lieu d'annoncer une mise à jour qui n'a pas eu lieu.
+   *
+   * @returns `true` si l'entrée a été écrite (ou est introuvable : rien à faire)
    */
-  updateEntry(id: string, updatedData: Partial<PctacLogEntry>): PctacLogEntry[] {
+  updateEntry(id: string, updatedData: Partial<PctacLogEntry>): boolean {
     const logData = Storage.loadLogData();
     const index = logData.findIndex((e) => e.id === id);
-    if (index !== -1) {
-      const entry = logData[index];
-      if (entry) {
-        logData[index] = { ...entry, ...updatedData };
-        Storage.saveLogData(logData);
-      }
-    }
-    return logData;
+    if (index === -1) return true;
+    const entry = logData[index];
+    if (!entry) return true;
+    logData[index] = { ...entry, ...updatedData };
+    return Storage.saveLogData(logData);
   },
 
   /**

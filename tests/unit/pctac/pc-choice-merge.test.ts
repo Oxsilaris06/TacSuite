@@ -52,6 +52,28 @@ describe('choiceDialog', () => {
     await expect(p).resolves.toBeNull();
   });
 
+  it('R26 — le titre nomme la boîte, le message la décrit', () => {
+    choiceDialog({
+      title: 'Une fiche existe déjà',
+      message: 'Pour Dupont',
+      options: [{ value: 'a', label: 'A' }],
+    });
+    const dlg = document.querySelector<HTMLElement>('.tac-choice-dialog')!;
+    const labelId = dlg.getAttribute('aria-labelledby');
+    expect(labelId).toBeTruthy();
+    expect(document.getElementById(labelId!)?.textContent).toBe('Une fiche existe déjà');
+    const descId = dlg.getAttribute('aria-describedby');
+    expect(descId).toBeTruthy();
+    expect(document.getElementById(descId!)?.textContent).toBe('Pour Dupont');
+  });
+
+  it('R26 — sans titre, aria-label porte le message', () => {
+    choiceDialog({ message: 'Pour Dupont', options: [{ value: 'a', label: 'A' }] });
+    const dlg = document.querySelector<HTMLElement>('.tac-choice-dialog')!;
+    expect(dlg.getAttribute('aria-label')).toBe('Pour Dupont');
+    expect(dlg.getAttribute('aria-labelledby')).toBeNull();
+  });
+
   it('le message passe par textContent (jamais innerHTML)', () => {
     choiceDialog({ message: '<img src=x onerror=alert(1)>', options: [{ value: 'a', label: 'A' }] });
     const dlg = document.querySelector('.tac-choice-dialog');

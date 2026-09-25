@@ -167,4 +167,40 @@ export const Utils = {
             detail: { lat: position.latitude, lon: position.longitude, label },
         }));
     },
+
+    /**
+     * R10 — récapitulatif du toast de la passerelle OI → PC-Tac. Un OI qui
+     * n'apporte que des photos (A6) doit le dire, sinon l'opérateur lit
+     * « 0 adversaire(s), 0 intervenant(s) » et croit que rien n'est passé.
+     */
+    oiImportSummaryParts(res: {
+        advAdded: number;
+        advPhotos: number;
+        paxAdded: number;
+        gridImported?: boolean | undefined;
+        galleryAdded?: number | undefined;
+        galleryUpdated?: number | undefined;
+    }): string[] {
+        const parts = [`${res.advAdded} adversaire(s)`];
+        if (res.advPhotos) parts.push(`${res.advPhotos} photo(s)`);
+        parts.push(`${res.paxAdded} intervenant(s)`);
+        if (res.gridImported) parts.push('le carroyage');
+        if (res.galleryAdded) parts.push(`${res.galleryAdded} photo(s) de l'OI`);
+        if (res.galleryUpdated) parts.push(`${res.galleryUpdated} photo(s) mise(s) à jour`);
+        return parts;
+    },
+
+    /**
+     * R accord (double toast d'import) — `Archive.importFile` affiche DÉJÀ son
+     * récapitulatif quand il y a des fiches remplacées/fusionnées ou des clés
+     * ignorées. `main.ts` ne doit alors PAS ajouter « Archive importée avec
+     * succès. » : un seul message, le récapitulatif.
+     */
+    archiveImportHasRecap(summary: {
+        replacedFiches: readonly string[];
+        mergedFiches: readonly string[];
+        unknownKeys: number;
+    }): boolean {
+        return summary.replacedFiches.length > 0 || summary.mergedFiches.length > 0 || summary.unknownKeys > 0;
+    },
 };
