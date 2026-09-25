@@ -308,8 +308,8 @@ export function layoutA3(input: A3Input, measure: A3Measure): A3Layout {
                 const hA = nA ? (nH ? B.h * s - GAP / 2 : B.h) : 0;
                 const zA: A3Box = { ...B, h: hA };
                 const zH: A3Box = { ...B, y: B.y + hA + (hA ? GAP : 0), h: B.h - hA - (hA ? GAP : 0) };
-                const fa = nA ? fitFlow(advBlocks, zA, 'adv', [1, 2], measure) : [];
-                const fh = nH ? fitFlow(hostBlocks, zH, 'host', [1, 2], measure) : [];
+                const fa = nA ? fitFlow(advBlocks, zA, 'adv', [1, 2, 3], measure) : [];
+                const fh = nH ? fitFlow(hostBlocks, zH, 'host', [1, 2, 3], measure) : [];
                 if (fa && fh) {
                     const score = Math.min(minSize(fa), minSize(fh)) * 100 + minSize(fa) + minSize(fh);
                     if (!best || score > best.score) best = { score, boxes: [...fa, ...fh] };
@@ -317,7 +317,7 @@ export function layoutA3(input: A3Input, measure: A3Measure): A3Layout {
                 if (!nA || !nH) break;
             }
             fiches = best?.boxes ?? null;
-            if (!fiches) failures.push({ zone: 'short', reason: `fiches : ${nA} + ${nH} ne tiennent pas, même ramenées à leurs 3 faits clés en ${TIERS[TIERS.length - 1]} pt` });
+            if (!fiches) failures.push({ zone: 'short', reason: `fiches : ${nA} + ${nH} ne tiennent pas, même ramenées à leurs 3 faits clés en ${String(TIERS[TIERS.length - 1]).replace('.', ',')} pt` });
             else if (flags.short) reductions.push('Fiches ramenées à leurs 3 faits clés (fiches complètes au rapport complet)');
         }
 
@@ -336,19 +336,19 @@ export function layoutA3(input: A3Input, measure: A3Measure): A3Layout {
             ];
         };
         const total = input.faits.entries.length;
-        let faits = fitFlow(cBlocks(total), C, 'faits', [1], measure);
+        let faits = fitFlow(cBlocks(total), C, 'faits', [1, 2], measure);
         if (!faits && flags.recent) {
             let lo = 0, hi = total;
-            if (fitFlow(cBlocks(0), C, 'faits', [1], measure)) {
+            if (fitFlow(cBlocks(0), C, 'faits', [1, 2], measure)) {
                 while (lo < hi) {
                     const mid = Math.ceil((lo + hi) / 2);
-                    if (fitFlow(cBlocks(mid), C, 'faits', [1], measure)) lo = mid; else hi = mid - 1;
+                    if (fitFlow(cBlocks(mid), C, 'faits', [1, 2], measure)) lo = mid; else hi = mid - 1;
                 }
-                faits = fitFlow(cBlocks(lo), C, 'faits', [1], measure);
+                faits = fitFlow(cBlocks(lo), C, 'faits', [1, 2], measure);
                 reductions.push(`Faits marquants : les ${lo} plus récents (${total - lo} antérieurs au rapport complet)`);
             }
         }
-        if (!faits) failures.push({ zone: 'recent', reason: `faits marquants, points et forces amies ne tiennent pas en ${TIERS[TIERS.length - 1]} pt` });
+        if (!faits) failures.push({ zone: 'recent', reason: `faits marquants, points et forces amies ne tiennent pas en ${String(TIERS[TIERS.length - 1]).replace('.', ',')} pt` });
 
         return {
             result: { banner: reductions.length ? banner : null, plan, photos: photos ?? [], textBoxes: [...(fiches ?? []), ...(faits ?? [])], reductions },
