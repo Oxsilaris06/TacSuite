@@ -232,8 +232,10 @@ describe('coords — parseCoordinateInput (avant tout géocodage)', () => {
     }
   });
 
-  it('case sans carroyage actif → cell-no-grid', () => {
-    expect(parseCoordinateInput('C4', null)).toEqual({ kind: 'cell-no-grid' });
+  it('case sans carroyage actif → null (la route « D951 » part au géocodage)', () => {
+    expect(parseCoordinateInput('C4', null)).toBeNull();
+    expect(parseCoordinateInput('D951', null)).toBeNull();
+    expect(parseCoordinateInput('A7', null)).toBeNull();
   });
 
   it('latitude hors bornes → bad-range', () => {
@@ -243,5 +245,49 @@ describe('coords — parseCoordinateInput (avant tout géocodage)', () => {
   it('adresse ordinaire → null (géocodage)', () => {
     expect(parseCoordinateInput('12 rue de Rivoli, Paris', grid)).toBeNull();
     expect(parseCoordinateInput('', grid)).toBeNull();
+  });
+});
+
+// R16 — le pré-analyseur DMS avalait toute adresse contenant un n/s/e/w
+// (« rue », « des », « Nantes »…), court-circuitant le géocodage BAN/Nominatim.
+describe('coords — adresses ordinaires jamais prises pour des coordonnées (R16)', () => {
+  const addresses = [
+    '12 rue des Lilas 45000 Orléans',
+    '8 avenue Foch Paris 75008',
+    '2 rue des Écoles 75',
+    '5 rue de Nantes 44000',
+    '1 place de la Mairie 45',
+  ];
+  for (const q of addresses) {
+    it(`« ${q} » → null (géocodage)`, () => {
+      expect(parseCoordinateInput(q, null)).toBeNull();
+    });
+  }
+});
+
+describe('coords — formes de coordonnées légitimes préservées (R16)', () => {
+  const grid = { west: 2.0, north: 49.0, dLon: 0.001, dLat: 0.001, cols: 10, rows: 10 };
+
+  it('DMS avec symboles reste un point DMS', () => {
+    const r = parseCoordinateInput(`48°51'24"N 2°21'03"E`, grid);
+    expect(r?.kind).toBe('point');
+    if (r?.kind === 'point') expect(r.format).toBe('dms');
+  });
+
+  it('DMS sans symboles (hémisphères isolés) reste un point DMS', () => {
+    const r = parseCoordinateInput('48 51 24 N 2 21 03 E', grid);
+    expect(r?.kind).toBe('point');
+    if (r?.kind === 'point') expect(r.format).toBe('dms');
+  });
+
+  it('MGRS reste un point MGRS', () => {
+    const r = parseCoordinateInput('31U DQ 52 12', grid);
+    expect(r?.kind).toBe('point');
+    if (r?.kind === 'point') expect(r.format).toBe('mgrs');
+  });
+
+  it('case du carroyage actif reste une case (même hors du rectangle)', () => {
+    expect(parseCoordinateInput('A1', grid)?.kind).toBe('cell');
+    expect(parseCoordinateInput('D951', grid)?.kind).toBe('cell-out-of-grid');
   });
 });

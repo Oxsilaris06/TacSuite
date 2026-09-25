@@ -106,4 +106,24 @@ describe('C5 — verrou d’écran partagé entre suivis', () => {
     await Promise.resolve();
     expect(toastCount()).toBe(1);
   });
+
+  // R19 : `startOidc` pose `running = true` AVANT tout await ; si la session
+  // échoue (réseau, Stop pendant l'autorisation) avant `runSync`, `stop()` ne
+  // doit PAS relâcher une référence qu'elle n'a jamais prise — sinon le verrou
+  // d'un suivi OsmAnd simultané tombe et l'écran se met en veille.
+  it('un démarrage ProConnect en échec ne coupe pas le verrou d’un suivi OsmAnd', async () => {
+    document.body.innerHTML = '<input id="tl_hs" value="https://hs.example"><input id="tl_room" value="!r:hs"><input id="tl_token" value="">';
+    const release = vi.fn();
+    const sentinel = { release, addEventListener: (): void => {}, released: false };
+    vi.stubGlobal('navigator', { wakeLock: { request: vi.fn(async () => sentinel) } });
+    vi.stubGlobal('fetch', vi.fn(async () => { throw new TypeError('Failed to fetch'); }));
+
+    const mod = await freshModule();
+    mod.acquireScreenWakeLock(); // suivi OsmAnd déjà actif (un seul verrou pris)
+    await Promise.resolve();
+    await mod.TchapLive.startOidc(); // échoue avant `runSync`
+    await Promise.resolve();
+
+    expect(release).not.toHaveBeenCalled();
+  });
 });
