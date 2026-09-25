@@ -497,3 +497,113 @@ describe('photo annotée (décision 25)', () => {
   });
 });
 
+
+describe('brouillon : la photo choisie est gardée (décision 33)', () => {
+  afterEach(() => { vi.restoreAllMocks(); });
+
+  it('la photo du brouillon est stockée sous une clé propre et remontrée à la réouverture', async () => {
+    const put = vi.spyOn(ImageStore, 'put').mockResolvedValue(undefined);
+    vi.spyOn(Utils, 'compressImage').mockResolvedValue('data:image/jpeg;base64,DRAFT');
+    await openFiche('adv');
+    const input = dialog().querySelector<HTMLInputElement>('.fiche-photo-input')!;
+    Object.defineProperty(input, 'files', { value: [new File(['x'], 'p.jpg', { type: 'image/jpeg' })] });
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    await flush();
+    const draftKey = put.mock.calls.map((c) => c[0]).find((k) => k.includes('FicheDraft') || k.includes('Draft'));
+    expect(draftKey).toBeTruthy();
+
+    dialog().close();
+    vi.spyOn(ImageStore, 'get').mockResolvedValue('data:image/jpeg;base64,DRAFT');
+    await openFiche('adv');
+    await flush();
+    expect(dialog().querySelector<HTMLImageElement>('.fiche-photo img')?.getAttribute('src'))
+      .toBe('data:image/jpeg;base64,DRAFT');
+  });
+
+  it('« Effacer » le brouillon efface aussi sa photo', async () => {
+    vi.spyOn(Utils, 'compressImage').mockResolvedValue('data:image/jpeg;base64,DRAFT');
+    const del = vi.spyOn(ImageStore, 'delete').mockResolvedValue(undefined);
+    await openFiche('adv');
+    const input = dialog().querySelector<HTMLInputElement>('.fiche-photo-input')!;
+    Object.defineProperty(input, 'files', { value: [new File(['x'], 'p.jpg', { type: 'image/jpeg' })] });
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    await flush();
+    dialog().close();
+    await openFiche('adv');
+    dialog().querySelector<HTMLElement>('.fiche-draft-drop')!.click();
+    await flush();
+    expect(del.mock.calls.some((c) => String(c[0]).includes('Draft'))).toBe(true);
+  });
+});
+
+describe('quitter l\'onglet ferme la fiche (décision 33)', () => {
+  it('la fiche est refermée et la saisie reste en brouillon', async () => {
+    await openFiche('adv');
+    setField('nom', 'MARTIN');
+    expect(dialog().open).toBe(true);
+
+    UI.switchMainView('view-photos');
+
+    expect(dialog().open).toBe(false);
+    expect(drafts()).toHaveProperty('adv:new');
+  });
+});
+
+describe('doublon de personne à la création (décision 32)', () => {
+  afterEach(() => { vi.restoreAllMocks(); });
+
+  const seed = (): void => {
+    Storage.saveCollection('pcTacAdversaries', [{ id: 'a1', nom: 'Dupont', prenom: 'Jean', status: 'active' }]);
+  };
+
+  it('propose « Ouvrir l\'existante », « Fusionner », « Créer quand même »', async () => {
+    seed();
+    await openFiche('adv');
+    setField('nom', 'Dupont');
+    setField('prenom', 'Jean');
+    await clickSave();
+    const labels = [...document.querySelectorAll('.tac-choice-dialog [data-choice]')].map((b) => b.textContent);
+    expect(labels).toEqual(["Ouvrir l'existante", 'Fusionner', 'Créer quand même']);
+    document.querySelector<HTMLElement>('[data-choice="create"]')!.click();
+    await flush();
+    expect(Storage.loadCollection('pcTacAdversaries')).toHaveLength(2);
+  });
+
+  it('« Fusionner » : la nouvelle n\'est pas créée, les champs vides sont complétés', async () => {
+    // Doublon par NOM + DATE DE NAISSANCE (prénom vide dans l'existante).
+    Storage.saveCollection('pcTacAdversaries', [{ id: 'a1', nom: 'Dupont', dob: '01/01/1990', status: 'active' }]);
+    await openFiche('adv');
+    setField('nom', 'Dupont');
+    setField('dob', '01/01/1990');
+    setField('prenom', 'Jean');
+    setField('alias', 'Le Petit');
+    await clickSave();
+    document.querySelector<HTMLElement>('[data-choice="merge"]')!.click();
+    await flush();
+    const list = Storage.loadCollection('pcTacAdversaries');
+    expect(list).toHaveLength(1);
+    expect(storedFiche('pcTacAdversaries', 'a1')).toMatchObject({ prenom: 'Jean', alias: 'Le Petit' });
+  });
+
+  it('« Ouvrir l\'existante » : referme la saisie et ouvre la fiche existante', async () => {
+    seed();
+    await openFiche('adv');
+    setField('nom', 'Dupont');
+    setField('prenom', 'Jean');
+    await clickSave();
+    document.querySelector<HTMLElement>('[data-choice="open"]')!.click();
+    await flush();
+    expect(Storage.loadCollection('pcTacAdversaries')).toHaveLength(1);
+    expect(dialog().open).toBe(true);
+    expect(dialog().querySelector<HTMLInputElement>('#fiche_nom')?.value).toBe('Dupont');
+  });
+
+  it('aucun doublon : la fiche est créée directement, sans fenêtre', async () => {
+    Storage.saveCollection('pcTacAdversaries', []);
+    await openFiche('adv');
+    setField('nom', 'Unique');
+    await clickSave();
+    expect(document.querySelector('.tac-choice-dialog')).toBeNull();
+    expect(Storage.loadCollection('pcTacAdversaries')).toHaveLength(1);
+  });
+});

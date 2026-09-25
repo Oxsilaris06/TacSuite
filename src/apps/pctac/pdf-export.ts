@@ -33,7 +33,7 @@ import { Storage } from '@pctac/storage.js';
 import { ImageStore } from '@pctac/image-store.js';
 import { PDF_PAX_COLORS, PHOTO_CATEGORIES, FREE_MODE_COLORS } from '@pctac/config.js';
 import { currentMode, currentModeId } from '@pctac/modes.js';
-import { TYPE_MENACE_KEY, ficheCounters, ficheTitle, filledSections, statusChoices, statusMeta, type FicheSide } from '@pctac/fiche.js';
+import { TYPE_MENACE_KEY, ficheCounters, ficheTitle, filledSections, sortFichesByPriority, statusChoices, statusMeta, type FicheSide } from '@pctac/fiche.js';
 import { showBusy, hideBusy } from '@pctac/busy.js';
 import { toast } from '@shared/feedback.js';
 import type { PdfExportContract, PlanMapPinSummary } from '@shared/types/contracts.js';
@@ -217,8 +217,13 @@ export const PdfExport: PdfExportContract = {
             };
             const logData = allLogs.filter((e) => !isAuto(e));
             const carteLogs = allLogs.filter(isAuto);
-            const adversaries = await ImageStore.hydrate(Storage.loadCollection('pcTacAdversaries'), 'photo');
-            const hostages = await ImageStore.hydrate(Storage.loadCollection('pcTacHostages'), 'photo');
+            // Décision 33 — même tri par priorité qu'à l'écran (source unique).
+            const adversaries = sortFichesByPriority(
+                'adv', currentModeId(), await ImageStore.hydrate(Storage.loadCollection('pcTacAdversaries'), 'photo'),
+            );
+            const hostages = sortFichesByPriority(
+                'host', currentModeId(), await ImageStore.hydrate(Storage.loadCollection('pcTacHostages'), 'photo'),
+            );
             const friends = Storage.loadCollection('pcTacFriends');
             const photos = await ImageStore.hydrate(Storage.loadCollection('pcTacPhotos'), 'data');
 
@@ -460,7 +465,21 @@ export const PdfExport: PdfExportContract = {
                     }
                     pdfPage().drawText(title, { x: context.margin + 5, y: context.y + 2, size: 11, font: fontBold, color: themeColors.text });
                     if (label) {
-                        pdfPage().drawText(label, { x: context.pageWidth - context.margin - labelWidth + 7, y: context.y + 2, size: 10, font: fontBold, color: hexRgb(status.color) });
+                        const labelX = context.pageWidth - context.margin - labelWidth + 7;
+                        // Décision 33 — DCD : texte NOIR sur fond clair, encadré
+                        // d'un liseré : lisible sur thème sombre comme clair.
+                        const isDcd = status.key === 'dcd';
+                        if (isDcd) {
+                            pdfPage().drawRectangle({
+                                x: labelX - 4, y: context.y - 5, width: labelWidth, height: 18,
+                                color: pdfRgb(0.93, 0.93, 0.93),
+                                borderColor: pdfRgb(0.5, 0.5, 0.5), borderWidth: 0.8,
+                            });
+                        }
+                        pdfPage().drawText(label, {
+                            x: labelX, y: context.y + 2, size: 10, font: fontBold,
+                            color: isDcd ? pdfRgb(0, 0, 0) : hexRgb(status.color),
+                        });
                     }
                     context.y -= 25;
 

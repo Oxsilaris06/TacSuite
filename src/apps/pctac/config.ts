@@ -93,7 +93,9 @@ export const HOST_STATUS: Record<string, PctacStatusMeta> = {
     ok: { label: 'OK', symbol: '✔', color: '#22c55e' },
     preoccupant: { label: 'Préoccupant', symbol: '!', color: '#eab308' },
     blesse: { label: 'Blessé', symbol: '✚', color: '#ef4444' },
-    dcd: { label: 'DCD', symbol: '✝', color: '#94a3b8' },
+    // Décision 33 — DCD en noir, avec un liseré clair (CSS écran, encadré PDF) :
+    // lisible sur thème sombre comme clair.
+    dcd: { label: 'DCD', symbol: '✝', color: '#000000' },
     // Triage des victimes (TP, Ampleur). Jamais déduit des blessures : c'est
     // un médecin qui trie ; une victime fichée reste « Non triée ».
     nt: { label: 'Non triée', symbol: '?', color: '#64748b' },
