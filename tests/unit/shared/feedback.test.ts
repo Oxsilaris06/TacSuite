@@ -15,7 +15,21 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { confirmDialog, toast } from '../../../src/shared/feedback.js';
+import {
+  confirmDialog,
+  hideBanner,
+  showBanner,
+  toast,
+  undoableToast,
+  UNDO_DELAY_MS,
+} from '../../../src/shared/feedback.js';
+
+/** Texte de la feuille de styles injectée par `feedback.ts` (jsdom n'applique
+ *  pas les règles : on vérifie le CSS lui-même pour les exigences de mise en
+ *  page — cible tactile, zone sûre). */
+function feedbackCss(): string {
+  return document.getElementById('tac-feedback-styles')?.textContent ?? '';
+}
 
 beforeEach(() => {
   document.body.innerHTML = '';
@@ -215,5 +229,201 @@ describe('injection de styles — une seule fois, idempotente', () => {
     confirmDialog({ message: 'y' });
     document.querySelector<HTMLButtonElement>('[data-tac-confirm="cancel"]')?.click();
     expect(document.querySelectorAll('#tac-feedback-styles')).toHaveLength(1);
+  });
+});
+
+describe('toast() avec action', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('sans action, aucun bouton n’est ajouté', () => {
+    toast('Simple');
+    expect(document.querySelector('.tac-toast button')).toBeNull();
+  });
+
+  it('un vrai <button type="button"> porte le libellé, cible ≥ 44 px', () => {
+    toast('Message', { action: { label: 'Annuler', onClick: () => {} } });
+    const button = document.querySelector<HTMLButtonElement>('.tac-toast button');
+    expect(button).not.toBeNull();
+    expect(button?.type).toBe('button');
+    expect(button?.textContent).toBe('Annuler');
+    expect(button?.getAttribute('type')).toBe('button');
+    expect(feedbackCss()).toContain('min-height: 44px');
+  });
+
+  it('le clic sur l’action appelle onClick UNE fois puis ferme le toast', () => {
+    const onClick = vi.fn();
+    toast('Message', { action: { label: 'Faire', onClick } });
+    const button = document.querySelector<HTMLButtonElement>('.tac-toast button')!;
+    button.click();
+    button.click();
+    expect(onClick).toHaveBeenCalledTimes(1);
+    vi.advanceTimersByTime(250);
+    expect(document.querySelectorAll('.tac-toast')).toHaveLength(0);
+  });
+
+  it('un clic ailleurs sur le toast ferme sans appeler l’action', () => {
+    const onClick = vi.fn();
+    toast('Message', { action: { label: 'Faire', onClick } });
+    document.querySelector<HTMLElement>('.tac-toast')!.click();
+    expect(onClick).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(250);
+    expect(document.querySelectorAll('.tac-toast')).toHaveLength(0);
+  });
+});
+
+describe('undoableToast()', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('UNDO_DELAY_MS vaut 10 000 ms et sert de durée par défaut', () => {
+    expect(UNDO_DELAY_MS).toBe(10_000);
+    const onCommit = vi.fn();
+    undoableToast('Supprimé', { onUndo: () => {}, onCommit });
+    // Rien avant l’échéance…
+    vi.advanceTimersByTime(9_999);
+    expect(onCommit).not.toHaveBeenCalled();
+    // …commit à l’échéance.
+    vi.advanceTimersByTime(1);
+    expect(onCommit).toHaveBeenCalledTimes(1);
+  });
+
+  it('« Annuler » appelle onUndo une seule fois (double clic), jamais onCommit', () => {
+    const onUndo = vi.fn();
+    const onCommit = vi.fn();
+    undoableToast('Supprimé', { onUndo, onCommit });
+    const button = document.querySelector<HTMLButtonElement>('.tac-toast button')!;
+    expect(button.textContent).toBe('Annuler');
+    button.click();
+    button.click();
+    expect(onUndo).toHaveBeenCalledTimes(1);
+    vi.advanceTimersByTime(20_000);
+    expect(onCommit).not.toHaveBeenCalled();
+  });
+
+  it('chassé par la limite de toasts visibles : onCommit est appelé', () => {
+    const onUndo = vi.fn();
+    const onCommit = vi.fn();
+    undoableToast('Supprimé', { onUndo, onCommit });
+    toast('B');
+    toast('C');
+    toast('D');
+    expect(onCommit).toHaveBeenCalledTimes(1);
+    expect(onUndo).not.toHaveBeenCalled();
+  });
+
+  it('pagehide : onCommit est appelé, jamais onUndo', () => {
+    const onUndo = vi.fn();
+    const onCommit = vi.fn();
+    undoableToast('Supprimé', { onUndo, onCommit });
+    window.dispatchEvent(new Event('pagehide'));
+    expect(onCommit).toHaveBeenCalledTimes(1);
+    expect(onUndo).not.toHaveBeenCalled();
+    // L’échéance suivante ne redéclenche rien (une seule fois).
+    vi.advanceTimersByTime(20_000);
+    expect(onCommit).toHaveBeenCalledTimes(1);
+  });
+
+  it('clic sur le corps du toast : onCommit, jamais onUndo', () => {
+    const onUndo = vi.fn();
+    const onCommit = vi.fn();
+    undoableToast('Supprimé', { onUndo, onCommit });
+    document.querySelector<HTMLElement>('.tac-toast')!.click();
+    expect(onCommit).toHaveBeenCalledTimes(1);
+    expect(onUndo).not.toHaveBeenCalled();
+  });
+
+  it('sans onCommit, « Annuler » fonctionne quand même', () => {
+    const onUndo = vi.fn();
+    undoableToast('Supprimé', { onUndo });
+    document.querySelector<HTMLButtonElement>('.tac-toast button')!.click();
+    expect(onUndo).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('bandeaux persistants', () => {
+  it('s’insère en tête du <body>, dans le flux (aucune commande masquée)', () => {
+    document.body.innerHTML = '<div class="container">Application</div>';
+    showBanner('b1', { message: 'Info', level: 'info' });
+    const container = document.getElementById('tac-banner-container');
+    expect(container).not.toBeNull();
+    expect(document.body.firstElementChild).toBe(container);
+    // Le conteneur pousse le contenu, il ne le recouvre pas.
+    expect(feedbackCss()).toContain('env(safe-area-inset-top');
+  });
+
+  it('role="alert" pour alert, "status" sinon', () => {
+    showBanner('a', { message: 'Alerte', level: 'alert' });
+    expect(document.querySelector('[data-banner-id="a"]')?.getAttribute('role')).toBe('alert');
+    showBanner('i', { message: 'Info', level: 'info' });
+    expect(document.querySelector('[data-banner-id="i"]')?.getAttribute('role')).toBe('status');
+    showBanner('m', { message: 'Important', level: 'important' });
+    expect(document.querySelector('[data-banner-id="m"]')?.getAttribute('role')).toBe('status');
+  });
+
+  it('le texte passe par textContent (jamais innerHTML)', () => {
+    showBanner('xss', { message: '<img src=x onerror=alert(1)>', level: 'info' });
+    expect(document.querySelector('[data-banner-id="xss"] img')).toBeNull();
+    expect(document.querySelector('[data-banner-id="xss"] .tac-banner-message')?.textContent)
+      .toBe('<img src=x onerror=alert(1)>');
+  });
+
+  it('un seul bandeau par id : le second remplace en place', () => {
+    document.body.innerHTML = '<div class="container">App</div>';
+    showBanner('b1', { message: 'Premier', level: 'info' });
+    showBanner('b1', { message: 'Second', level: 'alert' });
+    expect(document.querySelectorAll('[data-banner-id="b1"]')).toHaveLength(1);
+    const el = document.querySelector('[data-banner-id="b1"]');
+    expect(el?.textContent).toContain('Second');
+    expect(el?.getAttribute('role')).toBe('alert');
+    // L’ordre relatif est conservé : toujours le premier enfant du conteneur.
+    expect(document.getElementById('tac-banner-container')?.firstElementChild).toBe(el);
+  });
+
+  it('bouton × si dismissible (défaut) : appelle onDismiss et retire le bandeau', () => {
+    const onDismiss = vi.fn();
+    showBanner('b1', { message: 'Fermable', level: 'info', onDismiss });
+    const close = document.querySelector<HTMLButtonElement>('[data-banner-id="b1"] button[data-banner-close]');
+    expect(close).not.toBeNull();
+    close!.click();
+    expect(onDismiss).toHaveBeenCalledTimes(1);
+    expect(document.querySelector('[data-banner-id="b1"]')).toBeNull();
+  });
+
+  it('dismissible: false retire le bouton ×', () => {
+    showBanner('b1', { message: 'Sans ×', level: 'important', dismissible: false });
+    expect(document.querySelector('[data-banner-id="b1"] button[data-banner-close]')).toBeNull();
+  });
+
+  it('les actions sont de vrais boutons qui rappellent onClick', () => {
+    const onClick = vi.fn();
+    showBanner('b1', {
+      message: 'Mettre à jour',
+      level: 'important',
+      actions: [{ label: 'Recharger', onClick }],
+    });
+    const btn = document.querySelector<HTMLButtonElement>('[data-banner-id="b1"] button[data-banner-action]');
+    expect(btn?.type).toBe('button');
+    expect(btn?.textContent).toBe('Recharger');
+    btn!.click();
+    expect(onClick).toHaveBeenCalledTimes(1);
+  });
+
+  it('hideBanner retire le bandeau demandé', () => {
+    showBanner('b1', { message: 'Un', level: 'info' });
+    showBanner('b2', { message: 'Deux', level: 'info' });
+    hideBanner('b1');
+    expect(document.querySelector('[data-banner-id="b1"]')).toBeNull();
+    expect(document.querySelector('[data-banner-id="b2"]')).not.toBeNull();
+    hideBanner('b2');
+    expect(document.querySelector('[data-banner-id="b2"]')).toBeNull();
   });
 });
