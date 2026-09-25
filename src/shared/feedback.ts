@@ -172,32 +172,35 @@ function injectStyles(): void {
   flex-direction: column;
   width: 100%;
 }
+/* Les jetons PC-Tac/OI (--bg-container, --text-main…) n'existent PAS sur le
+   portail (F-2) : on donne des replis sur les jetons du portail, lisibles dans
+   les deux thèmes. Un bandeau de portail est donc toujours lisible. */
 .tac-banner {
   display: flex;
   align-items: center;
   gap: var(--tac-space-2, 8px);
   padding: var(--tac-space-2, 8px) var(--tac-space-3, 12px);
   padding-top: calc(var(--tac-space-2, 8px) + env(safe-area-inset-top, 0px));
-  border: 1px solid var(--border-light);
+  border: 1px solid var(--border-light, var(--color-border, #3a3f4b));
   border-left-width: 4px;
   border-radius: 0;
-  background: var(--bg-container);
-  color: var(--text-main);
+  background: var(--bg-container, var(--color-surface, #1b1d24));
+  color: var(--text-main, var(--color-text, #e6e8ee));
   font: 500 13.5px/1.4 var(--font-ui, system-ui, sans-serif);
 }
-.tac-banner--info { border-left-color: var(--accent-fill); }
-.tac-banner--important { border-left-color: #d97706; background: color-mix(in srgb, #d97706 12%, var(--bg-container)); }
-.tac-banner--alert { border-left-color: var(--danger-red); background: color-mix(in srgb, var(--danger-red) 14%, var(--bg-container)); }
+.tac-banner--info { border-left-color: var(--accent-fill, var(--color-primary, #3b82f6)); }
+.tac-banner--important { border-left-color: #d97706; background: color-mix(in srgb, #d97706 12%, var(--bg-container, var(--color-surface, #1b1d24))); }
+.tac-banner--alert { border-left-color: var(--danger-red, var(--color-danger, #c8344a)); background: color-mix(in srgb, var(--danger-red, var(--color-danger, #c8344a)) 14%, var(--bg-container, var(--color-surface, #1b1d24))); }
 .tac-banner-message { flex: 1 1 auto; min-width: 0; }
 .tac-banner-action {
   appearance: none;
   flex: 0 0 auto;
   min-height: 44px;
   padding: 0 var(--tac-space-3, 12px);
-  border: 1px solid var(--border-light);
+  border: 1px solid var(--border-light, var(--color-border, #3a3f4b));
   border-radius: var(--tac-radius-sm, 6px);
   background: transparent;
-  color: var(--text-main);
+  color: var(--text-main, var(--color-text, #e6e8ee));
   font: 600 13.5px/1 var(--font-ui, system-ui, sans-serif);
   cursor: pointer;
 }
@@ -209,14 +212,23 @@ function injectStyles(): void {
   border: none;
   border-radius: var(--tac-radius-sm, 6px);
   background: transparent;
-  color: var(--text-main);
+  color: var(--text-main, var(--color-text, #e6e8ee));
   font: 600 20px/1 var(--font-ui, system-ui, sans-serif);
   cursor: pointer;
 }
 .tac-banner-action:focus-visible,
 .tac-banner-close:focus-visible {
-  outline: 2px solid var(--accent-fill);
+  outline: 2px solid var(--accent-fill, var(--color-primary, #3b82f6));
   outline-offset: 2px;
+}
+
+/* F-1 : sous ~560 px, le message prend toute la largeur et les actions passent
+   dessous (au lieu d'écraser le texte dans une colonne étroite). */
+@media (max-width: 560px) {
+  .tac-banner { flex-wrap: wrap; }
+  .tac-banner-message { flex: 1 1 100%; }
+  .tac-banner-action { order: 1; margin-left: auto; }
+  .tac-banner-close { order: 2; }
 }
 
 .tac-confirm-dialog {
@@ -305,7 +317,16 @@ const LEAVE_DELAY_MS = 200;
 /** Délai d'annulation par défaut d'un `undoableToast` (décision 31). */
 export const UNDO_DELAY_MS = 10_000;
 
-const toastTimers = new WeakMap<HTMLElement, ReturnType<typeof setTimeout>>();
+interface ToastTimer {
+  /** Timeout courant (recréé à chaque reprise). */
+  id: ReturnType<typeof setTimeout>;
+  /** Temps restant avant retrait, en ms. */
+  remaining: number;
+  /** Instant de départ du décompte en cours. */
+  startedAt: number;
+}
+
+const toastTimers = new WeakMap<HTMLElement, ToastTimer>();
 /**
  * Rappel appelé quand un toast disparaît SANS que son action ait été utilisée
  * (expiration, éviction, `pagehide`, clic sur le corps). Sert au « commit »
@@ -317,6 +338,71 @@ const toastDone = new WeakSet<HTMLElement>();
 /** Toasts d'annulation en attente : `pagehide` doit les « committer ». */
 const undoableToasts = new Set<HTMLElement>();
 let pagehideInstalled = false;
+let undoShortcutInstalled = false;
+
+/** Démarre (ou redémarre) le décompte d'un toast. */
+function startToastTimer(el: HTMLElement, duration: number): void {
+  const id = setTimeout(() => removeToast(el), duration);
+  toastTimers.set(el, { id, remaining: duration, startedAt: Date.now() });
+}
+
+/**
+ * Met le décompte en pause (survol, focus). Le temps déjà écoulé est retiré du
+ * restant, pour qu'un toast d'annulation ne disparaisse pas sous le doigt de
+ * l'utilisateur qui s'apprête à cliquer « Annuler » (WCAG 2.2.1, R12).
+ */
+function pauseToastTimer(el: HTMLElement): void {
+  const timer = toastTimers.get(el);
+  if (!timer) return;
+  clearTimeout(timer.id);
+  timer.remaining = Math.max(0, timer.remaining - (Date.now() - timer.startedAt));
+}
+
+/** Reprend le décompte mis en pause. */
+function resumeToastTimer(el: HTMLElement): void {
+  const timer = toastTimers.get(el);
+  if (!timer) return;
+  timer.startedAt = Date.now();
+  timer.id = setTimeout(() => removeToast(el), timer.remaining);
+}
+
+/** Dernier toast d'annulation encore ouvert (annulé par Ctrl+Z). */
+function lastUndoableToast(): HTMLElement | null {
+  let last: HTMLElement | null = null;
+  for (const el of undoableToasts) last = el;
+  return last;
+}
+
+/** Vrai si la cible clavier est un champ éditable (on ne vole pas Ctrl+Z). */
+function isEditableTarget(target: EventTarget | null): boolean {
+  const el = target as HTMLElement | null;
+  if (!el || typeof el.tagName !== 'string') return false;
+  const tag = el.tagName.toLowerCase();
+  if (tag === 'input' || tag === 'textarea' || tag === 'select') return true;
+  return el.isContentEditable === true;
+}
+
+/**
+ * Raccourci global Ctrl+Z / Cmd+Z (R12) : annule la DERNIÈRE suppression si le
+ * focus n'est pas dans un champ éditable (sinon on volerait l'annulation de
+ * frappe). Sans toast d'annulation ouvert, la touche n'est pas interceptée.
+ */
+function ensureUndoShortcut(): void {
+  if (undoShortcutInstalled) return;
+  undoShortcutInstalled = true;
+  if (typeof window === 'undefined' || typeof window.addEventListener !== 'function') return;
+  window.addEventListener('keydown', (event) => {
+    if (!(event.ctrlKey || event.metaKey)) return;
+    if (event.key !== 'z' && event.key !== 'Z') return;
+    if (isEditableTarget(event.target)) return;
+    const el = lastUndoableToast();
+    if (!el) return;
+    const button = el.querySelector<HTMLButtonElement>('[data-tac-toast-action="undo"]');
+    if (!button) return;
+    event.preventDefault();
+    button.click();
+  });
+}
 
 function ensureToastContainer(): HTMLElement {
   let el = document.getElementById('tac-toast-container');
@@ -336,7 +422,7 @@ function ensureToastContainer(): HTMLElement {
  */
 function removeToast(el: HTMLElement, actionUsed = false): void {
   const timer = toastTimers.get(el);
-  if (timer !== undefined) clearTimeout(timer);
+  if (timer !== undefined) clearTimeout(timer.id);
   toastTimers.delete(el);
   undoableToasts.delete(el);
   if (!toastDone.has(el)) {
@@ -420,7 +506,15 @@ function buildToast(config: BuildToastConfig): HTMLElement {
   requestAnimationFrame(() => el.classList.add('tac-toast--visible'));
 
   if (config.duration > 0) {
-    toastTimers.set(el, setTimeout(() => removeToast(el), config.duration));
+    startToastTimer(el, config.duration);
+  }
+  // R12 : un toast d'annulation ne doit pas s'évanouir pendant que
+  // l'utilisateur le vise ou l'a au clavier.
+  if (config.actionVariant === 'undo') {
+    el.addEventListener('pointerenter', () => pauseToastTimer(el));
+    el.addEventListener('pointerleave', () => resumeToastTimer(el));
+    el.addEventListener('focusin', () => pauseToastTimer(el));
+    el.addEventListener('focusout', () => resumeToastTimer(el));
   }
   return el;
 }
@@ -450,6 +544,7 @@ export function undoableToast(
   opts: { onUndo: () => void; onCommit?: () => void; duration?: number },
 ): void {
   ensurePagehideListener();
+  ensureUndoShortcut();
   const duration = opts.duration ?? UNDO_DELAY_MS;
   let settled = false;
   const finish = (undo: boolean): void => {
@@ -459,7 +554,7 @@ export function undoableToast(
     else opts.onCommit?.();
   };
   const el = buildToast({
-    message,
+    message: undoMessageWithShortcut(message),
     kind: 'info',
     duration,
     action: { label: 'Annuler', onClick: () => finish(true) },
@@ -467,6 +562,27 @@ export function undoableToast(
     onDismiss: () => finish(false),
   });
   undoableToasts.add(el);
+}
+
+/** Libellé du raccourci selon la plateforme (Ctrl+Z / Cmd+Z). */
+function undoShortcutLabel(): string {
+  try {
+    const platform = typeof navigator !== 'undefined' ? navigator.platform : '';
+    return /mac|iphone|ipad|ipod/i.test(platform) ? 'Cmd+Z' : 'Ctrl+Z';
+  } catch {
+    return 'Ctrl+Z';
+  }
+}
+
+/**
+ * Annonce accessible : « … supprimé. Ctrl+Z pour annuler. » (R12). Idempotent
+ * si l'appelant a déjà mentionné le raccourci.
+ */
+function undoMessageWithShortcut(message: string): string {
+  const trimmed = message.trim();
+  if (/pour annuler/i.test(trimmed)) return trimmed;
+  const sentence = /[.!?…]\s*$/.test(trimmed) ? trimmed : `${trimmed}.`;
+  return `${sentence} ${undoShortcutLabel()} pour annuler.`;
 }
 
 /* =========================================================================
