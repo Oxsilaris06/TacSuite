@@ -462,22 +462,22 @@ describe('_renderPins — réconciliation par ID + INVARIANT 2b (draggable, plan
     it('icône modifiée : repeint pinWrap EN PLACE, garde la même référence de marker', () => {
         const map = { getSource: vi.fn(), addSource: vi.fn(), addLayer: vi.fn() };
         const fake = makeFakeThis({ map: map as unknown as PlanMapInternal['map'] });
-        fake._savePins([makePin({ id: 'p1', icon: 'place' })]);
+        fake._savePins([makePin({ id: 'p1', icon: 'local_police' })]);
         PinsMethods._renderPins.call(fake);
 
         const pinMarkers = assertNonNull(fake._pinMarkers);
         const entry1 = assertNonNull(pinMarkers.get('p1'));
-        expect(entry1.pinWrap.innerHTML).toContain('place');
+        expect(entry1.pinWrap.innerHTML).toContain('local_police');
 
-        fake._savePins([makePin({ id: 'p1', icon: 'star' })]);
+        fake._savePins([makePin({ id: 'p1', icon: 'security' })]);
         PinsMethods._renderPins.call(fake);
 
         const entry2 = assertNonNull(pinMarkers.get('p1'));
         expect(entry2).toBe(entry1); // même entrée (pas de recréation)
         expect(entry2.pinMarker).toBe(entry1.pinMarker); // marker pin NON recréé
         expect(entry2.pinWrap).toBe(entry1.pinWrap); // même élément DOM
-        expect(entry2.pinWrap.innerHTML).toContain('star'); // glyph actualisé
-        expect(entry2.pinWrap.innerHTML).not.toContain('place');
+        expect(entry2.pinWrap.innerHTML).toContain('security'); // glyph actualisé
+        expect(entry2.pinWrap.innerHTML).not.toContain('local_police');
     });
 
     it('sans carte (this.map === null) : ne fait rien, ne jette pas', () => {
@@ -564,6 +564,60 @@ describe('_renderPins — réconciliation par ID + INVARIANT 2b (draggable, plan
 
         // La roue ne doit PAS être ouverte après un drag
         expect(openWheel).not.toHaveBeenCalled();
+    });
+});
+
+describe('_buildPinVisual — R18 : aucun HTML venu d’une archive forgée', () => {
+    function makeEntry(pin: PlanPin): PinEntry {
+        return {
+            pin,
+            pinWrap: document.createElement('div'),
+            labelEl: document.createElement('div'),
+            pinMarker: null,
+            labelMarker: null,
+            sig: null,
+            _anchor: null,
+        };
+    }
+
+    it('icône hors catalogue PIN_ICONS → icône par défaut, aucune balise injectée', () => {
+        const fake = makeFakeThis();
+        const entry = makeEntry(makePin({ id: 'x1', icon: '<img src=x onerror="window.__xss=1">' }));
+
+        PinsMethods._buildPinVisual.call(fake, entry);
+
+        expect(entry.pinWrap.querySelector('img')).toBeNull();
+        expect(entry.pinWrap.innerHTML).not.toContain('onerror');
+        expect(entry.pinWrap.querySelector('.material-symbols-outlined')?.textContent).toBe('flag');
+    });
+
+    it('icône du catalogue rendue telle quelle', () => {
+        const fake = makeFakeThis();
+        const entry = makeEntry(makePin({ id: 'x2', icon: 'local_police' }));
+
+        PinsMethods._buildPinVisual.call(fake, entry);
+
+        expect(entry.pinWrap.querySelector('.material-symbols-outlined')?.textContent).toBe('local_police');
+    });
+
+    it('couleur injectable → couleur de repli, aucune balise ni attribut injecté', () => {
+        const fake = makeFakeThis();
+        const entry = makeEntry(makePin({ id: 'x3', color: '"><img src=x onerror="window.__xss=1">' }));
+
+        PinsMethods._buildPinVisual.call(fake, entry);
+
+        expect(entry.pinWrap.querySelector('img')).toBeNull();
+        expect(entry.pinWrap.innerHTML).not.toContain('onerror');
+    });
+
+    it('couleur valide conservée sur le glyph', () => {
+        const fake = makeFakeThis();
+        const entry = makeEntry(makePin({ id: 'x4', color: '#123456', icon: 'local_police' }));
+
+        PinsMethods._buildPinVisual.call(fake, entry);
+
+        const span = entry.pinWrap.querySelector<HTMLElement>('.material-symbols-outlined');
+        expect(span?.style.color).toBe('rgb(18, 52, 86)');
     });
 });
 
