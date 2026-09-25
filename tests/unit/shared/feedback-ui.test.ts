@@ -10,7 +10,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { confirmDialog, promptDialog, toast, undoableToast } from '../../../src/shared/feedback.js';
+import { confirmDialog, promptDialog, showBanner, toast, undoableToast } from '../../../src/shared/feedback.js';
 
 function feedbackCss(): string {
   return document.getElementById('tac-feedback-styles')?.textContent ?? '';
@@ -172,5 +172,15 @@ describe('fenêtres de confirmation et de saisie', () => {
     expect(document.querySelector('.tac-confirm-dialog')).not.toBeNull();
     dialog.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: 5, clientY: 5 }));
     await expect(p).resolves.toBeNull();
+  });
+});
+
+describe('bandeaux', () => {
+  it('pas de liseré latéral coloré épais (règle du projet) : le niveau se lit à la pastille et au fond', () => {
+    showBanner('b1', { message: 'Nouvelle version prête.', level: 'info' });
+    const css = feedbackCss();
+    expect(css).not.toMatch(/border-left-width/);
+    expect(css).not.toMatch(/border-left-color/);
+    expect(rule('.tac-banner-message::before')).toMatch(/border-radius:\s*50%/);
   });
 });
