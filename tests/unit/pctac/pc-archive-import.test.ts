@@ -6,7 +6,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import JSZip from 'jszip';
 
-import { ADVERSARIES_KEY, LOCAL_STORAGE_KEY } from '@pctac/config.js';
+import { ADVERSARIES_KEY, FREE_MODE_COLORS, LOCAL_STORAGE_KEY } from '@pctac/config.js';
 
 const imageStoreState = vi.hoisted(() => ({ store: new Map<string, string>() }));
 
@@ -154,6 +154,21 @@ describe('importFile — liste blanche et récapitulatif', () => {
         const result = await Archive.importFile(file);
         expect(result).toMatchObject({ ok: true, unknownKeys: 1 });
         expect(localStorage.getItem('pcTacTchapLive')).toBeNull();
+    });
+
+    it('normalise une couleur forgée (paxColor du journal, color des intervenants) — A1', async () => {
+        const payload = '#fff"><img id="pwn" src=x onerror="1">';
+        const file = await buildZip(
+            { appName: 'PC TAC', version: 1 },
+            {
+                [LOCAL_STORAGE_KEY]: JSON.stringify([{ id: 'l1', heure: '10:00', pax: 'X', paxMode: 'free', paxColor: payload, lieu: '', remarques: '' }]),
+                pcTacCustomPax: JSON.stringify([{ id: 'p1', name: 'Z', color: payload }]),
+            },
+        );
+        const result = await Archive.importFile(file);
+        expect(result).toMatchObject({ ok: true });
+        expect(Storage.loadLogData()[0]?.paxColor).toBe(FREE_MODE_COLORS[0]?.hex);
+        expect(Storage.loadCollection('pcTacCustomPax')[0]?.color).toBe(FREE_MODE_COLORS[0]?.hex);
     });
 });
 

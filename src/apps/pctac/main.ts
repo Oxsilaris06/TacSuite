@@ -93,6 +93,7 @@ import {
     HOSTAGES_KEY,
     FRIENDS_KEY,
     PHOTOS_KEY,
+    safeHexColor,
 } from '@pctac/config.js';
 import { undoableDelete, undoableDeleteLog, purgeCollectionImages } from '@pctac/delete-undo.js';
 import { resetWithArchive } from '@pctac/reset-flow.js';
@@ -274,8 +275,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (confirmCreatePaxBtn) {
         confirmCreatePaxBtn.onclick = () => {
             const name = (document.getElementById('new_pax_name') as HTMLInputElement).value.trim();
-            const color = (document.getElementById('new_pax_color_val') as HTMLInputElement).value;
+            // A1 — couleur validée avant stockage.
+            const color = safeHexColor((document.getElementById('new_pax_color_val') as HTMLInputElement).value, '');
             if (!name) { toast('Nom requis', { kind: 'error' }); return; }
+            if (!color) { toast('Couleur invalide', { kind: 'error' }); return; }
             const list = Storage.loadCollection(CUSTOM_PAX_KEY);
             // Unicité de la couleur (garde au submit, en plus du blocage visuel :
             // l'état a pu changer pendant que la modale était ouverte).
