@@ -314,6 +314,7 @@ function injectStyles(): void {
 
 .tac-confirm-input {
   width: 100%;
+  min-height: 44px;
   margin-top: var(--tac-space-2, 8px);
   padding: 8px 10px;
   border: 1px solid var(--border-light);

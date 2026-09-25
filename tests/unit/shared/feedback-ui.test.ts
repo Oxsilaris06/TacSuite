@@ -10,7 +10,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { confirmDialog, toast, undoableToast } from '../../../src/shared/feedback.js';
+import { confirmDialog, promptDialog, toast, undoableToast } from '../../../src/shared/feedback.js';
 
 function feedbackCss(): string {
   return document.getElementById('tac-feedback-styles')?.textContent ?? '';
@@ -140,5 +140,10 @@ describe('fenêtres de confirmation et de saisie', () => {
   it('pas de raccourci `font` invalide (`… inherit` en famille annule toute la déclaration)', () => {
     void confirmDialog({ message: 'Supprimer ?' });
     expect(rule('.tac-confirm-btn')).not.toMatch(/font:[^;]*\binherit\s*;/);
+  });
+
+  it('le champ de saisie fait 44 px de haut (mesuré : 38 px dans PC-Tac)', () => {
+    void promptDialog({ message: 'Nouveau titre :' });
+    expect(rule('.tac-confirm-input')).toMatch(/min-height:\s*44px/);
   });
 });
