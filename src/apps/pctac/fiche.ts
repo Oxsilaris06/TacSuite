@@ -427,6 +427,32 @@ export function ageFromDob(dob: unknown, now: Date = new Date()): number | null 
     return age >= 0 && age <= 130 ? age : null;
 }
 
+/**
+ * Normalise une date de naissance en `AAAA-MM-JJ`, ou `null` si la valeur n'est
+ * pas une date exploitable. Reconnaît `JJ/MM/AAAA`, `JJ-MM-AAAA`, `JJ.MM.AAAA`
+ * et `AAAA-MM-JJ`. Les ÂGES estimés (« ~40 ans »), le vide et les dates
+ * impossibles (31/02) rendent `null` : la décision 32 compare une DATE, jamais
+ * une estimation. C6 : l'OI stocke en ISO (`input type=date`), PC-Tac en
+ * JJ/MM/AAAA — la comparaison littérale ne pouvait donc jamais aboutir.
+ */
+export function normalizeDob(value: unknown): string | null {
+    const s = String(value ?? '').trim();
+    if (!s) return null;
+    let y = 0, mo = 0, d = 0;
+    const iso = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(s);
+    if (iso) {
+        y = Number(iso[1]); mo = Number(iso[2]); d = Number(iso[3]);
+    } else {
+        const fr = /^(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{4})$/.exec(s);
+        if (!fr) return null;
+        d = Number(fr[1]); mo = Number(fr[2]); y = Number(fr[3]);
+    }
+    if (mo < 1 || mo > 12 || d < 1 || d > 31) return null;
+    const date = new Date(y, mo - 1, d);
+    if (date.getFullYear() !== y || date.getMonth() !== mo - 1 || date.getDate() !== d) return null;
+    return `${String(y).padStart(4, '0')}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+}
+
 export interface FicheRow { label: string; value: string }
 
 function displayValue(field: FicheField, raw: unknown, now: Date, resolveLink?: (id: string) => string): string {
@@ -577,7 +603,7 @@ export function findDuplicatePerson(
     if (isPhenomene(candidate)) return null;
     const nom = normalizePerson(candidate.nom);
     const prenom = normalizePerson(candidate.prenom);
-    const dob = normalizePerson(candidate.dob);
+    const dob = normalizeDob(candidate.dob);
     for (const item of items) {
         if (item.id === candidate.id) continue;
         if (isPhenomene(item)) continue;
@@ -585,7 +611,7 @@ export function findDuplicatePerson(
         if (!nom || !otherNom || nom !== otherNom) continue;
         const otherPrenom = normalizePerson(item.prenom);
         if (prenom && otherPrenom && prenom === otherPrenom) return item;
-        const otherDob = normalizePerson(item.dob);
+        const otherDob = normalizeDob(item.dob);
         if (dob && otherDob && dob === otherDob) return item;
     }
     return null;

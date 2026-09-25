@@ -14,7 +14,10 @@
 
 import type { PctacCollectionItem } from '@shared/types/contracts.js';
 import { ImageStore } from '@pctac/image-store.js';
-import { mergeFicheFields } from '@pctac/fiche.js';
+import { Storage } from '@pctac/storage.js';
+import { PHOTOS_KEY } from '@pctac/config.js';
+import { defaultStatus, ficheTitle, mergeFicheFields } from '@pctac/fiche.js';
+import { currentModeId, type PctacModeId } from '@pctac/modes.js';
 
 export interface MergePersonResult {
     merged: PctacCollectionItem;
@@ -85,4 +88,62 @@ export async function mergePersonIntoExisting(
     // `updatedAt` est reposé par `Storage.saveCollection`.
     delete merged.updatedAt;
     return { merged, filled };
+}
+
+/** Camp d'une fiche qui a une copie galerie (`<id>_sync`). */
+export type MergeGallerySide = 'adv' | 'host';
+
+/**
+ * Met la GALERIE Photos en cohérence avec une fusion de fiches (C4/C12/B-2) :
+ *   - retire l'entrée `<entrante>_sync` (la fiche entrante disparaît : sa
+ *     vignette deviendrait morte) ;
+ *   - crée ou actualise `<existante>_sync` quand la fiche gardée a une photo,
+ *     pour que la photo reprise apparaisse dans l'onglet Photos.
+ *
+ * Fonction COMMUNE aux trois appelants de `mergePersonIntoExisting` : la
+ * fusion depuis la fiche (RB), `resolveDuplicateFiches` (import d'archive) et
+ * la fusion de l'import d'OI. Avant, seule la première la gérait (B-2 corrigé
+ * à un seul endroit) ; les imports laissaient une vignette morte et une photo
+ * reprise invisible.
+ *
+ * Écrit la galerie de la situation CIBLE via `Storage` (elle peut différer de
+ * celle affichée, décision 2).
+ */
+export function syncMergedGallery(
+    side: MergeGallerySide,
+    incomingId: string,
+    merged: PctacCollectionItem,
+    modeId: PctacModeId = currentModeId(),
+): boolean {
+    const keptId = String(merged.id);
+    const incomingEntryId = `${incomingId}_sync`;
+    const photos = Storage.loadCollection(PHOTOS_KEY, modeId);
+    const before = photos.length;
+    const filtered = photos.filter((p) => p.id !== incomingEntryId);
+    let changed = filtered.length !== before;
+
+    if (merged.hasImage) {
+        const title = ficheTitle(side, modeId, merged);
+        const status = String(merged.status || defaultStatus(side, modeId));
+        const existing = filtered.find((p) => p.id === `${keptId}_sync`);
+        if (existing) {
+            // Réutilise l'objet : sa classe de rendu peut être en cache côté vue.
+            delete existing.data;
+            existing.hasImage = true;
+            existing.title = title;
+            existing.status = status;
+        } else {
+            filtered.push({
+                id: `${keptId}_sync`,
+                title,
+                category: side === 'adv' ? 'neutralized' : 'hostage',
+                status,
+                hasImage: true,
+            });
+        }
+        changed = true;
+    }
+
+    if (changed) Storage.saveCollection(PHOTOS_KEY, filtered, modeId);
+    return changed;
 }

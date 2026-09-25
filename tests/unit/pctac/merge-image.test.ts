@@ -39,13 +39,15 @@ describe('fusion : la fiche locale plus récente gagne… mais sa photo ?', () =
     it('garde la photo de la fiche locale plus récente', async () => {
         localStorage.setItem(PCTAC_MODE_KEY, 'forcene');
         localStorage.setItem(ADVERSARIES_KEY, JSON.stringify([{ id: 'a1', nom: 'Dupont', hasImage: true, updatedAt: '2026-09-25T12:00:00.000Z' }]));
-        imageStoreState.store.set('a1', 'data:image/png;base64,LOCAL_RECENTE=');
+        // Base64 VALIDE (le sanitizer R7 rejette « _ ») : sinon `sanitizeImageDataUrl`
+        // rend null et le test resterait vert même si le filtre R3 disparaissait (C8).
+        imageStoreState.store.set('a1', 'data:image/png;base64,TE9DQUw=');
         const zip = new JSZip();
         zip.file('manifest.json', JSON.stringify({ appName: 'PC TAC', version: 1, situation: 'forcene' }));
         zip.file('data.json', JSON.stringify({ [ADVERSARIES_KEY]: JSON.stringify([{ id: 'a1', nom: 'Dupont', hasImage: true, updatedAt: '2026-09-25T08:00:00.000Z' }]) }));
-        zip.file('images/a1.txt', 'data:image/png;base64,ARCHIVE_ANCIENNE=');
+        zip.file('images/a1.txt', 'data:image/png;base64,T0xE');
         const file = new File([await zip.generateAsync({ type: 'arraybuffer' })], 'a.pctac.zip');
         await Archive.importFile(file);
-        expect(imageStoreState.store.get('a1')).toBe('data:image/png;base64,LOCAL_RECENTE=');
+        expect(imageStoreState.store.get('a1')).toBe('data:image/png;base64,TE9DQUw=');
     });
 });
