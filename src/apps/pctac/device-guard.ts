@@ -24,7 +24,7 @@
  * horloge, dock, `showBanner`) pour être testables sans navigateur réel.
  */
 
-import { showBanner } from '@shared/feedback.js';
+import { showBanner, toast } from '@shared/feedback.js';
 
 /* -------------------------------------------------------------------------
  * 1. Persistance du stockage
@@ -170,15 +170,20 @@ export function mountStorageBadge(dock: HTMLElement | null | undefined, persiste
     if (!dock) return null;
     let badge = dock.querySelector<HTMLElement>(`#${STORAGE_BADGE_ID}`);
     if (!badge) {
-        badge = document.createElement('span');
+        // Bouton (et non span inerte) : l'infobulle s'affiche au survol, et un
+        // toucher explique l'état sur tablette et téléphone, sans infobulle.
+        const button = document.createElement('button');
+        button.type = 'button';
+        badge = button;
         badge.id = STORAGE_BADGE_ID;
         badge.className = 'dock-menu-item device-storage-badge';
-        badge.setAttribute('role', 'status');
         badge.style.display = 'inline-flex';
         badge.style.alignItems = 'center';
         badge.style.justifyContent = 'center';
         badge.style.padding = '0 8px';
-        badge.style.pointerEvents = 'none';
+        button.addEventListener('click', () => {
+            toast(button.title, { kind: button.dataset.persisted === 'true' ? 'info' : 'error', duration: 8000 });
+        });
         const dot = document.createElement('span');
         dot.className = 'device-storage-badge__dot';
         dot.style.width = '10px';
