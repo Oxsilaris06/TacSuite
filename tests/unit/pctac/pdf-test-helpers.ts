@@ -104,3 +104,10 @@ export function pngDataUrl(w: number, h: number): string {
     for (const p of parts) { all.set(p, o); o += p.length; }
     return `data:image/png;base64,${Buffer.from(all).toString('base64')}`;
 }
+
+/** Images dessinées sur une page : position et taille (points, origine en bas à gauche). */
+export async function pdfImageDraws(bytes: Uint8Array, pageIndex: number): Promise<{ x: number; y: number; width: number; height: number }[]> {
+    const ops = await pdfPageOperators(bytes, pageIndex);
+    const re = /1 0 0 1 (-?[\d.]+) (-?[\d.]+) cm\n1 0 0 1 0 0 cm\n(-?[\d.]+) 0 0 (-?[\d.]+) 0 0 cm\n1 0 0 1 0 0 cm\n\/Image-\d+ Do/g;
+    return Array.from(ops.matchAll(re), (m) => ({ x: Number(m[1]), y: Number(m[2]), width: Number(m[3]), height: Number(m[4]) }));
+}
