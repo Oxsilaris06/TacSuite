@@ -185,6 +185,20 @@ export function sanitizeWinAnsi(s: unknown, hasGlyph: ((codePoint: number) => bo
     return out;
 }
 
+/**
+ * C16 / B-3 — tronque `text` à `maxWidth` points pour la police et la taille
+ * données, en terminant par « … ». Indispensable depuis le passage du corps en
+ * JetBrains Mono : monospace, environ 40 % plus large que l'Oswald condensé,
+ * elle fait déborder les colonnes à largeur fixe (tables Forces amies, journal,
+ * liste des points). Les titres de fiche utilisaient déjà ce repli.
+ */
+export function fitTextToWidth(text: string, font: PDFLib.PDFFont, size: number, maxWidth: number): string {
+    if (font.widthOfTextAtSize(text, size) <= maxWidth) return text;
+    let out = text;
+    while (out.length > 1 && font.widthOfTextAtSize(`${out}…`, size) > maxWidth) out = out.slice(0, -1);
+    return `${out.trimEnd()}…`;
+}
+
 /** Palette de couleurs du thème courant, calculée une fois par export (pdfExport.js:118-124). */
 interface PdfThemeColors {
     background: PDFLib.RGB;
@@ -417,7 +431,7 @@ export const PdfExport: PdfExportContract = {
                 }
 
                 let currentX = context.margin + 5;
-                pdfPage().drawText(sanitizeWinAnsi(entry.heure), { x: currentX, y: context.y, size: 9, font, color: themeColors.text });
+                pdfPage().drawText(fitTextToWidth(sanitizeWinAnsi(entry.heure), font, 9, colWidths[0] - 5), { x: currentX, y: context.y, size: 9, font, color: themeColors.text });
                 currentX += colWidths[0];
 
                 // Style Pax (Couleur). Le libellé suit la situation (« Inter »
@@ -442,10 +456,10 @@ export const PdfExport: PdfExportContract = {
                 const textColor = (yiq >= 128) ? pdfRgb(0, 0, 0) : pdfRgb(1, 1, 1);
 
                 pdfPage().drawRectangle({ x: currentX - 2, y: context.y - 2, width: colWidths[1] - 5, height: 12, color: pColor });
-                pdfPage().drawText(sanitizeWinAnsi(pText).substring(0, 12), { x: currentX, y: context.y, size: 8, font: fontBold, color: textColor });
+                pdfPage().drawText(fitTextToWidth(sanitizeWinAnsi(pText), fontBold, 8, colWidths[1] - 5), { x: currentX, y: context.y, size: 8, font: fontBold, color: textColor });
                 currentX += colWidths[1];
 
-                pdfPage().drawText(sanitizeWinAnsi(entry.lieu).substring(0, 25), { x: currentX, y: context.y, size: 9, font, color: themeColors.text });
+                pdfPage().drawText(fitTextToWidth(sanitizeWinAnsi(entry.lieu), font, 9, colWidths[2] - 5), { x: currentX, y: context.y, size: 9, font, color: themeColors.text });
                 currentX += colWidths[2];
 
                 remarksLines.forEach((line, idx) => {
@@ -492,11 +506,7 @@ export const PdfExport: PdfExportContract = {
                     const labelWidth = label ? fontBold.widthOfTextAtSize(label, 10) + 12 : 0;
                     // Titre tronqué (« … ») à la place restante : jamais sous le statut.
                     const room = context.pageWidth - 2 * context.margin - 10 - labelWidth;
-                    let title = sanitizeWinAnsi(ficheTitle(side, modeId, item));
-                    if (fontBold.widthOfTextAtSize(title, 11) > room) {
-                        while (title.length > 1 && fontBold.widthOfTextAtSize(`${title}…`, 11) > room) title = title.slice(0, -1);
-                        title = `${title.trimEnd()}…`;
-                    }
+                    const title = fitTextToWidth(sanitizeWinAnsi(ficheTitle(side, modeId, item)), fontBold, 11, room);
                     pdfPage().drawText(title, { x: context.margin + 5, y: context.y + 2, size: 11, font: fontBold, color: themeColors.text });
                     if (label) {
                         const labelX = context.pageWidth - context.margin - labelWidth + 7;
@@ -572,11 +582,13 @@ export const PdfExport: PdfExportContract = {
                 for (const f of friends) {
                     if (context.y < 50) { addNewPage("FORCES AMIES (SUITE)"); drawFHeader(); }
                     let cx = context.margin + 5;
-                    pdfPage().drawText(sanitizeWinAnsi(`${f.nom || ''} ${f.prenom || ''}`), { x: cx, y: context.y, size: 9, font, color: themeColors.text });
+                    // C16 / B-3 — colonnes à largeur FIXE : chacune tronque à sa
+                    // largeur (moins 5 pt de marge) au lieu de déborder.
+                    pdfPage().drawText(fitTextToWidth(sanitizeWinAnsi(`${f.nom || ''} ${f.prenom || ''}`), font, 9, fCols[0] - 5), { x: cx, y: context.y, size: 9, font, color: themeColors.text });
                     cx += fCols[0];
-                    pdfPage().drawText(sanitizeWinAnsi(f.unite), { x: cx, y: context.y, size: 9, font, color: themeColors.text });
+                    pdfPage().drawText(fitTextToWidth(sanitizeWinAnsi(f.unite), font, 9, fCols[1] - 5), { x: cx, y: context.y, size: 9, font, color: themeColors.text });
                     cx += fCols[1];
-                    pdfPage().drawText(sanitizeWinAnsi(`${f.mission || ''} ${f.tph ? '['+String(f.tph)+']':''}`), { x: cx, y: context.y, size: 9, font, color: themeColors.text });
+                    pdfPage().drawText(fitTextToWidth(sanitizeWinAnsi(`${f.mission || ''} ${f.tph ? '['+String(f.tph)+']':''}`), font, 9, fCols[2] - 5), { x: cx, y: context.y, size: 9, font, color: themeColors.text });
                     context.y -= 20;
                 }
             }
@@ -700,20 +712,19 @@ export const PdfExport: PdfExportContract = {
                             if (!pin || typeof pin !== 'object') continue;
                             if (context.y < context.margin + 20) { addNewPage('PLAN TACTIQUE - LISTE DES POINTS (SUITE)'); drawPinHeader(); }
                             let px = context.margin + 5;
-                            // B-3 — JetBrains Mono (5,4 pt/car. à 9 pt) : 25 car.
-                            // tiennent dans la colonne Label (140 pt) sans mordre
-                            // sur MGRS (l'Oswald condensé laissait passer 28).
-                            pdfPage().drawText(sanitizeWinAnsi(pin.label).substring(0, 25), { x: px, y: context.y, size: 9, font, color: themeColors.text });
+                            // B-3 — JetBrains Mono (5,4 pt/car. à 9 pt) : la colonne
+                            // Label (140 pt) tronque à sa largeur, sans mordre sur MGRS.
+                            pdfPage().drawText(fitTextToWidth(sanitizeWinAnsi(pin.label), font, 9, pCols[0] - 5), { x: px, y: context.y, size: 9, font, color: themeColors.text });
                             px += pCols[0];
-                            pdfPage().drawText(sanitizeWinAnsi(pin.mgrs || 'N/C'), { x: px, y: context.y, size: 8, font, color: themeColors.text });
+                            pdfPage().drawText(fitTextToWidth(sanitizeWinAnsi(pin.mgrs || 'N/C'), font, 8, pCols[1] - 5), { x: px, y: context.y, size: 8, font, color: themeColors.text });
                             px += pCols[1];
-                            pdfPage().drawText(sanitizeWinAnsi(pin.cell || '-'), { x: px, y: context.y, size: 9, font: fontBold, color: themeColors.text });
+                            pdfPage().drawText(fitTextToWidth(sanitizeWinAnsi(pin.cell || '-'), fontBold, 9, pCols[2] - 5), { x: px, y: context.y, size: 9, font: fontBold, color: themeColors.text });
                             px += pCols[2];
-                            pdfPage().drawText(fmtCoord(pin.lat), { x: px, y: context.y, size: 8, font, color: themeColors.text });
+                            pdfPage().drawText(fitTextToWidth(fmtCoord(pin.lat), font, 8, pCols[3] - 5), { x: px, y: context.y, size: 8, font, color: themeColors.text });
                             px += pCols[3];
-                            pdfPage().drawText(fmtCoord(pin.lng), { x: px, y: context.y, size: 8, font, color: themeColors.text });
+                            pdfPage().drawText(fitTextToWidth(fmtCoord(pin.lng), font, 8, pCols[4] - 5), { x: px, y: context.y, size: 8, font, color: themeColors.text });
                             px += pCols[4];
-                            pdfPage().drawText(fmtDiam(pin.diameterM), { x: px, y: context.y, size: 9, font, color: themeColors.text });
+                            pdfPage().drawText(fitTextToWidth(fmtDiam(pin.diameterM), font, 9, pCols[5] - 5), { x: px, y: context.y, size: 9, font, color: themeColors.text });
 
                             pdfPage().drawLine({
                                 start: { x: context.margin, y: context.y - 5 },

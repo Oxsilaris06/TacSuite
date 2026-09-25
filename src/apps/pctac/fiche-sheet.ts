@@ -160,6 +160,23 @@ function dropDraft(side: FicheSide, id: string | null): void {
     void ImageStore.delete(draftPhotoKey(side, id)).catch(() => { /* absente */ });
 }
 
+/**
+ * C11 (R21) — déplace la photo d'un brouillon d'un créneau à un autre
+ * (`<id>` → `new`) quand sa saisie change de fiche. Sans cela, le blob
+ * `…-img:adv:<id>` resterait orphelin et échapperait à la collecte du RESET.
+ * Le blob source est supprimé dans tous les cas (il ne doit pas survivre).
+ */
+async function moveDraftPhoto(side: FicheSide, fromId: string | null, toId: string | null): Promise<void> {
+    const from = draftPhotoKey(side, fromId);
+    const to = draftPhotoKey(side, toId);
+    if (from === to) return;
+    const data = await ImageStore.get(from).catch(() => null);
+    if (data) {
+        try { await ImageStore.put(to, data); } catch { /* stockage indispo : la photo suit au mieux */ }
+    }
+    try { await ImageStore.delete(from); } catch { /* absente */ }
+}
+
 /** Recharge la photo du brouillon dans la fiche affichée, si elle n'en a pas. */
 async function loadDraftPhoto(side: FicheSide, id: string | null): Promise<void> {
     const data = await ImageStore.get(draftPhotoKey(side, id)).catch(() => null);
@@ -475,6 +492,8 @@ async function save(next: boolean): Promise<void> {
                 drafts[slotOf(side, null)] = { values, savedAt: Date.now(), base: null, statusTouched: s.statusTouched };
                 delete drafts[slotOf(side, id)];
                 writeDrafts(drafts);
+                // C11 (R21) — la photo du brouillon suit la saisie déplacée.
+                await moveDraftPhoto(side, id, null);
             }
             toast(freeSlot
                 ? 'Fiche supprimée entre-temps : votre saisie est proposée dans une nouvelle fiche'
@@ -493,9 +512,16 @@ async function save(next: boolean): Promise<void> {
             // supprimée dans un autre onglet. On repart de la fiche d'OUVERTURE
             // (champs non modifiés compris), sous son id d'origine : liens,
             // pings et statut sont préservés au lieu d'une fiche presque vide.
+            const openedPhoto = typeof s.item.photo === 'string' ? s.item.photo : '';
             const openedItem = (s.base ? JSON.parse(s.base) : {}) as Record<string, unknown>;
             item = { ...openedItem, ...s.item, id };
             delete item.photo;
+            // C9 (R14) — la photo lue à l'ouverture n'est pas jetée : si le blob
+            // a été purgé avec la fiche (échéance de l'autre onglet), on le
+            // réécrit, copie de galerie `<id>_sync` comprise.
+            if (openedPhoto && !(await ImageStore.get(id).catch(() => null))) {
+                await syncPhoto(side, item, openedPhoto);
+            }
             list.push(item);
         } else if (!item) {
             // Décision 32/33 — doublon de personne à la CRÉATION : signaler et
@@ -689,6 +715,8 @@ async function handleRemoteFicheChangeInner(s: SheetState): Promise<void> {
                 drafts[slotOf(s.side, null)] = { values: collect(), savedAt: Date.now(), base: null, statusTouched: s.statusTouched };
                 delete drafts[slotOf(s.side, s.id)];
                 writeDrafts(drafts);
+                // C11 (R21) — la photo du brouillon suit la saisie déplacée.
+                await moveDraftPhoto(s.side, s.id, null);
                 toast('Fiche supprimée entre-temps : votre saisie est proposée dans une nouvelle fiche', { kind: 'error' });
             } else {
                 toast('Fiche supprimée entre-temps : votre saisie reste en brouillon', { kind: 'error' });
@@ -721,6 +749,10 @@ async function handleRemoteFicheChangeInner(s: SheetState): Promise<void> {
         if (choice === 'theirs') s.item[conflict.key] = conflict.theirs;
         else if (choice === 'mine') s.item[conflict.key] = conflict.mine;
     }
+    // C10 (R20) — la version de l'autre onglet devient la base connue : seule
+    // une NOUVELLE divergence redemandera un choix (sinon la même question
+    // était reposée à chaque écriture distante ultérieure).
+    s.base = baseOf(fresh);
     if (state === s) render();
 }
 

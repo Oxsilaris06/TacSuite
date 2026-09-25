@@ -172,6 +172,10 @@ export const Utils = {
      * R10 — récapitulatif du toast de la passerelle OI → PC-Tac. Un OI qui
      * n'apporte que des photos (A6) doit le dire, sinon l'opérateur lit
      * « 0 adversaire(s), 0 intervenant(s) » et croit que rien n'est passé.
+     *
+     * C14 / K2 — les fiches FUSIONNÉES avec une existante sont désormais
+     * comptées à part (`advMerged`) : elles ne sont ni des adversaires ajoutés,
+     * ni des doublons ignorés.
      */
     oiImportSummaryParts(res: {
         advAdded: number;
@@ -180,10 +184,12 @@ export const Utils = {
         gridImported?: boolean | undefined;
         galleryAdded?: number | undefined;
         galleryUpdated?: number | undefined;
+        advMerged?: number | undefined;
     }): string[] {
         const parts = [`${res.advAdded} adversaire(s)`];
         if (res.advPhotos) parts.push(`${res.advPhotos} photo(s)`);
         parts.push(`${res.paxAdded} intervenant(s)`);
+        if (res.advMerged) parts.push(`${res.advMerged} fiche(s) fusionnée(s)`);
         if (res.gridImported) parts.push('le carroyage');
         if (res.galleryAdded) parts.push(`${res.galleryAdded} photo(s) de l'OI`);
         if (res.galleryUpdated) parts.push(`${res.galleryUpdated} photo(s) mise(s) à jour`);
@@ -195,12 +201,20 @@ export const Utils = {
      * récapitulatif quand il y a des fiches remplacées/fusionnées ou des clés
      * ignorées. `main.ts` ne doit alors PAS ajouter « Archive importée avec
      * succès. » : un seul message, le récapitulatif.
+     *
+     * C13 / K1 — `warned` est posé par `archive.ts` quand il a DÉJÀ affiché un
+     * toast d'échec partiel (photos/GPX non restaurés) : le succès générique
+     * doit être supprimé dans ce cas aussi.
      */
     archiveImportHasRecap(summary: {
         replacedFiches: readonly string[];
         mergedFiches: readonly string[];
         unknownKeys: number;
+        warned?: boolean | undefined;
     }): boolean {
-        return summary.replacedFiches.length > 0 || summary.mergedFiches.length > 0 || summary.unknownKeys > 0;
+        return summary.warned === true
+            || summary.replacedFiches.length > 0
+            || summary.mergedFiches.length > 0
+            || summary.unknownKeys > 0;
     },
 };
