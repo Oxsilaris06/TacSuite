@@ -506,22 +506,29 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (confirmResetExportBtn) {
         confirmResetExportBtn.onclick = async () => {
             showBusy("Export de l'archive avant RESET…");
-            // R17 — nom du fichier à confirmer, calculé comme `Archive.exportZip`.
-            const fileName = Utils.readableFileName(currentMode().label, new Date(), 'pctac.zip');
             const outcome = await resetWithArchive(
                 () => Archive.exportZip(),
                 performReset,
-                () => {
+                (fileName) => {
                     hideBusy();
+                    // C15 / K3 — nom RÉELLEMENT téléchargé, demandé à `Archive`
+                    // après l'export ; repli sur le nom calculé tant que
+                    // `Archive.lastExportFileName` n'est pas déployé (contrat K3).
+                    const name = fileName
+                        ?? Utils.readableFileName(currentMode().label, new Date(), 'pctac.zip');
                     return confirmDialog({
                         title: 'Archive enregistrée ?',
-                        message: `L'archive ${fileName} a-t-elle bien été enregistrée ?`,
+                        message: `L'archive ${name} a-t-elle bien été enregistrée ?`,
                         confirmLabel: 'Effacer maintenant',
                         cancelLabel: 'Pas encore',
                         danger: true,
                     });
                 },
                 2200,
+                () => {
+                    const a = Archive as unknown as { lastExportFileName?: () => string | null };
+                    return typeof a.lastExportFileName === 'function' ? a.lastExportFileName() : null;
+                },
             );
             hideBusy();
             if (outcome === 'export-failed') {
@@ -559,12 +566,11 @@ document.addEventListener('DOMContentLoaded', async () => {
                 UI.renderFriends();
                 await UI.renderPhotos();
                 if (window.PlanMap && window.PlanMap.initialized) window.PlanMap.refresh();
-                // R accord — un seul message : si `archive.ts` a produit un
-                // récapitulatif (fiches remplacées/fusionnées, clés ignorées),
-                // on n'ajoute rien ; sinon, succès générique.
-                if (!res.ok) {
-                    toast("Erreur d'import : " + String('error' in res ? res.error : ''), { kind: 'error' });
-                } else if (!Utils.archiveImportHasRecap(res)) {
+                // R accord + C13 / K1 — `archive.ts` a DÉJÀ parlé : message
+                // d'erreur sur `!ok`, toast d'échec partiel signalé par
+                // `warned`. main.ts n'ajoute ni seconde erreur, ni succès qui
+                // contredirait l'alerte.
+                if (res.ok && !Utils.archiveImportHasRecap(res)) {
                     toast('Archive importée avec succès.', { kind: 'success' });
                 }
             } catch (err) {
