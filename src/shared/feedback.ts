@@ -661,7 +661,9 @@ function bannerContainer(): HTMLElement {
  */
 function publishBannerHeight(): void {
   const el = document.getElementById('tac-banner-container');
-  const h = el && el.childElementCount ? el.offsetHeight : 0;
+  // Bord BAS du conteneur dans le document (un remplissage de <body> décale
+  // son haut) : c'est là que l'écran scindé doit commencer.
+  const h = el && el.childElementCount ? el.offsetTop + el.offsetHeight : 0;
   document.documentElement.style.setProperty('--tac-banner-h', `${h}px`);
 }
 
