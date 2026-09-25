@@ -53,6 +53,12 @@ import {
     type PdfTheme,
 } from '@shared/pdf-options.js';
 import type { PdfExportContract, PlanMapPinSummary } from '@shared/types/contracts.js';
+import { GpxStore } from '@pctac/image-store.js';
+import { scopedKey } from '@pctac/modes.js';
+import { Persist } from '@shared/persist.js';
+import { GPX_INDEX_KEY, SHAPES_KEY } from '@pctac/planmap/constants.js';
+import { circleDiameter, formatDistance, measureTotalMeters, shapeCoords } from '@pctac/planmap/geo.js';
+import type { LngLatTuple, PlanGpxTrack, PlanShape } from '@pctac/planmap/types.js';
 
 /** Rapports proposés par la fenêtre de génération (décisions 41 et 42). */
 export const PCTAC_PDF_KINDS: readonly PdfKindChoice[] = [
@@ -424,6 +430,78 @@ export function planPrintedWidth(aspect: number): number {
     return Math.min(box.width, box.height * aspect);
 }
 
+/** Ligne de la liste « Formes et traces » (audit PDF 2026-09-25, Mo4). */
+export interface PlanItemRow {
+    name: string;
+    type: string;
+    measure: string;
+    color: string;
+}
+
+/** Distance à la française (« 1,50 km ») ; `formatDistance` écrit le point de l'écran. */
+const distanceFr = (m: number): string => formatDistance(m).replace('.', ',');
+
+/** Surface lisible : m² jusqu'à 1 ha, puis ha, puis km². */
+export function formatArea(m2: number): string {
+    if (!isFinite(m2) || m2 <= 0) return '';
+    if (m2 < 10_000) return `${String(Math.round(m2)).replace(/\B(?=(\d{3})+(?!\d))/g, ' ')} m²`;
+    return m2 < 1_000_000 ? `${(m2 / 10_000).toFixed(2).replace('.', ',')} ha` : `${(m2 / 1_000_000).toFixed(2).replace('.', ',')} km²`;
+}
+
+/**
+ * Surface d'un polygone [lng, lat] en m², projection locale équirectangulaire
+ * (sphère de `haversineMeters`). ponytail: exacte à l'échelle d'un plan
+ * tactique ; au-delà de quelques kilomètres, passer à une aire géodésique.
+ */
+function polygonAreaM2(coords: readonly LngLatTuple[]): number {
+    if (coords.length < 3) return 0;
+    const rad = Math.PI / 180;
+    const k = Math.cos((coords.reduce((s, c) => s + c[1], 0) / coords.length) * rad);
+    let twice = 0;
+    coords.forEach(([x1, y1], i) => {
+        const [x2, y2] = coords[(i + 1) % coords.length] ?? [x1, y1];
+        twice += x1 * k * y2 - x2 * k * y1;
+    });
+    return (Math.abs(twice) / 2) * (6371000 * rad) ** 2;
+}
+
+/**
+ * Formes et traces GPX du plan, telles qu'imprimées sous la liste des points :
+ * nom, type, longueur ou surface. Une trace masquée sur la carte est dite.
+ */
+export function planItemRows(
+    shapes: readonly PlanShape[],
+    tracks: readonly { track: PlanGpxTrack; coords: LngLatTuple[][] | null }[],
+): PlanItemRow[] {
+    const TYPES: Record<string, string> = {
+        line: 'Trait', rectangle: 'Rectangle', circle: 'Cercle', text: 'Texte', measure: 'Mesure', 'measure-rings': "Anneaux d'engagement",
+    };
+    const rows: PlanItemRow[] = shapes.filter((s) => !!s && typeof s === 'object').map((s) => {
+        let measure = '';
+        if (s.type === 'line') measure = distanceFr(measureTotalMeters(shapeCoords(s)));
+        else if (s.type === 'measure') measure = distanceFr(typeof s.totalM === 'number' && isFinite(s.totalM) ? s.totalM : measureTotalMeters(shapeCoords(s)));
+        else if (s.type === 'rectangle') measure = formatArea(polygonAreaM2(shapeCoords(s)));
+        else if (s.type === 'circle') {
+            const d = circleDiameter(s);
+            measure = d > 0 ? `diamètre ${distanceFr(d)}, ${formatArea(Math.PI * (d / 2) ** 2)}` : '';
+        } else if (s.type === 'measure-rings') {
+            const radii = (s.rings ?? []).map((r) => distanceFr(r.radiusM)).filter(Boolean);
+            measure = radii.length ? `rayons ${radii.join(', ')}` : '';
+        }
+        return { name: String(s.text ?? '').trim() || '—', type: TYPES[s.type] ?? String(s.type), measure: measure || '—', color: s.color || '#888888' };
+    });
+    for (const { track, coords } of tracks) {
+        const length = coords ? coords.reduce((m, seg) => m + measureTotalMeters(seg), 0) : 0;
+        rows.push({
+            name: `${String(track.name || 'Trace')}${track.visible === false ? ' (masquée)' : ''}`,
+            type: 'Trace GPX',
+            measure: coords ? distanceFr(length) || '—' : 'coordonnées absentes de la base',
+            color: track.color || '#888888',
+        });
+    }
+    return rows;
+}
+
 /**
  * Données lues UNE fois par export (les essais du budget « Partage » les
  * réutilisent) : journal, fiches, amis, photos hydratées, capture du plan et
@@ -436,8 +514,13 @@ async function loadReportData(sortie: PdfSortie) {
     // statut — flag `auto`, pax 'Carte' legacy, ou remarques de statut)
     // sortent de la main courante et vont sur leur propre page, en fin
     // de document (après « PLAN TACTIQUE - LISTE DES POINTS »).
-    const isAuto = (e: { auto?: boolean | undefined; pax: string; remarques?: string | undefined }): boolean => {
+    const isAuto = (e: { auto?: boolean | undefined; pax: string; remarques?: string | undefined; date?: string | undefined }): boolean => {
         if (e.auto) return true;
+        // Mo7 — une entrée datée vient d'une version qui pose le drapeau
+        // `auto` (date et drapeau datent du 11/08/2026) : il fait foi. Une
+        // remarque saisie à la main qui ressemble à un statut reste en main
+        // courante ; le texte ne départage plus que les entrées anciennes.
+        if (e.date) return false;
         if (e.pax === 'Carte') return true;
         if (typeof e.remarques === 'string') {
             const r = e.remarques.trim();
@@ -486,7 +569,16 @@ async function loadReportData(sortie: PdfSortie) {
             pins = [];
         }
     }
-    return { allLogs, logData, carteLogs, adversaries, hostages, friends, photos, plan, pins };
+    // Mo4 — formes et traces GPX listées (nom, type, longueur ou surface) :
+    // sur l'image du plan seulement, elles n'étaient ni nommées ni mesurées.
+    const shapes = Persist.get<PlanShape[]>(scopedKey(SHAPES_KEY), { validator: (v): v is PlanShape[] => Array.isArray(v), fallback: [] });
+    const gpxIndex = Persist.get<PlanGpxTrack[]>(scopedKey(GPX_INDEX_KEY), { validator: (v): v is PlanGpxTrack[] => Array.isArray(v), fallback: [] });
+    const tracks = await Promise.all(gpxIndex.filter((t) => !!t && typeof t.id === 'string').map(async (track) => {
+        const stored = await GpxStore.get(track.id).catch(() => null);
+        return { track, coords: stored && Array.isArray(stored.coords) ? stored.coords : null };
+    }));
+    const planItems = planItemRows(shapes, tracks);
+    return { allLogs, logData, carteLogs, adversaries, hostages, friends, photos, plan, pins, planItems };
 }
 
 type ReportData = Awaited<ReturnType<typeof loadReportData>>;
@@ -663,6 +755,19 @@ async function renderReport(data: ReportData, settings: RenderSettings): Promise
         }
     };
 
+    /**
+     * Étoile pleine des entrées favorites (Mo4), centrée en (`x`, `y`) :
+     * dessinée, aucune police embarquée n'ayant « ★ ».
+     */
+    const drawStar = (x: number, y: number, r: number): void => {
+        const points = Array.from({ length: 10 }, (_, k) => {
+            const radius = k % 2 ? r * 0.45 : r;
+            const angle = -Math.PI / 2 + (k * Math.PI) / 5;
+            return `${(radius * Math.cos(angle)).toFixed(2)},${(radius * Math.sin(angle)).toFixed(2)}`;
+        });
+        pdfPage().drawSvgPath(`M${points.join(' L')} Z`, { x, y, color: pdfRgb(0.96, 0.68, 0.05) });
+    };
+
     // Progression affichée (audit : 35 s sans retour visuel sur le jeu extrême).
     const step = (what: string): void => setBusyMessage(settings.attempt === 0
         ? `Génération du PDF : ${what}…`
@@ -677,6 +782,14 @@ async function renderReport(data: ReportData, settings: RenderSettings): Promise
         { x: context.margin, y: context.y, size: 9, font: fontBold, color: themeColors.text }
     );
     context.y -= 18;
+    // Mo4 — favoris (« Marquer comme important ») : légende, puis étoile à
+    // côté de l'heure. L'ordre reste chronologique : la main courante fait foi.
+    const favorisCount = logData.filter((e) => e.favori).length;
+    if (favorisCount > 0) {
+        drawStar(context.margin + 4, context.y + 3, 4);
+        pdfPage().drawText(`Entrées marquées importantes : ${favorisCount}`, { x: context.margin + 12, y: context.y, size: 9, font, color: themeColors.text });
+        context.y -= 20;
+    }
     const colWidths: [number, number, number, number] = [50, 70, 150, 245]; // Heure, Pax, Localisation, Remarques
     const headers = ["Heure", "Pax", "Localisation", "Remarques"];
 
@@ -773,6 +886,10 @@ async function renderReport(data: ReportData, settings: RenderSettings): Promise
             }
             if (i === 0 || newPageHeader) {
                 pdfPage().drawText(fitTextToWidth(sanitizeWinAnsi(entry.heure), font, 9, colWidths[0] - 5), { x: heureX, y: context.y, size: 9, font, color: themeColors.text });
+                if (entry.favori) {
+                    const heureWidth = font.widthOfTextAtSize(fitTextToWidth(sanitizeWinAnsi(entry.heure), font, 9, colWidths[0] - 5), 9);
+                    drawStar(Math.min(heureX + heureWidth + 7, paxX - 7), context.y + 3, 4);
+                }
                 pdfPage().drawRectangle({ x: paxX - 2, y: context.y - 2, width: colWidths[1] - 5, height: 12, color: pColor });
                 pdfPage().drawText(fitTextToWidth(sanitizeWinAnsi(pText), fontBold, 8, colWidths[1] - 5), { x: paxX, y: context.y, size: 8, font: fontBold, color: textColor });
                 newPageHeader = false;
@@ -824,6 +941,9 @@ async function renderReport(data: ReportData, settings: RenderSettings): Promise
             // seule tombe sous 2:1 en thème clair (jaune, vert).
             if (hasStatus) paras.push({ text: `${statusWord} : ${item.status ? status.label : 'N/C'}`, bold: false, gap: 0 });
             if (side === 'adv' && modeId === 'evenement' && item[TYPE_MENACE_KEY]) paras.push({ text: `Type : ${String(item[TYPE_MENACE_KEY])}`, bold: false, gap: 0 });
+            // Mo4 — fiches protégées liées, comme la carte de l'écran (ui.ts).
+            const linked = side === 'adv' ? hostages.filter((h) => h.lien === item.id).map((h) => ficheTitle('host', modeId, h)) : [];
+            if (linked.length) paras.push({ text: `Fiches liées : ${linked.join(', ')}`, bold: false, gap: 0 });
             filledSections(side, modeId, item, new Date(), resolveLink).forEach((sec) => {
                 paras.push({ text: sec.title.toUpperCase(), bold: true, gap: 4 });
                 sec.rows.forEach((r) => paras.push({ text: `${r.label} : ${r.value}`, bold: false, gap: 0 }));
@@ -1114,6 +1234,39 @@ async function renderReport(data: ReportData, settings: RenderSettings): Promise
         console.warn('PDF Plan tactique ignoré :', planErr);
     }
 
+    // --- 6 bis. FORMES ET TRACES GPX (Mo4) : nom, type, longueur ou surface ---
+    if (data.planItems.length > 0) {
+        const iCols: [number, number, number] = [200, 125, 190]; // Nom (pastille comprise), Type, Mesure
+        const iRows = data.planItems.map((row) => {
+            const nameLines = wrapText(row.name, iCols[0] - 20, font, 9);
+            const measureLines = wrapText(row.measure, iCols[2] - 5, font, 9);
+            return { row, nameLines, measureLines, rowHeight: Math.max(1, nameLines.length, measureLines.length) * context.lineHeight + 6 };
+        });
+        startSection('PLAN TACTIQUE - FORMES ET TRACES', 25 + iRows.reduce((h, r) => h + r.rowHeight, 0));
+        const drawItemHeader = (): void => {
+            pdfPage().drawRectangle({ x: context.margin, y: context.y - 5, width: context.pageWidth - 2 * context.margin, height: 20, color: themeColors.headerBg });
+            ['Nom', 'Type', 'Longueur ou surface'].forEach((h, i) => {
+                pdfPage().drawText(h, { x: context.margin + 5 + [0, iCols[0], iCols[0] + iCols[1]][i]!, y: context.y + 2, size: 9, font: fontBold, color: themeColors.text });
+            });
+            context.y -= 25;
+        };
+        drawItemHeader();
+        for (const { row, nameLines, measureLines, rowHeight } of iRows) {
+            if (context.y - rowHeight < context.margin) { addNewPage('PLAN TACTIQUE - FORMES ET TRACES (SUITE)'); drawItemHeader(); }
+            // Pastille de la couleur sur la carte, cerclée (un blanc reste visible).
+            pdfPage().drawRectangle({ x: context.margin + 5, y: context.y - 1, width: 9, height: 9, color: hexRgb(safeHexColor(row.color, '#888888')), borderColor: themeColors.line, borderWidth: 0.5 });
+            nameLines.forEach((line, i) => pdfPage().drawText(line, { x: context.margin + 20, y: context.y - i * context.lineHeight, size: 9, font, color: themeColors.text }));
+            pdfPage().drawText(fitTextToWidth(sanitizeWinAnsi(row.type), font, 9, iCols[1] - 5), { x: context.margin + 5 + iCols[0], y: context.y, size: 9, font, color: themeColors.text });
+            measureLines.forEach((line, i) => pdfPage().drawText(line, { x: context.margin + 5 + iCols[0] + iCols[1], y: context.y - i * context.lineHeight, size: 9, font, color: themeColors.text }));
+            pdfPage().drawLine({
+                start: { x: context.margin, y: context.y - rowHeight + 13 },
+                end: { x: context.pageWidth - context.margin, y: context.y - rowHeight + 13 },
+                thickness: 0.5, color: themeColors.line, opacity: 0.3
+            });
+            context.y -= rowHeight;
+        }
+    }
+
     // --- 7. JOURNAL DES ACTIONS PC-TAC (entrées auto, en dernier) ---
     step('journal des actions');
     if (carteLogs.length > 0) {
@@ -1224,6 +1377,14 @@ async function renderReport(data: ReportData, settings: RenderSettings): Promise
             x: w - context.margin - numWidth, y: 10, size: 8, font, color: footerColor
         });
     });
+
+    // Mo8 — le document s'identifie seul dans une visionneuse ou une
+    // messagerie ; jamais de nom de personne (ni auteur ni mot-clé).
+    pdfDoc.setTitle(`PC-Tac — ${mode.label} — ${exportStamp}`, { showInWindowTitleBar: true });
+    pdfDoc.setSubject('DIFFUSION RESTREINTE');
+    pdfDoc.setCreator('TacSuite PC-Tac');
+    pdfDoc.setProducer('TacSuite');
+    pdfDoc.setLanguage('fr-FR');
 
     return pdfDoc.save();
 }
