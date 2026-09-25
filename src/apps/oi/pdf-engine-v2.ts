@@ -45,6 +45,8 @@ import { dbManager, Store } from '@oi/init.js';
 import { OiPdfFitRefusalError, type OiPdfFormat } from '@oi/pdf/theme.js';
 import { attachEditableTextLayer, createEditMatchState, type EditMatchStats } from '@oi/pdf-preview-edit.js';
 import { toast } from '@shared/feedback.js';
+import { showOiFitRefusal } from '@oi/validation.js';
+import { fitErrorLine } from '@oi/pdf/theme.js';
 import { formatBytes, type PdfSortie } from '@shared/pdf-options.js';
 import { currentOiPdfOptions } from '@oi/pdf/options.js';
 import { acquirePdfLock, releasePdfLock } from '@oi/pdf/generation-lock.js';
@@ -500,15 +502,17 @@ async function runOpenPreview(deps?: OiPdfBuildDeps): Promise<void> {
                 // même message que `downloadOiPdfV3`/`engine-v3.ts` — une seule
                 // vérité) : liste déjà la/les section(s) en cause et invite à les
                 // raccourcir, contrairement au message générique ci-dessous.
-                const message = error instanceof OiPdfFitRefusalError
-                    ? error.message
-                    : "Erreur lors de la génération de l'aperçu.";
-                toast(message, { kind: 'error' });
+                // Décision 43 : un refus « une page = un usage » s'explique
+                // dans une fenêtre persistante (« Aller au champ ») ; le
+                // téléchargement échouerait pareil, on n'y renvoie pas.
+                if (error instanceof OiPdfFitRefusalError) void showOiFitRefusal(error);
+                else toast("Erreur lors de la génération de l'aperçu.", { kind: 'error' });
                 if (canReplace) {
                     const errorEl = document.createElement('div');
                     errorEl.className = 'pdf-preview-error';
-                    errorEl.textContent =
-                        "Erreur lors de la génération de l'aperçu. "
+                    errorEl.textContent = error instanceof OiPdfFitRefusalError
+                        ? `PDF non généré : une page déborde. À raccourcir :\n${error.fitErrors.map((e) => `• ${fitErrorLine(e)}`).join('\n')}`
+                        : "Erreur lors de la génération de l'aperçu. "
                         + 'Utilisez le bouton « Télécharger le PDF » ci-dessous.\n'
                         + `Cause technique : ${cause}`;
                     presentationContent.replaceChildren(errorEl);
@@ -606,7 +610,9 @@ export const PDFEngineV2 = {
         } catch (e) {
             console.error('[Présenter ici] échec:', e);
             // U19 — toast unique (@shared/feedback.js), plus de window.toast.
-            toast("Erreur lors de l'ouverture de la présentation.", { kind: 'error' });
+            // Décision 43 : un refus « une page = un usage » a sa fenêtre.
+            if (e instanceof OiPdfFitRefusalError) void showOiFitRefusal(e);
+            else toast("Erreur lors de l'ouverture de la présentation.", { kind: 'error' });
         } finally {
             if (loader) loader.style.display = 'none';
             releasePdfLock(lockToken);

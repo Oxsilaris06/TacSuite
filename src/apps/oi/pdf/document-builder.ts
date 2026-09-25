@@ -1049,32 +1049,29 @@ function adversaryAtcdListPt(items: string[], hasBoundary: boolean, atcdText: st
  * la fiche est alors quand même rendue au palier plancher (le document entier
  * ne sera jamais renvoyé à l'appelant si `fitErrors` n'est pas vide).
  * ======================================================================== */
-function buildAdversaryFiche(ctx: BuildCtx, adv: OiAdversary, index: number): Content {
-    const { photosBase64, dynamicPhotos, p, geo, is169 } = ctx;
-    const nom = strOr(adv.nom_adversaire, 'Inconnu');
-    const mainPhotoId = dynamicPhotos[`photo_main_${adv.id}`]?.[0]?.id;
-    const mainPhotoSrc = mainPhotoId ? photosBase64[mainPhotoId] : undefined;
-    const maxPortraitHMm = is169 ? 55 : 65;
+/** Marge (lignes au palier plancher) laissée par un coût : < 0 = refus. */
+function marginLinesAtFloor(availablePt: number, costPt: number): number {
+    return Math.floor((availablePt - costPt) / effracLinePt(FIT_FONT_FLOOR));
+}
 
+/**
+ * Modèle de la fiche adversaire — textes dérivés et coût (pt) au palier
+ * `fontPx`, photo de `portraitHPt` : UN SEUL modèle pour le solveur
+ * (`buildAdversaryFiche`) et pour le compteur sous le champ ATCD
+ * (`adversaryFicheMarginLines`, décision 43) — le compteur passe au rouge
+ * exactement quand le PDF serait refusé, jamais après.
+ */
+function adversaryFicheModel(adv: OiAdversary, index: number, hasPhoto: boolean, geo: ReturnType<typeof pageGeometry>, is169: boolean) {
+    const nom = strOr(adv.nom_adversaire, 'Inconnu');
     const meList = adv.me_list.filter((m) => m.trim() !== '');
     const volumeList = adv.volume_list.filter((v) => v.trim() !== '');
     const etatEspritList = adv.etat_esprit_list.filter((v) => v.trim() !== '');
     const vehiculesList = adv.vehicules_list.filter((v) => v.trim() !== '');
-
     const advTitle = `2.${index} FICHE ADVERSAIRE : ${nom}`;
-    // Nom affiché dans le bandeau de titre (`ficheAdversaireTitleBar`
-    // ci-dessous) — texte libre non typé (`str()`), ancré séparément : ce
-    // helper ne prend ni valeur ni référence isolée (`text` déjà composé),
-    // cf. JSDoc `registerPdfEditAnchor`. Repli `'Inconnu'` de `nom`
-    // délibérément NON ancré (`str(adv.nom_adversaire)` brut) — un champ
-    // vide n'a aucune valeur SAISIE à corriger.
-    registerPdfEditAnchor(ctx.anchors, advFieldAnchor(adv.id, 'nom_adversaire'), str(adv.nom_adversaire));
     const armesConnues = strOr(adv.armes_connues);
     const atcdText = strOr(adv.antecedents_adversaire);
     const atcdItems = splitAtcdBoundaries(atcdText);
     const hasAtcdBoundary = atcdItems.length > 1;
-    const atcdRef: PdfFieldAnchor = advFieldAnchor(adv.id, 'antecedents_adversaire');
-
     // Tableau bordé (référence B : `kvRow()`, print-view.ts:89-90/303-310, la
     // MÊME classe `.k` que toute la fiche), pas des lignes de texte nues (D4,
     // `pdfv3-design-fix/DEFAUTS.md`) — `kvTable()` existait déjà, jamais appelée.
@@ -1087,6 +1084,79 @@ function buildAdversaryFiche(ctx: BuildCtx, adv: OiAdversary, index: number): Co
         ['Substances', strOr(adv.substances_adversaire)],
         ...(meList.length > 0 ? ([['Moyens Employés', meList.join(' / ')]] as Array<[string, string]>) : []),
     ];
+    const domicileValue = str(adv.domicile_adversaire).trim();
+    const volumeEspritValue = [volumeList.join(', '), etatEspritList.join(', ')].filter((v) => v !== '').join(' | ');
+    const vehiculesValue = vehiculesList.join(' | ');
+    const attitudeValue = str(adv.attitude_adversaire).trim();
+    const hasLocalisation = !isBlankOrDash(domicileValue) || !isBlankOrDash(volumeEspritValue);
+    const hasMobilite = !isBlankOrDash(vehiculesValue) || !isBlankOrDash(attitudeValue);
+    const columnWidthPt = (geo.contentWidthPt - mm(6)) / 2;
+
+    // Modèle de coût (pt) — solveur fit-to-page à DEUX degrés de liberté
+    // (correctif Nico 2026-08-10, « la photo n'est pas comptée par le modèle
+    // de coût ») : la photo d'identité est un élément NON TEXTUEL dont la
+    // hauteur ne rétrécit pas avec la police ; `costPt` prend donc aussi
+    // `portraitHPt` (hauteur RÉELLE du cadre photo passé à `figure()`, même
+    // valeur au coût et au rendu). Colonnes GAUCHE/DROITE en PARALLÈLE
+    // (`columns` pdfmake) : le coût total suit la plus haute des deux.
+    const costPt = (fontPx: number, portraitHPt: number): number => {
+        const photoPt = hasPhoto ? portraitHPt + 6 : 0;
+        const identityRowsPt = identityRows.reduce((sum, [label, value]) => sum + identityRowPt(label, value, fontPx, columnWidthPt), 0);
+        const identityCardPt = cardWithTitlePt(identityRowsPt);
+        const dangerCardPt = cardWithTitlePt(textLinePt(`Armes Connues : ${armesConnues}`, fontPx, columnWidthPt));
+        const leftPt = photoPt + identityCardPt + 6 + dangerCardPt;
+
+        const localPt = hasLocalisation ? cardWithTitlePt(textLinePt(`Domicile : ${domicileValue} Volume/Esprit : ${volumeEspritValue}`, fontPx, columnWidthPt)) : 0;
+        const mobilePt = hasMobilite ? cardWithTitlePt(textLinePt(`Véhicules : ${vehiculesValue} Attitude : ${attitudeValue}`, fontPx, columnWidthPt)) : 0;
+        const atcdCardPt = cardWithTitlePt(adversaryAtcdListPt(atcdItems, hasAtcdBoundary, atcdText, fontPx, columnWidthPt));
+        const rightPt = (localPt > 0 ? localPt + 6 : 0) + (mobilePt > 0 ? mobilePt + 6 : 0) + atcdCardPt;
+
+        // `advTitle` (nom d'adversaire) : texte utilisateur non borné, cf.
+        // JSDoc `extraTitleLinesPt` — mesuré au MÊME palier `fontPx` que le
+        // reste de la fiche (le bandeau hérite de `fontSize: fontPx` posé
+        // sur le `stack` racine, jamais un corps de police propre).
+        return ADV_TITLE_BAR_PT + extraTitleLinesPt(advTitle, fontPx, geo.contentWidthPt) + Math.max(leftPt, rightPt);
+    };
+    const maxPortraitHPt = mm(is169 ? 55 : 65);
+    // Paliers de hauteur photo essayés à CHAQUE palier de police, du plus
+    // large (nominal) au plancher de lisibilité — dédoublonnés si le plancher
+    // dépasse déjà le nominal (formats très compacts).
+    const portraitStepsPt = hasPhoto ? [...new Set([maxPortraitHPt, ADV_PHOTO_H_FLOOR_PT])] : [maxPortraitHPt];
+    const availablePt = geo.contentHeightPt - EFFRAC_FITS_SAFETY_PT;
+    /** Marge au plus petit palier (police plancher, plus petite photo) : < 0 = refus. */
+    const marginLines = (): number => marginLinesAtFloor(availablePt, costPt(FIT_FONT_FLOOR, portraitStepsPt[portraitStepsPt.length - 1] as number));
+    return {
+        nom, meList, advTitle, armesConnues, atcdText, atcdItems, hasAtcdBoundary, identityRows,
+        domicileValue, volumeEspritValue, vehiculesValue, attitudeValue, columnWidthPt,
+        costPt, portraitStepsPt, availablePt, marginLines,
+    };
+}
+
+/**
+ * Marge, en lignes au plus petit palier de police, de la fiche adversaire
+ * `adv` (compteur sous le champ ATCD, décision 43) : négative, le PDF sera
+ * refusé — même modèle que le solveur de `buildAdversaryFiche`.
+ */
+export function adversaryFicheMarginLines(adv: OiAdversary, opts: { hasPhoto: boolean; format: OiPdfFormat; index?: number }): number {
+    return adversaryFicheModel(adv, opts.index ?? 1, opts.hasPhoto, pageGeometry(opts.format), opts.format === '16:9').marginLines();
+}
+
+function buildAdversaryFiche(ctx: BuildCtx, adv: OiAdversary, index: number): Content {
+    const { photosBase64, dynamicPhotos, p, geo, is169 } = ctx;
+    const mainPhotoId = dynamicPhotos[`photo_main_${adv.id}`]?.[0]?.id;
+    const mainPhotoSrc = mainPhotoId ? photosBase64[mainPhotoId] : undefined;
+    const model = adversaryFicheModel(adv, index, mainPhotoSrc !== undefined, geo, is169);
+    const { nom, meList, advTitle, armesConnues, atcdText, atcdItems, hasAtcdBoundary, identityRows, domicileValue, volumeEspritValue, vehiculesValue, attitudeValue, columnWidthPt } = model;
+
+    // Nom affiché dans le bandeau de titre (`ficheAdversaireTitleBar`
+    // ci-dessous) — texte libre non typé (`str()`), ancré séparément : ce
+    // helper ne prend ni valeur ni référence isolée (`text` déjà composé),
+    // cf. JSDoc `registerPdfEditAnchor`. Repli `'Inconnu'` de `nom`
+    // délibérément NON ancré (`str(adv.nom_adversaire)` brut) — un champ
+    // vide n'a aucune valeur SAISIE à corriger.
+    registerPdfEditAnchor(ctx.anchors, advFieldAnchor(adv.id, 'nom_adversaire'), str(adv.nom_adversaire));
+    const atcdRef: PdfFieldAnchor = advFieldAnchor(adv.id, 'antecedents_adversaire');
+
     // Ancrage PAR LIGNE (même index que `identityRows`) — `null` pour
     // « Naissance »/« Signalement » (DEUX champs source concaténés dans une
     // seule valeur rendue, ex. `"1995-06-12 @ TESTVILLE"`) et « Moyens
@@ -1125,8 +1195,6 @@ function buildAdversaryFiche(ctx: BuildCtx, adv: OiAdversary, index: number): Co
     // OMISES si tous leurs champs sont vides — jamais de page saturée de
     // libellés « LABEL : - » (cf. BLIND.REFIX round 2, préservé par ce
     // correctif P1, seul le DÉCOUPAGE EN PAGES change).
-    const domicileValue = str(adv.domicile_adversaire).trim();
-    const volumeEspritValue = [volumeList.join(', '), etatEspritList.join(', ')].filter((s) => s !== '').join(' | ');
     const localisationRows: Content[] = [
         !isBlankOrDash(domicileValue)
             ? labelValue('Domicile', domicileValue, p, undefined, { anchors: ctx.anchors, ref: advFieldAnchor(adv.id, 'domicile_adversaire') })
@@ -1137,8 +1205,6 @@ function buildAdversaryFiche(ctx: BuildCtx, adv: OiAdversary, index: number): Co
     const localisationCard: Content | null =
         localisationRows.length > 0 ? card([h3('LOCALISATION', p), ...localisationRows], p, { unbreakable: false }) : null;
 
-    const vehiculesValue = vehiculesList.join(' | ');
-    const attitudeValue = str(adv.attitude_adversaire).trim();
     const mobiliteRows: Content[] = [
         // `vehiculesValue` : agrégat `vehicules_list.join(' | ')` — non ancrable (cf. JSDoc `identityRefs`).
         !isBlankOrDash(vehiculesValue) ? labelValue('Véhicules / Plaques', vehiculesValue, p) : null,
@@ -1149,45 +1215,9 @@ function buildAdversaryFiche(ctx: BuildCtx, adv: OiAdversary, index: number): Co
     const mobiliteCard: Content | null =
         mobiliteRows.length > 0 ? card([h3('MOBILITÉ', p), ...mobiliteRows], p, { unbreakable: false }) : null;
 
-    const columnGapMm = 6;
-    const columnWidthPt = (geo.contentWidthPt - mm(columnGapMm)) / 2;
-
-    // Modèle de coût (pt) — solveur fit-to-page à DEUX degrés de liberté
-    // (correctif Nico 2026-08-10, « la photo n'est pas comptée par le modèle
-    // de coût ») : `fitUsageToPage` (theme.ts) ne fait varier QUE `fontPx` —
-    // insuffisant ici, la photo d'identité est un élément NON TEXTUEL dont la
-    // hauteur ne rétrécit pas avec la police. `computeCostPt` prend donc aussi
-    // `portraitHPt` (hauteur RÉELLE du cadre photo passé à `figure()`, même
-    // valeur au coût et au rendu — jamais deux modèles divergents) ; le
-    // solveur ci-dessous essaie chaque palier de police PUIS, à défaut, réduit
-    // la photo jusqu'à `ADV_PHOTO_H_FLOOR_PT` avant de redescendre encore la
-    // police — colonnes GAUCHE/DROITE en PARALLÈLE (`columns` pdfmake), le
-    // coût total suit la plus haute des deux, jamais leur somme.
-    const computeCostPt = (fontPx: number, portraitHPt: number): number => {
-        const photoPt = mainPhotoSrc !== undefined ? portraitHPt + 6 : 0;
-        const identityRowsPt = identityRows.reduce((sum, [label, value]) => sum + identityRowPt(label, value, fontPx, columnWidthPt), 0);
-        const identityCardPt = cardWithTitlePt(identityRowsPt);
-        const dangerCardPt = cardWithTitlePt(textLinePt(`Armes Connues : ${armesConnues}`, fontPx, columnWidthPt));
-        const leftPt = photoPt + identityCardPt + 6 + dangerCardPt;
-
-        const localPt = localisationCard !== null ? cardWithTitlePt(textLinePt(`Domicile : ${domicileValue} Volume/Esprit : ${volumeEspritValue}`, fontPx, columnWidthPt)) : 0;
-        const mobilePt = mobiliteCard !== null ? cardWithTitlePt(textLinePt(`Véhicules : ${vehiculesValue} Attitude : ${attitudeValue}`, fontPx, columnWidthPt)) : 0;
-        const atcdCardPt = cardWithTitlePt(adversaryAtcdListPt(atcdItems, hasAtcdBoundary, atcdText, fontPx, columnWidthPt));
-        const rightPt = (localPt > 0 ? localPt + 6 : 0) + (mobilePt > 0 ? mobilePt + 6 : 0) + atcdCardPt;
-
-        // `advTitle` (nom d'adversaire) : texte utilisateur non borné, cf.
-        // JSDoc `extraTitleLinesPt` — mesuré au MÊME palier `fontPx` que le
-        // reste de la fiche (le bandeau hérite de `fontSize: fontPx` posé
-        // sur le `stack` racine, jamais un corps de police propre).
-        return ADV_TITLE_BAR_PT + extraTitleLinesPt(advTitle, fontPx, geo.contentWidthPt) + Math.max(leftPt, rightPt);
-    };
-
-    const maxPortraitHPt = mm(maxPortraitHMm);
-    // Paliers de hauteur photo essayés à CHAQUE palier de police, du plus
-    // large (nominal) au plancher de lisibilité — dédoublonnés si le plancher
-    // dépasse déjà le nominal (formats très compacts).
-    const portraitHStepsPt = mainPhotoSrc !== undefined ? [...new Set([maxPortraitHPt, ADV_PHOTO_H_FLOOR_PT])] : [maxPortraitHPt];
-    const availablePt = geo.contentHeightPt - EFFRAC_FITS_SAFETY_PT;
+    // Solveur : chaque palier de police PUIS, à défaut, la photo réduite
+    // jusqu'à `ADV_PHOTO_H_FLOOR_PT` avant de redescendre encore la police.
+    const { costPt: computeCostPt, portraitStepsPt: portraitHStepsPt, availablePt } = model;
     let resolvedFontPx: number | undefined;
     let resolvedPortraitHPt = portraitHStepsPt[portraitHStepsPt.length - 1] as number;
     let worstCost = 0;
@@ -1206,8 +1236,10 @@ function buildAdversaryFiche(ctx: BuildCtx, adv: OiAdversary, index: number): Co
         const excessRatio = availablePt > 0 ? worstCost / availablePt - 1 : Number.POSITIVE_INFINITY;
         ctx.fitErrors.push({
             section: `Fiche Adversaire ${index} : ${nom}`,
-            details: 'contenu (identité/dangerosité/localisation/mobilité/ATCD) trop volumineux — réduisez les ATCD ou les textes libres',
+            details: 'réduisez les ATCD ou les autres textes de la fiche',
             excessRatio,
+            excessLines: -model.marginLines(),
+            field: atcdRef,
         });
     }
     const fontPx = resolvedFontPx ?? FIT_FONT_FLOOR;
@@ -1245,7 +1277,7 @@ function buildAdversaryFiche(ctx: BuildCtx, adv: OiAdversary, index: number): Co
     // dessous, l'espace résiduel éventuel (fiche peu renseignée) reste
     // naturellement en PIED de page, jamais un vide béant sous le titre.
     return {
-        stack: [ficheAdversaireTitleBar(advTitle, p), grid2(leftColumn, rightColumn, mm(columnGapMm))],
+        stack: [ficheAdversaireTitleBar(advTitle, p), grid2(leftColumn, rightColumn, mm(6))],
         fontSize: fontPx,
     };
 }
@@ -2328,50 +2360,111 @@ function cellsContentPt(groups: Array<[string, string[]]>, placeChef: string, fo
  * le bloc est quand même rendu au palier plancher (le document entier ne
  * sera jamais renvoyé si `fitErrors` n'est pas vide).
  */
-function buildArticulationPage(
-    ctx: BuildCtx,
-    opts: {
-        title: string;
-        sectionLabel: string;
-        /** Édition en place : 3e élément = ancrage du champ (`null` si non ancrable — aucun cas à ce jour), cf. `blockFieldAnchor`. */
-        coreFields: Array<[string, string, PdfFieldAnchor | null]>;
-        catLabel: string;
-        catText: string;
-        catRef: PdfFieldAnchor;
-        groups: Array<[string, string[]]>;
-        cellsContent: Content[];
-        placeChef: string;
-        placeChefRef: PdfFieldAnchor;
-        /** Libellé du champ Place du Chef — diffère entre MOICP/ZMSPCP (§4.3 SPEC-2026-08-18-pdf-et-champs.md). */
-        placeChefLabel: string;
-    },
-): Content {
-    const { p, geo } = ctx;
-    const { title, sectionLabel, coreFields, catLabel, catText, catRef, groups, cellsContent, placeChef, placeChefRef, placeChefLabel } = opts;
+/** Données d'une page ZMSPCP/MOICP, sans rendu : partagées par le solveur et le compteur. */
+interface ArticulationSpec {
+    title: string;
+    sectionLabel: string;
+    /** Édition en place : 3e élément = ancrage du champ (`null` si non ancrable — aucun cas à ce jour), cf. `blockFieldAnchor`. */
+    coreFields: Array<[string, string, PdfFieldAnchor | null]>;
+    catLabel: string;
+    catText: string;
+    catRef: PdfFieldAnchor;
+    groups: Array<[string, string[]]>;
+    placeChef: string;
+    placeChefRef: PdfFieldAnchor;
+    /** Libellé du champ Place du Chef — diffère entre MOICP/ZMSPCP (§4.3 SPEC-2026-08-18-pdf-et-champs.md). */
+    placeChefLabel: string;
+}
+
+/**
+ * Coût (pt) d'une page ZMSPCP/MOICP au palier `fontPx` — UN SEUL modèle pour
+ * le solveur (`buildArticulationPage`) et le compteur sous le champ CAT
+ * (`articulationMarginLines`, décision 43).
+ */
+function articulationCostPt(spec: ArticulationSpec, fontPx: number, geo: ReturnType<typeof pageGeometry>): number {
+    const { title, coreFields, catLabel, catText, groups, placeChef, placeChefLabel } = spec;
     const catItems = splitAtDashBoundaries(catText || '-');
     const hasBoundary = catItems.length > 1;
     const columnWidthPt = (geo.contentWidthPt - mm(6)) / 2;
+    const line = effracLinePt(fontPx);
+    const coreFieldsPt = coreFields.reduce((sum, [label, value]) => sum + textLinePt(`${label} : ${value}`, fontPx, columnWidthPt), 0);
+    const catPt = hasBoundary
+        ? line /* fieldLabel */ + catItems.reduce((sum, item) => sum + textLinePt(item, fontPx, columnWidthPt), 0)
+        : textLinePt(`${catLabel} : ${catText}`, fontPx, columnWidthPt);
+    const leftPt = EFFRAC_H3_PT + coreFieldsPt + catPt;
+    const rightPt = cellsContentPt(groups, placeChef, fontPx, columnWidthPt, placeChefLabel);
+    // `title` embarque `block.title` (ZMSPCP/MOICP) : texte utilisateur
+    // non borné, cf. JSDoc `extraTitleLinesPt` — `h2()` rend TOUJOURS à
+    // fontSize 17 fixe (jamais le palier `fontPx` du corps), mesuré comme tel.
+    return EFFRAC_H2_PT + extraTitleLinesPt(title, 17, geo.contentWidthPt) + Math.max(leftPt, rightPt);
+}
 
-    const computeCostPt = (fontPx: number): number => {
-        const line = effracLinePt(fontPx);
-        const coreFieldsPt = coreFields.reduce((sum, [label, value]) => sum + textLinePt(`${label} : ${value}`, fontPx, columnWidthPt), 0);
-        const catPt = hasBoundary
-            ? line /* fieldLabel */ + catItems.reduce((sum, item) => sum + textLinePt(item, fontPx, columnWidthPt), 0)
-            : textLinePt(`${catLabel} : ${catText}`, fontPx, columnWidthPt);
-        const leftPt = EFFRAC_H3_PT + coreFieldsPt + catPt;
-        const rightPt = cellsContentPt(groups, placeChef, fontPx, columnWidthPt, placeChefLabel);
-        // `title` embarque `block.title` (ZMSPCP/MOICP) : texte utilisateur
-        // non borné, cf. JSDoc `extraTitleLinesPt` — `h2()` rend TOUJOURS à
-        // fontSize 17 fixe (jamais le palier `fontPx` du corps), mesuré comme tel.
-        return EFFRAC_H2_PT + extraTitleLinesPt(title, 17, geo.contentWidthPt) + Math.max(leftPt, rightPt);
+/** Spécification d'une page ZMSPCP ou MOICP (titre, champs cœur, CAT, cellules). */
+function articulationSpec(kind: 'zmspcp' | 'moicp', block: OiZmspcpBlock | OiMoicpBlock, formData: OiFormData, memberToCell: Map<string, string>): ArticulationSpec {
+    const common = {
+        title: `Articulation : ${pdfSectionTitle(formData, kind)} - ${block.title || '-'}`,
+        catLabel: 'C conduite à tenir',
+        catText: block.cat || '-',
+        catRef: blockFieldAnchor(kind, block.id, 'cat'),
+        groups: regroupByCellOrdered(block.members, memberToCell),
+        placeChef: block.place_chef || '-',
+        placeChefRef: blockFieldAnchor(kind, block.id, 'place-chef'),
     };
+    if (kind === 'zmspcp') {
+        const z = block as OiZmspcpBlock;
+        return {
+            ...common,
+            sectionLabel: 'ZMSPCP',
+            coreFields: [
+                ['Z zone', z.zone || '-', blockFieldAnchor('zmspcp', z.id, 'zone')],
+                ['M mission', z.mission || '-', blockFieldAnchor('zmspcp', z.id, 'mission')],
+                ['S secteur', z.secteur || '-', blockFieldAnchor('zmspcp', z.id, 'secteur')],
+                ['P points particuliers', z.points_particuliers || '-', blockFieldAnchor('zmspcp', z.id, 'pp')],
+            ],
+            placeChefLabel: 'Place du chef AO',
+        };
+    }
+    const m = block as OiMoicpBlock;
+    return {
+        ...common,
+        sectionLabel: 'MOICP',
+        coreFields: [
+            ['M mission', m.mission || '-', blockFieldAnchor('moicp', m.id, 'mission')],
+            ['O objectif', m.objectif || '-', blockFieldAnchor('moicp', m.id, 'objectif')],
+            ['I itinéraire', m.itineraire || '-', blockFieldAnchor('moicp', m.id, 'itineraire')],
+            ['P points particuliers', m.points_particuliers || '-', blockFieldAnchor('moicp', m.id, 'pp')],
+        ],
+        placeChefLabel: 'Place du chef inter',
+    };
+}
 
-    const fit = fitUsageToPage(computeCostPt, geo.contentHeightPt - EFFRAC_FITS_SAFETY_PT);
+/**
+ * Marge, en lignes au plus petit palier de police, d'une page ZMSPCP/MOICP
+ * (compteur sous le champ CAT, décision 43) : négative, le PDF sera refusé —
+ * même modèle que le solveur de `buildArticulationPage`. `formData` fournit
+ * les cellules (PATRACDVR) et les titres personnalisés.
+ */
+export function articulationMarginLines(kind: 'zmspcp' | 'moicp', block: OiZmspcpBlock | OiMoicpBlock, formData: OiFormData, format: OiPdfFormat): number {
+    const geo = pageGeometry(format);
+    const spec = articulationSpec(kind, block, formData, buildMemberToCellMap(formData.patracdvr_rows ?? []));
+    return marginLinesAtFloor(geo.contentHeightPt - EFFRAC_FITS_SAFETY_PT, articulationCostPt(spec, FIT_FONT_FLOOR, geo));
+}
+
+function buildArticulationPage(ctx: BuildCtx, opts: ArticulationSpec & { cellsContent: Content[] }): Content {
+    const { p, geo } = ctx;
+    const { title, sectionLabel, coreFields, catLabel, catText, catRef, cellsContent, placeChef, placeChefRef, placeChefLabel } = opts;
+    const catItems = splitAtDashBoundaries(catText || '-');
+    const hasBoundary = catItems.length > 1;
+
+    const availablePt = geo.contentHeightPt - EFFRAC_FITS_SAFETY_PT;
+    const fit = fitUsageToPage((fontPx) => articulationCostPt(opts, fontPx, geo), availablePt);
     if ('error' in fit) {
         ctx.fitErrors.push({
             section: title,
-            details: `${catLabel} et/ou composition par cellule trop volumineux — allégez le texte ou le nombre de cellules`,
+            details: `allégez la ${catLabel.replace(/^C /, '').toLowerCase()} ou retirez des cellules`,
             excessRatio: fit.error.excessRatio,
+            excessLines: -marginLinesAtFloor(availablePt, articulationCostPt(opts, FIT_FONT_FLOOR, geo)),
+            field: catRef,
         });
     }
     const fontPx = 'fontPx' in fit ? fit.fontPx : FIT_FONT_FLOOR;
@@ -2409,54 +2502,20 @@ function buildArticulationPage(
     };
 }
 
-function buildZmspcpPage(ctx: BuildCtx, block: OiZmspcpBlock, memberToCell: Map<string, string>): Content {
+function buildArticulationBlockPage(ctx: BuildCtx, kind: 'zmspcp' | 'moicp', block: OiZmspcpBlock | OiMoicpBlock, memberToCell: Map<string, string>): Content {
     const { p } = ctx;
-    const groups = regroupByCellOrdered(block.members, memberToCell);
+    const spec = articulationSpec(kind, block, ctx.formData, memberToCell);
     const cellsContent: Content[] =
-        groups.length > 0 ? groups.map(([cell, members]) => cellGroupBox(cell, members, p)) : [{ text: '-', color: p.muted }];
-    return buildArticulationPage(ctx, {
-        title: `Articulation : ${pdfSectionTitle(ctx.formData, 'zmspcp')} - ${block.title || '-'}`,
-        sectionLabel: 'ZMSPCP',
-        coreFields: [
-            ['Z zone', block.zone || '-', blockFieldAnchor('zmspcp', block.id, 'zone')],
-            ['M mission', block.mission || '-', blockFieldAnchor('zmspcp', block.id, 'mission')],
-            ['S secteur', block.secteur || '-', blockFieldAnchor('zmspcp', block.id, 'secteur')],
-            ['P points particuliers', block.points_particuliers || '-', blockFieldAnchor('zmspcp', block.id, 'pp')],
-        ],
-        catLabel: 'C conduite à tenir',
-        catText: block.cat || '-',
-        catRef: blockFieldAnchor('zmspcp', block.id, 'cat'),
-        groups,
-        cellsContent,
-        placeChef: block.place_chef || '-',
-        placeChefRef: blockFieldAnchor('zmspcp', block.id, 'place-chef'),
-        placeChefLabel: 'Place du chef AO',
-    });
+        spec.groups.length > 0 ? spec.groups.map(([cell, members]) => cellGroupBox(cell, members, p)) : [{ text: '-', color: p.muted }];
+    return buildArticulationPage(ctx, { ...spec, cellsContent });
+}
+
+function buildZmspcpPage(ctx: BuildCtx, block: OiZmspcpBlock, memberToCell: Map<string, string>): Content {
+    return buildArticulationBlockPage(ctx, 'zmspcp', block, memberToCell);
 }
 
 function buildMoicpPage(ctx: BuildCtx, block: OiMoicpBlock, memberToCell: Map<string, string>): Content {
-    const { p } = ctx;
-    const groups = regroupByCellOrdered(block.members, memberToCell);
-    const cellsContent: Content[] =
-        groups.length > 0 ? groups.map(([cell, members]) => cellGroupBox(cell, members, p)) : [{ text: '-', color: p.muted }];
-    return buildArticulationPage(ctx, {
-        title: `Articulation : ${pdfSectionTitle(ctx.formData, 'moicp')} - ${block.title || '-'}`,
-        sectionLabel: 'MOICP',
-        coreFields: [
-            ['M mission', block.mission || '-', blockFieldAnchor('moicp', block.id, 'mission')],
-            ['O objectif', block.objectif || '-', blockFieldAnchor('moicp', block.id, 'objectif')],
-            ['I itinéraire', block.itineraire || '-', blockFieldAnchor('moicp', block.id, 'itineraire')],
-            ['P points particuliers', block.points_particuliers || '-', blockFieldAnchor('moicp', block.id, 'pp')],
-        ],
-        catLabel: 'C conduite à tenir',
-        catText: block.cat || '-',
-        catRef: blockFieldAnchor('moicp', block.id, 'cat'),
-        groups,
-        cellsContent,
-        placeChef: block.place_chef || '-',
-        placeChefRef: blockFieldAnchor('moicp', block.id, 'place-chef'),
-        placeChefLabel: 'Place du chef inter',
-    });
+    return buildArticulationBlockPage(ctx, 'moicp', block, memberToCell);
 }
 
 /** En-tête à 4 colonnes du tableau Hypothèses d'Effraction (R21 — répétée sur chaque page « (suite) », cf. `buildEffractionPages`). */
@@ -3317,8 +3376,10 @@ function buildEffractionPages(ctx: BuildCtx, block: OiEffractionBlock): Content[
     const worstCostPt = regionCostPt([worstHyp], floorLevel.fontPx, floorLevel.tight);
     ctx.fitErrors.push({
         section: title,
-        details: `l'hypothèse « ${worstHyp.title} » dépasse à elle seule une page complète, même au palier plancher 7 px — réduisez son texte (technique/dégagement/assaut/description)`,
+        details: `l'hypothèse « ${worstHyp.title} » dépasse à elle seule une page, réduisez son texte (technique, dégagement, assaut, description)`,
         excessRatio: worstCostPt / dedicatedPageBudgetPt - 1,
+        excessLines: -marginLinesAtFloor(dedicatedPageBudgetPt, worstCostPt),
+        field: { selector: `#oi-form .effraction-block[data-block-id="${block.id}"] .effrac-hyp-effrac`, index: hypotheses.indexOf(worstHyp) },
     });
     // Rendu de repli (jamais renvoyé à l'appelant : `ctx.fitErrors` non vide déclenche `OiPdfFitRefusalError` en fin de `buildOiDocDefinition`) au palier plancher, disposition uniforme.
     return [
@@ -3920,28 +3981,10 @@ export { OiPdfFitRefusalError };
  * N caractères au palier actuel » pendant la saisie).
  */
 export const PAGE_CAPACITY = {
-    /**
-     * Nombre max de caractères ATCD tenant sur la fiche adversaire au palier
-     * `fontPx`, colonne droite, APRÈS réservation de LOCALISATION/MOBILITÉ
-     * (approximées à leur coût maximal — capacité MINORÉE, jamais surestimée :
-     * direction sûre pour un compteur UI, mieux vaut prévenir tôt qu'annoncer
-     * une marge qui n'existe pas réellement).
-     */
-    adversaireAtcdMaxChars(fontPx: number, geo: ReturnType<typeof pageGeometry> = pageGeometry('a4')): number {
-        const columnWidthPt = (geo.contentWidthPt - mm(6)) / 2;
-        const cpl = estimateCharsPerLine(fontPx, columnWidthPt);
-        const reservedPt = ADV_TITLE_BAR_PT + 3 * cardWithTitlePt(2 * effracLinePt(fontPx));
-        const availableLines = Math.max(0, Math.floor((geo.contentHeightPt - reservedPt) / effracLinePt(fontPx)));
-        return availableLines * cpl;
-    },
-    /** Nombre max de caractères du champ « C conduite à tenir » tenant sur une page ZMSPCP/MOICP au palier `fontPx` (colonne gauche, après réservation des 4 champs cœur + h3). */
-    articulationCatMaxChars(fontPx: number, geo: ReturnType<typeof pageGeometry> = pageGeometry('a4')): number {
-        const columnWidthPt = (geo.contentWidthPt - mm(6)) / 2;
-        const cpl = estimateCharsPerLine(fontPx, columnWidthPt);
-        const reservedPt = EFFRAC_H2_PT + EFFRAC_H3_PT + 4 * effracLinePt(fontPx);
-        const availableLines = Math.max(0, Math.floor((geo.contentHeightPt - reservedPt) / effracLinePt(fontPx)));
-        return availableLines * cpl;
-    },
+    // Les capacités en caractères de l'ATCD et de la CAT (compteurs P3) sont
+    // remplacées par des marges en lignes calculées par le modèle du solveur
+    // lui-même (`adversaryFicheMarginLines`, `articulationMarginLines`,
+    // décision 43) : elles annonçaient une marge qui n'existait pas (audit F07).
     /** Nombre max d'hypothèses d'effraction rendues en CARTES (au-delà, repli automatique sur la table dense — jamais de refus pour ce seul motif). */
     effractionHypothesesCardsMax(): number {
         return EFFRAC_HYP_CARDS_MAX;

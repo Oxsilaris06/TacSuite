@@ -16,15 +16,16 @@
  *  - la fonction de détachement retourne un état propre (listeners +
  *    erreur affichée retirés).
  */
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { attachValidation, lengthRange, required } from '@oi/validation.js';
 import {
-    ADVERSAIRE_ATCD_SOFT_MAX,
-    ARTICULATION_CAT_SOFT_MAX,
     EFFRACTION_HYP_FIELD_SOFT_MAX,
     charCounter,
+    fitCounter,
+    showOiFitRefusal,
 } from '@oi/validation.js';
+import { OiPdfFitRefusalError } from '@oi/pdf/theme.js';
 
 function makeInput(id: string): HTMLInputElement {
     const input = document.createElement('input');
@@ -418,18 +419,126 @@ describe('oi-validation — charCounter', () => {
         expect(input.getAttribute('aria-describedby')).toBe('hint-c11 c11-charcount');
     });
 
-    it('les seuils exportés dérivent de `PAGE_CAPACITY` (source de vérité `pdf/document-builder.ts`) et sont strictement positifs', () => {
-        expect(ADVERSAIRE_ATCD_SOFT_MAX).toBeGreaterThan(0);
-        expect(ARTICULATION_CAT_SOFT_MAX).toBeGreaterThan(0);
-        expect(EFFRACTION_HYP_FIELD_SOFT_MAX).toBeGreaterThan(0);
-
-        // Valeurs calibrées au palier 8px (cf. JSDoc `CHAR_COUNTER_FONT_PX`,
-        // validation.ts) — figées ici en garde-fou de régression : toute
-        // dérive de la géométrie page A4/du modèle de coût PDF (`pdf/theme.ts`,
-        // `pdf/document-builder.ts`) doit se répercuter volontairement ici,
-        // jamais silencieusement.
-        expect(ADVERSAIRE_ATCD_SOFT_MAX).toBe(1368);
-        expect(ARTICULATION_CAT_SOFT_MAX).toBe(1976);
+    // Décision 43 : les compteurs en caractères de l'ATCD et de la CAT
+    // (ADVERSAIRE_ATCD_SOFT_MAX = 1368, ARTICULATION_CAT_SOFT_MAX = 1976)
+    // restaient orange ou verts au moment du refus (audit F07) : remplacés par
+    // `fitCounter`, en lignes, issu du modèle du solveur. Seul le seuil des
+    // champs d'hypothèse d'effraction reste en caractères.
+    it('le seuil exporté des champs d’hypothèse d’effraction dérive de `PAGE_CAPACITY` et reste figé', () => {
         expect(EFFRACTION_HYP_FIELD_SOFT_MAX).toBe(148);
+    });
+});
+
+describe('oi-validation — fitCounter (lignes, même modèle que le solveur, décision 43)', () => {
+    afterEach(() => {
+        document.body.innerHTML = '';
+    });
+
+    function setup(margin: { value: number }): { scope: HTMLDivElement; input: HTMLTextAreaElement; other: HTMLInputElement } {
+        const scope = document.createElement('div');
+        const input = document.createElement('textarea');
+        input.id = 'atcd';
+        const other = document.createElement('input');
+        scope.append(input, other);
+        document.body.appendChild(scope);
+        fitCounter(input, { scope, measure: () => margin.value });
+        return { scope, input, other };
+    }
+    const counter = (): HTMLElement | null => document.getElementById('atcd-charcount');
+
+    it('large marge, sans focus : rien ; au focus : « 12 lignes de marge »', () => {
+        const { input } = setup({ value: 12 });
+        expect(counter()).toBeNull();
+        input.dispatchEvent(new Event('focus'));
+        expect(counter()?.textContent).toBe('12 lignes de marge sur la page');
+        expect(counter()?.className).toBe('char-counter char-counter--normal');
+    });
+
+    it('marge faible : visible sans focus, en avertissement', () => {
+        setup({ value: 3 });
+        expect(counter()?.textContent).toBe('3 lignes de marge sur la page');
+        expect(counter()?.className).toBe('char-counter char-counter--warning');
+    });
+
+    it('page pleine (marge 0) : ROUGE avant le refus', () => {
+        setup({ value: 0 });
+        expect(counter()?.className).toBe('char-counter char-counter--danger');
+        expect(counter()?.textContent).toMatch(/page pleine/i);
+    });
+
+    it('marge négative : rouge, « 4 lignes de trop — PDF refusé », annoncé', () => {
+        setup({ value: -4 });
+        expect(counter()?.textContent).toBe('4 lignes de trop : le PDF sera refusé');
+        expect(counter()?.getAttribute('aria-live')).toBe('polite');
+    });
+
+    it('une saisie AILLEURS dans la fiche (même portée) remet la marge à jour', () => {
+        const margin = { value: 12 };
+        const { other } = setup(margin);
+        expect(counter()).toBeNull();
+        margin.value = -1;
+        other.dispatchEvent(new Event('input', { bubbles: true }));
+        expect(counter()?.textContent).toBe('1 ligne de trop : le PDF sera refusé');
+    });
+});
+
+describe('showOiFitRefusal — refus « une page = un usage » expliqué (décision 43)', () => {
+    const ATCD = '#oi-form .adversary-entry[data-adv-id="adv1"] [data-field="antecedents_adversaire"]';
+    const refusal = (): OiPdfFitRefusalError => new OiPdfFitRefusalError([
+        { section: 'Fiche Adversaire 1 : MARTIN Paul', details: 'réduisez les ATCD ou les textes libres', excessRatio: 0.05, excessLines: 3, field: { selector: ATCD } },
+        { section: 'Articulation : ZMSPCP - APPUI 1', details: 'allégez la conduite à tenir ou le nombre de cellules', excessRatio: 0.1, excessLines: 1, field: { selector: '#oi-form .zmspcp-block[data-block-id="z1"] .zmspcp-cat' } },
+    ]);
+    let goToStep: ReturnType<typeof vi.fn<(n: number) => void>>;
+
+    beforeEach(() => {
+        vi.useFakeTimers();
+        document.body.innerHTML = `
+            <dialog id="presentationModal" open></dialog>
+            <form id="oi-form">
+                <div class="wizard-step"></div>
+                <div class="wizard-step"><div class="collapsible-container adversary-entry" data-adv-id="adv1"><div class="collapsible-content"><textarea data-field="antecedents_adversaire"></textarea></div></div></div>
+            </form>`;
+        goToStep = vi.fn<(n: number) => void>();
+        window.goToStep = goToStep;
+    });
+    afterEach(() => {
+        vi.useRealTimers();
+        document.body.innerHTML = '';
+    });
+    const dialog = (): HTMLDialogElement | null => document.querySelector('dialog.tac-confirm-dialog');
+    const button = (which: 'ok' | 'cancel'): HTMLButtonElement => dialog()?.querySelector(`[data-tac-confirm="${which}"]`) as HTMLButtonElement;
+
+    it('fenêtre persistante : nomme chaque fiche ou bloc, dit combien retirer, toujours ouverte 30 s plus tard', async () => {
+        void showOiFitRefusal(refusal());
+        expect(dialog()?.textContent).toContain('Fiche Adversaire 1 : MARTIN Paul');
+        expect(dialog()?.textContent).toContain('environ 3 lignes de trop');
+        expect(dialog()?.textContent).toContain('Articulation : ZMSPCP - APPUI 1');
+        expect(dialog()?.textContent).toContain('environ 1 ligne de trop');
+        await vi.advanceTimersByTimeAsync(30_000);
+        expect(dialog()).not.toBeNull();
+        expect(button('ok').textContent).toBe('Aller au champ');
+    });
+
+    it('« Aller au champ » : ferme l’aperçu, va à l’étape, déplie la fiche et place le curseur dans l’ATCD', async () => {
+        const done = showOiFitRefusal(refusal());
+        button('ok').click();
+        await done;
+        await vi.runAllTimersAsync();
+        const field = document.querySelector<HTMLTextAreaElement>(ATCD);
+        expect(dialog()).toBeNull();
+        expect((document.getElementById('presentationModal') as HTMLDialogElement).hasAttribute('open')).toBe(false);
+        expect(goToStep).toHaveBeenCalledWith(1);
+        expect(document.querySelector('.adversary-entry')?.classList.contains('open')).toBe(true);
+        expect(document.activeElement).toBe(field);
+    });
+
+    it('« Fermer » : rien ne bouge (aperçu et étape gardés)', async () => {
+        const done = showOiFitRefusal(refusal());
+        button('cancel').click();
+        await done;
+        await vi.runAllTimersAsync();
+        expect(dialog()).toBeNull();
+        expect(goToStep).not.toHaveBeenCalled();
+        expect((document.getElementById('presentationModal') as HTMLDialogElement).hasAttribute('open')).toBe(true);
     });
 });
