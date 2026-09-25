@@ -20,6 +20,12 @@ export const BAN_ENDPOINT = 'https://data.geopf.fr/geocodage/search';
 export const NOMINATIM_ENDPOINT = 'https://nominatim.openstreetmap.org/search';
 /** Délai maximal par requête avant repli (exigence : 5 s). */
 export const GEOCODE_TIMEOUT_MS = 5000;
+/**
+ * B4 (revue du 25/09) — en dessous de ce score, la BAN rend des homonymes
+ * français d'une adresse étrangère (« Genève gare Cornavin » → Vierzon, 0,4) :
+ * ce n'est pas une réponse. Nominatim est alors consulté, la BAN reste en repli.
+ */
+export const BAN_MIN_SCORE = 0.5;
 
 export type GeocodeSource = 'ban' | 'nominatim';
 
@@ -28,6 +34,10 @@ export interface GeocodeHit {
     lng: number;
     lat: number;
     source: GeocodeSource;
+    /** Score BAN (0 à 1) quand la BAN le fournit. */
+    score?: number;
+    /** Correspondance approximative (score sous {@link BAN_MIN_SCORE}) : l'hôte ne s'y rend pas d'office. */
+    weak?: boolean;
 }
 
 export function banSearchUrl(q: string): string {
@@ -40,7 +50,7 @@ export function nominatimSearchUrl(q: string): string {
 
 /** Une entrée brute BAN (GeoJSON Feature) — seuls les champs lus. */
 interface BanFeature {
-    properties?: { label?: unknown } | undefined;
+    properties?: { label?: unknown; score?: unknown } | undefined;
     geometry?: { coordinates?: unknown } | undefined;
 }
 
@@ -56,7 +66,8 @@ export function parseBanResults(json: unknown): GeocodeHit[] {
         const lng = Number(coords[0]);
         const lat = Number(coords[1]);
         if (!Number.isFinite(lng) || !Number.isFinite(lat)) continue;
-        out.push({ label, lng, lat, source: 'ban' });
+        const score = Number(f?.properties?.score);
+        out.push(Number.isFinite(score) ? { label, lng, lat, source: 'ban', score } : { label, lng, lat, source: 'ban' });
     }
     return out;
 }
@@ -115,16 +126,25 @@ export async function geocodeAddress(
 ): Promise<GeocodeHit[]> {
     const query = q.trim();
     if (!query) return [];
+    // B4 — résultats BAN sous le seuil : gardés en repli, marqués `weak`.
+    let weak: GeocodeHit[] = [];
     try {
         const r = await fetchWithTimeout(banSearchUrl(query), fetchImpl, timeoutMs, { 'Accept-Language': 'fr' });
         if (r.ok) {
             const hits = parseBanResults(await r.json());
-            if (hits.length) return hits;
+            if (hits.some((h) => (h.score ?? 1) >= BAN_MIN_SCORE)) return hits;
+            weak = hits.map((h) => ({ ...h, weak: true }));
         }
     } catch {
         // BAN injoignable, en délai ou en erreur : on bascule sur Nominatim.
     }
-    const r2 = await fetchWithTimeout(nominatimSearchUrl(query), fetchImpl, timeoutMs, { 'Accept-Language': 'fr' });
-    if (!r2.ok) throw new Error('HTTP ' + r2.status);
-    return parseNominatimResults(await r2.json());
+    try {
+        const r2 = await fetchWithTimeout(nominatimSearchUrl(query), fetchImpl, timeoutMs, { 'Accept-Language': 'fr' });
+        if (!r2.ok) throw new Error('HTTP ' + r2.status);
+        const hits = parseNominatimResults(await r2.json());
+        return hits.length ? [...hits, ...weak] : weak;
+    } catch (e) {
+        if (weak.length) return weak;
+        throw e;
+    }
 }

@@ -422,11 +422,19 @@ export const ChromeMethods = {
             }
             const first = hits[0];
             if (!first) return;
-            if (this.map) this.map.flyTo({ center: [first.lng, first.lat], zoom: 17, speed: 1.4 });
-            this._placeSearchMarker(first.lng, first.lat, first.label);
-            resultsBox.innerHTML = (gridHint ?? '') + hits.map((item: GeocodeHit, i: number) => `
+            // B4 (revue du 25/09) — correspondance approximative (score BAN
+            // faible, Nominatim muet) : on ne s'y rend pas d'office, l'opérateur
+            // choisit dans la liste.
+            if (!first.weak) {
+                if (this.map) this.map.flyTo({ center: [first.lng, first.lat], zoom: 17, speed: 1.4 });
+                this._placeSearchMarker(first.lng, first.lat, first.label);
+            }
+            const weakNote = first.weak
+                ? '<em style="color: var(--text-muted); display: block; padding: 6px 8px;">Aucune correspondance sûre : choisissez un résultat.</em>'
+                : '';
+            resultsBox.innerHTML = (gridHint ?? '') + weakNote + hits.map((item: GeocodeHit, i: number) => `
                 <div class="plan-search-result" data-idx="${i}" style="padding: 6px 8px; cursor: pointer; border-bottom: 1px solid var(--border-glass);">
-                    ${escHtml(item.label)}
+                    ${escHtml(item.label)}${item.weak ? ' <span style="color: var(--text-muted);">(approximatif)</span>' : ''}
                 </div>
             `).join('');
             resultsBox.querySelectorAll<HTMLDivElement>('.plan-search-result').forEach((div) => {
