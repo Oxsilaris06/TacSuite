@@ -115,18 +115,23 @@ function injectStyles(): void {
   const style = document.createElement('style');
   style.id = STYLE_ID;
   style.textContent = `
+/* Centré par left/right: 0 + margin auto, avec une largeur PROPRE : calé à
+   left: 50%, un élément fixe ne dispose que de la moitié droite de l'écran
+   (195 px sur un téléphone de 390 px) et le texte d'un toast à bouton
+   s'écrivait une syllabe par ligne (constat UI-1 du 25/09). */
 .tac-toast-container {
   position: fixed;
-  left: 50%;
+  left: 0;
+  right: 0;
   bottom: var(--tac-space-5, 24px);
-  transform: translateX(-50%);
+  margin-inline: auto;
+  width: min(92vw, 420px);
   z-index: ${TOP_Z};
   display: flex;
   flex-direction: column-reverse;
   gap: var(--tac-space-2, 8px);
   align-items: center;
   pointer-events: none;
-  max-width: min(92vw, 420px);
 }
 .tac-toast {
   pointer-events: auto;
