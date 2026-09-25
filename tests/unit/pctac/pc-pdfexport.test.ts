@@ -120,6 +120,46 @@ describe('police complète du PDF (décision 34)', () => {
   });
 });
 
+describe('R23 — glyphes absents : translittération, jamais de carré vide', () => {
+  it('translittère le grec quand la police ne le porte pas', async () => {
+    const { sanitizeWinAnsi } = await import('@pctac/pdf-export.js');
+    // Police qui porte le latin mais pas le grec (cas d'Oswald par exemple).
+    const noGreek = (cp: number): boolean => !(cp >= 0x0370 && cp <= 0x03ff);
+    expect(sanitizeWinAnsi('Αλέξης Παπαδόπουλος', noGreek)).toBe('Alexis Papadopoulos');
+  });
+
+  it('replie sur « ? » tout autre caractère absent (CJK, arabe)', async () => {
+    const { sanitizeWinAnsi } = await import('@pctac/pdf-export.js');
+    expect(sanitizeWinAnsi('中ع', () => false)).toBe('??');
+  });
+
+  it('conserve le texte tel quel quand la police porte le glyphe', async () => {
+    const { sanitizeWinAnsi } = await import('@pctac/pdf-export.js');
+    expect(sanitizeWinAnsi('Αλέξης', () => true)).toBe('Αλέξης');
+  });
+
+  it('la police de CORPS (JetBrains Mono) porte le grec et le cyrillique, pas le CJK', async () => {
+    const { PDFDocument } = await import('pdf-lib');
+    const { embedReportFonts } = await import('@pctac/pdf-export.js');
+    const doc = await PDFDocument.create();
+    const { hasGlyph } = await embedReportFonts(doc);
+    expect(hasGlyph('Α'.codePointAt(0)!)).toBe(true);
+    expect(hasGlyph('Д'.codePointAt(0)!)).toBe(true);
+    expect(hasGlyph('中'.codePointAt(0)!)).toBe(false);
+  });
+});
+
+describe('B-3 — corps JetBrains Mono, titres Oswald', () => {
+  it('embarque trois polices distinctes (normal, gras, titres)', async () => {
+    const { PDFDocument } = await import('pdf-lib');
+    const { embedReportFonts } = await import('@pctac/pdf-export.js');
+    const doc = await PDFDocument.create();
+    const fonts = await embedReportFonts(doc);
+    expect(fonts.font).not.toBe(fonts.fontBold);
+    expect(fonts.titleFont).not.toBe(fonts.font);
+  });
+});
+
 describe('cloneA4 (P2.CONV)', () => {
   it('deux clones successifs du même tuple ne partagent pas le même tableau (piège pdfExport.js:102-104,161)', async () => {
     const { cloneA4 } = await import('@pctac/pdf-export.js');
@@ -172,8 +212,9 @@ describe('buildPdf — restauration de la vue Plan (P2.CONV)', () => {
 
     // La bascule vers 'view-plan' puis la restauration de 'view-journal' (la
     // vue de départ) doivent toutes deux avoir eu lieu, dans cet ordre.
-    expect(switchMainView).toHaveBeenNthCalledWith(1, 'view-plan');
-    expect(switchMainView).toHaveBeenNthCalledWith(2, 'view-journal');
+    // R25 — la capture passe `keepFiche` : la fiche ouverte ne se ferme pas.
+    expect(switchMainView).toHaveBeenNthCalledWith(1, 'view-plan', { keepFiche: true });
+    expect(switchMainView).toHaveBeenNthCalledWith(2, 'view-journal', { keepFiche: true });
   }, 10000);
 });
 
