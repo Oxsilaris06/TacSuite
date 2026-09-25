@@ -277,6 +277,14 @@ let wakeLock: WakeLockSentinelLike | null = null;
 let wakeLockCount = 0;
 let wakeLockWarned = false;
 let wakeVisWired = false;
+/**
+ * R19 — vrai seulement quand CETTE session Tchap a effectivement pris une
+ * référence via `runSync`. `startOidc` pose `running = true` avant tout await
+ * (découverte, autorisation) : si la session échoue avant `runSync`, `stop()`
+ * ne doit pas relâcher une référence jamais prise, sous peine de couper le
+ * verrou d'un suivi OsmAnd simultané (compteur partagé).
+ */
+let tchapWakeHeld = false;
 
 function warnWakeLockUnavailable(): void {
   if (wakeLockWarned) return;
@@ -1192,7 +1200,7 @@ function wireVisibility(): void {
 }
 
 async function runSync(): Promise<void> {
-  uiBusy(true); startSweep(); wireVisibility(); acquireScreenWakeLock();
+  uiBusy(true); startSweep(); wireVisibility(); acquireScreenWakeLock(); tchapWakeHeld = true;
   const myAborter = aborter; // jeton de génération : si remplacé (stop+start), cette boucle s'arrête
   setDot('var(--civil-yellow)'); status('Connexion…');
   try {
@@ -1331,14 +1339,13 @@ function showDevice(da: OidcDeviceAuthResponse): void {
 function hideDevice(): void { const el = $('tl_device'); if (el) { el.style.display = 'none'; el.innerHTML = ''; } }
 
 function stop(userInitiated: boolean): void {
-  const wasRunning = running;
   running = false; deviceAbort = true;
   if (resumeFromHidden) { const r = resumeFromHidden; resumeFromHidden = null; r(); } // réveille une boucle en pause
   if (aborter) { aborter.abort(); aborter = null; } // remis à null → un nouveau start crée un signal frais
   stopSweep(); stopOfflineTicker(); markOnline();
   // Ne relâche le verrou d'écran que si CETTE session Tchap en avait acquis un :
   // stopper Tchap ne doit pas couper le verrou d'un suivi OsmAnd simultané.
-  if (wasRunning) releaseScreenWakeLock();
+  if (tchapWakeHeld) { tchapWakeHeld = false; releaseScreenWakeLock(); }
   for (const s of [...members.keys()]) removeMember(s); // purge l'affichage (pas de marqueurs périmés au re-start)
   accessToken = null; expiresAt = 0; followed = null; centered = false;
   if (userInitiated) {
