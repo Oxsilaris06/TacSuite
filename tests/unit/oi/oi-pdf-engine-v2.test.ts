@@ -73,6 +73,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { dbManager, Store } from '@oi/init.js';
 import { PDFEngineV2 } from '@oi/pdf-engine-v2.js';
 import { OiPdfFitRefusalError } from '@oi/pdf/theme.js';
+import { acquirePdfLock, releasePdfLock } from '@oi/pdf/generation-lock.js';
 import type { OiPdfCollectedData } from '@shared/types/contracts.js';
 
 // R2-T2b : `alert()` natif → `toast` (`@shared/feedback.js`) mocké plutôt que
@@ -584,6 +585,44 @@ describe('openPreview', () => {
 // openPresentInPlace (R4-a : nouvel onglet sur le vrai PDF ; SPEC §1 : repli
 // sur l'aperçu intégré pdf.js/<canvas> si le nouvel onglet échoue/est bloqué)
 // ===========================================================================
+describe('verrou : une génération à la fois (audit F23)', () => {
+    it('aperçu ou « Présenter ici » pendant un téléchargement : refusé, rien n\'est construit', async () => {
+        buildPresentationDom();
+        const token = acquirePdfLock('telechargement');
+        expect(token).not.toBeNull();
+        const buildBlob = vi.fn(async () => makeFakeBlob());
+        try {
+            await PDFEngineV2.openPreview({ collect: () => Promise.resolve(makeCollectedData()), buildBlob, renderPdf: makeFakeRenderPdf() });
+            await PDFEngineV2.openPresentInPlace({ collect: () => Promise.resolve(makeCollectedData()), buildBlob });
+        } finally {
+            releasePdfLock(token as number);
+        }
+        expect(buildBlob).not.toHaveBeenCalled();
+        expect(toastSpy).toHaveBeenCalledWith(expect.stringContaining('déjà en cours'), expect.anything());
+    });
+
+    it('le verrou de l\'aperçu est rendu à la fin : un téléchargement peut suivre', async () => {
+        buildPresentationDom();
+        await PDFEngineV2.openPreview({ collect: () => Promise.resolve(makeCollectedData()), buildBlob: async () => makeFakeBlob(), renderPdf: makeFakeRenderPdf() });
+        const token = acquirePdfLock('telechargement');
+        expect(token).not.toBeNull();
+        releasePdfLock(token as number);
+    });
+
+    it('« Présenter ici » bloqué par le navigateur : le repli sur l\'aperçu intégré n\'est pas refusé par son propre verrou', async () => {
+        buildPresentationDom();
+        vi.spyOn(window, 'open').mockReturnValue(null);
+        vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:mock-url');
+        vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
+        const renderPdf = makeFakeRenderPdf();
+        await PDFEngineV2.openPresentInPlace({ collect: () => Promise.resolve(makeCollectedData()), buildBlob: async () => makeFakeBlob(), renderPdf });
+        expect(renderPdf).toHaveBeenCalledTimes(1);
+        const token = acquirePdfLock('telechargement');
+        expect(token).not.toBeNull();
+        releasePdfLock(token as number);
+    });
+});
+
 describe('openPresentInPlace', () => {
     beforeEach(() => {
         vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:present-1');
