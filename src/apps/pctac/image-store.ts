@@ -8,6 +8,7 @@
  */
 
 import type { ImageStoreContract } from '@shared/types/contracts.js';
+import { publishImageChange } from '@pctac/tab-sync.js';
 
 const DB_NAME = 'pcTacImages';
 const STORE = 'images';
@@ -104,6 +105,8 @@ export const ImageStore: ImageStoreContract = {
   async put(id: string, dataUrl: string): Promise<void> {
     if (!id || !dataUrl) return;
     await withStore('readwrite', (store) => store.put(dataUrl, id));
+    // Après SUCCÈS seulement : les autres onglets rechargent leur affichage.
+    publishImageChange(id, 'put');
   },
 
   /**
@@ -166,6 +169,7 @@ export const ImageStore: ImageStoreContract = {
   async delete(id: string): Promise<void> {
     if (!id) return;
     await withStore('readwrite', (store) => store.delete(id));
+    publishImageChange(id, 'delete');
   },
 
   /**
@@ -180,6 +184,7 @@ export const ImageStore: ImageStoreContract = {
       ids.forEach((id) => store.delete(id));
       return undefined;
     });
+    ids.forEach((id) => publishImageChange(id, 'delete'));
   },
 
   /**
@@ -188,6 +193,8 @@ export const ImageStore: ImageStoreContract = {
    * imageStore.js:90-92
    */
   async clear(): Promise<void> {
+    // Pas de publication ici : `clear` n'a pas d'id à annoncer, et l'unique
+    // appelant (reset) recharge déjà la page/situation.
     await withStore('readwrite', (store) => store.clear());
   },
 

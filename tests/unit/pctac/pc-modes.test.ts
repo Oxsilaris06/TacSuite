@@ -19,6 +19,7 @@ import {
     currentMode,
     currentModeId,
     paxChipKeys,
+    persistModeId,
 } from '@pctac/modes.js';
 import { applyLexicon, syncSituationPaxChip } from '@pctac/mode-ui.js';
 import { PDF_PAX_COLORS } from '@pctac/config.js';
@@ -147,7 +148,7 @@ describe('pastilles Pax par situation', () => {
         expect(options.at(-1)?.nextElementSibling).toBe(add);
 
         // Forcené : quatre pastilles, aucune cinquième.
-        localStorage.setItem(PCTAC_MODE_KEY, 'forcene');
+        persistModeId('forcene');
         buildPaxContainer();
         syncSituationPaxChip();
         expect(document.querySelectorAll('#pax_select_container [role="radio"]')).toHaveLength(4);
