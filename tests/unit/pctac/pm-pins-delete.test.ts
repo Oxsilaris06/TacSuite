@@ -6,7 +6,7 @@
  * remet le point à l'identique (même id, mêmes propriétés). `confirmDialog` et
  * `undoableToast` sont simulés pour piloter le scénario.
  */
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const confirmMock = vi.fn<(...args: unknown[]) => Promise<boolean>>();
 const undoableMock = vi.fn<(message: string, opts: { onUndo: () => void; onCommit?: () => void }) => void>();
@@ -16,6 +16,8 @@ vi.mock('@shared/feedback.js', () => ({
     undoableToast: (message: string, opts: { onUndo: () => void; onCommit?: () => void }): void => { undoableMock(message, opts); },
 }));
 
+import { ADVERSARIES_KEY } from '../../../src/apps/pctac/config.js';
+import { Storage } from '../../../src/apps/pctac/storage.js';
 import { PinsMethods } from '../../../src/apps/pctac/planmap/pins.js';
 import { SafeMethods, createPlanMapState } from '../../../src/apps/pctac/planmap/state.js';
 import type { PlanMapInternal, PlanPin } from '../../../src/apps/pctac/planmap/types.js';
@@ -39,6 +41,10 @@ beforeEach(() => {
     localStorage.clear();
     confirmMock.mockReset();
     undoableMock.mockReset();
+});
+
+afterEach(() => {
+    vi.unstubAllGlobals();
 });
 
 describe('_requestRemovePin — décision 31', () => {
@@ -86,5 +92,27 @@ describe('_requestRemovePin — décision 31', () => {
         await fake._requestRemovePin('inconnu');
         expect(confirmMock).not.toHaveBeenCalled();
         expect(undoableMock).not.toHaveBeenCalled();
+    });
+
+    it('« Annuler » journalise le rétablissement d’un ping d’entité (R27)', async () => {
+        const addEntry = vi.fn<(entry: { remarques: string; auto?: boolean }) => void>();
+        vi.stubGlobal('LogManager', { addEntry });
+        confirmMock.mockResolvedValue(true);
+        Storage.saveCollection(ADVERSARIES_KEY, [{ id: 'a1', nom: 'ALPHA', prenom: '' }]);
+        const fake = makeFakeThis();
+        fake._savePins([makePin({ id: 'p1', label: 'ALPHA', entityRef: { kind: 'adv', id: 'a1' } })]);
+
+        await fake._requestRemovePin('p1');
+        // Retrait journalisé immédiatement, une seule fois.
+        expect(addEntry).toHaveBeenCalledTimes(1);
+        expect(String(addEntry.mock.calls[0]?.[0]?.remarques)).toContain('Ping retiré');
+
+        addEntry.mockClear();
+        undoableMock.mock.calls[0]?.[1]?.onUndo();
+
+        expect(fake._loadPins()).toHaveLength(1);
+        // Le retrait n'a finalement pas eu lieu : la main courante le dit.
+        expect(addEntry).toHaveBeenCalledTimes(1);
+        expect(String(addEntry.mock.calls[0]?.[0]?.remarques)).toContain('Ping rétabli');
     });
 });
