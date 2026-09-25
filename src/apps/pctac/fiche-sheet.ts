@@ -561,7 +561,7 @@ async function save(next: boolean): Promise<void> {
                             candidate.hasImage = true;
                         } catch { /* photo non copiée : la fusion reste possible sans */ }
                     }
-                    const { merged } = await mergePersonIntoExisting(target, candidate);
+                    const { merged, photoTaken } = await mergePersonIntoExisting(target, candidate);
                     // Relecture après les écritures d'images (await) : on écrit
                     // dans la liste fraîche, pas dans celle d'avant la fenêtre.
                     list = Storage.loadCollection(key);
@@ -576,7 +576,7 @@ async function save(next: boolean): Promise<void> {
                     // galerie correspondante doit exister pour que la photo soit
                     // visible dans l'onglet Photos. Même fonction que les fusions
                     // de l'import d'archive et d'OI (C12).
-                    syncMergedGallery(side, candidateId, merged);
+                    syncMergedGallery(side, candidateId, merged, { photoTaken });
                     try {
                         await ImageStore.delete(candidateId);
                         await ImageStore.delete(`${candidateId}_sync`);
@@ -1121,6 +1121,15 @@ export function closeFicheIfInView(viewId: string): void {
  * `performReset` les collecte AVANT `clearAllData` : sans cela, un brouillon
  * effacé ressurgirait sur une fiche neuve tant que son blob traîne.
  */
+/**
+ * Efface TOUTES les photos de brouillon de la situation courante, par préfixe
+ * de clé (revue finale F14) : un blob resté sans créneau (effacement non
+ * attendu, onglet fermé aussitôt) disparaît aussi au RESET (décision 33).
+ */
+export async function purgeDraftImages(): Promise<void> {
+    await ImageStore.deleteByPrefix(`${scopedKey(FICHE_DRAFT_KEY)}-img:`);
+}
+
 export function draftImageIds(): string[] {
     return Object.keys(readDrafts()).map((slot) => `${scopedKey(FICHE_DRAFT_KEY)}-img:${slot}`);
 }

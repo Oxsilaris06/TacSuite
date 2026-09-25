@@ -103,7 +103,7 @@ import { initSplitView } from '@pctac/split-view.js';
 import { initTabSync } from '@pctac/tab-sync.js';
 import { initTabSyncViews } from '@pctac/tab-sync-views.js';
 import { applyLexicon, initModeSelector, onModeChange } from '@pctac/mode-ui.js';
-import { draftImageIds, openFiche } from '@pctac/fiche-sheet.js';
+import { draftImageIds, openFiche, purgeDraftImages } from '@pctac/fiche-sheet.js';
 
 /**
  * Point d'entrée principal du module PC TAC
@@ -448,6 +448,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         Storage.clearAllData();
         try { if (imgIds.size) await ImageStore.deleteMany([...imgIds]); } catch (e) { console.error('[PC TAC] suppression images IDB échec:', e); }
+        // F14 — et TOUTES les photos de brouillon de la situation, par préfixe :
+        // un blob resté sans créneau (onglet fermé avant la fin d'un effacement)
+        // disparaît aussi.
+        try { await purgeDraftImages(); } catch (e) { console.error('[PC TAC] suppression photos de brouillon échec:', e); }
         for (const id of gpxIds) {
             try { await GpxStore.delete(id); } catch (e) { console.error('[PC TAC] suppression trace GPX échec:', e); }
         }

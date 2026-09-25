@@ -193,10 +193,25 @@ export function sanitizeWinAnsi(s: unknown, hasGlyph: ((codePoint: number) => bo
  * liste des points). Les titres de fiche utilisaient déjà ce repli.
  */
 export function fitTextToWidth(text: string, font: PDFLib.PDFFont, size: number, maxWidth: number): string {
-    if (font.widthOfTextAtSize(text, size) <= maxWidth) return text;
-    let out = text;
-    while (out.length > 1 && font.widthOfTextAtSize(`${out}…`, size) > maxWidth) out = out.slice(0, -1);
-    return `${out.trimEnd()}…`;
+    // Revue finale F8 : on mesure au plus quelques dizaines de caractères et
+    // on cherche la coupe par dichotomie, au lieu de remesurer la chaîne
+    // entière à chaque caractère retiré (coût quadratique : plusieurs secondes
+    // pour un champ long venu d'une archive). Même résultat que la coupe
+    // caractère par caractère : la largeur d'un préfixe croît avec sa longueur.
+    // Borne haute : aucun préfixe plus long que (largeur / glyphe le plus
+    // étroit + 1) ne peut tenir ; on ne mesure donc jamais au-delà.
+    const narrowest = Math.min(...['i', 'l', '.', ' ', '’'].map((c) => font.widthOfTextAtSize(c, size)).filter((w) => w > 0));
+    const bound = Number.isFinite(narrowest) ? Math.floor(maxWidth / narrowest) + 2 : text.length;
+    const head = text.length > bound ? text.slice(0, bound) : text;
+    if (head === text && font.widthOfTextAtSize(text, size) <= maxWidth) return text;
+    // Plus long préfixe `n` (au moins 1) tel que `préfixe + « … »` tienne.
+    let lo = 1, hi = head.length;
+    while (lo < hi) {
+        const mid = Math.ceil((lo + hi) / 2);
+        if (font.widthOfTextAtSize(`${head.slice(0, mid)}…`, size) <= maxWidth) lo = mid;
+        else hi = mid - 1;
+    }
+    return `${head.slice(0, lo).trimEnd()}…`;
 }
 
 /** Palette de couleurs du thème courant, calculée une fois par export (pdfExport.js:118-124). */
