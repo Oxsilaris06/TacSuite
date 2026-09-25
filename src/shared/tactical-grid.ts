@@ -208,6 +208,19 @@ export function makeOrientedGrid(origin: LngLat, widthM: number, heightM: number
 }
 
 /**
+ * Carroyage orienté à partir des trois coins géographiques d'un rectangle
+ * À L'ÉCRAN : A1 (`tl`), le coin haut-droit (`tr`) et le coin bas-gauche
+ * (`bl`). Les dimensions sont les distances le long des axes du carroyage,
+ * converties en mètres à la latitude de A1. `angle` = orientation de l'écran.
+ */
+export function orientedGridFromCorners(tl: LngLat, tr: LngLat, bl: LngLat, cellM: number, angle: number): { spec: TacticalGridSpec; clamped: boolean } {
+    const m = metersPerDegree(tl[1]);
+    const widthM = Math.hypot((tr[0] - tl[0]) * m.lon, (tr[1] - tl[1]) * m.lat);
+    const heightM = Math.hypot((bl[0] - tl[0]) * m.lon, (bl[1] - tl[1]) * m.lat);
+    return makeOrientedGrid(tl, widthM, heightM, cellM, angle);
+}
+
+/**
  * Tourne un carroyage autour de son CENTRE : le centre géographique ne bouge
  * pas (le coin A1 se déplace), l'angle est posé, la maille et les dimensions
  * sont conservées.

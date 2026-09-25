@@ -19,9 +19,10 @@ import {
     GRID_DEFAULT_CELL,
     gridCellAt,
     isTacticalGridSpec,
-    makeTacticalGrid,
+    makeOrientedGrid,
     mgrsGridGeometry,
     mgrsOf,
+    orientedGridFromCorners,
     tacticalGridGeometry,
     type LngLat,
     type TacticalGridSpec,
@@ -228,7 +229,7 @@ export function createMapOverlays(map: MapLibreMap, opts: OverlayOptions): MapOv
     const listeners = new Set<() => void>();
     // Tracé du carroyage : `press` = appui en cours (glisser d'un coin à l'autre),
     // `first` = premier coin posé par un simple toucher (tracé en deux touchers).
-    let capture: null | { mode: 'draw' | 'move'; first?: LngLat; press?: ScreenPoint | undefined; last?: ScreenPoint | undefined } = null;
+    let capture: null | { mode: 'draw' | 'move'; first?: ScreenPoint; press?: ScreenPoint | undefined; last?: ScreenPoint | undefined } = null;
     // Le `click` qui suit le relâchement du doigt appartient encore au tracé :
     // l'hôte (pings, formes) doit l'ignorer quelques instants.
     let swallowUntil = 0;
@@ -331,8 +332,23 @@ export function createMapOverlays(map: MapLibreMap, opts: OverlayOptions): MapOv
         void renderPower();
     }
 
-    function setPreview(a: LngLat, b: LngLat): void {
-        const ring: LngLat[] = [a, [b[0], a[1]], b, [a[0], b[1]], a];
+    const toLngLat = (p: { lng: number; lat: number }): LngLat => [p.lng, p.lat];
+
+    /**
+     * Aperçu du rectangle À L'ÉCRAN : on reprojette les quatre coins de la
+     * boîte englobante des deux appuis, si bien que le pointillé suit
+     * exactement le doigt, même sur une carte tournée.
+     */
+    function setPreviewScreen(p: ScreenPoint, q: ScreenPoint): void {
+        const x0 = Math.min(p.x, q.x), x1 = Math.max(p.x, q.x);
+        const y0 = Math.min(p.y, q.y), y1 = Math.max(p.y, q.y);
+        const ring: LngLat[] = [
+            toLngLat(map.unproject([x0, y0])),
+            toLngLat(map.unproject([x1, y0])),
+            toLngLat(map.unproject([x1, y1])),
+            toLngLat(map.unproject([x0, y1])),
+            toLngLat(map.unproject([x0, y0])),
+        ];
         src(map, 'tac-grid-preview')?.setData({ type: 'FeatureCollection', features: [{ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: ring } }] });
     }
 
@@ -356,8 +372,18 @@ export function createMapOverlays(map: MapLibreMap, opts: OverlayOptions): MapOv
         notifyStatus();
     }
 
-    function commitGrid(a: LngLat, b: LngLat): void {
-        const { spec, clamped } = makeTacticalGrid(a, b, state.cellM);
+    /**
+     * Pose le carroyage depuis deux appuis ÉCRAN : A1 au coin haut-gauche de
+     * la boîte englobante, colonnes et rangées tirées de ses dimensions, angle
+     * = orientation de la carte au moment du tracé (décision 39).
+     */
+    function commitGridFromScreen(p: ScreenPoint, q: ScreenPoint): void {
+        const x0 = Math.min(p.x, q.x), x1 = Math.max(p.x, q.x);
+        const y0 = Math.min(p.y, q.y), y1 = Math.max(p.y, q.y);
+        const tl = toLngLat(map.unproject([x0, y0]));
+        const tr = toLngLat(map.unproject([x1, y0]));
+        const bl = toLngLat(map.unproject([x0, y1]));
+        const { spec, clamped } = orientedGridFromCorners(tl, tr, bl, state.cellM, map.getBearing());
         state.grid = spec;
         state.gridOn = true;
         endCapture();
@@ -392,9 +418,9 @@ export function createMapOverlays(map: MapLibreMap, opts: OverlayOptions): MapOv
         if (!p) return;
         if (capture.press) {
             capture.last = p;
-            setPreview(capture.press.at, p.at);
+            setPreviewScreen(capture.press, p);
         } else if (capture.first) {
-            setPreview(capture.first, p.at); // souris : aperçu entre les deux clics
+            setPreviewScreen(capture.first, p); // souris : aperçu entre les deux clics
         }
     };
     const onUp = (): void => {
@@ -413,14 +439,14 @@ export function createMapOverlays(map: MapLibreMap, opts: OverlayOptions): MapOv
             toast('Carroyage déplacé : A1 est maintenant au point touché.', 'success');
             return;
         }
-        if (moved) { commitGrid(press.at, last.at); return; }
+        if (moved) { commitGridFromScreen(press, last); return; }
         if (!capture.first) {
-            capture.first = press.at;
-            setPreview(press.at, press.at);
+            capture.first = press;
+            setPreviewScreen(press, press);
             toast('Touchez le coin opposé (ou glissez d’un coin à l’autre).');
             return;
         }
-        commitGrid(capture.first, press.at);
+        commitGridFromScreen(capture.first, press);
     };
     map.on('mousedown', onDown);
     map.on('touchstart', onDown);
@@ -468,11 +494,11 @@ export function createMapOverlays(map: MapLibreMap, opts: OverlayOptions): MapOv
             // que « Tracer ».
             if (state.grid && opts.confirm && !(await opts.confirm(`Passer la maille à ${m} m ? Toutes les cases changent de nom.`))) return false;
             state.cellM = m;
-            // Même emprise, nouvelle maille : on repart du coin A1 existant.
+            // Même emprise, nouvelle maille : on repart du coin A1 existant, en
+            // CONSERVANT l'angle (décision 39).
             if (state.grid) {
                 const g = state.grid;
-                const se: LngLat = [g.west + g.cols * g.dLon, g.north - g.rows * g.dLat];
-                const { spec, clamped } = makeTacticalGrid([g.west, g.north], se, m);
+                const { spec, clamped } = makeOrientedGrid([g.west, g.north], g.cols * g.cellM, g.rows * g.cellM, m, g.angle ?? 0);
                 state.grid = spec;
                 renderGrid();
                 if (clamped) toast(`Carroyage borné à ${spec.cols} × ${spec.rows} cases : l'emprise d'origine est trop grande pour une maille de ${m} m.`);
@@ -487,13 +513,14 @@ export function createMapOverlays(map: MapLibreMap, opts: OverlayOptions): MapOv
         },
         async placeGridOnView() {
             if (state.grid && opts.confirm && !(await opts.confirm('Remplacer le carroyage actuel ? Les cases annoncées jusqu’ici changeront de place.'))) return;
-            // 60 % central de l'écran, en pixels puis en coordonnées : juste sous
-            // les yeux, quel que soit le zoom ou l'orientation de la carte.
+            // 60 % central de l'écran, en pixels : juste sous les yeux, quel que
+            // soit le zoom ou l'orientation de la carte (le carroyage prend
+            // l'orientation de l'écran, décision 39).
             const c = map.getCanvas();
             const w = c.clientWidth || c.width, h = c.clientHeight || c.height;
             const nw = map.unproject([w * 0.2, h * 0.2]);
             const se = map.unproject([w * 0.8, h * 0.8]);
-            commitGrid([nw.lng, nw.lat], [se.lng, se.lat]);
+            commitGridFromScreen({ at: toLngLat(nw), x: w * 0.2, y: h * 0.2 }, { at: toLngLat(se), x: w * 0.8, y: h * 0.8 });
         },
         startGridMove() {
             if (!state.grid) return;
