@@ -637,16 +637,22 @@ export const PdfExport: PdfExportContract = {
                 drawFHeader();
 
                 for (const f of friends) {
-                    if (context.y < 50) { addNewPage("FORCES AMIES (SUITE)"); drawFHeader(); }
+                    // M3 — la mission est repliée (hauteur variable) au lieu
+                    // d'être tronquée par « … ».
+                    const missionLines = wrapText(`${f.mission || ''} ${f.tph ? '['+String(f.tph)+']':''}`, fCols[2] - 5, font, 9);
+                    const rowHeight = Math.max(1, missionLines.length) * context.lineHeight + 8;
+                    if (context.y - rowHeight < context.margin) { addNewPage("FORCES AMIES (SUITE)"); drawFHeader(); }
                     let cx = context.margin + 5;
-                    // C16 / B-3 — colonnes à largeur FIXE : chacune tronque à sa
-                    // largeur (moins 5 pt de marge) au lieu de déborder.
+                    // C16 / B-3 — nom et unité : colonnes à largeur FIXE, tronquées
+                    // à leur largeur (moins 5 pt de marge) au lieu de déborder.
                     pdfPage().drawText(fitTextToWidth(sanitizeWinAnsi(`${f.nom || ''} ${f.prenom || ''}`), font, 9, fCols[0] - 5), { x: cx, y: context.y, size: 9, font, color: themeColors.text });
                     cx += fCols[0];
                     pdfPage().drawText(fitTextToWidth(sanitizeWinAnsi(f.unite), font, 9, fCols[1] - 5), { x: cx, y: context.y, size: 9, font, color: themeColors.text });
                     cx += fCols[1];
-                    pdfPage().drawText(fitTextToWidth(sanitizeWinAnsi(`${f.mission || ''} ${f.tph ? '['+String(f.tph)+']':''}`), font, 9, fCols[2] - 5), { x: cx, y: context.y, size: 9, font, color: themeColors.text });
-                    context.y -= 20;
+                    missionLines.forEach((line, i) => {
+                        pdfPage().drawText(line, { x: cx, y: context.y - i * context.lineHeight, size: 9, font, color: themeColors.text });
+                    });
+                    context.y -= rowHeight;
                 }
             }
 
@@ -767,11 +773,16 @@ export const PdfExport: PdfExportContract = {
 
                         for (const pin of pins) {
                             if (!pin || typeof pin !== 'object') continue;
-                            if (context.y < context.margin + 20) { addNewPage('PLAN TACTIQUE - LISTE DES POINTS (SUITE)'); drawPinHeader(); }
+                            // M3 — le libellé est replié (hauteur variable) au lieu
+                            // d'être tronqué par « … » : le point tel qu'annoncé à
+                            // la radio ne doit pas perdre son intitulé.
+                            const labelLines = wrapText(pin.label, pCols[0] - 5, font, 9);
+                            const rowHeight = Math.max(1, labelLines.length) * context.lineHeight + 6;
+                            if (context.y - rowHeight < context.margin) { addNewPage('PLAN TACTIQUE - LISTE DES POINTS (SUITE)'); drawPinHeader(); }
                             let px = context.margin + 5;
-                            // B-3 — JetBrains Mono (5,4 pt/car. à 9 pt) : la colonne
-                            // Label (140 pt) tronque à sa largeur, sans mordre sur MGRS.
-                            pdfPage().drawText(fitTextToWidth(sanitizeWinAnsi(pin.label), font, 9, pCols[0] - 5), { x: px, y: context.y, size: 9, font, color: themeColors.text });
+                            labelLines.forEach((line, i) => {
+                                pdfPage().drawText(line, { x: px, y: context.y - i * context.lineHeight, size: 9, font, color: themeColors.text });
+                            });
                             px += pCols[0];
                             pdfPage().drawText(fitTextToWidth(sanitizeWinAnsi(pin.mgrs || 'N/C'), font, 8, pCols[1] - 5), { x: px, y: context.y, size: 8, font, color: themeColors.text });
                             px += pCols[1];
@@ -784,11 +795,11 @@ export const PdfExport: PdfExportContract = {
                             pdfPage().drawText(fitTextToWidth(fmtDiam(pin.diameterM), font, 9, pCols[5] - 5), { x: px, y: context.y, size: 9, font, color: themeColors.text });
 
                             pdfPage().drawLine({
-                                start: { x: context.margin, y: context.y - 5 },
-                                end: { x: context.pageWidth - context.margin, y: context.y - 5 },
+                                start: { x: context.margin, y: context.y - rowHeight + 13 },
+                                end: { x: context.pageWidth - context.margin, y: context.y - rowHeight + 13 },
                                 thickness: 0.5, color: themeColors.line, opacity: 0.3
                             });
-                            context.y -= 18;
+                            context.y -= rowHeight;
                         }
                     }
                 }
