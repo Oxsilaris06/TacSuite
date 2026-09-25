@@ -651,6 +651,8 @@ export const UI: UIContract = {
     const entry = logData.find((e) => e.id === id);
     if (!entry) return;
     (document.getElementById('edit_id') as HTMLInputElement).value = id;
+    // Décision 30 — la date est modifiable, préremplie avec celle de l'entrée.
+    (document.getElementById('edit_date') as HTMLInputElement).value = entry.date || '';
     (document.getElementById('edit_heure') as HTMLInputElement).value = entry.heure;
     (document.getElementById('edit_lieu') as HTMLInputElement).value = entry.lieu || '';
     (document.getElementById('edit_remarques') as HTMLTextAreaElement).value = entry.remarques || '';
@@ -666,10 +668,14 @@ export const UI: UIContract = {
       toast('Renseignez une heure', { kind: 'error' });
       return;
     }
-    const updated = {
+    // Décision 30 — changer l'heure seule garde la date : on ne l'écrit que si
+    // elle est renseignée (une entrée legacy sans date reste sans date).
+    const date = (document.getElementById('edit_date') as HTMLInputElement).value;
+    const updated: Partial<PctacLogEntry> = {
       heure,
       lieu: (document.getElementById('edit_lieu') as HTMLInputElement).value.trim(),
       remarques: (document.getElementById('edit_remarques') as HTMLTextAreaElement).value.trim(),
+      ...(date ? { date } : {}),
     };
     LogManager.updateEntry(id, updated);
     if (updated.lieu) LogManager.addLieuToHistory(updated.lieu);
