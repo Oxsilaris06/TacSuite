@@ -277,3 +277,29 @@ export const BASE_PAX_CHIPS: readonly string[] = ['Adversaire', 'Otage', 'Inter'
 export function paxChipKeys(mode: PctacMode): string[] {
     return mode.extraPaxChip ? [...BASE_PAX_CHIPS, mode.extraPaxChip.key] : [...BASE_PAX_CHIPS];
 }
+
+/**
+ * Libellé de la pastille Pax dans la main courante, selon la situation (M5).
+ * Les clés stockées restent les clés historiques (« Adversaire », « Otage ») :
+ * seul l'affichage suit le vocabulaire, comme à l'écran (ui.ts). Les cinq
+ * pastilles supplémentaires gardent leur libellé propre à la situation.
+ */
+export function paxChipLabel(pax: string, mode: PctacMode = currentMode()): string {
+    if (pax === 'Adversaire') return mode.adv.paxChip;
+    if (pax === 'Otage') return mode.host.paxChip;
+    return mode.paxChipLabels[pax] ?? pax;
+}
+
+/**
+ * Libellé d'une catégorie photo selon la situation (M5). Source unique
+ * écran/PDF : `PHOTO_CATEGORIES` garde les `id` stockés (jamais renommés) ;
+ * seuls « Adversaire » et « Otages » changent de mot avec la situation.
+ */
+export function photoCategoryLabel(
+    cat: { id: string; label: string },
+    mode: PctacMode = currentMode(),
+): string {
+    if (cat.id === 'hostage') return mode.host.plural;
+    if (cat.id === 'neutralized') return mode.adv.singular;
+    return cat.label;
+}

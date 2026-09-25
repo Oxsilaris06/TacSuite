@@ -34,7 +34,7 @@ import { PDF_FONT_VFS } from '@oi/pdf/fonts.js';
 import { Storage } from '@pctac/storage.js';
 import { ImageStore } from '@pctac/image-store.js';
 import { PDF_PAX_COLORS, PHOTO_CATEGORIES, FREE_MODE_COLORS, safeHexColor } from '@pctac/config.js';
-import { currentMode, currentModeId } from '@pctac/modes.js';
+import { currentMode, currentModeId, paxChipLabel, photoCategoryLabel } from '@pctac/modes.js';
 import { TYPE_MENACE_KEY, ficheCounters, ficheTitle, filledSections, sortFichesByPriority, statusChoices, statusMeta, type FicheSide } from '@pctac/fiche.js';
 import { showBusy, hideBusy } from '@pctac/busy.js';
 import { Utils } from '@pctac/utils.js';
@@ -486,7 +486,7 @@ export const PdfExport: PdfExportContract = {
                 // devient « Recherches » en Recherche de personnes) ; la clé
                 // stockée, elle, ne change jamais.
                 let pColor = pdfRgb(0.5, 0.5, 0.5);
-                const pText = mode.paxChipLabels[entry.pax] ?? entry.pax ?? '';
+                const pText = paxChipLabel(entry.pax, mode);
                 let hexColor = '#888888';
                 if (entry.paxMode === 'standard') {
                     const cfg = PDF_PAX_COLORS[entry.pax] ?? PDF_PAX_COLORS['Autre'];
@@ -674,10 +674,10 @@ export const PdfExport: PdfExportContract = {
                 const catPhotos = photos.filter(p => p.category === cat.id);
                 if (catPhotos.length === 0) continue;
 
-                addNewPage(`GALERIE : ${cat.label.toUpperCase()}`, true); // Mode PAYSAGE
+                addNewPage(`GALERIE : ${photoCategoryLabel(cat, mode).toUpperCase()}`, true); // Mode PAYSAGE
                 for (let i = 0; i < catPhotos.length; i += 2) {
                     // Une page paysage par paire de photos (toute la hauteur dispo).
-                    if (i > 0) addNewPage(`GALERIE : ${cat.label.toUpperCase()} (SUITE)`, true);
+                    if (i > 0) addNewPage(`GALERIE : ${photoCategoryLabel(cat, mode).toUpperCase()} (SUITE)`, true);
 
                     const photoWidth = (context.pageWidth - 3 * context.margin) / 2;
                     const photoHeightMax = context.pageHeight - 2 * context.margin - 40; // Presque toute la hauteur
