@@ -116,3 +116,17 @@ describe('_requestRemovePin — décision 31', () => {
         expect(String(addEntry.mock.calls[0]?.[0]?.remarques)).toContain('Ping rétabli');
     });
 });
+
+describe('Revue neuve du 25/09 — V5 : un point supprimé reçoit sa pierre à l’échéance', () => {
+    it('onCommit du toast pose pcTacPlanPins:<id>', async () => {
+        const { readTombstones } = await import('../../../src/apps/pctac/tombstones.js');
+        confirmMock.mockResolvedValue(true);
+        const fake = makeFakeThis();
+        fake._savePins([makePin({ id: 'pin1' })]);
+        await fake._requestRemovePin('pin1');
+        const call = undoableMock.mock.calls.at(-1) as unknown as [string, { onUndo: () => void; onCommit?: () => void }];
+        expect(call?.[1].onCommit).toBeTypeOf('function');
+        call[1].onCommit?.();
+        expect(readTombstones('forcene').map((t) => `${t.key}:${t.itemId}`)).toEqual(['pcTacPlanPins:pin1']);
+    });
+});

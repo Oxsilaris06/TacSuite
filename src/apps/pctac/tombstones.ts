@@ -53,6 +53,28 @@ export function recordTombstone(key: string, itemId: string, modeId: PctacModeId
     Persist.set(scopedKey(DELETED_KEY, modeId), list);
 }
 
+/**
+ * V6 (revue neuve du 25/09) — pierres reçues d'une archive : entrées
+ * invalides écartées, dates FUTURES (horloge fausse, archive forgée) ramenées
+ * à `nowMs` (sinon un retour serait bloqué sans limite et propagé partout),
+ * plafond appliqué (les plus récentes gardées). Rend une liste triée par date.
+ */
+export function normalizeTombstones(list: unknown, nowMs: number = Date.now()): Tombstone[] {
+    if (!Array.isArray(list)) return [];
+    const nowIso = new Date(nowMs).toISOString();
+    const out: Tombstone[] = [];
+    for (const raw of list) {
+        if (!isTombstone(raw)) continue;
+        const ms = Date.parse(raw.deletedAt);
+        if (!Number.isFinite(ms)) continue;
+        const deletedAt = ms > nowMs ? nowIso : new Date(ms).toISOString();
+        out.push({ id: `${raw.key}:${raw.itemId}`, key: raw.key, itemId: raw.itemId, deletedAt, updatedAt: deletedAt });
+    }
+    out.sort((a, b) => (a.deletedAt < b.deletedAt ? -1 : a.deletedAt > b.deletedAt ? 1 : 0));
+    if (out.length > TOMBSTONES_MAX) out.splice(0, out.length - TOMBSTONES_MAX);
+    return out;
+}
+
 /** `itemId` → date de suppression (ms) pour une clé de collection. */
 export function tombstoneMap(list: readonly Tombstone[], key: string): Map<string, number> {
     const out = new Map<string, number>();

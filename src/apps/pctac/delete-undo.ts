@@ -98,6 +98,9 @@ export function undoableDelete(opts: UndoableDeleteOptions): boolean {
         // rien tant que l'id est de nouveau présent dans la collection.
         if (Storage.loadCollection(opts.key, modeId).some((item) => item.id === removed.id)) return;
         recordTombstone(opts.key, opts.id, modeId); // A7
+        // V3 — l'entrée de galerie `<id>_sync` part avec la fiche : sans pierre,
+        // la photo de la personne supprimée revenait par la fusion d'archive.
+        if (opts.key === ADVERSARIES_KEY || opts.key === HOSTAGES_KEY) recordTombstone(PHOTOS_KEY, `${opts.id}_sync`, modeId);
         run(() => opts.onCommit?.(modeId));
     };
     undoableToast(opts.message, { onUndo: restore, onCommit: commit });

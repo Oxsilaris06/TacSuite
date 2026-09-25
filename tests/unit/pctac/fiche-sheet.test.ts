@@ -771,3 +771,22 @@ describe('Revue du 25/09 — remplacer la photo date la fiche (A6)', () => {
     expect(second.updatedAt).not.toBe(first.updatedAt);
   });
 });
+
+describe('Revue neuve du 25/09 — V2 : lien posé ailleurs vers une fiche créée après l’ouverture', () => {
+  it('le menu Lien reçoit l’option manquante et garde la valeur à l’enregistrement', async () => {
+    Storage.saveCollection('pcTacAdversaires', [{ id: 'a1', nom: 'A', status: 'active' }]);
+    Storage.saveCollection('pcTacHostages', [{ id: 'h1', nom: 'H', status: 'ok' }]);
+    await openFiche('host', 'h1');
+    const select = document.querySelector<HTMLSelectElement>('#ficheSheet select[data-key="lien"]');
+    expect(select).not.toBeNull();
+    // L'autre onglet crée l'adversaire a2 puis lie h1 à a2.
+    Storage.saveCollection('pcTacAdversaires', [{ id: 'a1', nom: 'A', status: 'active' }, { id: 'a2', nom: 'B', status: 'active' }]);
+    Storage.saveCollection('pcTacHostages', [{ id: 'h1', nom: 'H', status: 'ok', lien: 'a2' }]);
+    document.dispatchEvent(new CustomEvent('pctac:data', { detail: { key: 'pcTacHostages', remote: true } }));
+    await flush();
+    expect(select!.value).toBe('a2');
+    setField('position', 'Étage 2');
+    await clickSave();
+    expect(storedFiche('pcTacHostages', 'h1')).toMatchObject({ lien: 'a2', position: 'Étage 2' });
+  });
+});

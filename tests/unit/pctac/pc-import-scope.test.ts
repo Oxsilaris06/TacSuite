@@ -301,3 +301,18 @@ describe('Revue du 25/09 — pierres tombales à la fusion (A7)', () => {
         expect((JSON.parse(localStorage.getItem(ADVERSARIES_KEY) ?? '[]') as Array<{ id: string }>).map((e) => e.id)).toEqual(['gone']);
     });
 });
+
+describe('Revue neuve du 25/09 — V6 : pierres futures reçues d’une archive', () => {
+    it('une pierre datée dans le futur est ramenée à maintenant à l’union', () => {
+        localStorage.setItem('pcTacDeleted', '[]');
+        const before = Date.now();
+        applyScope(
+            { [ADVERSARIES_KEY]: '[]', pcTacDeleted: JSON.stringify([{ id: `${ADVERSARIES_KEY}:z`, key: ADVERSARIES_KEY, itemId: 'z', deletedAt: '9999-01-01T00:00:00.000Z', updatedAt: '9999-01-01T00:00:00.000Z' }]) },
+            scope(['adversaires'], 'merge'),
+        );
+        const stones = JSON.parse(localStorage.getItem('pcTacDeleted') ?? '[]') as Array<{ deletedAt: string }>;
+        expect(stones).toHaveLength(1);
+        expect(Date.parse(stones[0]!.deletedAt)).toBeLessThanOrEqual(Date.now());
+        expect(Date.parse(stones[0]!.deletedAt)).toBeGreaterThanOrEqual(before);
+    });
+});

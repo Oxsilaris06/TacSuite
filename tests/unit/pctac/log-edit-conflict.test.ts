@@ -103,3 +103,24 @@ describe('UI.confirmEditLog — champs modifiés seulement', () => {
     expect((document.getElementById('edit_lieu') as HTMLInputElement).value).toBe('Ailleurs');
   });
 });
+
+describe('Revue neuve du 25/09 — V7', () => {
+  it('un favori retiré ailleurs n’ouvre pas de conflit fantôme', async () => {
+    Storage.saveLogData([{ ...ENTRY, favori: true }]);
+    UI.openEditModal('e1');
+    Storage.saveLogData([{ ...ENTRY, favori: false }]);
+    setInput('edit_lieu', 'L2');
+    await UI.confirmEditLog();
+    expect(choiceSpy).not.toHaveBeenCalled();
+    expect(stored()).toMatchObject({ lieu: 'L2', favori: false });
+  });
+
+  it('entrée supprimée pendant la fenêtre de conflit : message « supprimée », pas « stockage plein »', async () => {
+    Storage.saveLogData([{ ...ENTRY, remarques: 'R2' }]);
+    choiceSpy.mockImplementationOnce(async () => { Storage.saveLogData([]); return 'mine'; });
+    setInput('edit_remarques', 'R-mienne');
+    await UI.confirmEditLog();
+    expect(toastSpy).toHaveBeenCalledWith(expect.stringContaining('supprimée'), expect.objectContaining({ kind: 'error' }));
+    expect(toastSpy).not.toHaveBeenCalledWith(expect.stringContaining('Stockage plein'), expect.anything());
+  });
+});
