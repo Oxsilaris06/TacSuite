@@ -77,13 +77,14 @@ import {
   ficheTitle,
   ficheVariant,
   filledSections,
+  sortFichesByPriority,
   statusChoices,
   statusMeta,
   summaryRows,
   type FicheSide,
   type StatusChoice,
 } from '@pctac/fiche.js';
-import { openFiche } from '@pctac/fiche-sheet.js';
+import { close as closeFicheSheet, openFiche } from '@pctac/fiche-sheet.js';
 import { annotatePhoto } from '@pctac/photo-annotation.js';
 
 /** Options de statut d'une fiche : celles de la situation, plus la valeur
@@ -131,7 +132,7 @@ function ficheCard(
           <h3 class="fiche-card-name">${esc(name)}</h3>
           ${sub ? `<p class="fiche-card-sub">${esc(sub)}</p>` : ''}
         </div>
-        ${hasStatus ? `<select class="fiche-card-status" data-fiche-action="status" aria-label="Statut : ${esc(name)}">${statusOptionsFor(side, status)}</select>` : ''}
+        ${hasStatus ? `<select class="fiche-card-status" data-fiche-action="status" data-status="${esc(status)}" aria-label="Statut : ${esc(name)}">${statusOptionsFor(side, status)}</select>` : ''}
       </div>
       ${facts.length ? `<dl class="fiche-card-facts">${facts.map((r) => `<div><dt>${esc(r.label)}</dt><dd>${esc(r.value)}</dd></div>`).join('')}</dl>` : ''}
       ${linked.length ? `<p class="fiche-card-linked"><span class="material-symbols-outlined" aria-hidden="true">link</span>Fiches liées : ${esc(linked.join(', '))}</p>` : ''}
@@ -427,6 +428,10 @@ export const UI: UIContract = {
    * non déclaré dans global.d.ts.
    */
   switchMainView(viewId: string): void {
+    // Décision 33 — quitter l'onglet de la fiche la referme (dans la page ou en
+    // modale) : la saisie reste en brouillon. Évite qu'un retour arrière
+    // Android ferme une fiche cachée au lieu d'agir sur l'onglet affiché.
+    if (document.getElementById('ficheSheet')?.hasAttribute('open')) closeFicheSheet();
     document.querySelectorAll<HTMLElement>('.tab-btn').forEach((btn) => {
       const active = btn.dataset.view === viewId;
       btn.classList.toggle('active', active);
@@ -861,8 +866,10 @@ export const UI: UIContract = {
 
   // ui.js:436-466
   async renderAdversaries(): Promise<void> {
-    const raw = Storage.loadCollection('pcTacAdversaries') || [];
-    migrateStatuses('pcTacAdversaries', raw, 'active'); // U16 — migration douce
+    const stored = Storage.loadCollection('pcTacAdversaries') || [];
+    migrateStatuses('pcTacAdversaries', stored, 'active'); // U16 — migration douce
+    // Décision 33 — tri par priorité (source unique partagée avec le PDF).
+    const raw = sortFichesByPriority('adv', currentModeId(), stored);
     renderFicheCounters();
     const box = document.getElementById('adversary-table-body');
     if (!box) return;
@@ -887,11 +894,11 @@ export const UI: UIContract = {
 
   // ui.js:468-496
   async renderHostages(): Promise<void> {
-    const raw = Storage.loadCollection('pcTacHostages') || [];
+    const stored = Storage.loadCollection('pcTacHostages') || [];
     const mode = currentModeId();
     // U16 — migration douce : photo _sync d'abord, sinon statut par défaut de
     // la situation (Forcené : heuristique blessures ; triage : « Non triée »).
-    const noStatus = raw.filter((it) => !it.status);
+    const noStatus = stored.filter((it) => !it.status);
     if (noStatus.length > 0) {
       const photos = Storage.loadCollection('pcTacPhotos');
       noStatus.forEach((it) => {
@@ -899,8 +906,10 @@ export const UI: UIContract = {
         it.status = (photo && photo.status)
           || (mode === 'forcene' ? hostageStatusFromBlessures(it.blessures) : defaultStatus('host', mode));
       });
-      Storage.saveCollection('pcTacHostages', raw);
+      Storage.saveCollection('pcTacHostages', stored);
     }
+    // Décision 33 — tri par priorité (source unique partagée avec le PDF).
+    const raw = sortFichesByPriority('host', mode, stored);
     // Lot B (constat 10) — suggestions de la main courante.
     this.refreshOtagesSuggestions();
     renderFicheCounters();
