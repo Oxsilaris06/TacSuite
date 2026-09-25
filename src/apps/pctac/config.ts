@@ -30,6 +30,8 @@ export const FICHE_DRAFT_KEY = 'pcTacFicheDraft';
 // Clé de persistance du tableau de liens (board "Dashboard")
 // Forme : { positions:{[nodeId]:{x,y}}, links:[{id,from,to,comment}], locked:boolean, layout:'auto'|'manual' }
 export const DASHBOARD_KEY = 'pcTacDashboard';
+/** Pierres tombales des suppressions, par situation (revue du 25/09, A7). */
+export const DELETED_KEY = 'pcTacDeleted';
 
 // Catégories de photos
 export const PHOTO_CATEGORIES: PctacPhotoCategory[] = [

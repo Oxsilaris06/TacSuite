@@ -396,8 +396,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             id,
             message,
             refresh: () => refreshDeletedView(viewId),
-            onCommit: async () => {
-                await purgeCollectionImages(key, id);
+            onCommit: async (modeId) => {
+                await purgeCollectionImages(key, id, modeId);
                 refreshDeletedView(viewId);
             },
         });

@@ -411,8 +411,8 @@ export interface PctacStorageContract {
      * `Persist.set`. Pose `updatedAt` sur les entrées nouvelles ou modifiées.
      * Rend `false` si le stockage a refusé l'écriture (quota, indisponible).
      */
-    saveLogData(logData: PctacLogEntry[]): boolean;
-    loadLogData(): PctacLogEntry[];
+    saveLogData(logData: PctacLogEntry[], modeId?: string): boolean;
+    loadLogData(modeId?: string): PctacLogEntry[];
     /**
      * Associations « Pax Libre ». ATTENTION : la map est indexée par COULEUR
      * (`assoc[color] = label`), pas par libellé.

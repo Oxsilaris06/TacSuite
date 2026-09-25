@@ -143,3 +143,56 @@ describe('purgeCollectionImages — effacement différé', () => {
     expect(Storage.loadCollection(PHOTOS_KEY).map((i) => i.id)).toEqual(['p', 'q']);
   });
 });
+
+describe('Revue du 25/09 — pierres tombales, situation figée, stockage plein (A7, A11, A9)', () => {
+  it('A7 : l’échéance pose une pierre tombale ; « Annuler » n’en pose pas', async () => {
+    const { readTombstones } = await import('../../../src/apps/pctac/tombstones.js');
+    Storage.saveCollection(ADVERSARIES_KEY, [{ id: 'a' }, { id: 'b' }]);
+    undoableDelete({ key: ADVERSARIES_KEY, id: 'a', message: 'Fiche supprimée', refresh: () => {} });
+    clickUndo();
+    vi.runOnlyPendingTimers();
+    expect(readTombstones('forcene')).toEqual([]);
+    undoableDelete({ key: ADVERSARIES_KEY, id: 'b', message: 'Fiche supprimée', refresh: () => {} });
+    vi.runOnlyPendingTimers();
+    expect(readTombstones('forcene').map((t) => t.itemId)).toEqual(['b']);
+  });
+
+  it('A7 : une entrée de main courante supprimée reçoit aussi sa pierre à l’échéance', async () => {
+    const { readTombstones } = await import('../../../src/apps/pctac/tombstones.js');
+    const { LOCAL_STORAGE_KEY } = await import('../../../src/apps/pctac/config.js');
+    Storage.saveLogData([{ id: 'l1', heure: '10:00', pax: 'x', paxMode: 'free', paxColor: '', lieu: '', remarques: '' }]);
+    undoableDeleteLog('l1', 'Entrée supprimée', () => {});
+    vi.runOnlyPendingTimers();
+    expect(readTombstones('forcene').map((t) => `${t.key}:${t.itemId}`)).toEqual([`${LOCAL_STORAGE_KEY}:l1`]);
+  });
+
+  it('A11 : changement de situation avant l’échéance, la purge vise la situation de la suppression', async () => {
+    const { persistModeId } = await import('../../../src/apps/pctac/modes.js');
+    Storage.saveCollection(ADVERSARIES_KEY, [{ id: 'x', hasImage: true }]);
+    Storage.saveCollection(PHOTOS_KEY, [{ id: 'x_sync', hasImage: true }]);
+    undoableDelete({
+      key: ADVERSARIES_KEY, id: 'x', message: 'Fiche supprimée', refresh: () => {},
+      onCommit: async (modeId) => { await purgeCollectionImages(ADVERSARIES_KEY, 'x', modeId); },
+    });
+    persistModeId('tp');
+    vi.runOnlyPendingTimers();
+    await Promise.resolve();
+    // La galerie de Forcené ne montre plus la vignette morte ; TP n'est pas touché.
+    expect(Storage.loadCollection(PHOTOS_KEY, 'forcene').map((p) => p.id)).toEqual([]);
+    expect(Storage.loadCollection(PHOTOS_KEY, 'tp')).toEqual([]);
+    persistModeId('forcene');
+  });
+
+  it('A9 : stockage plein à « Annuler » : rien de perdu, message, nouvel essai possible', () => {
+    Storage.saveCollection(PHOTOS_KEY, [{ id: 'a' }, { id: 'b' }]);
+    undoableDelete({ key: PHOTOS_KEY, id: 'a', message: 'Photo supprimée', refresh: () => {} });
+    const spy = vi.spyOn(Storage, 'saveCollection').mockReturnValueOnce(false);
+    clickUndo();
+    expect(Storage.loadCollection(PHOTOS_KEY).map((i) => i.id)).toEqual(['b']);
+    expect([...document.querySelectorAll('.tac-toast')].some((t) => /NON restaurée/.test(t.textContent ?? ''))).toBe(true);
+    spy.mockRestore();
+    // Un toast d'annulation est de nouveau proposé : second essai, place libérée.
+    [...document.querySelectorAll<HTMLButtonElement>('.tac-toast button[data-tac-toast-action="undo"]')].at(-1)?.click();
+    expect(Storage.loadCollection(PHOTOS_KEY).map((i) => i.id)).toEqual(['a', 'b']);
+  });
+});

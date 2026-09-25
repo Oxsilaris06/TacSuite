@@ -245,3 +245,59 @@ describe('Revue du 25/09 — fusion du journal (A4)', () => {
         expect(ids).toEqual(['a', 'b', 'c']);
     });
 });
+
+describe('Revue du 25/09 — pierres tombales à la fusion (A7)', () => {
+    const T = '2026-09-25T12:00:00.000Z';
+    const stone = (key: string, id: string, at = T): Record<string, string> => ({ id: `${key}:${id}`, key, itemId: id, deletedAt: at, updatedAt: at });
+
+    it('un élément supprimé ici après sa dernière modification là-bas ne revient pas, et il est signalé', () => {
+        localStorage.setItem(ADVERSARIES_KEY, JSON.stringify([item('keep', 'gardée')]));
+        localStorage.setItem('pcTacDeleted', JSON.stringify([stone(ADVERSARIES_KEY, 'gone')]));
+        const report = applyScope(
+            { [ADVERSARIES_KEY]: JSON.stringify([{ id: 'gone', nom: 'revenante', updatedAt: '2026-09-25T10:00:00.000Z' }, { id: 'new', nom: 'neuve' }]) },
+            scope(['adversaires'], 'merge'),
+        );
+        const ids = (JSON.parse(localStorage.getItem(ADVERSARIES_KEY) ?? '[]') as Array<{ id: string }>).map((e) => e.id);
+        expect(ids).toEqual(['keep', 'new']);
+        expect(report.skippedByKey[ADVERSARIES_KEY]?.map((i) => i.nom)).toEqual(['revenante']);
+        expect(report.addedByKey[ADVERSARIES_KEY]?.map((i) => i.nom)).toEqual(['neuve']);
+    });
+
+    it('un élément modifié là-bas APRÈS sa suppression ici revient (la plus récente gagne)', () => {
+        localStorage.setItem(ADVERSARIES_KEY, '[]');
+        localStorage.setItem('pcTacDeleted', JSON.stringify([stone(ADVERSARIES_KEY, 'back')]));
+        applyScope(
+            { [ADVERSARIES_KEY]: JSON.stringify([{ id: 'back', nom: 'remise à jour', updatedAt: '2026-09-25T13:00:00.000Z' }]) },
+            scope(['adversaires'], 'merge'),
+        );
+        const ids = (JSON.parse(localStorage.getItem(ADVERSARIES_KEY) ?? '[]') as Array<{ id: string }>).map((e) => e.id);
+        expect(ids).toEqual(['back']);
+    });
+
+    it('un élément sans date de modification ne revient pas non plus', () => {
+        localStorage.setItem(ADVERSARIES_KEY, '[]');
+        localStorage.setItem('pcTacDeleted', JSON.stringify([stone(ADVERSARIES_KEY, 'old')]));
+        applyScope({ [ADVERSARIES_KEY]: JSON.stringify([{ id: 'old', nom: 'sans date' }]) }, scope(['adversaires'], 'merge'));
+        expect(JSON.parse(localStorage.getItem(ADVERSARIES_KEY) ?? '[]')).toEqual([]);
+    });
+
+    it('les pierres tombales de l’archive rejoignent les miennes (union, la plus récente gagne), quelles que soient les catégories', () => {
+        localStorage.setItem('pcTacDeleted', JSON.stringify([stone(ADVERSARIES_KEY, 'a', '2026-09-25T10:00:00.000Z'), stone(HOSTAGES_KEY, 'h')]));
+        applyScope(
+            {
+                [ADVERSARIES_KEY]: '[]',
+                pcTacDeleted: JSON.stringify([stone(ADVERSARIES_KEY, 'a', '2026-09-25T11:00:00.000Z'), stone(LOCAL_STORAGE_KEY, 'l')]),
+            },
+            scope(['adversaires'], 'merge'),
+        );
+        const stones = JSON.parse(localStorage.getItem('pcTacDeleted') ?? '[]') as Array<{ id: string; deletedAt: string }>;
+        expect(stones.map((s) => s.id).sort()).toEqual([`${ADVERSARIES_KEY}:a`, `${HOSTAGES_KEY}:h`, `${LOCAL_STORAGE_KEY}:l`].sort());
+        expect(stones.find((s) => s.id === `${ADVERSARIES_KEY}:a`)?.deletedAt).toBe('2026-09-25T11:00:00.000Z');
+    });
+
+    it('en remplacement, un élément supprimé ici revient (restauration : l’archive fait foi)', () => {
+        localStorage.setItem('pcTacDeleted', JSON.stringify([stone(ADVERSARIES_KEY, 'gone')]));
+        applyScope({ [ADVERSARIES_KEY]: JSON.stringify([{ id: 'gone', nom: 'x' }]) }, scope(['adversaires'], 'replace'));
+        expect((JSON.parse(localStorage.getItem(ADVERSARIES_KEY) ?? '[]') as Array<{ id: string }>).map((e) => e.id)).toEqual(['gone']);
+    });
+});
