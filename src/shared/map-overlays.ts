@@ -18,11 +18,13 @@ import {
     GRID_CELL_SIZES,
     GRID_DEFAULT_CELL,
     gridCellAt,
+    gridToGeo,
     isTacticalGridSpec,
     makeOrientedGrid,
     mgrsGridGeometry,
     mgrsOf,
     orientedGridFromCorners,
+    rotateTacticalGrid,
     tacticalGridGeometry,
     type LngLat,
     type TacticalGridSpec,
@@ -60,6 +62,10 @@ export interface MapOverlays {
     /** Pose d'un seul geste un carroyage centré sur la vue (60 % de l'écran) : l'option commode au doigt. */
     placeGridOnView(): Promise<void>;
     startGridMove(): void;
+    /** Affiche une poignée pour tourner le carroyage autour de son centre (décision 39). */
+    startGridRotate(): Promise<void>;
+    /** Remet le carroyage au nord (angle 0) autour de son centre. */
+    gridNorthUp(): void;
     clearGrid(): Promise<void>;
     cancelCapture(): void;
     /** Case du carroyage (« C4 ») d'un point, `null` hors carroyage ou sans carroyage. */
@@ -220,6 +226,28 @@ export function overlayLayers(withBolt: boolean): LayerSpecification[] {
 /** Sources GeoJSON des surcouches. */
 export const OVERLAY_SOURCES = ['tac-grid', 'tac-grid-labels', 'tac-grid-preview', 'tac-mgrs', 'tac-mgrs-labels', 'tac-power', 'tac-power-towers'] as const;
 
+/** Aimant de la rotation (degrés) : le nord tombe pile, comme pour un tracé. */
+export const GRID_ROTATE_SNAP = 5;
+
+/** Distance en pixels entre le centre du carroyage et sa poignée de rotation. */
+const ROTATE_HANDLE_PX = 90;
+
+/**
+ * Angle de carroyage (degrés depuis le nord, sens horaire) désigné par un
+ * pointeur à l'écran. `center` et `pointer` sont en pixels du canevas ; l'angle
+ * tient compte de l'orientation de la carte (`bearing`).
+ */
+export function gridAngleFromScreen(bearing: number, center: { x: number; y: number }, pointer: { x: number; y: number }): number {
+    const deg = (Math.atan2(pointer.x - center.x, -(pointer.y - center.y)) * 180) / Math.PI;
+    return ((deg + bearing) % 360 + 360) % 360;
+}
+
+/** Cale un angle sur le pas d'aimant (5° par défaut), dans [0, 360). */
+export function snapGridAngle(angle: number, step = GRID_ROTATE_SNAP): number {
+    const a = Math.round(angle / step) * step;
+    return ((a % 360) + 360) % 360;
+}
+
 export function createMapOverlays(map: MapLibreMap, opts: OverlayOptions): MapOverlays {
     const state = sanitize(opts.load());
     // Interrupteur « Carroyage » actif sans carroyage (reset de situation,
@@ -238,6 +266,20 @@ export function createMapOverlays(map: MapLibreMap, opts: OverlayOptions): MapOv
     let powerSeq = 0;
     let moveTimer: ReturnType<typeof setTimeout> | null = null;
     let ready = false;
+    // Rotation en cours : poignée posée sur la carte, geste suspendu, angle
+    // appliqué en direct mais enregistré seulement au relâcher (décision 39).
+    let rotate: null | {
+        marker: { setLngLat(ll: { lng: number; lat: number }): unknown; remove(): void };
+        el: HTMLElement;
+        label: HTMLElement;
+        original: TacticalGridSpec;
+        centerGeo: LngLat;
+        centerPx: { x: number; y: number };
+        dirty: boolean;
+    } = null;
+    let rotateCleanup: (() => void) | null = null;
+    let rotateDragWasOn = true;
+    let rotateActive = false;
 
     const toast = (m: string, k: OverlayToastKind = 'info'): void => opts.toast?.(m, k);
     const changed = (): void => {
@@ -353,6 +395,7 @@ export function createMapOverlays(map: MapLibreMap, opts: OverlayOptions): MapOv
     }
 
     function beginCapture(mode: 'draw' | 'move'): void {
+        if (rotate) endRotate();
         capture = { mode };
         // Au doigt, glisser déplaçait la carte au lieu de tracer (retour Nico
         // 2026-09-24) : le déplacement à un doigt est suspendu pendant le tracé.
@@ -395,6 +438,90 @@ export function createMapOverlays(map: MapLibreMap, opts: OverlayOptions): MapOv
                 : `Carroyage posé : ${spec.cols} × ${spec.rows} cases de ${spec.cellM} m.`,
             clamped ? 'info' : 'success',
         );
+    }
+
+    type RotateMarkerCtor = new (opts: { element: HTMLElement; anchor: string }) => {
+        setLngLat(ll: { lng: number; lat: number }): { addTo(m: MapLibreMap): unknown };
+        addTo(m: MapLibreMap): unknown;
+        remove(): void;
+    };
+
+    /** Positionne la poignée sur l'axe « haut » du carroyage, à distance fixe du centre. */
+    function placeRotateHandle(): void {
+        if (!rotate || !state.grid) return;
+        const phi = (((state.grid.angle ?? 0) - map.getBearing()) * Math.PI) / 180;
+        const hx = rotate.centerPx.x + ROTATE_HANDLE_PX * Math.sin(phi);
+        const hy = rotate.centerPx.y - ROTATE_HANDLE_PX * Math.cos(phi);
+        rotate.marker.setLngLat(map.unproject([hx, hy]));
+        rotate.label.textContent = `${Math.round(state.grid.angle ?? 0)}°`;
+    }
+
+    function endRotate(): void {
+        if (!rotate) return;
+        rotateCleanup?.();
+        rotateCleanup = null;
+        rotateActive = false;
+        rotate.marker.remove();
+        rotate = null;
+        map.getCanvas().style.cursor = '';
+        if (rotateDragWasOn) map.dragPan.enable();
+        notifyStatus();
+    }
+
+    function rotationPointerPx(e: MouseEvent | TouchEvent): { x: number; y: number } {
+        const r = map.getCanvas().getBoundingClientRect();
+        const t = 'touches' in e ? e.touches[0] : e;
+        return { x: (t?.clientX ?? 0) - r.left, y: (t?.clientY ?? 0) - r.top };
+    }
+
+    /** Geste de la poignée : glisser fait tourner autour du centre, en direct, aimanté au 5°. */
+    function beginRotateGesture(): void {
+        if (!rotate) return;
+        const el = rotate.el;
+        const onDown = (ev: MouseEvent | TouchEvent): void => {
+            ev.preventDefault();
+            ev.stopPropagation();
+            rotateActive = true;
+            map.getCanvas().style.cursor = 'grabbing';
+        };
+        const onMove = (ev: MouseEvent | TouchEvent): void => {
+            if (!rotate || !rotateActive) return;
+            ev.preventDefault();
+            const p = rotationPointerPx(ev);
+            const angle = snapGridAngle(gridAngleFromScreen(map.getBearing(), rotate.centerPx, p));
+            state.grid = rotateTacticalGrid(rotate.original, angle);
+            rotate.dirty = true;
+            renderGrid();
+            placeRotateHandle();
+        };
+        const onUp = (): void => {
+            if (!rotate || !rotateActive) return;
+            const angle = state.grid ? (state.grid.angle ?? 0) : 0;
+            const dirty = rotate.dirty;
+            endRotate();
+            if (dirty) {
+                changed();
+                toast(`Carroyage orienté à ${Math.round(angle)}°.`, 'success');
+            }
+        };
+        el.addEventListener('pointerdown', onDown);
+        el.addEventListener('touchstart', onDown, { passive: false });
+        document.addEventListener('pointermove', onMove);
+        document.addEventListener('pointerup', onUp);
+        document.addEventListener('pointercancel', onUp);
+        document.addEventListener('touchmove', onMove, { passive: false });
+        document.addEventListener('touchend', onUp);
+        document.addEventListener('touchcancel', onUp);
+        rotateCleanup = () => {
+            el.removeEventListener('pointerdown', onDown);
+            el.removeEventListener('touchstart', onDown);
+            document.removeEventListener('pointermove', onMove);
+            document.removeEventListener('pointerup', onUp);
+            document.removeEventListener('pointercancel', onUp);
+            document.removeEventListener('touchmove', onMove);
+            document.removeEventListener('touchend', onUp);
+            document.removeEventListener('touchcancel', onUp);
+        };
     }
 
     /** Point d'un évènement souris ou tactile ; `null` pour un geste à plusieurs doigts (pincement). */
@@ -460,7 +587,16 @@ export function createMapOverlays(map: MapLibreMap, opts: OverlayOptions): MapOv
         moveTimer = setTimeout(() => { moveTimer = null; renderMgrs(); void renderPower(); }, 350);
     });
     const onKey = (e: KeyboardEvent): void => {
-        if (e.key === 'Escape' && capture) { endCapture(); toast('Tracé du carroyage annulé.'); }
+        if (e.key !== 'Escape') return;
+        if (rotate) {
+            const original = rotate.original;
+            endRotate();
+            state.grid = original;
+            renderGrid();
+            toast('Rotation du carroyage annulée.');
+            return;
+        }
+        if (capture) { endCapture(); toast('Tracé du carroyage annulé.'); }
     };
     document.addEventListener('keydown', onKey);
 
@@ -469,7 +605,7 @@ export function createMapOverlays(map: MapLibreMap, opts: OverlayOptions): MapOv
 
     const api: MapOverlays = {
         get state() { return state; },
-        isCapturing: () => capture !== null || Date.now() < swallowUntil,
+        isCapturing: () => capture !== null || rotate !== null || Date.now() < swallowUntil,
         setGridOn(on) {
             state.gridOn = on;
             renderGrid();
@@ -526,6 +662,56 @@ export function createMapOverlays(map: MapLibreMap, opts: OverlayOptions): MapOv
             if (!state.grid) return;
             beginCapture('move');
             toast('Touchez le nouvel emplacement du coin A1 (Échap pour annuler).');
+        },
+        async startGridRotate() {
+            if (!state.grid || rotate) return;
+            const g = state.grid;
+            const centerGeo = gridToGeo(g, g.cols / 2, g.rows / 2);
+            const el = document.createElement('div');
+            el.className = 'tac-grid-rotate-handle';
+            el.setAttribute('role', 'slider');
+            el.setAttribute('aria-label', 'Tourner le carroyage');
+            el.style.cssText = 'width:44px;height:44px;border-radius:50%;background:rgba(11,13,18,0.85);border:2px solid #fff;color:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:grab;touch-action:none;user-select:none;-webkit-user-select:none;box-shadow:0 1px 6px rgba(0,0,0,0.5);font:600 11px Inter,system-ui,sans-serif;';
+            const icon = document.createElement('span');
+            icon.textContent = '⟳';
+            icon.style.cssText = 'font-size:18px;line-height:1;';
+            const label = document.createElement('span');
+            label.className = 'tac-grid-rotate-deg';
+            el.append(icon, label);
+            let MarkerCtor: RotateMarkerCtor | undefined;
+            try {
+                const mod = (await import('maplibre-gl')) as { Marker?: RotateMarkerCtor; default?: { Marker?: RotateMarkerCtor } };
+                MarkerCtor = mod.Marker ?? mod.default?.Marker;
+            } catch {
+                MarkerCtor = undefined;
+            }
+            if (!MarkerCtor) { toast('Rotation du carroyage indisponible sur cette carte.', 'error'); return; }
+            const marker = new MarkerCtor({ element: el, anchor: 'center' });
+            marker.setLngLat({ lng: centerGeo[0], lat: centerGeo[1] }).addTo(map);
+            rotate = {
+                marker: marker as unknown as { setLngLat(ll: { lng: number; lat: number }): unknown; remove(): void },
+                el,
+                label,
+                original: g,
+                centerGeo,
+                centerPx: map.project({ lng: centerGeo[0], lat: centerGeo[1] }),
+                dirty: false,
+            };
+            rotateDragWasOn = map.dragPan.isEnabled();
+            map.dragPan.disable();
+            map.getCanvas().style.cursor = 'grab';
+            placeRotateHandle();
+            beginRotateGesture();
+            notifyStatus();
+            toast('Glissez la poignée pour tourner le carroyage (Échap pour annuler).');
+        },
+        gridNorthUp() {
+            if (!state.grid) return;
+            if (rotate) endRotate();
+            state.grid = rotateTacticalGrid(state.grid, 0);
+            renderGrid();
+            changed();
+            toast('Carroyage remis au nord.', 'success');
         },
         async clearGrid() {
             if (!state.grid) return;
@@ -626,9 +812,15 @@ export function mountOverlayControls(section: HTMLElement, ov: MapOverlays, cls:
     draw.addEventListener('click', () => void ov.startGridDraw());
     const move = fab('tac-overlay-tool', 'open_with', 'Déplacer le carroyage (nouvel emplacement du coin A1)');
     move.addEventListener('click', () => ov.startGridMove());
+    const rotateBtn = fab('tac-overlay-tool', 'rotate_right', 'Tourner le carroyage autour de son centre');
+    rotateBtn.append(' Tourner');
+    rotateBtn.addEventListener('click', () => void ov.startGridRotate());
+    const northBtn = fab('tac-overlay-tool', 'explore', 'Remettre le carroyage au nord (angle 0)');
+    northBtn.append(' Nord en haut');
+    northBtn.addEventListener('click', () => ov.gridNorthUp());
     const clear = fab('tac-overlay-tool', 'delete', 'Effacer le carroyage');
     clear.addEventListener('click', () => void ov.clearGrid());
-    tools.append(select, onView, draw, move, clear);
+    tools.append(select, onView, draw, move, rotateBtn, northBtn, clear);
     grid.el.after(tools);
 
     const mgrsBtn = fab(cls.fab, 'grid_4x4', 'Afficher ou masquer la grille MGRS');
@@ -646,8 +838,11 @@ export function mountOverlayControls(section: HTMLElement, ov: MapOverlays, cls:
         tools.hidden = !s.gridOn;
         select.value = String(s.cellM);
         move.disabled = !s.grid;
+        rotateBtn.disabled = !s.grid;
+        northBtn.disabled = !s.grid;
         clear.disabled = !s.grid;
-        grid.note.textContent = ov.isCapturing() ? 'Touchez la carte…' : s.grid ? `${s.grid.cols} × ${s.grid.rows} cases de ${s.grid.cellM} m` : s.gridOn ? 'À tracer' : '';
+        const angle = s.grid ? Math.round(((s.grid.angle ?? 0) % 360 + 360) % 360) : 0;
+        grid.note.textContent = ov.isCapturing() ? 'Touchez la carte…' : s.grid ? `${s.grid.cols} × ${s.grid.rows} cases de ${s.grid.cellM} m${angle ? ` · orienté ${angle}°` : ''}` : s.gridOn ? 'À tracer' : '';
         mgrsBtn.classList.toggle('active', s.mgrsOn);
         mgrsBtn.setAttribute('aria-pressed', String(s.mgrsOn));
         mgrs.note.textContent = !s.mgrsOn ? '' : ov.mgrsNeedsZoom() ? 'Zoomez pour l’afficher' : '1 km, 100 m de près';
