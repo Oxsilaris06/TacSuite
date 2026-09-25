@@ -183,3 +183,10 @@
     --tac-zero: 0;
     --tac-full: 100%;
 }
+
+/* C7 (revue du 25/09) : l'attribut `hidden` gagne TOUJOURS, meme sur un
+   element qui porte son propre `display`. Sans cette regle, chaque composant
+   affiche en flex/grid devait redire `[hidden] { display: none }`. */
+[hidden] {
+    display: none !important;
+}

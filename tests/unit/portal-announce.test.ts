@@ -18,6 +18,7 @@ import {
     ANNOUNCE_CACHE_KEY,
     ANNOUNCE_DISMISS_KEY,
     MAX_FUTURE_MS,
+    announcementLayout,
     applyCachedAnnouncement,
     fingerprint,
     hasTimezone,
@@ -312,5 +313,61 @@ describe('initAnnouncement', () => {
         initAnnouncement({ fetchFn, now, storage: localStorage });
         expect(bannerText()).toBe('Au chargement.');
         await vi.waitFor(() => expect(bannerText()).toBe('Fraîche.'));
+    });
+});
+
+describe('Revue du 25/09 — carte : réemploi, mise en page, ordre du DOM, focus, sortie (C1 à C6)', () => {
+    const show = async (a: Announcement): Promise<void> => {
+        await refreshAnnouncement({ fetchFn: async () => jsonResponse(a), now, storage: localStorage });
+    };
+
+    it('C1 : la même annonce reçue de nouveau ne reconstruit pas la carte', async () => {
+        await show(ann({ texte: 'Stable.' }));
+        const first = bannerEl();
+        await show(ann({ texte: 'Stable.' }));
+        expect(bannerEl()).toBe(first);
+        expect(document.querySelectorAll(`#${ANNOUNCE_BANNER_ID}`)).toHaveLength(1);
+    });
+
+    it('C1 : une annonce différente remplace la carte (nouvel élément)', async () => {
+        await show(ann({ texte: 'Une.' }));
+        const first = bannerEl();
+        await show(ann({ texte: 'Deux.' }));
+        expect(bannerEl()).not.toBe(first);
+        expect(bannerText()).toContain('Deux.');
+    });
+
+    it('C3 : une ligne réduite à un tiret ne fait pas de puce vide ; un titre à puce perd sa puce', () => {
+        expect(announcementLayout('Nouveautés :\n• a\n-\n• b')).toEqual({ title: 'Nouveautés', blocks: [{ kind: 'list', items: ['a', 'b'] }] });
+        expect(announcementLayout('• Attention :\n• x').title).toBe('Attention');
+    });
+
+    it('C4 : le bouton de fermeture vient APRÈS le corps dans le DOM (ordre de lecture)', async () => {
+        await show(ann({ texte: 'Ordre.' }));
+        const card = bannerEl()!;
+        const body = card.querySelector('.release-card__body')!;
+        const close = card.querySelector('.release-card__close')!;
+        expect(body.compareDocumentPosition(close) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    });
+
+    it('C5 : à la fermeture, le focus quitte la carte avant qu’elle soit masquée', async () => {
+        document.body.innerHTML = '<div class="portal"><header class="portal-header"></header><main></main></div>';
+        await show(ann({ texte: 'Focus.' }));
+        const btn = bannerEl()!.querySelector<HTMLButtonElement>('.release-card__close')!;
+        btn.focus();
+        btn.click();
+        const card = document.getElementById(ANNOUNCE_BANNER_ID)!;
+        expect(card.getAttribute('aria-hidden')).toBe('true');
+        expect(card.contains(document.activeElement)).toBe(false);
+        expect(document.activeElement).toBe(document.querySelector('main'));
+    });
+
+    it('C6 : la fin de l’animation retire la carte sans attendre la minuterie de secours', async () => {
+        vi.useFakeTimers();
+        await show(ann({ texte: 'Sortie.' }));
+        bannerEl()!.querySelector<HTMLButtonElement>('.release-card__close')!.click();
+        const card = document.getElementById(ANNOUNCE_BANNER_ID)!;
+        card.dispatchEvent(new Event('animationend'));
+        expect(document.getElementById(ANNOUNCE_BANNER_ID)).toBeNull();
     });
 });

@@ -60,8 +60,13 @@ const CHIP_LABEL: Record<AnnounceLevel, string> = {
     alerte: 'Alerte',
 };
 
-/** Durée de la sortie animée de la carte (voir `styles/portal.css`). */
-const CARD_EXIT_MS = 220;
+/**
+ * Retrait de la carte : à la fin de l'animation de sortie (`animationend`,
+ * voir `styles/portal.css`), avec une minuterie de secours (C6) au cas où
+ * l'évènement ne vient pas (mouvement réduit sans animation, environnement
+ * sans moteur d'animation).
+ */
+const CARD_EXIT_FALLBACK_MS = 320;
 
 /**
  * Découpe le texte en titre, liste et paragraphes (note de version) : une
@@ -72,13 +77,15 @@ const CARD_EXIT_MS = 220;
 export function announcementLayout(texte: string): { title: string | null; blocks: Array<{ kind: 'list'; items: string[] } | { kind: 'p'; text: string }> } {
     const lines = texte.split('\n').map((l) => l.trim()).filter(Boolean);
     let title: string | null = null;
-    if (lines.length > 1 && /:\s*$/.test(lines[0] ?? '')) title = (lines.shift() ?? '').replace(/\s*:\s*$/, '');
+    // C3 — un titre écrit avec une puce (« • Attention : ») perd sa puce.
+    if (lines.length > 1 && /:\s*$/.test(lines[0] ?? '')) title = (lines.shift() ?? '').replace(/^[•\-–]\s*/, '').replace(/\s*:\s*$/, '');
     const blocks: Array<{ kind: 'list'; items: string[] } | { kind: 'p'; text: string }> = [];
     for (const line of lines) {
         const bullet = /^[•\-–]\s*/.exec(line);
         if (bullet) {
             const last = blocks[blocks.length - 1];
-            const item = line.slice(bullet[0].length);
+            const item = line.slice(bullet[0].length).trim();
+            if (!item) continue; // C3 — un tiret oublié ne fait pas de puce vide
             if (last && last.kind === 'list') last.items.push(item);
             else blocks.push({ kind: 'list', items: [item] });
         } else {
@@ -93,10 +100,24 @@ function removeAnnouncementCard(animate: boolean): void {
     const el = document.getElementById(ANNOUNCE_BANNER_ID);
     if (!el) return;
     if (!animate) { el.remove(); return; }
+    // C5 — le focus quitte la carte AVANT qu'elle soit masquée : sinon un
+    // élément focalisé se retrouve sous aria-hidden, puis le focus tombe sur
+    // <body> et la tabulation repart du haut de la page.
+    if (el.contains(document.activeElement)) {
+        const main = document.querySelector<HTMLElement>('main');
+        if (main) {
+            if (!main.hasAttribute('tabindex')) main.setAttribute('tabindex', '-1');
+            try { main.focus({ preventScroll: true }); } catch { /* environnement sans focus */ }
+        } else {
+            (document.activeElement as HTMLElement | null)?.blur?.();
+        }
+    }
     // Sortie par le même chemin que l'entrée (fondu, léger retrait), puis retrait.
     el.dataset.closing = 'true';
     el.setAttribute('aria-hidden', 'true');
-    setTimeout(() => el.remove(), CARD_EXIT_MS);
+    const done = (): void => { el.remove(); };
+    el.addEventListener('animationend', done, { once: true });
+    setTimeout(done, CARD_EXIT_FALLBACK_MS);
 }
 
 /**
@@ -146,7 +167,11 @@ function renderAnnouncementCard(a: Announcement, onDismiss: () => void): void {
     close.appendChild(svg);
     close.addEventListener('click', () => {
         removeAnnouncementCard(true);
-        onDismiss();
+        try {
+            onDismiss();
+        } catch {
+            // Un raccord en échec ne doit jamais remonter jusqu'à l'utilisateur.
+        }
     });
 
     const body = document.createElement('div');
@@ -168,10 +193,12 @@ function renderAnnouncementCard(a: Announcement, onDismiss: () => void): void {
         }
     }
 
-    card.append(head, close, body);
+    // C4 — ordre de lecture : pastille, titre, corps, puis le bouton qui
+    // masque (la grille CSS le place en haut à droite quoi qu'il en soit).
+    card.append(head, body, close);
+    card.dataset.fp = fingerprint(a);
     if (previous) {
-        // Même annonce remplacée en place : pas de nouvelle entrée animée.
-        card.dataset.settled = 'true';
+        // Annonce différente déjà affichée : remplacée en place.
         previous.replaceWith(card);
         return;
     }
@@ -328,6 +355,11 @@ function applyAnnouncement(a: Announcement, opts: AnnounceOptions): void {
         removeAnnouncementCard(false);
         return;
     }
+    // C1 — même annonce déjà à l'écran (cache puis réseau, évènement `online`) :
+    // rien à reconstruire, l'entrée animée n'est pas coupée et un lecteur
+    // d'écran n'entend pas l'alerte une seconde fois.
+    const shown = typeof document === 'undefined' ? null : document.getElementById(ANNOUNCE_BANNER_ID);
+    if (shown && shown.dataset.fp === fp && shown.dataset.closing !== 'true') return;
     renderAnnouncementCard(a, () => writeDismissed(storage, fp));
 }
 

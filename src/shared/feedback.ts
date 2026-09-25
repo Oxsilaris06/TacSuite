@@ -200,9 +200,7 @@ function injectStyles(): void {
 .tac-banner--info { border-left-color: var(--accent-fill, var(--color-primary, #3b82f6)); }
 .tac-banner--important { border-left-color: #d97706; background: color-mix(in srgb, #d97706 12%, var(--bg-container, var(--color-surface, #1b1d24))); }
 .tac-banner--alert { border-left-color: var(--danger-red, var(--color-danger, #c8344a)); background: color-mix(in srgb, var(--danger-red, var(--color-danger, #c8344a)) 14%, var(--bg-container, var(--color-surface, #1b1d24))); }
-/* pre-line : une note de version en liste garde ses retours à la ligne (texte
-   posé par textContent, jamais d'HTML). */
-.tac-banner-message { flex: 1 1 auto; min-width: 0; white-space: pre-line; }
+.tac-banner-message { flex: 1 1 auto; min-width: 0; }
 .tac-banner-action {
   appearance: none;
   flex: 0 0 auto;
