@@ -545,6 +545,10 @@ export interface ArchiveOiImportResult {
     paxSkipped: number;
     /** Carroyage de la carto OI repris dans le plan de la situation courante. */
     gridImported?: boolean | undefined;
+    /** Photos d'OI (hors photo principale des fiches) AJOUTÉES à la galerie. */
+    galleryAdded?: number | undefined;
+    /** Photos d'OI déjà présentes, Mises à jour au réimport (A6). */
+    galleryUpdated?: number | undefined;
 }
 
 export interface ArchiveContract {

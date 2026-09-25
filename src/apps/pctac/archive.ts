@@ -127,11 +127,13 @@ interface OiPatracdvrRow {
     members?: OiPatracdvrMember[];
 }
 
-/** Entrée `dynamic_photos['photo_main_<advId>']` : images liées à un adversaire. */
+/** Entrée `dynamic_photos[<clé>]` : image liée à un contenant de l'OI. */
 interface OiDynamicPhotoEntry {
     id?: string;
     /** JSON du moteur d'annotation (`formulaires.ts`), commun au PC-Tac. */
     annotations?: unknown;
+    /** Légende saisie dans l'OI (formulaires « Photos HD »). */
+    customTitle?: string;
 }
 
 /** Sous-ensemble utile de `tactical_oi_data` désérialisé (structure best-effort). */
@@ -428,6 +430,47 @@ export function importSummaryMessage(
         parts.push(`${unknownKeys} élément${unknownKeys > 1 ? 's' : ''} inconnu${unknownKeys > 1 ? 's' : ''} ignoré${unknownKeys > 1 ? 's' : ''}`);
     }
     return parts.length ? `${parts.join('. ')}.` : null;
+}
+
+/**
+ * Identifiant PC-Tac STABLE d'une photo d'OI, dérivé de son id OI (A6). Un
+ * réimport du même OI retrouve donc la même entrée et la met à jour au lieu
+ * d'en ajouter une seconde. Restreint aux caractères admis par `SAFE_ID`
+ * (l'id finit dans des gestionnaires en ligne).
+ */
+export function stableOiPhotoId(imgId: string): string {
+    const safe = imgId.replace(/[^A-Za-z0-9_.:-]/g, '_').slice(0, 120);
+    return `oi_photo_${safe || 'sans_id'}`;
+}
+
+/** Catégorie de l'onglet Photos la plus cohérente pour un contenant OI. */
+export function oiPhotoCategory(key: string): string {
+    if (/advers|renfort|photo_extra_/.test(key)) return 'neutralized';
+    if (/logo/.test(key)) return 'other';
+    return 'location';
+}
+
+/** Légende lisible d'une photo d'OI (légende saisie, sinon libellé du contenant). */
+export function oiPhotoTitle(key: string, entry: OiDynamicPhotoEntry): string {
+    const custom = typeof entry.customTitle === 'string' ? entry.customTitle.trim() : '';
+    if (custom) return custom;
+    const known: Array<[RegExp, string]> = [
+        [/express_objectif/, 'Objectif'],
+        [/express_adversaire/, 'Adversaire'],
+        [/express_carte/, 'Carte'],
+        [/transport_pr/, 'Transport PSIG → PR'],
+        [/transport_domicile/, 'Transport PR → Domicile'],
+        [/photo_itin_ext_/, 'Cheminement extérieur'],
+        [/photo_itin_int_/, 'Cheminement intérieur'],
+        [/photo_bapteme_/, 'Baptême terrain'],
+        [/photo_empl_ao_/, 'Emplacement AO'],
+        [/photo_effrac_/, 'Effraction'],
+        [/photo_extra_/, 'Adversaire — photo supplémentaire'],
+        [/photo_renforts_/, 'Renforts'],
+        [/photo_logo_unite/, 'Logo unité'],
+    ];
+    for (const [re, label] of known) if (re.test(key)) return label;
+    return key;
 }
 
 export const Archive: ArchiveContract = {
@@ -921,19 +964,19 @@ export const Archive: ArchiveContract = {
 
         const oiGrid = isTacticalGridSpec(oi.cartography?.grid) ? oi.cartography.grid : null;
 
-        if (!adversaries.length && !paxMembers.length && !oiGrid) {
-            throw new Error('Aucun adversaire, membre PATRACDVR ni carroyage trouvé dans ce fichier OI.');
+        // Le fichier est-il porteur de quelque chose d'exploitable ? Les photos
+        // de `dynamic_photos` comptent autant que les fiches : un OI « photos
+        // seules » doit pouvoir être importé (A6).
+        const hasDynPhotos = Object.values(dynPhotos).some((e) => Array.isArray(e) && e.length > 0);
+        if (!adversaries.length && !paxMembers.length && !oiGrid && !hasDynPhotos) {
+            throw new Error('Aucun adversaire, membre PATRACDVR, photo ni carroyage trouvé dans ce fichier OI.');
         }
 
-        // Récupère le data URL de la photo principale d'un adversaire depuis l'archive.
-        // OI stocke la photo dans dynamic_photos['photo_main_<advId>'][0].id (clé img_…),
-        // dont les octets sont dans images/<encodeURIComponent(id)>.bin (type via images.json).
-        const photoDataUrlForAdv = async (advId: string | undefined): Promise<string | null> => {
-            if (!zip || !advId) return null;
-            const entries = dynPhotos['photo_main_' + advId];
-            const first = entries ? entries[0] : undefined;
-            const imgId = first ? first.id : undefined;
-            if (!imgId) return null;
+        // Lit les octets d'une photo de l'OI depuis l'archive. OI stocke la clé
+        // `img_…` dans `dynamic_photos`, les octets dans
+        // `images/<encodeURIComponent(id)>.bin` (type via images.json).
+        const readPhotoDataUrl = async (imgId: string | undefined): Promise<string | null> => {
+            if (!zip || !imgId) return null;
             // archive.js:369-370 — repli sur le nom d'image NON encodé.
             const zipEntry = zip.file('images/' + encodeURIComponent(imgId) + '.bin')
                 || zip.file('images/' + imgId + '.bin');
@@ -945,14 +988,21 @@ export const Archive: ArchiveContract = {
             } catch (e) { console.warn('[OI→PCTAC] photo illisible:', imgId, e); return null; }
         };
 
-        // Annotations de cette photo dans l'OI : tableau d'objets, sinon aucune.
-        const photoAnnotationsForAdv = (advId: string | undefined): OiAnnotation[] => {
-            const raw = advId ? dynPhotos['photo_main_' + advId]?.[0]?.annotations : undefined;
+        // Data URL de la photo PRINCIPALE d'un adversaire (première entrée).
+        const photoDataUrlForAdv = (advId: string | undefined): Promise<string | null> => {
+            const first = advId ? dynPhotos['photo_main_' + advId]?.[0] : undefined;
+            return readPhotoDataUrl(first?.id);
+        };
+
+        // Annotations d'une photo dans l'OI : tableau d'objets, sinon aucune.
+        const parseAnnotations = (raw: unknown): OiAnnotation[] => {
             try {
                 const parsed: unknown = typeof raw === 'string' ? JSON.parse(raw) : raw;
                 return Array.isArray(parsed) ? parsed.filter((a): a is OiAnnotation => !!a && typeof a === 'object') : [];
             } catch { return []; }
         };
+        const photoAnnotationsForAdv = (advId: string | undefined): OiAnnotation[] =>
+            advId ? parseAnnotations(dynPhotos['photo_main_' + advId]?.[0]?.annotations) : [];
 
         // --- 1) Adversaires → pcTacAdversaries (+ photo + galerie Photos) ---
         const advList = Storage.loadCollection(ADVERSARIES_KEY);
@@ -1062,6 +1112,59 @@ export const Archive: ArchiveContract = {
         });
         if (paxAdded) Storage.saveCollection(CUSTOM_PAX_KEY, paxList);
 
+        // --- 2 bis) TOUTES les photos de l'OI → galerie Photos (A6) ---
+        // La photo PRINCIPALE de chaque adversaire est déjà passée par la fiche
+        // (id `_sync`), on ne la réimporte pas ici : les autres contenants
+        // (objectif, carte, transport, cheminement, effraction, photos
+        // supplémentaires d'adversaire…) arrivent avec leur légende, leurs
+        // annotations et une catégorie cohérente. L'id PC-Tac est DÉRIVÉ de
+        // l'id OI de la photo : réimporter le même OI met à jour l'entrée au
+        // lieu d'en ajouter une seconde.
+        const photoById = new Map(photoList.map((p) => [p.id, p]));
+        let galleryAdded = 0, galleryUpdated = 0;
+        for (const [key, entries] of Object.entries(dynPhotos)) {
+            if (key.startsWith('photo_main_') || !Array.isArray(entries)) continue;
+            for (const entry of entries) {
+                const imgId = entry && typeof entry.id === 'string' ? entry.id : '';
+                if (!imgId) continue;
+                const dataUrl = await readPhotoDataUrl(imgId);
+                if (!dataUrl) continue; // photo illisible : les autres passent
+
+                const pcId = stableOiPhotoId(imgId);
+                const annotations = parseAnnotations(entry.annotations);
+                let shown = dataUrl;
+                let annotated = false;
+                if (annotations.length) {
+                    try {
+                        shown = await renderAnnotated(dataUrl, annotations);
+                        annotated = true;
+                    } catch (e) {
+                        shown = dataUrl;
+                        console.warn('[OI→PCTAC] annotations non appliquées:', e);
+                    }
+                }
+                try {
+                    await ImageStore.put(pcId, shown);
+                    if (annotated) await ImageStore.put(pcId + '_orig', dataUrl);
+                    else { try { await ImageStore.delete(pcId + '_orig'); } catch { /* best-effort */ } }
+                } catch (e) {
+                    console.warn('[OI→PCTAC] photo de galerie non enregistrée:', imgId, e);
+                    continue;
+                }
+
+                const existing = photoById.get(pcId);
+                const item: PctacCollectionItem = existing ?? { id: pcId };
+                item.title = oiPhotoTitle(key, entry);
+                item.category = oiPhotoCategory(key);
+                item.hasImage = true;
+                if (annotated) item.annotations = JSON.stringify(annotations);
+                else delete item.annotations;
+                if (existing) galleryUpdated++;
+                else { photoList.push(item); photoById.set(pcId, item); galleryAdded++; }
+            }
+        }
+        if (galleryAdded || galleryUpdated) Storage.saveCollection(PHOTOS_KEY, photoList);
+
         // --- 3) Carroyage de la carto OI → plan de la situation courante ---
         // L'OI fait foi (décision Nico 2026-09-24) : tout le monde doit appeler
         // « C4 » la même case, donc le carroyage de l'OI REMPLACE celui du plan,
@@ -1078,7 +1181,7 @@ export const Archive: ArchiveContract = {
             } catch (e) { console.warn('[OI→PCTAC] carroyage non enregistré:', e); }
         }
 
-        return { ok: true, advAdded, advPhotos, advSkipped, paxAdded, paxSkipped, gridImported };
+        return { ok: true, advAdded, advPhotos, advSkipped, paxAdded, paxSkipped, gridImported, galleryAdded, galleryUpdated };
     },
 };
 
