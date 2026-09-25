@@ -29,6 +29,8 @@
 // module reste néanmoins un CONSOMMATEUR pur : aucune écriture dans `pdf/`.
 import { PAGE_CAPACITY } from '@oi/pdf/document-builder.js';
 import { estimateCharsPerLine, mm, pageGeometry } from '@oi/pdf/theme.js';
+import { fitErrorLine, type OiPdfFitRefusalError } from '@oi/pdf/theme.js';
+import { confirmDialog } from '@shared/feedback.js';
 
 /** Une règle de validation : `test` renvoie `true` si la valeur est valide. */
 export interface FieldRule {
@@ -226,7 +228,7 @@ function removeCharCounterEl(input: HTMLInputElement | HTMLTextAreaElement): voi
     if (el) el.remove();
 }
 
-function renderCharCounterEl(input: HTMLInputElement | HTMLTextAreaElement, count: number, softMax: number, zone: CharCounterZone): void {
+function renderCharCounterEl(input: HTMLInputElement | HTMLTextAreaElement, text: string, zone: CharCounterZone): void {
     const counterId = counterIdFor(input);
     let el = document.getElementById(counterId);
     if (!el) {
@@ -242,7 +244,7 @@ function renderCharCounterEl(input: HTMLInputElement | HTMLTextAreaElement, coun
         }
     }
     el.className = `char-counter char-counter--${zone}`;
-    el.textContent = zone === 'danger' ? `${count}/${softMax} — risque de refus PDF` : `${count}/${softMax}`;
+    el.textContent = text;
     // aria-live uniquement au passage en zone rouge (mission) : annoncer chaque
     // frappe en régime normal/avertissement serait bruyant pour un lecteur
     // d'écran ; seul le franchissement du seuil dur mérite l'interruption.
@@ -269,7 +271,8 @@ export function charCounter(input: HTMLInputElement | HTMLTextAreaElement, opts:
             removeCharCounterEl(input);
             return;
         }
-        renderCharCounterEl(input, count, softMax, charCounterZone(count, softMax));
+        const zone = charCounterZone(count, softMax);
+        renderCharCounterEl(input, zone === 'danger' ? `${count}/${softMax} — risque de refus PDF` : `${count}/${softMax}`, zone);
     }
 
     function onFocus(): void {
@@ -307,19 +310,6 @@ export function charCounter(input: HTMLInputElement | HTMLTextAreaElement, opts:
  * risque réel plutôt qu'une simple réduction automatique.
  */
 const CHAR_COUNTER_FONT_PX = 8;
-
-/**
- * Seuil (caractères) du champ ATCD/dangerosité d'une fiche adversaire —
- * dérivé de `PAGE_CAPACITY.adversaireAtcdMaxChars` (source de vérité,
- * `pdf/document-builder.ts`), palier `CHAR_COUNTER_FONT_PX`.
- */
-export const ADVERSAIRE_ATCD_SOFT_MAX = PAGE_CAPACITY.adversaireAtcdMaxChars(CHAR_COUNTER_FONT_PX);
-
-/**
- * Seuil (caractères) des champs « C conduite à tenir » ZMSPCP/MOICP — dérivé
- * de `PAGE_CAPACITY.articulationCatMaxChars`, même palier.
- */
-export const ARTICULATION_CAT_SOFT_MAX = PAGE_CAPACITY.articulationCatMaxChars(CHAR_COUNTER_FONT_PX);
 
 /**
  * Seuil (caractères) d'UN champ de carte hypothèse d'effraction (Technique/
@@ -375,3 +365,114 @@ function effractionHypFieldSoftMax(fontPx: number): number {
 }
 
 export const EFFRACTION_HYP_FIELD_SOFT_MAX = effractionHypFieldSoftMax(CHAR_COUNTER_FONT_PX);
+
+/**
+ * fitCounter — compteur EN LIGNES sous un champ dont la page PDF peut être
+ * refusée (ATCD d'une fiche adversaire, CAT d'un bloc ZMSPCP/MOICP ;
+ * décision 43, audit F07). `measure()` rend la marge de la page en lignes au
+ * plus petit palier de police, calculée par le MÊME modèle que le solveur
+ * (`adversaryFicheMarginLines`, `articulationMarginLines`) : le compteur est
+ * rouge dès que la page est pleine (marge 0), donc AVANT le refus (marge
+ * négative). Toute saisie dans `scope` (la fiche ou le bloc entier) remet la
+ * marge à jour : les autres champs prennent aussi de la place.
+ *
+ * Même politique d'apparition que `charCounter` : au focus, ou dès que la
+ * marge devient faible ; jamais au repos sur une page confortable.
+ */
+export interface FitCounterOptions {
+    measure: () => number;
+    scope?: HTMLElement | undefined;
+}
+
+/** Marge (lignes) sous laquelle le compteur passe en avertissement et reste visible hors focus. */
+const FIT_COUNTER_WARNING_LINES = 5;
+
+function plural(n: number, word: string): string {
+    return `${n} ${word}${n > 1 ? 's' : ''}`;
+}
+
+export function fitCounter(input: HTMLInputElement | HTMLTextAreaElement, opts: FitCounterOptions): DetachValidation {
+    ensureId(input);
+    let isFocused = false;
+
+    function update(): void {
+        let margin: number;
+        try {
+            margin = opts.measure();
+        } catch {
+            removeCharCounterEl(input);
+            return;
+        }
+        if (!isFocused && margin > FIT_COUNTER_WARNING_LINES) {
+            removeCharCounterEl(input);
+            return;
+        }
+        const zone: CharCounterZone = margin < 1 ? 'danger' : margin <= FIT_COUNTER_WARNING_LINES ? 'warning' : 'normal';
+        const text = margin < 0
+            ? `${plural(-margin, 'ligne')} de trop : le PDF sera refusé`
+            : margin === 0
+                ? 'Page pleine : une ligne de plus et le PDF sera refusé'
+                : `${plural(margin, 'ligne')} de marge sur la page`;
+        renderCharCounterEl(input, text, zone);
+    }
+    const onFocus = (): void => { isFocused = true; update(); };
+    const onBlur = (): void => { isFocused = false; update(); };
+    const scope = opts.scope ?? input;
+    input.addEventListener('focus', onFocus);
+    input.addEventListener('blur', onBlur);
+    scope.addEventListener('input', update);
+    update();
+
+    return () => {
+        input.removeEventListener('focus', onFocus);
+        input.removeEventListener('blur', onBlur);
+        scope.removeEventListener('input', update);
+        removeCharCounterEl(input);
+    };
+}
+
+/**
+ * « Aller au champ » (décision 43) : ferme l'aperçu PDF s'il est ouvert, va à
+ * l'étape qui contient le champ, déplie sa fiche ou son bloc, puis y place le
+ * curseur (le compteur en lignes s'affiche alors). `false` si le champ n'existe
+ * plus (fiche supprimée entre-temps).
+ */
+export function revealOiField(field: { selector: string; index?: number }): boolean {
+    const el = document.querySelectorAll<HTMLElement>(field.selector)[field.index ?? 0];
+    if (!el) return false;
+    const preview = document.getElementById('presentationModal') as HTMLDialogElement | null;
+    if (preview?.open) {
+        if (typeof preview.close === 'function') preview.close();
+        else preview.removeAttribute('open');
+    }
+    // Étapes de l'assistant : même sélecteur que `oiState.steps` (main.ts).
+    const step = Array.from(document.querySelectorAll('.wizard-step')).findIndex((s) => s.contains(el));
+    if (step >= 0 && typeof window.goToStep === 'function') window.goToStep(step);
+    let opened = false;
+    for (let c = el.closest('.collapsible-container'); c; c = c.parentElement?.closest('.collapsible-container') ?? null) {
+        if (!c.classList.contains('open')) { c.classList.add('open'); opened = true; }
+    }
+    // Dépli animé en CSS (0,4 s) : on attend sa fin pour centrer le champ.
+    setTimeout(() => {
+        el.scrollIntoView?.({ block: 'center' });
+        el.focus({ preventScroll: true });
+    }, opened ? 450 : 0);
+    return true;
+}
+
+/**
+ * Refus « une page = un usage » expliqué (décision 43, audit F07) : fenêtre
+ * persistante (plus de toast de 4 s) qui nomme chaque fiche ou bloc en cause,
+ * dit à peu près combien retirer et mène au premier champ à corriger.
+ */
+export async function showOiFitRefusal(error: OiPdfFitRefusalError): Promise<void> {
+    const target = error.fitErrors.find((e) => e.field)?.field;
+    const lines = error.fitErrors.map((e) => `• ${fitErrorLine(e)}`);
+    const go = await confirmDialog({
+        title: 'PDF non généré : une page déborde',
+        message: `Chaque fiche adversaire, bloc ZMSPCP ou MOICP et cellule effraction tient sur UNE page, même en petite police. À raccourcir :\n\n${lines.join('\n')}`,
+        confirmLabel: target ? 'Aller au champ' : 'Compris',
+        cancelLabel: 'Fermer',
+    });
+    if (go && target) revealOiField(target);
+}

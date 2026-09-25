@@ -265,6 +265,26 @@ export interface OiPdfFitError {
     details: string;
     /** Fraction de dépassement au palier plancher (ex. 0.4 = ~40 % de trop). */
     excessRatio: number;
+    /**
+     * Lignes de trop au palier plancher (décision 43 : dire à peu près
+     * combien retirer) — même modèle que le compteur sous le champ.
+     */
+    excessLines?: number;
+    /** Champ à corriger (« Aller au champ ») : sélecteur CSS et rang, comme les ancres d'édition en place. */
+    field?: { selector: string; index?: number };
+}
+
+/** « environ 6 lignes de trop », à défaut « ~12 % ». */
+export function fitExcessText(e: OiPdfFitError): string {
+    if (e.excessLines !== undefined && e.excessLines > 0) {
+        return `environ ${e.excessLines} ligne${e.excessLines > 1 ? 's' : ''} de trop`;
+    }
+    return `~${Math.round(e.excessRatio * 100)} % de trop`;
+}
+
+/** Une ligne du refus expliqué (décision 43) : quoi, combien, que faire. */
+export function fitErrorLine(e: OiPdfFitError): string {
+    return `${e.section} — ${fitExcessText(e)} : ${e.details}.`;
 }
 
 /**
@@ -280,7 +300,7 @@ export class OiPdfFitRefusalError extends Error {
     constructor(fitErrors: OiPdfFitError[]) {
         super(
             fitErrors
-                .map((e) => `${e.section} : contenu trop long pour une page (dépassement ~${Math.round(e.excessRatio * 100)} %) — ${e.details}`)
+                .map((e) => `${e.section} : contenu trop long pour une page (dépassement : ${fitExcessText(e)}) — ${e.details}`)
                 .join(' | '),
         );
         this.name = 'OiPdfFitRefusalError';

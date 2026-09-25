@@ -30,6 +30,8 @@ import { describe, expect, it } from 'vitest';
 import type { Content, ContextPageSize, DynamicBackground, DynamicContent } from 'pdfmake/interfaces';
 
 import {
+    adversaryFicheMarginLines,
+    articulationMarginLines,
     buildOiDocDefinition,
     effractionFirstOverheadPt,
     hypothesisRowHeightPt,
@@ -1412,11 +1414,19 @@ describe("PAGE_CAPACITY — capacités calibrées par champ/section (mission P1,
         expect(PAGE_CAPACITY.effractionHypothesesCardsMax()).toBe(4);
     });
 
-    it('adversaireAtcdMaxChars/articulationCatMaxChars décroissent quand la police grandit (moins de caractères tiennent par ligne à police plus grande, mais moins de lignes aussi — capacité positive et finie)', () => {
-        for (const fontPx of [7, 9, 11]) {
-            expect(PAGE_CAPACITY.adversaireAtcdMaxChars(fontPx)).toBeGreaterThan(0);
-            expect(PAGE_CAPACITY.articulationCatMaxChars(fontPx)).toBeGreaterThan(0);
-        }
+    // Décision 43 : les capacités en caractères de l'ATCD et de la CAT
+    // (adversaireAtcdMaxChars, articulationCatMaxChars) annonçaient une marge
+    // qui n'existait pas (audit F07) ; elles sont remplacées par des marges en
+    // lignes issues du modèle du solveur (accord vérifié dans
+    // oi-pdf-fit-refusal.test.ts). Ici : finies, et décroissantes avec le texte.
+    it('adversaryFicheMarginLines/articulationMarginLines : finies et décroissantes quand le texte s’allonge', () => {
+        const adv = (atcd: string): OiAdversary => ({ id: 'a', nom_adversaire: 'X', antecedents_adversaire: atcd, me_list: [], etat_esprit_list: [], volume_list: [], vehicules_list: [] });
+        const short = adversaryFicheMarginLines(adv('- 2024 : vol'), { hasPhoto: false, format: 'a4' });
+        const long = adversaryFicheMarginLines(adv(Array.from({ length: 30 }, (_, i) => `- ${i} : vol aggravé en réunion`).join('\n')), { hasPhoto: false, format: 'a4' });
+        expect(Number.isFinite(short) && Number.isFinite(long)).toBe(true);
+        expect(long).toBeLessThan(short);
+        const block = (cat: string): OiZmspcpBlock => ({ id: 'z', title: 'T', zone: '', mission: '', secteur: '', points_particuliers: '', cat, place_chef: '', members: [] });
+        expect(articulationMarginLines('zmspcp', block('x'.repeat(1500)), {}, 'a4')).toBeLessThan(articulationMarginLines('zmspcp', block('x'), {}, 'a4'));
     });
 });
 

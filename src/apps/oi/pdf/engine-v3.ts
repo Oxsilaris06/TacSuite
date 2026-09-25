@@ -26,6 +26,7 @@ import { PDF_FONT_VFS, PDF_FONTS } from './fonts.js';
 import { currentOiPdfOptions } from './options.js';
 import { acquirePdfLock, releasePdfLock } from './generation-lock.js';
 import { toast } from '@shared/feedback.js';
+import { showOiFitRefusal } from '@oi/validation.js';
 import { PDF_IMAGE_PROFILES, formatBytes, type PdfSortie } from '@shared/pdf-options.js';
 import type { OiPdfFormat } from './theme.js';
 import type { OiPdfCollectedData } from '@shared/types/contracts.js';
@@ -549,7 +550,8 @@ export async function downloadOiPdfV3(deps?: {
             // qui masquerait la cause et n'orienterait pas l'utilisateur vers
             // la bonne action : réduire les ATCD/textes concernés).
             if (error instanceof OiPdfFitRefusalError) {
-                toast(error.message, { kind: 'error' });
+                // Décision 43 : fenêtre persistante, « Aller au champ ».
+                void showOiFitRefusal(error);
             } else {
                 // Message IDENTIQUE à pdf-engine-v2.ts (U19 : toast unique).
                 toast('Erreur de génération. Veuillez consulter les logs.', { kind: 'error' });

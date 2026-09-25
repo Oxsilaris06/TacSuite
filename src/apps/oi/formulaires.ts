@@ -194,8 +194,6 @@ import { setupQuickEditPanel } from '@oi/patrac.js';
 import { reencodeSansExif } from '@oi/outils.js';
 // R2-T4 — validation inline (nouveau module, cf. son en-tête).
 import { attachValidation, required } from '@oi/validation.js';
-// P3 — compteur de caractères calibré PDF (nouveau module, cf. son en-tête).
-import { ADVERSAIRE_ATCD_SOFT_MAX, charCounter } from '@oi/validation.js';
 import { confirmDialog, toast } from '@shared/feedback.js';
 import type {
     OiAdversary,
@@ -596,13 +594,8 @@ function addAdversary(data: OiAdversary | null = null): void {
         attachValidation(domicileAdvInput, [required("Le domicile de l'adversaire est requis.")]);
     }
 
-    // P3 — compteur de caractères : champ ATCD/dangerosité, seul champ de la
-    // fiche adversaire alimentant une section PDF à refus possible (fiche
-    // adversaire, colonne droite — cf. `PAGE_CAPACITY.adversaireAtcdMaxChars`).
-    const antecedentsAdvInput = document.getElementById(`antecedents_adv_${id}`) as HTMLTextAreaElement | null;
-    if (antecedentsAdvInput) {
-        charCounter(antecedentsAdvInput, { softMax: ADVERSAIRE_ATCD_SOFT_MAX });
-    }
+    // Décision 43 — le compteur sous l'ATCD (en lignes, même modèle que le
+    // solveur PDF) est posé par main.ts (`attachDynamicCharCounters`).
 
     // Initialisation des composants
     initChipContainer(`esprit_${id}`, (data?.etat_esprit_list as string[] | undefined) || []);

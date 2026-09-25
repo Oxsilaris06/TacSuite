@@ -79,8 +79,11 @@ import type { OiPdfCollectedData } from '@shared/types/contracts.js';
 // R2-T2b : `alert()` natif → `toast` (`@shared/feedback.js`) mocké plutôt que
 // `vi.spyOn(window, 'alert')`, même pattern que `pc-archive.test.ts`.
 const toastSpy = vi.hoisted(() => vi.fn());
+// Décision 43 : le refus « une page = un usage » passe par une fenêtre persistante.
+const confirmSpy = vi.hoisted(() => vi.fn(() => Promise.resolve(false)));
 vi.mock('@shared/feedback.js', () => ({
     toast: toastSpy,
+    confirmDialog: confirmSpy,
 }));
 
 // ---------------------------------------------------------------------------
@@ -353,6 +356,40 @@ describe('openPreview', () => {
         expect(content.querySelector('.pdf-preview-error')).not.toBeNull();
     });
 
+    it('premier aperçu refusé (une page déborde) : l’aperçu explique le refus au lieu de renvoyer vers « Télécharger », qui échouerait pareil (décision 43, audit F07)', async () => {
+        const { content } = buildPresentationDom();
+        vi.spyOn(console, 'error').mockImplementation(() => {});
+        confirmSpy.mockClear();
+
+        await PDFEngineV2.openPreview({
+            collect: () => Promise.resolve(makeCollectedData()),
+            buildBlob: () => Promise.reject(new OiPdfFitRefusalError([
+                { section: 'Fiche Adversaire 1 : DUPONT', details: 'réduisez les ATCD', excessRatio: 0.05, excessLines: 4 },
+            ])),
+        });
+
+        const text = content.querySelector('.pdf-preview-error')?.textContent ?? '';
+        expect(text).toContain('Fiche Adversaire 1 : DUPONT');
+        expect(text).toContain('environ 4 lignes de trop');
+        expect(text).not.toContain('Télécharger le PDF');
+        expect(confirmSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it('« Présenter ici » refusé (une page déborde) : même fenêtre persistante, pas le message générique', async () => {
+        vi.spyOn(console, 'error').mockImplementation(() => {});
+        confirmSpy.mockClear();
+
+        await PDFEngineV2.openPresentInPlace({
+            collect: () => Promise.resolve(makeCollectedData()),
+            buildBlob: () => Promise.reject(new OiPdfFitRefusalError([
+                { section: 'Articulation : ZMSPCP - APPUI', details: 'retirez des cellules', excessRatio: 0.1, excessLines: 2 },
+            ])),
+        });
+
+        expect(confirmSpy).toHaveBeenCalledWith(expect.objectContaining({ message: expect.stringContaining('Articulation : ZMSPCP - APPUI') }));
+        expect(toastSpy).not.toHaveBeenCalledWith("Erreur lors de l'ouverture de la présentation.", expect.anything());
+    });
+
     it("affiche un message d'erreur si renderPdf (pdf.js) échoue, en gardant le bouton de téléchargement exploitable", async () => {
         const { content } = buildPresentationDom();
         vi.spyOn(console, 'error').mockImplementation(() => {});
@@ -514,8 +551,10 @@ describe('openPreview', () => {
         expect(content.querySelectorAll('.pdf-preview-page')).toHaveLength(4);
         expect(content.querySelector('.pdf-preview-error')).toBeNull();
         // L'utilisateur est notifié (message SPÉCIFIQUE du refus, pas le
-        // générique) — via toast, sans détruire l'aperçu affiché.
-        expect(toastSpy).toHaveBeenCalledWith(expect.stringContaining('Fiche Adversaire 1'), { kind: 'error' });
+        // générique) — décision 43 : fenêtre persistante avec « Aller au
+        // champ » (plus un toast de 4 s), sans détruire l'aperçu affiché.
+        expect(confirmSpy).toHaveBeenCalledWith(expect.objectContaining({ message: expect.stringContaining('Fiche Adversaire 1') }));
+        expect(toastSpy).not.toHaveBeenCalledWith(expect.anything(), { kind: 'error' });
 
         // 3) Une régénération qui réussit ENSUITE (champ raccourci) retrouve
         // normalement un rendu propre — la voie de récupération reste intacte.
