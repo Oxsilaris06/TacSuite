@@ -234,10 +234,13 @@ function injectStyles(): void {
 /* F-1 : sous ~560 px, le message prend toute la largeur et les actions passent
    dessous (au lieu d'écraser le texte dans une colonne étroite). */
 @media (max-width: 560px) {
-  .tac-banner { flex-wrap: wrap; }
-  .tac-banner-message { flex: 1 1 100%; }
-  .tac-banner-action { order: 1; margin-left: auto; }
-  .tac-banner-close { order: 2; }
+  /* Texte sur toute la largeur disponible, croix en haut à droite à côté du
+     texte (essai réel du 09-25 : seule sur une deuxième ligne, elle gaspillait
+     ~60 px), boutons d'action dessous, calés à droite. */
+  .tac-banner { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; }
+  .tac-banner-message { grid-column: 1; grid-row: 1; align-self: center; }
+  .tac-banner-close { grid-column: 2; grid-row: 1; }
+  .tac-banner-action { grid-column: 1 / -1; justify-self: end; }
 }
 
 .tac-confirm-dialog {
