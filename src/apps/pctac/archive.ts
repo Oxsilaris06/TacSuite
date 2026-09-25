@@ -266,13 +266,13 @@ function gpxTrackIds(): string[] {
 }
 
 export const Archive: ArchiveContract = {
-    async exportZip(): Promise<void> {
+    async exportZip(): Promise<boolean> {
         // archive.js:52-55 — garde « lib absente » (SPEC-PCTAC-CONVERSION.md §1.4) :
         // le branchement (alerte + retour) est conservé mot pour mot, la condition
         // devient un test de forme puisque JSZip est désormais un import statique.
         if (typeof JSZip !== 'function') {
             toast('JSZip indisponible (réseau ?). Impossible de générer l\'archive.', { kind: 'error' });
-            return;
+            return false;
         }
         try {
             const zip = new JSZip();
@@ -354,9 +354,11 @@ export const Archive: ArchiveContract = {
             a.click();
             document.body.removeChild(a);
             setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+            return true;
         } catch (e) {
             console.error('[Archive] export échec:', e);
             toast('Erreur d\'export : ' + (e instanceof Error ? e.message : String(e)), { kind: 'error' });
+            return false;
         }
     },
 

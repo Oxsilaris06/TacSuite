@@ -577,3 +577,22 @@ describe('photos annotées (décision 25) : l’original `<base>_orig` voyage av
   });
 });
 
+describe('exportZip — retour boolean (décision 32)', () => {
+  it('rend true quand le téléchargement est déclenché', async () => {
+    vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:x');
+    vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    await expect(Archive.exportZip()).resolves.toBe(true);
+  });
+
+  it('rend false quand la génération échoue, et garde le toast d’erreur', async () => {
+    const spy = vi.spyOn(JSZip.prototype, 'generateAsync').mockRejectedValueOnce(new Error('boom'));
+    try {
+      await expect(Archive.exportZip()).resolves.toBe(false);
+    } finally {
+      spy.mockRestore();
+    }
+    expect(toastSpy).toHaveBeenCalled();
+  });
+});
+
