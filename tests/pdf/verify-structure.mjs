@@ -63,6 +63,8 @@
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync, statSync } from 'node:fs';
 
+import { assertD2_surPdf } from './assert-exif.mjs';
+
 // ===========================================================================
 // Les 15 marqueurs (ordre imposé, verbatim) — SPEC-PDF-V3.md §7, recopiés
 // caractère pour caractère depuis le bloc de code numéroté 1..15 de cette
@@ -1602,6 +1604,10 @@ function main() {
     // IMPRIMÉE sur chaque page portant un pied (le pied à deux lignes était
     // silencieusement tronqué par pdfmake — voir le JSDoc d'assertD1).
     { code: 'D1', ...assertD1_pagePagination(text) },
+    // D2 (audit PDF du 2026-09-25, constat F09) : aucune image embarquée ne
+    // porte de métadonnée EXIF — le fond personnalisé et les images d'archive
+    // partaient sinon dans le PDF avec leurs coordonnées GPS.
+    { code: 'D2', ...assertD2_surPdf(opts.file, images.length) },
   ];
 
   for (const a of assertions) {

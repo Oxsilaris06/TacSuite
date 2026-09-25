@@ -179,6 +179,27 @@ Après correctif, sur le même jeu de données : `PASS D1 — 9/10 pied(s) porte
 « n / N » (page de garde sans pied, écart E2 assumé)`, 18/18 assertions — le
 pied imprimé est désormais `OI - PGD - PSIG TEST - CONFIDENTIEL - 2 / 10`.
 
+| Code | Garde | Détection |
+|---|---|---|
+| **D2** | Aucune métadonnée dans les images embarquées | `pdfimages -all` extrait les images (octets d'origine, sans ré-encodage) et chacune est fouillée : signature `Exif\0\0` (segment APP1 d'un JPEG) ou `eXIf` (chunk PNG) ⇒ FAIL. Sans image embarquée ⇒ SKIP (non applicable) ; si `pdfimages -list` annonce des images mais que l'extraction n'en rend aucune ⇒ FAIL (garde non évaluable, jamais un succès silencieux). Implémentation : `tests/pdf/assert-exif.mjs`. |
+
+Motif (audit du 2026-09-25, constat F09) : le fond PDF personnalisé et les
+images d'un import d'archive étaient stockés tels quels puis transmis au moteur
+SANS ré-encodage tant qu'ils tenaient sous 2 560 px. Un fond photographié sur
+place partait donc dans le PDF avec ses coordonnées GPS — prouvé en relisant
+`GPSLatitude 48/1,51/1,2999/100` dans l'image extraite du PDF produit, identique
+octet pour octet au fichier d'origine. Les tests unitaires ne vérifient que la
+DÉCISION de ré-encodage ; D2 vérifie l'octet qui sort du PDF.
+
+**Contre-épreuve** — un PDF a été fabriqué avec le vrai pdfmake (`d2-pdf.cjs`,
+hors dépôt) à partir de la même image, avec puis sans EXIF :
+
+```
+FAIL D2 — 1/1 image(s) portent des métadonnées et voyagent telles quelles dans le PDF (GPS compris) : img-000.jpg : segment APP1 « Exif » (JPEG)
+PASS D2 — 1 image(s) embarquée(s), aucune métadonnée EXIF (ni GPS)      [image nettoyée]
+PASS D2 — aucune image embarquée — assertion non applicable            [fixture du dépôt]
+```
+
 ### B7 (corrigée) et B9-B11 — protocole de contre-épreuve (historique, gardes retirées depuis)
 
 Gardes écrites et contre-éprouvées AVANT les correctifs D1-D4 : une garde
