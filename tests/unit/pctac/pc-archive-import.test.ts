@@ -261,3 +261,24 @@ describe('resolveDuplicateFiches — doublon fusionné (décision 32)', () => {
         expect(Storage.loadCollection(ADVERSARIES_KEY)).toHaveLength(2);
     });
 });
+
+describe('Revue du 25/09 — écriture concurrente pendant un dialogue de doublon (A3)', () => {
+    it('une fiche créée dans un autre onglet pendant le dialogue survit à la fusion', async () => {
+        Storage.saveCollection(ADVERSARIES_KEY, [
+            { id: 'local1', nom: 'Dupont', prenom: 'Jean' },
+            { id: 'remote1', nom: 'Dupont', prenom: 'Jean', domicile: '3 rue' },
+        ]);
+        confirmSpy.mockImplementationOnce(async () => {
+            // L'autre onglet crée une fiche pendant que l'opérateur réfléchit.
+            Storage.saveCollection(ADVERSARIES_KEY, [...Storage.loadCollection(ADVERSARIES_KEY), { id: 'other-tab', nom: 'Autre' }]);
+            return true;
+        });
+        await resolveDuplicateFiches({ [ADVERSARIES_KEY]: [{ id: 'remote1', nom: 'Dupont', prenom: 'Jean', domicile: '3 rue' }] });
+        const list = Storage.loadCollection(ADVERSARIES_KEY);
+        const ids = list.map((f) => f.id);
+        expect(ids).toContain('other-tab');
+        expect(ids).toContain('local1');
+        expect(ids).not.toContain('remote1');
+        expect(list.find((f) => f.id === 'local1')).toMatchObject({ domicile: '3 rue' });
+    });
+});
