@@ -17,6 +17,7 @@
  */
 
 import { inverse } from 'mgrs';
+import { gridCellCenter } from '@shared/tactical-grid.js';
 
 const WGS84_A = 6378137.0; // demi-grand axe (m)
 const WGS84_F = 1 / 298.257223563; // aplatissement
@@ -201,6 +202,8 @@ export interface GridCellSpec {
     dLat: number;
     cols: number;
     rows: number;
+    /** Orientation du carroyage (décision 39) ; absent = 0. */
+    angle?: number | undefined;
 }
 
 /** Résultat de l'analyse d'une saisie de coordonnées. `null` = ce n'est pas une coordonnée (→ géocodage). */
@@ -362,13 +365,6 @@ function inverseMgrs(ref: string): number[] {
     return inverse(ref) as unknown as number[];
 }
 
-/** Case du carroyage (« C4 », « AA12 ») : index 0 → A, 25 → Z, 26 → AA… */
-function columnIndex(letters: string): number {
-    const up = letters.toUpperCase();
-    if (up.length === 1) return up.charCodeAt(0) - 65;
-    return (up.charCodeAt(0) - 64) * 26 + (up.charCodeAt(1) - 65);
-}
-
 /** La saisie ressemble-t-elle à une case de carroyage ? */
 export function looksLikeGridCell(str: string): boolean {
     return /^\s*[A-Za-z]{1,2}\s?\d{1,3}\s*$/.test(str);
@@ -376,7 +372,8 @@ export function looksLikeGridCell(str: string): boolean {
 
 /**
  * Résout une case de carroyage. `grid` absent → `'cell-no-grid'` ; case valide
- * → centre ; hors du rectangle → `'cell-out-of-grid'`.
+ * → centre (repère TOURNÉ compris, via `gridCellCenter`) ; hors du rectangle →
+ * `'cell-out-of-grid'`.
  */
 export function parseGridCell(str: string, grid: GridCellSpec | null | undefined):
     | { kind: 'cell'; cell: string; lat: number; lng: number }
@@ -387,12 +384,9 @@ export function parseGridCell(str: string, grid: GridCellSpec | null | undefined
     if (!m) return null;
     const cell = `${(m[1] ?? '').toUpperCase()}${m[2] ?? ''}`;
     if (!grid) return { kind: 'cell-no-grid' };
-    const col = columnIndex(m[1] ?? '');
-    const row = parseInt(m[2] ?? '', 10) - 1;
-    if (col < 0 || row < 0 || col >= grid.cols || row >= grid.rows) return { kind: 'cell-out-of-grid', cell };
-    const lng = normLon(grid.west + (col + 0.5) * grid.dLon);
-    const lat = grid.north - (row + 0.5) * grid.dLat;
-    return { kind: 'cell', cell, lat, lng };
+    const center = gridCellCenter(grid, cell);
+    if (!center) return { kind: 'cell-out-of-grid', cell };
+    return { kind: 'cell', cell, lat: center[1], lng: normLon(center[0]) };
 }
 
 /**
