@@ -30,6 +30,13 @@ import {
     type PctacMode,
     type PctacModeId,
 } from '@pctac/modes.js';
+import {
+    describeSituationData,
+    hasSituationData,
+    situationData,
+    type SituationDataCounts,
+} from '@pctac/storage.js';
+import { confirmDialog } from '@shared/feedback.js';
 
 /** Jetons résolvables par `data-lex`. Toute autre valeur laisse le DOM intact. */
 function resolveToken(token: string, mode: PctacMode): string | null {
@@ -144,6 +151,56 @@ function positionIndicator(group: HTMLElement, index: number): void {
 
 export function setMode(id: PctacModeId, group?: HTMLElement | null): void {
     if (currentModeId() === id) return;
+    const counts = situationData();
+    // Décision 28 : on ne quitte une situation QUE si elle porte des données,
+    // et jamais sans le dire. Une situation vide se quitte sans question.
+    if (!hasSituationData(counts)) {
+        applyModeSwitch(id, group);
+        return;
+    }
+    void confirmModeSwitch(id, group, counts);
+}
+
+/** Confirme puis bascule, ou rétablit le sélecteur si l'opérateur renonce. */
+async function confirmModeSwitch(
+    id: PctacModeId,
+    group: HTMLElement | null | undefined,
+    counts: SituationDataCounts,
+): Promise<void> {
+    const ok = await confirmDialog({
+        title: 'Changer de situation ?',
+        message:
+            `Cette situation contient ${describeSituationData(counts)}. ` +
+            'Ces données restent enregistrées dans cette situation : vous les retrouverez en y revenant. ' +
+            "Changer de situation recharge l'application.",
+        confirmLabel: 'Changer',
+        cancelLabel: 'Rester',
+    });
+    if (!ok) {
+        revertModeSelectorUi();
+        return;
+    }
+    applyModeSwitch(id, group);
+}
+
+/** Rétablit l'affichage du sélecteur sur la situation courante (choix annulé). */
+function revertModeSelectorUi(): void {
+    const root = document.getElementById('modeSelector');
+    if (!root) return;
+    const select = root.querySelector<HTMLSelectElement>('.mode-selector-select');
+    if (select) select.value = currentModeId();
+    const icon = root.querySelector<HTMLElement>('.mode-selector-current .material-symbols-outlined');
+    if (icon) icon.textContent = currentMode().icon;
+}
+
+/**
+ * Bascule effective. Chaque situation est un espace de travail indépendant :
+ * listes, compteurs, plan (MapLibre), écran scindé et états internes des
+ * modules portent encore les données de la situation quittée. Un rendu complet
+ * à la main devrait tous les couvrir, un par un, et le premier oubli laisserait
+ * un résidu. Le rechargement repart d'un document neuf, donc sans résidu.
+ */
+function applyModeSwitch(id: PctacModeId, group?: HTMLElement | null): void {
     persistModeId(id);
     const root = group ?? document.getElementById('modeSelector');
     if (root) {
@@ -158,12 +215,6 @@ export function setMode(id: PctacModeId, group?: HTMLElement | null): void {
     }
     applyLexicon();
     notify();
-    // Bascule = RECHARGEMENT. Chaque situation est un espace de travail
-    // indépendant : listes, compteurs, plan (MapLibre), écran scindé et états
-    // internes des modules portent encore les données de la situation quittée.
-    // Un rendu complet à la main devrait tous les couvrir, un par un, et le
-    // premier oubli laisserait un résidu. Le rechargement repart d'un document
-    // neuf, donc sans résidu possible.
     // Le rechargement attend que la pastille se pose (sa transition dure
     // 250 ms) : le choix se voit arriver. Page inerte pendant l'attente, rien
     // ne s'écrit dans la situation d'arrivée depuis un écran encore ancien.
