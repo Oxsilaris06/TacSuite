@@ -527,6 +527,12 @@ export interface ArchiveImportSummary {
     mergedFiches: string[];
     /** Clés inconnues (ou communes) de l'archive, ignorées à l'import. */
     unknownKeys: number;
+    /**
+     * K1 : vrai quand `archive.ts` a DÉJÀ affiché un toast d'erreur ou d'échec
+     * partiel (photos ou traces GPX non restaurées). `main.ts` n'ajoute alors
+     * PAS de succès générique, qui contredirait le message d'avertissement.
+     */
+    warned?: boolean | undefined;
 }
 
 /** Résultat de `Archive.importFile` (archive.js:157, 199, 211, 233, 274). */
@@ -541,10 +547,16 @@ export interface ArchiveOiImportResult {
     ok: true;
     /** Adversaires ajoutés depuis l'étape 2 de l'OI. */
     advAdded: number;
-    /** Photos d'adversaire restaurées dans IndexedDB. */
+    /** Photos d'adversaire restaurées dans IndexedDB (réellement conservées). */
     advPhotos: number;
-    /** Adversaires ignorés (doublon de nom normalisé, ou nom vide). */
+    /** Adversaires réellement ignorés (aucun choix « garder les deux »/fusion). */
     advSkipped: number;
+    /**
+     * K2 : fiches existantes FUSIONNÉES avec un adversaire de l'OI. Distinct
+     * d'`advSkipped` (R9/C14) : une fusion complète la fiche, ce n'est pas un
+     * doublon ignoré.
+     */
+    advMerged: number;
     /** Trigrammes PATRACDVR ajoutés à `pcTacCustomPax`. */
     paxAdded: number;
     /** Trigrammes ignorés (`'N/A'`, vide, ou déjà présents). */
@@ -555,6 +567,11 @@ export interface ArchiveOiImportResult {
     galleryAdded?: number | undefined;
     /** Photos d'OI déjà présentes, Mises à jour au réimport (A6). */
     galleryUpdated?: number | undefined;
+    /**
+     * C2/R6 : photos d'OI NON mises à jour parce que l'opérateur les a éditées
+     * localement (légende ou annotation). Rien n'est perdu, mais on le compte.
+     */
+    galleryPreserved?: number | undefined;
 }
 
 export interface ArchiveContract {
@@ -565,6 +582,14 @@ export interface ArchiveContract {
      * sortie en échec (décision 32).
      */
     exportZip(): Promise<boolean>;
+    /**
+     * K3 : nom RÉELLEMENT donné au dernier téléchargement d'archive réussi
+     * (`PC-Tac_<Situation>_<AAAA-MM-JJ>_<HHhMM>.pctac.zip`), ou `null` si aucun
+     * export n'a encore abouti. La confirmation du RESET l'utilise pour ne pas
+     * nommer un fichier calculé AVANT l'export (au passage de la minute, le nom
+     * annoncé différait du nom téléchargé).
+     */
+    lastExportFileName(): string | null;
     /**
      * Import `.pctac.zip` OU `.json` legacy (routage par extension).
      * Jette sur archive illisible / manifest d'une autre app.
