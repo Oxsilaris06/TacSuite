@@ -997,10 +997,18 @@ export function pctacTutoData(): TutoData {
         },
         {
           title: "Générer et télécharger le PDF",
-          body: "Le bouton à icône picture_as_pdf (infobulle « Générer et télécharger le PDF ») construit puis télécharge immédiatement un dossier de synthèse nommé « PC-Tac_<Situation>_<AAAA-MM-JJ>_<HHhMM>.pdf » (mêmes principes que l'archive : situation et horodatage, jamais de nom de personne). Le PDF adopte automatiquement le thème actif (clair ou sombre).",
+          body: "Le bouton à icône picture_as_pdf (infobulle « Générer et télécharger le PDF ») ouvre la fenêtre « Générer le PDF ». Rapport : « Rapport complet » (toutes les pages, A4, par défaut) ou « Synthèse A3 » (une page A3 paysage). Thème : « Clair » pour imprimer (par défaut) ou « Sombre » pour projeter à l'écran. Sortie : « Impression » (photos en haute définition) ou « Partage » (moins de 10 Mo, pour Tchap). Les derniers choix sont retenus. « Générer le PDF » construit puis télécharge le document nommé « PC-Tac_<Situation>_<AAAA-MM-JJ>_<HHhMM>.pdf » (situation et horodatage, jamais de nom de personne) ; « Annuler » referme sans rien produire.",
           selector: "#previewPdfDockBtn",
           terms: [
             "Générer et télécharger le PDF",
+            "Générer le PDF",
+            "Rapport complet",
+            "Synthèse A3",
+            "Clair",
+            "Sombre",
+            "Impression",
+            "Partage",
+            "Annuler",
             "PC-Tac_"
           ],
           tip: "Nécessite la librairie pdf-lib chargée ; sinon « Librairie pdf-lib non chargée (réseau ?). Réessaie dans quelques secondes. »."

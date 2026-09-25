@@ -1177,6 +1177,9 @@ test.describe('PC-Tac — Checklist fonctionnelle', () => {
     await step('génération PDF déclenche un téléchargement', async () => {
       const downloadPromise = page.waitForEvent('download', { timeout: 5000 }).catch(() => null);
       await page.locator('#previewPdfDockBtn').click();
+      // Décision 42 — le bouton ouvre la fenêtre de génération (rapport
+      // complet par défaut) : on confirme.
+      await page.locator('dialog.tac-confirm-dialog [data-tac-confirm="ok"]').click();
       const download = await downloadPromise;
       expect.soft(download).not.toBeNull();
       if (download) {
