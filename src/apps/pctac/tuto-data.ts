@@ -944,16 +944,17 @@ export function pctacTutoData(): TutoData {
         },
         {
           title: "Réinitialiser toutes les données",
-          body: `Le bouton rouge à icône delete_forever (infobulle « Réinitialiser toutes les données ») ouvre la modale « RESET COMPLET », qui avertit que « toutes les données (logs, ${mode.adv.plural.toLowerCase()}, ${mode.host.plural.toLowerCase()}, photos) seront définitivement supprimées. Cette action est irréversible. ». « CONFIRMER LE » efface tout (stockage local + photos) puis recharge la page ; « ANNULER » referme sans rien supprimer.`,
+          body: `Le bouton rouge à icône delete_forever (infobulle « Réinitialiser toutes les données ») ouvre la modale « RESET COMPLET », qui avertit que « toutes les données (logs, ${mode.adv.plural.toLowerCase()}, ${mode.host.plural.toLowerCase()}, photos) seront définitivement supprimées. Cette action est irréversible. ». « EXPORTER L'ARCHIVE PUIS EFFACER » télécharge d'abord l'archive .pctac.zip de la situation, puis efface tout (stockage local + photos) et recharge la page ; si l'export échoue, rien n'est effacé. « EFFACER SANS ARCHIVE », en rouge, efface sans sauvegarde ; « ANNULER » referme sans rien supprimer.`,
           selector: "#resetDataDockBtn",
           terms: [
             "Réinitialiser toutes les données",
             "RESET COMPLET",
             "seront définitivement supprimées. Cette action est irréversible.",
-            "CONFIRMER LE",
+            "EXPORTER L'ARCHIVE PUIS",
+            "EFFACER SANS",
             "ANNULER"
           ],
-          tip: "À faire de préférence après avoir exporté une archive .pctac.zip : la réinitialisation est définitive et sans corbeille."
+          tip: "La réinitialisation est définitive et sans corbeille : préférez « EXPORTER L'ARCHIVE PUIS EFFACER »."
         }
       ]
     }
