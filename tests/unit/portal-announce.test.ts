@@ -39,12 +39,13 @@ function jsonResponse(body: unknown, ok = true): Response {
     return { ok, json: async () => body } as unknown as Response;
 }
 
+/** Carte de note de version (variante A choisie par Nico le 09-25), hors sortie en cours. */
 function bannerEl(): HTMLElement | null {
-    return document.querySelector(`[data-banner-id="${ANNOUNCE_BANNER_ID}"]`);
+    return document.querySelector(`#${ANNOUNCE_BANNER_ID}:not([data-closing])`);
 }
 
 function bannerText(): string | null {
-    return bannerEl()?.querySelector('.tac-banner-message')?.textContent ?? null;
+    return bannerEl()?.querySelector('.release-card__body')?.textContent ?? null;
 }
 
 beforeEach(() => {
@@ -108,6 +109,53 @@ describe('fingerprint', () => {
     });
 });
 
+describe('carte de note de version (variante A, Nico 09-25)', () => {
+    const show = async (a: Announcement): Promise<void> => {
+        await refreshAnnouncement({ fetchFn: async () => jsonResponse(a), now, storage: localStorage });
+    };
+
+    it('titre tiré de la première ligne finie par « : », puces en liste', async () => {
+        await show(ann({ texte: 'Mise à jour PC-Tac et OI :\n• 4 situations\n- Fiches refondues\n• OI Express' }));
+        const card = bannerEl()!;
+        expect(card.querySelector('.release-card__title')?.textContent).toBe('Mise à jour PC-Tac et OI');
+        expect(Array.from(card.querySelectorAll('.release-card__list li')).map((li) => li.textContent)).toEqual(['4 situations', 'Fiches refondues', 'OI Express']);
+        expect(card.querySelectorAll('.release-card__body p')).toHaveLength(0);
+    });
+
+    it('texte sans titre ni puce : un paragraphe, sans titre', async () => {
+        await show(ann({ texte: 'Exercice demain 08h00.' }));
+        expect(bannerEl()?.querySelector('.release-card__title')).toBeNull();
+        expect(bannerEl()?.querySelector('.release-card__body p')?.textContent).toBe('Exercice demain 08h00.');
+    });
+
+    it('pastille selon le niveau : Nouveautés, Important, Alerte', async () => {
+        await show(ann({ niveau: 'info' }));
+        expect(bannerEl()?.querySelector('.release-card__chip')?.textContent).toBe('Nouveautés');
+        await show(ann({ niveau: 'important', texte: 'b' }));
+        expect(bannerEl()?.querySelector('.release-card__chip')?.textContent).toBe('Important');
+        await show(ann({ niveau: 'alerte', texte: 'c' }));
+        expect(bannerEl()?.querySelector('.release-card__chip')?.textContent).toBe('Alerte');
+        expect(document.querySelectorAll(`#${ANNOUNCE_BANNER_ID}`)).toHaveLength(1);
+    });
+
+    it('placée dans la colonne, juste sous l’en-tête du portail', async () => {
+        document.body.innerHTML = '<div class="portal"><header class="portal-header"></header><main></main></div>';
+        await show(ann());
+        expect(document.querySelector('.portal-header')?.nextElementSibling?.id).toBe(ANNOUNCE_BANNER_ID);
+    });
+
+    it('bouton de fermeture nommé ; la sortie est animée puis la carte retirée', async () => {
+        vi.useFakeTimers();
+        await show(ann({ texte: 'À fermer.' }));
+        const btn = bannerEl()!.querySelector<HTMLButtonElement>('.release-card__close')!;
+        expect(btn.getAttribute('aria-label')).toBe('Masquer l’annonce');
+        btn.click();
+        expect(document.getElementById(ANNOUNCE_BANNER_ID)?.dataset.closing).toBe('true');
+        vi.advanceTimersByTime(400);
+        expect(document.getElementById(ANNOUNCE_BANNER_ID)).toBeNull();
+    });
+});
+
 describe('refreshAnnouncement — fraîcheur (essai réel du 09-25)', () => {
     it('la requête porte un paramètre qui change chaque minute (le CDN de GitHub garde sinon l’ancienne version 5 min)', async () => {
         const urls: string[] = [];
@@ -126,24 +174,25 @@ describe('refreshAnnouncement — réponse distante', () => {
         const a = ann({ texte: 'Réunion 14h.', niveau: 'important', expire: iso(3600_000) });
         await refreshAnnouncement({ fetchFn: async () => jsonResponse(a), now, storage: localStorage });
         expect(bannerText()).toBe('Réunion 14h.');
-        expect(bannerEl()?.className).toContain('tac-banner--important');
+        expect(bannerEl()?.dataset.level).toBe('important');
         expect(JSON.parse(localStorage.getItem(ANNOUNCE_CACHE_KEY) as string)).toEqual(a);
     });
 
     it('mappe le niveau « alerte » sur un bandeau d’alerte', async () => {
         await refreshAnnouncement({ fetchFn: async () => jsonResponse(ann({ niveau: 'alerte' })), now, storage: localStorage });
-        expect(bannerEl()?.className).toContain('tac-banner--alert');
+        expect(bannerEl()?.dataset.level).toBe('alerte');
         expect(bannerEl()?.getAttribute('role')).toBe('alert');
     });
 
     it('pose le texte en textContent (jamais d’HTML, aucun lien)', async () => {
         const texte = '<b>gras</b> <a href="//x">lien</a>';
         await refreshAnnouncement({ fetchFn: async () => jsonResponse(ann({ texte })), now, storage: localStorage });
-        const span = bannerEl()?.querySelector('.tac-banner-message');
-        expect(span?.textContent).toBe(texte);
-        expect(span?.querySelector('a')).toBeNull();
-        expect(span?.querySelector('b')).toBeNull();
-        expect(bannerEl()?.querySelectorAll('button.tac-banner-action')).toHaveLength(0);
+        const body = bannerEl()?.querySelector('.release-card__body');
+        expect(body?.textContent).toBe(texte);
+        expect(bannerEl()?.querySelector('a')).toBeNull();
+        expect(bannerEl()?.querySelector('b')).toBeNull();
+        // Seul bouton : masquer.
+        expect(bannerEl()?.querySelectorAll('button')).toHaveLength(1);
     });
 
     it('n’affiche rien et efface le cache sur une réponse non JSON', async () => {
@@ -199,7 +248,7 @@ describe('repli hors ligne', () => {
 
 describe('mémoire de fermeture', () => {
     const dismiss = (): void => {
-        const btn = bannerEl()?.querySelector<HTMLButtonElement>('.tac-banner-close');
+        const btn = bannerEl()?.querySelector<HTMLButtonElement>('.release-card__close');
         btn?.click();
     };
 
