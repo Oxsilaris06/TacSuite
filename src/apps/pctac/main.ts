@@ -512,8 +512,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 (fileName) => {
                     hideBusy();
                     // C15 / K3 — nom RÉELLEMENT téléchargé, demandé à `Archive`
-                    // après l'export ; repli sur le nom calculé tant que
-                    // `Archive.lastExportFileName` n'est pas déployé (contrat K3).
+                    // après l'export (repli : nom calculé, par sûreté).
                     const name = fileName
                         ?? Utils.readableFileName(currentMode().label, new Date(), 'pctac.zip');
                     return confirmDialog({
@@ -525,10 +524,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     });
                 },
                 2200,
-                () => {
-                    const a = Archive as unknown as { lastExportFileName?: () => string | null };
-                    return typeof a.lastExportFileName === 'function' ? a.lastExportFileName() : null;
-                },
+                () => Archive.lastExportFileName(),
             );
             hideBusy();
             if (outcome === 'export-failed') {
