@@ -648,9 +648,6 @@ body {
 
 /* Pas prête hors ligne : badge masqué, sans message (Nico, 09-25). Le
    `display: inline-flex` ci-dessus l'emporterait sinon sur l'attribut hidden. */
-.offline-badge[hidden] {
-    display: none;
-}
 
 /* --- Note de version (bandeau d'annonce, decisions 27 et 40) --------------
    Variante A choisie par Nico le 09-25 : meme grammaire que les cartes
@@ -691,11 +688,6 @@ body {
     --release-accent: var(--release-danger);
 }
 
-/* Annonce remplacee en place : pas de nouvelle entree animee. */
-.release-card[data-settled] {
-    animation: none;
-}
-
 /* Sortie par le meme chemin que l'entree (220 ms, voir announce.ts). */
 .release-card[data-closing] {
     animation: release-card-out var(--release-out) var(--release-ease) forwards;
@@ -703,6 +695,8 @@ body {
 }
 
 .release-card__head {
+    grid-column: 1;
+    grid-row: 1;
     display: flex;
     flex-wrap: wrap;
     align-items: center;
@@ -747,6 +741,9 @@ body {
 }
 
 .release-card__close {
+    /* C4 : en haut a droite, quel que soit l'ordre du DOM (le bouton suit le corps). */
+    grid-column: 2;
+    grid-row: 1;
     appearance: none;
     display: grid;
     place-items: center;
@@ -787,6 +784,7 @@ body {
 
 .release-card__body {
     grid-column: 1 / -1;
+    grid-row: 2;
     display: grid;
     gap: var(--tac-space-2);
     color: var(--color-text-secondary);
@@ -806,7 +804,8 @@ body {
     list-style: none;
     display: grid;
     gap: var(--release-list-gap);
-    grid-template-columns: repeat(auto-fit, minmax(var(--release-list-column), 1fr));
+    /* C2 : jamais plus large que la carte (petit téléphone, police agrandie). */
+    grid-template-columns: repeat(auto-fit, minmax(min(var(--release-list-column), 100%), 1fr));
 }
 
 .release-card__list li {
