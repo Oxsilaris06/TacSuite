@@ -201,15 +201,26 @@ function injectStyles(): void {
   padding: var(--tac-space-2, 8px) var(--tac-space-3, 12px);
   padding-top: calc(var(--tac-space-2, 8px) + env(safe-area-inset-top, 0px));
   border: 1px solid var(--border-light, var(--color-border, #3a3f4b));
-  border-left-width: 4px;
   border-radius: 0;
   background: var(--bg-container, var(--color-surface, #1b1d24));
   color: var(--text-main, var(--color-text, #e6e8ee));
   font: 500 13.5px/1.4 var(--font-ui, system-ui, sans-serif);
 }
-.tac-banner--info { border-left-color: var(--accent-fill, var(--color-primary, #3b82f6)); }
-.tac-banner--important { border-left-color: #d97706; background: color-mix(in srgb, #d97706 12%, var(--bg-container, var(--color-surface, #1b1d24))); }
-.tac-banner--alert { border-left-color: var(--danger-red, var(--color-danger, #c8344a)); background: color-mix(in srgb, var(--danger-red, var(--color-danger, #c8344a)) 14%, var(--bg-container, var(--color-surface, #1b1d24))); }
+/* Niveau : pastille devant le message (comme les toasts) et fond teinté,
+   jamais de liseré latéral épais (règle du projet). */
+.tac-banner--info { --tac-banner-dot: var(--accent-fill, var(--color-primary, #3b82f6)); }
+.tac-banner--important { --tac-banner-dot: #d97706; background: color-mix(in srgb, #d97706 12%, var(--bg-container, var(--color-surface, #1b1d24))); }
+.tac-banner--alert { --tac-banner-dot: var(--danger-red, var(--color-danger, #c8344a)); background: color-mix(in srgb, var(--danger-red, var(--color-danger, #c8344a)) 14%, var(--bg-container, var(--color-surface, #1b1d24))); }
+.tac-banner-message::before {
+  content: '';
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: var(--tac-space-2, 8px);
+  border-radius: 50%;
+  vertical-align: 0.1em;
+  background: var(--tac-banner-dot);
+}
 .tac-banner-message { flex: 1 1 auto; min-width: 0; }
 .tac-banner-action {
   appearance: none;
