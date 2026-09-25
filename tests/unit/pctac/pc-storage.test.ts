@@ -365,6 +365,14 @@ describe('Utils — readableFileName (décision 32)', () => {
         expect(Utils.readableFileName('Un   --  Deux', date, 'pctac.zip'))
             .toBe('PC-Tac_Un-Deux_2026-12-31_00h00.pctac.zip');
     });
+
+    it('sans apostrophe (situation « Événement d’ampleur ») : audit PDF 2026-09-25, Mo8', () => {
+        const date = new Date(2026, 8, 25, 9, 5);
+        expect(Utils.readableFileName('Événement d\'ampleur', date, 'pdf'))
+            .toBe('PC-Tac_Evenement-d-ampleur_2026-09-25_09h05.pdf');
+        expect(Utils.readableFileName('Événement d’ampleur', date, 'pctac.zip'))
+            .toBe('PC-Tac_Evenement-d-ampleur_2026-09-25_09h05.pctac.zip');
+    });
 });
 
 describe('Utils — compressImage (utils.js:38-46)', () => {

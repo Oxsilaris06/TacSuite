@@ -105,7 +105,9 @@ export const Utils = {
         const situation = situationLabel
             .normalize('NFD')
             .replace(/[\u0300-\u036f]/g, '')
-            .replace(/[\\/:*?"<>|]/g, '-')
+            // Apostrophes comprises (« Événement d'ampleur ») : mal vues des
+            // messageries et des lignes de commande (audit PDF, Mo8).
+            .replace(/[\\/:*?"<>|'’]/g, '-')
             .replace(/\s+/g, '-')
             .replace(/-+/g, '-')
             .replace(/^-+|-+$/g, '');
