@@ -223,35 +223,41 @@ export function fitTextToWidth(text: string, font: PDFLib.PDFFont, size: number,
  */
 export function wrapText(text: unknown, width: number, font: PDFLib.PDFFont, size: number): string[] {
     const lines: string[] = [];
-    let currentLine = '';
-    const pushSplitWord = (word: string): void => {
-        let rest = word;
-        while (rest && font.widthOfTextAtSize(rest, size) >= width) {
-            let lo = 1, hi = rest.length;
-            while (lo < hi) {
-                const mid = Math.ceil((lo + hi) / 2);
-                if (font.widthOfTextAtSize(rest.slice(0, mid), size) < width) lo = mid;
-                else hi = mid - 1;
+    // M4 — chaque paragraphe saisi est replié séparément. Les sauts de ligne
+    // doivent être lus AVANT sanitizeWinAnsi, qui aplatit les contrôles en
+    // espaces (même découpage que les fiches).
+    const raw = typeof text === 'string' ? text : sanitizeWinAnsi(text);
+    for (const paragraph of raw.split(/\r?\n/)) {
+        let currentLine = '';
+        const pushSplitWord = (word: string): void => {
+            let rest = word;
+            while (rest && font.widthOfTextAtSize(rest, size) >= width) {
+                let lo = 1, hi = rest.length;
+                while (lo < hi) {
+                    const mid = Math.ceil((lo + hi) / 2);
+                    if (font.widthOfTextAtSize(rest.slice(0, mid), size) < width) lo = mid;
+                    else hi = mid - 1;
+                }
+                lines.push(rest.slice(0, lo));
+                rest = rest.slice(lo);
             }
-            lines.push(rest.slice(0, lo));
-            rest = rest.slice(lo);
-        }
-        currentLine = rest;
-    };
-    sanitizeWinAnsi(text).split(' ').forEach((word) => {
-        const testLine = currentLine ? currentLine + ' ' + word : word;
-        if (font.widthOfTextAtSize(testLine, size) < width) {
-            currentLine = testLine;
-            return;
-        }
-        if (currentLine) {
-            lines.push(currentLine);
-            currentLine = '';
-        }
-        if (font.widthOfTextAtSize(word, size) < width) currentLine = word;
-        else pushSplitWord(word);
-    });
-    if (currentLine) lines.push(currentLine);
+            currentLine = rest;
+        };
+        sanitizeWinAnsi(paragraph).split(' ').forEach((word) => {
+            const testLine = currentLine ? currentLine + ' ' + word : word;
+            if (font.widthOfTextAtSize(testLine, size) < width) {
+                currentLine = testLine;
+                return;
+            }
+            if (currentLine) {
+                lines.push(currentLine);
+                currentLine = '';
+            }
+            if (font.widthOfTextAtSize(word, size) < width) currentLine = word;
+            else pushSplitWord(word);
+        });
+        if (currentLine) lines.push(currentLine);
+    }
     return lines;
 }
 
