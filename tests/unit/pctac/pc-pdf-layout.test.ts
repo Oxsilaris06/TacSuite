@@ -126,6 +126,31 @@ describe('Forces amies et points — plus de « … » (M3)', () => {
     });
 });
 
+describe('nom de la situation et période en tête du PDF (Mo5)', () => {
+    it('situationPeriod rend la première et la dernière entrée du journal', async () => {
+        const { situationPeriod } = await import('@pctac/pdf-export.js');
+        expect(situationPeriod([])).toBe('—');
+        expect(situationPeriod([{ date: '2026-09-12', heure: '08:15' }])).toBe('12/09/2026 08:15');
+        expect(situationPeriod([
+            { date: '2026-09-12', heure: '08:15' },
+            { date: '2026-09-13', heure: '17:40' },
+        ])).toBe('12/09/2026 08:15 → 13/09/2026 17:40');
+    });
+
+    it('le PDF affiche le nom de la situation et la période en tête de première page', async () => {
+        localStorage.setItem('pcTacMode', 'evenement');
+        localStorage.setItem('pcTacLogData@evenement', JSON.stringify([
+            logEntry({ date: '2026-09-12', heure: '08:15' }),
+            logEntry({ id: 'e2', date: '2026-09-13', heure: '17:40' }),
+        ]));
+        const { pages } = await buildAndReadPdf();
+        const first = (pages[0] ?? '').replace(/\s+/g, ' ');
+        expect(first).toContain("Événement d'ampleur");
+        expect(first).toContain('Période');
+        expect(first).toContain('12/09/2026 08:15');
+    });
+});
+
 describe('lexique de situation au PDF (M5)', () => {
     it('la pastille Pax suit le vocabulaire de la situation', async () => {
         const { paxChipLabel, PCTAC_MODES } = await import('@pctac/modes.js');
