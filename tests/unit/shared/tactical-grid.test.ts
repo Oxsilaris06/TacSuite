@@ -74,6 +74,15 @@ describe('carroyage tactique', () => {
         expect(isTacticalGridSpec({ ...spec, cellM: -5 })).toBe(false);
         expect(isTacticalGridSpec({ ...spec, dLat: spec.dLat * 20 })).toBe(false);
     });
+
+    it('validation : une couleur ou une taille héritée de Object (« toString », « constructor ») est refusée', () => {
+        const { spec } = makeTacticalGrid([1.9, 47.9], [1.91, 47.89], 50);
+        expect(isTacticalGridSpec({ ...spec, color: 'toString' })).toBe(false);
+        expect(isTacticalGridSpec({ ...spec, color: 'constructor' })).toBe(false);
+        expect(isTacticalGridSpec({ ...spec, labelSize: '__proto__' })).toBe(false);
+        expect(gridColor({ ...spec, color: 'toString' as never })).toBe('yellow');
+        expect(gridLabelSize({ ...spec, labelSize: 'constructor' as never })).toBe('medium');
+    });
 });
 
 describe('carroyage orientable (décision 39)', () => {

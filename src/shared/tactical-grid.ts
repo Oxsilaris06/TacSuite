@@ -118,13 +118,13 @@ export function gridAngle(spec: GridFrame): number {
 /** Couleur du carroyage, repli jaune (spec ancien ou JSON non validé). */
 export function gridColor(spec: TacticalGridSpec): GridColor {
     const c = spec.color;
-    return c && c in GRID_COLORS ? c : GRID_DEFAULT_COLOR;
+    return c && Object.hasOwn(GRID_COLORS, c) ? c : GRID_DEFAULT_COLOR;
 }
 
 /** Taille des lettres, repli moyen (spec ancien ou JSON non validé). */
 export function gridLabelSize(spec: TacticalGridSpec): GridLabelSize {
     const s = spec.labelSize;
-    return s && s in GRID_LABEL_SIZES ? s : GRID_DEFAULT_LABEL_SIZE;
+    return s && Object.hasOwn(GRID_LABEL_SIZES, s) ? s : GRID_DEFAULT_LABEL_SIZE;
 }
 
 /**
@@ -244,8 +244,8 @@ export function isTacticalGridSpec(v: unknown): v is TacticalGridSpec {
     const g = v as Record<string, unknown>;
     const finite = (k: string): boolean => typeof g[k] === 'number' && Number.isFinite(g[k]);
     const angleOk = g.angle === undefined || (typeof g.angle === 'number' && Number.isFinite(g.angle) && g.angle >= 0 && g.angle < 360);
-    const colorOk = g.color === undefined || (typeof g.color === 'string' && g.color in GRID_COLORS);
-    const sizeOk = g.labelSize === undefined || (typeof g.labelSize === 'string' && g.labelSize in GRID_LABEL_SIZES);
+    const colorOk = g.color === undefined || (typeof g.color === 'string' && Object.hasOwn(GRID_COLORS, g.color));
+    const sizeOk = g.labelSize === undefined || (typeof g.labelSize === 'string' && Object.hasOwn(GRID_LABEL_SIZES, g.labelSize));
     return (
         ['west', 'north', 'cellM', 'cols', 'rows', 'dLon', 'dLat'].every(finite) &&
         (g.cols as number) >= 1 && (g.cols as number) <= GRID_MAX_CELLS_PER_SIDE &&

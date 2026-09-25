@@ -676,13 +676,13 @@ export function createMapOverlays(map: MapLibreMap, opts: OverlayOptions): MapOv
             return true;
         },
         setGridColor(c) {
-            if (!state.grid || !(c in GRID_COLORS) || gridColor(state.grid) === c) return;
+            if (!state.grid || !Object.hasOwn(GRID_COLORS, c) || gridColor(state.grid) === c) return;
             state.grid = { ...state.grid, color: c };
             renderGrid();
             changed();
         },
         setGridLabelSize(s) {
-            if (!state.grid || !(s in GRID_LABEL_SIZES) || gridLabelSize(state.grid) === s) return;
+            if (!state.grid || !Object.hasOwn(GRID_LABEL_SIZES, s) || gridLabelSize(state.grid) === s) return;
             state.grid = { ...state.grid, labelSize: s };
             renderGrid();
             changed();
