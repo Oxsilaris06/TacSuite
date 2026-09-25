@@ -41,6 +41,21 @@ export const PERSIST_BANNER_ID = 'device-persist';
 export const PRIVATE_BANNER_ID = 'device-private';
 export const CLOCK_BANNER_ID = 'device-clock';
 export const STORAGE_BADGE_ID = 'deviceStorageBadge';
+/**
+ * Clé `sessionStorage` mémorisant que l'opérateur a fermé le bandeau de
+ * persistance (A-3). Chrome refuse `persist()` à un site non installé : sans
+ * cette mémoire, le bandeau reviendrait à CHAQUE chargement de la session. La
+ * pastille du dock reste, elle, l'état permanent.
+ */
+export const PERSIST_BANNER_SESSION_KEY = 'pcTacPersistBannerDismissed';
+
+function persistBannerDismissed(): boolean {
+    try { return sessionStorage.getItem(PERSIST_BANNER_SESSION_KEY) === '1'; } catch { return false; }
+}
+
+function markPersistBannerDismissed(): void {
+    try { sessionStorage.setItem(PERSIST_BANNER_SESSION_KEY, '1'); } catch { /* best-effort */ }
+}
 
 /** Écart d'horloge toléré avant alerte (2 minutes). */
 export const CLOCK_TOLERANCE_MS = 2 * 60 * 1000;
@@ -93,6 +108,10 @@ export interface DeviceGuardDeps {
     now?: () => number;
     /** Dock accueillant la pastille d'état. */
     dock?: HTMLElement | null;
+    /** Le bandeau de persistance a-t-il déjà été fermé dans cette session ? */
+    isPersistBannerDismissed?: () => boolean;
+    /** Mémorise la fermeture du bandeau de persistance pour la session. */
+    onPersistBannerDismissed?: () => void;
 }
 
 function defaultExportArchive(): Promise<boolean> {
@@ -103,15 +122,23 @@ function defaultExportArchive(): Promise<boolean> {
         .catch(() => false);
 }
 
-/** Affiche le bandeau de persistance refusée (ou d'API absente). */
+/**
+ * Affiche le bandeau de persistance refusée (ou d'API absente). Ne réapparaît
+ * pas si l'opérateur l'a déjà fermé dans cette session (A-3) ; la pastille du
+ * dock continue de porter l'état permanent.
+ */
 export function showPersistenceBanner(deps: DeviceGuardDeps = {}): void {
+    const isDismissed = deps.isPersistBannerDismissed ?? persistBannerDismissed;
+    if (isDismissed()) return;
     const show = deps.show ?? showBanner;
     const exportArchive = deps.exportArchive ?? defaultExportArchive;
+    const onDismiss = deps.onPersistBannerDismissed ?? markPersistBannerDismissed;
     show(PERSIST_BANNER_ID, {
         message:
             "Le stockage n'est pas persistant : le navigateur peut effacer vos données (stockage plein, inactivité) sans prévenir. Installez l'application ou exportez l'archive.",
         level: 'important',
         actions: [{ label: "Exporter l'archive", onClick: () => { void exportArchive(); } }],
+        onDismiss,
     });
 }
 
