@@ -93,8 +93,8 @@ import {
     HOSTAGES_KEY,
     FRIENDS_KEY,
     PHOTOS_KEY,
-    DASHBOARD_KEY,
 } from '@pctac/config.js';
+import { undoableDelete, undoableDeleteLog, purgeCollectionImages } from '@pctac/delete-undo.js';
 import { GPX_INDEX_KEY, PINS_KEY } from '@pctac/planmap/constants.js';
 import { scopedKey } from '@pctac/modes.js';
 import { initImportScopeModal } from '@pctac/import-scope.js';
@@ -342,6 +342,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     // §5.3 étape 17 — EXPOSITIONS GLOBALES.
+    // Décision 31 : suppression immédiate (liste + stockage) suivie d'un toast
+    // « Annuler » de 10 s ; les images IndexedDB ne partent qu'à l'échéance.
     window.deleteLogEntry = async (id) => {
         // U3 — même garde que deleteCollectionItem ci-dessous.
         const confirmed = await confirmDialog({
@@ -350,24 +352,16 @@ document.addEventListener('DOMContentLoaded', async () => {
             danger: true,
         });
         if (!confirmed) return;
-        LogManager.deleteEntry(id);
-        UI.renderLogTable(Storage.loadLogData());
+        undoableDeleteLog(id, 'Entrée supprimée', () => UI.renderLogTable(Storage.loadLogData()));
     };
 
-    /** Forme minimale lue/mutée par la purge ci-dessous (board relationnel, `dashboard.js` mort). */
-    interface PctacDashboardPurgeLink {
-        from?: unknown;
-        to?: unknown;
-    }
-    interface PctacDashboardPurgeState {
-        positions?: Record<string, unknown>;
-        links?: (PctacDashboardPurgeLink | null | undefined)[];
-    }
-    // Prédicat strict (cf. storage.ts `isObject`) — équivalent en pratique à
-    // l'original `v && typeof v === 'object'` : DASHBOARD_KEY ne contient jamais
-    // de valeur JSON falsy non-null (0/''/false) à la racine.
-    const isDashboardState = (v: unknown): v is PctacDashboardPurgeState =>
-        v !== null && typeof v === 'object';
+    /** Rendu de la vue concernée par une suppression annulable. */
+    const refreshDeletedView = (viewId: string | undefined): void => {
+        if (viewId === 'view-adversaires') void UI.renderAdversaries();
+        else if (viewId === 'view-otages') void UI.renderHostages();
+        else if (viewId === 'view-amis') UI.renderFriends();
+        else if (viewId === 'view-photos') void UI.renderPhotos();
+    };
 
     window.deleteCollectionItem = async (key, id, viewId) => {
         const confirmed = await confirmDialog({
@@ -376,69 +370,19 @@ document.addEventListener('DOMContentLoaded', async () => {
             danger: true,
         });
         if (!confirmed) return;
-        const list = Storage.loadCollection(key).filter((item) => item.id !== id);
-        Storage.saveCollection(key, list);
-
-        // Nettoyer l'image dans IndexedDB (et l'original d'une photo annotée).
-        try { await ImageStore.delete(id); } catch (e) { console.error('[PC TAC] delete image échec:', e); }
-        try { await ImageStore.delete(id + '_orig'); } catch (e) { console.error('[PC TAC] delete original échec:', e); }
-
-        // Suppression en cascade pour les photos synchronisées
-        if (viewId === 'view-adversaires' || viewId === 'view-otages') {
-            const photoKey = 'pcTacPhotos';
-            const photos = Storage.loadCollection(photoKey);
-            const syncId = id + '_sync';
-            const filteredPhotos = photos.filter((p) => p.id !== syncId);
-            Storage.saveCollection(photoKey, filteredPhotos);
-            try { await ImageStore.delete(syncId); } catch (e) { console.error('[PC TAC] delete sync échec:', e); }
-        }
-
-        // Purge des références photo mortes dans les pings du plan (sinon
-        // exportées telles quelles dans l'archive, nettoyées seulement au
-        // premier affichage du viewer — cf. planmap/panels.ts, nettoyage lazy).
-        try {
-            const pins = Persist.get<{ photoId?: string }[]>(scopedKey(PINS_KEY), { validator: Array.isArray, fallback: [] }) || [];
-            const syncId = id + '_sync';
-            let pinsTouched = false;
-            for (const pin of pins) {
-                if (pin && (pin.photoId === id || pin.photoId === syncId)) {
-                    delete pin.photoId; // jamais `= undefined` (précédent panels.ts:48)
-                    pinsTouched = true;
-                }
-            }
-            if (pinsTouched) {
-                Persist.set(scopedKey(PINS_KEY), pins);
-                if (window.PlanMap && window.PlanMap.initialized) window.PlanMap.refresh();
-            }
-        } catch { /* purge pings non bloquante */ }
-
-        // Purge de l'état du board relationnel : position du nœud supprimé et
-        // liens manuels qui le référencent (sinon orphelins persistés à vie).
-        try {
-            const st = Persist.get<PctacDashboardPurgeState | null>(scopedKey(DASHBOARD_KEY), { validator: isDashboardState, fallback: null });
-            if (st) {
-                // Trois formes de clés de nœud : id photo brut, '<id>_sync', et les
-                // placeholders entités préfixés 'ent:adv:<id>' / 'ent:host:<id>'.
-                const matches = (k: unknown): boolean => k === id || k === id + '_sync' || String(k).endsWith(':' + id);
-                let touched = false;
-                if (st.positions) {
-                    for (const k of Object.keys(st.positions)) {
-                        if (matches(k)) { delete st.positions[k]; touched = true; }
-                    }
-                }
-                if (Array.isArray(st.links)) {
-                    const before = st.links.length;
-                    st.links = st.links.filter((l) => !l || (!matches(l.from) && !matches(l.to)));
-                    if (st.links.length !== before) touched = true;
-                }
-                if (touched) Persist.set(scopedKey(DASHBOARD_KEY), st);
-            }
-        } catch { /* purge board non bloquante */ }
-
-        if (viewId === 'view-adversaires') await UI.renderAdversaries();
-        if (viewId === 'view-otages') await UI.renderHostages();
-        if (viewId === 'view-amis') UI.renderFriends();
-        if (viewId === 'view-photos') await UI.renderPhotos();
+        // Message generique par NATURE d'objet (fiche, photo) : evite les
+        // accords au masculin d'un libelle de situation (« Victime »…).
+        const message = key === PHOTOS_KEY ? 'Photo supprimée' : 'Fiche supprimée';
+        undoableDelete({
+            key,
+            id,
+            message,
+            refresh: () => refreshDeletedView(viewId),
+            onCommit: async () => {
+                await purgeCollectionImages(key, id);
+                refreshDeletedView(viewId);
+            },
+        });
     };
 
     // §5.3 étape 18 — Boutons dock : PDF, reset (+ confirm/cancel), création PAX,
