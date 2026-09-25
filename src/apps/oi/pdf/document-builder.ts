@@ -42,6 +42,7 @@ import type {
 
 import {
     accentCard,
+    adaptiveGalleryPages,
     card,
     figure,
     galleryPages,
@@ -55,9 +56,12 @@ import {
     LAYOUT_BORDERED,
     LAYOUT_NONE,
     pillRow,
+    isPlanPhotoId,
     registerPdfEditAnchor,
+    type GalleryEntry,
     type PdfFieldAnchor,
 } from './blocks.js';
+import { imageSizeFromDataUrl, type ImageSize } from './image-size.js';
 import {
     documentFontPx,
     mm,
@@ -193,6 +197,8 @@ interface BuildCtx {
      * MÊME ordre pour rapprocher les fragments RÉELS de pdf.js.
      */
     anchors: OiPdfEditAnchor[];
+    /** Dimensions lues dans chaque photo (galerie adaptative, décision 44), `null` si illisibles. */
+    photoSize: (id: string) => ImageSize | null;
 }
 
 /* --------------------------------------------------------------------------
@@ -1463,8 +1469,8 @@ function buildAdversaryPages(ctx: BuildCtx): Content[] {
         }
         const extra = dynamicPhotos[`photo_extra_${adv.id}`] ?? [];
         const renfort = dynamicPhotos[`photo_renforts_${adv.id}`] ?? [];
-        pushPages(acc, galleryPages(`Adversaire : ${nom} (Photos annexes)`, extra, photosBase64, p, geo));
-        pushPages(acc, galleryPages(`Adversaire : ${nom} (Renfort possible)`, renfort, photosBase64, p, geo));
+        pushPages(acc, galleryPages(`Adversaire : ${nom} (Photos annexes)`, extra, photosBase64, p, geo, ctx.photoSize));
+        pushPages(acc, galleryPages(`Adversaire : ${nom} (Renfort possible)`, renfort, photosBase64, p, geo, ctx.photoSize));
     });
     return acc;
 }
@@ -3373,10 +3379,10 @@ function buildArticulationBlocksLoop(ctx: BuildCtx): Content[] {
         const zmspcp = zmspcpBlocks[i];
         if (zmspcp) {
             const bapteme = dynamicPhotos[`photo_bapteme_${zmspcp.id}`] ?? [];
-            pushArticPages(galleryPages(`Baptême Terrain — ${zmspcp.title || '-'}`, bapteme, photosBase64, p, geo));
+            pushArticPages(galleryPages(`Baptême Terrain — ${zmspcp.title || '-'}`, bapteme, photosBase64, p, geo, ctx.photoSize));
             pushArticPage(buildZmspcpPage(ctx, zmspcp, memberToCell));
             const emplAo = dynamicPhotos[`photo_empl_ao_${zmspcp.id}`] ?? [];
-            pushArticPages(galleryPages(`${pdfSectionTitle(ctx.formData, 'zmspcp')} : ${zmspcp.title || '-'} (Emplacement AO)`, emplAo, photosBase64, p, geo));
+            pushArticPages(galleryPages(`${pdfSectionTitle(ctx.formData, 'zmspcp')} : ${zmspcp.title || '-'} (Emplacement AO)`, emplAo, photosBase64, p, geo, ctx.photoSize));
         }
 
         const moicp = moicpBlocks[i];
@@ -3384,14 +3390,14 @@ function buildArticulationBlocksLoop(ctx: BuildCtx): Content[] {
             pushArticPage(buildMoicpPage(ctx, moicp, memberToCell));
             const ext = dynamicPhotos[`photo_itin_ext_${moicp.id}`] ?? [];
             const int_ = dynamicPhotos[`photo_itin_int_${moicp.id}`] ?? [];
-            pushArticPages(galleryPages(`${pdfSectionTitle(ctx.formData, 'moicp')} : ${moicp.title || '-'}`, [...ext, ...int_], photosBase64, p, geo));
+            pushArticPages(galleryPages(`${pdfSectionTitle(ctx.formData, 'moicp')} : ${moicp.title || '-'}`, [...ext, ...int_], photosBase64, p, geo, ctx.photoSize));
         }
 
         const effrac = effracBlocks[i];
         if (effrac) {
             pushArticPages(buildEffractionPages(ctx, effrac));
             const photos = dynamicPhotos[`photo_effrac_${effrac.id}`] ?? [];
-            pushArticPages(galleryPages(`Effraction : ${effrac.title || '-'}`, photos, photosBase64, p, geo));
+            pushArticPages(galleryPages(`Effraction : ${effrac.title || '-'}`, photos, photosBase64, p, geo, ctx.photoSize));
         }
     }
     return acc;
@@ -4062,7 +4068,7 @@ const OI_PDF_SECTIONS: OiPdfSectionDef[] = [
             if (!photos.some((meta) => photosBase64[meta.id] !== undefined)) {
                 return [];
             }
-            return galleryPages(`${num()}. ${pdfSectionTitle(ctx.formData, 'cheminement')}`, photos, photosBase64, p, geo);
+            return galleryPages(`${num()}. ${pdfSectionTitle(ctx.formData, 'cheminement')}`, photos, photosBase64, p, geo, ctx.photoSize);
         },
     },
     { id: 'mission-execution', title: "Mission de l'unité / Exécution", build: (ctx, num) => buildMissionExecutionPages(ctx, num) },
@@ -4160,16 +4166,12 @@ function expressPatrac(rows: ExpressRow[], p: OiPdfPalette, widthPt: number, fon
     return { node, costPt };
 }
 
-/** Hauteur minimale d'une photo en page 2 : en dessous, une photo ne se lit plus. */
-const EXPRESS_PHOTO_MIN_PT = 150;
-
 /**
  * PDF de l'OI express : l'ordre en DEUX pages (décision Nico 2026-09-24),
- * puis TOUTES les photos à taille naturelle, pages comprises (décision 24).
+ * puis TOUTES les photos (décision 24) en galerie adaptative (décision 44).
  * Trois dispositions de l'ordre, essayées dans l'ordre ; la première qui tient
- * ENTIÈREMENT (page 1, et page 2 avec une rangée de photos d'au moins
- * `EXPRESS_PHOTO_MIN_PT`) au
- * plus grand palier de police possible (11 → 7) est retenue :
+ * ENTIÈREMENT (page 1, et page 2) au plus grand palier de police possible
+ * (11 → 7) est retenue :
  *  - A : page 1 = l'ordre, chronologie et PATRACDVR ; page 2 = les photos ;
  *  - B : page 1 = l'ordre et la chronologie ; page 2 = PATRACDVR puis photos ;
  *  - C : page 1 = situation, mission, exécution ; page 2 = chronologie,
@@ -4194,34 +4196,23 @@ function buildExpressPages(ctx: BuildCtx): Content[] {
     const HEADER_PT = 56;
 
     // TOUTES les photos (décision 24) : objectif, adversaire, puis plans ;
-    // légende = titre saisi, sinon la catégorie, numérotée s'il y en a plusieurs.
-    const photos = EXPRESS_PHOTOS.flatMap((c) => {
+    // légende = titre saisi, sinon la catégorie, numérotée s'il y en a
+    // plusieurs. Galerie adaptative (décision 44), mêmes règles que l'OI
+    // Complet : les plans chacun sur sa page, après les photos.
+    const photoEntries = (plans: boolean): GalleryEntry[] => EXPRESS_PHOTOS.flatMap((c) => {
         const metas = (dynamicPhotos[c.id] ?? []).filter((m) => photosBase64[m.id] !== undefined);
-        return metas.map((m, i) => ({
-            label: m.customTitle?.trim() || (metas.length > 1 ? `${c.label} ${i + 1}` : c.label),
-            ref: photosBase64[m.id] as string,
-            plan: c.id === EXPRESS_PLAN_CONTAINER,
-        }));
+        return metas
+            .map((m, i) => ({
+                id: m.id,
+                ref: photosBase64[m.id] as string,
+                caption: m.customTitle?.trim() || (metas.length > 1 ? `${c.label} ${i + 1}` : c.label),
+                tools: [],
+                size: ctx.photoSize(m.id),
+                isPlan: c.id === EXPRESS_PLAN_CONTAINER || isPlanPhotoId(m.id),
+            }))
+            .filter((e) => e.isPlan === plans);
     });
-    const nPhotos = photos.length;
-    const gapPh = mm(4);
-    // Rangées : photos par deux (4:3), chaque plan sur toute la largeur (rues,
-    // carroyage lisibles). Une rangée ne dépasse jamais une page.
-    type PhotoRow = { items: typeof photos; w: number; h: number; capPt: number };
-    const halfW = (W - gapPh) / 2;
-    const rowGapPt = mm(3);
-    // `perPage` : rangées tenant sur une page (PDF paysage) ; photos : deux
-    // rangées, quatre photos par page ; plan : une page à lui.
-    const rowOf = (items: typeof photos, w: number, ratio: number, perPage: number): PhotoRow => {
-        const capPt = Math.max(0, ...items.map((ph) => textLinePt(ph.label, 9, w) + 5));
-        const pageMax = Math.floor((available - EFFRAC_H2_PT - 8 - rowGapPt * (perPage - 1)) / perPage) - capPt;
-        return { items, w, capPt, h: Math.min(Math.round(w * ratio), pageMax) };
-    };
-    const others = photos.filter((ph) => !ph.plan);
-    const rows: PhotoRow[] = [
-        ...others.flatMap((_, i) => (i % 2 ? [] : [rowOf(others.slice(i, i + 2), halfW, 0.75, 2)])),
-        ...photos.filter((ph) => ph.plan).map((ph) => rowOf([ph], W, 0.62, 1)),
-    ];
+    const galleryEntries = [...photoEntries(false), ...photoEntries(true)];
 
     // Coûts (pt) au palier `f`.
     const corePt = (f: number): number => {
@@ -4238,10 +4229,9 @@ function buildExpressPages(ctx: BuildCtx): Content[] {
     const chronoPt = (f: number): number =>
         events.length ? STACKED_CARD_GAP_PT + cardWithTitlePt(effracLinePt(f) + EFFRAC_ROW_VPAD_PT + events.reduce((sum, e) => sum + chronoEventPt(e, f, (W - 16) * 0.78), 0)) : 0;
     const patracPt = (f: number): number => (members.length ? STACKED_CARD_GAP_PT + EFFRAC_H3_PT + expressPatrac(members, p, W, f).costPt : 0);
-    // Place réservée aux photos pour choisir la disposition de l'ordre : la
-    // même qu'avant la décision 24 (une rangée au minimum), pour que l'ordre
-    // garde sa mise en page ; les photos suivent ensuite, pages comprises.
-    const photosNeedPt = nPhotos ? EFFRAC_H2_PT + EXPRESS_PHOTO_MIN_PT + (rows[0] as PhotoRow).capPt : 0;
+    // Les photos ont leurs propres pages (galerie adaptative) : l'ordre n'a
+    // plus à leur garder de place.
+    const photosNeedPt = 0;
 
     // `flow` : aucun saut forcé — la page 1 se remplit, la suite (chronologie
     // coupée entre deux rangées, en-tête répété) passe en page 2 avant les
@@ -4325,40 +4315,16 @@ function buildExpressPages(ctx: BuildCtx): Content[] {
         fontSize: fontPx,
     };
     const p2Parts = layout.p2.flatMap(partNodes);
-    if (!nPhotos && !p2Parts.length) return [page1];
-
-    // Photos à taille naturelle (un plan réduit ne se lit plus) ; les pages
-    // suivent. Une rangée n'est jamais coupée, et le titre « PHOTOS » voyage
-    // avec la première : jamais seul en bas de page. Seule exception : une
-    // première rangée de photos (pas un plan) se resserre, jamais sous
-    // `EXPRESS_PHOTO_MIN_PT`, pour commencer dans ce que la page 2 laisse au
-    // lieu de la laisser à moitié vide.
-    const usedP2 = layout.flow
-        ? Math.max(0, corePt(fontPx) + chronoPt(fontPx) + patracPt(fontPx) - available)
-        : layout.p2.reduce((sum, x) => sum + partPt(x, fontPx), 0);
-    const leftP2 = available - usedP2 - EFFRAC_H2_PT - (p2Parts.length ? STACKED_CARD_GAP_PT : 0) - 8;
-    const first = rows[0];
-    if (first && first.w !== W && first.h + first.capPt > leftP2 && leftP2 - first.capPt >= EXPRESS_PHOTO_MIN_PT) {
-        first.h = Math.floor(leftP2 - first.capPt);
-    }
-    const rowNode = (r: PhotoRow): Content =>
-        ({ columns: r.items.map((ph) => ({ width: r.w, stack: [figure(ph.ref, [r.w, r.h], p, ph.label)] })), columnGap: gapPh }) as Content;
-    const photoNodes: Content[] = rows.map((r, i) => (i === 0
-        ? { stack: [h2('PHOTOS', p, W), rowNode(r)], unbreakable: true }
-        : { stack: [rowNode(r)], unbreakable: true, margin: [0, rowGapPt, 0, 0] }) as Content);
+    // Photos et plans : galerie adaptative, à partir d'une nouvelle page.
+    const photoPages = adaptiveGalleryPages('ANNEXES', galleryEntries, p, geo).map((page, i) =>
+        i === 0 ? ({ ...(page as object), pageBreak: 'before' } as Content) : page);
     if (layout.flow) {
         // Tout d'un bloc : pdfmake coupe là où la page 1 est pleine.
-        return [{ stack: [...(page1 as { stack: Content[] }).stack, ...(nPhotos ? [gapNode(), ...photoNodes] : [])], fontSize: fontPx }];
+        return [{ stack: (page1 as { stack: Content[] }).stack, fontSize: fontPx }, ...photoPages];
     }
-    const page2: Content = {
-        stack: [
-            ...p2Parts,
-            ...(nPhotos ? [...(p2Parts.length ? [gapNode()] : []), ...photoNodes] : []),
-        ],
-        fontSize: fontPx,
-        pageBreak: 'before',
-    };
-    return [page1, page2];
+    if (!p2Parts.length) return [page1, ...photoPages];
+    const page2: Content = { stack: p2Parts, fontSize: fontPx, pageBreak: 'before' };
+    return [page1, page2, ...photoPages];
 }
 
 /** Section du formulaire (`sections.ts`) dont le retrait (×) omet toute la section du PDF. */
@@ -4459,7 +4425,9 @@ export function buildOiDocDefinition(data: OiPdfCollectedData, opts: { format: O
 
     const fitErrors: OiPdfFitError[] = [];
     const anchors: OiPdfEditAnchor[] = [];
+    const sizes = new Map(Object.entries(data.photosBase64).map(([id, url]) => [id, imageSizeFromDataUrl(url)]));
     const ctx: BuildCtx = {
+        photoSize: (id) => sizes.get(id) ?? null,
         formData,
         photosBase64,
         dynamicPhotos,

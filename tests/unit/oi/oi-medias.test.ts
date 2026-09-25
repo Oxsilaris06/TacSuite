@@ -176,6 +176,15 @@ describe('(a) handleFileChange — upload', () => {
         expect(blob).toBeInstanceOf(Blob);
     });
 
+    it('une capture de carte (fichier carte_…, carto/capture.ts) reçoit une clé img_plan_* : le PDF la met seule sur sa page (décision 44)', async () => {
+        const input = makeFileInput([makeFile('carte_1727300000000.jpg')]);
+
+        await handleFileChange(input, 'adversary_photo_preview_container', false);
+
+        const [key] = vi.mocked(dbManager.putItem).mock.calls[0] as [string, Blob];
+        expect(key).toMatch(/^img_plan_/);
+    });
+
     it('ajoute une .image-preview-item dans le conteneur, réinitialise l’input et synchronise le Store', async () => {
         const input = makeFileInput([makeFile()]);
 

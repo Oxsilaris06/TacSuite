@@ -76,12 +76,13 @@ function expressOi(nMembers: number, nEvents: number, textLen: number): OiFormDa
 
 describe('OI express — pages du PDF rendu', () => {
     const photos = { o1: JPEG, a1: JPEG, c1: JPEG };
-    // Décision 24 : toutes les photos, plans pleine largeur (PDF paysage : un
-    // plan occupe presque une page). L'ordre et la paire objectif/adversaire
-    // tiennent en deux pages ; le plan prend la troisième.
+    // Décisions 24 et 44 : toutes les photos, en galerie adaptative APRÈS
+    // l'ordre (la paire objectif/adversaire sur une page, le plan seul sur la
+    // sienne). L'ordre lui-même tient en deux pages au plus ici ; le point 5
+    // de l'atelier (décision 43, express densifié) resserre ce plafond.
     for (const [n, ev, len] of [[4, 3, 150], [8, 5, 300], [12, 5, 300], [16, 6, 400]] as const) {
-        it(`${n} membres, ${ev} étapes, textes de ${len} caractères, 3 photos dont un plan : 3 pages`, async () => {
-            expect(await renderedPages(expressOi(n, ev, len), photos)).toBeLessThanOrEqual(3);
+        it(`${n} membres, ${ev} étapes, textes de ${len} caractères, 3 photos dont un plan : l'ordre (2 pages au plus) puis 2 pages de photos`, async () => {
+            expect(await renderedPages(expressOi(n, ev, len), photos)).toBeLessThanOrEqual(4);
         }, 30_000);
     }
 
