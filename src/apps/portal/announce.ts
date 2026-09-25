@@ -27,7 +27,7 @@
 import { hideBanner, showBanner } from '@shared/feedback.js';
 import type { BannerLevel } from '@shared/feedback.js';
 
-/** Gist secret, CORS ouvert, cache CDN 5 min (décision 27). */
+/** Gist secret, CORS ouvert (décision 27). Lu avec un paramètre à la minute : voir `fetchAnnouncement`. */
 export const ANNOUNCE_URL =
     'https://gist.githubusercontent.com/Oxsilaris06/074ec5651eef3daa592905ea25ce76a7/raw/annonce.json';
 
@@ -239,7 +239,11 @@ async function fetchAnnouncement(fetchFn: typeof fetch, nowMs: number): Promise<
     const controller = typeof AbortController === 'function' ? new AbortController() : null;
     const timer = setTimeout(() => controller?.abort(), FETCH_TIMEOUT_MS);
     try {
-        const res = await fetchFn(ANNOUNCE_URL, {
+        // Le CDN de GitHub garde la version brute jusqu'à 5 min, nœud par nœud
+        // (essai réel du 09-25 : ancienne annonce servie après publication). Un
+        // paramètre qui change chaque minute force un contenu frais en moins
+        // d'une minute, et laisse le CDN mettre en cache le reste du temps.
+        const res = await fetchFn(`${ANNOUNCE_URL}?v=${Math.floor(nowMs / 60_000)}`, {
             cache: 'no-store',
             ...(controller ? { signal: controller.signal } : {}),
         });

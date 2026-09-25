@@ -108,6 +108,19 @@ describe('fingerprint', () => {
     });
 });
 
+describe('refreshAnnouncement — fraîcheur (essai réel du 09-25)', () => {
+    it('la requête porte un paramètre qui change chaque minute (le CDN de GitHub garde sinon l’ancienne version 5 min)', async () => {
+        const urls: string[] = [];
+        const fetchFn = async (url: RequestInfo | URL): Promise<Response> => { urls.push(String(url)); return jsonResponse(ann()); };
+        await refreshAnnouncement({ fetchFn: fetchFn as typeof fetch, now: () => NOW, storage: localStorage });
+        await refreshAnnouncement({ fetchFn: fetchFn as typeof fetch, now: () => NOW + 30_000, storage: localStorage });
+        await refreshAnnouncement({ fetchFn: fetchFn as typeof fetch, now: () => NOW + 61_000, storage: localStorage });
+        expect(urls[0]).toMatch(/^https:\/\/gist\.githubusercontent\.com\/.+\/raw\/annonce\.json\?v=\d+$/);
+        expect(urls[0]).toBe(`${urls[0]!.split('?')[0]}?v=${Math.floor(NOW / 60_000)}`);
+        expect(new Set(urls).size).toBeGreaterThanOrEqual(2);
+    });
+});
+
 describe('refreshAnnouncement — réponse distante', () => {
     it('affiche une annonce valide et la met en cache', async () => {
         const a = ann({ texte: 'Réunion 14h.', niveau: 'important', expire: iso(3600_000) });
