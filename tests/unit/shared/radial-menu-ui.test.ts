@@ -6,7 +6,7 @@
  * `transform` en ligne (`translate(calc(-50% + Xpx), calc(-50% + Ypx))`), où
  * la roue l'écrit elle-même.
  */
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { RadialMenu, type RadialMenuHost, type RadialMenuOption } from '../../../src/shared/radial-menu.js';
 
@@ -37,6 +37,7 @@ const options = (n: number): RadialMenuOption[] => LABELS.slice(0, n).map((label
 afterEach(() => {
   document.body.innerHTML = '';
   setViewportWidth(1024);
+  vi.unstubAllGlobals();
 });
 
 describe('RadialMenu — étiquettes lisibles sur téléphone', () => {
@@ -66,6 +67,34 @@ describe('RadialMenu — étiquettes lisibles sur téléphone', () => {
     const menu = new RadialMenu({ host: makeHost(), lngLat: { lng: 0, lat: 0 }, options: options(8) });
     menu.open();
     expect(parseFloat(menu.element?.style.width ?? '0')).toBeLessThanOrEqual(358);
+    menu.destroy();
+  });
+});
+
+describe('RadialMenu — mouvement réduit', () => {
+  function stubReducedMotion(reduce: boolean): void {
+    vi.stubGlobal('matchMedia', (query: string) => ({
+      matches: reduce && query.includes('prefers-reduced-motion: reduce'), media: query, onchange: null,
+      addListener: () => {}, removeListener: () => {}, addEventListener: () => {}, removeEventListener: () => {}, dispatchEvent: () => false,
+    }));
+  }
+
+  it('mouvement réduit demandé : apparition en fondu seul, sans rebond ni changement d’échelle', () => {
+    stubReducedMotion(true);
+    const menu = new RadialMenu({ host: makeHost(), lngLat: { lng: 0, lat: 0 }, options: options(3) });
+    menu.open();
+    const style = menu.element?.style;
+    expect(style?.transform).not.toMatch(/scale/);
+    expect(style?.transition).not.toMatch(/transform/);
+    expect(style?.transition).toMatch(/opacity/);
+    menu.destroy();
+  });
+
+  it('sans préférence : l’apparition garde son ressort', () => {
+    stubReducedMotion(false);
+    const menu = new RadialMenu({ host: makeHost(), lngLat: { lng: 0, lat: 0 }, options: options(3) });
+    menu.open();
+    expect(menu.element?.style.transition).toMatch(/transform/);
     menu.destroy();
   });
 });
