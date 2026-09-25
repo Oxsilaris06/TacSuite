@@ -20,6 +20,7 @@ import {
     mergeFicheFields,
     parseChips,
     serializeChips,
+    sortFichesByPriority,
     statusChoices,
     statusMeta,
     summaryRows,
@@ -288,5 +289,50 @@ describe('mergeFicheFields — complète les champs vides sans écraser (décisi
         mergeFicheFields(existing, incoming);
         expect(existing.prenom).toBe('');
         expect(incoming.prenom).toBe('Jean');
+    });
+});
+
+describe('sortFichesByPriority — tri par priorité (décision 33)', () => {
+    const f = (id: string, status?: string): PctacCollectionItem => ({ id, ...(status ? { status } : {}) });
+
+    it('protégés triage : Non triée → EU → UA → UR → Impliqué → DCD', () => {
+        const items = ['dcd', 'impl', 'ur', 'ua', 'eu', 'nt'].map((s, i) => f(`p${i}`, s));
+        const ordered = sortFichesByPriority('host', 'tp', items).map((i) => i.status);
+        expect(ordered).toEqual(['nt', 'eu', 'ua', 'ur', 'impl', 'dcd']);
+    });
+
+    it('protégés Forcené (hors triage) : Blessé → Préoccupant → OK → DCD', () => {
+        const items = ['dcd', 'ok', 'preoccupant', 'blesse'].map((s, i) => f(`p${i}`, s));
+        const ordered = sortFichesByPriority('host', 'forcene', items).map((i) => i.status);
+        expect(ordered).toEqual(['blesse', 'preoccupant', 'ok', 'dcd']);
+    });
+
+    it('adversaires : actifs d\'abord, puis l\'ordre de statusChoices', () => {
+        const items = ['neutralized', 'located', 'active'].map((s, i) => f(`a${i}`, s));
+        const ordered = sortFichesByPriority('adv', 'recherche', items).map((i) => i.status);
+        expect(ordered).toEqual(['active', 'located', 'neutralized']);
+    });
+
+    it('à priorité égale, l\'ordre de création est conservé (tri stable)', () => {
+        const items = [f('c1', 'ok'), f('c2', 'ok'), f('c3', 'blesse')];
+        expect(sortFichesByPriority('host', 'forcene', items).map((i) => i.id)).toEqual(['c3', 'c1', 'c2']);
+    });
+
+    it('Témoins (Recherche, sans statut) : ordre inchangé', () => {
+        const items = [f('t1'), f('t2'), f('t3')];
+        expect(sortFichesByPriority('host', 'recherche', items).map((i) => i.id)).toEqual(['t1', 't2', 't3']);
+    });
+
+    it('ne mute pas la liste d\'entrée', () => {
+        const items = [f('a', 'dcd'), f('b', 'nt')];
+        sortFichesByPriority('host', 'tp', items);
+        expect(items.map((i) => i.id)).toEqual(['a', 'b']);
+    });
+});
+
+describe('DCD en noir (décision 33)', () => {
+    it('le statut DCD est noir, les autres gardent leur couleur', () => {
+        expect(statusMeta('host', 'tp', 'dcd').color).toBe('#000000');
+        expect(statusMeta('host', 'tp', 'eu').color).not.toBe('#000000');
     });
 });

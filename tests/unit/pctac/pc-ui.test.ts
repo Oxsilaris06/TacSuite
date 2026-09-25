@@ -268,3 +268,40 @@ describe('UI — les méthodes de rendu ne jettent pas quand leur conteneur DOM 
     expect(() => UI.closeLightbox()).not.toThrow();
   });
 });
+
+describe('délégation d\'événements : aucun id dans un gestionnaire en ligne (B8)', () => {
+  it('journal : favori, modifier et supprimer par délégation, id à apostrophe', () => {
+    document.body.innerHTML = '<table id="logTable"><tbody></tbody></table>';
+    UI.initElements();
+    Storage.saveLogData([{ id: "l'1", heure: '10:00', pax: 'Adversaire', paxMode: 'standard', lieu: 'Ici', remarques: "d'accord", date: '2026-01-01' }]);
+    UI.renderLogTable(Storage.loadLogData());
+
+    expect(document.getElementById('logTable')!.innerHTML).not.toMatch(/on(click|change)=/);
+    const fav = vi.spyOn(UI, 'toggleLogFavori').mockImplementation(() => {});
+    document.querySelector<HTMLElement>('[data-log-action="favori"]')!.click();
+    expect(fav).toHaveBeenCalledWith("l'1");
+  });
+
+  it('amis : modifier/supprimer par délégation, id à apostrophe', () => {
+    document.body.innerHTML = '<table><tbody id="friend-table-body"></tbody></table>';
+    Storage.saveCollection('pcTacFriends', [{ id: "a'b", nom: 'X', prenom: 'Y', unite: '', tph: '', mission: '' }]);
+    UI.renderFriends();
+
+    expect(document.getElementById('friend-table-body')!.innerHTML).not.toMatch(/on(click|change)=/);
+    const edit = vi.spyOn(UI, 'showEditFriendModal').mockImplementation(() => {});
+    document.querySelector<HTMLElement>('[data-friend-action="edit"]')!.click();
+    expect(edit).toHaveBeenCalledWith("a'b");
+  });
+
+  it('photos : filtres et actions par délégation, id à apostrophe', async () => {
+    document.body.innerHTML = '<div id="photo-filter-container"></div><div id="photo-board"></div>';
+    Storage.saveCollection('pcTacPhotos', [{ id: "p'1", title: 'T', category: 'location', data: 'data:image/jpeg;base64,X', status: 'active' }]);
+    await UI.renderPhotos('all');
+
+    const html = document.getElementById('photo-board')!.innerHTML + document.getElementById('photo-filter-container')!.innerHTML;
+    expect(html).not.toMatch(/on(click|change|drag)/);
+    const rename = vi.spyOn(UI, 'editPhotoTitle').mockResolvedValue();
+    document.querySelector<HTMLElement>('[data-photo-action="rename"]')!.click();
+    expect(rename).toHaveBeenCalledWith("p'1");
+  });
+});

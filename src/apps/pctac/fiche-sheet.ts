@@ -29,6 +29,7 @@ import {
     defaultStatus,
     ficheSections,
     ficheTitle,
+    findDuplicatePerson,
     headerFields,
     parseChips,
     serializeChips,
@@ -40,6 +41,10 @@ import {
 import { esc } from '@shared/ui-platform.js';
 import { toast } from '@shared/feedback.js';
 import { annotatePhoto } from '@pctac/photo-annotation.js';
+import { mergePersonIntoExisting } from '@pctac/fiche-merge.js';
+import { choiceDialog } from '@pctac/choice-dialog.js';
+import { diffOpenFiche } from '@pctac/fiche-conflict.js';
+import type { PctacCollectionItem } from '@shared/types/contracts.js';
 
 interface Draft {
     values: Record<string, string>;
@@ -63,6 +68,8 @@ interface SheetState {
     pendingDraft: boolean;
     /** Compression photo en cours : l'enregistrement l'attend. */
     photoPending: Promise<void> | null;
+    /** La fiche a été supprimée dans un autre onglet : « Enregistrer » la recrée. */
+    recreate?: boolean;
 }
 
 let state: SheetState | null = null;
@@ -73,6 +80,7 @@ let historyPushed = false;
 /** Dialogue déjà câblé (un gabarit rechargé en crée un neuf). */
 let boundTo: HTMLDialogElement | null = null;
 let popstateBound = false;
+let remoteBound = false;
 
 /** Même seuil que le CSS : téléphone, ou téléphone en paysage. */
 const FULLSCREEN_MQ = '(max-width: 640px), (max-height: 500px)';
@@ -103,6 +111,14 @@ try {
 
 const collectionKey = (side: FicheSide): string => (side === 'adv' ? ADVERSARIES_KEY : HOSTAGES_KEY);
 const slotOf = (side: FicheSide, id: string | null): string => `${side}:${id ?? 'new'}`;
+
+/**
+ * Clé ImageStore de la photo d'un brouillon (décision 33), PROPRE à la
+ * situation (`scopedKey`) et au brouillon (camp + id). La photo n'est plus
+ * perdue quand on quitte la fiche : elle est effacée avec le brouillon.
+ */
+const draftPhotoKey = (side: FicheSide, id: string | null): string =>
+    `${scopedKey(FICHE_DRAFT_KEY)}-img:${slotOf(side, id)}`;
 
 /** Empreinte d'une fiche pour son brouillon. Le statut, les annotations de
  *  la photo et `updatedAt` (date de modification, décision 32) en sont exclus :
@@ -137,6 +153,22 @@ function dropDraft(side: FicheSide, id: string | null): void {
     const drafts = readDrafts();
     delete drafts[slotOf(side, id)];
     writeDrafts(drafts);
+    // La photo du brouillon part avec lui (blob ImageStore).
+    void ImageStore.delete(draftPhotoKey(side, id)).catch(() => { /* absente */ });
+}
+
+/** Recharge la photo du brouillon dans la fiche affichée, si elle n'en a pas. */
+async function loadDraftPhoto(side: FicheSide, id: string | null): Promise<void> {
+    const data = await ImageStore.get(draftPhotoKey(side, id)).catch(() => null);
+    if (!data || !state || state.side !== side || state.id !== id || state.photo) return;
+    state.photo = data;
+    const holder = dialogEl()?.querySelector('.fiche-photo');
+    if (!holder) return;
+    holder.querySelector('img, .material-symbols-outlined')?.remove();
+    const img = document.createElement('img');
+    img.src = data;
+    img.alt = '';
+    holder.prepend(img);
 }
 
 function saveDraft(force = false): void {
@@ -289,8 +321,10 @@ function render(): void {
             <button type="button" class="fiche-save-next">Enregistrer et suivante</button>
             <button type="button" class="fiche-save">${esc(id ? 'Enregistrer' : lex.saveLabel)}</button>
         </footer>
-    </form>`;
+        </form>`;
     updateCounts(dlg);
+    // Brouillon avec photo (décision 33) : la remontre à l'ouverture.
+    if (!photoSrc) void loadDraftPhoto(side, id);
 }
 
 // --- Lecture du formulaire --------------------------------------------------
@@ -407,7 +441,7 @@ async function save(next: boolean): Promise<void> {
         const key = collectionKey(side);
         const list = Storage.loadCollection(key);
         let item = id ? list.find((i) => i.id === id) : undefined;
-        if (id && !item) {
+        if (id && !item && !s.recreate) {
             // Supprimée ailleurs (autre onglet) : la saisie devient le brouillon
             // d'une NOUVELLE fiche, proposé au prochain « + ».
             const drafts = readDrafts();
@@ -424,20 +458,79 @@ async function save(next: boolean): Promise<void> {
             return;
         }
         const created = !item;
-        if (!item) {
-            item = { id: Date.now().toString() };
-            list.push(item);
-        }
-        const oldBlessures = String(item.blessures ?? '');
         // Saisie masquée par un changement de type (Phénomène) : gardée aussi.
         const kept = Object.fromEntries(Object.entries(s.item)
             .filter(([k, v]) => typeof v === 'string' && !['id', 'photo', 'status'].includes(k)));
+        const entered = { ...kept, ...fields };
+
+        if (!item) {
+            // Décision 32/33 — doublon de personne à la CRÉATION : signaler et
+            // laisser choisir « Ouvrir l'existante », « Fusionner » (la nouvelle
+            // n'est pas créée, la photo de l'entrante est reprise si l'existante
+            // n'en a pas) ou « Créer quand même ».
+            const candidateId = Date.now().toString();
+            const candidate: PctacCollectionItem = { id: candidateId, ...entered };
+            const duplicate = findDuplicatePerson(list, candidate);
+            if (duplicate) {
+                const dupName = `${String(entered.nom ?? '')} ${String(entered.prenom ?? '')}`.trim() || '(sans nom)';
+                const choice = await choiceDialog({
+                    title: 'Une fiche existe déjà',
+                    message: `Une fiche existe déjà pour ${dupName}.`,
+                    options: [
+                        { value: 'open', label: "Ouvrir l'existante" },
+                        { value: 'merge', label: 'Fusionner' },
+                        { value: 'create', label: 'Créer quand même' },
+                    ],
+                });
+                if (choice === 'open') {
+                    close();
+                    // `saving` retombe en fin de `save()` : l'ouverture attend.
+                    setTimeout(() => { void openFiche(side, String(duplicate.id)); }, 0);
+                    return;
+                }
+                if (choice === 'merge') {
+                    if (s.photo) {
+                        try {
+                            await ImageStore.put(candidateId, s.photo);
+                            await ImageStore.put(`${candidateId}_sync`, s.photo);
+                            candidate.hasImage = true;
+                        } catch { /* photo non copiée : la fusion reste possible sans */ }
+                    }
+                    const at = list.findIndex((i) => i.id === duplicate.id);
+                    const { merged } = await mergePersonIntoExisting(duplicate, candidate);
+                    list[at] = merged;
+                    if (!Storage.saveCollection(key, list)) {
+                        toast('Stockage plein : fiche NON enregistrée.', { kind: 'error' });
+                        return;
+                    }
+                    try {
+                        await ImageStore.delete(candidateId);
+                        await ImageStore.delete(`${candidateId}_sync`);
+                        await ImageStore.delete(`${candidateId}_orig`);
+                    } catch { /* blobs temporaires, sans effet visible */ }
+                    dropDraft(side, id);
+                    toast('Fiches fusionnées', { kind: 'success' });
+                    if (side === 'adv') await window.UI.renderAdversaries();
+                    else await window.UI.renderHostages();
+                    if (s.photo) await window.UI.renderPhotos();
+                    close();
+                    return;
+                }
+                if (choice !== 'create') {
+                    // Fond ou Échap : on n'enregistre rien, la saisie reste.
+                    return;
+                }
+            }
+            item = { id: candidateId };
+            list.push(item);
+        }
+        const oldBlessures = String(item.blessures ?? '');
         // Seuls les champs changés depuis l'ouverture sont écrits : une valeur
         // posée ailleurs pendant la saisie (import, autre vue) n'est pas
         // écrasée par la copie d'ouverture. Un champ vidé retire sa clé : les
         // QR et archives ne transportent pas une vingtaine de valeurs vides.
         const opened = (s.base ? JSON.parse(s.base) : {}) as Record<string, unknown>;
-        Object.entries({ ...kept, ...fields }).forEach(([k, v]) => {
+        Object.entries(entered).forEach(([k, v]) => {
             if (v === String(opened[k] ?? '')) return;
             if (v === '') delete item![k];
             else item![k] = v;
@@ -501,6 +594,52 @@ async function save(next: boolean): Promise<void> {
     }
 }
 
+/**
+ * Décision 29 — la même fiche change dans un autre onglet pendant qu'elle est
+ * ouverte : appliquer sans bruit les champs changés là-bas et pas ici, faire
+ * trancher champ par champ les divergences, ou proposer de recréer la fiche si
+ * elle a été supprimée ailleurs.
+ */
+async function handleRemoteFicheChange(): Promise<void> {
+    const s = state;
+    if (!s || !s.id) return;
+    const key = collectionKey(s.side);
+    const fresh = Storage.loadCollection(key).find((i) => i.id === s.id);
+    if (!fresh) {
+        const choice = await choiceDialog({
+            title: 'Fiche supprimée ailleurs',
+            message: 'Cette fiche a été supprimée dans un autre onglet. Que faire ?',
+            options: [
+                { value: 'recreate', label: 'Recréer en enregistrant' },
+                { value: 'close', label: 'Fermer' },
+            ],
+        });
+        if (choice === 'recreate') { s.recreate = true; return; }
+        close();
+        return;
+    }
+    const mine = { ...s.item, ...collect() };
+    const base = s.base ? JSON.parse(s.base) as Record<string, unknown> : null;
+    const diff = diffOpenFiche(base, mine, fresh);
+    if (diff.conflicts.length === 0 && Object.keys(diff.silent).length === 0) return;
+    // Les saisies locales priment avant d'appliquer ; les silencieux écrasent
+    // les valeurs non touchées ici uniquement.
+    s.item = { ...s.item, ...mine, ...diff.silent };
+    for (const conflict of diff.conflicts) {
+        const choice = await choiceDialog({
+            title: 'Champ modifié dans un autre onglet',
+            message: `Champ « ${conflict.key} » : votre valeur « ${String(conflict.mine ?? '')} » `
+                + `/ autre onglet « ${String(conflict.theirs ?? '')} ».`,
+            options: [
+                { value: 'mine', label: 'Garder la mienne' },
+                { value: 'theirs', label: "Prendre l'autre" },
+            ],
+        });
+        if (choice === 'theirs') s.item[conflict.key] = conflict.theirs;
+    }
+    if (state === s) render();
+}
+
 /** Photo enregistrée de la fiche (décision 25) : la fiche montre ensuite la version annotée. */
 async function annotateFichePhoto(): Promise<void> {
     const s = state;
@@ -537,6 +676,8 @@ function onClick(e: Event): void {
             state.pendingDraft = false;
             state.dirty = true;
             render();
+            // Le brouillon repris remontre aussi sa photo (décision 33).
+            void loadDraftPhoto(state.side, state.id);
         }
         return;
     }
@@ -608,9 +749,19 @@ async function onChange(e: Event): Promise<void> {
     const owner = state;
     const job = (async (): Promise<void> => {
         try {
+            // Position GPS de l'original (décision 34) : question INDÉPENDANTE
+            // de l'enregistrement, jamais bloquante pour la compression.
+            void Utils.promptGpsPoint(file, ficheTitle(owner.side, currentModeId(), owner.item));
             const data = await Utils.compressImage(file, 800, 800, 0.7);
             if (state !== owner) return;
             owner.photo = data;
+            // Le brouillon garde la photo choisie (décision 33), propre à la
+            // situation : rechargée à la réouverture, effacée avec le brouillon.
+            void ImageStore.put(draftPhotoKey(owner.side, owner.id), data).catch(() => { /* stockage */ });
+            // Le brouillon existe dès qu'une photo est choisie (sinon la photo
+            // n'aurait aucun brouillon auquel s'accrocher à la réouverture).
+            owner.dirty = true;
+            saveDraft();
             // « Annoter » vise la photo enregistrée : plus celle de la fiche.
             dialogEl()?.querySelector('.fiche-annotate')?.remove();
             const holder = input.closest('.fiche-photo');
@@ -687,6 +838,16 @@ function bind(dlg: HTMLDialogElement): void {
     dlg.addEventListener('keydown', onKeydown);
     // Filet : aucune soumission de formulaire, quelle qu'en soit l'origine.
     dlg.addEventListener('submit', (e) => { e.preventDefault(); });
+    // Décision 29 — la même fiche change dans un autre onglet (écouteur unique).
+    if (!remoteBound) {
+        remoteBound = true;
+        document.addEventListener('pctac:data', (e) => {
+            const detail = (e as CustomEvent<{ key?: unknown; remote?: unknown }>).detail;
+            if (!detail || detail.remote !== true || !state || !state.id) return;
+            if (detail.key !== collectionKey(state.side)) return;
+            void handleRemoteFicheChange();
+        });
+    }
     // Fermeture par Échap ou `close()` : on rend l'entrée d'historique.
     dlg.addEventListener('close', () => {
         const closed = state;

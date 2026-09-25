@@ -646,8 +646,10 @@
             adversaires, otages, photos) seront définitivement supprimées. Cette action est irréversible.</p>
         <div class="pctac-actions-row-gap10">
             <button type="button" class="add-btn pctac-btn-bg-input" id="cancelResetBtn">ANNULER</button>
-            <button type="button" class="add-btn pctac-btn-danger-bg" id="confirmResetBtn">CONFIRMER LE
-                RESET</button>
+            <button type="button" class="add-btn" id="confirmResetExportBtn">EXPORTER L'ARCHIVE PUIS
+                EFFACER</button>
+            <button type="button" class="add-btn pctac-btn-danger-bg" id="confirmResetBtn">EFFACER SANS
+                ARCHIVE</button>
         </div>
     </dialog>
 
@@ -656,6 +658,7 @@
         <h3 id="editModalTitle">Modifier l'entrée</h3>
         <input type="hidden" id="edit_id">
         <div class="form-row pctac-row-edit">
+            <div><label for="edit_date">Date</label><input type="date" id="edit_date"></div>
             <div><label for="edit_heure">Heure</label><input type="time" id="edit_heure" required></div>
             <div>
                 <label for="edit_lieu">Localisation</label>
