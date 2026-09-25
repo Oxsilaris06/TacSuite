@@ -357,150 +357,131 @@ describe('figure (fit préserve le ratio, T15/§3.3 — SANS encadré, directive
     });
 });
 
-describe('galleryPages (OrderHtmlPhotos.kt:69-92, SPEC-PDF-V3.md §3.3)', () => {
-    const photosBase64 = {
-        'photo-1': 'data:image/jpeg;base64,AAA',
-        'photo-2': 'data:image/jpeg;base64,BBB',
-        'photo-3': 'data:image/jpeg;base64,CCC',
+// Galerie ADAPTATIVE (décision 44, `layoutGallery` de `shared/photo-layout.ts`) :
+// remplace « une photo par page » (directive 2026-08-10). Les tests de
+// structure de l'ancienne galerie sont réécrits sur la nouvelle : même titre,
+// même convention de saut de page, mêmes légendes et badges d'outils, mais
+// 2 portraits ou 4 captures d'écran par page, plans seuls, jamais d'image
+// agrandie au-delà de 150 ppi (« basse définition »).
+
+/** Tous les nœuds d'un arbre pdfmake (stack, columns, table), en profondeur. */
+function walk(node: unknown): Record<string, unknown>[] {
+    if (!node || typeof node !== 'object') return [];
+    if (Array.isArray(node)) return node.flatMap(walk);
+    const n = node as Record<string, unknown>;
+    const children = [n.stack, n.columns, n.text, (n.table as { body?: unknown } | undefined)?.body].filter((c) => c !== undefined);
+    return [n, ...children.flatMap(walk)];
+}
+const imagesOf = (page: Content): ContentImage[] => walk(page).filter((n) => 'image' in n) as unknown as ContentImage[];
+const textsOf = (page: Content): string[] => walk(page).map((n) => n.text).filter((t): t is string => typeof t === 'string');
+function titleOf(page: Content): string {
+    const h2Node = (page as ContentStack).stack[0] as ContentStack;
+    const line = h2Node.stack[0] as { text: ContentText[] };
+    return line.text.map((t) => t.text).join('');
+}
+
+describe('galleryPages — galerie adaptative (décision 44, OrderHtmlPhotos.kt:69-92)', () => {
+    const photosBase64: Record<string, string> = {
+        'photo-1': 'img1', 'photo-2': 'img2', 'photo-3': 'img3', 'photo-4': 'img4', 'img_plan_1': 'plan1',
     };
+    const PORTRAIT = { widthPx: 1500, heightPx: 2000 };
+    const PAYSAGE = { widthPx: 4000, heightPx: 3000 };
+    const ECRAN = { widthPx: 1080, heightPx: 2340 };
+    const sizes = (map: Record<string, { widthPx: number; heightPx: number }>) => (id: string) => map[id] ?? null;
+    const photos = (n: number): OiPhotoMeta[] => Array.from({ length: n }, (_, i) => makePhoto({ id: `photo-${i + 1}` }));
 
     it('photos=[] -> [] (section omise, §3.4.1)', () => {
         expect(galleryPages('Titre', [], {}, p, geo)).toEqual([]);
     });
 
-    it('3 photos -> 3 pages (1 photo pleine largeur par page, directive Nico 2026-08-10), titrées "TITRE — PHOTO i/N" (jamais "(suite)", mission R6)', () => {
-        const photos = [makePhoto({ id: 'photo-1' }), makePhoto({ id: 'photo-2' }), makePhoto({ id: 'photo-3' })];
-        const pages = galleryPages('Galerie test', photos, photosBase64, p, geo);
-        expect(pages).toHaveLength(3);
+    it('3 photos paysage (ou de taille inconnue, repli 4:3) -> 3 pages titrées « TITRE — PHOTO i/N », jamais « (suite) »', () => {
+        const pages = galleryPages('Galerie test', photos(3), photosBase64, p, geo);
+        expect(pages.map(titleOf)).toEqual(['GALERIE TEST — PHOTO 1/3', 'GALERIE TEST — PHOTO 2/3', 'GALERIE TEST — PHOTO 3/3']);
+        pages.forEach((page) => expect(titleOf(page)).not.toMatch(/\(suite\)/i));
+        pages.forEach((page) => expect(imagesOf(page)).toHaveLength(1));
+    });
 
-        const page1 = pages[0] as ContentStack;
-        const page2 = pages[1] as ContentStack;
-        const page3 = pages[2] as ContentStack;
-        const h2Page1 = page1.stack[0] as ContentStack;
-        const h2Page2 = page2.stack[0] as ContentStack;
-        const h2Page3 = page3.stack[0] as ContentStack;
-        const titleLine1 = h2Page1.stack[0] as { text: [ContentText, ContentText] };
-        const titleLine2 = h2Page2.stack[0] as { text: [ContentText, ContentText] };
-        const titleLine3 = h2Page3.stack[0] as { text: [ContentText, ContentText] };
-        expect(titleLine1.text[0].text).toBe('GALERIE TEST');
-        expect(titleLine1.text[1].text).toBe(' — PHOTO 1/3');
-        expect(titleLine2.text[0].text).toBe('GALERIE TEST');
-        expect(titleLine2.text[1].text).toBe(' — PHOTO 2/3');
-        expect(titleLine3.text[0].text).toBe('GALERIE TEST');
-        expect(titleLine3.text[1].text).toBe(' — PHOTO 3/3');
-        // Aucune trace de "(SUITE)"/"(suite)" nulle part (interdiction absolue).
-        [titleLine1, titleLine2, titleLine3].forEach((line) => {
-            expect(line.text[0].text).not.toMatch(/\(suite\)/i);
-            expect(line.text[1].text).not.toMatch(/\(suite\)/i);
-        });
+    it('2 portraits -> UNE page, côte à côte, « PHOTOS 1-2/2 »', () => {
+        const pages = galleryPages('Galerie', photos(2), photosBase64, p, geo, sizes({ 'photo-1': PORTRAIT, 'photo-2': PORTRAIT }));
+        expect(pages).toHaveLength(1);
+        expect(titleOf(pages[0] as Content)).toBe('GALERIE — PHOTOS 1-2/2');
+        const images = imagesOf(pages[0] as Content);
+        expect(images).toHaveLength(2);
+        images.forEach((img) => expect((img.fit as number[])[0]).toBeLessThanOrEqual((geo.contentWidthPt - 12) / 2 + 0.01));
+    });
 
-        // Chaque page = 1 photo pleine largeur (stack), jamais de columns.
-        [page1, page2, page3].forEach((page) => {
-            const body = page.stack[1] as ContentStack;
-            expect(Array.isArray(body.stack)).toBe(true);
-            const fig = (body.stack[0] as ContentStack).stack[0] as ContentImage;
-            expect(fig.fit?.[0]).toBe(geo.contentWidthPt);
-        });
+    it('4 captures de téléphone -> UNE page paysage ; 3 captures gardent la taille de cellule', () => {
+        const four = galleryPages('G', photos(4), photosBase64, p, geo, sizes({ 'photo-1': ECRAN, 'photo-2': ECRAN, 'photo-3': ECRAN, 'photo-4': ECRAN }));
+        expect(four).toHaveLength(1);
+        expect(imagesOf(four[0] as Content)).toHaveLength(4);
+        const three = galleryPages('G', photos(3), photosBase64, p, geo, sizes({ 'photo-1': ECRAN, 'photo-2': ECRAN, 'photo-3': ECRAN }));
+        const w4 = (imagesOf(four[0] as Content)[0]?.fit as number[])[0];
+        const w3 = (imagesOf(three[0] as Content)[0]?.fit as number[])[0];
+        expect(w3).toBeCloseTo(w4 as number, 6);
+    });
+
+    it('ordre de saisie gardé, formes jamais mélangées sur une page', () => {
+        const pages = galleryPages('G', photos(4), photosBase64, p, geo, sizes({ 'photo-1': PAYSAGE, 'photo-2': PORTRAIT, 'photo-3': PORTRAIT, 'photo-4': PAYSAGE }));
+        expect(pages.map((page) => imagesOf(page).map((i) => i.image))).toEqual([['img1'], ['img2', 'img3'], ['img4']]);
+    });
+
+    it('une capture de carte (id img_plan_…) est seule sur sa page, même de forme portrait', () => {
+        const metas = [makePhoto({ id: 'photo-1' }), makePhoto({ id: 'img_plan_1' }), makePhoto({ id: 'photo-2' })];
+        const pages = galleryPages('G', metas, photosBase64, p, geo, sizes({ 'photo-1': PORTRAIT, img_plan_1: PORTRAIT, 'photo-2': PORTRAIT }));
+        expect(pages.map((page) => imagesOf(page).map((i) => i.image))).toEqual([['img1'], ['plan1'], ['img2']]);
+    });
+
+    it('miniature : jamais agrandie au-delà de 150 ppi, mention « basse définition » sous l’image', () => {
+        const pages = galleryPages('G', photos(1), photosBase64, p, geo, sizes({ 'photo-1': { widthPx: 160, heightPx: 120 } }));
+        const [img] = imagesOf(pages[0] as Content);
+        expect((img?.fit as number[])[0]).toBeLessThanOrEqual((160 / 150) * 72 + 0.01);
+        expect(textsOf(pages[0] as Content)).toContain('basse définition');
+        // Une photo assez définie n'a pas la mention.
+        const nette = galleryPages('G', photos(1), photosBase64, p, geo, sizes({ 'photo-1': PAYSAGE }));
+        expect(textsOf(nette[0] as Content)).not.toContain('basse définition');
     });
 
     it('convention de saut de page : pageBreak "before" sur toutes sauf la première', () => {
-        const photos = [makePhoto({ id: 'photo-1' }), makePhoto({ id: 'photo-2' }), makePhoto({ id: 'photo-3' })];
-        const pages = galleryPages('Galerie', photos, photosBase64, p, geo);
+        const pages = galleryPages('Galerie', photos(3), photosBase64, p, geo);
         expect((pages[0] as { pageBreak?: string }).pageBreak).toBeUndefined();
         expect((pages[1] as { pageBreak?: string }).pageBreak).toBe('before');
     });
 
     it('une photo absente de photosBase64 est ignorée (pas de figure vide)', () => {
-        const photos = [makePhoto({ id: 'photo-1' }), makePhoto({ id: 'photo-missing' })];
-        const pages = galleryPages('Galerie', photos, { 'photo-1': photosBase64['photo-1'] }, p, geo);
+        const metas = [makePhoto({ id: 'photo-1' }), makePhoto({ id: 'photo-missing' })];
+        const pages = galleryPages('Galerie', metas, { 'photo-1': 'img1' }, p, geo);
         expect(pages).toHaveLength(1);
-        // Une seule photo restante -> mise en page pleine largeur (stack), pas columns.
-        const page1 = pages[0] as ContentStack;
-        const body = page1.stack[1] as ContentStack;
-        expect(Array.isArray(body.stack)).toBe(true);
+        expect(titleOf(pages[0] as Content)).toBe('GALERIE — PHOTO 1/1');
     });
 
-    it('tools JSON corrompu ("{{") ne lève pas et ne produit aucun badge', () => {
-        const photos = [makePhoto({ id: 'photo-1', tools: '{{' })];
-        expect(() => galleryPages('Galerie', photos, photosBase64, p, geo)).not.toThrow();
-        const pages = galleryPages('Galerie', photos, photosBase64, p, geo);
-        const page1 = pages[0] as ContentStack;
-        const body = page1.stack[1] as ContentStack;
-        // figure() seul, sans ligne de pillRow de badges en plus.
-        expect(body.stack).toHaveLength(1);
-    });
-
-    it('tools valides + other_tools ajoutent une grille de badges premium en flow (fond or translucide, texte p.warning)', () => {
-        const photos = [makePhoto({ id: 'photo-1', tools: '["Pied de biche"]', other_tools: 'Bélier' })];
-        const pages = galleryPages('Galerie', photos, photosBase64, p, geo);
-        const page1 = pages[0] as ContentStack;
-        const body = page1.stack[1] as ContentStack;
-        expect(body.stack).toHaveLength(2);
-        const badgesFlow = body.stack[1] as ContentStack;
-        const row = badgesFlow.stack[0] as ContentColumns;
-        expect(row.columns).toHaveLength(2); // 2 items courts -> 1 seule rangée, largeur pleine page
-        const firstBadgeCol = row.columns[0] as { stack: Content[] };
-        const chip = (firstBadgeCol.stack[0] as ContentStack).stack;
-        const canvasNode = chip[0] as ContentCanvas;
-        const textNode = chip[1] as ContentText;
-        expect(canvasNode.canvas[0]).toMatchObject({ type: 'rect', r: expect.any(Number) });
-        // Retour à la ligne AUX ESPACES uniquement (jamais mi-mot, revue design
-        // 2026-08-10) : "PIED DE BICHE" tient sur une seule ligne à pleine
-        // largeur de page, sa largeur naturelle laissant assez de place.
-        expect(textNode.text).toBe('PIED DE BICHE');
-        expect(textNode.color).toBe(p.warning);
+    it('tools JSON corrompu ("{{") ne lève pas et ne produit aucun badge ; outils valides + other_tools : badges premium', () => {
+        expect(() => galleryPages('Galerie', [makePhoto({ id: 'photo-1', tools: '{{' })], photosBase64, p, geo)).not.toThrow();
+        const bare = galleryPages('Galerie', [makePhoto({ id: 'photo-1', tools: '{{' })], photosBase64, p, geo);
+        // Un badge est un rectangle arrondi (le filet du titre h2, lui, n'en est pas un).
+        const isChip = (n: Record<string, unknown>): boolean => Array.isArray(n.canvas) && (n.canvas as { r?: number }[]).some((c) => c.r !== undefined);
+        expect(walk(bare[0]).some(isChip)).toBe(false);
+        const tooled = galleryPages('Galerie', [makePhoto({ id: 'photo-1', tools: '["Pied de biche"]', other_tools: 'Bélier' })], photosBase64, p, geo);
+        expect(textsOf(tooled[0] as Content)).toEqual(expect.arrayContaining(['PIED DE BICHE', 'BÉLIER']));
+        const chip = walk(tooled[0]).find(isChip) as unknown as ContentCanvas;
+        expect(chip.canvas[0]).toMatchObject({ type: 'rect', r: expect.any(Number) });
     });
 
     it('customTitle utilisé comme légende si renseigné, sinon repli "<titre> - Détail"', () => {
-        const withCustom = [makePhoto({ id: 'photo-1', customTitle: 'Vue de face' })];
-        const withoutCustom = [makePhoto({ id: 'photo-1' })];
-
-        const pagesCustom = galleryPages('Porte principale', withCustom, photosBase64, p, geo);
-        const pagesDefault = galleryPages('Porte principale', withoutCustom, photosBase64, p, geo);
-
-        const captionOf = (pages: Content[]): string => {
-            const page1 = pages[0] as ContentStack;
-            const body = page1.stack[1] as ContentStack;
-            const fig = body.stack[0] as ContentStack;
-            const captionNode = fig.stack[1] as ContentText;
-            return captionNode.text as string;
-        };
-        expect(captionOf(pagesCustom)).toBe('Vue de face');
-        expect(captionOf(pagesDefault)).toBe('Porte principale - Détail');
+        const custom = galleryPages('Porte principale', [makePhoto({ id: 'photo-1', customTitle: 'Vue de face' })], photosBase64, p, geo);
+        const fallback = galleryPages('Porte principale', [makePhoto({ id: 'photo-1' })], photosBase64, p, geo);
+        expect(textsOf(custom[0] as Content)).toContain('Vue de face');
+        expect(textsOf(fallback[0] as Content)).toContain('Porte principale - Détail');
     });
 
-    it('bug PDF-GALLERY-16-9 : le budget de hauteur d\'UNE galerie 1-photo tient dans la page RÉELLE, en A4 ET en 16:9 (avant le correctif, le budget était figé — identique dans les deux formats — et débordait de la page en 16:9)', () => {
-        const geoA4 = pageGeometry('a4');
-        const geo169 = pageGeometry('16:9');
-        const photos = [makePhoto({ id: 'photo-1' })];
-
-        const frameHeightOf = (g: ReturnType<typeof pageGeometry>): number => {
-            const pages = galleryPages('Galerie', photos, photosBase64, p, g);
-            expect(pages).toHaveLength(1); // 1 photo -> 1 page, jamais scindée
-            const page1 = pages[0] as ContentStack;
-            const body = page1.stack[1] as ContentStack;
-            const fig = body.stack[0] as ContentStack;
-            const image = fig.stack[0] as ContentImage;
-            return (image.fit as number[])[1] as number;
-        };
-
-        const heightA4 = frameHeightOf(geoA4);
-        const height169 = frameHeightOf(geo169);
-
-        // Le cadre photo ne doit JAMAIS dépasser la hauteur utile réelle de
-        // la page moins le titre h2 (48 pt, mesuré — cf. PDF_H2_BLOCK_PT,
-        // theme.ts) : au-delà, pdfmake scinde le stack sur une 2e page —
-        // page blanche (titre + pied de page seuls) suivie d'une page
-        // orpheline sans titre, reproduit sur l'archive OI réelle en 16:9.
-        const H2_RESERVE_PT = 48;
-        expect(heightA4).toBeLessThanOrEqual(geoA4.contentHeightPt - H2_RESERVE_PT);
-        expect(height169).toBeLessThanOrEqual(geo169.contentHeightPt - H2_RESERVE_PT);
-
-        // Le 16:9 dispose de moins de hauteur utile que l'A4 : le budget
-        // DOIT rétrécir en conséquence (avant le correctif, `landscape: true`
-        // était figé et les deux valeurs étaient rigoureusement identiques,
-        // quel que soit le format demandé).
-        expect(height169).toBeLessThan(heightA4);
+    it('bug PDF-GALLERY-16-9 : les images tiennent dans la page RÉELLE sous le titre, en A4 ET en 16:9', () => {
+        for (const g of [pageGeometry('a4'), pageGeometry('16:9')]) {
+            const pages = galleryPages('Galerie', photos(1), photosBase64, p, g, sizes({ 'photo-1': PAYSAGE }));
+            const [img] = imagesOf(pages[0] as Content);
+            expect((img?.fit as number[])[1]).toBeLessThanOrEqual(g.contentHeightPt - 48);
+        }
+        const a4 = imagesOf(galleryPages('G', photos(1), photosBase64, p, pageGeometry('a4'), sizes({ 'photo-1': PAYSAGE }))[0] as Content)[0];
+        const w169 = imagesOf(galleryPages('G', photos(1), photosBase64, p, pageGeometry('16:9'), sizes({ 'photo-1': PAYSAGE }))[0] as Content)[0];
+        expect((w169?.fit as number[])[1]).toBeLessThan((a4?.fit as number[])[1] as number);
     });
 });
 
@@ -539,28 +520,25 @@ describe('galleryToolsReservePt (SPEC-PDF-DEFINITIF §5, axe A3 — correctif D3
         expect(galleryAllTools(makePhoto({ tools: '{{', other_tools: '' }))).toEqual([]);
     });
 
-    it('galleryPages : le cadre photo est RÉDUIT de la réserve quand des outils existent, jamais sous le plancher mm(40)', () => {
-        const photosBase64 = { 'photo-1': 'data:image/jpeg;base64,AAA' };
-        const frameHeightOf = (photos: OiPhotoMeta[]): number => {
-            const pages = galleryPages('Galerie', photos, photosBase64, p, geo);
-            const page1 = pages[0] as ContentStack;
-            const body = page1.stack[1] as ContentStack;
-            const fig = body.stack[0] as ContentStack; // figure avec légende = stack [image, caption]
-            const image = fig.stack[0] as ContentImage;
+    it('galleryPages : la place des badges d’outils est retirée à la hauteur des images, jamais sous le plancher mm(40)', () => {
+        const photosBase64 = { 'photo-1': 'img1' };
+        const PAYSAGE = (): { widthPx: number; heightPx: number } => ({ widthPx: 4000, heightPx: 3000 });
+        const heightOf = (photos: OiPhotoMeta[]): number => {
+            const pages = galleryPages('Galerie', photos, photosBase64, p, geo, PAYSAGE);
+            const image = walk(pages[0]).find((n) => 'image' in n) as unknown as ContentImage;
             return (image.fit as number[])[1] as number;
         };
 
-        const without = frameHeightOf([makePhoto({ id: 'photo-1' })]);
-        const withTools = frameHeightOf([makePhoto({ id: 'photo-1', tools: '["HDR50","Bélier lourd","VIGIK"]', other_tools: 'Bfldkngnfl' })]);
-        // Sans outil : hauteur historique inchangée (base - réserve légende).
-        expect(without).toBeCloseTo(mm(photoPageGalleryHeightMm(geo.contentHeightPt)) - mm(10), 6);
+        const without = heightOf([makePhoto({ id: 'photo-1' })]);
+        const withTools = heightOf([makePhoto({ id: 'photo-1', tools: '["HDR50","Bélier lourd","VIGIK"]', other_tools: 'Bfldkngnfl' })]);
+        expect(without).toBeLessThanOrEqual(mm(photoPageGalleryHeightMm(geo.contentHeightPt)));
         expect(withTools).toBeLessThan(without);
         expect(withTools).toBeGreaterThanOrEqual(mm(40));
 
         // Plancher jamais franchi, même avec un déluge d'outils.
         const many = Array.from({ length: 200 }, (_, i) => `Outil numéro ${i} très long pour replier`);
-        const flooded = frameHeightOf([makePhoto({ id: 'photo-1', tools: JSON.stringify(many) })]);
-        expect(flooded).toBe(mm(40));
+        const flooded = heightOf([makePhoto({ id: 'photo-1', tools: JSON.stringify(many) })]);
+        expect(flooded).toBeGreaterThanOrEqual(mm(40) - 0.01);
     });
 });
 

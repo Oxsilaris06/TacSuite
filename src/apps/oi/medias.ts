@@ -157,7 +157,10 @@ export async function handleFileChange(
         let added = 0;
         for (const file of Array.from(files)) {
             progressEl.textContent = `Import de la photo ${added + 1}/${total}…`;
-            const previewImgId = `img_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+            // Capture de carte (`carto/capture.ts`, fichier `carte_…`) : clé
+            // `img_plan_…`, le PDF met un plan seul sur sa page (décision 44).
+            const planPrefix = file.name.startsWith('carte_') ? 'plan_' : '';
+            const previewImgId = `img_${planPrefix}${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
 
             try {
                 // Compression à l'upload : quasi sans perte (JPEG q0.95) avec
