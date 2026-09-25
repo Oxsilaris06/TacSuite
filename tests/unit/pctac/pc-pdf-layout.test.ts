@@ -126,6 +126,38 @@ describe('Forces amies et points — plus de « … » (M3)', () => {
     });
 });
 
+describe('lexique de situation au PDF (M5)', () => {
+    it('la pastille Pax suit le vocabulaire de la situation', async () => {
+        const { paxChipLabel, PCTAC_MODES } = await import('@pctac/modes.js');
+        expect(paxChipLabel('Adversaire', PCTAC_MODES.recherche)).toBe('Recherché');
+        expect(paxChipLabel('Otage', PCTAC_MODES.recherche)).toBe('Témoin');
+        expect(paxChipLabel('Adversaire', PCTAC_MODES.tp)).toBe('Ennemi');
+        expect(paxChipLabel('Adversaire', PCTAC_MODES.evenement)).toBe('Menace');
+        expect(paxChipLabel('Adversaire', PCTAC_MODES.forcene)).toBe('Adversaire');
+        expect(paxChipLabel('Inter', PCTAC_MODES.recherche)).toBe('Recherches');
+    });
+
+    it('le titre de galerie suit le vocabulaire de la situation', async () => {
+        const { photoCategoryLabel, PCTAC_MODES } = await import('@pctac/modes.js');
+        expect(photoCategoryLabel({ id: 'neutralized', label: 'Adversaire' }, PCTAC_MODES.recherche)).toBe('Personne recherchée');
+        expect(photoCategoryLabel({ id: 'hostage', label: 'Otages' }, PCTAC_MODES.recherche)).toBe('Témoins');
+        expect(photoCategoryLabel({ id: 'location', label: 'Lieu' }, PCTAC_MODES.recherche)).toBe('Lieu');
+    });
+
+    it('le PDF en Recherche affiche la pastille « Recherché » et la galerie adaptée', async () => {
+        localStorage.setItem('pcTacMode', 'recherche');
+        localStorage.setItem('pcTacLogData@recherche', JSON.stringify([logEntry({})]));
+        localStorage.setItem('pcTacPhotos@recherche', JSON.stringify([
+            { id: 'p1', category: 'neutralized', title: 'Vue', data: 'data:image/png;base64,AAAA' },
+        ]));
+        const { pages } = await buildAndReadPdf();
+        const all = pages.join(' ').replace(/\s+/g, ' ');
+        expect(all).toContain('Recherché');
+        expect(all.toUpperCase()).toContain('GALERIE : PERSONNE RECHERCHÉE');
+        expect(all).not.toContain('GALERIE : ADVERSAIRE');
+    });
+});
+
 describe('blocs plus hauts qu’une page — découpe avec « (suite) » (M1)', () => {
     it('scinde un compte rendu de main courante sur plusieurs pages', async () => {
         localStorage.setItem('pcTacLogData', JSON.stringify([

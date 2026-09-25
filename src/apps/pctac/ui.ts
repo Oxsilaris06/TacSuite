@@ -62,7 +62,7 @@
  * `contracts.ts` (interdit par la mission) ; à signaler au gate.
  */
 
-import type { PctacLogEntry, PctacPhotoCategory, UIContract } from '@shared/types/contracts.js';
+import type { PctacLogEntry, UIContract } from '@shared/types/contracts.js';
 import { PDF_PAX_COLORS, FREE_MODE_COLORS, LONG_PRESS_DELAY, PHOTO_CATEGORIES, hostageStatusFromBlessures, safeHexColor } from '@pctac/config.js';
 import { Storage } from '@pctac/storage.js';
 import { ImageStore } from '@pctac/image-store.js';
@@ -71,7 +71,7 @@ import { choiceDialog } from '@pctac/choice-dialog.js';
 import { diffOpenFiche } from '@pctac/fiche-conflict.js';
 import { esc } from '@shared/ui-platform.js';
 import { confirmDialog, promptDialog, toast } from '@shared/feedback.js';
-import { currentMode, currentModeId } from '@pctac/modes.js';
+import { currentMode, currentModeId, photoCategoryLabel } from '@pctac/modes.js';
 import {
   ageFromDob,
   defaultStatus,
@@ -342,19 +342,6 @@ interface PctacCollectionItemLike { id: string; [key: string]: unknown }
 function formatDateFr(iso: string): string {
   const [y, m, d] = iso.split('-');
   return (d && m && y) ? `${d}/${m}/${y}` : iso;
-}
-
-/**
- * Lot B (constats 7 et 9) — libellé d'une catégorie photo dérivé de la
- * situation courante. Seuls « Otages » et « Adversaire » suivent le vocabulaire
- * du mode ; les autres restent fixes. `PHOTO_CATEGORIES` demeure la source
- * unique des `id` (valeurs stockées, jamais renommées).
- */
-function photoCategoryLabel(cat: PctacPhotoCategory): string {
-  const mode = currentMode();
-  if (cat.id === 'hostage') return mode.host.plural;
-  if (cat.id === 'neutralized') return mode.adv.singular;
-  return cat.label;
 }
 
 /**
