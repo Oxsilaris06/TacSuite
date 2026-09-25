@@ -72,3 +72,33 @@ describe('importOiArchive — doublon signalé et fusionnable (R9)', () => {
         expect(list[0]).toMatchObject({ id: 'field1', nom: 'Dupont', prenom: 'Jean', domicile: '3 rue TP' });
     });
 });
+
+describe('Revue du 25/09 — import OI et écriture concurrente (A3)', () => {
+    it('une fiche créée dans un autre onglet pendant le dialogue de doublon survit à l’import', async () => {
+        Storage.saveCollection(ADVERSARIES_KEY, [{ id: 'field1', nom: 'Dupont', prenom: 'Jean', dob: '01/01/1980' }]);
+        confirmSpy.mockImplementationOnce(async () => {
+            Storage.saveCollection(ADVERSARIES_KEY, [...Storage.loadCollection(ADVERSARIES_KEY), { id: 'other-tab', nom: 'Autre' }]);
+            return false; // « Garder les deux »
+        });
+        const file = await buildOiZip({ adversaries: [{ id: 'adv1', nom_adversaire: 'Jean Dupont', date_naissance: '01/01/1980' }] });
+        await Archive.importOiArchive(file);
+        const ids = Storage.loadCollection(ADVERSARIES_KEY).map((f) => String(f.id));
+        expect(ids).toContain('other-tab');
+        expect(ids).toContain('field1');
+        expect(ids.some((id) => id.startsWith('oi_adv_'))).toBe(true);
+    });
+
+    it('une fiche créée dans un autre onglet pendant le dialogue survit à une fusion', async () => {
+        Storage.saveCollection(ADVERSARIES_KEY, [{ id: 'field1', nom: 'Dupont', prenom: 'Jean', dob: '01/01/1980' }]);
+        confirmSpy.mockImplementationOnce(async () => {
+            Storage.saveCollection(ADVERSARIES_KEY, [...Storage.loadCollection(ADVERSARIES_KEY), { id: 'other-tab', nom: 'Autre' }]);
+            return true; // « Fusionner »
+        });
+        const file = await buildOiZip({ adversaries: [{ id: 'adv1', nom_adversaire: 'Jean Dupont', date_naissance: '01/01/1980', domicile_adversaire: '3 rue TP' }] });
+        await Archive.importOiArchive(file);
+        const list = Storage.loadCollection(ADVERSARIES_KEY);
+        expect(list.map((f) => f.id)).toEqual(expect.arrayContaining(['field1', 'other-tab']));
+        expect(list).toHaveLength(2);
+        expect(list.find((f) => f.id === 'field1')).toMatchObject({ domicile: '3 rue TP' });
+    });
+});

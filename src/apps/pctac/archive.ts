@@ -232,6 +232,24 @@ export function sanitizeImportColors(dataJson: Record<string, string>): Record<s
     return dataJson;
 }
 
+/**
+ * A3 — applique des deltas (fusions par id, ajouts) à une liste RELUE du
+ * stockage, juste avant l'écriture : ce qu'un autre onglet a écrit entre la
+ * lecture initiale et l'écriture est conservé. Une fiche fusionnée qui a été
+ * supprimée ailleurs entre-temps est réécrite (l'import l'apporte).
+ */
+function applyDeltas(
+    fresh: readonly PctacCollectionItem[],
+    mergedById: ReadonlyMap<string, PctacCollectionItem>,
+    adds: readonly PctacCollectionItem[],
+): PctacCollectionItem[] {
+    const out = fresh.map((it) => mergedById.get(String(it.id)) ?? it);
+    const present = new Set(out.map((it) => String(it.id)));
+    for (const [id, it] of mergedById) if (!present.has(id)) { out.push(it); present.add(id); }
+    for (const it of adds) if (!present.has(String(it.id))) { out.push(it); present.add(String(it.id)); }
+    return out;
+}
+
 const COLLECTION_KEYS = [
     LOCAL_STORAGE_KEY, TP_ASSOC_KEY,
     ADVERSARIES_KEY, HOSTAGES_KEY, FRIENDS_KEY, PHOTOS_KEY, CUSTOM_PAX_KEY,
@@ -451,9 +469,12 @@ export async function resolveDuplicateFiches(
             }
             if (choice !== true) continue;
             const { merged, photoTaken } = await mergePersonIntoExisting(existing, candidate);
-            list = list
+            // A3 — relecture juste avant l'écriture : un autre onglet a pu
+            // écrire pendant le dialogue ; seul le delta est appliqué.
+            list = Storage.loadCollection(key, modeId)
                 .filter((it) => it.id !== candidate.id)
                 .map((it) => (it.id === existing.id ? merged : it));
+            if (!list.some((it) => it.id === existing.id)) list.push(merged);
             Storage.saveCollection(key, list, modeId);
             // C4/C12 : la galerie suit la fusion (vignette morte retirée, photo
             // reprise visible) — même fonction commune que l'import d'OI.
@@ -1173,10 +1194,18 @@ export const Archive: ArchiveContract = {
             advId ? parseAnnotations(dynPhotos['photo_main_' + advId]?.[0]?.annotations) : [];
 
         // --- 1) Adversaires → pcTacAdversaries (+ photo + galerie Photos) ---
-        const advList = Storage.loadCollection(ADVERSARIES_KEY);
-        const photoList = Storage.loadCollection(PHOTOS_KEY);
+        // A3 — aucune liste n'est gardée à travers un await (dialogue de
+        // doublon, photos) : un autre onglet peut écrire pendant ce temps. La
+        // détection de doublon relit le stockage, et l'écriture n'applique que
+        // les deltas (fusions par id, ajouts) à la liste relue.
+        const advAdds: PctacCollectionItem[] = [];
+        const advMergedById = new Map<string, PctacCollectionItem>();
+        const advView = (): PctacCollectionItem[] => [
+            ...Storage.loadCollection(ADVERSARIES_KEY).map((a) => advMergedById.get(String(a.id)) ?? a),
+            ...advAdds,
+        ];
+        const photoAdds: PctacCollectionItem[] = [];
         let advAdded = 0, advPhotos = 0, advMerged = 0;
-        let photoListDirty = false;
         // C5/C12 : les fusions sont traitées APRÈS l'écriture de `photoList`, pour
         // que la galerie lue par `syncMergedGallery` soit à jour.
         const merges: Array<{ incomingId: string; merged: PctacCollectionItem; photoTaken: boolean }> = [];
@@ -1239,7 +1268,7 @@ export const Archive: ArchiveContract = {
             // (décision 32). L'OI ne porte qu'un champ nom, d'où la comparaison
             // du nom complet aux deux ordres de `nom`/`prenom`, et le repli sur
             // `nom + date de naissance`.
-            const existing = findOiDuplicatePerson(advList, nom, (oa.date_naissance || '').toString());
+            const existing = findOiDuplicatePerson(advView(), nom, (oa.date_naissance || '').toString());
             if (existing) {
                 const choice = await confirmDialog({
                     title: 'Fiche en double',
@@ -1254,8 +1283,7 @@ export const Archive: ArchiveContract = {
                 if (choice === 'extra') requestOpenFiche('adv', String(existing.id));
                 if (choice === true) {
                     const { merged, photoTaken } = await mergePersonIntoExisting(existing, item);
-                    const at = advList.findIndex((a) => a.id === existing.id);
-                    if (at >= 0) advList[at] = merged;
+                    advMergedById.set(String(existing.id), merged);
                     // K2 : une photo n'est comptée que réellement GARDÉE — pas de
                     // fusion dans une existante qui avait déjà la sienne.
                     if (photoStored && !existing.hasImage && merged.hasImage) advPhotos++;
@@ -1268,15 +1296,14 @@ export const Archive: ArchiveContract = {
             }
 
             if (photoStored) {
-                photoList.push({ id: itemId + '_sync', title: nom || 'Adversaire OI', category: 'neutralized', status: 'active', hasImage: true });
+                photoAdds.push({ id: itemId + '_sync', title: nom || 'Adversaire OI', category: 'neutralized', status: 'active', hasImage: true });
                 advPhotos++;
-                photoListDirty = true;
             }
-            advList.push(item);
+            advAdds.push(item);
             advAdded++;
         }
-        if (advAdded || advMerged) Storage.saveCollection(ADVERSARIES_KEY, advList);
-        if (photoListDirty) Storage.saveCollection(PHOTOS_KEY, photoList);
+        if (advAdded || advMerged) Storage.saveCollection(ADVERSARIES_KEY, applyDeltas(Storage.loadCollection(ADVERSARIES_KEY), advMergedById, advAdds));
+        if (photoAdds.length) Storage.saveCollection(PHOTOS_KEY, applyDeltas(Storage.loadCollection(PHOTOS_KEY), new Map(), photoAdds));
 
         // --- 2) Équipe PATRACDVR → pcTacCustomPax (couleurs distinctes) ---
         const paxList = Storage.loadCollection(CUSTOM_PAX_KEY);
@@ -1321,7 +1348,9 @@ export const Archive: ArchiveContract = {
         // annotations et une catégorie cohérente. L'id PC-Tac est DÉRIVÉ de
         // l'id OI de la photo : réimporter le même OI met à jour l'entrée au
         // lieu d'en ajouter une seconde.
-        const photoById = new Map(photoList.map((p) => [p.id, p]));
+        const photoById = new Map(Storage.loadCollection(PHOTOS_KEY).map((p) => [p.id, p]));
+        // A3 — entrées mises à jour ou ajoutées, appliquées à la liste relue à l'écriture.
+        const galleryChanges = new Map<string, PctacCollectionItem>();
         let galleryAdded = 0, galleryUpdated = 0, galleryPreserved = 0;
         for (const [key, entries] of Object.entries(dynPhotos)) {
             if (key.startsWith('photo_main_') || !Array.isArray(entries)) continue;
@@ -1387,11 +1416,12 @@ export const Archive: ArchiveContract = {
                     delete item.annotations;
                     delete item.oiAnnotations;
                 }
+                galleryChanges.set(pcId, item);
                 if (existing) galleryUpdated++;
-                else { photoList.push(item); photoById.set(pcId, item); galleryAdded++; }
+                else { photoById.set(pcId, item); galleryAdded++; }
             }
         }
-        if (galleryAdded || galleryUpdated) Storage.saveCollection(PHOTOS_KEY, photoList);
+        if (galleryChanges.size) Storage.saveCollection(PHOTOS_KEY, applyDeltas(Storage.loadCollection(PHOTOS_KEY), galleryChanges, []));
         // C5/C12 : la photo reprise d'une fusion a son entrée de galerie. Traité
         // APRÈS la dernière écriture de `photoList` : `syncMergedGallery` relit
         // le stockage et ne doit pas être écrasé par un `photoList` périmé.
