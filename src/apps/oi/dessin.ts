@@ -1800,17 +1800,15 @@ function toggleMobileDock(): void {
         wrapper.classList.remove('show-triple-dock');
         panel.classList.remove('expanded');
         fab.style.display = 'flex';
-        setTimeout(() => {
-            if (typeof resetZoom === 'function') resetZoom();
-        }, 50);
     } else {
         wrapper.classList.add('show-triple-dock');
         panel.classList.add('expanded');
         fab.style.display = 'none';
-        setTimeout(() => {
-            if (typeof resetZoom === 'function') resetZoom();
-        }, 50);
     }
+    // Recadrage immédiat (lire les dimensions force la mise en page ; aucune
+    // transition CSS sur ces classes). L'ancien minuteur de 50 ms survivait à
+    // la fenêtre, et à jsdom en test : ReferenceError intermittente.
+    resetZoom();
 }
 window.toggleMobileDock = toggleMobileDock;
 
