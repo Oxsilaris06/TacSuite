@@ -4198,3 +4198,14 @@ dialog:where(#annotationModal, #annotationModal *)::backdrop {
   cursor: pointer;
 }
 .tl-op-remove:focus-visible { outline: 2px solid var(--danger-red, #f0556a); outline-offset: 2px; }
+
+/* Fenêtre de génération PDF (décision 42) : les choix sont des options, pas
+   des libellés de formulaire (la règle générale `label` les mettait en
+   capitales grises). */
+label.tac-pdf-choice {
+  margin: 0;
+  color: var(--text-main);
+  font-size: 14px;
+  font-weight: 400;
+  text-transform: none;
+}
