@@ -254,13 +254,13 @@ export const Storage: PctacStorageContract = {
    * Sauvegarde une collection générique.
    * (storage.js:62-68)
    */
-  saveCollection(key: string, data: readonly PctacCollectionItem[]): boolean {
-    const stored = Persist.get<PctacCollectionItem[]>(scopedKey(key), { validator: isArray, fallback: [] });
+  saveCollection(key: string, data: readonly PctacCollectionItem[], modeId: PctacModeId = currentModeId()): boolean {
+    const stored = Persist.get<PctacCollectionItem[]>(scopedKey(key, modeId), { validator: isArray, fallback: [] });
     // `data` est en lecture seule : on ne touche jamais au tableau (ni tri, ni
     // copie). Les éléments, eux, reçoivent leur date de modification.
     stampUpdatedAt(data, stored);
     // Quota géré par Persist via l'évènement 'pctac:quota'.
-    const result = Persist.set(scopedKey(key), data);
+    const result = Persist.set(scopedKey(key, modeId), data);
     announceChange(key);
     return result.ok;
   },
@@ -268,9 +268,13 @@ export const Storage: PctacStorageContract = {
   /**
    * Charge une collection générique.
    * (storage.js:71-77)
+   *
+   * `modeId` (optionnel) permet de lire une AUTRE situation que celle
+   * affichée : l'import d'archive vise la situation qu'il déclare (décision 2),
+   * et la fusion de doublons doit lire/écrire cette CIBLE, pas l'écran.
    */
-  loadCollection(key: string): PctacCollectionItem[] {
-    return Persist.get(scopedKey(key), { validator: isArray, fallback: [] });
+  loadCollection(key: string, modeId: PctacModeId = currentModeId()): PctacCollectionItem[] {
+    return Persist.get(scopedKey(key, modeId), { validator: isArray, fallback: [] });
   },
 
   /**

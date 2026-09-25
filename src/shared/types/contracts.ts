@@ -35,6 +35,7 @@
  */
 
 import type { Map as MapLibreMap } from 'maplibre-gl';
+import type { PctacModeId } from '@pctac/modes.js';
 import type { TutoChapter, TutoData, TutoFlatStep } from './tuto.js';
 import type { TacticalGridSpec } from '@shared/tactical-grid.js';
 
@@ -423,8 +424,13 @@ export interface PctacStorageContract {
      * modifiés (comparaison JSON sans ce champ) ; ne mute pas `data`. Rend
      * `false` si le stockage a refusé l'écriture (quota, indisponible).
      */
-    saveCollection(key: string, data: readonly PctacCollectionItem[]): boolean;
-    loadCollection(key: string): PctacCollectionItem[];
+    saveCollection(key: string, data: readonly PctacCollectionItem[], modeId?: PctacModeId): boolean;
+    /**
+     * Charge une collection. `modeId` (optionnel) cible une AUTRE situation que
+     * celle affichée — indispensable à l'import, qui écrit dans la situation
+     * déclarée par l'archive (décision 2), et à la fusion de doublons.
+     */
+    loadCollection(key: string, modeId?: PctacModeId): PctacCollectionItem[];
     /** Supprime les 14 clés listées dans `storage.js:84-102` (localStorage direct). */
     clearAllData(): void;
 }
