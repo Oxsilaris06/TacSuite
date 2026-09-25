@@ -4165,3 +4165,32 @@ dialog:where(#annotationModal, #annotationModal *)::backdrop {
   0% { opacity: 0; transform: translateY(-4px); }
   100% { opacity: 1; transform: translateY(0px); }
 }
+
+/* === Lot C : plan et suivi (décisions 28, 29, 31, 35) === */
+
+/* Bouton « Retirer » d'un opérateur perdu, posé sur son marqueur (C4). */
+.tl-retire {
+  margin-left: 6px;
+  min-height: 24px;
+  padding: 2px 8px;
+  border: 1px solid var(--danger-red, #f0556a);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--danger-red, #f0556a);
+  font: 600 11px/1 var(--font-ui, system-ui, sans-serif);
+  cursor: pointer;
+}
+.tl-retire:focus-visible { outline: 2px solid var(--danger-red, #f0556a); outline-offset: 2px; }
+
+/* Action « Retirer » dans la liste des opérateurs, pour un opérateur perdu (C4). */
+.tl-op-remove {
+  min-height: 28px;
+  padding: 2px 8px;
+  border: 1px solid var(--danger-red, #f0556a);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--danger-red, #f0556a);
+  font: 600 12px/1 var(--font-ui, system-ui, sans-serif);
+  cursor: pointer;
+}
+.tl-op-remove:focus-visible { outline: 2px solid var(--danger-red, #f0556a); outline-offset: 2px; }

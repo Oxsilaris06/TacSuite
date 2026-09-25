@@ -16,6 +16,8 @@
  * Vérifié : 0°,0° → "31N AA 66021 00000" (valeur canonique « null island »).
  */
 
+import { inverse } from 'mgrs';
+
 const WGS84_A = 6378137.0; // demi-grand axe (m)
 const WGS84_F = 1 / 298.257223563; // aplatissement
 const K0 = 0.9996; // facteur d'échelle UTM
@@ -178,4 +180,222 @@ export function shortMgrs(lng: number, lat: number): string {
   } catch {
     return `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
   }
+}
+
+/* =========================================================================
+ * SAISIE DE COORDONNÉES (décision 35, lot C) — parseurs PURS
+ *
+ * La recherche du plan accepte, AVANT tout géocodage réseau : décimal
+ * (« 48.85, 2.35 », virgule française comprise), DMS (« 48°51'24"N
+ * 2°21'03"E », « N48°51.4' E2°21.05' », symboles ′ ″ ’ ”), MGRS (avec ou
+ * sans espaces) et case du carroyage actif (« C4 »). Ces fonctions ne
+ * touchent NI au DOM NI à la carte : elles sont testées à part
+ * (`tests/unit/shared/coords.test.ts`).
+ * ========================================================================= */
+
+/** Spécification minimale d'un carroyage pour résoudre une case (sous-ensemble de `TacticalGridSpec`). */
+export interface GridCellSpec {
+    west: number;
+    north: number;
+    dLon: number;
+    dLat: number;
+    cols: number;
+    rows: number;
+}
+
+/** Résultat de l'analyse d'une saisie de coordonnées. `null` = ce n'est pas une coordonnée (→ géocodage). */
+export type CoordinateInput =
+    | { kind: 'point'; lat: number; lng: number; format: 'decimal' | 'dms' | 'mgrs'; label: string }
+    | { kind: 'cell'; cell: string; lat: number; lng: number }
+    | { kind: 'cell-no-grid' }
+    | { kind: 'cell-out-of-grid'; cell: string }
+    | { kind: 'bad-range' };
+
+function isLat(v: number): boolean {
+    return Number.isFinite(v) && v >= -90 && v <= 90;
+}
+function isLon(v: number): boolean {
+    return Number.isFinite(v) && v >= -180 && v <= 180;
+}
+
+/**
+ * Décimal « lat, lng » (séparateur virgule, point-virgule ou espace ; virgule
+ * décimale française comprise). Renvoie `null` si la forme ne correspond pas,
+ * `'bad-range'` si elle correspond mais sort des bornes.
+ */
+export function parseDecimalCoords(str: string): { lat: number; lng: number } | 'bad-range' | null {
+    const m = str.match(/^\s*(-?\d{1,3}(?:[.,]\d+)?)\s*[,;\s]\s*(-?\d{1,3}(?:[.,]\d+)?)\s*$/);
+    if (!m) return null;
+    const lat = parseFloat((m[1] ?? '').replace(',', '.'));
+    const lng = parseFloat((m[2] ?? '').replace(',', '.'));
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+    if (!isLat(lat) || !isLon(lng)) return 'bad-range';
+    return { lat, lng };
+}
+
+/** Normalise les symboles de degré/minute/seconde en ASCII et supprime les degrés. */
+function normalizeDms(input: string): string {
+    return input
+        .replace(/[°º]/g, ' ')
+        .replace(/[′’']/g, "'")
+        .replace(/[″”"]/g, '"');
+}
+
+/** Minutes/secondes d'une composante : 1, 2 ou 3 nombres + hémisphère éventuel. */
+interface DmsComponent { value: number; hemi: string | null }
+/** Composante en cours d'assemblage (nombres bruts + hémisphère éventuel). */
+interface RawDmsComponent { nums: number[]; hemi: string | null }
+
+/**
+ * Découpe une saisie DMS en (au plus) deux composantes signées. `null` si la
+ * forme n'est pas reconnue. Accepte les hémisphères en tête ou en queue et les
+ * composantes sans symbole (nombres séparés par des espaces).
+ */
+function tokenizeDms(input: string): DmsComponent[] | null {
+    const norm = normalizeDms(input);
+    const re = /([NSEWnsew])|(\d+(?:\.\d+)?)/g;
+    const comps: RawDmsComponent[] = [];
+    let cur: RawDmsComponent = { nums: [], hemi: null };
+    let match: RegExpExecArray | null;
+    while ((match = re.exec(norm)) !== null) {
+        if (match[1]) {
+            const letter = match[1].toUpperCase();
+            if (cur.nums.length) {
+                // Hémisphère EN TÊTE déjà posé : la lettre courante ouvre la
+                // composante SUIVANTE ; sinon elle ferme la composante courante.
+                if (cur.hemi !== null) {
+                    comps.push({ nums: cur.nums, hemi: cur.hemi });
+                    cur = { nums: [], hemi: letter };
+                } else {
+                    comps.push({ nums: cur.nums, hemi: letter });
+                    cur = { nums: [], hemi: null };
+                }
+            } else if (cur.hemi === null) {
+                cur.hemi = letter;
+            } else {
+                cur = { nums: [], hemi: letter };
+            }
+        } else {
+            cur.nums.push(parseFloat(match[2] ?? ''));
+        }
+    }
+    if (cur.nums.length) comps.push({ nums: cur.nums, hemi: cur.hemi });
+
+    const out: DmsComponent[] = [];
+    for (const c of comps) {
+        if (!c.nums.length) continue;
+        if (c.nums.length > 3) return null;
+        const [d = 0, m = 0, s = 0] = c.nums;
+        if (m >= 60 || s >= 60) return null;
+        let value = d + m / 60 + s / 3600;
+        const hemi = c.hemi;
+        if (hemi === 'S' || hemi === 'W') value = -value;
+        out.push({ value, hemi });
+    }
+    if (!out.length || out.length > 2) return null;
+    return out;
+}
+
+/**
+ * DMS : deux composantes (lat puis lon), dans n'importe quel ordre d'hémisphère.
+ * `null` si non reconnu, `'bad-range'` si reconnu mais hors bornes.
+ */
+export function parseDmsCoords(str: string): { lat: number; lng: number } | 'bad-range' | null {
+    // La présence d'au moins une lettre d'hémisphère est le signal DMS (sinon
+    // une paire de nombres entiers serait ambiguë avec une paire décimale).
+    if (!/[NSEWnsew]/.test(str)) return null;
+    const comps = tokenizeDms(str);
+    if (!comps || comps.length !== 2) return null;
+    const [a, b] = comps as [DmsComponent, DmsComponent];
+    let lat: number, lng: number;
+    const aIsLon = a.hemi === 'E' || a.hemi === 'W';
+    const bIsLat = b.hemi === 'N' || b.hemi === 'S';
+    if (aIsLon && bIsLat) { lng = a.value; lat = b.value; }
+    else { lat = a.value; lng = b.value; }
+    if (!isLat(lat) || !isLon(lng)) return 'bad-range';
+    return { lat, lng };
+}
+
+/**
+ * MGRS : via le paquet `mgrs` (`inverse` rend l'emprise [ouest, sud, est,
+ * nord]). Renvoie le centre de la case. `null` si ce n'est pas du MGRS.
+ */
+export function parseMgrsCoords(str: string): { lat: number; lng: number } | null {
+    const compact = str.replace(/\s+/g, '');
+    // Forme MGRS minimale : zone (1-2 chiffres) + bande (C-X) + 2 lettres.
+    if (!/^\d{1,2}[C-X][A-Z]{2}/i.test(compact)) return null;
+    try {
+        // Import paresseux : `mgrs` est déjà une dépendance directe (decision 13).
+        const box = inverseMgrs(compact);
+        if (!Array.isArray(box) || box.length < 4) return null;
+        const west = box[0] as number, south = box[1] as number, east = box[2] as number, north = box[3] as number;
+        if (![west, south, east, north].every(Number.isFinite)) return null;
+        const lng = normLon((west + east) / 2);
+        const lat = (south + north) / 2;
+        if (!isLat(lat) || !isLon(lng)) return null;
+        return { lat, lng };
+    } catch {
+        return null;
+    }
+}
+
+/** Inverse MGRS branchée sur le paquet (séparée pour rester mockable/testable). */
+function inverseMgrs(ref: string): number[] {
+    return inverse(ref) as unknown as number[];
+}
+
+/** Case du carroyage (« C4 », « AA12 ») : index 0 → A, 25 → Z, 26 → AA… */
+function columnIndex(letters: string): number {
+    const up = letters.toUpperCase();
+    if (up.length === 1) return up.charCodeAt(0) - 65;
+    return (up.charCodeAt(0) - 64) * 26 + (up.charCodeAt(1) - 65);
+}
+
+/** La saisie ressemble-t-elle à une case de carroyage ? */
+export function looksLikeGridCell(str: string): boolean {
+    return /^\s*[A-Za-z]{1,2}\s?\d{1,3}\s*$/.test(str);
+}
+
+/**
+ * Résout une case de carroyage. `grid` absent → `'cell-no-grid'` ; case valide
+ * → centre ; hors du rectangle → `'cell-out-of-grid'`.
+ */
+export function parseGridCell(str: string, grid: GridCellSpec | null | undefined):
+    | { kind: 'cell'; cell: string; lat: number; lng: number }
+    | { kind: 'cell-no-grid' }
+    | { kind: 'cell-out-of-grid'; cell: string }
+    | null {
+    const m = str.match(/^\s*([A-Za-z]{1,2})\s?(\d{1,3})\s*$/);
+    if (!m) return null;
+    const cell = `${(m[1] ?? '').toUpperCase()}${m[2] ?? ''}`;
+    if (!grid) return { kind: 'cell-no-grid' };
+    const col = columnIndex(m[1] ?? '');
+    const row = parseInt(m[2] ?? '', 10) - 1;
+    if (col < 0 || row < 0 || col >= grid.cols || row >= grid.rows) return { kind: 'cell-out-of-grid', cell };
+    const lng = normLon(grid.west + (col + 0.5) * grid.dLon);
+    const lat = grid.north - (row + 0.5) * grid.dLat;
+    return { kind: 'cell', cell, lat, lng };
+}
+
+/**
+ * Analyse une saisie AVANT géocodage, dans l'ordre : décimal, DMS, MGRS, case.
+ * `null` = à traiter comme une adresse (géocodage réseau).
+ */
+export function parseCoordinateInput(str: string, grid?: GridCellSpec | null): CoordinateInput | null {
+    const q = str.trim();
+    if (!q) return null;
+
+    const dec = parseDecimalCoords(q);
+    if (dec === 'bad-range') return { kind: 'bad-range' };
+    if (dec) return { kind: 'point', lat: dec.lat, lng: dec.lng, format: 'decimal', label: `${dec.lat.toFixed(5)}, ${dec.lng.toFixed(5)}` };
+
+    const dms = parseDmsCoords(q);
+    if (dms === 'bad-range') return { kind: 'bad-range' };
+    if (dms) return { kind: 'point', lat: dms.lat, lng: dms.lng, format: 'dms', label: q };
+
+    const mgrs = parseMgrsCoords(q);
+    if (mgrs) return { kind: 'point', lat: mgrs.lat, lng: mgrs.lng, format: 'mgrs', label: q };
+
+    if (looksLikeGridCell(q)) return parseGridCell(q, grid ?? null);
+    return null;
 }

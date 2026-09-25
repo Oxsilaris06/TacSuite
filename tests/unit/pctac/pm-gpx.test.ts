@@ -10,7 +10,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { GPX_CASING_LAYER, GPX_INDEX_KEY, GPX_LINE_LAYER, GPX_SRC } from '../../../src/apps/pctac/planmap/constants.js';
-import { GpxMethods, groupByDay, operationalDayKey, parseGpx, sortTracks, trackTimeBounds } from '../../../src/apps/pctac/planmap/gpx.js';
+import { GpxMethods, groupByDay, operationalDayKey, parseGpx, countGpxPoints, GPX_MAX_BYTES, GPX_MAX_POINTS, sortTracks, trackTimeBounds } from '../../../src/apps/pctac/planmap/gpx.js';
 import { createPlanMapState } from '../../../src/apps/pctac/planmap/state.js';
 import type { GpxTrackData, LngLatTuple, PlanGpxTrack, PlanMapInternal } from '../../../src/apps/pctac/planmap/types.js';
 
@@ -359,6 +359,52 @@ describe('_importGpxFiles', () => {
         const fake = makeFakeThis(makeFakeMap());
         await fake._importGpxFiles([]);
         expect(fake._gpxTracks).toHaveLength(0);
+    });
+
+    // --- Plafonds de taille et de points (correction d'office, décision 37) ---
+
+    it('plafond de taille : 10 Mo passe, 10 Mo + 1 octet est refusé SANS lecture du fichier', async () => {
+        expect(GPX_MAX_BYTES).toBe(10 * 1024 * 1024);
+        const alert = vi.spyOn(window, 'alert').mockImplementation(() => {});
+        const fake = makeFakeThis(makeFakeMap());
+
+        let read = 0;
+        const okFile = { name: 'gros-ok.gpx', size: GPX_MAX_BYTES, text: async (): Promise<string> => { read++; return GPX_TRACK; } } as unknown as File;
+        const tooBigFile = { name: 'trop-gros.gpx', size: GPX_MAX_BYTES + 1, text: async (): Promise<string> => { read++; return GPX_TRACK; } } as unknown as File;
+
+        await fake._importGpxFiles([okFile, tooBigFile]);
+
+        expect(fake._gpxTracks).toHaveLength(1);
+        // Le fichier trop gros n'a JAMAIS été lu (le plafond agit avant `text()`).
+        expect(read).toBe(1);
+        expect(alert).toHaveBeenCalledTimes(1);
+        expect(alert.mock.calls[0]?.[0]).toContain('Fichier GPX trop gros');
+        expect(alert.mock.calls[0]?.[0]).toContain('10 Mo au plus');
+        alert.mockRestore();
+    });
+
+    it('plafond de points : à la borne passe, un point de plus est refusé', async () => {
+        expect(GPX_MAX_POINTS).toBe(100_000);
+        const alert = vi.spyOn(window, 'alert').mockImplementation(() => {});
+        const fake = makeFakeThis(makeFakeMap());
+        document.body.innerHTML = '<div id="plan_gpx_list"></div>';
+        const limits = { maxBytes: GPX_MAX_BYTES, maxPoints: 3 };
+
+        const exactly3 = { name: 'a.gpx', size: 0, text: async (): Promise<string> => '<gpx><trk><trkseg><trkpt lat="1" lon="1"/><trkpt lat="2" lon="2"/><trkpt lat="3" lon="3"/></trkseg></trk></gpx>' } as unknown as File;
+        const four = { name: 'b.gpx', size: 0, text: async (): Promise<string> => '<gpx><trk><trkseg><trkpt lat="1" lon="1"/><trkpt lat="2" lon="2"/><trkpt lat="3" lon="3"/><trkpt lat="4" lon="4"/></trkseg></trk></gpx>' } as unknown as File;
+
+        await fake._importGpxFiles([exactly3, four], limits);
+
+        expect(fake._gpxTracks).toHaveLength(1);
+        expect(alert).toHaveBeenCalledTimes(1);
+        expect(alert.mock.calls[0]?.[0]).toContain('Trace GPX trop longue');
+        alert.mockRestore();
+    });
+
+    it('countGpxPoints additionne tous les segments', () => {
+        const parsed = parseGpx('<gpx><trk><trkseg><trkpt lat="1" lon="1"/><trkpt lat="2" lon="2"/></trkseg><trkseg><trkpt lat="3" lon="3"/><trkpt lat="4" lon="4"/><trkpt lat="5" lon="5"/></trkseg></trk></gpx>');
+        expect(parsed).not.toBeNull();
+        expect(countGpxPoints(parsed as NonNullable<typeof parsed>)).toBe(5);
     });
 });
 

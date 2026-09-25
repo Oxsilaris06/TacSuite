@@ -92,6 +92,17 @@ function jsonResponse(body: unknown, status = 200): Response {
     } as unknown as Response;
 }
 
+/** Réponse BAN GeoJSON (une feature par résultat `[label, lng, lat]`). */
+function banResponse(features: Array<{ label: string; lng: number; lat: number }>): Response {
+    return jsonResponse({
+        type: 'FeatureCollection',
+        features: features.map((f) => ({
+            properties: { label: f.label },
+            geometry: { type: 'Point', coordinates: [f.lng, f.lat] },
+        })),
+    });
+}
+
 /** Point MapLibre factice — sous-ensemble RÉELLEMENT lu par `Marker._update()`
  *  (`.x`, `.y`, `._add()`, `.round()`), validé empiriquement sous jsdom. */
 function fakePoint(x: number, y: number): { x: number; y: number; _add: () => unknown; round: () => unknown } {
@@ -252,8 +263,8 @@ describe('_searchAddress — INVARIANT §5.7 : jeton de séquence Nominatim', ()
 
         // La PREMIÈRE requête (A) résout EN DERNIER : on résout B (la plus
         // récente) d'abord, puis A (périmée) ensuite.
-        pendingResolvers[1]?.(jsonResponse([{ display_name: 'Résultat B', lon: '3.0', lat: '4.0' }]));
-        pendingResolvers[0]?.(jsonResponse([{ display_name: 'Résultat A', lon: '1.0', lat: '2.0' }]));
+        pendingResolvers[1]?.(banResponse([{ label: 'Résultat B', lng: 3.0, lat: 4.0 }]));
+        pendingResolvers[0]?.(banResponse([{ label: 'Résultat A', lng: 1.0, lat: 2.0 }]));
 
         await Promise.all([p1, p2]);
 
@@ -283,11 +294,13 @@ describe('_searchAddress — INVARIANT §5.7 : jeton de séquence Nominatim', ()
         input.value = 'Adresse B';
         const p2 = instance._searchAddress();
 
-        pendingResolvers[1]?.resolve(jsonResponse([{ display_name: 'Résultat B', lon: '5.0', lat: '6.0' }]));
-        // La requête périmée (A) échoue APRÈS coup — ne doit ni écraser le
-        // résultat de B ni purger `searchMarker` (garde `seq !== this._searchSeq`
-        // du chemin d'échec, planMap.js:883).
-        pendingResolvers[0]?.reject(new Error('réseau HS'));
+        pendingResolvers[1]?.resolve(banResponse([{ label: 'Résultat B', lng: 5.0, lat: 6.0 }]));
+        // La requête périmée (A) échoue APRÈS coup : la BAN ne rend rien, on
+        // bascule sur Nominatim qui échoue à son tour — ne doit ni écraser le
+        // résultat de B ni purger `searchMarker` (garde `seq !== this._searchSeq`).
+        pendingResolvers[0]?.resolve(banResponse([]));
+        await vi.waitFor(() => expect(pendingResolvers.length).toBe(3));
+        pendingResolvers[2]?.reject(new Error('réseau HS'));
 
         await Promise.all([p1, p2]);
 

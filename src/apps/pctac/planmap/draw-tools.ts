@@ -408,6 +408,9 @@ export const DrawToolsMethods = {
         list.push(shape);
         this._saveShapes(list);
         this.drawState = null;
+        // Fin de tracé : rejoue un rechargement distant différé pendant le geste
+        // (décision 29) — la forme vient d'être relue puis écrite ci-dessus.
+        this._flushPendingRemoteReload();
         this._clearPreview();
         // Désactive l'outil de dessin et repasse en mode contrôle carte
         // (le dock reste ouvert pour permettre un nouveau tracé immédiat).

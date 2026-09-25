@@ -26,6 +26,7 @@ import maplibregl from 'maplibre-gl';
 import type { GeoJSONSource, Map as MapLibreMap, Marker as MapLibreMarker } from 'maplibre-gl';
 
 import { Persist } from '@shared/persist.js';
+import { toast } from '@shared/feedback.js';
 
 /* ─── types internes ────────────────────────────────────────────────────── */
 
@@ -254,6 +255,75 @@ let deviceAbort = false;
 const members = new Map<string, TlMember>();
 const names = new Map<string, string>();
 const beacons = new Map<string, TlBeacon>();
+
+/* ─── Verrou d'écran pendant un suivi en direct (décision 28, C5) ──────────
+ * Tant qu'au moins un suivi (Tchap ou OsmAnd) est actif, l'écran est maintenu
+ * allumé via `navigator.wakeLock`. Compteur de références : plusieurs suivis
+ * partagent un seul verrou, relâché au Stop du DERNIER. Au retour de
+ * visibilité, le verrou est repris s'il a été libéré par le navigateur.
+ * API absente ou refusée : UN SEUL toast d'avertissement, jamais d'erreur. */
+
+/** Surface minimale d'un `WakeLockSentinel` (non garanti par les lib TS). */
+interface WakeLockSentinelLike {
+  release(): Promise<void> | void;
+  addEventListener(type: 'release', listener: () => void): void;
+  released?: boolean;
+}
+interface WakeLockNavigator {
+  wakeLock?: { request(type: 'screen'): Promise<WakeLockSentinelLike> } | undefined;
+}
+
+let wakeLock: WakeLockSentinelLike | null = null;
+let wakeLockCount = 0;
+let wakeLockWarned = false;
+let wakeVisWired = false;
+
+function warnWakeLockUnavailable(): void {
+  if (wakeLockWarned) return;
+  wakeLockWarned = true;
+  try { toast("L'écran peut se mettre en veille pendant le suivi", { kind: 'info' }); } catch { /* jamais bloquant */ }
+}
+
+async function requestWakeLock(): Promise<void> {
+  if (wakeLockCount <= 0 || wakeLock) return;
+  const nav = navigator as Navigator & WakeLockNavigator;
+  if (!nav.wakeLock || typeof nav.wakeLock.request !== 'function') { warnWakeLockUnavailable(); return; }
+  try {
+    const sentinel = await nav.wakeLock.request('screen');
+    // Le dernier suivi a été arrêté pendant l'attente : on relâche aussitôt.
+    if (wakeLockCount <= 0) { try { void sentinel.release(); } catch { /* sans effet */ } return; }
+    wakeLock = sentinel;
+    try { sentinel.addEventListener('release', () => { if (wakeLock === sentinel) wakeLock = null; }); } catch { /* sans effet */ }
+  } catch {
+    wakeLock = null;
+    warnWakeLockUnavailable();
+  }
+}
+
+/** Reprend le verrou au retour de visibilité s'il a été relâché entre-temps. */
+function wireWakeVisibility(): void {
+  if (wakeVisWired || typeof document === 'undefined') return;
+  wakeVisWired = true;
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden && wakeLockCount > 0 && !wakeLock) void requestWakeLock();
+  });
+}
+
+/** Déclare un suivi actif ; idempotent côté verrou (un seul pour N suivis). */
+export function acquireScreenWakeLock(): void {
+  wakeLockCount++;
+  wireWakeVisibility();
+  if (wakeLockCount === 1 && !wakeLock) void requestWakeLock();
+}
+
+/** Déclare un suivi terminé ; relâche le verrou quand le DERNIER s'arrête. */
+export function releaseScreenWakeLock(): void {
+  if (wakeLockCount > 0) wakeLockCount--;
+  if (wakeLockCount > 0) return;
+  const wl = wakeLock;
+  wakeLock = null;
+  if (wl) { try { void wl.release(); } catch { /* sans effet */ } }
+}
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 // Sleep interruptible par l'AbortController courant : un stop() (aborter.abort())
@@ -507,6 +577,16 @@ function computeState(m: TlMember, now: number): TlState {
   return 'idle';
 }
 function fnIcon(fonction: string | null | undefined): string { return (fonction && FUNCTION_ICONS[fonction]) || DEFAULT_ICON; }
+/** « perdu depuis N min » — N en minutes pleines, au moins 1. */
+export function lostSinceLabel(ageMs: number): string {
+  const min = Math.max(1, Math.floor(ageMs / 60000));
+  return `perdu depuis ${min} min`;
+}
+/** Retire le bouton « Retirer » d'un marqueur (états non perdus). */
+function clearRetireButton(m: TlMember): void {
+  const btn = m.root.querySelector('.tl-retire');
+  if (btn) btn.remove();
+}
 function applyVisual(sender: string, m: TlMember | undefined): void {
   if (!m || !m.iconEl) return;
   const a = cfg.assign[sender] || {};
@@ -523,15 +603,33 @@ function applyVisual(sender: string, m: TlMember | undefined): void {
     m.iconEl.classList.remove('pulse');
     m.labelEl.textContent = `${tag}${name} · ${fmtAge(age)}`;
     m.labelEl.style.borderLeftColor = color;
+    clearRetireButton(m);
     return;
   }
-  m.iconEl.style.opacity = '';
   const st = computeState(m, Date.now()); m.state = st;
   const color = STATE_COLORS[st] || STATE_COLORS.expiring;
-  m.iconEl.style.color = color;
   m.glyphEl.textContent = fnIcon(a.fonction);
   m.iconEl.classList.toggle('pulse', st === 'moving' || st === 'expiring');
-  m.labelEl.textContent = tag + name;
+  if (st === 'lost') {
+    // Décision 35 : l'opérateur perdu RESTE sur la carte, grisé et daté,
+    // jusqu'à un Stop ou un retrait à la main. Jamais retiré par le balayage.
+    m.iconEl.style.opacity = '0.45';
+    m.labelEl.textContent = `${tag}${name} · ${lostSinceLabel(Date.now() - (m.ts || Date.now()))}`;
+    if (!m.root.querySelector('.tl-retire')) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'tl-retire';
+      btn.textContent = 'Retirer';
+      btn.title = 'Retirer cet opérateur de la carte';
+      btn.addEventListener('click', (ev) => { ev.stopPropagation(); removeMember(sender); });
+      m.root.appendChild(btn);
+    }
+  } else {
+    m.iconEl.style.opacity = '';
+    m.labelEl.textContent = tag + name;
+    clearRetireButton(m);
+  }
+  m.iconEl.style.color = color;
   m.labelEl.style.borderLeftColor = color;
 }
 
@@ -818,7 +916,7 @@ function renderOps(force?: boolean): void {
   const pill = (st: TlState, label: string): string => glob[st] ? `<span title="${label}"><i style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${STATE_COLORS[st]};vertical-align:middle"></i> <b>${glob[st]}</b></span>` : '';
   let html = '<div class="tl-ops-bar">'
     + `<button type="button" class="tl-batch-toggle${batchMode ? ' active' : ''}" title="Mode lot : affecter une fonction à plusieurs opérateurs">Lot</button>`
-    + `<span class="tl-ops-states">${pill('new', 'Nouveau')}${pill('moving', 'En mouvement')}${pill('idle', 'Immobile')}${pill('expiring', 'Déco imminente')}</span></div>`;
+    + `<span class="tl-ops-states">${pill('new', 'Nouveau')}${pill('moving', 'En mouvement')}${pill('idle', 'Immobile')}${pill('expiring', 'Déco imminente')}${pill('lost', 'Perdu')}</span></div>`;
   if (batchMode) {
     html += '<div class="tl-batch-bar">'
       + '<button type="button" class="tl-batch-all" title="Tout sélectionner / désélectionner">Tout</button>'
@@ -854,6 +952,7 @@ function renderOps(force?: boolean): void {
         + `<span class="tl-op-age">${fmtAge(now - (m.ts || now))}</span>`
         + fnCtrl
         + `<button type="button" class="tl-op-follow ${followed === s ? 'on' : ''}" title="Suivre (centrage live)" aria-label="Suivre cet opérateur (centrage live)">${followed === s ? '◉' : '◎'}</button>`
+        + (m.state === 'lost' ? '<button type="button" class="tl-op-remove" title="Retirer de la carte" aria-label="Retirer cet opérateur de la carte">Retirer</button>' : '')
         + '</div>';
     }
     html += '</div></div>';
@@ -932,6 +1031,14 @@ function onOpsClick(e: Event): void {
     renderOps(true);
     return;
   }
+  // Retirer un opérateur perdu de la carte (décision 35).
+  const rm = target.closest<HTMLElement>('.tl-op-remove');
+  if (rm) {
+    const rowR = rm.closest<HTMLElement>('.tl-op');
+    if (rowR) removeMember(decodeURIComponent(rowR.dataset.s ?? ''));
+    renderOps(true);
+    return;
+  }
   // Suivre un opérateur (centrage live)
   const btn = target.closest<HTMLElement>('.tl-op-follow'); if (!btn) return;
   const opRow = btn.closest<HTMLElement>('.tl-op'); if (!opRow) return;
@@ -969,7 +1076,7 @@ function processSync(data: MatrixSyncResponse, initial: boolean): void {
   if (initial) jlog(`salon trouvé : ${st.length} state + ${tl.length} timeline`, 'var(--text-muted)');
   for (const ev of st) handleEvent(ev);
   for (const ev of tl) handleEvent(ev);
-  if (initial) { const now = Date.now(); for (const [s, m] of [...members]) if (m.marker && computeState(m, now) === 'lost') removeMember(s); }
+  if (initial) applyVisualAll();
 }
 
 /* ─── AUTH : OIDC device-code (RFC 8628) + refresh + repli token manuel ──── */
@@ -1085,7 +1192,7 @@ function wireVisibility(): void {
 }
 
 async function runSync(): Promise<void> {
-  uiBusy(true); startSweep(); wireVisibility();
+  uiBusy(true); startSweep(); wireVisibility(); acquireScreenWakeLock();
   const myAborter = aborter; // jeton de génération : si remplacé (stop+start), cette boucle s'arrête
   setDot('var(--civil-yellow)'); status('Connexion…');
   try {
@@ -1224,10 +1331,14 @@ function showDevice(da: OidcDeviceAuthResponse): void {
 function hideDevice(): void { const el = $('tl_device'); if (el) { el.style.display = 'none'; el.innerHTML = ''; } }
 
 function stop(userInitiated: boolean): void {
+  const wasRunning = running;
   running = false; deviceAbort = true;
   if (resumeFromHidden) { const r = resumeFromHidden; resumeFromHidden = null; r(); } // réveille une boucle en pause
   if (aborter) { aborter.abort(); aborter = null; } // remis à null → un nouveau start crée un signal frais
   stopSweep(); stopOfflineTicker(); markOnline();
+  // Ne relâche le verrou d'écran que si CETTE session Tchap en avait acquis un :
+  // stopper Tchap ne doit pas couper le verrou d'un suivi OsmAnd simultané.
+  if (wasRunning) releaseScreenWakeLock();
   for (const s of [...members.keys()]) removeMember(s); // purge l'affichage (pas de marqueurs périmés au re-start)
   accessToken = null; expiresAt = 0; followed = null; centered = false;
   if (userInitiated) {
@@ -1269,7 +1380,9 @@ function sweepStates(): void {
     // disparaître au bout de FB_LOST_MS (6 min), ce qui détruirait
     // l'affichage hors-ligne voulu.
     if (m.stale) { if (now - (m.ts || 0) > STALE_MAX_MS) removeMember(s); else applyVisual(s, m); continue; }
-    if (computeState(m, now) === 'lost') removeMember(s); else applyVisual(s, m);
+    // Décision 35 : un opérateur « perdu » RESTE affiché (grisé, daté) ; il
+    // n'est retiré que par un Stop ou l'action « Retirer » de son marqueur.
+    applyVisual(s, m);
   }
   if (members.size) scheduleRenderOps();
 }

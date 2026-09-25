@@ -332,6 +332,10 @@ export interface PlanMapState {
     _gpxCoords: Record<string, GpxTrackData>;
     _measureLabelMarkers: Marker[];
     _committedMeasureMarkers: Marker[];
+    /** Changement distant reçu pendant un geste, à rejouer à la fin (décision 29, C8). */
+    _pendingRemoteReload: boolean;
+    /** Glisser d'un point en cours (décision 29, C8) : diffère le rechargement distant. */
+    _pinDragging: boolean;
 
     /* --- 28 propriétés créées à l'exécution (hors littéral) --- */
     _searchSeq: number;                     // :834
@@ -430,6 +434,11 @@ export interface PlanMapInternal extends PlanMapState, PlanMapContract {
     _initTopoLayers(): void;
     _initOverlays(): void;
     _updateTopoBtns(): void;
+    /* Synchronisation entre onglets du plan (décision 29, C8) */
+    _onRemotePlanData(key: string): void;
+    _planGestureActive(): boolean;
+    _reloadPlanFromStorage(): void;
+    _flushPendingRemoteReload(): void;
 
     /* --- chrome.ts (9) --- */
     _bindUi(): void;
@@ -446,6 +455,7 @@ export interface PlanMapInternal extends PlanMapState, PlanMapContract {
     _onMapClick(e: MapMouseEvent): void;
     _addPin(pin: PlanPin): void;
     _removePin(id: string): void;
+    _requestRemovePin(id: string): Promise<void>;
     _loadPins(): PlanPin[];
     _savePins(pins: readonly PlanPin[]): void;
     _resolvePin(pin: PlanPin): ResolvedPin;
@@ -576,7 +586,7 @@ export interface PlanMapInternal extends PlanMapState, PlanMapContract {
     _renderGpxList(): void;
     _refreshGpxActions(): void;
     _toggleGpxPanel(force?: boolean): void;
-    _importGpxFiles(files: readonly File[]): Promise<void>;
+    _importGpxFiles(files: readonly File[], limits?: { maxBytes: number; maxPoints: number }): Promise<void>;
     _toggleGpxTrack(id: string): void;
     _removeGpxTrack(id: string): void;
     _fitGpxTracks(): void;

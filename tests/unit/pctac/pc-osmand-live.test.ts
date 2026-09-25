@@ -117,6 +117,7 @@ afterEach(() => {
 describe('OsmandLive — sondage du relais', () => {
   it('pousse chaque point par upsert(osmand:<id>) avec nom, fonction et libellé, puis avance `since`', async () => {
     vi.useFakeTimers();
+    vi.setSystemTime(OP_A.ts);
     seedDom();
     stubPlanMap();
     responses = [
@@ -243,6 +244,8 @@ describe('OsmandLive — sondage du relais', () => {
     vi.doMock('@pctac/tchap-live.js', () => ({
       upsert: (sender: string, _lat: number, _lon: number, ts: number): void => { upserts.push({ sender, ts }); },
       registerRemoteOperator: (): void => { /* sans effet */ },
+      acquireScreenWakeLock: (): void => { /* sans effet */ },
+      releaseScreenWakeLock: (): void => { /* sans effet */ },
     }));
     const dup = { ts: 5000, rx: 5000, lat: 48.1, lon: 2.1 };
     responses = [

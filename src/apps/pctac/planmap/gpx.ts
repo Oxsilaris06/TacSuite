@@ -64,6 +64,35 @@ export interface ParsedGpx {
     times: GpxTimes | null;
 }
 
+/* ─── Plafonds d'import GPX (correction d'office, décision 37) ─────────────
+ * Un GPX est lu EN ENTIER avant d'être exploité (DOMParser + stockage) : sans
+ * plafond, un fichier de plusieurs dizaines de Mo de points fait figer le
+ * téléphone. Deux barrières, dans cet ordre :
+ *   1. TAILLE DU FICHIER (10 Mo) — contrôlée AVANT toute lecture, donc avant
+ *      de payer le coût mémoire du texte.
+ *   2. NOMBRE DE POINTS (100 000) — contrôlé après lecture. Justification :
+ *      une trace à 1 point/seconde sur une journée fait 86 400 points ;
+ *      100 000 couvre la journée entière avec marge, au-delà la trace n'est
+ *      plus lisible à l'écran et sature le rendu MapLibre.
+ */
+export const GPX_MAX_BYTES = 10 * 1024 * 1024;
+export const GPX_MAX_POINTS = 100_000;
+
+/** Plafonds injectables (tests aux bornes) ; en production, les constantes ci-dessus. */
+export interface GpxImportLimits {
+    maxBytes: number;
+    maxPoints: number;
+}
+
+export const GPX_DEFAULT_LIMITS: GpxImportLimits = { maxBytes: GPX_MAX_BYTES, maxPoints: GPX_MAX_POINTS };
+
+/** Nombre total de points d'un GPX parsé (toutes traces et segments). */
+export function countGpxPoints(parsed: ParsedGpx): number {
+    let n = 0;
+    for (const seg of parsed.segments) n += seg.length;
+    return n;
+}
+
 /**
  * Parse un GPX. PURE, sans DOM applicatif ni carte.
  *
@@ -605,11 +634,19 @@ export const GpxMethods = {
      * Importe un ou plusieurs fichiers `.gpx`. Chaque fichier illisible est
      * signalé et ignoré : un lot n'échoue jamais en entier à cause d'un fichier.
      */
-    async _importGpxFiles(this: PlanMapInternal, files: readonly File[]): Promise<void> {
+    async _importGpxFiles(this: PlanMapInternal, files: readonly File[], limits: GpxImportLimits = GPX_DEFAULT_LIMITS): Promise<void> {
         if (!files || !files.length) return;
         let added = 0;
         let rejected = 0;
         for (const file of files) {
+            // 1) Plafond de TAILLE avant toute lecture (coût mémoire du texte).
+            const size = typeof file.size === 'number' && Number.isFinite(file.size) ? file.size : 0;
+            if (size > limits.maxBytes) {
+                const mo = (size / (1024 * 1024)).toFixed(1);
+                window.alert(`Fichier GPX trop gros (${mo} Mo, 10 Mo au plus).`);
+                continue;
+            }
+
             let parsed: ParsedGpx | null = null;
             try {
                 parsed = parseGpx(await file.text());
@@ -617,6 +654,13 @@ export const GpxMethods = {
                 parsed = null;
             }
             if (!parsed) { rejected++; continue; }
+
+            // 2) Plafond du NOMBRE DE POINTS après lecture.
+            const points = countGpxPoints(parsed);
+            if (points > limits.maxPoints) {
+                window.alert(`Trace GPX trop longue (${points} points, 100 000 au plus).`);
+                continue;
+            }
 
             const id = `gpx_${Date.now()}_${this._gpxTracks.length + added}`;
             const color = GPX_COLORS[(this._gpxTracks.length + added) % GPX_COLORS.length] ?? '#a855f7';

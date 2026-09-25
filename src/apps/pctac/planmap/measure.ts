@@ -40,6 +40,7 @@
 
 import maplibregl from 'maplibre-gl';
 
+import { formatAzimuth, magneticDeclination } from './azimuth.js';
 import type { LngLatTuple, PlanMapInternal, PlanShape } from './types.js';
 
 export const MeasureMethods = {
@@ -146,6 +147,11 @@ export const MeasureMethods = {
         const sink = committed ? this._committedMeasureMarkers : this._measureLabelMarkers;
         const color = this.drawColor || '#22d3ee';
 
+        // Déclinaison calculée UNE fois au point de départ (décision 35) :
+        // le WMM varie trop lentement pour justifier un calcul par segment.
+        const start = pts[0];
+        const decl = start ? magneticDeclination(start[1], start[0]) : null;
+
         let cumul = 0;
         for (let i = 1; i < pts.length; i++) {
             // Bornes de la boucle garantissent `a`/`b` définis ; `noUncheckedIndexedAccess`
@@ -159,7 +165,7 @@ export const MeasureMethods = {
             cumul += dist;
             const mid: LngLatTuple = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
             const isLast = i === pts.length - 1;
-            const segTxt = `${this._formatDistance(dist)} · ${this._formatBearing(az)}`;
+            const segTxt = `${this._formatDistance(dist)} · ${formatAzimuth(az, decl)}`;
             const totTxt = (pts.length > 2 && isLast) ? `Σ ${this._formatDistance(cumul)}` : '';
             const div = document.createElement('div');
             div.className = 'plan-measure-label';
