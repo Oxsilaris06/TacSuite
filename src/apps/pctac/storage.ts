@@ -33,7 +33,7 @@ import { Persist } from '@shared/persist.js';
  * TOUTES à une situation (cf. `scopedKey`) : on ne supprime donc jamais que
  * celles de la situation visée, jamais celles des trois autres.
  */
-const SITUATION_KEYS: readonly string[] = [
+export const SITUATION_KEYS: readonly string[] = [
   LOCAL_STORAGE_KEY,
   TP_ASSOC_KEY,
   ADVERSARIES_KEY,

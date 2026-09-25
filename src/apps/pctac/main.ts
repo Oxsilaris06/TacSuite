@@ -98,6 +98,7 @@ import { GPX_INDEX_KEY, PINS_KEY } from '@pctac/planmap/constants.js';
 import { scopedKey } from '@pctac/modes.js';
 import { initImportScopeModal } from '@pctac/import-scope.js';
 import { initSplitView } from '@pctac/split-view.js';
+import { initTabSync } from '@pctac/tab-sync.js';
 import { applyLexicon, initModeSelector, onModeChange } from '@pctac/mode-ui.js';
 import { openFiche } from '@pctac/fiche-sheet.js';
 
@@ -133,6 +134,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     // libellés et les champs doctrinaux doivent être en place quand les vues
     // se peignent, sinon l'opérateur voit « Adversaire » clignoter en « Ennemi ».
     initModeSelector();
+    // Synchronisation entre onglets (décision 29) : APRÈS le sélecteur, dont
+    // elle lit la situation figée.
+    initTabSync();
     // Liste des categories d'import, construite depuis IMPORT_CATEGORIES : ses
     // libelles dependant de la situation sont ensuite pris en charge par applyLexicon().
     initImportScopeModal();
