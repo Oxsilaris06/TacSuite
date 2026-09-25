@@ -20,7 +20,7 @@ vi.mock('maplibre-gl', () => {
     return { Marker: M, default: { Marker: M } };
 });
 
-import { createMapOverlays } from '@shared/map-overlays.js';
+import { createMapOverlays, mountOverlayControls } from '@shared/map-overlays.js';
 import { gridToGeo, metersPerDegree, type TacticalGridSpec } from '@shared/tactical-grid.js';
 
 const LAT0 = 47.9, LNG0 = 1.9;
@@ -298,5 +298,135 @@ describe('carroyage orientable, revue finale (F1 à F7)', () => {
         el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
         expect(saved.at(-1)!.angle).toBe(355);
         expect(a.isCapturing()).toBe(false);
+    });
+});
+
+describe('Revue du 25/09 — sortie de capture, ordre d’enregistrement, maille importée (B1, B3, B7)', () => {
+    const live = (h: ReturnType<typeof makeMap>, initial: Record<string, unknown>) => {
+        let stored: Record<string, unknown> = initial;
+        const a = createMapOverlays(h.map as never, {
+            load: () => stored as never,
+            save: (s) => { stored = { ...s }; },
+            toast: () => {},
+            confirm: async () => true,
+        });
+        return { a, stored: () => stored };
+    };
+
+    it('B1 : Déplacer puis Effacer termine la capture, la carte redevient libre', async () => {
+        const h = makeMap(0);
+        const a = api(h);
+        await a.placeGridOnView();
+        a.startGridMove();
+        expect(a.isCapturing()).toBe(true);
+        expect(h.isDragOn()).toBe(false);
+        await a.clearGrid();
+        expect(a.state.grid).toBeNull();
+        expect(a.isCapturing()).toBe(false);
+        expect(h.isDragOn()).toBe(true);
+        h.tap(300, 300);
+        expect(a.state.grid).toBeNull();
+        expect(a.isCapturing()).toBe(false);
+    });
+
+    it('B1 : Tracer puis Effacer annule le tracé, deux touchers ne posent plus rien', async () => {
+        const h = makeMap(0);
+        const a = api(h);
+        await a.placeGridOnView();
+        await a.startGridDraw();
+        await a.clearGrid();
+        expect(a.isCapturing()).toBe(false);
+        h.tap(200, 200);
+        h.tap(500, 400);
+        expect(a.state.grid).toBeNull();
+    });
+
+    it('B1 : Déplacer puis interrupteur éteint : un toucher ne déplace plus A1', async () => {
+        const h = makeMap(0);
+        const a = api(h);
+        await a.placeGridOnView();
+        const before = { west: a.state.grid!.west, north: a.state.grid!.north };
+        a.startGridMove();
+        a.setGridOn(false);
+        expect(a.isCapturing()).toBe(false);
+        h.tap(100, 100);
+        expect(a.state.grid!.west).toBe(before.west);
+        expect(a.state.grid!.north).toBe(before.north);
+    });
+
+    it('B1 : au tactile, Tracer devient Annuler pendant la capture et la termine', async () => {
+        const h = makeMap(0);
+        const a = api(h);
+        const section = document.createElement('div');
+        document.body.appendChild(section);
+        mountOverlayControls(section, a, { row: 'r', fab: 'f', label: 'l' });
+        const byText = (t: string) => [...section.querySelectorAll('button')].find((b) => b.textContent?.includes(t));
+        await a.startGridDraw();
+        expect(a.isCapturing()).toBe(true);
+        const cancel = byText('Annuler');
+        expect(cancel).toBeDefined();
+        cancel!.click();
+        expect(a.isCapturing()).toBe(false);
+        expect(byText('Tracer')).toBeDefined();
+        expect(byText('Annuler')).toBeUndefined();
+        section.remove();
+    });
+
+    it('B1 : Déplacer devient Annuler pendant le déplacement', async () => {
+        const h = makeMap(0);
+        const a = api(h);
+        await a.placeGridOnView();
+        const section = document.createElement('div');
+        document.body.appendChild(section);
+        mountOverlayControls(section, a, { row: 'r', fab: 'f', label: 'l' });
+        a.startGridMove();
+        const cancel = [...section.querySelectorAll('button')].find((b) => (b.getAttribute('aria-label') ?? '').startsWith('Annuler'));
+        expect(cancel).toBeDefined();
+        cancel!.click();
+        expect(a.isCapturing()).toBe(false);
+        expect(a.state.grid).not.toBeNull();
+        section.remove();
+    });
+
+    it('B3 : une relecture distante différée pendant « Sur la vue » ne remplace pas le nouveau carroyage', async () => {
+        const h = makeMap(0);
+        const { a, stored } = live(h, { gridOn: true, cellM: 50 });
+        await a.placeGridOnView();
+        const first = a.state.grid!;
+        let pending = false;
+        // Hôte (map-core) : rejoue la relecture différée dès que la carte est libre.
+        a.onChange(() => { if (pending && !a.isCapturing()) { pending = false; a.reload(); } });
+        pending = true; // un autre onglet a écrit pendant le geste
+        h.t.E0 += 500; // la carte a été déplacée de 500 m vers l'est
+        await a.placeGridOnView();
+        expect(a.state.grid!.west).not.toBe(first.west);
+        expect((stored().grid as TacticalGridSpec).west).toBe(a.state.grid!.west);
+    });
+
+    it('B3 : une relecture distante différée pendant la rotation ne perd pas la rotation', async () => {
+        const h = makeMap(0);
+        const { a, stored } = live(h, { gridOn: true, cellM: 50 });
+        await a.placeGridOnView();
+        let pending = false;
+        a.onChange(() => { if (pending && !a.isCapturing()) { pending = false; a.reload(); } });
+        await a.startGridRotate();
+        const el = lastMarkerEl();
+        pending = true;
+        for (let i = 0; i < 18; i++) el.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+        expect(a.state.grid!.angle).toBe(90);
+        el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+        expect(a.state.grid!.angle).toBe(90);
+        expect((stored().grid as TacticalGridSpec).angle).toBe(90);
+        expect(a.isCapturing()).toBe(false);
+    });
+
+    it('B7 : la maille affichée suit le carroyage chargé, pas les réglages', async () => {
+        const h = makeMap(0);
+        const a1 = createMapOverlays(h.map as never, { load: () => ({ gridOn: true, cellM: 100 }) as never, save: () => {}, toast: () => {}, confirm: async () => true });
+        await a1.placeGridOnView();
+        const grid100 = a1.state.grid!;
+        expect(grid100.cellM).toBe(100);
+        const a2 = createMapOverlays(h.map as never, { load: () => ({ gridOn: true, cellM: 50, grid: grid100 }) as never, save: () => {}, toast: () => {}, confirm: async () => true });
+        expect(a2.state.cellM).toBe(100);
     });
 });
