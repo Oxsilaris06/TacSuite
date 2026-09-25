@@ -64,12 +64,13 @@
  *      chaîne de conteneurs (`data-h2c-pin` + `onclone`) — LE durcissement
  *      cité en tête de `planmap/capture.ts` (`:132-163`, `:188-231`).
  *   6. Garde-fou `dpr` (fini, positif) replié sur `devicePixelRatio` (`:171-173`).
- * Repli sciemment NON porté : attente `idle`/`areTilesLoaded` (`planMap.js`
- * :103-125, dépend de `map.isMoving()`/`map.areTilesLoaded()` — présents sur
- * tout `maplibregl.Map`, mais l'original `oi_cartographie.js` ne les attendait
- * déjà pas ; ajouter cette attente changerait un comportement observable
- * (délai avant capture) hors du périmètre "durcissement anti-jank/anti-perte
- * de markers" de cette mission).
+ *
+ * CAPTURE D'IMPRESSION (audit PDF du 2026-09-25, F12, point 10) : attente de
+ * l'événement `idle` (au plus `CAPTURE_IDLE_TIMEOUT_MS`, message si dépassé),
+ * refus d'une carte vide, uniforme ou trouée (hors ligne compris), boutons et
+ * échelle de MapLibre masqués, attribution dépliée, définition doublée bornée
+ * par la carte graphique (4096 px de côté au plus, limite d'iOS), flèche du
+ * nord et échelle incrustées.
  */
 
 import html2canvas from 'html2canvas';
@@ -79,6 +80,177 @@ import { legacyCaptureColors } from '@shared/h2c-colors.js';
 import { drawOverlayLegend, overlayLegend } from '@shared/map-overlays.js';
 
 import type { OICartoInternal, OiCartoPhotoTarget } from './types.js';
+
+/** Attente maximale du rendu de la carte avant capture (tuiles, nouvelle définition). */
+export const CAPTURE_IDLE_TIMEOUT_MS = 8000;
+/** Côté maximal du canvas : `maxCanvasSize` par défaut de MapLibre, limite des canvas d'iOS. */
+const CAPTURE_MAX_SIDE_PX = 4096;
+
+/**
+ * Densité de pixels de la capture : au moins le double de l'écran (ou la
+ * densité réelle si elle est plus forte), sans dépasser 4096 px de côté (iOS)
+ * ni la taille de texture de la carte graphique.
+ */
+export function capturePixelRatio(cssW: number, cssH: number, dpr: number, maxTextureSize: number): number {
+    const maxSide = Math.min(CAPTURE_MAX_SIDE_PX, maxTextureSize > 0 ? maxTextureSize : CAPTURE_MAX_SIDE_PX);
+    return Math.min(Math.max(2, dpr), maxSide / Math.max(cssW, cssH, 1));
+}
+
+/** `MAX_TEXTURE_SIZE` du contexte WebGL déjà ouvert par MapLibre (aucun contexte créé), 4096 à défaut. */
+function maxTextureSize(canvas: HTMLCanvasElement): number {
+    const gl = (canvas.getContext('webgl2') ?? canvas.getContext('webgl')) as WebGLRenderingContext | null;
+    const v: unknown = gl?.getParameter?.(0x0d33 /* MAX_TEXTURE_SIZE */);
+    return typeof v === 'number' && v > 0 ? v : CAPTURE_MAX_SIDE_PX;
+}
+
+/**
+ * Verdict sur un échantillon RGBA du canvas de la carte. Sans couche de fond,
+ * une tuile absente (hors ligne, pas encore chargée) laisse le canvas
+ * TRANSPARENT à sa place (audit F12 : capture hors ligne « entièrement
+ * noire »). Vide : presque tout transparent, ou image uniforme ; incomplète :
+ * plus de 2 % de trous.
+ */
+export function mapSampleVerdict(rgba: Uint8ClampedArray): 'vide' | 'incomplete' | 'ok' {
+    const n = rgba.length / 4;
+    let holes = 0;
+    const lo = [255, 255, 255, 255];
+    const hi = [0, 0, 0, 0];
+    for (let i = 0; i < rgba.length; i += 4) {
+        if ((rgba[i + 3] ?? 0) < 128) holes++;
+        for (let c = 0; c < 4; c++) {
+            const v = rgba[i + c] ?? 0;
+            if (v < (lo[c] ?? 0)) lo[c] = v;
+            if (v > (hi[c] ?? 0)) hi[c] = v;
+        }
+    }
+    const uniform = lo.every((v, c) => (hi[c] ?? 0) - v <= 8);
+    if (n === 0 || uniform || holes / n >= 0.98) return 'vide';
+    return holes / n > 0.02 ? 'incomplete' : 'ok';
+}
+
+/** Barre d'échelle ronde (1, 2 ou 5 × 10ⁿ m) la plus longue tenant dans `maxPx`. */
+export function niceScale(metersPerPx: number, maxPx: number): { meters: number; px: number; label: string } | null {
+    if (!(metersPerPx > 0) || !Number.isFinite(metersPerPx) || !(maxPx > 0)) return null;
+    const maxM = metersPerPx * maxPx;
+    const pow = 10 ** Math.floor(Math.log10(maxM));
+    const meters = [5, 2, 1].map((k) => k * pow).find((m) => m <= maxM) ?? pow;
+    return { meters, px: meters / metersPerPx, label: meters >= 1000 ? `${meters / 1000} km` : `${meters} m` };
+}
+
+/** Échantillon RGBA réduit (`size`²) d'un canvas, ou null sans contexte 2D. */
+function sampleCanvas(source: HTMLCanvasElement, size = 64): Uint8ClampedArray | null {
+    const c = document.createElement('canvas');
+    c.width = size;
+    c.height = size;
+    const ctx = c.getContext('2d', { willReadFrequently: true });
+    if (!ctx) return null;
+    ctx.drawImage(source, 0, 0, size, size);
+    return ctx.getImageData(0, 0, size, size).data;
+}
+
+/** Attend l'événement `idle` (rendu fini, tuiles visibles chargées), au plus `ms` ; false si le délai est dépassé. */
+function waitForIdle(map: NonNullable<OICartoInternal['map']>, ms: number): Promise<boolean> {
+    return new Promise((resolve) => {
+        const onIdle = (): void => { clearTimeout(timer); resolve(true); };
+        const timer = setTimeout(() => { map.off('idle', onIdle); resolve(false); }, ms);
+        map.once('idle', onIdle);
+        map.triggerRepaint();
+    });
+}
+
+/** Message de refus d'une capture sans fond de carte, selon la connexion. */
+function captureRefusal(verdict: 'vide' | 'incomplete'): string {
+    const offline = navigator.onLine === false;
+    if (verdict === 'vide') {
+        return offline
+            ? "Capture refusée : hors ligne, le fond de carte de cette zone n'a jamais été chargé. Revenez sur une zone déjà affichée en ligne."
+            : 'Capture refusée : la carte est vide (fond de carte non chargé). Attendez son affichage, puis recommencez.';
+    }
+    return offline
+        ? 'Capture refusée : hors ligne, une partie du fond de carte manque (zones vides).'
+        : "Capture refusée : une partie du fond de carte n'est pas encore chargée. Attendez quelques secondes, puis recommencez.";
+}
+
+/**
+ * Ligne d'état de la fenêtre de capture. Un toast serait CACHÉ ici : la carte
+ * et cette fenêtre sont des `<dialog>` modales (couche supérieure du
+ * navigateur), au-dessus du conteneur des toasts. Message vide : ligne masquée.
+ */
+function setCaptureStatus(message: string, kind: 'info' | 'error' = 'info'): void {
+    const modal = document.getElementById('oi_carto_capture_modal');
+    if (!modal) return;
+    let line = modal.querySelector<HTMLElement>('.oi-carto-capture-status');
+    if (!line) {
+        line = document.createElement('p');
+        line.className = 'oi-carto-capture-status';
+        line.style.cssText = 'margin: 12px 0; line-height: 1.4;';
+        const hint = modal.querySelector('.hint-text-top');
+        if (hint) hint.after(line);
+        else (modal.querySelector('.modal-content') ?? modal).appendChild(line);
+    }
+    line.textContent = message;
+    line.hidden = !message;
+    line.setAttribute('role', kind === 'error' ? 'alert' : 'status');
+    line.style.color = kind === 'error' ? 'var(--danger-red, #ef4444)' : 'var(--text-secondary, inherit)';
+}
+
+/**
+ * Flèche du nord (tournée avec la carte) et, dessous, barre d'échelle,
+ * toujours incrustées en haut à gauche, à la place des boutons masqués : une
+ * carte tournée ne sort plus sans nord (audit F12). Le bas de l'image reste à
+ * l'attribution (dépliée sur deux lignes sur téléphone) et à la légende.
+ */
+function drawNorthAndScale(
+    ctx: CanvasRenderingContext2D,
+    dpr: number,
+    bearingDeg: number,
+    scale: { px: number; label: string } | null,
+): void {
+    const m = 10 * dpr;
+    const r = 18 * dpr;
+    ctx.save();
+    ctx.translate(m + r, m + r);
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+    ctx.beginPath();
+    ctx.arc(0, 0, r, 0, 2 * Math.PI);
+    ctx.fill();
+    ctx.rotate((-bearingDeg * Math.PI) / 180);
+    ctx.fillStyle = '#c0392b';
+    ctx.beginPath();
+    ctx.moveTo(0, -r * 0.5);
+    ctx.lineTo(r * 0.3, r * 0.45);
+    ctx.lineTo(0, r * 0.25);
+    ctx.lineTo(-r * 0.3, r * 0.45);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = '#111111';
+    ctx.font = `700 ${Math.round(9 * dpr)}px Inter, system-ui, sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('N', 0, -r * 0.74);
+    ctx.restore();
+    if (!scale) return;
+    ctx.save();
+    const pad = 6 * dpr;
+    const bar = 4 * dpr;
+    const fontPx = Math.round(11 * dpr);
+    ctx.font = `600 ${fontPx}px Inter, system-ui, sans-serif`;
+    const boxW = Math.max(scale.px, ctx.measureText(scale.label).width) + 2 * pad;
+    const boxH = fontPx + bar + 3 * pad;
+    const x = m;
+    const y = 2 * m + 2 * r;
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+    ctx.fillRect(x, y, boxW, boxH);
+    ctx.fillStyle = '#111111';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    ctx.fillText(scale.label, x + pad, y + pad);
+    const barY = y + boxH - pad - bar;
+    ctx.fillRect(x + pad, barY, scale.px, bar);
+    ctx.fillRect(x + pad, barY - bar, dpr * 1.5, 2 * bar);
+    ctx.fillRect(x + pad + scale.px - dpr * 1.5, barY - bar, dpr * 1.5, 2 * bar);
+    ctx.restore();
+}
 
 export const CaptureMethods = {
     // oi_cartographie.js:1164-1175
@@ -92,6 +264,7 @@ export const CaptureMethods = {
                 ? targets.map((t) => `<option value="${t.id}">${t.label}</option>`).join('')
                 : '<option value="">Aucun champ photo disponible</option>';
         }
+        setCaptureStatus('');
         if (!modal.open) modal.showModal();
     },
 
@@ -188,12 +361,20 @@ export const CaptureMethods = {
             document.getElementById('oi_carto_hint'),
             this._activeWheel?.element ?? null,
             this._inlinePanel,
+            // Boutons (zoom, boussole) et échelle de MapLibre : l'échelle et le
+            // nord sont redessinés à la définition de l'image (audit F12).
+            ...Array.from(mapContainer.querySelectorAll<HTMLElement>('.maplibregl-ctrl-group, .maplibregl-ctrl-scale')),
         ].filter((el): el is HTMLElement => !!el);
         const memo = toHide.map((el) => el.style.display);
         toHide.forEach((el) => { el.style.display = 'none'; });
-
-        map.triggerRepaint();
-        await new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())));
+        // Attribution (© IGN, © Esri) dépliée le temps de la capture : repliée
+        // (écran étroit), elle ne laisserait qu'un bouton « i » dans l'image.
+        const attrib = mapContainer.querySelector<HTMLElement>('.maplibregl-ctrl-attrib.maplibregl-compact:not(.maplibregl-compact-show)');
+        attrib?.classList.add('maplibregl-compact-show');
+        // Définition doublée le temps de la capture, bornée par la carte graphique.
+        const prevRatio = map.getPixelRatio();
+        const ratio = capturePixelRatio(map.getCanvas().clientWidth, map.getCanvas().clientHeight, prevRatio, maxTextureSize(map.getCanvas()));
+        const boosted = ratio > prevRatio;
 
         // DURCISSEMENT 5 (porté de `@pctac/planmap/capture.ts:132-163`) :
         // aplatir temporairement en position/left/top ABSOLUS tous les
@@ -221,6 +402,22 @@ export const CaptureMethods = {
 
         let outCanvas: HTMLCanvasElement | null = null;
         try {
+            if (boosted) map.setPixelRatio(ratio);
+            // Rendu fini et tuiles visibles chargées (audit F12 : capture juste
+            // après un déplacement floue, capture hors ligne noire), au plus
+            // CAPTURE_IDLE_TIMEOUT_MS.
+            setCaptureStatus('Chargement de la carte avant capture…');
+            const idle = await waitForIdle(map, CAPTURE_IDLE_TIMEOUT_MS);
+            const sample = sampleCanvas(map.getCanvas());
+            const verdict = sample ? mapSampleVerdict(sample) : 'ok';
+            if (verdict !== 'ok') {
+                const refusal = captureRefusal(verdict);
+                setCaptureStatus(refusal, 'error');
+                toast(refusal, { kind: 'error' });
+                return null;
+            }
+            setCaptureStatus('');
+
             const parentRect = mapContainer.getBoundingClientRect();
             const markerElements = Array.from(mapContainer.querySelectorAll<HTMLElement>('.maplibregl-marker, .mapboxgl-marker'));
             for (const el of markerElements) {
@@ -298,6 +495,18 @@ export const CaptureMethods = {
             // l'image (PDF, téléchargement), incrustée en bandeau.
             const legend = this.overlays ? overlayLegend(this.overlays, map.getBearing()) : null;
             if (legend) drawOverlayLegend(ctx, w, h, dpr, legend);
+            // Échelle mesurée au centre de l'image, sur un quart de sa largeur.
+            const a = map.unproject([(cssW * 3) / 8, cssH / 2]);
+            const b = map.unproject([(cssW * 5) / 8, cssH / 2]);
+            const scale = niceScale(a.distanceTo(b) / (cssW / 4) / dpr, w * 0.2);
+            drawNorthAndScale(ctx, dpr, map.getBearing(), scale);
+            if (!idle) {
+                const warning = `La carte n'avait pas fini de charger après ${CAPTURE_IDLE_TIMEOUT_MS / 1000} s : l'image peut être floue par endroits.`;
+                setCaptureStatus(warning);
+                toast(warning, { kind: 'info' });
+                // Lu par `_exportToField` : la fenêtre reste ouverte, l'avertissement lisible.
+                outCanvas.dataset.chargementIncomplet = '1';
+            }
         } catch (e) {
             console.error('[OICarto] capture échec:', e);
             toast('Erreur lors de la capture : ' + (e instanceof Error ? e.message : String(e)), { kind: 'error' });
@@ -313,6 +522,9 @@ export const CaptureMethods = {
             }
             pinnedEls.forEach((n) => { try { n.removeAttribute('data-h2c-pin'); } catch { /* ignore */ } });
             toHide.forEach((el, i) => { el.style.display = memo[i] || ''; });
+            attrib?.classList.remove('maplibregl-compact-show');
+            // `null` rend la main à `devicePixelRatio` (documenté par MapLibre, absent de son typage).
+            if (boosted) map.setPixelRatio(prevRatio === window.devicePixelRatio ? (null as unknown as number) : prevRatio);
             this._captureBusy = false;
         }
         return outCanvas;
@@ -361,7 +573,7 @@ export const CaptureMethods = {
             fakeInput.type = 'file';
             fakeInput.files = dt.files;
             await window.handleFileChange(fakeInput, containerId, false);
-            this._closeCaptureModal();
+            if (canvas.dataset.chargementIncomplet !== '1') this._closeCaptureModal();
             // U19 — toast unique (@shared/feedback.js).
             toast('Capture de carte ajoutée au champ photo.', { kind: 'success' });
         } catch (e) {

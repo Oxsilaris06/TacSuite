@@ -88,6 +88,12 @@ interface FakeMap {
     getZoom: ReturnType<typeof vi.fn>;
     triggerRepaint: ReturnType<typeof vi.fn>;
     getCanvas: ReturnType<typeof vi.fn>;
+    // Capture d'impression (point 10) : attente `idle`, définition, nord, échelle.
+    once: ReturnType<typeof vi.fn>;
+    getPixelRatio: ReturnType<typeof vi.fn>;
+    setPixelRatio: ReturnType<typeof vi.fn>;
+    getBearing: ReturnType<typeof vi.fn>;
+    unproject: ReturnType<typeof vi.fn>;
 }
 
 /** Conteneur `#oi_carto_map_wrap` factice : `offsetWidth` figé (jsdom ne fait
@@ -132,6 +138,11 @@ function makeFakeMap(canvas?: HTMLCanvasElement): FakeMap {
         getZoom: vi.fn(() => 10),
         triggerRepaint: vi.fn(),
         getCanvas: vi.fn(() => canvas ?? makeGlCanvas()),
+        once: vi.fn((event: string, cb: () => void) => { if (event === 'idle') cb(); }),
+        getPixelRatio: vi.fn(() => 1),
+        setPixelRatio: vi.fn(),
+        getBearing: vi.fn(() => 0),
+        unproject: vi.fn(() => ({ distanceTo: () => 100 })),
     };
 }
 
@@ -789,7 +800,15 @@ describe('_getPhotoTargets (oi_cartographie.js:1185-1210)', () => {
 
 describe('_captureCanvas (oi_cartographie.js:1215-1260)', () => {
     beforeEach(() => {
-        const fakeCtx = { drawImage: vi.fn() } as unknown as CanvasRenderingContext2D;
+        // Échantillon varié et opaque : la carte a un fond (point 10, refus d'une
+        // carte vide) ; méthodes de dessin du nord et de l'échelle incrustés.
+        const pixels = new Uint8ClampedArray(64 * 64 * 4).map((_, i) => (i % 4 === 3 ? 255 : (i * 37) % 256));
+        const noop = (): void => {};
+        const fakeCtx = {
+            drawImage: vi.fn(), getImageData: () => ({ data: pixels }), measureText: () => ({ width: 10 }),
+            save: noop, restore: noop, translate: noop, rotate: noop, beginPath: noop, arc: noop, fill: noop,
+            moveTo: noop, lineTo: noop, closePath: noop, fillText: noop, fillRect: noop,
+        } as unknown as CanvasRenderingContext2D;
         vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(fakeCtx);
     });
 
