@@ -102,6 +102,30 @@ describe('wrapText — retours à la ligne saisis (M4)', () => {
     });
 });
 
+describe('Forces amies et points — plus de « … » (M3)', () => {
+    it('replie la mission d’une Force amie au lieu de la tronquer', async () => {
+        localStorage.setItem('pcTacFriends', JSON.stringify([
+            { id: 'f1', nom: 'DUPONT', prenom: 'Jean', unite: 'PSIG', mission: 'Bouclage du perimetre exterieur secteur nord avec releve toutes les deux heures' },
+        ]));
+        const { pages } = await buildAndReadPdf();
+        const all = pages.join(' ').replace(/\s+/g, ' ');
+        expect(all).toContain('Bouclage du perimetre exterieur secteur nord avec releve toutes les deux heures');
+    });
+
+    it('replie le libellé d’un point du plan au lieu de le tronquer', async () => {
+        Reflect.set(window, 'PlanMap', {
+            getPinsSummary: () => [{
+                label: 'Point de regroupement alpha bravo charlie delta secteur nord',
+                mgrs: '31U DQ 12345 67890', cell: 'AB12', lat: 48.1, lng: 1.9, diameterM: 100,
+            }],
+        });
+        const { pages } = await buildAndReadPdf();
+        const all = pages.join(' ').replace(/\s+/g, ' ');
+        expect(all).toContain('Point de regroupement alpha bravo');
+        expect(all).toContain('delta secteur nord');
+    });
+});
+
 describe('main courante — lieu replié, plus de « … » (M3)', () => {
     it('affiche le lieu entier au lieu de le tronquer', async () => {
         localStorage.setItem('pcTacLogData', JSON.stringify([
