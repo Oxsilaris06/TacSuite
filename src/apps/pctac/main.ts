@@ -85,6 +85,7 @@ import '@pctac/osmand-live.js'; // géoloc équipe via relais OsmAnd → même u
 // en l'état, mis de côté. Ne pas réimporter sans décision explicite.
 import { Persist } from '@shared/persist.js';
 import { registerServiceWorker } from '@shared/register-sw.js';
+import { initDeviceGuard } from '@pctac/device-guard.js';
 import { confirmDialog, toast } from '@shared/feedback.js';
 import {
     CUSTOM_PAX_KEY,
@@ -122,6 +123,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     // SW reconstruit sur les assets buildés : cf. public/sw.ts +
     // vite.config.ts (VitePWA/injectManifest).
     registerServiceWorker('pctac');
+    // Garde-fous d'appareil (décision 28) : squelette rempli par le lot A.
+    initDeviceGuard();
 
     // §5.3 étape 2 — Migration des photos base64 vers IndexedDB (s'exécute une seule fois).
     try {
