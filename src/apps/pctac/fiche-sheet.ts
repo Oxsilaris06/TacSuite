@@ -306,6 +306,11 @@ function render(): void {
     const draft = readDrafts()[slotOf(side, id)];
     const photoSrc = state.photo ?? (typeof item.photo === 'string' ? item.photo : '');
     const title = id ? `Modifier ${lex.demonstrative} : ${ficheTitle(side, mode, item)}` : lex.newLabel;
+    // B2 — tant que le bandeau « Reprendre / Effacer » n'est pas tranché, le
+    // formulaire est inerte : une frappe faite pendant l'attente n'était gardée
+    // nulle part (saveDraft la refusait) et se perdait à la fermeture.
+    const pending = !!(draft && state.pendingDraft);
+    const inert = pending ? ' inert' : '';
 
     dlg.innerHTML = `
     <form class="fiche-form" novalidate>
@@ -314,11 +319,11 @@ function render(): void {
             <button type="button" class="fiche-close" aria-label="Fermer la fiche"><span class="material-symbols-outlined" aria-hidden="true">close</span></button>
         </header>
         <div class="fiche-body">
-            ${draft && state.pendingDraft ? `<div class="fiche-draft" role="status">
-                <span>Saisie non enregistrée du ${new Date(draft.savedAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</span>
+            ${pending ? `<div class="fiche-draft" role="status">
+                <span>Saisie non enregistrée du ${new Date(draft.savedAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })} : la reprendre ou l'effacer avant de continuer</span>
                 <button type="button" class="fiche-draft-resume">Reprendre</button>
                 <button type="button" class="fiche-draft-drop">Effacer</button></div>` : ''}
-            <div class="fiche-top">
+            <div class="fiche-top"${inert}>
                 <div class="fiche-photo-col">
                     <label class="fiche-photo" aria-label="Photo">
                         ${photoSrc ? `<img src="${attr(photoSrc)}" alt="">` : `<span class="material-symbols-outlined" aria-hidden="true">add_a_photo</span>`}
@@ -332,12 +337,12 @@ function render(): void {
                 </div>
             </div>
             ${sections.map((s, i) => `
-            <details class="fiche-section" data-section="${attr(s.id)}"${i === 0 ? ' open' : ''}>
+            <details class="fiche-section" data-section="${attr(s.id)}"${i === 0 ? ' open' : ''}${inert}>
                 <summary><span class="fiche-section-title">${esc(s.title)}</span><span class="fiche-count"></span></summary>
                 <div class="fiche-section-body">${s.fields.map((f) => fieldHtml(f, item[f.key])).join('')}</div>
             </details>`).join('')}
         </div>
-        <footer class="fiche-foot">
+        <footer class="fiche-foot"${inert}>
             <button type="button" class="fiche-save-next">Enregistrer et suivante</button>
             <button type="button" class="fiche-save">${esc(id ? 'Enregistrer' : lex.saveLabel)}</button>
         </footer>
@@ -387,6 +392,24 @@ function labelOf(key: string): string {
     const field = [...headerFields(state.side, mode), ...ficheSections(state.side, mode, state.item).flatMap((s) => s.fields)]
         .find((f) => f.key === key);
     return field?.label ?? key;
+}
+
+/** B2 — rend le formulaire saisissable (bandeau de brouillon tranché) ou inerte. */
+function setFormInert(on: boolean): void {
+    dialogEl()?.querySelectorAll<HTMLElement>('.fiche-top, .fiche-section, .fiche-foot').forEach((el) => {
+        if (on) el.setAttribute('inert', '');
+        else el.removeAttribute('inert');
+    });
+}
+
+/**
+ * B2 — vrai si la saisie est refusée : un brouillon attend et la cible n'est
+ * ni le bandeau ni la fermeture. Ramène l'attention sur le bandeau.
+ */
+function draftBlocks(target: HTMLElement): boolean {
+    if (!state?.pendingDraft || target.closest('.fiche-draft, .fiche-close')) return false;
+    dialogEl()?.querySelector<HTMLElement>('.fiche-draft-resume')?.focus();
+    return true;
 }
 
 /** Re-rend en gardant la saisie (changement de type de menace). */
@@ -802,10 +825,12 @@ function onClick(e: Event): void {
         dropDraft(state.side, state.id);
         state.pendingDraft = false;
         target.closest('.fiche-draft')?.remove();
+        setFormInert(false);
         // Saisie faite pendant que le bandeau attendait : protégée à son tour.
         if (state.dirty) saveDraft();
         return;
     }
+    if (draftBlocks(target)) return;
     const now = target.closest<HTMLElement>('.fiche-now');
     if (now) {
         const input = dlg.querySelector<HTMLInputElement>(`[data-key="${now.dataset.now}"]`);
@@ -844,7 +869,7 @@ function onClick(e: Event): void {
 
 function onInput(e: Event): void {
     const target = e.target as HTMLElement;
-    if (target.classList.contains('fiche-photo-input')) return;
+    if (target.classList.contains('fiche-photo-input') || draftBlocks(target)) return;
     const ageFor = (target as HTMLInputElement).dataset.key;
     if (ageFor) {
         const hint = dialogEl()?.querySelector(`[data-age-for="${ageFor}"]`);
@@ -858,7 +883,7 @@ function onInput(e: Event): void {
 
 async function onChange(e: Event): Promise<void> {
     const input = e.target as HTMLInputElement;
-    if (!input.classList.contains('fiche-photo-input') || !state) return;
+    if (!input.classList.contains('fiche-photo-input') || !state || draftBlocks(input)) return;
     const file = input.files?.[0];
     if (!file) return;
     // La fiche peut changer pendant la compression (« suivante », fermeture) :
