@@ -943,7 +943,8 @@ export function overlayLegend(ov: MapOverlays | null | undefined, bearing: numbe
     const s = ov.state;
     const parts: string[] = [];
     if (s.gridOn && s.grid) {
-        parts.push(`Carroyage ${s.grid.cellM} m (${s.grid.cols} × ${s.grid.rows}), A1 au nord-ouest : ${mgrsOf(s.grid.west, s.grid.north) ?? 'N/C'}`);
+        const a = Math.round(((s.grid.angle ?? 0) % 360 + 360) % 360);
+        parts.push(`Carroyage ${s.grid.cellM} m (${s.grid.cols} × ${s.grid.rows}), A1${a ? ` orienté à ${a}°` : ''} : ${mgrsOf(s.grid.west, s.grid.north) ?? 'N/C'}`);
     }
     if (s.mgrsOn) parts.push('Grille MGRS');
     if (s.powerOn) parts.push('Lignes électriques : RTE (OSM), HTA et BT (Enedis)');

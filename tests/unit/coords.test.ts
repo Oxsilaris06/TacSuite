@@ -20,6 +20,7 @@ import {
   parseMgrsCoords,
   shortMgrs,
 } from '../../src/shared/coords';
+import { gridCellAt } from '../../src/shared/tactical-grid';
 import fixtures from './fixtures/coords.fixtures.json';
 
 interface UtmFixture {
@@ -205,6 +206,20 @@ describe('coords — parseGridCell', () => {
 
   it('hors du carroyage → cell-out-of-grid', () => {
     expect(parseGridCell('Z9', grid)).toEqual({ kind: 'cell-out-of-grid', cell: 'Z9' });
+  });
+
+  it('carroyage TOURNÉ : le centre renvoyé retombe sur la bonne case (décision 39)', () => {
+    const turned = { ...grid, angle: 90 };
+    const r = parseGridCell('C4', turned);
+    expect(r?.kind).toBe('cell');
+    if (r?.kind === 'cell') {
+      expect(gridCellAt(turned, r.lng, r.lat)).toBe('C4');
+      const flat = parseGridCell('C4', grid);
+      expect(flat?.kind).toBe('cell');
+      if (flat?.kind === 'cell') {
+        expect(Math.hypot(r.lng - flat.lng, r.lat - flat.lat)).toBeGreaterThan(0.001);
+      }
+    }
   });
 });
 

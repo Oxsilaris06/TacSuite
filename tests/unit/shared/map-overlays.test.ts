@@ -26,8 +26,8 @@ vi.mock('maplibre-gl', () => {
     return { Marker: RecordingMarker, default: { Marker: RecordingMarker } };
 });
 
-import { createMapOverlays, gridAngleFromScreen, mountOverlayControls, overlayLayers, snapGridAngle, type MapOverlays } from '@shared/map-overlays.js';
-import { GRID_COLORS, geoToGrid, gridToGeo, metersPerDegree, type TacticalGridSpec } from '@shared/tactical-grid.js';
+import { createMapOverlays, gridAngleFromScreen, mountOverlayControls, overlayLayers, overlayLegend, snapGridAngle, type MapOverlays } from '@shared/map-overlays.js';
+import { GRID_COLORS, geoToGrid, gridToGeo, makeOrientedGrid, metersPerDegree, type TacticalGridSpec } from '@shared/tactical-grid.js';
 
 const CENTER_LAT = 47.9;
 const CENTER_LNG = 1.9;
@@ -313,5 +313,27 @@ describe('couleur et taille du carroyage (décision 39, G4)', () => {
         size!.value = 'small';
         size!.dispatchEvent(new Event('change'));
         expect((api.state.grid as TacticalGridSpec).labelSize).toBe('small');
+    });
+});
+
+describe('légende des captures (décision 39, G5)', () => {
+    function legendFor(spec: TacticalGridSpec): string | null {
+        const ov = { state: { gridOn: true, grid: spec, mgrsOn: false, powerOn: false, cellM: spec.cellM } } as unknown as MapOverlays;
+        return overlayLegend(ov, 0);
+    }
+
+    it('dit « A1 » sans prétendre qu’il est au nord-ouest', () => {
+        const { spec } = makeOrientedGrid([1.9, 47.9], 200, 100, 50, 0);
+        const legend = legendFor(spec);
+        expect(legend).toContain('Carroyage 50 m');
+        expect(legend).toContain('A1');
+        expect(legend).not.toContain('nord-ouest');
+    });
+
+    it('dit l’orientation quand elle n’est pas nulle', () => {
+        const flat = makeOrientedGrid([1.9, 47.9], 200, 100, 50, 0).spec;
+        expect(legendFor(flat)).not.toContain('orienté');
+        const turned = { ...flat, angle: 35 };
+        expect(legendFor(turned)).toContain('orienté à 35°');
     });
 });
