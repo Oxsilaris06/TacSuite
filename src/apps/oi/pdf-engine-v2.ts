@@ -45,6 +45,9 @@ import { dbManager, Store } from '@oi/init.js';
 import { OiPdfFitRefusalError, type OiPdfFormat } from '@oi/pdf/theme.js';
 import { attachEditableTextLayer, createEditMatchState, type EditMatchStats } from '@oi/pdf-preview-edit.js';
 import { toast } from '@shared/feedback.js';
+import { formatBytes, type PdfSortie } from '@shared/pdf-options.js';
+import { currentOiPdfOptions } from '@oi/pdf/options.js';
+import { acquirePdfLock, releasePdfLock } from '@oi/pdf/generation-lock.js';
 
 // Mission « robustesse alignement » (édition en place, cf. JSDoc `pdf-preview-
 // edit.ts`) — hook de mesure, JAMAIS lu par le code applicatif : posé après
@@ -92,7 +95,7 @@ interface OiPdfRenderProgress {
  * jamais exécutée en test). */
 interface OiPdfBuildDeps {
     collect?: () => Promise<OiPdfCollectedData>;
-    buildBlob?: (data: OiPdfCollectedData, opts: { format: OiPdfFormat }) => Promise<Blob>;
+    buildBlob?: (data: OiPdfCollectedData, opts: { format: OiPdfFormat; sortie: PdfSortie }) => Promise<Blob>;
     /** `editAnchors` (mission « régression édition ») : n'existe QUE dans le
      * chemin réel (`defaultRenderPdf`) — jamais consommé par les faux
      * `renderPdf` de test (même précédent que `blob`/`container`, cf. JSDoc
@@ -103,7 +106,7 @@ interface OiPdfBuildDeps {
 /** Import dynamique de `buildOiPdfBlob` — isole `pdfmake`/`document-builder.ts`
  * dans leur propre chunk (même raison que `downloadOiPdfV3` important
  * dynamiquement `pdf-engine-v2.js` pour `collectAllData`, chunk mutuel). */
-async function defaultBuildBlob(data: OiPdfCollectedData, opts: { format: OiPdfFormat }): Promise<Blob> {
+async function defaultBuildBlob(data: OiPdfCollectedData, opts: { format: OiPdfFormat; sortie: PdfSortie }): Promise<Blob> {
     const { buildOiPdfBlob } = await import('@oi/pdf/engine-v3.js');
     return buildOiPdfBlob(data, opts);
 }
@@ -350,6 +353,11 @@ function ensurePreviewCloseCleanup(modal: HTMLDialogElement): void {
 async function runOpenPreview(deps?: OiPdfBuildDeps): Promise<void> {
     const presentationContent = document.getElementById('presentation-content');
     if (!presentationContent) return;
+    // Une génération à la fois : un aperçu remplace un aperçu en cours, mais
+    // attend la fin d'un téléchargement, d'une présentation ou d'un PATRAC
+    // (verrou rendu dès le PDF construit, cf. plus bas).
+    const lockToken = acquirePdfLock('apercu');
+    if (lockToken === null) return;
 
     const modal = document.getElementById('presentationModal') as HTMLDialogElement | null;
     if (modal) ensurePreviewCloseCleanup(modal);
@@ -412,10 +420,17 @@ async function runOpenPreview(deps?: OiPdfBuildDeps): Promise<void> {
         updateStatus('Préparation des images…');
         updateStatus('Composition du document…');
         const buildBlob = deps?.buildBlob ?? defaultBuildBlob;
-        const blob = await buildBlob(data, { format });
+        const blob = await buildBlob(data, { format, sortie: currentOiPdfOptions().sortie });
         builtBlob = blob;
+        // Le verrou couvre la construction (photos, pdfmake : le pic mémoire),
+        // pas l'affichage pdf.js : un lecteur bloqué ne doit jamais empêcher
+        // un téléchargement.
+        releasePdfLock(lockToken);
 
         if (isCancelled()) return;
+        // Décision 42 : poids annoncé sous les choix de sortie.
+        const weightNote = document.getElementById('pdfWeightNote');
+        if (weightNote) weightNote.textContent = `Poids du PDF : ${formatBytes(blob.size)}`;
 
         const pagesContainer = document.createElement('div');
         pagesContainer.className = 'pdf-preview-pages';
@@ -502,6 +517,7 @@ async function runOpenPreview(deps?: OiPdfBuildDeps): Promise<void> {
         }
     } finally {
         if (!isCancelled() && loader) loader.style.display = 'none';
+        releasePdfLock(lockToken);
     }
 }
 
@@ -542,6 +558,8 @@ export const PDFEngineV2 = {
      * l'utilisateur avec un simple toast d'erreur.
      */
     async openPresentInPlace(deps?: OiPdfBuildDeps): Promise<void> {
+        const lockToken = acquirePdfLock('presentation');
+        if (lockToken === null) return;
         const loader = document.getElementById('pdfLoadingModal');
         const statusText = document.getElementById('pdfLoadingStatus');
         const updateStatus = (msg: string): void => {
@@ -559,13 +577,15 @@ export const PDFEngineV2 = {
             updateStatus('Préparation des images…');
             updateStatus('Composition du document…');
             const buildBlob = deps?.buildBlob ?? defaultBuildBlob;
-            const blob = await buildBlob(data, { format });
+            const blob = await buildBlob(data, { format, sortie: currentOiPdfOptions().sortie });
 
             const url = URL.createObjectURL(blob);
             const win = window.open(url, '_blank');
             if (!win) {
                 URL.revokeObjectURL(url);
                 toast("La fenêtre de présentation a été bloquée par le navigateur (pop-up). Affichage dans l'aperçu intégré à la place.", { kind: 'error' });
+                // Le PDF est construit : l'aperçu de repli prend son propre verrou.
+                releasePdfLock(lockToken);
                 // Repli : même blob déjà construit, aucune recollecte/reconstruction.
                 // `exactOptionalPropertyTypes` : `renderPdf` omise plutôt que
                 // valant `undefined` si `deps` n'en fournit pas (couture de test).
@@ -589,6 +609,7 @@ export const PDFEngineV2 = {
             toast("Erreur lors de l'ouverture de la présentation.", { kind: 'error' });
         } finally {
             if (loader) loader.style.display = 'none';
+            releasePdfLock(lockToken);
         }
     },
 
@@ -650,10 +671,9 @@ export const PDFEngineV2 = {
         } catch (e) { console.warn("Erreur chargement fond personnalisé (PDF Engine):", e); }
 
         console.log(`📸 Fin collecte. ${Object.keys(photosBase64).length} photos prêtes pour le rendu.`);
-        return {
-            formData, photosBase64,
-            isDark: formData.pdf_theme === 'dark' || (formData.pdf_theme !== 'light' && document.body.classList.contains('dark-mode'))
-        };
+        // Décision 42 : thème choisi dans la fenêtre de génération (clair par
+        // défaut) — jamais le thème de l'application ni `pdf_theme` (audit F02).
+        return { formData, photosBase64, isDark: currentOiPdfOptions().theme === 'sombre' };
     },
 
     blobToBase64(blob: Blob): Promise<string> {

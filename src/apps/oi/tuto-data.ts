@@ -884,13 +884,16 @@ export const oiTutoData: TutoData = {
         },
         {
           title: "Télécharger le PDF de l'OI",
-          body: "« Télécharger le PDF » lance la génération : la modale de chargement affiche l'avancement (« Collecte des données... », « Rendu : Page {i}/{N}... », « Assemblage final... ») sous « Veuillez patienter pendant la génération du rapport tactique. ». Le fichier est nommé OI_{date_op}_{trigramme_redacteur}.pdf et « PDF généré avec succès ! » confirme la réussite. Le bouton « Fermer » referme la modale.",
+          body: "Au-dessus des boutons, choisissez le « Thème » du PDF (« Clair » pour imprimer, par défaut, ou « Sombre » pour projeter) et la « Sortie » (« Impression », photos en haute définition, ou « Partage », moins de 10 Mo pour Tchap) : l'aperçu se met à jour et « Poids du PDF » annonce la taille du fichier. « Télécharger le PDF » lance la génération : la modale de chargement affiche l'avancement (« Collecte des données... », « Préparation des images... », « Assemblage final... ») sous « Veuillez patienter pendant la génération du rapport tactique. ». « PDF généré : 8,4 Mo. » confirme la réussite et annonce le poids. Le bouton « Fermer » referme la modale.",
           terms: [
             "Télécharger le PDF",
+            "Thème",
+            "Sortie",
+            "Partage",
+            "Poids du PDF",
             "Veuillez patienter pendant la génération du rapport tactique.",
-            "Rendu : Page {i}/{N}...",
             "Assemblage final...",
-            "PDF généré avec succès !",
+            "PDF généré",
             "Fermer"
           ],
           selector: "#downloadPdfBtn",

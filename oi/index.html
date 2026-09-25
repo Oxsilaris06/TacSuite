@@ -38,6 +38,13 @@
             </aside>
         </div>
         <div class="modal-actions-pdf">
+            <!-- Décision 42 — fenêtre de génération : thème (clair par défaut) et
+                 sortie (Impression / Partage < 10 Mo), montées par
+                 src/apps/oi/pdf/options.ts ; poids du dernier aperçu dessous. -->
+            <div class="pdf-options-bar">
+                <div id="pdfOptionsSlot" class="pdf-options-slot"></div>
+                <span id="pdfWeightNote" class="toggle-label pdf-weight-note" aria-live="polite"></span>
+            </div>
             <div class="pdf-format-toggle">
                 <span class="toggle-label">Format PDF</span>
                 <div class="pdf-format-track" id="pdfFormatTrack">

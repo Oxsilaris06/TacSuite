@@ -73,6 +73,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { dbManager, Store } from '@oi/init.js';
 import { PDFEngineV2 } from '@oi/pdf-engine-v2.js';
 import { OiPdfFitRefusalError } from '@oi/pdf/theme.js';
+import { acquirePdfLock, releasePdfLock } from '@oi/pdf/generation-lock.js';
 import type { OiPdfCollectedData } from '@shared/types/contracts.js';
 
 // R2-T2b : `alert()` natif → `toast` (`@shared/feedback.js`) mocké plutôt que
@@ -231,19 +232,23 @@ describe('collectAllData', () => {
         expect(warnSpy).toHaveBeenCalled();
     });
 
-    it("isDark reflète pdf_theme ('dark'/'light') puis, à défaut, la classe dark-mode du body", async () => {
+    // Décision 42 : le thème du PDF vient de la fenêtre de génération (clair
+    // par défaut), plus du thème de l'application ni de `pdf_theme` (qui
+    // rendait un PDF noir dès que l'appli était en sombre, audit F02). Ce test
+    // remplace l'ancien « isDark reflète pdf_theme puis dark-mode du body ».
+    it("isDark suit le thème choisi dans la fenêtre de génération (clair par défaut), jamais le thème de l'application", async () => {
         vi.spyOn(dbManager, 'getItem').mockResolvedValue(undefined);
+        localStorage.removeItem('tacPdfOptions:oi');
 
-        Store.state.formData = { pdf_theme: 'dark' };
-        expect((await PDFEngineV2.collectAllData()).isDark).toBe(true);
-
-        Store.state.formData = { pdf_theme: 'light' };
         document.body.classList.add('dark-mode');
+        Store.state.formData = { pdf_theme: 'dark' };
         expect((await PDFEngineV2.collectAllData()).isDark).toBe(false);
 
-        Store.state.formData = {};
-        expect((await PDFEngineV2.collectAllData()).isDark).toBe(true);
+        localStorage.setItem('tacPdfOptions:oi', JSON.stringify({ kind: null, theme: 'sombre', sortie: 'impression' }));
         document.body.classList.remove('dark-mode');
+        Store.state.formData = { pdf_theme: 'light' };
+        expect((await PDFEngineV2.collectAllData()).isDark).toBe(true);
+        localStorage.removeItem('tacPdfOptions:oi');
     });
 });
 
@@ -275,7 +280,7 @@ describe('openPreview', () => {
         await PDFEngineV2.openPreview({ collect, buildBlob, renderPdf });
 
         expect(collect).toHaveBeenCalledTimes(1);
-        expect(buildBlob).toHaveBeenCalledWith(expect.anything(), { format: '16:9' });
+        expect(buildBlob).toHaveBeenCalledWith(expect.anything(), { format: '16:9', sortie: 'impression' });
         expect(renderPdf).toHaveBeenCalledTimes(1);
         const [renderedBlob, container] = renderPdf.mock.calls[0] as [Blob, HTMLElement, unknown];
         expect(renderedBlob).toBe(blob);
@@ -283,6 +288,21 @@ describe('openPreview', () => {
         expect(content.contains(container)).toBe(true);
         // Le faux renderPdf a peint 2 pages dans le conteneur qu'on lui a passé.
         expect(container.querySelectorAll('.pdf-preview-page')).toHaveLength(2);
+    });
+
+    it('annonce le poids du PDF sous les choix de sortie (décision 42)', async () => {
+        const { modal } = buildPresentationDom();
+        const note = document.createElement('span');
+        note.id = 'pdfWeightNote';
+        modal.appendChild(note);
+
+        await PDFEngineV2.openPreview({
+            collect: () => Promise.resolve(makeCollectedData()),
+            buildBlob: () => Promise.resolve(makeFakeBlob()),
+            renderPdf: makeFakeRenderPdf(1),
+        });
+
+        expect(note.textContent).toBe('Poids du PDF : 9 o');
     });
 
     it("relaie la progression (onProgress) dans #pdfLoadingStatus pendant le rendu", async () => {
@@ -565,6 +585,44 @@ describe('openPreview', () => {
 // openPresentInPlace (R4-a : nouvel onglet sur le vrai PDF ; SPEC §1 : repli
 // sur l'aperçu intégré pdf.js/<canvas> si le nouvel onglet échoue/est bloqué)
 // ===========================================================================
+describe('verrou : une génération à la fois (audit F23)', () => {
+    it('aperçu ou « Présenter ici » pendant un téléchargement : refusé, rien n\'est construit', async () => {
+        buildPresentationDom();
+        const token = acquirePdfLock('telechargement');
+        expect(token).not.toBeNull();
+        const buildBlob = vi.fn(async () => makeFakeBlob());
+        try {
+            await PDFEngineV2.openPreview({ collect: () => Promise.resolve(makeCollectedData()), buildBlob, renderPdf: makeFakeRenderPdf() });
+            await PDFEngineV2.openPresentInPlace({ collect: () => Promise.resolve(makeCollectedData()), buildBlob });
+        } finally {
+            releasePdfLock(token as number);
+        }
+        expect(buildBlob).not.toHaveBeenCalled();
+        expect(toastSpy).toHaveBeenCalledWith(expect.stringContaining('déjà en cours'), expect.anything());
+    });
+
+    it('le verrou de l\'aperçu est rendu à la fin : un téléchargement peut suivre', async () => {
+        buildPresentationDom();
+        await PDFEngineV2.openPreview({ collect: () => Promise.resolve(makeCollectedData()), buildBlob: async () => makeFakeBlob(), renderPdf: makeFakeRenderPdf() });
+        const token = acquirePdfLock('telechargement');
+        expect(token).not.toBeNull();
+        releasePdfLock(token as number);
+    });
+
+    it('« Présenter ici » bloqué par le navigateur : le repli sur l\'aperçu intégré n\'est pas refusé par son propre verrou', async () => {
+        buildPresentationDom();
+        vi.spyOn(window, 'open').mockReturnValue(null);
+        vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:mock-url');
+        vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
+        const renderPdf = makeFakeRenderPdf();
+        await PDFEngineV2.openPresentInPlace({ collect: () => Promise.resolve(makeCollectedData()), buildBlob: async () => makeFakeBlob(), renderPdf });
+        expect(renderPdf).toHaveBeenCalledTimes(1);
+        const token = acquirePdfLock('telechargement');
+        expect(token).not.toBeNull();
+        releasePdfLock(token as number);
+    });
+});
+
 describe('openPresentInPlace', () => {
     beforeEach(() => {
         vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:present-1');

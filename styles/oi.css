@@ -2349,6 +2349,81 @@
             box-shadow: 0 2px 8px rgba(59,130,246,0.4);
         }
 
+        /* Décision 42 — fenêtre de génération (thème, sortie) intégrée à la
+           barre d'actions de l'aperçu : même formulaire que PC-Tac
+           (shared/pdf-options.ts), resserré ici : légende à gauche, deux
+           choix côte à côte, pour laisser la place à l'aperçu sur téléphone. */
+        .pdf-options-bar {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: var(--space-2);
+        }
+        .pdf-options-slot {
+            flex: 1 1 auto;
+            min-width: 0;
+        }
+        .pdf-options-slot .tac-pdf-options {
+            display: flex;
+            flex-wrap: wrap;
+            gap: var(--space-2) var(--space-3);
+        }
+        .pdf-options-slot fieldset {
+            display: flex;
+            align-items: center;
+            flex: 1 1 280px;
+            min-width: 0;
+        }
+        .pdf-options-slot legend {
+            float: left;
+            min-width: 4.8em;
+            margin: 0 8px 0 0;
+            font-size: 0.8em;
+            font-weight: 600;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+            color: var(--text-secondary);
+        }
+        .pdf-options-slot .tac-pdf-choices {
+            display: flex;
+            flex: 1 1 auto;
+            gap: 4px;
+            min-width: 0;
+        }
+        .pdf-options-slot .tac-pdf-choice {
+            flex: 1 1 0;
+            min-width: 0;
+            align-content: start;
+            padding: 4px 10px;
+            font-size: 0.85em;
+        }
+        .pdf-options-slot .tac-pdf-choice-hint {
+            font-size: 11px;
+        }
+        /* La règle globale des champs de l'OI (input:not(...), marge basse,
+           remplissage, pleine largeur) s'appliquait aussi à ces boutons radio
+           et écartait libellé et aide : un id la surclasse. */
+        .pdf-options-slot .tac-pdf-choice {
+            margin: 0;
+        }
+        #pdfOptionsSlot .tac-pdf-choice input {
+            width: auto;
+            padding: 0;
+            margin: 3px 0 0;
+        }
+        .pdf-weight-note:empty {
+            display: none;
+        }
+        @media (min-width: 768px) {
+            .pdf-options-slot fieldset,
+            .pdf-options-slot .tac-pdf-choice {
+                flex: 0 0 auto;
+            }
+            .pdf-options-slot .tac-pdf-choice {
+                min-height: 0;
+            }
+        }
+
         /* Bandeau compact >=768px : le mobile garde l'empilement plein-
            largeur ci-dessus (cibles tactiles WCAG 2.5.5), mais sur un écran
            assez large pour une rangée, ce même empilement de boutons

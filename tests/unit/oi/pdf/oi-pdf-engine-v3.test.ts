@@ -136,7 +136,7 @@ describe('normalizePhotos — voie de repli (jsdom, sans createImageBitmap/Offsc
         expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('photoX'), expect.anything());
     });
 
-    it('ré-encode une entrée dépassant le palier de base (2560px/0.92, directive Nico 2026-08-10) via le pipeline canvas de repli (ratio préservé, plus grand côté = 2560, qualité JPEG 0.92)', async () => {
+    it('ré-encode une entrée plus définie que le profil Impression à sa taille imprimée (250 ppi sur la pleine largeur utile A4, décision 42) via le pipeline canvas de repli', async () => {
         // jsdom n'a pas de rastérisation canvas réelle (paquet npm `canvas`
         // absent) : `getContext('2d')` est doublé pour vérifier les PARAMÈTRES
         // de la décision (dimensions cible, qualité d'encodage) sans dépendre
@@ -154,9 +154,11 @@ describe('normalizePhotos — voie de repli (jsdom, sans createImageBitmap/Offsc
 
         const result = await normalizePhotos({ big: 'data:image/jpeg;base64,YmlnLWpwZWc=' });
 
+        // 2:1 sur une page photo A4 (779,5 × 493,4 pt sous le titre) : imprimée
+        // sur toute la largeur, 779,5 pt = 10,83 pouces × 250 ppi = 2707 px.
         expect(result.big).toBe('data:image/jpeg;base64,cmVlbmNvZGVk');
-        expect(drawImageSpy).toHaveBeenCalledWith(expect.anything(), 0, 0, 2560, 1280);
-        expect(toDataURLSpy).toHaveBeenCalledWith('image/jpeg', 0.92);
+        expect(drawImageSpy).toHaveBeenCalledWith(expect.anything(), 0, 0, 2707, 1354);
+        expect(toDataURLSpy).toHaveBeenCalledWith('image/jpeg', 0.85);
         getContextSpy.mockRestore();
     });
 
@@ -265,7 +267,7 @@ describe('normalizePhotos — voie moderne (createImageBitmap/OffscreenCanvas, d
         expect(drawImageSpy).not.toHaveBeenCalled();
     });
 
-    it("image surdimensionnée : 2e createImageBitmap appelé avec resizeWidth/resizeHeight (ratio préservé, plus grand côté = 2560, palier de base directive Nico 2026-08-10) et resizeQuality:'high', convertToBlob en JPEG qualité 0.92", async () => {
+    it("image surdimensionnée : 2e createImageBitmap appelé avec resizeWidth/resizeHeight (ratio préservé, 250 ppi à la taille imprimée, profil Impression) et resizeQuality:'high', convertToBlob en JPEG qualité 0.85", async () => {
         const { createImageBitmapMock, convertToBlobSpy } = stubModernPipeline({
             naturalWidth: 4000,
             naturalHeight: 2000,
@@ -276,12 +278,28 @@ describe('normalizePhotos — voie moderne (createImageBitmap/OffscreenCanvas, d
 
         expect(createImageBitmapMock).toHaveBeenCalledTimes(2);
         expect(createImageBitmapMock).toHaveBeenNthCalledWith(2, expect.anything(), {
-            resizeWidth: 2560,
-            resizeHeight: 1280,
+            resizeWidth: 2707,
+            resizeHeight: 1354,
             resizeQuality: 'high',
         });
-        expect(convertToBlobSpy).toHaveBeenCalledWith({ type: 'image/jpeg', quality: 0.92 });
+        expect(convertToBlobSpy).toHaveBeenCalledWith({ type: 'image/jpeg', quality: 0.85 });
         expect(result.big).toMatch(/^data:image\/jpeg;base64,/);
+    });
+
+    it('sortie Partage : 150 ppi et qualité 0,72 (PDF_IMAGE_PROFILES.partage)', async () => {
+        const { createImageBitmapMock, convertToBlobSpy } = stubModernPipeline({ naturalWidth: 2000, naturalHeight: 1500 });
+        const { normalizePhotos } = await loadEngineV3();
+
+        await normalizePhotos({ p: 'data:image/jpeg;base64,cA==' }, undefined, { sortie: 'partage', format: 'a4' });
+
+        // 4:3 limitée par la hauteur d'une page photo A4 sous son titre :
+        // 493,4 × 4/3 = 657,9 pt → 1371 px à 150 ppi.
+        expect(createImageBitmapMock).toHaveBeenNthCalledWith(2, expect.anything(), {
+            resizeWidth: 1371,
+            resizeHeight: 1028,
+            resizeQuality: 'high',
+        });
+        expect(convertToBlobSpy).toHaveBeenCalledWith({ type: 'image/jpeg', quality: 0.72 });
     });
 
     it('une entrée non décodable (createImageBitmap rejette) est omise (repli null) et journalise un avertissement — la voie de repli Image/canvas n’est PAS utilisée', async () => {
@@ -419,81 +437,130 @@ describe('normalizePhotos — onProgress', () => {
 });
 
 // ===========================================================================
-// planPhotoBudget — fonction PURE (directive Nico 2026-08-10, mission P2
-// « photos et badges outils ») : décide du palier qualité/résolution à
-// appliquer étant donné les tailles (octets) des photos normalisées au
-// palier de base et le budget total toléré.
+// Profils de sortie (décision 42) : la définition visée dépend de la TAILLE
+// IMPRIMÉE maximale de l'image (zone utile de la page) et du profil
+// `PDF_IMAGE_PROFILES[sortie]` ; la sortie Partage (10 Mo) réduit
+// progressivement jusqu'à tenir. Remplace l'ancien budget de 50 Mo
+// (`planPhotoBudget`/`PHOTO_BUDGET_STEPS`), sans effet réel (audit F11) :
+// tests adaptés à la décision 42.
 // ===========================================================================
-describe('planPhotoBudget (pipeline qualité/budget, directive Nico 2026-08-10)', () => {
-    it('sous le budget -> palier de base inchangé (0.92/2560px)', async () => {
-        const { planPhotoBudget, PHOTO_BUDGET_STEPS } = await loadEngineV3();
-        const sizes = [1_000_000, 2_000_000, 1_500_000]; // 4,5 Mo bien sous 50 Mo
-        const plan = planPhotoBudget(sizes, 50 * 1024 * 1024);
-        expect(plan).toEqual(PHOTO_BUDGET_STEPS[0]);
+describe('photoTargetSize / nextPhotoPass (profils de sortie, décision 42)', () => {
+    it('taille utile = taille imprimée maximale × ppi, jamais agrandie', async () => {
+        const { photoTargetSize } = await loadEngineV3();
+        const box = { width: 779.53, height: 541.42 };
+        expect(photoTargetSize(3000, 2250, box, 250)).toEqual({ width: 2507, height: 1880 });
+        expect(photoTargetSize(3000, 2250, box, 150)).toEqual({ width: 1504, height: 1128 });
+        // Déjà sous la cible : dimensions d'origine.
+        expect(photoTargetSize(800, 600, box, 250)).toEqual({ width: 800, height: 600 });
+        // Portrait : limité par la hauteur utile.
+        expect(photoTargetSize(3000, 4000, box, 150).height).toBeLessThanOrEqual(Math.ceil((541.42 / 72) * 150) + 1);
     });
 
-    it('aucune photo -> palier de base (rien à dégrader)', async () => {
-        const { planPhotoBudget, PHOTO_BUDGET_STEPS } = await loadEngineV3();
-        expect(planPhotoBudget([], 50 * 1024 * 1024)).toEqual(PHOTO_BUDGET_STEPS[0]);
+    it('première passe = profil de la sortie, sans ré-encodage forcé', async () => {
+        const { firstPhotoPass } = await loadEngineV3();
+        expect(firstPhotoPass('impression')).toEqual({ ppi: 250, quality: 0.85, forceReencode: false });
+        expect(firstPhotoPass('partage')).toEqual({ ppi: 150, quality: 0.72, forceReencode: false });
     });
 
-    it('dépassement léger -> repli qualité 0.85 (2560px conservé)', async () => {
-        const { planPhotoBudget, PHOTO_BUDGET_STEPS } = await loadEngineV3();
-        // 60 Mo au palier de base -> ratio qualité 0.85/0.92 ≈ 0,924 suffit
-        // (60 * 0,924 ≈ 55,4 Mo, encore > 50 -> palier suivant nécessaire ;
-        // ajusté pour retomber pile dans la fenêtre du 2e palier).
-        const budget = 50 * 1024 * 1024;
-        const baseTotal = 54 * 1024 * 1024; // *0.85/0.92 ≈ 49.9 Mo <= 50 Mo
-        const plan = planPhotoBudget([baseTotal], budget);
-        expect(plan).toEqual(PHOTO_BUDGET_STEPS[1]);
+    it('sans plafond (Impression) ou sous le budget : aucune passe de plus', async () => {
+        const { firstPhotoPass, nextPhotoPass } = await loadEngineV3();
+        expect(nextPhotoPass(firstPhotoPass('impression'), 80e6, null)).toBeNull();
+        expect(nextPhotoPass(firstPhotoPass('partage'), 5e6, 9e6)).toBeNull();
     });
 
-    it('dépassement sévère -> repli en cascade jusqu\'au dernier palier (2000px/0.78)', async () => {
-        const { planPhotoBudget, PHOTO_BUDGET_STEPS } = await loadEngineV3();
-        const plan = planPhotoBudget([500 * 1024 * 1024], 50 * 1024 * 1024);
-        expect(plan).toEqual(PHOTO_BUDGET_STEPS[3]);
-    });
-
-    it('dépassement même au plancher -> dernier palier retenu (meilleur effort, jamais d\'échec)', async () => {
-        const { planPhotoBudget, PHOTO_BUDGET_STEPS } = await loadEngineV3();
-        const plan = planPhotoBudget([5_000 * 1024 * 1024], 50 * 1024 * 1024);
-        expect(plan).toEqual(PHOTO_BUDGET_STEPS[PHOTO_BUDGET_STEPS.length - 1]);
-    });
-
-    it('paliers dégressifs dans le bon ordre : qualité (0.92→0.85→0.78) avant résolution (2560→2000px)', async () => {
-        const { PHOTO_BUDGET_STEPS } = await loadEngineV3();
-        expect(PHOTO_BUDGET_STEPS.map((s) => [s.quality, s.maxPx])).toEqual([
-            [0.92, 2560],
-            [0.85, 2560],
-            [0.78, 2560],
-            [0.78, 2000],
-        ]);
+    it('au-delà du budget : définition réduite (racine du rapport, avec marge), puis qualité une fois au plancher de définition', async () => {
+        const { firstPhotoPass, nextPhotoPass } = await loadEngineV3();
+        const first = firstPhotoPass('partage');
+        const second = nextPhotoPass(first, 36e6, 9e6);
+        expect(second).not.toBeNull();
+        expect(second!.ppi).toBeLessThan(first.ppi);
+        expect(second!.ppi).toBeLessThanOrEqual(Math.floor(150 * Math.sqrt(9 / 36)));
+        expect(second!.forceReencode).toBe(true);
+        // Au plancher de 72 ppi : c'est la qualité qui baisse.
+        const floor = { ppi: 72, quality: 0.72, forceReencode: true };
+        const third = nextPhotoPass(floor, 20e6, 9e6);
+        expect(third).toEqual({ ppi: 72, quality: expect.any(Number), forceReencode: true });
+        expect(third!.quality).toBeLessThan(0.72);
+        // Tout au plancher : meilleur effort, plus de passe.
+        expect(nextPhotoPass({ ppi: 72, quality: 0.4, forceReencode: true }, 20e6, 9e6)).toBeNull();
     });
 });
 
-// ===========================================================================
-// normalizePhotos — respecte le budget total (2e passe de ré-encodage si le
-// palier de base dépasse PHOTO_BUDGET_BYTES) — directive Nico 2026-08-10.
-// ===========================================================================
-describe('normalizePhotos — budget total 50 Mo (repli qualité en cascade)', () => {
-    it('sous le budget (petites photos) : une seule passe, qualité 0.92 conservée', async () => {
+describe('normalizePhotos — PNG, transparence et budget Partage (décision 42)', () => {
+    /** Canvas de repli doublé : `getImageData` rend des pixels de l'alpha voulu,
+     *  `toDataURL` une chaîne dont la longueur suit la surface et la qualité
+     *  (le poids d'un JPEG suit à peu près le nombre de pixels). */
+    function stubLegacyCanvas(alpha: number): { drawImageSpy: ReturnType<typeof vi.fn>; toDataURLSpy: ReturnType<typeof vi.fn> } {
         const drawImageSpy = vi.fn();
-        const toDataURLSpy = vi.fn(() => 'data:image/jpeg;base64,cmVlbmNvZGVk');
-        vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({
-            drawImage: drawImageSpy,
-        } as unknown as CanvasRenderingContext2D);
-        vi.spyOn(HTMLCanvasElement.prototype, 'toDataURL').mockImplementation(toDataURLSpy);
-        const infoSpy = vi.spyOn(console, 'info').mockImplementation(() => {});
+        vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(function (this: HTMLCanvasElement) {
+            const { width, height } = this;
+            return {
+                drawImage: drawImageSpy,
+                getImageData: () => ({ data: new Uint8ClampedArray(width * height * 4).fill(alpha) }),
+            } as unknown as CanvasRenderingContext2D;
+        } as unknown as typeof HTMLCanvasElement.prototype.getContext);
+        const toDataURLSpy = vi.fn(function (this: HTMLCanvasElement, type?: string, quality?: number) {
+            const bytes = Math.round(this.width * this.height * (quality ?? 1));
+            return `data:${type ?? 'image/png'};base64,${'A'.repeat(Math.ceil((bytes * 4) / 3))}`;
+        });
+        vi.spyOn(HTMLCanvasElement.prototype, 'toDataURL').mockImplementation(toDataURLSpy as unknown as typeof HTMLCanvasElement.prototype.toDataURL);
+        return { drawImageSpy, toDataURLSpy };
+    }
 
+    it('PNG opaque (photo annotée) : ressort en JPEG, même petit', async () => {
+        const { toDataURLSpy } = stubLegacyCanvas(255);
         const { normalizePhotos } = await loadEngineV3();
-        fakeImageState.naturalWidth = 4000;
-        fakeImageState.naturalHeight = 2000;
+        fakeImageState.naturalWidth = 800;
+        fakeImageState.naturalHeight = 600;
 
-        await normalizePhotos({ big: 'data:image/jpeg;base64,YmlnLWpwZWc=' });
+        const result = await normalizePhotos({ annotee: 'data:image/png;base64,cG5n' });
 
-        expect(toDataURLSpy).toHaveBeenCalledTimes(1);
-        expect(toDataURLSpy).toHaveBeenCalledWith('image/jpeg', 0.92);
-        expect(infoSpy).toHaveBeenCalledWith(expect.stringContaining('budget respecté'));
+        expect(result.annotee).toMatch(/^data:image\/jpeg;/);
+        expect(toDataURLSpy).toHaveBeenCalledWith('image/jpeg', 0.85);
+    });
+
+    it('PNG réellement transparent (logo) : gardé en PNG, tel quel s’il est assez petit', async () => {
+        stubLegacyCanvas(0);
+        const { normalizePhotos } = await loadEngineV3();
+        fakeImageState.naturalWidth = 800;
+        fakeImageState.naturalHeight = 600;
+        const logo = 'data:image/png;base64,bG9nbw==';
+
+        const result = await normalizePhotos({ logo });
+
+        expect(result.logo).toBe(logo);
+    });
+
+    it('PNG transparent trop défini : réduit mais toujours en PNG (jamais un fond noir)', async () => {
+        const { toDataURLSpy } = stubLegacyCanvas(0);
+        const { normalizePhotos } = await loadEngineV3();
+        fakeImageState.naturalWidth = 5000;
+        fakeImageState.naturalHeight = 2500;
+
+        const result = await normalizePhotos({ logo: 'data:image/png;base64,bG9nbw==' });
+
+        expect(result.logo).toMatch(/^data:image\/png;/);
+        expect(toDataURLSpy).toHaveBeenCalledWith('image/png');
+    });
+
+    it('Partage : 12 photos trop lourdes → passes de réduction jusqu’à tenir sous le budget photo', async () => {
+        const { drawImageSpy } = stubLegacyCanvas(255);
+        const { normalizePhotos, PDF_NON_PHOTO_RESERVE_BYTES } = await loadEngineV3();
+        vi.spyOn(console, 'info').mockImplementation(() => {});
+        fakeImageState.naturalWidth = 3000;
+        fakeImageState.naturalHeight = 2250;
+        const photos: Record<string, string> = {};
+        for (let i = 0; i < 12; i++) photos[`p${i}`] = `data:image/jpeg;base64,cCR7${i}`;
+
+        const result = await normalizePhotos(photos, undefined, { sortie: 'partage', format: 'a4' });
+
+        const total = Object.values(result).reduce((sum, url) => sum + Math.floor(((url.length - url.indexOf(',') - 1) * 3) / 4), 0);
+        expect(Object.keys(result)).toHaveLength(12);
+        expect(total).toBeLessThanOrEqual(10 * 1024 * 1024 - PDF_NON_PHOTO_RESERVE_BYTES);
+        // Première passe à 150 ppi (1371 px), puis au moins une passe plus petite.
+        const widths = drawImageSpy.mock.calls.map((call) => call[3] as number);
+        expect(widths).toContain(1371);
+        expect(Math.min(...widths)).toBeLessThan(1371);
     });
 });
 
@@ -534,6 +601,21 @@ describe('buildOiPdfBlob', () => {
 
         expect(onProgress).toHaveBeenCalledTimes(2);
         expect(onProgress).toHaveBeenCalledWith(expect.any(Number), 2);
+    });
+
+    it('transmet la sortie choisie à la normalisation des photos (Partage : qualité 0,72)', async () => {
+        const toDataURLSpy = vi.fn(() => 'data:image/jpeg;base64,cmVlbmNvZGVk');
+        vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({ drawImage: vi.fn() } as unknown as CanvasRenderingContext2D);
+        vi.spyOn(HTMLCanvasElement.prototype, 'toDataURL').mockImplementation(toDataURLSpy);
+        const { buildOiPdfBlob } = await loadEngineV3();
+        fakeImageState.naturalWidth = 2000;
+        fakeImageState.naturalHeight = 1500;
+        const data = makeCollectedData();
+        data.photosBase64 = { p0: 'data:image/jpeg;base64,cDA=' };
+
+        await buildOiPdfBlob(data, { format: 'a4', sortie: 'partage' });
+
+        expect(toDataURLSpy).toHaveBeenCalledWith('image/jpeg', 0.72);
     });
 });
 
@@ -581,6 +663,63 @@ describe('downloadOiPdfV3', () => {
             collect: () => Promise.reject(new Error('collecte impossible')),
         });
         expect(loaderKo.style.display).toBe('none');
+    });
+
+    it('double clic sur « Télécharger » : une seule génération, un seul fichier (verrou, audit F23)', async () => {
+        const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+        const { downloadOiPdfV3 } = await loadEngineV3();
+        const collect = vi.fn(() => Promise.resolve(makeCollectedData()));
+
+        await Promise.all([downloadOiPdfV3({ collect }), downloadOiPdfV3({ collect })]);
+
+        expect(collect).toHaveBeenCalledTimes(1);
+        expect(createPdfMock).toHaveBeenCalledTimes(1);
+        expect(clickSpy).toHaveBeenCalledTimes(1);
+        expect(toastSpy).toHaveBeenCalledWith(expect.stringContaining('déjà en cours'), expect.anything());
+
+        // Verrou rendu à la fin : un nouveau clic, plus tard, génère bien.
+        await downloadOiPdfV3({ collect });
+        expect(clickSpy).toHaveBeenCalledTimes(2);
+    });
+
+    it('verrou rendu aussi après un échec', async () => {
+        vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+        const { downloadOiPdfV3 } = await loadEngineV3();
+        await downloadOiPdfV3({ collect: () => Promise.reject(new Error('collecte impossible')) });
+        const collect = vi.fn(() => Promise.resolve(makeCollectedData()));
+        await downloadOiPdfV3({ collect });
+        expect(collect).toHaveBeenCalledTimes(1);
+    });
+
+    it('annonce le poids du PDF produit (décision 42)', async () => {
+        vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+        const { downloadOiPdfV3 } = await loadEngineV3();
+
+        await downloadOiPdfV3({ collect: () => Promise.resolve(makeCollectedData()) });
+
+        // Blob factice « %PDF-fake » : 9 octets.
+        expect(toastSpy).toHaveBeenCalledWith(expect.stringContaining('9 o'), expect.objectContaining({ kind: 'success' }));
+    });
+
+    it('applique la sortie retenue dans la fenêtre de génération (Partage)', async () => {
+        vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+        const toDataURLSpy = vi.fn(() => 'data:image/jpeg;base64,cmVlbmNvZGVk');
+        vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({ drawImage: vi.fn() } as unknown as CanvasRenderingContext2D);
+        vi.spyOn(HTMLCanvasElement.prototype, 'toDataURL').mockImplementation(toDataURLSpy);
+        localStorage.setItem('tacPdfOptions:oi', JSON.stringify({ kind: null, theme: 'clair', sortie: 'partage' }));
+        const { downloadOiPdfV3 } = await loadEngineV3();
+        fakeImageState.naturalWidth = 2000;
+        fakeImageState.naturalHeight = 1500;
+        const data = makeCollectedData();
+        data.photosBase64 = { p0: 'data:image/jpeg;base64,cDA=' };
+
+        try {
+            await downloadOiPdfV3({ collect: () => Promise.resolve(data) });
+        } finally {
+            localStorage.removeItem('tacPdfOptions:oi');
+        }
+
+        expect(toDataURLSpy).toHaveBeenCalledWith('image/jpeg', 0.72);
     });
 
     it("en cas d'échec de createPdf, toast est appelé avec kind 'error' et le message exact", async () => {
