@@ -23,6 +23,8 @@ export interface MergePersonResult {
     merged: PctacCollectionItem;
     /** Champs complétés depuis l'entrante (récapitulatif). */
     filled: string[];
+    /** La fiche gardée n'avait pas de photo et vient de prendre celle de l'entrante. */
+    photoTaken: boolean;
 }
 
 async function copyImage(srcId: string, dstId: string): Promise<boolean> {
@@ -61,6 +63,7 @@ export async function mergePersonIntoExisting(
 ): Promise<MergePersonResult> {
     const { merged, filled } = mergeFicheFields(existing, incoming);
     merged.id = existing.id;
+    let photoTaken = false;
 
     if (existing.hasImage) {
         // L'existante a déjà une photo : elle la garde, l'entrante n'apporte rien.
@@ -70,7 +73,7 @@ export async function mergePersonIntoExisting(
     } else if (incoming.hasImage) {
         // Reprendre la photo de l'entrante : recopier vers l'id gardé.
         const copied = await copyImage(String(incoming.id), String(existing.id));
-        if (copied) merged.hasImage = true;
+        if (copied) { merged.hasImage = true; photoTaken = true; }
         else delete merged.hasImage;
         // Les annotations de l'entrante ne sont reprises qu'avec son original.
         if (incoming.annotations !== undefined && await copyOriginal(String(incoming.id), String(existing.id))) {
@@ -87,7 +90,7 @@ export async function mergePersonIntoExisting(
 
     // `updatedAt` est reposé par `Storage.saveCollection`.
     delete merged.updatedAt;
-    return { merged, filled };
+    return { merged, filled, photoTaken };
 }
 
 /** Camp d'une fiche qui a une copie galerie (`<id>_sync`). */
@@ -97,8 +100,10 @@ export type MergeGallerySide = 'adv' | 'host';
  * Met la GALERIE Photos en cohérence avec une fusion de fiches (C4/C12/B-2) :
  *   - retire l'entrée `<entrante>_sync` (la fiche entrante disparaît : sa
  *     vignette deviendrait morte) ;
- *   - crée ou actualise `<existante>_sync` quand la fiche gardée a une photo,
- *     pour que la photo reprise apparaisse dans l'onglet Photos.
+ *   - CRÉE `<existante>_sync` seulement quand la photo vient d'être reprise
+ *     de l'entrante (`photoTaken`) ; sinon il n'actualise qu'une entrée déjà
+ *     là (revue finale F13 : une copie de galerie supprimée volontairement
+ *     ne revient pas, sans image, à la fusion suivante).
  *
  * Fonction COMMUNE aux trois appelants de `mergePersonIntoExisting` : la
  * fusion depuis la fiche (RB), `resolveDuplicateFiches` (import d'archive) et
@@ -113,8 +118,9 @@ export function syncMergedGallery(
     side: MergeGallerySide,
     incomingId: string,
     merged: PctacCollectionItem,
-    modeId: PctacModeId = currentModeId(),
+    opts: { photoTaken: boolean; modeId?: PctacModeId | undefined },
 ): boolean {
+    const modeId = opts.modeId ?? currentModeId();
     const keptId = String(merged.id);
     const incomingEntryId = `${incomingId}_sync`;
     const photos = Storage.loadCollection(PHOTOS_KEY, modeId);
@@ -126,7 +132,9 @@ export function syncMergedGallery(
         const title = ficheTitle(side, modeId, merged);
         const status = String(merged.status || defaultStatus(side, modeId));
         const existing = filtered.find((p) => p.id === `${keptId}_sync`);
-        if (existing) {
+        if (!existing && !opts.photoTaken) {
+            // Rien à créer : la fiche gardait déjà sa photo, sans copie de galerie.
+        } else if (existing) {
             // Réutilise l'objet : sa classe de rendu peut être en cache côté vue.
             delete existing.data;
             existing.hasImage = true;
@@ -141,7 +149,7 @@ export function syncMergedGallery(
                 hasImage: true,
             });
         }
-        changed = true;
+        if (existing || opts.photoTaken) changed = true;
     }
 
     if (changed) Storage.saveCollection(PHOTOS_KEY, filtered, modeId);

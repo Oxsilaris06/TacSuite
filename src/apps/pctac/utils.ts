@@ -185,6 +185,7 @@ export const Utils = {
         galleryAdded?: number | undefined;
         galleryUpdated?: number | undefined;
         advMerged?: number | undefined;
+        galleryPreserved?: number | undefined;
     }): string[] {
         const parts = [`${res.advAdded} adversaire(s)`];
         if (res.advPhotos) parts.push(`${res.advPhotos} photo(s)`);
@@ -193,6 +194,10 @@ export const Utils = {
         if (res.gridImported) parts.push('le carroyage');
         if (res.galleryAdded) parts.push(`${res.galleryAdded} photo(s) de l'OI`);
         if (res.galleryUpdated) parts.push(`${res.galleryUpdated} photo(s) mise(s) à jour`);
+        // F12 : une photo modifiée au PC (légende, annotation) n'est pas écrasée
+        // par le réimport ; on le dit, sinon l'opérateur croit avoir la dernière
+        // version de l'OI.
+        if (res.galleryPreserved) parts.push(`${res.galleryPreserved} photo(s) modifiée(s) au PC gardée(s)`);
         return parts;
     },
 

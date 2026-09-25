@@ -454,6 +454,8 @@ export interface ImageStoreContract {
     getMany(ids: readonly string[]): Promise<Record<string, string | null>>;
     delete(id: string): Promise<void>;
     deleteMany(ids: readonly string[]): Promise<void>;
+    /** Efface toutes les images dont la clé commence par `prefix` (préfixe vide : rien). */
+    deleteByPrefix(prefix: string): Promise<void>;
     clear(): Promise<void>;
     /**
      * Migration one-shot base64 (localStorage) → IndexedDB, gardée par le flag

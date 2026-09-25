@@ -261,6 +261,12 @@ async function flushPendingOpenFiche(): Promise<void> {
     try {
         document.dispatchEvent(new CustomEvent('pctac:open-fiche', { detail: pending }));
     } catch { /* hors DOM : seul l'import ci-dessous compte */ }
+    // F11 : l'import part du dock, depuis n'importe quelle vue ; sur tablette
+    // et bureau la fiche s'ouvre DANS la vue de son camp : on l'active d'abord.
+    try {
+        const sw = (window as unknown as { switchMainView?: (v: string) => void }).switchMainView;
+        if (typeof sw === 'function') sw(pending.side === 'adv' ? 'view-adversaires' : 'view-otages');
+    } catch { /* vue indisponible : la fiche s'ouvre quand même */ }
     try {
         const mod = await import('@pctac/fiche-sheet.js');
         await mod.openFiche(pending.side, pending.id);
@@ -389,15 +395,23 @@ export async function resolveDuplicateFiches(
             const existing = findDuplicatePerson(list, candidate);
             if (!existing) continue;
             const name = ficheDisplayName(incoming);
-            const choice = await confirmDialog({
+            // F10 : une fiche d'ami n'a pas d'écran de fiche à ouvrir : pas de
+            // troisième choix qui ne ferait rien.
+            const ask = {
                 title: 'Fiche en double',
-                message:
-                    `La fiche « ${name} » semble déjà exister. ` +
-                    "Fusionner les deux fiches (les champs vides de l'existante seront complétés), garder les deux, ou ouvrir l'existante ?",
                 confirmLabel: 'Fusionner',
                 cancelLabel: 'Garder les deux',
-                extraLabel: "Ouvrir l'existante",
-            });
+            };
+            const choice: boolean | 'extra' = side
+                ? await confirmDialog({
+                    ...ask,
+                    message: `La fiche « ${name} » semble déjà exister. Fusionner les deux fiches (les champs vides de l'existante seront complétés), garder les deux, ou ouvrir l'existante ?`,
+                    extraLabel: "Ouvrir l'existante",
+                })
+                : await confirmDialog({
+                    ...ask,
+                    message: `La fiche « ${name} » semble déjà exister. Fusionner les deux fiches (les champs vides de l'existante seront complétés), ou garder les deux ?`,
+                });
             // R9 point 3 : garder les deux fiches ET demander l'ouverture de
             // l'existante une fois l'import fini.
             if (choice === 'extra') {
@@ -405,14 +419,14 @@ export async function resolveDuplicateFiches(
                 continue;
             }
             if (choice !== true) continue;
-            const { merged } = await mergePersonIntoExisting(existing, candidate);
+            const { merged, photoTaken } = await mergePersonIntoExisting(existing, candidate);
             list = list
                 .filter((it) => it.id !== candidate.id)
                 .map((it) => (it.id === existing.id ? merged : it));
             Storage.saveCollection(key, list, modeId);
             // C4/C12 : la galerie suit la fusion (vignette morte retirée, photo
             // reprise visible) — même fonction commune que l'import d'OI.
-            if (side) syncMergedGallery(side, candidate.id, merged, modeId);
+            if (side) syncMergedGallery(side, candidate.id, merged, { photoTaken, modeId });
             try { await ImageStore.deleteMany([candidate.id, candidate.id + '_sync', candidate.id + '_orig']); }
             catch { /* best-effort */ }
             mergedNames.push(name);
@@ -649,6 +663,9 @@ export const Archive: ArchiveContract = {
     },
 
     async importFile(file: File): Promise<ArchiveImportResult> {
+        // F9 : une demande « Ouvrir l'existante » restée d'un import interrompu
+        // (exception) ne doit jamais s'exécuter dans celui-ci.
+        pendingOpenFiche = null;
         // archive.js:114
         if (typeof JSZip !== 'function') throw new Error('JSZip indisponible');
         const name = (file.name || '').toLowerCase();
@@ -924,6 +941,7 @@ export const Archive: ArchiveContract = {
         // atterri dans la situation AFFICHÉE (sinon on ouvrirait une fiche
         // d'une autre situation, ou le rechargement ci-dessus a déjà eu lieu).
         if (targetMode === currentModeId()) await flushPendingOpenFiche();
+        else pendingOpenFiche = null; // F9 : jamais de fuite vers l'import suivant
 
         // K1 : `archive.ts` a parlé (avertissement d'échec partiel) — `main.ts`
         // ne doit pas ajouter un succès générique qui le contredirait.
@@ -1008,6 +1026,7 @@ export const Archive: ArchiveContract = {
      * conservées, les doublons (même nom / même trigramme) sont ignorés.
      */
     async importOiArchive(file: File): Promise<ArchiveOiImportResult> {
+        pendingOpenFiche = null; // F9 : demande propre à CET import
         if (!file) throw new Error('Aucun fichier sélectionné.');
         const name = (file.name || '').toLowerCase();
 
@@ -1125,7 +1144,7 @@ export const Archive: ArchiveContract = {
         let photoListDirty = false;
         // C5/C12 : les fusions sont traitées APRÈS l'écriture de `photoList`, pour
         // que la galerie lue par `syncMergedGallery` soit à jour.
-        const merges: Array<{ incomingId: string; merged: PctacCollectionItem }> = [];
+        const merges: Array<{ incomingId: string; merged: PctacCollectionItem; photoTaken: boolean }> = [];
         let seq = 0;
 
         for (const oa of adversaries) {
@@ -1199,13 +1218,13 @@ export const Archive: ArchiveContract = {
                 // R9 point 3 : garder les deux fiches et ouvrir l'existante.
                 if (choice === 'extra') requestOpenFiche('adv', String(existing.id));
                 if (choice === true) {
-                    const { merged } = await mergePersonIntoExisting(existing, item);
+                    const { merged, photoTaken } = await mergePersonIntoExisting(existing, item);
                     const at = advList.findIndex((a) => a.id === existing.id);
                     if (at >= 0) advList[at] = merged;
                     // K2 : une photo n'est comptée que réellement GARDÉE — pas de
                     // fusion dans une existante qui avait déjà la sienne.
                     if (photoStored && !existing.hasImage && merged.hasImage) advPhotos++;
-                    merges.push({ incomingId: itemId, merged });
+                    merges.push({ incomingId: itemId, merged, photoTaken });
                     try { await ImageStore.deleteMany([itemId, itemId + '_sync', itemId + '_orig']); }
                     catch { /* best-effort */ }
                     advMerged++;
@@ -1341,7 +1360,7 @@ export const Archive: ArchiveContract = {
         // C5/C12 : la photo reprise d'une fusion a son entrée de galerie. Traité
         // APRÈS la dernière écriture de `photoList` : `syncMergedGallery` relit
         // le stockage et ne doit pas être écrasé par un `photoList` périmé.
-        for (const m of merges) syncMergedGallery('adv', m.incomingId, m.merged);
+        for (const m of merges) syncMergedGallery('adv', m.incomingId, m.merged, { photoTaken: m.photoTaken });
 
         // --- 3) Carroyage de la carto OI → plan de la situation courante ---
         // L'OI fait foi (décision Nico 2026-09-24) : tout le monde doit appeler

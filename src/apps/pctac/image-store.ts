@@ -188,6 +188,18 @@ export const ImageStore: ImageStoreContract = {
   },
 
   /**
+   * Efface toutes les images dont la clé commence par `prefix`, en UNE
+   * transaction (plage de clés `[prefix, prefix + \uffff]`), sans énumérer.
+   * Sert au RESET pour les photos de brouillon (revue finale F14) : un blob
+   * dont le créneau a disparu est effacé quand même. Préfixe vide : rien (on
+   * ne vide jamais tout le magasin par mégarde).
+   */
+  async deleteByPrefix(prefix: string): Promise<void> {
+    if (!prefix) return;
+    await withStore('readwrite', (store) => store.delete(IDBKeyRange.bound(prefix, `${prefix}\uffff`)));
+  },
+
+  /**
    * Vide tout le store.
    *
    * imageStore.js:90-92
