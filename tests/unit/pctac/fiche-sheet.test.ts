@@ -191,6 +191,38 @@ describe('revue neuve (398b11e)', () => {
     expect(document.querySelector('.fiche-draft')).not.toBeNull();
   });
 
+  it('B2 — brouillon en attente : formulaire inerte, saisie refusée, rien de perdu', async () => {
+    await openFiche('adv');
+    setField('nom', 'PREMIER');
+    dialog().close();
+    await openFiche('adv');
+    expect(document.querySelector('.fiche-draft')).not.toBeNull();
+    expect(document.querySelector('.fiche-top')?.hasAttribute('inert')).toBe(true);
+    expect(document.querySelector('.fiche-foot')?.hasAttribute('inert')).toBe(true);
+    const sections = document.querySelectorAll('.fiche-section');
+    expect(sections.length).toBeGreaterThan(0);
+    sections.forEach((s) => expect(s.hasAttribute('inert')).toBe(true));
+    setField('nom', 'SECOND');
+    expect((drafts()['adv:new'] as { values: Record<string, string> }).values.nom).toBe('PREMIER');
+    // Effacer : le formulaire redevient saisissable, la frappe suivante est protégée.
+    document.querySelector<HTMLElement>('.fiche-draft-drop')!.click();
+    expect(document.querySelector('.fiche-top')?.hasAttribute('inert')).toBe(false);
+    expect(document.querySelector('.fiche-foot')?.hasAttribute('inert')).toBe(false);
+    setField('nom', 'TROISIEME');
+    expect((drafts()['adv:new'] as { values: Record<string, string> }).values.nom).toBe('TROISIEME');
+  });
+
+  it('B2 — Reprendre rend le formulaire saisissable', async () => {
+    await openFiche('adv');
+    setField('nom', 'PREMIER');
+    dialog().close();
+    await openFiche('adv');
+    document.querySelector<HTMLElement>('.fiche-draft-resume')!.click();
+    expect(document.querySelector('.fiche-top')?.hasAttribute('inert')).toBe(false);
+    setField('nom', 'REPRIS');
+    expect((drafts()['adv:new'] as { values: Record<string, string> }).values.nom).toBe('REPRIS');
+  });
+
   it('un changement de statut depuis la carte ne fait pas jeter le brouillon de modification', async () => {
     Storage.saveCollection('pcTacAdversaries', [{ id: 'a1', nom: 'A', status: 'active' }]);
     await openFiche('adv', 'a1');
