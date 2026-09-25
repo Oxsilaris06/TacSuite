@@ -21,7 +21,7 @@
 
 import { Persist } from '@shared/persist.js';
 
-import { acquireScreenWakeLock, registerRemoteOperator, releaseScreenWakeLock, upsert } from '@pctac/tchap-live.js';
+import { OSMAND_SENDER_PREFIX, acquireScreenWakeLock, acquireSweep, registerRemoteOperator, releaseScreenWakeLock, releaseSweep, removeRemoteMembers, upsert } from '@pctac/tchap-live.js';
 
 const LS_KEY = 'pcTacOsmandRelay';
 const DEFAULT_URL = 'https://nico-ai-series-1.tailed318a.ts.net/osmand';
@@ -127,7 +127,7 @@ function halt(): void {
   // Ne relâche un verrou d'écran QUE si cette session OsmAnd en avait pris un :
   // un `halt()` de réinitialisation avant démarrage ne doit pas couper le verrou
   // d'un suivi Tchap simultané (même compteur partagé).
-  if (wasRunning) releaseScreenWakeLock();
+  if (wasRunning) { releaseScreenWakeLock(); releaseSweep(); }
   setButtons();
 }
 
@@ -135,7 +135,7 @@ function applyResponse(data: RelayResponse): void {
   const ops = Array.isArray(data.operators) ? data.operators : [];
   for (const op of ops) {
     if (!op || typeof op.id !== 'string') continue;
-    const sender = `osmand:${op.id}`;
+    const sender = `${OSMAND_SENDER_PREFIX}${op.id}`;
     registerRemoteOperator(sender, op.nom ?? null, op.fonction ?? null);
     known.add(op.id);
     const points = Array.isArray(op.points) ? op.points : [];
@@ -170,6 +170,7 @@ async function loop(): Promise<void> {
       });
       if (res.status === 401) {
         halt();
+        removeRemoteMembers(OSMAND_SENDER_PREFIX);
         setStatus('Clé de lecture refusée par le relais.', 'error');
         return;
       }
@@ -208,6 +209,7 @@ export function start(): void {
   running = true; since = 0; backoffIdx = 0; known.clear(); seenTs.clear();
   aborter = new AbortController();
   acquireScreenWakeLock();
+  acquireSweep(); // A2 — sans Tchap, personne ne faisait vieillir les marqueurs
   setButtons();
   setStatus('Connexion au relais…');
   void loop();
@@ -215,6 +217,7 @@ export function start(): void {
 
 export function stop(): void {
   halt();
+  removeRemoteMembers(OSMAND_SENDER_PREFIX); // fin de session : pas de marqueurs figés
   setStatus('Arrêté.');
 }
 

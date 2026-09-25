@@ -285,6 +285,10 @@ let wakeVisWired = false;
  * verrou d'un suivi OsmAnd simultané (compteur partagé).
  */
 let tchapWakeHeld = false;
+/** A2 — cette session Tchap tient-elle le balayage d'état partagé ? */
+let tchapSweepHeld = false;
+/** Préfixe des `sender` venus du relais OsmAnd (A8 : leurs marqueurs survivent au Stop de Tchap). */
+export const OSMAND_SENDER_PREFIX = 'osmand:';
 
 function warnWakeLockUnavailable(): void {
   if (wakeLockWarned) return;
@@ -1200,7 +1204,9 @@ function wireVisibility(): void {
 }
 
 async function runSync(): Promise<void> {
-  uiBusy(true); startSweep(); wireVisibility(); acquireScreenWakeLock(); tchapWakeHeld = true;
+  uiBusy(true);
+  if (!tchapSweepHeld) { tchapSweepHeld = true; acquireSweep(); }
+  wireVisibility(); acquireScreenWakeLock(); tchapWakeHeld = true;
   const myAborter = aborter; // jeton de génération : si remplacé (stop+start), cette boucle s'arrête
   setDot('var(--civil-yellow)'); status('Connexion…');
   try {
@@ -1342,16 +1348,20 @@ function stop(userInitiated: boolean): void {
   running = false; deviceAbort = true;
   if (resumeFromHidden) { const r = resumeFromHidden; resumeFromHidden = null; r(); } // réveille une boucle en pause
   if (aborter) { aborter.abort(); aborter = null; } // remis à null → un nouveau start crée un signal frais
-  stopSweep(); stopOfflineTicker(); markOnline();
+  if (tchapSweepHeld) { tchapSweepHeld = false; releaseSweep(); }
+  stopOfflineTicker(); markOnline();
   // Ne relâche le verrou d'écran que si CETTE session Tchap en avait acquis un :
   // stopper Tchap ne doit pas couper le verrou d'un suivi OsmAnd simultané.
   if (tchapWakeHeld) { tchapWakeHeld = false; releaseScreenWakeLock(); }
-  for (const s of [...members.keys()]) removeMember(s); // purge l'affichage (pas de marqueurs périmés au re-start)
+  // Purge l'affichage (pas de marqueurs périmés au re-start). A8 — les
+  // marqueurs OsmAnd appartiennent à leur propre suivi : ils restent.
+  for (const s of [...members.keys()]) if (!s.startsWith(OSMAND_SENDER_PREFIX)) removeMember(s);
   accessToken = null; expiresAt = 0; followed = null; centered = false;
   if (userInitiated) {
     // Arrêt VOLONTAIRE = fin de session logique : on oublie tout (tampon,
     // beacons/names, last-known IndexedDB, curseur sync).
-    beacons.clear(); names.clear();
+    beacons.clear();
+    for (const s of [...names.keys()]) if (!s.startsWith(OSMAND_SENDER_PREFIX)) names.delete(s);
     pendingPositions.clear();
     purgeState();
     try { Persist.setRaw(LS_SINCE_KEY, ''); } catch { /* best-effort */ }
@@ -1395,6 +1405,20 @@ function sweepStates(): void {
 }
 function startSweep(): void { if (!sweepTimer) sweepTimer = setInterval(sweepStates, 5000); }
 function stopSweep(): void { if (sweepTimer) { clearInterval(sweepTimer); sweepTimer = null; } }
+
+/**
+ * A2 (revue du 25/09) — balayage partagé à compteur : chaque suivi (Tchap,
+ * OsmAnd) le tient pendant sa session ; il s'arrête quand plus personne ne le
+ * tient. Sans Tchap, les marqueurs OsmAnd ne vieillissaient jamais.
+ */
+let sweepHolders = 0;
+export function acquireSweep(): void { sweepHolders += 1; startSweep(); }
+export function releaseSweep(): void { sweepHolders = Math.max(0, sweepHolders - 1); if (!sweepHolders) stopSweep(); }
+
+/** Retire les marqueurs d'une source (préfixe de `sender`, ex. `osmand:`). */
+export function removeRemoteMembers(prefix: string): void {
+  for (const s of [...members.keys()]) if (s.startsWith(prefix)) removeMember(s);
+}
 
 /* ─── câblage UI ────────────────────────────────────────────────────────── */
 async function loadLists(): Promise<void> {
