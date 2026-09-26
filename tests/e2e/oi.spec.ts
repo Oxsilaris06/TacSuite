@@ -1573,4 +1573,34 @@ test.describe('OI — ergonomie', () => {
       expect(dock && box.bottom <= dock.y, `${box.name} sous le dock`).toBe(true);
     }
   });
+
+  test('annotation photo sur téléphone : titre dégagé, barre des couleurs dans l\'écran, pastilles de 44 px', async ({ page }, testInfo) => {
+    // Constat UI-1/UI-2 (390 px) : « Enregistrer » recouvrait le titre, la
+    // corbeille « Tout effacer » sortait à droite, pastilles de 30 px.
+    test.skip(testInfo.project.name !== 'chromium-mobile', 'mise en page du téléphone');
+    await gotoOi(page);
+    await goToStepViaBullet(page, 4);
+    await page.setInputFiles('#photo_container_transport_pr_input', {
+      name: 'e2e.png', mimeType: 'image/png', buffer: Buffer.from(LARGE_PNG_BASE64, 'base64'),
+    });
+    await page.locator('#photo_container_transport_pr_preview_container [aria-label="Annoter la photo"]').first().click({ timeout: 5000 });
+    await expect(page.locator('#annotationModal')).toBeVisible();
+    const m = await page.evaluate(() => {
+      const box = (s: string) => document.querySelector(s)!.getBoundingClientRect();
+      const title = box('#annotationModalTitle');
+      const hits = ['#annotation_cancel_header', '#annotation_save_header'].filter((s) => {
+        const b = box(s);
+        return title.width > 1 && b.left < title.right && title.left < b.right && b.top < title.bottom && title.top < b.bottom;
+      });
+      const out = Array.from(document.querySelectorAll('#dock-bottom button')).filter((b) => {
+        const r = b.getBoundingClientRect();
+        return r.left < 0 || r.right > innerWidth;
+      }).map((b) => b.getAttribute('aria-label'));
+      const circles = Array.from(document.querySelectorAll('#dock-bottom .color-circle')).map((c) => Math.min((c as HTMLElement).offsetWidth, (c as HTMLElement).offsetHeight));
+      return { hits, out, circles };
+    });
+    expect(m.hits, 'boutons sur le titre').toEqual([]);
+    expect(m.out, 'boutons hors de l\'écran').toEqual([]);
+    expect(Math.min(...m.circles), m.circles.join()).toBeGreaterThanOrEqual(44);
+  });
 });

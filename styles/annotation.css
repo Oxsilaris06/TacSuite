@@ -538,6 +538,14 @@
                 white-space: nowrap;
             }
             #annotationModal .modal-header h3 .material-symbols-outlined { display: none; }
+            /* Sous 480 px le titre n'a plus la place entre les deux boutons : il
+               reste pour le lecteur d'écran (aria-labelledby), masqué à l'œil. */
+            @media (max-width: 480px) {
+                #annotationModal .modal-header h3 {
+                    width: 1px; height: 1px; overflow: hidden;
+                    clip-path: inset(50%);
+                }
+            }
 
             #annotationModal .modal-header .header-actions {
                 margin-left: 0 !important;
@@ -549,7 +557,8 @@
             /* Annuler / Valider : cibles tactiles confortables */
             #annotationModal .modal-header #annotation_cancel_header,
             #annotationModal .modal-header #annotation_save_header {
-                min-height: 40px;
+                flex: 0 0 auto !important; /* étirés, ils recouvraient le titre */
+                min-height: 44px;
                 padding: var(--space-2) var(--space-4) !important;
                 border-radius: var(--radius-md) !important;
                 font-size: 0.85rem !important;
@@ -575,8 +584,6 @@
             #annotationModal .modal-header #annotation_save_header:active {
                 transform: scale(0.94);
             }
-            /* La croix de fermeture est redondante avec "Annuler" sur mobile */
-            #annotationModal .modal-header .close-modal-btn { display: none !important; }
 
             /* ---- Canvas plein écran ---- */
             .annotation-canvas-container {
@@ -617,7 +624,7 @@
             #dock-left {
                 position: absolute !important;
                 left: 8px; right: 8px;
-                bottom: calc(132px + env(safe-area-inset-bottom, 0px));
+                bottom: calc(184px + env(safe-area-inset-bottom, 0px)); /* au-dessus du réglage et du dock bas (2 rangées) */
                 z-index: var(--z-annot-dock);
                 display: block !important;
                 pointer-events: none;
@@ -692,7 +699,11 @@
                 flex-direction: row !important;
                 align-items: center !important;
                 gap: 6px !important;
-                height: 60px !important;
+                /* Deux rangées (couleurs, puis actions) : sur une seule, « Tout
+                   effacer » sortait de l'écran à 390 px. */
+                flex-wrap: wrap !important;
+                justify-content: center !important;
+                height: auto !important;
                 width: auto !important;
                 max-width: none !important;
                 margin: 0 !important;
@@ -715,11 +726,13 @@
                 gap: 10px !important;
                 padding: 0 var(--space-1) !important;
                 align-items: center !important;
+                background: none !important; /* le cadre clair coupait la pastille active */
+                border: 0 !important;
             }
             #dock-bottom .color-circle {
-                width: 30px !important;
-                height: 30px !important;
-                min-width: 30px !important;
+                width: 44px !important;
+                height: 44px !important;
+                min-width: 44px !important;
                 border-radius: 50% !important;
                 border: 2px solid rgba(255,255,255,0.18) !important;
                 box-shadow: inset 0 1px 3px rgba(0,0,0,0.35) !important;
@@ -734,6 +747,7 @@
 
             /* Séparateur inline (le <div> 1px) */
             #dock-bottom > div[style*="width: 1px"] {
+                display: none;
                 flex: 0 0 auto;
                 height: 28px !important;
                 margin: 0 var(--space-1) !important;
@@ -772,12 +786,12 @@
                Sliders 100% HORIZONTAUX — fini les hacks slider-vertical.
                ====================================================================== */
             /* Carte flottante COMPACTE, positionnée AU-DESSUS de la barre d'actions
-               (#dock-bottom, ~68px) : ainsi « Supprimer l'objet » / « Tout effacer »
+               (#dock-bottom, ~120px sur deux rangées) : ainsi « Supprimer l'objet » / « Tout effacer »
                restent accessibles et la photo n'est plus masquée sur toute la hauteur. */
             #dock-right {
                 position: absolute !important;
                 left: 8px; right: 8px;
-                bottom: calc(76px + env(safe-area-inset-bottom, 0px));
+                bottom: calc(128px + env(safe-area-inset-bottom, 0px)); /* dock bas sur 2 rangées, ~120 px */
                 z-index: var(--z-annot-panel);
                 /* Barre SLIM sur une seule ligne : masque le minimum de photo. */
                 display: flex !important;

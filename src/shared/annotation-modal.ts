@@ -20,9 +20,6 @@ const MARKUP = `
                 <button type="button" id="annotation_cancel_header" class="btn-cancel compact wizard-nav-btn annotation-header-btn" data-action="close-annotation-modal">Annuler</button>
                 <button type="button" id="annotation_save_header" class="btn-save compact wizard-nav-btn annotation-header-btn">Enregistrer</button>
             </div>
-            <button type="button" class="close-modal-btn annotation-close-btn up-tap-target" data-action="close-annotation-modal" aria-label="Fermer l'annotation photo">
-                <span class="material-symbols-outlined">close</span>
-            </button>
         </div>
         
         <div class="modal-body annotation-wrapper">
@@ -53,21 +50,21 @@ const MARKUP = `
                     <div id="contextual_tools" class="toolbar-vertical-group" style="margin-top: 45px; width: 100%; display: flex; flex-direction: column; align-items: center;">
                         <div class="tool-settings-group vertical-slider-group" title="Rotation">
                             <span class="material-symbols-outlined tool-settings-icon">rotate_right</span>
-                            <input type="range" id="rotation_input_slider" min="0" max="360" value="0" class="vertical-slider" data-action="sync-rotation-slider">
+                            <input type="range" id="rotation_input_slider" aria-label="Rotation" min="0" max="360" value="0" class="vertical-slider" data-action="sync-rotation-slider">
                             <input type="hidden" id="rotation_input" value="0">
                         </div>
                         <div class="tool-settings-group vertical-slider-group" title="Trait">
                             <span class="material-symbols-outlined tool-settings-icon">line_weight</span>
-                            <input type="range" id="stroke_width_edit" min="1" max="20" value="5" class="vertical-slider">
+                            <input type="range" id="stroke_width_edit" aria-label="Épaisseur du trait" min="1" max="20" value="5" class="vertical-slider">
                         </div>
                         
                         <div id="text_size_control" class="tool-settings-group vertical-slider-group" style="display: none;" title="Taille">
                             <span class="material-symbols-outlined tool-settings-icon">format_size</span>
-                            <input type="range" id="text_size_edit" min="10" max="200" step="5" value="30" class="vertical-slider">
+                            <input type="range" id="text_size_edit" aria-label="Taille du texte" min="10" max="200" step="5" value="30" class="vertical-slider">
                         </div>
                         <div id="zone_settings" class="tool-settings-group vertical-slider-group" style="display: none;" title="Opacité">
                             <span class="material-symbols-outlined tool-settings-icon">opacity</span>
-                            <input type="range" id="circle_opacity" min="0" max="1" step="0.1" value="0.5" class="vertical-slider">
+                            <input type="range" id="circle_opacity" aria-label="Opacité de la zone" min="0" max="1" step="0.1" value="0.5" class="vertical-slider">
                         </div>
                         <input type="hidden" id="text_size_tool" value="30">
 
