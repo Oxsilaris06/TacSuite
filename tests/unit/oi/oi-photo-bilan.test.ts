@@ -63,6 +63,12 @@ describe('photoBilanText — ce que l’utilisateur lit', () => {
         expect(text).toMatch(/Fond personnalisé : image illisible/);
     });
 
+    it('une photo « Baptême terrain » est rangée sous la Mission (Nico 09-26)', () => {
+        notePhotoIssue('img_bapt', 'absente');
+        const fd: OiFormData = { dynamic_photos: { photo_container_bapteme_terrain_preview_container: [meta('img_bapt', 'Portail')] } };
+        expect(photoBilanText(fd) ?? '').toMatch(/« Portail » \(Mission\) : absente de la base/);
+    });
+
     it('une photo perdue ne compte qu’une fois, la perte l’emporte sur les annotations', () => {
         notePhotoIssue('img_chemin', 'annotation');
         notePhotoIssue('img_chemin', 'illisible');

@@ -277,18 +277,14 @@ export function addZmspcp(data?: Partial<OiZmspcpBlock> | null): void {
                 style="min-height: 50px; border: 2px dashed var(--border-color); border-radius: var(--radius-md); padding: 10px; display: flex; flex-wrap: wrap; gap: 8px;">
             </div>
 
-            <!-- Photos Terrain -->
+            <!-- Photos Emplacement AO (le « Baptême terrain » est sous la Mission, étape 4) -->
             <h4 style="margin-top: 15px; color: var(--moicp-zmspcp-purple, #8e44ad);">
-                <span class="material-symbols-outlined" style="vertical-align: middle;">terrain</span> Photos Terrain / AO
+                <span class="material-symbols-outlined" style="vertical-align: middle;">terrain</span> Photos Emplacement AO
             </h4>
             <div style="display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 10px;">
-                <button type="button" class="add-btn" style="flex:1; justify-content: center;" onclick="document.getElementById('input_bapteme_${blockId}').click()"><span class="material-symbols-outlined" aria-hidden="true">photo_camera</span> Baptême Terrain</button>
-                <input type="file" id="input_bapteme_${blockId}" hidden accept="image/*" multiple onchange="handleFileChange(this, 'photo_bapteme_${blockId}', false)">
-
                 <button type="button" class="add-btn" style="flex:1; justify-content: center;" onclick="document.getElementById('input_empl_ao_${blockId}').click()"><span class="material-symbols-outlined" aria-hidden="true">photo_camera</span> Emplacement AO</button>
                 <input type="file" id="input_empl_ao_${blockId}" hidden accept="image/*" multiple onchange="handleFileChange(this, 'photo_empl_ao_${blockId}', false)">
             </div>
-            <div id="photo_bapteme_${blockId}" class="image-preview-container photo-display-area" style="margin-bottom:10px;"></div>
             <div id="photo_empl_ao_${blockId}" class="image-preview-container photo-display-area"></div>
         </div>
     `;

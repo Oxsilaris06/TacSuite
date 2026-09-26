@@ -79,6 +79,7 @@ import { toast } from '@shared/feedback.js';
 import { legacyCaptureColors } from '@shared/h2c-colors.js';
 import { drawOverlayLegend, overlayLegend } from '@shared/map-overlays.js';
 
+import { OI_BAPTEME_CONTAINER } from '@oi/sections.js';
 import type { OICartoInternal, OiCartoPhotoTarget } from './types.js';
 import { esc } from '@shared/ui-platform.js';
 
@@ -290,6 +291,8 @@ export const CaptureMethods = {
                 : []),
             { id: 'photo_container_transport_pr_preview_container', label: 'Transport PSIG → PR' },
             { id: 'photo_container_transport_domicile_preview_container', label: 'Transport PR → Domicile / LE' },
+            // Champ unique sous la Mission (Nico 09-26), OI Complet seulement.
+            ...(document.body.classList.contains('oi-express') ? [] : [{ id: OI_BAPTEME_CONTAINER, label: 'Baptême terrain' }]),
         ];
         const titleOf = (block: HTMLElement, fallback: string): string =>
             (block.querySelector<HTMLInputElement>('.block-title-input')?.value || fallback).trim();
@@ -302,7 +305,6 @@ export const CaptureMethods = {
         document.querySelectorAll<HTMLElement>('.zmspcp-block').forEach((b) => {
             const bid = b.dataset.blockId;
             const t = titleOf(b, 'ZMSPCP');
-            targets.push({ id: `photo_bapteme_${bid}`, label: `Baptême terrain — ${t}` });
             targets.push({ id: `photo_empl_ao_${bid}`, label: `Emplacement AO — ${t}` });
         });
         document.querySelectorAll<HTMLElement>('.effraction-block').forEach((b) => {

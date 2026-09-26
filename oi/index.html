@@ -274,6 +274,16 @@ INTERPELLER L'OBJECTIF.
 ASSISTER LORS DE LA PERQUISITION.
 
 CONDUITE AU LIEU DE GAV.</textarea>
+                    <!-- Photos « Baptême terrain » (Nico, 2026-09-26) : imprimées sous la
+                         Mission, avant l'Exécution. OI Complet seulement. -->
+                    <div class="oi-subsection oi-express-hidden oi-bapteme-photos">
+                        <button type="button" class="add-btn btn-flex-center" data-action="trigger-file-input" data-target="photo_container_bapteme_terrain_input">
+                            <span class="material-symbols-outlined" aria-hidden="true">photo_camera</span> Baptême terrain
+                        </button>
+                        <input type="file" id="photo_container_bapteme_terrain_input" class="photo-input sr-only-input" accept="image/*" multiple
+                            data-action="handle-file-change" data-preview-container="photo_container_bapteme_terrain_preview_container" data-single="false">
+                        <div id="photo_container_bapteme_terrain_preview_container" class="image-preview-container"></div>
+                    </div>
                 </div>
 
                 <div class="wizard-step" data-oi-section="execution">

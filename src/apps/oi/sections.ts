@@ -203,6 +203,39 @@ export function applySectionRemovals(fd: OiFormData): OiFormData {
     return out;
 }
 
+// ─── Photos « Baptême terrain » (Nico, 2026-09-26) ──────────────────────────
+
+/**
+ * Champ unique des photos « Baptême terrain », sous la Mission de l'unité
+ * (étape 4) ; imprimées sous « MISSION DE L'UNITÉ », avant « EXÉCUTION ».
+ * Identifiant repris de l'ancien champ global (medias.ts), pour qu'un OI
+ * ancien qui le portait le retrouve.
+ */
+export const OI_BAPTEME_CONTAINER = 'photo_container_bapteme_terrain_preview_container';
+
+const LEGACY_BAPTEME = /^photo_bapteme_(.+)$/;
+
+/**
+ * Reprise des anciennes photos « Baptême Terrain » rangées par bloc ZMSPCP
+ * (`photo_bapteme_<bloc>`) dans le champ unique, à la suite de ses photos,
+ * dans l'ordre des blocs (`blockOrder`), puis les autres clés anciennes. Rien
+ * n'est perdu ; les autres clés sont rendues telles quelles. Copie, jamais de
+ * mutation.
+ */
+export function mergeLegacyBaptemePhotos<T>(dynamicPhotos: Record<string, T[]>, blockOrder: readonly string[] = []): Record<string, T[]> {
+    const legacy = Object.keys(dynamicPhotos).filter((k) => LEGACY_BAPTEME.test(k));
+    if (legacy.length === 0) return dynamicPhotos;
+    const rank = (k: string): number => {
+        const i = blockOrder.indexOf(k.replace(LEGACY_BAPTEME, '$1'));
+        return i < 0 ? blockOrder.length : i;
+    };
+    legacy.sort((a, b) => rank(a) - rank(b));
+    const out: Record<string, T[]> = {};
+    for (const [k, v] of Object.entries(dynamicPhotos)) if (!LEGACY_BAPTEME.test(k)) out[k] = v;
+    out[OI_BAPTEME_CONTAINER] = [...(dynamicPhotos[OI_BAPTEME_CONTAINER] ?? []), ...legacy.flatMap((k) => dynamicPhotos[k] ?? [])];
+    return out;
+}
+
 // ─── Mode express (décision Nico 2026-09-24, DevSYNCState §3 n° 12) ─────────
 
 /** Étapes (0-based) de l'OI express : Situation, Mission, Exécution, PATRACDVR. */
