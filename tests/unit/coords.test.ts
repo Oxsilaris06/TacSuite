@@ -381,3 +381,35 @@ describe('coords — saisies étiquetées lues sur place', () => {
     }
   });
 });
+
+describe('coords — audit du 26/09 (skills) : saisies françaises et ambiguës', () => {
+    it('« O » (Ouest) vaut W, en DMS et en décimal à hémisphères', () => {
+        const dms = parseCoordinateInput(`47°12'30"N 1°33'10"O`, null);
+        expect(dms).toMatchObject({ kind: 'point' });
+        if (dms?.kind === 'point') {
+            expect(dms.lat).toBeCloseTo(47.2083, 3);
+            expect(dms.lng).toBeCloseTo(-1.5528, 3);
+        }
+        const dec = parseDmsCoords('48.1 N 1.6 O');
+        expect(dec).toMatchObject({ lat: 48.1, lng: -1.6 });
+        // Une adresse avec un « o » dans un mot reste une adresse.
+        expect(parseCoordinateInput('12 rue du Port Nantes', null)).toBeNull();
+    });
+
+    it('deux hémisphères du même axe sont refusés (faute de frappe S pour E)', () => {
+        expect(parseDmsCoords('48°N 2°S')).toBeNull();
+        expect(parseDmsCoords('N48 N2')).toBeNull();
+        expect(parseDmsCoords('2°E 3°W')).toBeNull();
+        expect(looksLikeCoordinates('48°N 2°S')).toBe(true);
+    });
+
+    it('« 48,85 » (un seul nombre à virgule française) n’est pas un couple lat/lng, et ne part pas au géocodage', () => {
+        expect(parseDecimalCoords('48,85')).toBeNull();
+        expect(parseDecimalCoords('12,5')).toBeNull();
+        expect(looksLikeCoordinates('48,85')).toBe(true);
+        // Les couples explicites restent lus.
+        expect(parseDecimalCoords('48, 2')).toMatchObject({ lat: 48, lng: 2 });
+        expect(parseDecimalCoords('48,8566, 2,3522')).toMatchObject({ lat: 48.8566, lng: 2.3522 });
+        expect(parseDecimalCoords('48.8566,2.3522')).toMatchObject({ lat: 48.8566, lng: 2.3522 });
+    });
+});
