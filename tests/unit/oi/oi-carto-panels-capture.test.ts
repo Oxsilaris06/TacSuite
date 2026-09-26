@@ -393,6 +393,16 @@ describe('_openPinPhotoPanel — attache d’une photo du formulaire', () => {
         expect(state._inlinePanel).toBeNull(); // panneau refermé
     });
 
+    it('photo sans légende : la tuile porte le nom par défaut du champ (« Baptême terrain (1/2) »)', () => {
+        addFormPhoto('img_def');
+        document.querySelector<HTMLInputElement>('.photo-title-input')!.placeholder = 'Baptême terrain (1/2)';
+        const state = makePanelsState({ map: makeFakeMap(), pins: [makePin({ id: 'p1' })] });
+
+        state._openPinPhotoPanel('p1');
+
+        expect(state._inlinePanel?.querySelector('.oi-carto-photo-tile[data-id="img_def"]')?.textContent).toContain('Baptême terrain (1/2)');
+    });
+
     it('« Retirer la photo » (pin déjà photographié) : photoId supprimé du pin', () => {
         addFormPhoto('img_abc');
         const state = makePanelsState({

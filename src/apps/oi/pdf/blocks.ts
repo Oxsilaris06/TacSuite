@@ -1086,8 +1086,9 @@ export function adaptiveGalleryPages(
 }
 
 /**
- * Galerie d'un champ photo de l'OI Complet (légende = titre saisi, sinon
- * « <titre> - Détail » ; badges d'outils d'effraction) — cf.
+ * Galerie d'un champ photo de l'OI Complet (légende = titre saisi, ou par
+ * défaut « nom du bouton (rang/total) », posée par `withDefaultCaptions` ;
+ * sinon le titre ; badges d'outils d'effraction) — cf.
  * `adaptiveGalleryPages`. `photos` vide, ou dont AUCUN `id` n'a d'entrée dans
  * `photosBase64`, -> `[]` (section omise, §3.4.1 règle 1) ; une photo absente
  * de `photosBase64` est ignorée (jamais de figure vide). `sizeOf` donne les
@@ -1117,7 +1118,7 @@ function galleryEntries(
         entries.push({
             id: meta.id,
             ref,
-            caption: meta.customTitle || `${title} - Détail`,
+            caption: meta.customTitle || title,
             tools: galleryAllTools(meta),
             size: sizeOf(meta.id),
             isPlan: isPlanPhotoId(meta.id),

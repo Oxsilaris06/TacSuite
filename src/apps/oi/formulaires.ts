@@ -191,8 +191,8 @@ import { LOCAL_STORAGE_KEY, Store, dbManager, memberConfig } from '@oi/init.js';
 import { collectCoherence } from '@oi/coherence.js';
 import { createAnnotatedImageBlob } from '@oi/dessin.js';
 import { setupQuickEditPanel } from '@oi/patrac.js';
-import { isSafeId, reencodeSansExif } from '@oi/outils.js';
-import { mergeLegacyBaptemePhotos } from '@oi/sections.js';
+import { isSafeId, reencodeSansExif, refreshCaptionPlaceholders } from '@oi/outils.js';
+import { mergeLegacyBaptemePhotos, OI_PHOTO_CAPTION_MAX } from '@oi/sections.js';
 // R2-T4 — validation inline (nouveau module, cf. son en-tête).
 import { attachValidation, required } from '@oi/validation.js';
 import { confirmDialog, toast } from '@shared/feedback.js';
@@ -716,6 +716,7 @@ function syncDomToStoreCore(): void {
                 if (imagesMetadata.length > 0) {
                     dynamicPhotos[container.id] = imagesMetadata;
                 }
+                refreshCaptionPlaceholders(container);
             }
         });
 
@@ -1077,7 +1078,7 @@ async function loadFormData(): Promise<boolean> {
                                             data-tools="${esc(imgData.tools || '[]')}"
                                             data-other-tools="${esc(imgData.other_tools || '')}"
                                         >
-                                        <input type="text" class="photo-title-input" placeholder="Légende de la photo..."
+                                        <input type="text" class="photo-title-input" maxlength="${OI_PHOTO_CAPTION_MAX}" aria-label="Légende de la photo"
                                             value="${esc(imgData.customTitle || '')}"
                                             style="width: 100%; margin-top: 5px; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); color: white; border-radius: 4px; padding: 2px 5px; font-size: 0.8em;"
                                             oninput="syncDomToStore()">
@@ -1089,6 +1090,7 @@ async function loadFormData(): Promise<boolean> {
                             previewContainer.appendChild(interactiveItem);
                         }
                     }
+                    refreshCaptionPlaceholders(previewContainer);
                 }
             }
         }

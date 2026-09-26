@@ -82,6 +82,7 @@ vi.mock('@shared/feedback.js', async (importOriginal) => ({
 }));
 
 import { dbManager, Store } from '@oi/init.js';
+import { OI_PHOTO_CAPTION_MAX } from '@oi/sections.js';
 import {
     handleCustomBackgroundChange,
     handleFileChange,
@@ -311,6 +312,15 @@ describe('handleFileChange — champ limité (data-max-photos, « Baptême terra
         expect(added).toBe(2);
         expect(container.querySelectorAll('.image-preview-item')).toHaveLength(2);
         expect(toastSpy).not.toHaveBeenCalledWith(expect.stringMatching(/non ajoutée/), expect.anything());
+    });
+
+    it('légende : saisie bornée à la limite du PDF, nom par défaut « champ (rang/total) » affiché', async () => {
+        document.body.insertAdjacentHTML('beforeend', '<div id="photo_container_bapteme_terrain_preview_container" data-max-photos="2"></div>');
+        await handleFileChange(makeFileInput([makeFile('a.jpg'), makeFile('b.jpg')]), 'photo_container_bapteme_terrain_preview_container', false);
+
+        const inputs = Array.from(document.querySelectorAll<HTMLInputElement>('#photo_container_bapteme_terrain_preview_container .photo-title-input'));
+        expect(inputs.map((i) => i.maxLength)).toEqual([OI_PHOTO_CAPTION_MAX, OI_PHOTO_CAPTION_MAX]);
+        expect(inputs.map((i) => i.placeholder)).toEqual(['Baptême terrain (1/2)', 'Baptême terrain (2/2)']);
     });
 
     it('un champ sans limite reçoit toutes les photos', async () => {

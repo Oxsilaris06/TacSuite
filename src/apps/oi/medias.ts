@@ -98,7 +98,8 @@
  * seule).
  */
 import { Store, dbManager } from '@oi/init.js';
-import { compressImage, photoRoom, reencodeSansExif } from '@oi/outils.js';
+import { compressImage, photoRoom, reencodeSansExif, refreshCaptionPlaceholders } from '@oi/outils.js';
+import { OI_PHOTO_CAPTION_MAX } from '@oi/sections.js';
 import { confirmDialog, toast } from '@shared/feedback.js';
 
 // ==================== MediaManager.js ====================
@@ -225,7 +226,7 @@ export async function handleFileChange(
 
                 interactiveItem.innerHTML = `
                             <img id="${previewImgId}" class="image-preview" src="${base64Data}" style="display:block;" data-annotations="[]" data-tools="[]" data-other-tools="">
-                            <input type="text" class="photo-title-input" placeholder="Légende de la photo..."
+                            <input type="text" class="photo-title-input" maxlength="${OI_PHOTO_CAPTION_MAX}" aria-label="Légende de la photo"
                                 style="width: 100%; margin-top: 5px; background: var(--bg-interactive); border: 1px solid var(--border-color); color: var(--text-primary); border-radius: 4px; padding: 2px 5px; font-size: 0.8em;"
                                 oninput="syncDomToStore()">
                             <div style="display: flex; gap: 5px; margin-top: 5px;">
@@ -244,6 +245,7 @@ export async function handleFileChange(
         }
         // U26 — fin d'import : restauration + bilan unique.
         progressEl.remove();
+        refreshCaptionPlaceholders(previewContainer);
         previewContainer.removeAttribute('aria-busy');
         input.disabled = false;
         if (added > 0) toast(`${added} photo${added > 1 ? 's' : ''} ajoutée${added > 1 ? 's' : ''}`, { kind: 'success' });

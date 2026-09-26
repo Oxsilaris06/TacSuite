@@ -65,6 +65,7 @@
 import type { PDFDocument, PDFImage } from 'pdf-lib';
 
 import { Store } from '@oi/init.js';
+import { photoFieldLabel } from '@oi/sections.js';
 
 // ==================== Utils.js ====================
 
@@ -88,6 +89,17 @@ export function cleanupObjectUrls(): void {
 }
 window.cleanupObjectUrls = cleanupObjectUrls; // outils.js:25
 
+
+/** Nom par défaut affiché dans chaque légende vide d'un champ photo,
+ *  « Baptême terrain (1/2) » : ce que le PDF imprime si rien n'est saisi
+ *  (`withDefaultCaptions`, Nico 2026-09-26). */
+export function refreshCaptionPlaceholders(container: HTMLElement): void {
+    const inputs = container.querySelectorAll<HTMLInputElement>('.image-preview-item .photo-title-input');
+    const label = photoFieldLabel(container.id);
+    inputs.forEach((input, i) => {
+        input.placeholder = `${label} (${i + 1}/${inputs.length})`;
+    });
+}
 
 /** Place restante d'un champ photo limité par `data-max-photos` (« Baptême
  *  terrain » : 2, Nico 2026-09-26) ; `Infinity` pour un champ sans limite. */

@@ -181,15 +181,12 @@ describe('buildOiDocDefinition — ordre des sections (SPEC-2026-08-18-pdf-et-ch
         const data = collect(makeRichFormData(), { logphoto: 'data:image/jpeg;base64,bG9n' });
         const json = JSON.stringify(buildOiDocDefinition(data, { format: 'a4' }));
 
-        // 4 (TRANSPORT) exclu de cette boucle : sa légende de galerie
-        // (`galleryPhotoStack`, blocks.ts) reprend le titre en repli
-        // (`meta.customTitle || "<titre> - Détail"`) — 2 occurrences
-        // ATTENDUES (h2 + légende), comportement PRÉEXISTANT de
-        // `galleryPages()`, pas une régression du fix de numérotation.
-        for (const n of [3, 5, 6, 7, 8, 9]) {
+        // 4 (TRANSPORT) compris : la légende par défaut d'une photo est
+        // désormais « nom du bouton (rang/total) » (Nico 09-26), elle ne
+        // reprend plus le titre numéroté de la galerie.
+        for (const n of [3, 4, 5, 6, 7, 8, 9]) {
             expect((json.match(new RegExp(`"text":"${n}\\. `, 'g')) ?? []).length, `numéro ${n}`).toBe(1);
         }
-        expect((json.match(/"text":"4\. /g) ?? []).length, 'numéro 4 (h2 + légende de galerie)').toBe(2);
     });
 
     it('sans cat_generales/no_go/cat_liaison, « 8. CONDUITES À TENIR GÉNÉRALES » est omise', () => {
@@ -2737,7 +2734,7 @@ describe('buildOiDocDefinition — OI express', () => {
             { format: 'a4' },
         );
         const json = JSON.stringify(dd);
-        for (const t of ['Objectif 1', 'Objectif 2', 'Objectif 3', 'Carroyage 50 m', 'Carte 2']) expect(json).toContain(`"text":"${t}"`);
+        for (const t of ['Objectif (1/3)', 'Objectif (2/3)', 'Objectif (3/3)', 'Carroyage 50 m', 'Carte (2/2)']) expect(json).toContain(`"text":"${t}"`);
         expect(json).not.toContain('"text":"Adversaire'); // pas de photo adversaire : pas de case vide
         const pages = dd.content as Content[];
         const imagesOn = (page: Content): string[] => [...JSON.stringify(page).matchAll(/"image":"(\w+)"/g)].map((m) => m[1] as string);
