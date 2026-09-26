@@ -1427,6 +1427,34 @@ test('capture de la carte vers « OI Express — Carte » : photo ajoutée, aucu
 // ============================================================================
 
 test.describe('OI — ergonomie', () => {
+  /** Boutons visibles de `scope` dont un côté fait moins de 44 px (cible tactile). */
+  async function smallButtons(page: Page, scope: string): Promise<string[]> {
+    return page.locator(scope).evaluateAll((roots) => roots.flatMap((root) =>
+      Array.from(root.querySelectorAll('button')).flatMap((b) => {
+        const r = b.getBoundingClientRect();
+        if (!r.width || getComputedStyle(b).visibility === 'hidden') return [];
+        return Math.min(r.width, r.height) < 43.5 ? [`${b.className || b.textContent?.trim()} ${Math.round(r.width)}x${Math.round(r.height)}`] : [];
+      })));
+  }
+
+  test('cibles tactiles ≥ 44 px : tutoriel, ordre des sections, suppression d\'un VL', async ({ page }) => {
+    await gotoOi(page);
+    await page.locator('#dockMenu .ptuto-dock').click();
+    await expect(page.locator('.ptuto-panel')).toBeVisible();
+    expect(await smallButtons(page, '.ptuto-panel')).toEqual([]);
+    await page.keyboard.press('Escape');
+
+    await goToStepViaBullet(page, 6);
+    await withPrompt(page, 'VL-CIBLE', () => page.locator('#addManualVehicleBtn').click());
+    expect(await smallButtons(page, '.vehicle-header')).toEqual([]);
+
+    await goToFinalStepAndOpenPreview(page);
+    await page.locator('#pdfSectionOrderToggleBtn').click();
+    await expect(page.locator('.pdf-section-order-move-btn').first()).toBeVisible();
+    // Le panneau s'ouvre en s'agrandissant : mesurer une fois posé.
+    await expect.poll(() => smallButtons(page, '#presentationModal .pdf-section-order-move-btns')).toEqual([]);
+  });
+
   test('un champ qui prend le focus n\'est pas caché sous le dock', async ({ page }) => {
     await page.emulateMedia({ reducedMotion: 'reduce' }); // défilement immédiat
     await gotoOi(page);
