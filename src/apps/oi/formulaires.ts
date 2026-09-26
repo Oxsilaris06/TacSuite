@@ -1596,6 +1596,7 @@ async function applyArchiveImport(parsed: OiParsedArchiveOk, cats: readonly OiIm
 
     const snapshot = localStorage.getItem(KEY);
     let imgFail = 0;
+    let imgRaw = 0; // R7 : gardées sans ré-encodage, donc EXIF/GPS possible
     try {
         // Images AVANT le localStorage (clearAllImages mute le Store → flush).
         if (importImages && dbManager) {
@@ -1627,6 +1628,7 @@ async function applyArchiveImport(parsed: OiParsedArchiveOk, cats: readonly OiIm
                                 try {
                                     aStocker = await reencodeSansExif(brut);
                                 } catch (err) {
+                                    imgRaw++;
                                     console.warn('[OI Archive] image gardée telle quelle, sans ré-encodage (EXIF possible) :', k, err);
                                 }
                                 await dbManager.putItem(k, aStocker);
@@ -1653,11 +1655,13 @@ async function applyArchiveImport(parsed: OiParsedArchiveOk, cats: readonly OiIm
         // élément) ; repli sur c.label jamais emprunté en pratique.
         const labels = selected.map((c) => c.label.split(' (')[0] ?? c.label).join(', ');
         const warn = imgFail > 0 ? ` (${imgFail} photo(s) ignorée(s))` : '';
+        const raw = imgRaw > 0 ? ` ${imgRaw} image(s) importée(s) sans nettoyage des métadonnées (position possible).` : '';
         window.isFormLoading = true;
-        toast(`Import effectué : ${labels}${warn}. Rechargement…`, { kind: 'success' });
+        toast(`Import effectué : ${labels}${warn}.${raw} Rechargement…`, raw ? { kind: 'error', duration: 6000 } : { kind: 'success' });
         // R2-T2b : `toast` non bloquant — court délai avant reload pour laisser le
-        // message visible (même rationale que `importSession` ci-dessus).
-        setTimeout(() => location.reload(), 600);
+        // message visible (même rationale que `importSession` ci-dessus) ; plus
+        // long quand il y a un avertissement à lire (R7).
+        setTimeout(() => location.reload(), raw ? 6000 : 600);
     } catch (e) {
         console.error('[OI Archive] import sélectif échec:', e);
         toast("Erreur d'import : " + (e instanceof Error ? e.message : String(e)), { kind: 'error' });
