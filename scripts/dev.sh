@@ -4,21 +4,27 @@
 # Usage:
 #   ./scripts/dev.sh [LOG_FILE]
 #
-# Default log file: ./tmp/serve-tacsuite.log
+# Default log file: ~/.cache/tacsuite-serve-dev.log (private, mode 0600)
 #
-# The server runs on http://127.0.0.1:9678 and survives session termination (nohup+disown).
-# To kill: pkill -f "vite.*9678"
+# The server listens on all interfaces (--host 0.0.0.0, to test from a phone on
+# the network) on port 9678 and survives session termination (nohup+disown).
+# Local files are never served: see server.fs.deny in vite.config.ts.
+# To stop it: kill "$(cat "${XDG_CACHE_HOME:-$HOME/.cache}/tacsuite-dev.pid")"
+# (never pkill/killall/pgrep -f: a -f pattern hits the whole machine).
 
 set -e
 
 # Determine log file location
 TACSUITE_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-LOG_FILE="${1:-/tmp/tacsuite-serve-dev.log}"
+CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}"
+LOG_FILE="${1:-$CACHE_DIR/tacsuite-serve-dev.log}"
+PID_FILE="$CACHE_DIR/tacsuite-dev.pid"
+umask 077
 
 # Ensure directory exists
 mkdir -p "$(dirname "$LOG_FILE")"
 
-echo "Starting TacSuite development server on 127.0.0.1:9678..."
+echo "Starting TacSuite development server on port 9678 (all interfaces)..."
 echo "Log file: $LOG_FILE"
 
 # Check if port is already in use
@@ -29,14 +35,11 @@ if ss -ltnp 2>/dev/null | grep -q ':9678.*node'; then
   exit 0
 fi
 
-# Kill any stray vite processes from previous runs (optional, comment out if not desired)
-pkill -f "vite.*9678" 2>/dev/null || true
-sleep 1
-
 # Launch dev server from TacSuite root
 cd "$TACSUITE_DIR"
 nohup npm run dev -- --host 0.0.0.0 > "$LOG_FILE" 2>&1 &
 PID=$!
+echo "$PID" > "$PID_FILE"
 sleep 3
 
 # Disown so it survives session termination

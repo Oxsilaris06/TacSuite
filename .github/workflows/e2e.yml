@@ -5,6 +5,10 @@ name: E2E (manuel)
 on:
   workflow_dispatch:
 
+# Moindre privilège (revue de sécurité du 2026-09-26, D-10).
+permissions:
+  contents: read
+
 jobs:
   e2e:
     runs-on: ubuntu-latest

@@ -6,10 +6,10 @@ on:
       - main
   workflow_dispatch:
 
+# Moindre privilège (revue de sécurité du 2026-09-26, D-10) : lecture seule par
+# défaut ; droits de publication réservés au seul job de déploiement.
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 concurrency:
   group: pages
@@ -41,6 +41,9 @@ jobs:
           path: dist/
 
   deploy:
+    permissions:
+      pages: write
+      id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
