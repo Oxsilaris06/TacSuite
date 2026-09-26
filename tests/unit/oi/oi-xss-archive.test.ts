@@ -73,3 +73,44 @@ describe('C-3 — alertes et synthèse de cohérence', () => {
         expect(document.getElementById('recap_finalisation')!.textContent).toContain(tag);
     });
 });
+
+describe('C-4 — articulation et PATRACDVR rechargés depuis une archive', () => {
+    const TAG = '<img src=x onerror="window.__oiXss=1">';
+    const CLOSE = `</textarea>${TAG}`;
+    const ID = `a1');window.__oiXss=1;('`;
+
+    beforeEach(() => {
+        document.body.innerHTML = `<div id="moicp_container"></div><div id="zmspcp_container"></div>
+            <div id="effraction_container"></div><div id="rame_vl_container"></div>
+            <div id="patracdvr_container"></div><div id="unassigned_members_container"></div>`;
+    });
+
+    const noInjection = (): void => {
+        expect(document.body.querySelector('img')).toBeNull();
+        const inline = Array.from(document.body.querySelectorAll('[onclick],[onchange]'))
+            .map((el) => `${el.getAttribute('onclick') ?? ''}${el.getAttribute('onchange') ?? ''}`).join('\n');
+        expect(inline).not.toContain('window.__oiXss');
+    };
+
+    it('blocs MOICP, ZMSPCP, effraction et hypothèse : texte gardé, rien d’exécutable', async () => {
+        await import('@oi/articulation.js');
+        const text = { title: TAG, objectif: `"${TAG}`, itineraire: CLOSE, points_particuliers: CLOSE, mission: CLOSE, cat: CLOSE, place_chef: `"${TAG}` };
+        window.addMoicp({ id: ID, ...text });
+        window.addZmspcp({ id: ID, ...text, zone: CLOSE, secteur: CLOSE });
+        window.addEffraction({ id: 'effrac_1', title: `"${TAG}`, mission: CLOSE, porte: CLOSE, h_porte: `"${TAG}` });
+        window.addEffractionHypothesis('effrac_1', { id: 'h1', title: `"${TAG}`, desc: CLOSE, effrac: CLOSE });
+        noInjection();
+        expect(document.querySelector<HTMLTextAreaElement>('.moicp-mission')!.value).toBe(CLOSE);
+        expect(document.querySelector<HTMLInputElement>('.moicp-objectif')!.value).toBe(`"${TAG}`);
+    });
+
+    it('véhicule, membre et rame VL : nom et trigramme affichés comme du texte', async () => {
+        await import('@oi/articulation.js');
+        await import('@oi/patrac.js');
+        window.addPatracdvrRow(TAG, [{ trigramme: TAG, cellule: TAG, fonction: TAG, dir: TAG }]);
+        window.refreshRameVL();
+        noInjection();
+        expect(document.querySelector('.vehicle-name')!.textContent).toBe(TAG);
+        expect(document.querySelector('.rame-vl-name')!.textContent).toBe(TAG);
+    });
+});

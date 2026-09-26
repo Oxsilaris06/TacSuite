@@ -91,6 +91,10 @@
 
 import { DEFAULTS, Store, dbManager } from '@oi/init.js';
 import { sortable } from '@shared/ui-platform.js';
+import { esc } from '@shared/ui-platform.js';
+
+/** Identifiant venu d'une archive : réinjecté dans des `id` et des `onclick` inline. */
+const safeId = (v: unknown): string => String(v ?? '').replace(/[^\w-]/g, '');
 import type {
     OiEffractionBlock,
     OiEffractionHypothesis,
@@ -117,7 +121,7 @@ type OiArticulationBlockKind = 'moicp' | 'zmspcp' | 'effraction';
 export function addMoicp(data?: Partial<OiMoicpBlock> | null): void {
     const container = document.getElementById('moicp_container');
     if (!container) return;
-    const blockId = data?.id || `moicp_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
+    const blockId = safeId(data?.id) || `moicp_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
     const blockIndex = container.querySelectorAll('.moicp-block').length + 1;
 
     const div = document.createElement('div');
@@ -132,7 +136,7 @@ export function addMoicp(data?: Partial<OiMoicpBlock> | null): void {
         <div class="collapsible-header" style="background: color-mix(in srgb, var(--accent-blue) 12%, transparent); color: var(--accent-blue); border-left: 4px solid var(--accent-blue); border-radius: var(--radius-md) var(--radius-md) 0 0;">
             <h3 class="block-title" style="margin: 0; display: flex; align-items: center; gap: 10px;">
                 <span class="material-symbols-outlined">shield</span>
-                <input type="text" class="block-title-input" value="${data?.title || 'Inter ' + blockIndex}"
+                <input type="text" class="block-title-input" value="${esc(data?.title || 'Inter ' + blockIndex)}"
                     style="background: transparent; border: none; border-bottom: 1px solid rgba(59, 130, 246, 0.3); color: var(--accent-blue); font-size: 1.1em; font-weight: bold; padding: 2px 5px; width: 220px;"
                     onclick="event.stopPropagation()" oninput="syncDomToStore()">
             </h3>
@@ -144,22 +148,22 @@ export function addMoicp(data?: Partial<OiMoicpBlock> | null): void {
         </div>
         <div class="collapsible-content">
             <label>Mission (M):</label>
-            <textarea class="moicp-mission" rows="3" oninput="syncDomToStore()">${defaultMission}</textarea>
+            <textarea class="moicp-mission" rows="3" oninput="syncDomToStore()">${esc(defaultMission)}</textarea>
 
             <label>Objectif (O):</label>
-            <input type="text" class="moicp-objectif" value="${data?.objectif || ''}" oninput="syncDomToStore()">
+            <input type="text" class="moicp-objectif" value="${esc(data?.objectif || '')}" oninput="syncDomToStore()">
 
             <label>Itinéraire (I):</label>
-            <textarea class="moicp-itineraire" rows="3" oninput="syncDomToStore()">${data?.itineraire || ''}</textarea>
+            <textarea class="moicp-itineraire" rows="3" oninput="syncDomToStore()">${esc(data?.itineraire || '')}</textarea>
 
             <label>Points Particuliers (P):</label>
-            <textarea class="moicp-pp" rows="3" oninput="syncDomToStore()">${data?.points_particuliers || ''}</textarea>
+            <textarea class="moicp-pp" rows="3" oninput="syncDomToStore()">${esc(data?.points_particuliers || '')}</textarea>
 
             <label>Conduite à Tenir (C):</label>
-            <textarea class="moicp-cat" rows="5" oninput="syncDomToStore()">${defaultCat}</textarea>
+            <textarea class="moicp-cat" rows="5" oninput="syncDomToStore()">${esc(defaultCat)}</textarea>
 
             <label>Place du chef inter :</label>
-            <input type="text" class="moicp-place-chef" value="${data?.place_chef || ''}" oninput="syncDomToStore()">
+            <input type="text" class="moicp-place-chef" value="${esc(data?.place_chef || '')}" oninput="syncDomToStore()">
 
             <h4 style="margin-top: 15px; color: var(--accent-blue);">
                 <span class="material-symbols-outlined" style="vertical-align: middle;">group</span> Composition (ordre d'engagement)
@@ -218,7 +222,7 @@ export function addMoicp(data?: Partial<OiMoicpBlock> | null): void {
 export function addZmspcp(data?: Partial<OiZmspcpBlock> | null): void {
     const container = document.getElementById('zmspcp_container');
     if (!container) return;
-    const blockId = data?.id || `zmspcp_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
+    const blockId = safeId(data?.id) || `zmspcp_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
     const blockIndex = container.querySelectorAll('.zmspcp-block').length + 1;
 
     const div = document.createElement('div');
@@ -233,7 +237,7 @@ export function addZmspcp(data?: Partial<OiZmspcpBlock> | null): void {
         <div class="collapsible-header" style="background: color-mix(in srgb, var(--moicp-zmspcp-purple) 12%, transparent); color: var(--moicp-zmspcp-purple, #8e44ad); border-left: 4px solid var(--moicp-zmspcp-purple, #8e44ad); border-radius: var(--radius-md) var(--radius-md) 0 0;">
             <h3 class="block-title" style="margin: 0; display: flex; align-items: center; gap: 10px;">
                 <span class="material-symbols-outlined">visibility</span>
-                <input type="text" class="block-title-input" value="${data?.title || 'Appui Observation ' + blockIndex}"
+                <input type="text" class="block-title-input" value="${esc(data?.title || 'Appui Observation ' + blockIndex)}"
                     style="background: transparent; border: none; border-bottom: 1px solid rgba(142, 68, 173, 0.3); color: var(--moicp-zmspcp-purple, #8e44ad); font-size: 1.1em; font-weight: bold; padding: 2px 5px; width: 220px;"
                     onclick="event.stopPropagation()" oninput="syncDomToStore()">
             </h3>
@@ -245,22 +249,22 @@ export function addZmspcp(data?: Partial<OiZmspcpBlock> | null): void {
         </div>
         <div class="collapsible-content">
             <label>Zone d'installation (Z):</label>
-            <textarea class="zmspcp-zone" rows="3" oninput="syncDomToStore()">${data?.zone || ''}</textarea>
+            <textarea class="zmspcp-zone" rows="3" oninput="syncDomToStore()">${esc(data?.zone || '')}</textarea>
 
             <label>Mission (M):</label>
-            <textarea class="zmspcp-mission" rows="3" oninput="syncDomToStore()">${defaultMission}</textarea>
+            <textarea class="zmspcp-mission" rows="3" oninput="syncDomToStore()">${esc(defaultMission)}</textarea>
 
             <label>Secteur de surveillance (S):</label>
-            <textarea class="zmspcp-secteur" rows="3" oninput="syncDomToStore()">${data?.secteur || ''}</textarea>
+            <textarea class="zmspcp-secteur" rows="3" oninput="syncDomToStore()">${esc(data?.secteur || '')}</textarea>
 
             <label>Points Particuliers (P):</label>
-            <textarea class="zmspcp-pp" rows="3" oninput="syncDomToStore()">${data?.points_particuliers || ''}</textarea>
+            <textarea class="zmspcp-pp" rows="3" oninput="syncDomToStore()">${esc(data?.points_particuliers || '')}</textarea>
 
             <label>Conduite à Tenir (C):</label>
-            <textarea class="zmspcp-cat" rows="5" oninput="syncDomToStore()">${defaultCat}</textarea>
+            <textarea class="zmspcp-cat" rows="5" oninput="syncDomToStore()">${esc(defaultCat)}</textarea>
 
             <label>Place du chef AO :</label>
-            <input type="text" class="zmspcp-place-chef" value="${data?.place_chef || ''}" oninput="syncDomToStore()">
+            <input type="text" class="zmspcp-place-chef" value="${esc(data?.place_chef || '')}" oninput="syncDomToStore()">
 
             <h4 style="margin-top: 15px; color: var(--moicp-zmspcp-purple, #8e44ad);">
                 <span class="material-symbols-outlined" style="vertical-align: middle;">group</span> Composition (ordre d'engagement)
@@ -392,8 +396,8 @@ function _addArticulationMemberChip(zone: HTMLElement, trigramme: string, type: 
     const subtitle = [cellDisplay, funcDisplay].filter(Boolean).join(' / ');
 
     chip.innerHTML = `
-        <span class="art-member-trigramme">${trigramme}</span>
-        ${subtitle ? `<span class="art-member-detail">${subtitle}</span>` : ''}
+        <span class="art-member-trigramme">${esc(trigramme)}</span>
+        ${subtitle ? `<span class="art-member-detail">${esc(subtitle)}</span>` : ''}
         <button type="button" class="art-member-remove" onclick="this.parentElement.remove(); syncDomToStore();" title="Retirer" aria-label="Retirer ce membre"><span class="material-symbols-outlined">close</span></button>
     `;
 
@@ -520,7 +524,7 @@ export function refreshRameVL(savedData?: readonly string[]): void {
         chip.draggable = true;
         chip.innerHTML = `
             <span class="rame-vl-position">${index + 1}</span>
-            <span class="rame-vl-name">${name}</span>
+            <span class="rame-vl-name">${esc(name)}</span>
         `;
 
         chip.addEventListener('dragstart', (e) => {
@@ -740,8 +744,8 @@ function _createOrderChip(
 
     chip.innerHTML = `
         <span class="order-position">${index + 1}</span>
-        <span class="order-trigramme">${trigramme}</span>
-        <span class="order-detail">${[cellDisplay, funcDisplay].filter(Boolean).join(' / ')}</span>
+        <span class="order-trigramme">${esc(trigramme)}</span>
+        <span class="order-detail">${esc([cellDisplay, funcDisplay].filter(Boolean).join(' / '))}</span>
     `;
 
     chip.addEventListener('dragstart', (e) => {
@@ -935,7 +939,7 @@ Store.subscribe((state) => {
 export function addEffraction(data?: Partial<OiEffractionBlock> | null): void {
     const container = document.getElementById('effraction_container');
     if (!container) return;
-    const blockId = data?.id || `effrac_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
+    const blockId = safeId(data?.id) || `effrac_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
     const blockIndex = container.querySelectorAll('.effraction-block').length + 1;
 
     const div = document.createElement('div');
@@ -948,7 +952,7 @@ export function addEffraction(data?: Partial<OiEffractionBlock> | null): void {
         <div class="collapsible-header" style="background: color-mix(in srgb, var(--effraction-gold) 12%, transparent); color: var(--effraction-gold); border-left: 4px solid var(--effraction-gold); border-radius: var(--radius-md) var(--radius-md) 0 0;">
             <h3 class="block-title" style="margin: 0; display: flex; align-items: center; gap: 10px;">
                 <span class="material-symbols-outlined">hardware</span>
-                <input type="text" class="block-title-input" value="${data?.title || 'Effraction ' + blockIndex}"
+                <input type="text" class="block-title-input" value="${esc(data?.title || 'Effraction ' + blockIndex)}"
                     style="background: transparent; border: none; border-bottom: 1px solid rgba(212, 175, 55, 0.3); color: var(--effraction-gold); font-size: 1.1em; font-weight: bold; padding: 2px 5px; width: 220px;"
                     onclick="event.stopPropagation()" oninput="syncDomToStore()">
             </h3>
@@ -971,52 +975,52 @@ export function addEffraction(data?: Partial<OiEffractionBlock> | null): void {
             </div>
 
             <label>Mission EFFRAC :</label>
-            <textarea class="effrac-mission" rows="4" style="width:100%; margin-bottom: 15px;" oninput="syncDomToStore()" placeholder="...">${data?.mission || DEFAULTS.missions.effraction}</textarea>
+            <textarea class="effrac-mission" rows="4" style="width:100%; margin-bottom: 15px;" oninput="syncDomToStore()" placeholder="...">${esc(data?.mission || DEFAULTS.missions.effraction)}</textarea>
 
             <label>Type de porte :</label>
-            <textarea class="effrac-porte" rows="2" style="width:100%" oninput="syncDomToStore()" placeholder="Description libre...">${data?.porte || ''}</textarea>
+            <textarea class="effrac-porte" rows="2" style="width:100%" oninput="syncDomToStore()" placeholder="Description libre...">${esc(data?.porte || '')}</textarea>
 
             <label>Structure & Dormant :</label>
-            <textarea class="effrac-structure" rows="2" style="width:100%" oninput="syncDomToStore()" placeholder="Ex: Isolation par l'exterieur recouvert de crépi...">${data?.structure || ''}</textarea>
+            <textarea class="effrac-structure" rows="2" style="width:100%" oninput="syncDomToStore()" placeholder="Ex: Isolation par l'exterieur recouvert de crépi...">${esc(data?.structure || '')}</textarea>
 
             <label>Serrurerie :</label>
-            <textarea class="effrac-serrurerie" rows="2" style="width:100%" oninput="syncDomToStore()" placeholder="Ex: PVC, 1 point de fermeture...">${data?.serrurerie || ''}</textarea>
+            <textarea class="effrac-serrurerie" rows="2" style="width:100%" oninput="syncDomToStore()" placeholder="Ex: PVC, 1 point de fermeture...">${esc(data?.serrurerie || '')}</textarea>
 
             <label>Environnement immédiat :</label>
-            <textarea class="effrac-environnement" rows="2" style="width:100%" oninput="syncDomToStore()" placeholder="Ex: Petite marche en brique...">${data?.environnement || ''}</textarea>
+            <textarea class="effrac-environnement" rows="2" style="width:100%" oninput="syncDomToStore()" placeholder="Ex: Petite marche en brique...">${esc(data?.environnement || '')}</textarea>
 
             <div class="effrac-measurements-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin-top: 10px;">
                 <div>
                     <label style="font-size: 0.8em; color: var(--effraction-gold);">Bâti à Bâti (cm)</label>
-                    <input type="text" class="effrac-bati-bati" value="${data?.bati_a_bati || ''}" oninput="syncDomToStore()" placeholder="0">
+                    <input type="text" class="effrac-bati-bati" value="${esc(data?.bati_a_bati || '')}" oninput="syncDomToStore()" placeholder="0">
                 </div>
                 <div>
                     <label style="font-size: 0.8em; color: var(--effraction-gold);">Dormant à Dormant (cm)</label>
-                    <input type="text" class="effrac-dormant-dormant" value="${data?.dormant_a_dormant || ''}" oninput="syncDomToStore()" placeholder="0">
+                    <input type="text" class="effrac-dormant-dormant" value="${esc(data?.dormant_a_dormant || '')}" oninput="syncDomToStore()" placeholder="0">
                 </div>
                 <div>
                     <label style="font-size: 0.8em; color: var(--effraction-gold);">Profondeur linteaux (cm)</label>
-                    <input type="text" class="effrac-prof-linteaux" value="${data?.prof_linteaux || ''}" oninput="syncDomToStore()" placeholder="0">
+                    <input type="text" class="effrac-prof-linteaux" value="${esc(data?.prof_linteaux || '')}" oninput="syncDomToStore()" placeholder="0">
                 </div>
                 <div>
                     <label style="font-size: 0.8em; color: var(--effraction-gold);">Profondeur Bâti (cm)</label>
-                    <input type="text" class="effrac-prof-bati" value="${data?.prof_bati || ''}" oninput="syncDomToStore()" placeholder="0">
+                    <input type="text" class="effrac-prof-bati" value="${esc(data?.prof_bati || '')}" oninput="syncDomToStore()" placeholder="0">
                 </div>
                 <div>
                     <label style="font-size: 0.8em; color: var(--effraction-gold);">Hauteur de porte (cm)</label>
-                    <input type="text" class="effrac-h-porte" value="${data?.h_porte || ''}" oninput="syncDomToStore()" placeholder="0">
+                    <input type="text" class="effrac-h-porte" value="${esc(data?.h_porte || '')}" oninput="syncDomToStore()" placeholder="0">
                 </div>
                 <div>
                     <label style="font-size: 0.8em; color: var(--text-muted);">Hauteur marche (opt.)</label>
-                    <input type="text" class="effrac-h-marche" value="${data?.h_marche || ''}" oninput="syncDomToStore()" placeholder="0">
+                    <input type="text" class="effrac-h-marche" value="${esc(data?.h_marche || '')}" oninput="syncDomToStore()" placeholder="0">
                 </div>
                 <div>
                     <label style="font-size: 0.8em; color: var(--text-muted);">Prof. marche (opt.)</label>
-                    <input type="text" class="effrac-prof-marche" value="${data?.prof_marche || ''}" oninput="syncDomToStore()" placeholder="0">
+                    <input type="text" class="effrac-prof-marche" value="${esc(data?.prof_marche || '')}" oninput="syncDomToStore()" placeholder="0">
                 </div>
                 <div>
                     <label style="font-size: 0.8em; color: var(--text-muted);">Prof. moulure (opt.)</label>
-                    <input type="text" class="effrac-prof-moulure" value="${data?.prof_moulure || ''}" oninput="syncDomToStore()" placeholder="0">
+                    <input type="text" class="effrac-prof-moulure" value="${esc(data?.prof_moulure || '')}" oninput="syncDomToStore()" placeholder="0">
                 </div>
             </div>
 
@@ -1096,25 +1100,25 @@ export function addEffractionHypothesis(blockId: string, data?: Partial<OiEffrac
 
     div.innerHTML = `
         <div style="display:flex; justify-content: space-between; align-items:center; margin-bottom: 10px;">
-            <input type="text" class="effrac-hyp-title" value="${data?.title || 'Hypothèse ' + (list.children.length + 1)}" placeholder="Titre..." style="font-weight: bold; background: transparent; border: none; border-bottom: 1px solid var(--border-color); color: var(--text-primary); font-size: 1.1em; width: 60%;" oninput="syncDomToStore()">
+            <input type="text" class="effrac-hyp-title" value="${esc(data?.title || 'Hypothèse ' + (list.children.length + 1))}" placeholder="Titre..." style="font-weight: bold; background: transparent; border: none; border-bottom: 1px solid var(--border-color); color: var(--text-primary); font-size: 1.1em; width: 60%;" oninput="syncDomToStore()">
             <button type="button" class="remove-btn" onclick="this.closest('.effrac-hypothesis-item').remove(); syncDomToStore();" style="padding: 5px;" aria-label="Supprimer cette hypothèse"><span class="material-symbols-outlined">close</span></button>
         </div>
 
         <label style="font-size: 0.85em;">Description Initiale:</label>
-        <textarea class="effrac-hyp-desc" rows="2" style="width:100%; margin-bottom: 10px;" oninput="syncDomToStore()">${data?.desc || ''}</textarea>
+        <textarea class="effrac-hyp-desc" rows="2" style="width:100%; margin-bottom: 10px;" oninput="syncDomToStore()">${esc(data?.desc || '')}</textarea>
 
         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; margin-top: 10px;">
             <div>
                 <label style="font-size: 0.85em; color: var(--accent-blue);">Phase Effraction:</label>
-                <textarea class="effrac-hyp-effrac text-muted" rows="3" style="width:100%" oninput="syncDomToStore()">${data?.effrac || ''}</textarea>
+                <textarea class="effrac-hyp-effrac text-muted" rows="3" style="width:100%" oninput="syncDomToStore()">${esc(data?.effrac || '')}</textarea>
             </div>
             <div>
                 <label style="font-size: 0.85em; color: var(--accent-blue);">Phase Dégagement:</label>
-                <textarea class="effrac-hyp-degag text-muted" rows="3" style="width:100%" oninput="syncDomToStore()">${data?.degag || ''}</textarea>
+                <textarea class="effrac-hyp-degag text-muted" rows="3" style="width:100%" oninput="syncDomToStore()">${esc(data?.degag || '')}</textarea>
             </div>
             <div>
                 <label style="font-size: 0.85em; color: var(--accent-blue);">Phase Assaut:</label>
-                <textarea class="effrac-hyp-assaut text-muted" rows="3" style="width:100%" oninput="syncDomToStore()">${data?.assaut || ''}</textarea>
+                <textarea class="effrac-hyp-assaut text-muted" rows="3" style="width:100%" oninput="syncDomToStore()">${esc(data?.assaut || '')}</textarea>
             </div>
         </div>
     `;
