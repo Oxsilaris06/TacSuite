@@ -1882,3 +1882,28 @@ test('thème clair : le champ actif reste lisible (fond clair au focus)', async 
   const alpha = Number(/rgba\([^)]*,\s*([\d.]+)\)/.exec(bg)?.[1] ?? 1);
   expect(red >= 200 || alpha < 0.2, `fond du champ actif en thème clair : ${bg}`).toBe(true);
 });
+
+// ============================================================================
+// Téléphone : la barre de la mesure (Point, Annuler dernier, Terminer,
+// Quitter) tient dans la carte ; centrée sans retour à la ligne, elle
+// débordait des deux côtés (« Point » et « Quitter » coupés).
+// ============================================================================
+test('mesure sur téléphone : tous les boutons de la barre restent dans l’écran', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await gotoPctac(page);
+  await clickTab(page, 'view-plan');
+  await waitForPlanMapReady(page);
+  await page.locator('#plan_btn_draw').click();
+  await page.locator('.plan-draw-btn[data-tool="measure"]').click();
+  const map = await page.locator('#plan_map').boundingBox();
+  if (!map) throw new Error('carte sans boîte');
+  await page.mouse.click(map.x + map.width / 2, map.y + map.height / 2);
+  const buttons = page.locator('#plan_measure_controls button:visible');
+  await expect(buttons.first()).toBeVisible();
+  for (const b of await buttons.all()) {
+    const r = await b.boundingBox();
+    if (!r) continue;
+    expect.soft(r.x, `bouton « ${await b.innerText()} » coupé à gauche`).toBeGreaterThanOrEqual(0);
+    expect.soft(r.x + r.width, `bouton « ${await b.innerText()} » coupé à droite`).toBeLessThanOrEqual(390);
+  }
+});

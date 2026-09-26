@@ -214,8 +214,9 @@ export const MeasureMethods = {
         const bar = document.createElement('div');
         bar.id = 'plan_measure_controls';
         bar.style.cssText = `
-            position: absolute; left: 50%; bottom: 18px; transform: translateX(-50%);
-            display: flex; gap: 8px; z-index: 12;
+            position: absolute; left: 8px; right: 8px; bottom: 18px;
+            width: fit-content; margin-inline: auto;
+            display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; z-index: 12;
             background: rgba(10,12,16,0.82);
             padding: 6px; border-radius: 14px;
             box-shadow: 0 4px 18px rgba(0,0,0,0.55);
