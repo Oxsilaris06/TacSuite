@@ -128,6 +128,7 @@ import { oiState } from '@oi/state.js';
 import { acquirePdfLock, releasePdfLock } from '@oi/pdf/generation-lock.js';
 import { currentOiPdfOptions } from '@oi/pdf/options.js';
 import { confirmDialog, promptDialog, toast } from '@shared/feedback.js';
+import { esc } from '@shared/ui-platform.js';
 import type { OiFormData, OiMemberConfig, OiPatracMember } from '@shared/types/contracts.js';
 
 // ==================== Patracdvr.js ====================
@@ -1339,7 +1340,6 @@ function openUniteConfigModal(): void {
     const content = document.getElementById('unite_config_content') as HTMLElement | null;
     const modal = document.getElementById('uniteConfigModal') as HTMLDialogElement | null;
     if (!content || !modal || typeof quickEditMapping === 'undefined') return;
-    const esc = (v: unknown): string => (window.UIPlatform ? window.UIPlatform.esc(v) : String(v));
     content.innerHTML = '';
     for (const [title, cfg] of Object.entries(quickEditMapping)) {
         const group = document.createElement('div');

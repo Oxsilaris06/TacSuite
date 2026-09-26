@@ -78,6 +78,8 @@ window.addEventListener('unhandledrejection', (e) => {
 });
 
 // ── §12.1 étape 1 — Intercepteur de logs persistant, VERBATIM de
+import { buildLogsHtml } from '@oi/log-window.js';
+
 // 4.html:44-110 (IIFE). Pose `window.openLogs` et `window.__capturedLogs`
 // (OiInlineGlobals, déjà typés dans global.d.ts). ──────────────────────────
 (function () {
@@ -136,10 +138,7 @@ window.addEventListener('unhandledrejection', (e) => {
     console.error = (...args: unknown[]): void => { formatLog(args, 'error'); originalError.apply(console, args); };
 
     window.openLogs = function () {
-        const html = `<html><head><title>Console Logs - GStart</title><style>body { font-family: monospace; background: #000; color: #fff; padding: 20px; line-height: 1.5; } h2 { color: #3b82f6; border-bottom: 2px solid #3b82f6; padding-bottom: 10px; display: flex; justify-content: space-between; align-items: center; } .log { color: #fff; border-bottom: 1px solid #1a1a1a; padding: 4px 0; } .warn { color: #fbbf24; border-bottom: 1px solid #1a1a1a; padding: 4px 0; } .error { color: #f87171; font-weight: bold; border-left: 3px solid red; padding: 4px 0 4px 10px; border-bottom: 1px solid #1a1a1a; } .btn-clear { background: #ef4444; color: white; border: none; padding: 5px 15px; border-radius: 4px; cursor: pointer; font-size: 14px; }</style></head><body><h2>GStart Mobile Console <button type="button" class="btn-clear" onclick="localStorage.removeItem('gstart_captured_logs'); location.reload();">Vider les logs</button></h2>${window.__capturedLogs.map((l) => {
-            const cls = l.includes('[ERROR]') ? 'error' : l.includes('[WARN]') ? 'warn' : 'log';
-            return `<div class="${cls}">${l}</div>`;
-        }).reverse().join('')}</body></html>`;
+        const html = buildLogsHtml(window.__capturedLogs);
 
         const logWindow = window.open('', 'GStartLogs', 'width=800,height=600');
         // Garde ajoutée (window.open peut renvoyer null, ex. bloqueur de popup) —
