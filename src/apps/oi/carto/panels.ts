@@ -44,6 +44,7 @@
  */
 
 import { dbManager } from '@oi/init.js';
+import { photoFieldLabel } from '@oi/sections.js';
 import { formatCoordsClipboard, shortMgrs } from '@shared/coords.js';
 import { toast } from '@shared/feedback.js';
 import { esc } from '@shared/ui-platform.js';
@@ -391,9 +392,11 @@ export const PanelsMethods = {
         const previews = Array.from(document.querySelectorAll<HTMLImageElement>('.image-preview-item img.image-preview'))
             .filter((img) => img.id.startsWith('img_'));
         const tiles = previews.map((img) => {
-            // Légende saisie, sinon le nom par défaut du champ (« Baptême terrain (1/2) »).
+            // Légende saisie, sinon le nom par défaut du champ (« Baptême terrain (1/2) »),
+            // ou son seul nom pour un champ sans légende (photo principale d'adversaire).
             const input = img.closest('.image-preview-item')?.querySelector<HTMLInputElement>('.photo-title-input');
-            const title = (input?.value.trim() || input?.placeholder || '').trim() || 'Photo';
+            const title = (input?.value.trim() || input?.placeholder || '').trim()
+                || photoFieldLabel(img.closest('.image-preview-container')?.id ?? '');
             const on = img.id === current;
             return `
                 <button type="button" class="oi-carto-photo-tile${on ? ' selected' : ''}" data-id="${esc(img.id)}" title="${esc(title)}">

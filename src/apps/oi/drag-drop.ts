@@ -330,7 +330,11 @@ function handleDragOver(e: DragEvent): void {
     else if (draggedItem.classList.contains('image-preview-item') && targetContainer.classList.contains('image-preview-container')) {
         // Champ limité (`data-max-photos`) plein : il ne reçoit pas de photo
         // venue d'un autre champ ; on y réordonne toujours les siennes.
-        if (draggedItem.parentElement !== targetContainer && photoRoom(targetContainer) <= 0) return;
+        // Photo principale d'adversaire (`data-no-caption`) : ni entrée ni
+        // sortie par glisser, sa vignette n'a pas de légende.
+        const from = draggedItem.parentElement;
+        if (from !== targetContainer
+            && (photoRoom(targetContainer) <= 0 || targetContainer.hasAttribute('data-no-caption') || from?.hasAttribute('data-no-caption'))) return;
         const draggableElements = [...targetContainer.querySelectorAll<HTMLElement>('.image-preview-item:not(.dragging)')];
         // drag.js:192-201 — même précédent que `getDragAfterElement`
         // (`outils.ts:290`) : accumulateur initial sans `.element`.
