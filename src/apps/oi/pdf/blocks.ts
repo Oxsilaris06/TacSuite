@@ -987,6 +987,12 @@ function galleryPageBody(slots: GallerySlot[], byId: Map<string, GalleryEntry>, 
     };
 }
 
+/** Contenu posé en tête de la première page d'une galerie, et sa hauteur (pt). */
+export interface GalleryLead {
+    content: Content;
+    heightPt: number;
+}
+
 /**
  * Galerie ADAPTATIVE (décision 44, audit A7) : `layoutGallery`
  * (`shared/photo-layout.ts`, commune à PC-Tac) place les images page par page
@@ -1003,12 +1009,17 @@ export function adaptiveGalleryPages(
     entries: readonly GalleryEntry[],
     p: OiPdfPalette,
     geo: ReturnType<typeof pageGeometry>,
+    lead?: GalleryLead,
 ): Content[] {
     if (entries.length === 0) {
         return [];
     }
     const W = geo.contentWidthPt;
     const box = { width: W, height: geo.contentHeightPt - PDF_H2_BLOCK_PT };
+    // `lead` (baptême sous la Mission, Nico 09-26) : posé en tête de la
+    // PREMIÈRE page, dont la zone d'images est réduite d'autant ; les pages
+    // suivantes gardent la zone pleine.
+    let firstBox = lead ? { width: W, height: box.height - lead.heightPt } : null;
     // Une réserve de légende par suite d'images de même forme (une page ne
     // mélange jamais deux formes) : la place des badges d'une photo de porte
     // ne rétrécit pas les portraits voisins. Plancher : l'image garde mm(40).
@@ -1023,7 +1034,17 @@ export function adaptiveGalleryPages(
         }
         const cellWidth = galleryCellWidthPt(shape, W);
         const reserve = Math.min(box.height - mm(40), Math.max(...run.map((e) => galleryCaptionReservePt(e, cellWidth))));
-        slotsPages.push(...layoutGallery(run.map(galleryInput), box, { gap: GALLERY_GAP_PT, captionHeight: reserve }));
+        let rest = run;
+        if (firstBox) {
+            // Première page seulement : ce qui n'y tient pas repart sur la zone pleine.
+            const fb = firstBox;
+            firstBox = null;
+            const firstSlots = layoutGallery(run.map(galleryInput), fb, { gap: GALLERY_GAP_PT, captionHeight: Math.min(reserve, fb.height - mm(40)) })[0] ?? [];
+            slotsPages.push(firstSlots);
+            const placed = new Set(firstSlots.map((slot) => slot.id));
+            rest = run.filter((e) => !placed.has(e.id));
+        }
+        if (rest.length > 0) slotsPages.push(...layoutGallery(rest.map(galleryInput), box, { gap: GALLERY_GAP_PT, captionHeight: reserve }));
     }
     const byId = new Map(entries.map((e) => [e.id, e]));
     let shown = 0;
@@ -1032,7 +1053,7 @@ export function adaptiveGalleryPages(
         shown += slots.length;
         const suffix = slots.length === 1 ? `— PHOTO ${first}/${entries.length}` : `— PHOTOS ${first}-${shown}/${entries.length}`;
         return {
-            stack: [h2(title, p, W, { suffix }), galleryPageBody(slots, byId, p, W)],
+            stack: [...(pageIndex === 0 && lead ? [lead.content] : []), h2(title, p, W, { suffix }), galleryPageBody(slots, byId, p, W)],
             pageBreak: pageIndex === 0 ? undefined : 'before',
         };
     });
@@ -1053,6 +1074,7 @@ export function galleryPages(
     p: OiPdfPalette,
     geo: ReturnType<typeof pageGeometry>,
     sizeOf: (id: string) => ImageSize | null = () => null,
+    lead?: GalleryLead,
 ): Content[] {
     const entries: GalleryEntry[] = [];
     for (const meta of photos) {
@@ -1067,5 +1089,5 @@ export function galleryPages(
             isPlan: isPlanPhotoId(meta.id),
         });
     }
-    return adaptiveGalleryPages(title, entries, p, geo);
+    return adaptiveGalleryPages(title, entries, p, geo, lead);
 }

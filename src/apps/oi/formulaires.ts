@@ -192,6 +192,7 @@ import { collectCoherence } from '@oi/coherence.js';
 import { createAnnotatedImageBlob } from '@oi/dessin.js';
 import { setupQuickEditPanel } from '@oi/patrac.js';
 import { isSafeId, reencodeSansExif } from '@oi/outils.js';
+import { mergeLegacyBaptemePhotos } from '@oi/sections.js';
 // R2-T4 — validation inline (nouveau module, cf. son en-tête).
 import { attachValidation, required } from '@oi/validation.js';
 import { confirmDialog, toast } from '@shared/feedback.js';
@@ -1006,6 +1007,11 @@ async function loadFormData(): Promise<boolean> {
         await window.updateCustomBgPreview();
 
         // --- 3. Restauration des photos (après que les conteneurs existent) ---
+        // Anciennes photos « Baptême Terrain » par bloc ZMSPCP : reprises dans le
+        // champ unique sous la Mission (Nico 09-26), jamais perdues.
+        if (data.dynamic_photos) {
+            data.dynamic_photos = mergeLegacyBaptemePhotos(data.dynamic_photos, (data.zmspcp_blocks ?? []).map((b) => b.id));
+        }
         if (data.dynamic_photos) {
             const dynamicPhotos = data.dynamic_photos;
             for (const previewId in dynamicPhotos) {

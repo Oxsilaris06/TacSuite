@@ -64,6 +64,7 @@ import { imageSizeFromDataUrl, type ImageSize } from './image-size.js';
 import {
     documentFontPx,
     mm,
+    PDF_H2_BLOCK_PT,
     pageGeometry,
     palette,
     estimateCharsPerLine,
@@ -78,7 +79,7 @@ import {
 } from './theme.js';
 import { breakLongTokens } from './text-utils.js';
 import { dateFr, oiModeLabel, oiPdfInfo } from './document-meta.js';
-import { applySectionRemovals, currentOiMode, isSectionRemoved, OI_EXPRESS_PHOTO_CONTAINERS, pdfSectionTitle } from '@oi/sections.js';
+import { applySectionRemovals, currentOiMode, isSectionRemoved, mergeLegacyBaptemePhotos, OI_BAPTEME_CONTAINER, OI_EXPRESS_PHOTO_CONTAINERS, pdfSectionTitle } from '@oi/sections.js';
 import type {
     OiAdversary,
     OiEffractionBlock,
@@ -2030,6 +2031,37 @@ function buildMissionExecutionPages(ctx: BuildCtx, num: () => number): Content[]
     const missionNum = num();
     const execNum = num();
     const availablePt = geo.contentHeightPt - EFFRAC_FITS_SAFETY_PT;
+
+    // Photos « Baptême terrain » (Nico 09-26) : sous la Mission, avant
+    // l'Exécution. La Mission ouvre la première page de la galerie (elle ne
+    // reste jamais seule sur une page) ; l'Exécution suit sur sa propre page.
+    const bapteme = ctx.dynamicPhotos[OI_BAPTEME_CONTAINER] ?? [];
+    if (bapteme.some((meta) => ctx.photosBase64[meta.id] !== undefined)) {
+        const execPages = buildExecution(ctx, execNum);
+        const [execFirst, ...execRest] = execPages;
+        const execution: Content[] = [{ stack: [execFirst as Content], pageBreak: 'before' }, ...execRest];
+        const leadHeightPt = missionPagePt(ctx, baseFontSize) + 2 * MISSION_EXEC_SEP_MARGIN_PT + EFFRAC_FITS_SAFETY_PT;
+        const title = 'Baptême terrain';
+        // Mission trop longue pour laisser une vraie place aux photos : page
+        // Mission seule, puis la galerie sur ses propres pages.
+        if (geo.contentHeightPt - PDF_H2_BLOCK_PT - leadHeightPt < mm(80)) {
+            const gallery = galleryPages(title, bapteme, ctx.photosBase64, p, geo, ctx.photoSize);
+            const [gFirst, ...gRest] = gallery;
+            return [buildMission(ctx, missionNum), { stack: [gFirst as Content], pageBreak: 'before' }, ...gRest, ...execution];
+        }
+        const lead: Content = {
+            stack: [
+                h2(`${missionNum}. ${pdfSectionTitle(ctx.formData, 'mission')}`, p, geo.contentWidthPt),
+                missionBodyContent(ctx, baseFontSize),
+                {
+                    canvas: [{ type: 'line', x1: 0, y1: 0, x2: geo.contentWidthPt, y2: 0, lineWidth: 1, lineColor: p.border }],
+                    margin: [0, MISSION_EXEC_SEP_MARGIN_PT, 0, MISSION_EXEC_SEP_MARGIN_PT],
+                },
+            ],
+            fontSize: baseFontSize,
+        };
+        return [...galleryPages(title, bapteme, ctx.photosBase64, p, geo, ctx.photoSize, { content: lead, heightPt: leadHeightPt }), ...execution];
+    }
     const steps = Array.from(new Set<number>([baseFontSize, ...FIT_FONT_STEPS]))
         .filter((f) => f <= baseFontSize)
         .sort((a, b) => b - a);
@@ -3425,8 +3457,9 @@ function buildEffractionPages(ctx: BuildCtx, block: OiEffractionBlock): Content[
 /**
  * Boucle des blocs d'articulation groupés par index — port de
  * `pdf-engine-v2.ts:1059-1189` : `for i < max(moicp, zmspcp, effrac)`, ordre
- * interne ZMSPCP → MOICP → EFFRACTION (§3.4 règle 4). Photos « Baptême
- * Terrain » avant chaque page ZMSPCP, « Emplacement AO » après (§3.4 règle 3).
+ * interne ZMSPCP → MOICP → EFFRACTION (§3.4 règle 4). Photos « Emplacement
+ * AO » après chaque page ZMSPCP (§3.4 règle 3) ; « Baptême terrain » est
+ * imprimé sous la Mission (`buildMissionExecutionPages`, Nico 09-26).
  *
  * CORRECTIF (rupture « premier bloc sans saut de page ») : le SEUL appelant
  * (`OI_PDF_SECTIONS['articulation'].build`) compose TOUJOURS ce résultat
@@ -3467,8 +3500,7 @@ function buildArticulationBlocksLoop(ctx: BuildCtx): Content[] {
     for (let i = 0; i < maxBlocks; i++) {
         const zmspcp = zmspcpBlocks[i];
         if (zmspcp) {
-            const bapteme = dynamicPhotos[`photo_bapteme_${zmspcp.id}`] ?? [];
-            pushArticPages(galleryPages(`Baptême Terrain — ${zmspcp.title || '-'}`, bapteme, photosBase64, p, geo, ctx.photoSize));
+            // « Baptême terrain » : imprimé sous la Mission (Nico 09-26), plus ici.
             pushArticPage(buildZmspcpPage(ctx, zmspcp, memberToCell));
             const emplAo = dynamicPhotos[`photo_empl_ao_${zmspcp.id}`] ?? [];
             pushArticPages(galleryPages(`${pdfSectionTitle(ctx.formData, 'zmspcp')} : ${zmspcp.title || '-'} (Emplacement AO)`, emplAo, photosBase64, p, geo, ctx.photoSize));
@@ -4477,6 +4509,7 @@ const OI_PDF_SECTION_FORM_ID: Record<string, string> = {
 const OI_PDF_SECTION_IS_EMPTY: Record<string, (fd: OiFormData) => boolean> = {
     environnement: (fd) => ENV_FIELD_SLOTS.every(([, key]) => isBlankOrDash(fd[key])),
     'mission-execution': (fd) =>
+        (fd.dynamic_photos?.[OI_BAPTEME_CONTAINER] ?? []).length === 0 &&
         ['missions_psig', 'date_execution', 'heure_execution', 'action_body_text'].every((key) => isBlankOrDash(fd[key])) &&
         (fd.time_events ?? []).every((e) => isBlankOrDash(e.hour) && isBlankOrDash(e.description)) &&
         (fd.hypotheses ?? []).every((h) => isBlankOrDash(h)),
@@ -4567,7 +4600,13 @@ export function buildOiDocDefinition(
     const { isDark } = data;
     // Sections retirées (×, `sections.ts`) : données masquées dans une COPIE —
     // l'OI garde tout, « Rétablir » rend la section intacte.
-    const formData = applySectionRemovals(data.formData);
+    const removed = applySectionRemovals(data.formData);
+    // Anciennes photos « Baptême Terrain » par bloc ZMSPCP : reprises dans le
+    // champ unique imprimé sous la Mission (Nico 09-26), jamais perdues.
+    const formData: OiFormData = {
+        ...removed,
+        dynamic_photos: mergeLegacyBaptemePhotos(removed.dynamic_photos ?? {}, (data.formData.zmspcp_blocks ?? []).map((b) => b.id)),
+    };
     const p = palette(isDark);
     const geo = pageGeometry(opts.format);
     const dynamicPhotos = formData.dynamic_photos ?? {};

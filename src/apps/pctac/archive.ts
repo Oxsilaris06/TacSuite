@@ -645,7 +645,7 @@ export function oiPhotoTitle(key: string, entry: OiDynamicPhotoEntry): string {
         [/transport_domicile/, 'Transport PR → Domicile'],
         [/photo_itin_ext_/, 'Cheminement extérieur'],
         [/photo_itin_int_/, 'Cheminement intérieur'],
-        [/photo_bapteme_/, 'Baptême terrain'],
+        [/photo_bapteme_|bapteme_terrain/, 'Baptême terrain'],
         [/photo_empl_ao_/, 'Emplacement AO'],
         [/photo_effrac_/, 'Effraction'],
         [/photo_extra_/, 'Adversaire — photo supplémentaire'],

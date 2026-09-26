@@ -53,7 +53,7 @@ vi.mock('@shared/feedback.js', () => ({
     hideBanner: vi.fn(),
 }));
 
-import { Archive, oiPhotoCategory, stableOiPhotoId } from '@pctac/archive.js';
+import { Archive, oiPhotoCategory, oiPhotoTitle, stableOiPhotoId } from '@pctac/archive.js';
 import { ImageStore } from '@pctac/image-store.js';
 import { Storage } from '@pctac/storage.js';
 
@@ -120,6 +120,13 @@ describe('helpers photo OI', () => {
         expect(oiPhotoCategory('photo_extra_adv1')).toBe('neutralized');
         expect(oiPhotoCategory('photo_renforts_adv1')).toBe('neutralized');
         expect(oiPhotoCategory('photo_container_express_objectif_preview_container')).toBe('location');
+    });
+});
+
+describe('légende des photos « Baptême terrain » importées', () => {
+    it('champ unique sous la Mission comme ancien champ par bloc : « Baptême terrain »', () => {
+        expect(oiPhotoTitle('photo_container_bapteme_terrain_preview_container', {})).toBe('Baptême terrain');
+        expect(oiPhotoTitle('photo_bapteme_z1', {})).toBe('Baptême terrain');
     });
 });
 

@@ -586,29 +586,73 @@ describe('buildOiDocDefinition — ordre des photos', () => {
         expect(extIdx).toBeLessThan(intIdx);
     });
 
-    it('baptême Terrain AVANT la page ZMSPCP, emplacement AO APRÈS', () => {
+    it('baptême terrain SOUS la Mission et AVANT l’Exécution (Nico 09-26) ; emplacement AO après la page ZMSPCP', () => {
         const formData: OiFormData = {
+            missions_psig: 'INTERPELLER L’OBJECTIF.',
             zmspcp_blocks: [
                 { id: 'z1', title: 'ALPHA', zone: '-', mission: '-', secteur: '-', points_particuliers: '-', cat: '-', place_chef: '-', members: [] },
             ],
             dynamic_photos: {
-                photo_bapteme_z1: [makePhotoMeta('baptphoto')],
+                photo_container_bapteme_terrain_preview_container: [makePhotoMeta('baptphoto')],
                 photo_empl_ao_z1: [makePhotoMeta('aophoto')],
             },
         };
         const photosBase64 = { baptphoto: 'data:image/jpeg;base64,BAPTPHOTO', aophoto: 'data:image/jpeg;base64,AOPHOTO' };
-        const json = JSON.stringify(buildOiDocDefinition(collect(formData, photosBase64), { format: 'a4' }));
+        const dd = buildOiDocDefinition(collect(formData, photosBase64), { format: 'a4' });
+        const content = dd.content as Content[];
+        const pageOf = (needle: string): number => content.findIndex((page) => JSON.stringify(page).includes(needle));
 
-        // D4 (internement des images) : même lecture par CLÉ que le test
-        // itinéraires ci-dessus.
-        const baptIdx = json.indexOf('"image":"baptphoto"');
-        const zmspcpIdx = json.indexOf('ARTICULATION : ZMSPCP - ALPHA');
-        const aoIdx = json.indexOf('"image":"aophoto"');
-        expect(baptIdx).toBeGreaterThanOrEqual(0);
-        expect(zmspcpIdx).toBeGreaterThanOrEqual(0);
-        expect(aoIdx).toBeGreaterThanOrEqual(0);
-        expect(baptIdx).toBeLessThan(zmspcpIdx);
-        expect(zmspcpIdx).toBeLessThan(aoIdx);
+        const missionPage = pageOf("MISSION DE L'UNITÉ");
+        const baptPage = pageOf('"image":"baptphoto"');
+        const execPage = pageOf('EXÉCUTION');
+        const zmspcpPage = pageOf('ARTICULATION : ZMSPCP - ALPHA');
+        const aoPage = pageOf('"image":"aophoto"');
+        // La Mission porte les premières photos sur SA page, l'Exécution suit.
+        expect(baptPage).toBeGreaterThanOrEqual(0);
+        expect(baptPage).toBe(missionPage);
+        expect(execPage).toBeGreaterThan(baptPage);
+        expect((content[execPage] as { pageBreak?: string }).pageBreak).toBe('before');
+        const json = JSON.stringify(content[missionPage]);
+        expect(json.indexOf("MISSION DE L'UNITÉ")).toBeLessThan(json.indexOf('"image":"baptphoto"'));
+        expect(json).toContain('BAPTÊME TERRAIN');
+        // Plus rien du baptême dans l'articulation ; l'AO reste après sa page ZMSPCP.
+        expect(zmspcpPage).toBeGreaterThan(execPage);
+        expect(aoPage).toBeGreaterThan(zmspcpPage);
+    });
+
+    it('ancienne donnée : photos « Baptême Terrain » d’un bloc ZMSPCP imprimées sous la Mission, jamais perdues', () => {
+        const formData: OiFormData = {
+            missions_psig: 'INTERPELLER L’OBJECTIF.',
+            zmspcp_blocks: [
+                { id: 'z1', title: 'ALPHA', zone: '-', mission: '-', secteur: '-', points_particuliers: '-', cat: '-', place_chef: '-', members: [] },
+            ],
+            dynamic_photos: { photo_bapteme_z1: [makePhotoMeta('baptphoto')] },
+        };
+        const dd = buildOiDocDefinition(collect(formData, { baptphoto: 'data:image/jpeg;base64,BAPTPHOTO' }), { format: 'a4' });
+        const content = dd.content as Content[];
+        const baptPage = content.findIndex((page) => JSON.stringify(page).includes('"image":"baptphoto"'));
+        const execPage = content.findIndex((page) => JSON.stringify(page).includes('EXÉCUTION'));
+        expect(baptPage).toBeGreaterThanOrEqual(0);
+        expect(JSON.stringify(content[baptPage])).toContain("MISSION DE L'UNITÉ");
+        expect(execPage).toBeGreaterThan(baptPage);
+        expect(JSON.stringify(content).split('"image":"baptphoto"').length - 1).toBe(1);
+    });
+
+    it('sans photo de baptême, Mission et Exécution restent fusionnées sur une page', () => {
+        const dd = buildOiDocDefinition(collect({ missions_psig: 'INTERPELLER L’OBJECTIF.' }, {}), { format: 'a4' });
+        const content = dd.content as Content[];
+        const page = content.findIndex((pg) => JSON.stringify(pg).includes("MISSION DE L'UNITÉ"));
+        expect(page).toBeGreaterThanOrEqual(0);
+        expect(JSON.stringify(content[page])).toContain('EXÉCUTION');
+        expect(JSON.stringify(content)).not.toContain('BAPTÊME TERRAIN');
+    });
+
+    it('photos de baptême sans texte de Mission : la section est imprimée, les photos jamais perdues', () => {
+        const formData: OiFormData = { dynamic_photos: { photo_container_bapteme_terrain_preview_container: [makePhotoMeta('baptphoto')] } };
+        const dd = buildOiDocDefinition(collect(formData, { baptphoto: 'data:image/jpeg;base64,BAPTPHOTO' }), { format: 'a4' });
+        const json = JSON.stringify(dd.content);
+        expect(json).toContain('"image":"baptphoto"');
+        expect(json.indexOf("MISSION DE L'UNITÉ")).toBeLessThan(json.indexOf('"image":"baptphoto"'));
     });
 });
 
@@ -2098,7 +2142,7 @@ describe('buildOiDocDefinition — RÉGRESSION anomalie #2 : 1er bloc articulati
         },
     );
 
-    it("AVEC une photo « Baptême Terrain » précédente, la 1re page de galerie porte AUSSI SON PROPRE saut de page — jamais glissée sur la page de « 7. ARTICULATION » (vérifie le second bout : pas de double saut/page blanche)", () => {
+    it("une photo « Baptême terrain » (désormais sous la Mission) ne s'intercale plus dans l'articulation : la page ZMSPCP suit l'aperçu avec SON PROPRE saut, sans page vide", () => {
         const zmspcpBlocks: OiZmspcpBlock[] = [
             { id: 'z1', title: 'ALPHA', zone: '-', mission: '-', secteur: '-', points_particuliers: '-', cat: '-', place_chef: '-', members: [] },
         ];
@@ -2112,17 +2156,11 @@ describe('buildOiDocDefinition — RÉGRESSION anomalie #2 : 1er bloc articulati
 
         const overviewIdx = content.findIndex((page) => JSON.stringify(page).includes('ARTICULATION & ORDRES DE MOUVEMENT'));
         const galleryIdx = content.findIndex((page) => JSON.stringify(page).includes('"image":"baptphoto"'));
-        expect(overviewIdx).toBeGreaterThanOrEqual(0);
-        expect(galleryIdx).toBeGreaterThanOrEqual(0);
-        expect(galleryIdx).not.toBe(overviewIdx);
-
-        const galleryPage = content[galleryIdx] as { pageBreak?: string };
-        expect(galleryPage.pageBreak, "la 1re page de galerie doit porter SON PROPRE pageBreak:'before'").toBe('before');
-
-        // Pas de double saut : aucune page top-level vide entre l'overview et
-        // la page ZMSPCP qui suit la galerie.
         const zmspcpIdx = content.findIndex((page) => JSON.stringify(page).includes('ARTICULATION : ZMSPCP'));
-        expect(zmspcpIdx).toBeGreaterThan(galleryIdx);
+        expect(galleryIdx).toBeGreaterThanOrEqual(0);
+        expect(galleryIdx).toBeLessThan(overviewIdx);
+        expect(zmspcpIdx).toBe(overviewIdx + 1);
+        expect((content[zmspcpIdx] as { pageBreak?: string }).pageBreak).toBe('before');
         for (let i = overviewIdx; i <= zmspcpIdx; i++) {
             expect(JSON.stringify(content[i]).length, `page top-level ${i} ne doit jamais être vide`).toBeGreaterThan(2);
         }

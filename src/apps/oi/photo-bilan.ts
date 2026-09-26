@@ -27,7 +27,9 @@ const RANK: Record<PhotoIssue, number> = { annotation: 1, illisible: 2, absente:
 const SECTIONS: ReadonlyArray<[RegExp, string]> = [
     [/^photo_(main|extra|renforts)_|^adversary_/, 'Adversaire'],
     [/^photo_itin_|itineraire/, 'Cheminement'],
-    [/^photo_(bapteme|empl_ao)_|bapteme|emplacement_ao/, 'ZMSPCP'],
+    // « Baptême terrain » : sous la Mission (Nico 09-26), ancien champ par bloc compris.
+    [/bapteme/, 'Mission'],
+    [/^photo_empl_ao_|emplacement_ao/, 'ZMSPCP'],
     [/effrac/, 'Effraction'],
     [/transport/, 'Transport'],
     [/^photo_container_express_/, 'OI Express'],

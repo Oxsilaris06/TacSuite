@@ -761,16 +761,17 @@ describe('_getPhotoTargets (oi_cartographie.js:1185-1210)', () => {
     it('replie sur le titre par défaut quand .block-title-input est absent', async () => {
         const CaptureMethods = await loadCaptureMethods(vi.fn());
         document.body.innerHTML = `
+            <div id="photo_container_bapteme_terrain_preview_container"></div>
             <div class="zmspcp-block" data-block-id="z1"></div>
-            <div id="photo_bapteme_z1"></div>
             <div id="photo_empl_ao_z1"></div>
         `;
         const state = makeCaptureState(CaptureMethods, null);
 
         const targets = state._getPhotoTargets();
 
+        // « Baptême terrain » : un seul champ, sous la Mission (Nico 09-26).
         expect(targets).toEqual([
-            { id: 'photo_bapteme_z1', label: 'Baptême terrain — ZMSPCP' },
+            { id: 'photo_container_bapteme_terrain_preview_container', label: 'Baptême terrain' },
             { id: 'photo_empl_ao_z1', label: 'Emplacement AO — ZMSPCP' },
         ]);
     });
