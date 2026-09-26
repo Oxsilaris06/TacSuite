@@ -943,21 +943,25 @@ function galleryInput(e: GalleryEntry): GalleryPhoto {
     return { id: e.id, widthPx: e.size?.widthPx ?? 0, heightPx: e.size?.heightPx ?? 0, isPlan: e.isPlan };
 }
 
-/** Contenu d'une cellule : photo et légende (`figure`), mention « basse définition », badges d'outils. */
-function galleryCell(e: GalleryEntry, slot: GallerySlot, p: OiPdfPalette): Content[] {
+/** Contenu d'une cellule : photo et légende (`figure`), mention « basse
+ *  définition », badges d'outils. Tout est composé à la largeur de la CELLULE
+ *  (celle qui a servi à réserver la légende), l'image centrée dedans : une
+ *  image basse définition peut ne mesurer que quelques points, sa légende
+ *  reste repliée sur quelques lignes lisibles, jamais un caractère par ligne. */
+function galleryCell(e: GalleryEntry, slot: GallerySlot, cellWidthPt: number, p: OiPdfPalette): Content[] {
     const items: Content[] = [figure(e.ref, [slot.width, slot.height], p, e.caption)];
     if (slot.lowRes) {
         items.push({ text: LOW_RES_MENTION, fontSize: GALLERY_LOW_RES_FONT_PT, color: p.warning, alignment: 'center' });
     }
     if (e.tools.length > 0) {
-        items.push(layoutToolBadges([...e.tools], p, p.warning, slot.width));
+        items.push(layoutToolBadges([...e.tools], p, p.warning, cellWidthPt));
     }
     return items;
 }
 
 /** Corps d'une page : les rangées de `layoutGallery` (une rangée = même `y`),
  *  chaque image dans une colonne à sa largeur exacte, décalée comme calculé. */
-function galleryPageBody(slots: GallerySlot[], byId: Map<string, GalleryEntry>, p: OiPdfPalette): Content {
+function galleryPageBody(slots: GallerySlot[], byId: Map<string, GalleryEntry>, p: OiPdfPalette, W: number): Content {
     const rows: GallerySlot[][] = [];
     for (const slot of slots) {
         const last = rows[rows.length - 1];
@@ -971,9 +975,12 @@ function galleryPageBody(slots: GallerySlot[], byId: Map<string, GalleryEntry>, 
             for (const slot of row) {
                 const entry = byId.get(slot.id);
                 if (!entry) continue;
-                if (slot.x - x > 0.5) columns.push({ width: slot.x - x, text: '' });
-                columns.push({ width: slot.width, stack: galleryCell(entry, slot, p) });
-                x = slot.x + slot.width;
+                // Cellule de `layoutGallery` : l'image y est centrée.
+                const cellWidth = Math.max(slot.width, galleryCellWidthPt(photoShape(galleryInput(entry)), W));
+                const cellX = slot.x + slot.width / 2 - cellWidth / 2;
+                if (cellX - x > 0.5) columns.push({ width: cellX - x, text: '' });
+                columns.push({ width: cellWidth, stack: galleryCell(entry, slot, cellWidth, p) });
+                x = cellX + cellWidth;
             }
             return { columns, columnGap: 0, unbreakable: true, margin: [0, i === 0 ? 0 : GALLERY_GAP_PT, 0, 0] };
         }),
@@ -1025,7 +1032,7 @@ export function adaptiveGalleryPages(
         shown += slots.length;
         const suffix = slots.length === 1 ? `— PHOTO ${first}/${entries.length}` : `— PHOTOS ${first}-${shown}/${entries.length}`;
         return {
-            stack: [h2(title, p, W, { suffix }), galleryPageBody(slots, byId, p)],
+            stack: [h2(title, p, W, { suffix }), galleryPageBody(slots, byId, p, W)],
             pageBreak: pageIndex === 0 ? undefined : 'before',
         };
     });
