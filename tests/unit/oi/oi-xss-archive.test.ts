@@ -7,6 +7,9 @@
  * rechargement.
  * C-2 : la fenêtre « LOG » réinjectait les lignes de console capturées en HTML
  * brut (document.write) → une chaîne non fiable journalisée devenait du code.
+ * C-3 : la vérification de cohérence (étape Finalisation, ouverte à chaque
+ * visite) injectait le nom d'un adversaire, un trigramme, une cellule et la
+ * première hypothèse en HTML brut (alertes et synthèse).
  */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
@@ -45,5 +48,28 @@ describe('C-2 — fenêtre LOG de l’OI', () => {
         expect(html).toContain('class="warn"');
         // Ordre le plus récent en premier, comme avant.
         expect(html.indexOf('RAS')).toBeLessThan(html.indexOf('image gardée'));
+    });
+});
+
+describe('C-3 — alertes et synthèse de cohérence', () => {
+    it('checkCoherence affiche nom, trigramme, cellule et hypothèse comme du texte', async () => {
+        await import('@oi/formulaires.js');
+        const { Store } = await import('@oi/init.js');
+        document.body.innerHTML = '<div id="coherence_alerts_container"></div><div id="recap_finalisation"></div>';
+        const tag = '<img src=x onerror=window.__oiXss=1>';
+        Store.state.formData = {
+            date_op: '2026-08-01',
+            adversaries: [{ id: 'a1', nom_adversaire: tag, domicile_adversaire: '' }],
+            hypotheses: [tag],
+            patracdvr_rows: [{ vehicle: 'VL', members: [
+                { trigramme: tag, cellule: `India ${tag}`, fonction: 'Chef inter', principales: 'Sans', secondaires: 'Sans', afis: '' },
+            ] }],
+        } as never;
+
+        window.checkCoherence();
+
+        expect(document.body.querySelector('img')).toBeNull();
+        expect(document.getElementById('coherence_alerts_container')!.textContent).toContain(tag);
+        expect(document.getElementById('recap_finalisation')!.textContent).toContain(tag);
     });
 });

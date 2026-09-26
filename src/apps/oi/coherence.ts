@@ -18,6 +18,7 @@
 
 import { currentOiMode, isSectionRemoved } from '@oi/sections.js';
 import { Store } from '@oi/init.js';
+import { esc } from '@shared/ui-platform.js';
 import type { OiFormData, OiPatracMember } from '@shared/types/contracts.js';
 
 /** Indices d'étape (0-based) des règles de cohérence. */
@@ -91,7 +92,7 @@ export function collectCoherence(): CoherenceResult {
     } else {
         Store.state.formData.adversaries.forEach((adv, index) => {
             if (!adv.nom_adversaire) push(STEP_ADVERSAIRE, `Le Nom de l'adversaire n°${index + 1} est manquant. <span class='material-symbols-outlined'>person</span>`);
-            if (!adv.domicile_adversaire) push(STEP_ADVERSAIRE, `Le Domicile de l'adversaire "${adv.nom_adversaire || index + 1}" est manquant. <span class='material-symbols-outlined'>home</span>`);
+            if (!adv.domicile_adversaire) push(STEP_ADVERSAIRE, `Le Domicile de l'adversaire "${esc(adv.nom_adversaire || index + 1)}" est manquant. <span class='material-symbols-outlined'>home</span>`);
         });
     }
 
@@ -100,16 +101,16 @@ export function collectCoherence(): CoherenceResult {
         const hasNoSecondary = member.secondaires === 'Sans' || !member.secondaires;
 
         if (hasNoPrimary && hasNoSecondary && member.fonction !== 'Sans') {
-            push(STEP_PATRACDVR, `Membre ${member.trigramme} est assigné mais n'a AUCUN armement principal/secondaire. (Cellule: ${member.cellule}) <span class='material-symbols-outlined'>local_fire_department</span>`);
+            push(STEP_PATRACDVR, `Membre ${esc(member.trigramme)} est assigné mais n'a AUCUN armement principal/secondaire. (Cellule: ${esc(member.cellule)}) <span class='material-symbols-outlined'>local_fire_department</span>`);
         }
         if (member.afis !== 'Sans' && !member.afis) {
-            push(STEP_PATRACDVR, `Membre ${member.trigramme} a un AFI non spécifié. <span class='material-symbols-outlined'>handgun</span>`);
+            push(STEP_PATRACDVR, `Membre ${esc(member.trigramme)} a un AFI non spécifié. <span class='material-symbols-outlined'>handgun</span>`);
         }
     });
 
     const chefInter = allAssignedMembers.find((m) => m.fonction && m.fonction.includes('Chef inter'));
     if (chefInter && !chefInter.cellule.toLowerCase().startsWith('india')) {
-        push(STEP_PATRACDVR, `Le Chef inter (${chefInter.trigramme}) est assigné à la cellule ${chefInter.cellule} au lieu d'India. <span class='material-symbols-outlined'>group</span>`);
+        push(STEP_PATRACDVR, `Le Chef inter (${esc(chefInter.trigramme)}) est assigné à la cellule ${esc(chefInter.cellule)} au lieu d'India. <span class='material-symbols-outlined'>group</span>`);
     }
 
     if (isSectionRemoved(Store.state.formData, 'chronologie')) {
