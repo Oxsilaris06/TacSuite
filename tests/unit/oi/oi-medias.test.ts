@@ -66,7 +66,8 @@ const { compressImageMock, reencodeSansExifMock } = vi.hoisted(() => ({
     reencodeSansExifMock: vi.fn(async (): Promise<Blob> => new Blob(['reencode-sans-exif'], { type: 'image/jpeg' })),
 }));
 
-vi.mock('@oi/outils.js', () => ({
+vi.mock('@oi/outils.js', async (orig) => ({
+    ...(await orig<typeof import('@oi/outils.js')>()),
     compressImage: compressImageMock,
     reencodeSansExif: reencodeSansExifMock,
 }));
@@ -220,7 +221,7 @@ describe('(a) handleFileChange — upload', () => {
         vi.mocked(dbManager.putItem).mockRejectedValueOnce(new Error('quota dépassé'));
         const input = makeFileInput([makeFile()]);
 
-        await expect(handleFileChange(input, 'adversary_photo_preview_container', false)).resolves.toBeUndefined();
+        await expect(handleFileChange(input, 'adversary_photo_preview_container', false)).resolves.toBe(0);
 
         expect(toastSpy).toHaveBeenCalledWith(
             "Échec d'enregistrement d'une photo (stockage saturé/indisponible). Exportez votre session puis réessayez.",
@@ -266,6 +267,43 @@ describe('(b) handleFileChange — isSingle remplace au lieu d’ajouter', () =>
 
         expect(container.querySelectorAll('.image-preview-item')).toHaveLength(2);
         expect(dbManager.deleteItem).not.toHaveBeenCalled();
+    });
+});
+
+describe('handleFileChange — champ limité (data-max-photos, « Baptême terrain » : 2 photos)', () => {
+    const limited = (): HTMLElement => {
+        document.body.insertAdjacentHTML('beforeend', '<div id="bapt" data-max-photos="2"></div>');
+        return byId('bapt');
+    };
+
+    it('champ plein : la photo est refusée, rien n’est stocké, le message le dit', async () => {
+        const container = limited();
+        await handleFileChange(makeFileInput([makeFile('a.jpg'), makeFile('b.jpg')]), 'bapt', false);
+        toastSpy.mockClear();
+        vi.mocked(dbManager.putItem).mockClear();
+
+        const added = await handleFileChange(makeFileInput([makeFile('c.jpg')]), 'bapt', false);
+
+        expect(added).toBe(0);
+        expect(container.querySelectorAll('.image-preview-item')).toHaveLength(2);
+        expect(dbManager.putItem).not.toHaveBeenCalled();
+        expect(toastSpy).toHaveBeenCalledWith(expect.stringMatching(/2 photos au plus/), { kind: 'error' });
+    });
+
+    it('trois photos choisies d’un coup dans un champ vide : les deux premières entrent, la troisième est refusée', async () => {
+        const container = limited();
+
+        const added = await handleFileChange(makeFileInput([makeFile('a.jpg'), makeFile('b.jpg'), makeFile('c.jpg')]), 'bapt', false);
+
+        expect(added).toBe(2);
+        expect(container.querySelectorAll('.image-preview-item')).toHaveLength(2);
+        expect(dbManager.putItem).toHaveBeenCalledTimes(2);
+        expect(toastSpy).toHaveBeenCalledWith(expect.stringMatching(/2 photos au plus.*1 non ajoutée/), { kind: 'error' });
+    });
+
+    it('un champ sans limite reçoit toutes les photos', async () => {
+        const added = await handleFileChange(makeFileInput([makeFile('a.jpg'), makeFile('b.jpg'), makeFile('c.jpg')]), 'adversary_photo_preview_container', false);
+        expect(added).toBe(3);
     });
 });
 

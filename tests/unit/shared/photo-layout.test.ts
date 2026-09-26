@@ -5,7 +5,7 @@
  * agrandie au-delà de ~150 ppi (sinon « basse définition »).
  */
 import { describe, expect, it } from 'vitest';
-import { layoutGallery, photoShape, type GalleryPhoto, type GallerySlot } from '@shared/photo-layout.js';
+import { layoutGallery, layoutSplitPage, photoShape, type GalleryPhoto, type GallerySlot } from '@shared/photo-layout.js';
 
 const A4_PAYSAGE = { width: 770, height: 480 };
 const A4_PORTRAIT = { width: 515, height: 720 };
@@ -106,6 +106,57 @@ describe('layoutGallery', () => {
                     expect(overlap(page[i]!, page[j]!)).toBe(false);
                 }
             }
+        }
+    });
+});
+
+// Photos « Baptême terrain » (Nico 2026-09-26) : 1 photo = toute la page,
+// 2 photos = la page partagée à parts égales.
+describe('layoutSplitPage', () => {
+    const area = (s: GallerySlot): number => s.width * s.height;
+
+    it('une photo prend toute la zone, quelle que soit sa forme', () => {
+        for (const [w, h] of [[4000, 3000], [3000, 4000], [1170, 2532], [8000, 2000]] as const) {
+            const [s] = layoutSplitPage([photo('a', w, h)], A4_PAYSAGE, { captionHeight: 14 });
+            const fit = Math.min(A4_PAYSAGE.width, (A4_PAYSAGE.height - 14) * (w / h));
+            expect(s!.width).toBeCloseTo(fit, 5);
+            expect(inside(s!, A4_PAYSAGE)).toBe(true);
+        }
+    });
+
+    it('deux photos : moitié-moitié, côte à côte sur une page paysage, même taille', () => {
+        const page = layoutSplitPage([photo('a', 4000, 3000), photo('b', 4000, 3000)], A4_PAYSAGE);
+        expect(page).toHaveLength(2);
+        expect(page[0]!.y).toBe(page[1]!.y);
+        expect(page[0]!.width).toBeCloseTo(page[1]!.width, 5);
+        expect(page[0]!.x + page[0]!.width).toBeLessThanOrEqual(A4_PAYSAGE.width / 2);
+        expect(page[1]!.x).toBeGreaterThanOrEqual(A4_PAYSAGE.width / 2);
+    });
+
+    it('deux panoramas : l’un sous l’autre, la découpe qui leur donne le plus de place', () => {
+        const page = layoutSplitPage([photo('a', 8000, 2000), photo('b', 8000, 2000)], A4_PAYSAGE);
+        expect(page[1]!.y).toBeGreaterThan(page[0]!.y + page[0]!.height);
+        const sideBySide = ((A4_PAYSAGE.width - 12) / 2) ** 2 / 4;
+        expect(area(page[0]!)).toBeGreaterThan(sideBySide);
+    });
+
+    it('centrées dans la hauteur : un panorama seul au milieu de la page, deux formes différentes alignées sur leur milieu', () => {
+        const [pano] = layoutSplitPage([photo('a', 8000, 2000)], A4_PAYSAGE, { captionHeight: 14 });
+        expect(pano!.y).toBeCloseTo((A4_PAYSAGE.height - pano!.height - 14) / 2, 5);
+        const [land, port] = layoutSplitPage([photo('a', 4000, 3000), photo('b', 3000, 4000)], A4_PAYSAGE);
+        expect(land!.y + land!.height / 2).toBeCloseTo(port!.y + port!.height / 2, 5);
+        expect(land!.y).toBeGreaterThan(port!.y);
+    });
+
+    it('garde l’ordre, les proportions, la zone, et le plafond de 150 ppi', () => {
+        for (const box of [A4_PAYSAGE, A4_PORTRAIT]) {
+            const page = layoutSplitPage([photo('a', 3000, 4000), photo('b', 40, 30)], box);
+            expect(page.map((s) => s.id)).toEqual(['a', 'b']);
+            expect(page[0]!.width / page[0]!.height).toBeCloseTo(3 / 4, 5);
+            for (const s of page) expect(inside(s, box)).toBe(true);
+            expect(overlap(page[0]!, page[1]!)).toBe(false);
+            expect(page[1]!.width).toBeCloseTo(40 / 150 * 72, 5);
+            expect(page[1]!.lowRes).toBe(true);
         }
     });
 });

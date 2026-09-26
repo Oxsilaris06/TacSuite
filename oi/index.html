@@ -280,9 +280,10 @@ CONDUITE AU LIEU DE GAV.</textarea>
                         <button type="button" class="add-btn btn-flex-center" data-action="trigger-file-input" data-target="photo_container_bapteme_terrain_input">
                             <span class="material-symbols-outlined" aria-hidden="true">photo_camera</span> Baptême terrain
                         </button>
+                        <p class="hint-text-block">2 photos au plus. Dans le PDF, une page après la Mission : une photo la prend en entier, deux se la partagent.</p>
                         <input type="file" id="photo_container_bapteme_terrain_input" class="photo-input sr-only-input" accept="image/*" multiple
                             data-action="handle-file-change" data-preview-container="photo_container_bapteme_terrain_preview_container" data-single="false">
-                        <div id="photo_container_bapteme_terrain_preview_container" class="image-preview-container"></div>
+                        <div id="photo_container_bapteme_terrain_preview_container" class="image-preview-container" data-max-photos="2"></div>
                     </div>
                 </div>
 

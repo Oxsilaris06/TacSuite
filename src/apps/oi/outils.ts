@@ -89,6 +89,14 @@ export function cleanupObjectUrls(): void {
 window.cleanupObjectUrls = cleanupObjectUrls; // outils.js:25
 
 
+/** Place restante d'un champ photo limité par `data-max-photos` (« Baptême
+ *  terrain » : 2, Nico 2026-09-26) ; `Infinity` pour un champ sans limite. */
+export function photoRoom(container: HTMLElement): number {
+    const max = Number(container.dataset.maxPhotos);
+    return max > 0 ? max - container.querySelectorAll('.image-preview').length : Number.POSITIVE_INFINITY;
+}
+
+
 // outils.js:121-134
 export function getDragAfterElement(container: HTMLElement, y: number): HTMLElement | undefined {
     // S'assurer de ne considérer que les éléments qui peuvent être déplacés

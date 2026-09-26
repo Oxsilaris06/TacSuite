@@ -34,6 +34,10 @@ describe('page de l’OI', () => {
         expect(block!.querySelector(`#${OI_BAPTEME_CONTAINER}.image-preview-container`)).not.toBeNull();
     });
 
+    it('le champ est limité à 2 photos', () => {
+        expect(doc.getElementById(OI_BAPTEME_CONTAINER)!.dataset.maxPhotos).toBe('2');
+    });
+
     it('masqué en OI Express (comme les autres photos de l’OI Complet)', () => {
         const block = doc.getElementById('missions_psig')!.nextElementSibling as HTMLElement;
         expect(block.classList.contains('oi-express-hidden')).toBe(true);

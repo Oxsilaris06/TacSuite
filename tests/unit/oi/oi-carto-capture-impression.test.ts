@@ -319,3 +319,30 @@ describe('_exportToField — capture faite avant la fin du chargement', () => {
         }
     });
 });
+
+describe('_exportToField — champ photo plein (« Baptême terrain » : 2 photos)', () => {
+    it('refus affiché dans la fenêtre de capture, sans capturer ni fermer', async () => {
+        document.body.insertAdjacentHTML('beforeend', `<dialog id="oi_carto_capture_modal" open><div class="modal-content"></div></dialog>
+            <div id="bapt" data-max-photos="2"><img class="image-preview"><img class="image-preview"></div>`);
+        const methods = await load(vi.fn());
+        const s = state(methods, makeMap());
+        const capture = vi.fn(async () => document.createElement('canvas'));
+        s._captureCanvas = capture;
+        const close = vi.fn();
+        s._closeCaptureModal = close;
+        const handle = vi.fn(async () => 1);
+        (window as unknown as Record<string, unknown>).handleFileChange = handle;
+        try {
+            await s._exportToField('bapt');
+
+            expect(capture).not.toHaveBeenCalled();
+            expect(handle).not.toHaveBeenCalled();
+            expect(close).not.toHaveBeenCalled();
+            const status = document.querySelector('#oi_carto_capture_modal .oi-carto-capture-status');
+            expect(status?.textContent).toMatch(/2 photos au plus/);
+            expect(status?.getAttribute('role')).toBe('alert');
+        } finally {
+            delete (window as unknown as Record<string, unknown>).handleFileChange;
+        }
+    });
+});

@@ -25,7 +25,7 @@ import type { Column, Content, CustomTableLayout, TableCell } from 'pdfmake/inte
 import { estimateCharsPerLine, estimateWrappedLines, mm, pageGeometry, PDF_H2_BLOCK_PT, type OiPdfPalette } from './theme.js';
 import { breakLongTokens } from './text-utils.js';
 import type { ImageSize } from './image-size.js';
-import { layoutGallery, photoShape, type GalleryPhoto, type GallerySlot, type PhotoShape } from '@shared/photo-layout.js';
+import { layoutGallery, layoutSplitPage, photoShape, type GalleryPhoto, type GallerySlot, type PhotoShape } from '@shared/photo-layout.js';
 import type { OiPdfEditAnchor, OiPhotoMeta } from '@shared/types/contracts.js';
 
 // --- Édition en place depuis l'aperçu PDF (index d'ancrage, mission ---------
@@ -987,12 +987,6 @@ function galleryPageBody(slots: GallerySlot[], byId: Map<string, GalleryEntry>, 
     };
 }
 
-/** Contenu posé en tête de la première page d'une galerie, et sa hauteur (pt). */
-export interface GalleryLead {
-    content: Content;
-    heightPt: number;
-}
-
 /**
  * Galerie ADAPTATIVE (décision 44, audit A7) : `layoutGallery`
  * (`shared/photo-layout.ts`, commune à PC-Tac) place les images page par page
@@ -1009,17 +1003,12 @@ export function adaptiveGalleryPages(
     entries: readonly GalleryEntry[],
     p: OiPdfPalette,
     geo: ReturnType<typeof pageGeometry>,
-    lead?: GalleryLead,
 ): Content[] {
     if (entries.length === 0) {
         return [];
     }
     const W = geo.contentWidthPt;
     const box = { width: W, height: geo.contentHeightPt - PDF_H2_BLOCK_PT };
-    // `lead` (baptême sous la Mission, Nico 09-26) : posé en tête de la
-    // PREMIÈRE page, dont la zone d'images est réduite d'autant ; les pages
-    // suivantes gardent la zone pleine.
-    let firstBox = lead ? { width: W, height: box.height - lead.heightPt } : null;
     // Une réserve de légende par suite d'images de même forme (une page ne
     // mélange jamais deux formes) : la place des badges d'une photo de porte
     // ne rétrécit pas les portraits voisins. Plancher : l'image garde mm(40).
@@ -1034,17 +1023,7 @@ export function adaptiveGalleryPages(
         }
         const cellWidth = galleryCellWidthPt(shape, W);
         const reserve = Math.min(box.height - mm(40), Math.max(...run.map((e) => galleryCaptionReservePt(e, cellWidth))));
-        let rest = run;
-        if (firstBox) {
-            // Première page seulement : ce qui n'y tient pas repart sur la zone pleine.
-            const fb = firstBox;
-            firstBox = null;
-            const firstSlots = layoutGallery(run.map(galleryInput), fb, { gap: GALLERY_GAP_PT, captionHeight: Math.min(reserve, fb.height - mm(40)) })[0] ?? [];
-            slotsPages.push(firstSlots);
-            const placed = new Set(firstSlots.map((slot) => slot.id));
-            rest = run.filter((e) => !placed.has(e.id));
-        }
-        if (rest.length > 0) slotsPages.push(...layoutGallery(rest.map(galleryInput), box, { gap: GALLERY_GAP_PT, captionHeight: reserve }));
+        slotsPages.push(...layoutGallery(run.map(galleryInput), box, { gap: GALLERY_GAP_PT, captionHeight: reserve }));
     }
     const byId = new Map(entries.map((e) => [e.id, e]));
     let shown = 0;
@@ -1053,7 +1032,7 @@ export function adaptiveGalleryPages(
         shown += slots.length;
         const suffix = slots.length === 1 ? `— PHOTO ${first}/${entries.length}` : `— PHOTOS ${first}-${shown}/${entries.length}`;
         return {
-            stack: [...(pageIndex === 0 && lead ? [lead.content] : []), h2(title, p, W, { suffix }), galleryPageBody(slots, byId, p, W)],
+            stack: [h2(title, p, W, { suffix }), galleryPageBody(slots, byId, p, W)],
             pageBreak: pageIndex === 0 ? undefined : 'before',
         };
     });
@@ -1074,8 +1053,16 @@ export function galleryPages(
     p: OiPdfPalette,
     geo: ReturnType<typeof pageGeometry>,
     sizeOf: (id: string) => ImageSize | null = () => null,
-    lead?: GalleryLead,
 ): Content[] {
+    return adaptiveGalleryPages(title, galleryEntries(title, photos, photosBase64, sizeOf), p, geo);
+}
+
+function galleryEntries(
+    title: string,
+    photos: OiPhotoMeta[],
+    photosBase64: Record<string, string>,
+    sizeOf: (id: string) => ImageSize | null,
+): GalleryEntry[] {
     const entries: GalleryEntry[] = [];
     for (const meta of photos) {
         const ref = photosBase64[meta.id];
@@ -1089,5 +1076,38 @@ export function galleryPages(
             isPlan: isPlanPhotoId(meta.id),
         });
     }
-    return adaptiveGalleryPages(title, entries, p, geo, lead);
+    return entries;
+}
+
+/**
+ * Page unique d'un champ limité à deux photos (« Baptême terrain », Nico
+ * 2026-09-26) : une photo prend toute la page, deux se la partagent à parts
+ * égales (`layoutSplitPage`) ; au-delà, seules les deux premières. `null` si
+ * aucune photo n'a d'image. Porte `pageBreak: 'before'`.
+ */
+export function splitGalleryPage(
+    title: string,
+    photos: OiPhotoMeta[],
+    photosBase64: Record<string, string>,
+    p: OiPdfPalette,
+    geo: ReturnType<typeof pageGeometry>,
+    sizeOf: (id: string) => ImageSize | null = () => null,
+): Content | null {
+    const entries = galleryEntries(title, photos, photosBase64, sizeOf).slice(0, 2);
+    if (entries.length === 0) return null;
+    const W = geo.contentWidthPt;
+    const box = { width: W, height: geo.contentHeightPt - PDF_H2_BLOCK_PT };
+    const halfPt = (W - GALLERY_GAP_PT) / 2;
+    const reserve = Math.min(box.height / entries.length - mm(40), Math.max(...entries.map((e) => galleryCaptionReservePt(e, entries.length === 2 ? halfPt : W))));
+    const slots = layoutSplitPage(entries.map(galleryInput), box, { gap: GALLERY_GAP_PT, captionHeight: reserve });
+    const cell = (slot: GallerySlot, i: number, widthPt: number): Content[] => galleryCell(entries[i] as GalleryEntry, slot, widthPt, p);
+    // Côte à côte : chaque colonne descend à la hauteur calculée (images
+    // alignées sur leur milieu). L'une sous l'autre : l'ensemble descend au
+    // centre, les images se suivent.
+    const [first, second] = slots;
+    const body: Content = second && first && second.x > first.x
+        ? { columns: slots.map((slot, i) => ({ width: halfPt, stack: cell(slot, i, halfPt), margin: [0, slot.y, 0, 0] })), columnGap: GALLERY_GAP_PT, unbreakable: true }
+        : { stack: slots.map((slot, i) => ({ stack: cell(slot, i, W), margin: [0, i === 0 ? slot.y : GALLERY_GAP_PT, 0, 0], unbreakable: true })) };
+    const suffix = entries.length === 1 ? '— PHOTO 1/1' : '— PHOTOS 1-2/2';
+    return { stack: [h2(title, p, W, { suffix }), body], pageBreak: 'before' };
 }
