@@ -111,3 +111,24 @@ describe('SEC-1 — identifiant de photo restaurée', () => {
         Object.assign(dbManager, { db: null });
     });
 });
+
+describe('SEC-2 — fiche adversaire rechargée', () => {
+    it('addAdversary : id forgé remplacé, date de naissance échappée, aucun onclick piégé', async () => {
+        await import('@oi/formulaires.js');
+        window.addAdversary({ id: EVIL_ID, nom_adversaire: 'X', date_naissance: '"><img src=x onerror="window.__oiXss=1">', me_list: ['a'] } as never);
+
+        expectNoInjection();
+        const entry = document.querySelector<HTMLElement>('.adversary-entry')!;
+        expect(entry.id).toMatch(/^[\w-]{1,128}$/);
+        expect(document.querySelector<HTMLInputElement>('[data-field="date_naissance"]')!.getAttribute('value'))
+            .toBe('"><img src=x onerror="window.__oiXss=1">');
+        // La liste ME de la fiche suit l'id assaini.
+        expect(document.querySelectorAll(`#me_${entry.id} .me-input`).length).toBe(1);
+    });
+
+    it('addAdversary garde un id sûr tel quel (rechargement fidèle)', async () => {
+        await import('@oi/formulaires.js');
+        window.addAdversary({ id: 'adv_1', nom_adversaire: 'X' } as never);
+        expect(document.querySelector('.adversary-entry')!.id).toBe('adv_1');
+    });
+});

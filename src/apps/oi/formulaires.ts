@@ -434,7 +434,9 @@ async function removeAdversary(id: string): Promise<void> {
 function addAdversary(data: OiAdversary | null = null): void {
     const container = document.getElementById('adversaries_container');
     if (!container) return;
-    const id = data?.id ? data.id : `adv_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    // SEC-2 : l'id d'une fiche rechargée (archive, stockage) est réinjecté dans
+    // une quinzaine d'attributs et de gestionnaires en ligne : forme sûre ou neuf.
+    const id = isSafeId(data?.id) ? data.id : `adv_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
     const div = document.createElement('div');
     div.className = 'collapsible-container adversary-entry open';
@@ -450,8 +452,7 @@ function addAdversary(data: OiAdversary | null = null): void {
     // reconnue comme « appel », contrairement à `getData(...)` chez articulation.ts).
     void (container.children.length + 1);
     // Échappement HTML de toute valeur restaurée (évite corruption du reload/PDF et self-XSS).
-    const e = (v: unknown): string => (window.UIPlatform ? window.UIPlatform.esc(v) : String(v == null ? '' : v)
-        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;'));
+    const e = esc;
     const nameVal = (data?.nom_adversaire as string | undefined) || '';
     const nameValSafe = e(nameVal);
     const title = nameVal ? `Adversaire: ${e(nameVal)}` : 'Adversaire';
@@ -505,7 +506,7 @@ function addAdversary(data: OiAdversary | null = null): void {
 
                     <label for="naissance_adv_${id}">Naissance&nbsp;:</label>
                     <div class="adv-duo">
-                        <input type="date" id="naissance_adv_${id}" name="naissance_adv_${id}" class="adv-field" data-field="date_naissance" value="${(data?.date_naissance as string | undefined) || ''}" oninput="syncDomToStore()">
+                        <input type="date" id="naissance_adv_${id}" name="naissance_adv_${id}" class="adv-field" data-field="date_naissance" value="${e(data?.date_naissance)}" oninput="syncDomToStore()">
                         <input type="text" id="lieu_adv_${id}" name="lieu_adv_${id}" class="adv-field" data-field="lieu_naissance" placeholder="Lieu de naissance" value="${e(data?.lieu_naissance)}" oninput="syncDomToStore()">
                     </div>
 
