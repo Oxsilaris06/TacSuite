@@ -148,6 +148,12 @@ describe('layoutSplitPage', () => {
         expect(land!.y).toBeGreaterThan(port!.y);
     });
 
+    it('légende plus haute qu’une demi-page : jamais de taille négative, les deux côte à côte', () => {
+        const page = layoutSplitPage([photo('a', 8000, 2000), photo('b', 8000, 2000)], A4_PAYSAGE, { captionHeight: 300 });
+        for (const s of page) expect(s.width).toBeGreaterThan(0);
+        expect(page[0]!.y).toBe(page[1]!.y);
+    });
+
     it('garde l’ordre, les proportions, la zone, et le plafond de 150 ppi', () => {
         for (const box of [A4_PAYSAGE, A4_PORTRAIT]) {
             const page = layoutSplitPage([photo('a', 3000, 4000), photo('b', 40, 30)], box);

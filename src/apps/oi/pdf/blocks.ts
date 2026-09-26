@@ -22,7 +22,7 @@
  */
 import type { Column, Content, CustomTableLayout, TableCell } from 'pdfmake/interfaces';
 
-import { estimateCharsPerLine, estimateWrappedLines, mm, pageGeometry, PDF_H2_BLOCK_PT, type OiPdfPalette } from './theme.js';
+import { mm, pageGeometry, PDF_H2_BLOCK_PT, type OiPdfPalette } from './theme.js';
 import { breakLongTokens } from './text-utils.js';
 import type { ImageSize } from './image-size.js';
 import { layoutGallery, layoutSplitPage, photoShape, type GalleryPhoto, type GallerySlot, type PhotoShape } from '@shared/photo-layout.js';
@@ -932,11 +932,57 @@ function galleryCellWidthPt(shape: PhotoShape, widthPt: number): number {
     return widthPt;
 }
 
-/** Hauteur réservée sous une image : légende repliée, mention « basse
+/** Interlettrage des légendes (`characterSpacing` de `figure`). */
+const GALLERY_CAPTION_SPACING_PT = 0.3;
+
+/** Lignes d'une légende repliée au mot, comme pdfmake (chasse fixe,
+ *  interlettrage compris ; un mot trop long est coupé). Compter les
+ *  caractères sans les mots sous-estimait d'une ligne ou plus : une photo
+ *  qui remplit la hauteur passait alors seule sur une page sans titre. */
+function wrapCaption(text: string, widthPt: number): string[] {
+    const perLine = Math.max(1, Math.floor(widthPt / (GALLERY_CAPTION_FONT_PT * 0.62 + GALLERY_CAPTION_SPACING_PT)));
+    const lines: string[] = [];
+    let line = '';
+    for (const word of text.split(/\s+/).filter(Boolean)) {
+        const next = line ? `${line} ${word}` : word;
+        if (next.length <= perLine) {
+            line = next;
+            continue;
+        }
+        if (line) lines.push(line);
+        line = word;
+        while (line.length > perLine) {
+            lines.push(line.slice(0, perLine));
+            line = line.slice(perLine);
+        }
+    }
+    if (line || lines.length === 0) lines.push(line);
+    return lines;
+}
+
+/** Hauteur réservée sous une image, hors légende : marge, mention « basse
  *  définition » (inconnue avant la mise en page, toujours réservée) et badges. */
+function galleryCaptionFixedPt(entry: GalleryEntry, cellWidthPt: number): number {
+    return 5 + GALLERY_LOW_RES_FONT_PT * 1.32 * 1.45 + galleryToolsReservePt(entry.tools, cellWidthPt);
+}
+
+/** Hauteur réservée sous une image : légende repliée, mention « basse
+ *  définition » et badges. */
 function galleryCaptionReservePt(entry: GalleryEntry, cellWidthPt: number): number {
-    const lines = estimateWrappedLines(entry.caption, estimateCharsPerLine(GALLERY_CAPTION_FONT_PT, cellWidthPt));
-    return 5 + lines * GALLERY_CAPTION_LINE_PT + GALLERY_LOW_RES_FONT_PT * 1.32 * 1.45 + galleryToolsReservePt(entry.tools, cellWidthPt);
+    return galleryCaptionFixedPt(entry, cellWidthPt) + wrapCaption(entry.caption, cellWidthPt).length * GALLERY_CAPTION_LINE_PT;
+}
+
+/** Légende raccourcie (« … ») pour que sa réserve tienne dans `maxPt` :
+ *  au-delà, la photo et sa légende (bloc insécable) ne tiendraient plus sur
+ *  une page et pdfmake ne dessinerait pas la photo. Le formulaire garde le
+ *  texte entier. */
+function fitCaption(entry: GalleryEntry, cellWidthPt: number, maxPt: number): GalleryEntry {
+    const lines = wrapCaption(entry.caption, cellWidthPt);
+    const maxLines = Math.max(1, Math.floor((maxPt - galleryCaptionFixedPt(entry, cellWidthPt)) / GALLERY_CAPTION_LINE_PT));
+    if (lines.length <= maxLines) return entry;
+    const kept = lines.slice(0, maxLines);
+    kept[maxLines - 1] = `${(kept[maxLines - 1] ?? '').slice(0, -1)}…`;
+    return { ...entry, caption: kept.join(' ') };
 }
 
 function galleryInput(e: GalleryEntry): GalleryPhoto {
@@ -1000,15 +1046,16 @@ function galleryPageBody(slots: GallerySlot[], byId: Map<string, GalleryEntry>, 
  */
 export function adaptiveGalleryPages(
     title: string,
-    entries: readonly GalleryEntry[],
+    input: readonly GalleryEntry[],
     p: OiPdfPalette,
     geo: ReturnType<typeof pageGeometry>,
 ): Content[] {
-    if (entries.length === 0) {
+    if (input.length === 0) {
         return [];
     }
     const W = geo.contentWidthPt;
     const box = { width: W, height: geo.contentHeightPt - PDF_H2_BLOCK_PT };
+    const entries = input.map((e) => fitCaption(e, galleryCellWidthPt(photoShape(galleryInput(e)), W), box.height - mm(40)));
     // Une réserve de légende par suite d'images de même forme (une page ne
     // mélange jamais deux formes) : la place des badges d'une photo de porte
     // ne rétrécit pas les portraits voisins. Plancher : l'image garde mm(40).
@@ -1080,34 +1127,40 @@ function galleryEntries(
 }
 
 /**
- * Page unique d'un champ limité à deux photos (« Baptême terrain », Nico
+ * Pages d'un champ limité à deux photos (« Baptême terrain », Nico
  * 2026-09-26) : une photo prend toute la page, deux se la partagent à parts
- * égales (`layoutSplitPage`) ; au-delà, seules les deux premières. `null` si
- * aucune photo n'a d'image. Porte `pageBreak: 'before'`.
+ * égales (`layoutSplitPage`). Un ancien OI qui en porte davantage (anciens
+ * champs par bloc ZMSPCP) les imprime toutes, deux par page, jamais perdues.
+ * `[]` si aucune photo n'a d'image. Chaque page porte `pageBreak: 'before'`.
  */
-export function splitGalleryPage(
+export function splitGalleryPages(
     title: string,
     photos: OiPhotoMeta[],
     photosBase64: Record<string, string>,
     p: OiPdfPalette,
     geo: ReturnType<typeof pageGeometry>,
     sizeOf: (id: string) => ImageSize | null = () => null,
-): Content | null {
-    const entries = galleryEntries(title, photos, photosBase64, sizeOf).slice(0, 2);
-    if (entries.length === 0) return null;
+): Content[] {
+    const all = galleryEntries(title, photos, photosBase64, sizeOf);
     const W = geo.contentWidthPt;
     const box = { width: W, height: geo.contentHeightPt - PDF_H2_BLOCK_PT };
     const halfPt = (W - GALLERY_GAP_PT) / 2;
-    const reserve = Math.min(box.height / entries.length - mm(40), Math.max(...entries.map((e) => galleryCaptionReservePt(e, entries.length === 2 ? halfPt : W))));
-    const slots = layoutSplitPage(entries.map(galleryInput), box, { gap: GALLERY_GAP_PT, captionHeight: reserve });
-    const cell = (slot: GallerySlot, i: number, widthPt: number): Content[] => galleryCell(entries[i] as GalleryEntry, slot, widthPt, p);
-    // Côte à côte : chaque colonne descend à la hauteur calculée (images
-    // alignées sur leur milieu). L'une sous l'autre : l'ensemble descend au
-    // centre, les images se suivent.
-    const [first, second] = slots;
-    const body: Content = second && first && second.x > first.x
-        ? { columns: slots.map((slot, i) => ({ width: halfPt, stack: cell(slot, i, halfPt), margin: [0, slot.y, 0, 0] })), columnGap: GALLERY_GAP_PT, unbreakable: true }
-        : { stack: slots.map((slot, i) => ({ stack: cell(slot, i, W), margin: [0, i === 0 ? slot.y : GALLERY_GAP_PT, 0, 0], unbreakable: true })) };
-    const suffix = entries.length === 1 ? '— PHOTO 1/1' : '— PHOTOS 1-2/2';
-    return { stack: [h2(title, p, W, { suffix }), body], pageBreak: 'before' };
+    const pages: Content[] = [];
+    for (let k = 0; k < all.length; k += 2) {
+        const cellWidth = all.length - k >= 2 ? halfPt : W;
+        const entries = all.slice(k, k + 2).map((e) => fitCaption(e, cellWidth, box.height - mm(40)));
+        const reserve = Math.max(...entries.map((e) => galleryCaptionReservePt(e, cellWidth)));
+        const slots = layoutSplitPage(entries.map(galleryInput), box, { gap: GALLERY_GAP_PT, captionHeight: reserve });
+        const cell = (slot: GallerySlot, i: number, widthPt: number): Content[] => galleryCell(entries[i] as GalleryEntry, slot, widthPt, p);
+        // Côte à côte (la 2e image commence au-dessus du bas de la 1re) :
+        // chaque colonne descend à la hauteur calculée, images alignées sur
+        // leur milieu. L'une sous l'autre : l'ensemble descend au centre.
+        const [first, second] = slots;
+        const body: Content = first && second && second.y < first.y + first.height
+            ? { columns: slots.map((slot, i) => ({ width: halfPt, stack: cell(slot, i, halfPt), margin: [0, slot.y, 0, 0] })), columnGap: GALLERY_GAP_PT, unbreakable: true }
+            : { stack: slots.map((slot, i) => ({ stack: cell(slot, i, W), margin: [0, i === 0 ? slot.y : GALLERY_GAP_PT, 0, 0], unbreakable: true })) };
+        const suffix = entries.length === 1 ? `— PHOTO ${k + 1}/${all.length}` : `— PHOTOS ${k + 1}-${k + 2}/${all.length}`;
+        pages.push({ stack: [h2(title, p, W, { suffix }), body], pageBreak: 'before' });
+    }
+    return pages;
 }

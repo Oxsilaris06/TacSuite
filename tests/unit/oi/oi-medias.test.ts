@@ -287,7 +287,7 @@ describe('handleFileChange — champ limité (data-max-photos, « Baptême terra
         expect(added).toBe(0);
         expect(container.querySelectorAll('.image-preview-item')).toHaveLength(2);
         expect(dbManager.putItem).not.toHaveBeenCalled();
-        expect(toastSpy).toHaveBeenCalledWith(expect.stringMatching(/2 photos au plus/), { kind: 'error' });
+        expect(toastSpy).toHaveBeenCalledWith(expect.stringMatching(/Champ plein \(2 photos au plus\)/), { kind: 'error' });
     });
 
     it('trois photos choisies d’un coup dans un champ vide : les deux premières entrent, la troisième est refusée', async () => {
@@ -299,6 +299,18 @@ describe('handleFileChange — champ limité (data-max-photos, « Baptême terra
         expect(container.querySelectorAll('.image-preview-item')).toHaveLength(2);
         expect(dbManager.putItem).toHaveBeenCalledTimes(2);
         expect(toastSpy).toHaveBeenCalledWith(expect.stringMatching(/2 photos au plus.*1 non ajoutée/), { kind: 'error' });
+    });
+
+    it('une photo illisible ne prend pas la place d’une photo valide', async () => {
+        const container = limited();
+        const decodeError = Object.assign(new Error('illisible'), { name: 'ImageDecodeError' });
+        compressImageMock.mockImplementationOnce(async () => { throw decodeError; });
+
+        const added = await handleFileChange(makeFileInput([makeFile('bad.jpg'), makeFile('a.jpg'), makeFile('b.jpg')]), 'bapt', false);
+
+        expect(added).toBe(2);
+        expect(container.querySelectorAll('.image-preview-item')).toHaveLength(2);
+        expect(toastSpy).not.toHaveBeenCalledWith(expect.stringMatching(/non ajoutée/), expect.anything());
     });
 
     it('un champ sans limite reçoit toutes les photos', async () => {
