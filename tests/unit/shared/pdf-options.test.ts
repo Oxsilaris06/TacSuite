@@ -77,6 +77,23 @@ describe('askPdfOptions', () => {
     });
 });
 
+describe('askPdfOptions — clic sur la boîte', () => {
+    it('un clic dans la marge intérieure de la boîte ne la ferme pas ; hors de la boîte, si', async () => {
+        const pending = askPdfOptions({ appKey: 'pctac', title: 'Générer le PDF', kinds: KINDS });
+        const dialog = document.querySelector('dialog')!;
+        dialog.getBoundingClientRect = () => ({ left: 100, top: 100, right: 500, bottom: 400, width: 400, height: 300, x: 100, y: 100, toJSON: () => ({}) });
+        let settled = false;
+        void pending.then(() => { settled = true; });
+        dialog.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: 110, clientY: 110 }));
+        await Promise.resolve();
+        await Promise.resolve();
+        expect(settled).toBe(false);
+        expect(document.querySelector('dialog')).not.toBeNull();
+        dialog.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: 20, clientY: 20 }));
+        await expect(pending).resolves.toBeNull();
+    });
+});
+
 describe('profils d’image', () => {
     it('le partage vise moins de 10 Mo et une définition plus basse que l’impression', () => {
         expect(PDF_IMAGE_PROFILES.partage.budgetBytes).toBe(10 * 1024 * 1024);

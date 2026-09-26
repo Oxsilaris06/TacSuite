@@ -70,7 +70,7 @@ import { LogManager } from '@pctac/log-manager.js';
 import { choiceDialog } from '@pctac/choice-dialog.js';
 import { diffOpenFiche } from '@pctac/fiche-conflict.js';
 import { esc } from '@shared/ui-platform.js';
-import { confirmDialog, promptDialog, toast } from '@shared/feedback.js';
+import { confirmDialog, isBackdropClick, promptDialog, toast } from '@shared/feedback.js';
 import { currentMode, currentModeId, photoCategoryLabel } from '@pctac/modes.js';
 import {
   ageFromDob,
@@ -441,8 +441,10 @@ export const UI: UIContract = {
     document.querySelectorAll<HTMLDialogElement>('dialog.modal').forEach((dialog) => {
       if (dialog.dataset.bound) return;
       dialog.dataset.bound = '1';
+      // Le padding (30 px) cible aussi le <dialog> : seul un point hors de sa
+      // boîte est le fond (sinon un toucher à côté d'un champ perd la saisie).
       dialog.addEventListener('click', (e) => {
-        if (e.target === dialog) dialog.close();
+        if (isBackdropClick(dialog, e)) dialog.close();
       });
     });
   },

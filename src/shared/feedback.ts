@@ -833,7 +833,7 @@ export function hideBanner(id: string): void {
  * la fenêtre, et la saisie en cours). Sans mise en page (jsdom, boîte nulle),
  * on ne peut pas trancher : fond.
  */
-function isBackdropClick(dialog: HTMLElement, e: MouseEvent): boolean {
+export function isBackdropClick(dialog: HTMLElement, e: MouseEvent): boolean {
   if (e.target !== dialog) return false;
   const r = dialog.getBoundingClientRect();
   if (r.width === 0 && r.height === 0) return true;
