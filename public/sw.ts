@@ -66,11 +66,11 @@ registerRoute(
     }),
 );
 
-// ── Polices même origine : mise en cache opportuniste (première requête). ──
-// Exclues du précache statique (cf. injectManifest.globPatterns dans
-// vite.config.ts — Material Symbols seul pèse ~4 Mo, au-delà de la limite
-// Workbox par fichier). `request.destination === 'font'` couvre .woff/.woff2
-// indépendamment du nom de fichier (hashes Vite).
+// ── Polices même origine hors précache : mise en cache à la première requête. ──
+// Les .woff2 sont précachés (vite.config.ts, Nico 2026-09-26) et servis par
+// le précache ; cette route garde les autres (.woff de repli).
+// `request.destination === 'font'` couvre les fichiers indépendamment du nom
+// (hashes Vite).
 registerRoute(
     ({ request, url }) => request.destination === 'font' && url.origin === self.location.origin,
     new StaleWhileRevalidate({

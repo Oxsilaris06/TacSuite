@@ -167,6 +167,20 @@ describe('R11 — le badge dépend de l’application, pas seulement du portail'
     });
 });
 
+describe('polices précachées dès la première visite (Nico 09-26)', () => {
+    it('la police d’icônes trouvée dans le précache Workbox suffit', async () => {
+        const caches: CachesLike = {
+            match: fakeCaches(['https://x/pctac/']).match,
+            async keys() { return ['workbox-precache-v2-https://x/', 'tacsuite-fonts']; },
+            async open(name: string) {
+                const urls = name.startsWith('workbox-precache') ? ['https://x/assets/material-symbols-outlined-Bz.woff2?__WB_REVISION__=1'] : [];
+                return { async keys() { return urls.map((url) => ({ url })); } };
+            },
+        };
+        await expect(hasIconFontCached({ serviceWorker: { controller: {} }, caches })).resolves.toBe(true);
+    });
+});
+
 describe('initOfflineBadges', () => {
     it('renseigne chaque application demandée', async () => {
         document.body.innerHTML = `
