@@ -59,6 +59,9 @@ import { Persist } from '@shared/persist.js';
 import { GPX_INDEX_KEY, SHAPES_KEY } from '@pctac/planmap/constants.js';
 import { circleDiameter, formatDistance, measureTotalMeters, shapeCoords } from '@pctac/planmap/geo.js';
 import type { LngLatTuple, PlanGpxTrack, PlanShape } from '@pctac/planmap/types.js';
+import { findUnsupported, replaceUnsupported, splitFontRuns, type FontCandidate } from '@shared/pdf-glyphs.js';
+import { EXTRA_FONT_KEYS, glyphTester, loadExtraFontVfs } from '@shared/pdf-fonts/index.js';
+import { confirmUnsupportedChars, type UnsupportedChars } from '@shared/pdf-unsupported-dialog.js';
 
 /** Rapports proposés par la fenêtre de génération (décisions 41 et 42). */
 export const PCTAC_PDF_KINDS: readonly PdfKindChoice[] = [
@@ -111,7 +114,7 @@ export interface ReportFonts {
     hasGlyph: (codePoint: number) => boolean;
 }
 
-export async function embedReportFonts(pdfDoc: PDFLib.PDFDocument): Promise<ReportFonts> {
+export async function embedReportFonts(pdfDoc: PDFLib.PDFDocument, extras: ExtraFontBytes = {}): Promise<ReportFonts> {
     pdfDoc.registerFontkit(fontkit);
     const bodyNormal = PDF_FONT_VFS['JetBrainsMono-400.ttf'];
     const bodyBold = PDF_FONT_VFS['JetBrainsMono-700.ttf'];
@@ -125,9 +128,83 @@ export async function embedReportFonts(pdfDoc: PDFLib.PDFDocument): Promise<Repo
     const titleFont = await pdfDoc.embedFont(base64ToBytes(title), { subset: true });
     // Couverture de la police de CORPS (celle qui porte les noms saisis).
     const kit = fontkit.create(bodyBytes) as unknown as { hasGlyphForCodePoint?: (c: number) => boolean };
-    const hasGlyph = (codePoint: number): boolean =>
+    const bodyHas = (codePoint: number): boolean =>
         typeof kit.hasGlyphForCodePoint === 'function' ? kit.hasGlyphForCodePoint(codePoint) : true;
+    // Décision 44 — chaînes de repli : corps JetBrains Mono NL → Noto Sans
+    // (cyrillique absent de JetBrains, kazakh…) → Noto Sans Arabic ; titres
+    // Oswald → Noto Sans (grec, cyrillique) → JetBrains Mono NL (symboles).
+    // Une police de repli n'est embarquée que si un texte la demande
+    // (`extras`, décidé par `scriptFonts`) ; une graisse manquante est
+    // remplacée par l'autre plutôt que par « ? ».
+    const extra = async (id: string, bytes: Uint8Array | undefined): Promise<ChainFont | null> =>
+        bytes ? { id, font: await pdfDoc.embedFont(bytes, { subset: true }), has: glyphTester(bytes) } : null;
+    const noto = await extra('noto', extras.notoRegular);
+    const notoBold = await extra('notoBold', extras.notoBold);
+    const arabic = await extra('arabic', extras.notoArabic);
+    const jetBold: ChainFont = { id: 'jetbrainsBold', font: fontBold, has: bodyHas };
+    const chain = (...fonts: (ChainFont | null)[]): ChainFont[] => fonts.filter((f): f is ChainFont => f !== null);
+    const body = chain({ id: 'jetbrains', font, has: bodyHas }, noto ?? notoBold, arabic);
+    FONT_CHAINS.set(font, body);
+    FONT_CHAINS.set(fontBold, chain(jetBold, notoBold ?? noto, arabic));
+    FONT_CHAINS.set(titleFont, chain({ id: 'oswald', font: titleFont, has: glyphTester(base64ToBytes(title)) }, notoBold ?? noto, jetBold, arabic));
+    // R23 — couverture de toute la chaîne du corps : « ? » seulement pour ce
+    // qu'aucune police embarquée ne porte.
+    const hasGlyph = (codePoint: number): boolean => body.some((f) => f.has(codePoint));
     return { font, fontBold, titleFont, hasGlyph };
+}
+
+/** Polices de repli à embarquer (décision 44) : seulement celles qu'un texte demande. */
+export interface ExtraFontBytes {
+    notoRegular?: Uint8Array | undefined;
+    notoBold?: Uint8Array | undefined;
+    notoArabic?: Uint8Array | undefined;
+}
+
+/** Police d'une chaîne de repli, avec sa couverture. */
+interface ChainFont extends FontCandidate {
+    font: PDFLib.PDFFont;
+}
+
+/** Chaîne de repli de chaque police principale posée par `embedReportFonts`. */
+const FONT_CHAINS = new WeakMap<PDFLib.PDFFont, ChainFont[]>();
+
+/**
+ * Décision 44 — segments d'un texte, chacun dans la police de la chaîne qui
+ * le couvre (`splitFontRuns`) ; ce qu'aucune ne couvre sort en « ? », émoji
+ * retirés. Texte couvert par la police principale : un seul segment.
+ */
+function fontRuns(text: string, font: PDFLib.PDFFont): { text: string; font: PDFLib.PDFFont }[] {
+    const chain = FONT_CHAINS.get(font);
+    const main = chain?.[0];
+    if (!chain || !main || Array.from(text).every((ch) => main.has(ch.codePointAt(0) ?? 0))) return [{ text, font }];
+    return splitFontRuns(text, chain).map((run) => {
+        const covering = chain.find((f) => f.id === run.fontId);
+        return covering ? { text: run.text, font: covering.font } : { text: replaceUnsupported(run.text, []), font };
+    });
+}
+
+/** Largeur d'un texte dessiné par segments : somme des largeurs de chaque police. */
+function textWidth(text: string, font: PDFLib.PDFFont, size: number): number {
+    return fontRuns(text, font).reduce((width, run) => width + run.font.widthOfTextAtSize(run.text, size), 0);
+}
+
+/**
+ * Dessine `text` segment par segment, chacun à la suite du précédent, dans la
+ * police de repli qui le couvre (décision 44). `draw` : le `drawText` d'origine
+ * de la page (les pages du rapport le remplacent par cette fonction).
+ */
+export function drawTextRuns(
+    page: PDFLib.PDFPage,
+    text: string,
+    options: PDFLib.PDFPageDrawTextOptions = {},
+    draw: (text: string, options: PDFLib.PDFPageDrawTextOptions) => void = page.drawText.bind(page),
+): void {
+    if (!options.font) { draw(text, options); return; }
+    let x = options.x ?? 0;
+    for (const run of fontRuns(text, options.font)) {
+        draw(run.text, { ...options, x, font: run.font });
+        x += run.font.widthOfTextAtSize(run.text, options.size ?? 24);
+    }
 }
 
 /** Base de translittération grecque → latine (R23), lettres isolées. */
@@ -155,6 +232,12 @@ export function transliterateGreek(str: string): string {
 let glyphChecker: ((codePoint: number) => boolean) | null = null;
 
 /**
+ * Séquence émoji (pictogramme, variantes, teintes, liaisons ZWJ) : même motif
+ * que `@shared/pdf-glyphs`, qui ne l'exporte pas.
+ */
+const EMOJI_SEQUENCE = /\p{Extended_Pictographic}(?:\uFE0F|[\u{1F3FB}-\u{1F3FF}]|\u200D\p{Extended_Pictographic}\uFE0F?)*/gu;
+
+/**
  * sanitizeWinAnsi(s, hasGlyph?)
  * Nettoie les caractères non dessinables : les CONTRÔLES (tabulations, sauts
  * de ligne, codes < 0x20, BOM, espaces de largeur nulle) deviennent un espace
@@ -174,6 +257,10 @@ export function sanitizeWinAnsi(s: unknown, hasGlyph: ((codePoint: number) => bo
     } catch {
         return '';
     }
+    // Décision 44 — pendant un export, un émoji qu'aucune police ne porte est
+    // retiré (l'avertissement l'annonce) plutôt qu'imprimé « ? ». ©, ®, ™ ou
+    // ↔, pictogrammes pour Unicode mais présents dans la police, restent.
+    if (hasGlyph) str = str.replace(EMOJI_SEQUENCE, (seq) => (hasGlyph(seq.codePointAt(0) ?? 0) ? seq.replace(/\uFE0F/gu, '') : ''));
     let out = '';
     for (const ch of str) {
         const code = ch.codePointAt(0) ?? -1;
@@ -206,15 +293,18 @@ export function fitTextToWidth(text: string, font: PDFLib.PDFFont, size: number,
     // caractère par caractère : la largeur d'un préfixe croît avec sa longueur.
     // Borne haute : aucun préfixe plus long que (largeur / glyphe le plus
     // étroit + 1) ne peut tenir ; on ne mesure donc jamais au-delà.
-    const narrowest = Math.min(...['i', 'l', '.', ' ', '’'].map((c) => font.widthOfTextAtSize(c, size)).filter((w) => w > 0));
+    // Décision 44 — avec des polices de repli, un glyphe d'une autre police
+    // peut être plus étroit : pas de borne, on mesure (par segments).
+    const narrowest = (FONT_CHAINS.get(font)?.length ?? 1) > 1 ? Infinity
+        : Math.min(...['i', 'l', '.', ' ', '’'].map((c) => font.widthOfTextAtSize(c, size)).filter((w) => w > 0));
     const bound = Number.isFinite(narrowest) ? Math.floor(maxWidth / narrowest) + 2 : text.length;
     const head = text.length > bound ? text.slice(0, bound) : text;
-    if (head === text && font.widthOfTextAtSize(text, size) <= maxWidth) return text;
+    if (head === text && textWidth(text, font, size) <= maxWidth) return text;
     // Plus long préfixe `n` (au moins 1) tel que `préfixe + « … »` tienne.
     let lo = 1, hi = head.length;
     while (lo < hi) {
         const mid = Math.ceil((lo + hi) / 2);
-        if (font.widthOfTextAtSize(`${head.slice(0, mid)}…`, size) <= maxWidth) lo = mid;
+        if (textWidth(`${head.slice(0, mid)}…`, font, size) <= maxWidth) lo = mid;
         else hi = mid - 1;
     }
     return `${head.slice(0, lo).trimEnd()}…`;
@@ -237,11 +327,11 @@ export function wrapText(text: unknown, width: number, font: PDFLib.PDFFont, siz
         let currentLine = '';
         const pushSplitWord = (word: string): void => {
             let rest = word;
-            while (rest && font.widthOfTextAtSize(rest, size) >= width) {
+            while (rest && textWidth(rest, font, size) >= width) {
                 let lo = 1, hi = rest.length;
                 while (lo < hi) {
                     const mid = Math.ceil((lo + hi) / 2);
-                    if (font.widthOfTextAtSize(rest.slice(0, mid), size) < width) lo = mid;
+                    if (textWidth(rest.slice(0, mid), font, size) < width) lo = mid;
                     else hi = mid - 1;
                 }
                 lines.push(rest.slice(0, lo));
@@ -251,7 +341,7 @@ export function wrapText(text: unknown, width: number, font: PDFLib.PDFFont, siz
         };
         sanitizeWinAnsi(paragraph).split(' ').forEach((word) => {
             const testLine = currentLine ? currentLine + ' ' + word : word;
-            if (font.widthOfTextAtSize(testLine, size) < width) {
+            if (textWidth(testLine, font, size) < width) {
                 currentLine = testLine;
                 return;
             }
@@ -259,7 +349,7 @@ export function wrapText(text: unknown, width: number, font: PDFLib.PDFFont, siz
                 lines.push(currentLine);
                 currentLine = '';
             }
-            if (font.widthOfTextAtSize(word, size) < width) currentLine = word;
+            if (textWidth(word, font, size) < width) currentLine = word;
             else pushSplitWord(word);
         });
         if (currentLine) lines.push(currentLine);
@@ -502,6 +592,106 @@ export function planItemRows(
     return rows;
 }
 
+/** Formes du plan, telles que la carte les garde (`pcTacPlanShapes`). */
+function loadPlanShapes(): PlanShape[] {
+    return Persist.get<PlanShape[]>(scopedKey(SHAPES_KEY), { validator: (v): v is PlanShape[] => Array.isArray(v), fallback: [] });
+}
+
+/** Index des traces GPX (métadonnées ; coordonnées en IndexedDB). */
+function loadGpxIndex(): PlanGpxTrack[] {
+    return Persist.get<PlanGpxTrack[]>(scopedKey(GPX_INDEX_KEY), { validator: (v): v is PlanGpxTrack[] => Array.isArray(v), fallback: [] })
+        .filter((t) => !!t && typeof t.id === 'string');
+}
+
+/** Texte saisi que le rapport imprime, et où le retrouver à l'écran (décision 44). */
+interface PrintedText {
+    where: string;
+    text: string;
+}
+
+/**
+ * Textes saisis que le rapport imprime, lus sans hydrater les photos ni
+ * capturer le plan : l'avertissement des caractères non imprimables passe
+ * AVANT le travail lourd. Même périmètre que `renderReport`.
+ */
+function printedTexts(): PrintedText[] {
+    const modeId = currentModeId();
+    const out: PrintedText[] = [];
+    const add = (where: string, text: unknown): void => {
+        if (typeof text === 'string' && text.trim()) out.push({ where, text });
+    };
+    for (const e of Storage.loadLogData()) {
+        const where = `Main courante ${e.heure ?? ''}`.trim();
+        add(`${where} — Pax`, e.pax);
+        add(`${where} — Localisation`, e.lieu);
+        add(`${where} — Remarques`, e.remarques);
+    }
+    for (const side of ['adv', 'host'] as const) {
+        for (const item of Storage.loadCollection(side === 'adv' ? 'pcTacAdversaries' : 'pcTacHostages')) {
+            const name = ficheTitle(side, modeId, item);
+            add(`Fiche ${name} — Nom`, name);
+            add(`Fiche ${name} — Type`, item[TYPE_MENACE_KEY]);
+            for (const sec of filledSections(side, modeId, item)) for (const r of sec.rows) add(`Fiche ${name} — ${r.label}`, r.value);
+        }
+    }
+    for (const f of Storage.loadCollection('pcTacFriends')) {
+        const where = `Forces amies — ${[f.nom, f.prenom].filter(Boolean).join(' ')}`;
+        for (const v of [f.nom, f.prenom, f.unite, f.mission, f.tph]) add(where, v);
+    }
+    for (const p of Storage.loadCollection('pcTacPhotos')) add('Photo — Titre', p.title);
+    try {
+        for (const pin of window.PlanMap?.getPinsSummary?.() ?? []) add('Plan — Point', pin.label);
+    } catch { /* liste des points indisponible : rien à signaler */ }
+    for (const s of loadPlanShapes()) add('Plan — Forme', s?.text);
+    for (const t of loadGpxIndex()) add('Plan — Trace GPX', t.name);
+    return out;
+}
+
+/**
+ * Décision 44 — polices de repli que les textes demandent (Noto Sans pour ce
+ * que JetBrains Mono NL n'a pas, cyrillique kazakh par exemple ; Noto Sans
+ * Arabic pour l'arabe) et chaîne complète pour nommer ce qu'aucune ne couvre.
+ * Le module des polices (~550 Ko) n'est chargé que si un caractère échappe à
+ * JetBrains Mono NL ; indisponible (hors ligne sans cache), on le dit comme
+ * un caractère non imprimable au lieu d'échouer.
+ */
+async function scriptFonts(texts: readonly PrintedText[]): Promise<{ fonts: ExtraFontBytes; chain: FontCandidate[] }> {
+    const jetbrains: FontCandidate = { id: 'jetbrains', has: glyphTester(base64ToBytes(PDF_FONT_VFS['JetBrainsMono-400.ttf'] ?? '')) };
+    const missing = new Set<number>();
+    for (const t of texts) {
+        for (const ch of t.text) {
+            const cp = ch.codePointAt(0) ?? 0;
+            if (cp > 0x7e && !jetbrains.has(cp)) missing.add(cp);
+        }
+    }
+    if (missing.size === 0) return { fonts: {}, chain: [jetbrains] };
+    let vfs: Record<string, string>;
+    try { vfs = await loadExtraFontVfs(); } catch { return { fonts: {}, chain: [jetbrains] }; }
+    const bytes = (key: string): Uint8Array | undefined => (vfs[key] ? base64ToBytes(vfs[key]) : undefined);
+    const notoRegular = bytes(EXTRA_FONT_KEYS.notoRegular);
+    const notoArabic = bytes(EXTRA_FONT_KEYS.notoArabic);
+    const noto: FontCandidate = { id: 'noto', has: notoRegular ? glyphTester(notoRegular) : () => false };
+    const arabic: FontCandidate = { id: 'arabic', has: notoArabic ? glyphTester(notoArabic) : () => false };
+    const needs = [...missing];
+    const fonts: ExtraFontBytes = {};
+    if (needs.some((cp) => noto.has(cp))) {
+        fonts.notoRegular = notoRegular;
+        fonts.notoBold = bytes(EXTRA_FONT_KEYS.notoBold);
+    }
+    if (needs.some((cp) => !noto.has(cp) && arabic.has(cp))) fonts.notoArabic = notoArabic;
+    return { fonts, chain: [jetbrains, noto, arabic] };
+}
+
+/** Caractères qu'aucune police ne couvre, regroupés par endroit (décision 44). */
+function unsupportedTexts(texts: readonly PrintedText[], chain: readonly FontCandidate[]): UnsupportedChars[] {
+    const byWhere = new Map<string, string[]>();
+    for (const t of texts) {
+        const chars = findUnsupported(t.text, chain);
+        if (chars.length) byWhere.set(t.where, [...new Set([...(byWhere.get(t.where) ?? []), ...chars])]);
+    }
+    return [...byWhere].map(([where, chars]) => ({ where, chars }));
+}
+
 /**
  * Données lues UNE fois par export (les essais du budget « Partage » les
  * réutilisent) : journal, fiches, amis, photos hydratées, capture du plan et
@@ -571,9 +761,8 @@ async function loadReportData(sortie: PdfSortie) {
     }
     // Mo4 — formes et traces GPX listées (nom, type, longueur ou surface) :
     // sur l'image du plan seulement, elles n'étaient ni nommées ni mesurées.
-    const shapes = Persist.get<PlanShape[]>(scopedKey(SHAPES_KEY), { validator: (v): v is PlanShape[] => Array.isArray(v), fallback: [] });
-    const gpxIndex = Persist.get<PlanGpxTrack[]>(scopedKey(GPX_INDEX_KEY), { validator: (v): v is PlanGpxTrack[] => Array.isArray(v), fallback: [] });
-    const tracks = await Promise.all(gpxIndex.filter((t) => !!t && typeof t.id === 'string').map(async (track) => {
+    const shapes = loadPlanShapes();
+    const tracks = await Promise.all(loadGpxIndex().map(async (track) => {
         const stored = await GpxStore.get(track.id).catch(() => null);
         return { track, coords: stored && Array.isArray(stored.coords) ? stored.coords : null };
     }));
@@ -591,6 +780,8 @@ interface RenderSettings {
     scale: number;
     /** Numéro d'essai du budget (0 = premier rendu). */
     attempt: number;
+    /** Décision 44 — polices de repli que les textes demandent. */
+    fonts?: ExtraFontBytes | undefined;
 }
 
 /** Dessine tout le rapport et rend les octets du PDF. */
@@ -601,7 +792,7 @@ async function renderReport(data: ReportData, settings: RenderSettings): Promise
     const A4_LANDSCAPE: [number, number] = cloneA4([PageSizes.A4[1], PageSizes.A4[0]]);
     const pdfDoc = await PDFDocument.create();
     // Décision 34 / B-3 — corps JetBrains Mono, titres Oswald (comme l'OI).
-    const { font, fontBold, titleFont, hasGlyph } = await embedReportFonts(pdfDoc);
+    const { font, fontBold, titleFont, hasGlyph } = await embedReportFonts(pdfDoc, settings.fonts);
     // R23 — la couverture de la police de corps guide l'échappement des
     // textes saisis (translittération/« ? »), retiré en fin d'export.
     glyphChecker = hasGlyph;
@@ -654,6 +845,12 @@ async function renderReport(data: ReportData, settings: RenderSettings): Promise
         // Cloner à chaque appel : pdf-lib peut conserver la référence
         const size = cloneA4(isLandscape ? A4_LANDSCAPE : A4_PORTRAIT);
         context.currentPage = pdfDoc.addPage(size);
+        // Décision 44 — tout texte de la page, pied de page compris, est
+        // dessiné par segments dans la police de repli qui le couvre : les
+        // appels `drawText` du rapport en profitent sans être réécrits.
+        const page = context.currentPage;
+        const drawRaw = page.drawText.bind(page);
+        page.drawText = (text, options) => drawTextRuns(page, text, options, drawRaw);
         context.pageWidth = pdfPage().getWidth();
         context.pageHeight = pdfPage().getHeight();
         context.y = context.pageHeight - context.margin;
@@ -1415,10 +1612,23 @@ export const PdfExport: PdfExportContract = {
                 toast('Librairie pdf-lib non chargée (réseau ?). Réessaie dans quelques secondes.', { kind: 'error' });
                 return;
             }
+            // Décision 44 — polices de repli selon les textes saisis, et
+            // avertissement des caractères non imprimables AVANT le travail
+            // lourd (capture du plan, photos, rendu) : « Corriger la saisie »
+            // n'a rien coûté.
+            const texts = printedTexts();
+            const scripts = await scriptFonts(texts);
+            const unsupported = unsupportedTexts(texts, scripts.chain);
+            if (unsupported.length > 0) {
+                hideBusy();
+                const go = await confirmUnsupportedChars(unsupported);
+                showBusy('Génération du PDF : lecture des données…');
+                if (!go) return;
+            }
             const data = await loadReportData(opts.sortie);
             const budget = PDF_IMAGE_PROFILES[opts.sortie].budgetBytes;
             const { bytes: pdfBytes, overBudget } = await renderWithinBudget(
-                (scale, attempt) => renderReport(data, { theme: opts.theme, sortie: opts.sortie, scale, attempt }),
+                (scale, attempt) => renderReport(data, { theme: opts.theme, sortie: opts.sortie, scale, attempt, fonts: scripts.fonts }),
                 budget,
             );
             // pdf-lib type ses .d.ts contre un `Uint8Array` non générique ; sous les lib DOM
