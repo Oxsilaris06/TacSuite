@@ -13,13 +13,15 @@ const APP_DIRS = ['index.html', 'pctac', 'oi', 'src', 'styles', 'public', 'node_
 export const DEV_SERVER_FS = {
   strict: true,
   allow: APP_DIRS.map((p) => fileURLToPath(new URL(`./${p}`, import.meta.url))),
+  // Seconde barrière : ce qui pourrait se glisser DANS un dossier autorisé.
+  // Pas de motif sur un nom de dossier (« **/.ai/** », « **/docs/** ») : Vite
+  // compare le chemin absolu, et un tel motif refuserait tout un worktree
+  // rangé sous ~/.ai ou un dépôt cloné sous ~/docs ; les dossiers de la racine
+  // hors application sont déjà exclus par `allow`.
   deny: [
     '.env', '.env.*', '*.{crt,pem,key}', '**/.git/**',
     '*.md', '*.yaml', '*.yml', '*.log', 'entities.json', 'tokens.json', 'vite.funnel*.config.ts',
-    '**/tools/osmand-relay/**', '**/graphify-out/**', '**/scratch/**', '**/docs/**',
-    '**/playwright-report/**', '**/test-results/**', '**/tests/visual/diffs/**',
-    '**/.claude/**', '**/.agents/**', '**/.continue/**', '**/.kiro/**', '**/.openhands/**',
-    '**/.impeccable/**', '**/.github/**', '**/.ai/**', '**/node_modules/playwright*/**',
+    '**/node_modules/playwright*/**',
   ],
 };
 
