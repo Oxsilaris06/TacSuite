@@ -234,6 +234,8 @@ export async function handleFileChange(
                                 ${isEffrac ? `<button type="button" class="add-btn" style="background-color: var(--effraction-gold); padding: 4px 8px;" onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation()" onclick="openEffractionToolsModal('${previewImgId}')" aria-label="Sélectionner les outils d'effraction"><span class="material-symbols-outlined" style="font-size: 1.2em;">hardware</span></button>` : ''}
                                 <button type="button" class="remove-btn" style="padding: 4px 8px;" onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation()" onclick="removeImage('${previewImgId}', this.closest('.image-preview-item'))" aria-label="Supprimer la photo">&times;</button>
                             </div>`;
+                // Photo principale d'adversaire : jamais de légende (Nico 09-26).
+                if (previewContainer.hasAttribute('data-no-caption')) interactiveItem.querySelector('.photo-title-input')?.remove();
                 previewContainer.appendChild(interactiveItem);
                 added++;
 

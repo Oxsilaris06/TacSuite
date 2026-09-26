@@ -44,6 +44,7 @@ import { PCTAC_MODES, SHARED_KEYS, currentModeId, persistModeId, scopedKey, type
 import { findDuplicatePerson, normalizeDob } from '@pctac/fiche.js';
 import { mergePersonIntoExisting, syncMergedGallery, type MergeGallerySide } from '@pctac/fiche-merge.js';
 import { Utils } from '@pctac/utils.js';
+import { mergeLegacyBaptemePhotos, photoFieldLabel } from '@oi/sections.js';
 import {
     LOCAL_STORAGE_KEY, TP_ASSOC_KEY,
     ADVERSARIES_KEY, HOSTAGES_KEY, FRIENDS_KEY, PHOTOS_KEY, CUSTOM_PAX_KEY,
@@ -145,6 +146,8 @@ interface OiData {
     dynamic_photos?: Record<string, OiDynamicPhotoEntry[]>;
     patracdvr_rows?: OiPatracdvrRow[];
     patracdvr_unassigned?: OiPatracdvrMember[];
+    /** Ordre des blocs ZMSPCP : numérote les anciennes photos « Baptême Terrain » par bloc. */
+    zmspcp_blocks?: { id?: unknown }[];
     /** Seul le carroyage est repris de la carto OI (`grid`, `@shared/tactical-grid`). */
     cartography?: { grid?: unknown };
 }
@@ -633,27 +636,11 @@ export function oiPhotoCategory(key: string): string {
     return 'location';
 }
 
-/** Légende lisible d'une photo d'OI (légende saisie, sinon libellé du contenant). */
-export function oiPhotoTitle(key: string, entry: OiDynamicPhotoEntry): string {
+/** Légende d'une photo d'OI importée : la légende saisie, sinon le nom par
+ *  défaut de l'OI, « nom du bouton (rang/total) » (Nico 2026-09-26). */
+export function oiPhotoTitle(key: string, entry: OiDynamicPhotoEntry, rank: number, total: number): string {
     const custom = typeof entry.customTitle === 'string' ? entry.customTitle.trim() : '';
-    if (custom) return custom;
-    const known: Array<[RegExp, string]> = [
-        [/express_objectif/, 'Objectif'],
-        [/express_adversaire/, 'Adversaire'],
-        [/express_carte/, 'Carte'],
-        [/transport_pr/, 'Transport PSIG → PR'],
-        [/transport_domicile/, 'Transport PR → Domicile'],
-        [/photo_itin_ext_/, 'Cheminement extérieur'],
-        [/photo_itin_int_/, 'Cheminement intérieur'],
-        [/photo_bapteme_|bapteme_terrain/, 'Baptême terrain'],
-        [/photo_empl_ao_/, 'Emplacement AO'],
-        [/photo_effrac_/, 'Effraction'],
-        [/photo_extra_/, 'Adversaire — photo supplémentaire'],
-        [/photo_renforts_/, 'Renforts'],
-        [/photo_logo_unite/, 'Logo unité'],
-    ];
-    for (const [re, label] of known) if (re.test(key)) return label;
-    return key;
+    return custom || `${photoFieldLabel(key)} (${rank}/${total})`;
 }
 
 export const Archive: ArchiveContract = {
@@ -1446,9 +1433,16 @@ export const Archive: ArchiveContract = {
         // A3 — entrées mises à jour ou ajoutées, appliquées à la liste relue à l'écriture.
         const galleryChanges = new Map<string, PctacCollectionItem>();
         let galleryAdded = 0, galleryUpdated = 0, galleryPreserved = 0;
-        for (const [key, entries] of Object.entries(dynPhotos)) {
-            if (key.startsWith('photo_main_') || !Array.isArray(entries)) continue;
-            for (const entry of entries) {
+        // Anciennes photos « Baptême Terrain » par bloc ZMSPCP : un seul champ,
+        // numéroté comme dans l'OI.
+        const zmspcpIds = (Array.isArray(oi.zmspcp_blocks) ? oi.zmspcp_blocks : []).map((b) => (typeof b?.id === 'string' ? b.id : ''));
+        const galleryPhotos = mergeLegacyBaptemePhotos(
+            Object.fromEntries(Object.entries(dynPhotos).filter((e): e is [string, OiDynamicPhotoEntry[]] => Array.isArray(e[1]))),
+            zmspcpIds,
+        );
+        for (const [key, entries] of Object.entries(galleryPhotos)) {
+            if (key.startsWith('photo_main_')) continue;
+            for (const [index, entry] of entries.entries()) {
                 const imgId = entry && typeof entry.id === 'string' ? entry.id : '';
                 if (!imgId) continue;
                 const dataUrl = await readPhotoDataUrl(imgId);
@@ -1456,7 +1450,7 @@ export const Archive: ArchiveContract = {
 
                 const pcId = stableOiPhotoId(imgId);
                 const existing = photoById.get(pcId);
-                const derivedTitle = oiPhotoTitle(key, entry);
+                const derivedTitle = oiPhotoTitle(key, entry, index + 1, entries.length);
                 const annotations = parseAnnotations(entry.annotations);
                 const importedAnnotationSig = annotations.length ? JSON.stringify(annotations) : '';
 

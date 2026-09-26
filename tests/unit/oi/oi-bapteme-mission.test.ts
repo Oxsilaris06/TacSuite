@@ -108,6 +108,25 @@ describe('chargement d’un OI ancien', () => {
         expect(input.style.color).toBe('var(--text-primary)');
     });
 
+    it('photo principale d’adversaire rechargée : aucun champ de légende', async () => {
+        document.body.innerHTML = `<div id="adversaries_container"></div><div id="time_events_container"></div>
+            <div id="hypotheses_container"></div><div id="photo_main_a1" class="image-preview-container" data-no-caption></div>`;
+        await import('@oi/formulaires.js');
+        const { dbManager } = await import('@oi/init.js');
+        for (const fn of ['initializePatracdvr', 'updateArticulationDisplay', 'addMoicp', 'addZmspcp', 'addEffraction',
+            'refreshRameVL', 'refreshColonneProgression', 'refreshOrdrePenetration', 'syncAllThumbnails', 'addAdversary'] as const) {
+            Reflect.set(window, fn, vi.fn());
+        }
+        window.updateCustomBgPreview = vi.fn(async () => { /* stub */ });
+        vi.spyOn(dbManager, 'getItem').mockImplementation(async () => new Blob(['x'], { type: 'image/jpeg' }));
+        localStorage.setItem('tactical_oi_data', JSON.stringify({ dynamic_photos: { photo_main_a1: [{ id: 'img_face', customTitle: '' }] } }));
+
+        await window.loadFormData();
+
+        expect(document.querySelectorAll('#photo_main_a1 .image-preview')).toHaveLength(1);
+        expect(document.querySelectorAll('#photo_main_a1 .photo-title-input')).toHaveLength(0);
+    });
+
     it('après suppression d’une photo, les noms par défaut sont renumérotés', async () => {
         vi.useFakeTimers();
         try {
