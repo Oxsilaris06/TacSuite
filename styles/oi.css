@@ -3920,11 +3920,20 @@ textarea[aria-invalid="true"]:focus-visible {
         .oi-section-heading {
             display: flex;
             align-items: center;
-            flex-wrap: wrap;
             gap: var(--space-2);
+            flex: 1 1 auto;
+            min-width: 0;
+        }
+
+        /* Le libellé passe à la ligne ; crayon et × restent sur celle du titre. */
+        .oi-section-label {
+            flex: 1 1 0;
+            min-width: 0;
+            overflow-wrap: anywhere;
         }
 
         .oi-section-tools {
+            flex-shrink: 0;
             display: inline-flex;
             gap: var(--space-1);
             margin-left: auto;
