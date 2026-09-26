@@ -694,6 +694,35 @@
             }
         }
 
+        /* Chronologie sur téléphone : type, heure et × sur une ligne, description
+           dessous ; un événement forme un bloc au lieu de quatre champs empilés
+           plus éloignés entre eux que de l'événement suivant. */
+        @media (max-width: 479px) {
+            .dynamic-list-item.time-item {
+                display: grid;
+                grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 44px;
+                gap: var(--space-2);
+                padding: var(--space-3);
+                border: 1px solid var(--border-color);
+                border-radius: var(--radius-md);
+            }
+
+            /* id : surclasse la règle globale des champs (spécificité 0,5,1). */
+            #time_events_container .time-item > input,
+            #time_events_container .time-item > select {
+                margin-block-end: 0;
+            }
+
+            .time-item > .remove-btn {
+                grid-column: 3;
+                grid-row: 1;
+            }
+
+            .time-item > .time-description-input {
+                grid-column: 1 / -1;
+            }
+        }
+
         /* ==========================================================================
    BOUTONS (Tactiles, Engagés & Animations Avancées)
    ========================================================================== */
