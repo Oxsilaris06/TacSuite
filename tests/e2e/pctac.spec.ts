@@ -616,6 +616,8 @@ test.describe('PC-Tac — Checklist fonctionnelle', () => {
   // l'état interne fiable à vérifier en headless (le pitch/bearing MapLibre
   // réel dépend du rendu WebGL, non déterministe en CI).
   test('Plan — bascule 2D/3D relief (#plan_btn_3d)', async ({ page }) => {
+    const skyErrors: string[] = [];
+    page.on('console', (m) => { if (m.type() === 'error' && /sky/i.test(m.text())) skyErrors.push(m.text()); });
     await step('clic sur le FAB 3D bascule window.PlanMap.is3D', async () => {
       await clickTab(page, 'view-plan');
       await page.waitForTimeout(1200);
@@ -637,6 +639,13 @@ test.describe('PC-Tac — Checklist fonctionnelle', () => {
         () => (window as unknown as { PlanMap: { is3D: boolean } }).PlanMap.is3D,
       );
       expect.soft(afterToggleBack).toBe(false);
+      // Retour en 2D : le ciel est vraiment retiré, sans erreur de validation
+      // MapLibre (setSky(null) était refusé : « sky: object expected, null found »).
+      const skyAfter = await page.evaluate(
+        () => (window as unknown as { PlanMap: { map: { getSky: () => unknown } } }).PlanMap.map.getSky() ?? null,
+      );
+      expect.soft(skyAfter).toBeNull();
+      expect.soft(skyErrors).toEqual([]);
     });
   });
 
@@ -814,9 +823,11 @@ test.describe('PC-Tac — Checklist fonctionnelle', () => {
       // l'outil measure soit réellement actif et aucun label n'apparaît.
       await page.waitForTimeout(200);
       const box = await page.locator('#plan_map').boundingBox();
+      // Autour du centre : le haut de la carte passe sous la barre d'onglets
+      // collante sur téléphone (390 px), un clic à +80 px y tombait.
       if (box) {
-        await page.mouse.click(box.x + 80, box.y + 80);
-        await page.mouse.click(box.x + 220, box.y + 180);
+        await page.mouse.click(box.x + box.width / 2 - 60, box.y + box.height / 2 - 60);
+        await page.mouse.click(box.x + box.width / 2 + 60, box.y + box.height / 2 + 40);
       }
       // Sélecteur précisé : `text=/\d+\s?(m|km)/` seul était ambigu (matchait
       // aussi le contrôle d'échelle natif MapLibre, toujours présent —
@@ -1073,9 +1084,9 @@ test.describe('PC-Tac — Checklist fonctionnelle', () => {
         mimeType: 'application/zip',
         buffer,
       });
-      // R2-T2a : Archive.importFile ouvre désormais confirmDialog() (danger:true,
-      // « Les données actuelles seront remplacées. ») au lieu de confirm() natif.
-      await clickConfirmDialogOk(page);
+      // L'import ouvre la fenêtre de portée (#importScopeModal, fusion par
+      // défaut, rien n'est écrasé) : « Importer » la valide.
+      await page.locator('#importScopeConfirm').click();
       await expect
         .soft(page.locator('#logTable tbody tr', { hasText: 'Lieu Import ZIP E2E' }))
         .toBeVisible({ timeout: 3000 });
@@ -1486,6 +1497,10 @@ test('traces GPX — import, masquage, persistance et suppression', async ({ pag
 // ============================================================================
 
 test('ligne droite + nom déplaçable le long du tracé et rotatif', async ({ page }) => {
+  // À 768 px et moins, la ligne droite se pose au réticule (mode précision,
+  // draw-tools.ts `drawPrecisionMode`, conçu pour les gants), pas au glisser :
+  // ce parcours à la souris ne concerne que les écrans larges.
+  test.skip((page.viewportSize()?.width ?? 0) <= 768, 'ligne droite au réticule sous 769 px');
   await page.goto('/pctac/', { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(1000);
   await page.evaluate(() => { (window as unknown as { UI?: { switchMainView?: (v: string) => void } }).UI?.switchMainView?.('view-plan'); });
@@ -1864,4 +1879,109 @@ test('fiche sur bureau : pleine largeur sans fiche, deux colonnes ensuite', asyn
   const two = await widths();
   expect(two.list).toBeGreaterThan(200);
   expect(two.fiche).toBeLessThan(two.layout - two.list);
+});
+
+// ============================================================================
+// Thème clair : un champ qui prend le focus garde son fond clair (le voile
+// noir à 50 % du thème sombre rendait le texte illisible, en plein soleil).
+// ============================================================================
+test('thème clair : le champ actif reste lisible (fond clair au focus)', async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('theme', 'light'));
+  await gotoPctac(page);
+  const field = page.locator('#remarques_input');
+  await field.focus();
+  await page.waitForTimeout(500); // fin de la transition de fond
+  const bg = await field.evaluate((el) => getComputedStyle(el).backgroundColor);
+  // Canal rouge du fond (rgb ou rgba) : clair = au-dessus de 200.
+  const red = Number(/\d+/.exec(bg)?.[0]);
+  const alpha = Number(/rgba\([^)]*,\s*([\d.]+)\)/.exec(bg)?.[1] ?? 1);
+  expect(red >= 200 || alpha < 0.2, `fond du champ actif en thème clair : ${bg}`).toBe(true);
+});
+
+// ============================================================================
+// Téléphone : la barre de la mesure (Point, Annuler dernier, Terminer,
+// Quitter) tient dans la carte ; centrée sans retour à la ligne, elle
+// débordait des deux côtés (« Point » et « Quitter » coupés).
+// ============================================================================
+test('mesure sur téléphone : tous les boutons de la barre restent dans l’écran', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await gotoPctac(page);
+  await clickTab(page, 'view-plan');
+  await waitForPlanMapReady(page);
+  await page.locator('#plan_btn_draw').click();
+  await page.locator('.plan-draw-btn[data-tool="measure"]').click();
+  const map = await page.locator('#plan_map').boundingBox();
+  if (!map) throw new Error('carte sans boîte');
+  await page.mouse.click(map.x + map.width / 2, map.y + map.height / 2);
+  const buttons = page.locator('#plan_measure_controls button:visible');
+  await expect(buttons.first()).toBeVisible();
+  for (const b of await buttons.all()) {
+    const r = await b.boundingBox();
+    if (!r) continue;
+    expect.soft(r.x, `bouton « ${await b.innerText()} » coupé à gauche`).toBeGreaterThanOrEqual(0);
+    expect.soft(r.x + r.width, `bouton « ${await b.innerText()} » coupé à droite`).toBeLessThanOrEqual(390);
+  }
+});
+
+// ============================================================================
+// Portail (destination du bouton « maison » du dock), téléphone 390×844 :
+// les deux applications se voient sans défiler et le bouton de thème est
+// une cible tactile de 44 px.
+// ============================================================================
+test('portail sur téléphone : deux applications à l’écran, thème à 44 px', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/');
+  await page.waitForLoadState('domcontentloaded');
+  const toggle = await page.locator('#theme-toggle').boundingBox();
+  expect.soft(toggle?.height ?? 0, 'hauteur du bouton de thème').toBeGreaterThanOrEqual(44);
+  const cards = page.locator('.app-card');
+  await expect(cards).toHaveCount(2);
+  const second = await cards.nth(1).boundingBox();
+  // Le titre de la seconde carte (OI) doit être visible sans défiler.
+  const title = await cards.nth(1).locator('.app-card__title').boundingBox();
+  expect.soft(second, 'seconde carte').not.toBeNull();
+  expect.soft((title?.y ?? 9999) + (title?.height ?? 0), 'titre OI sous la ligne de flottaison').toBeLessThanOrEqual(844);
+});
+
+// ============================================================================
+// Journal sur tablette et bureau : la case PAX est une pastille (marge
+// intérieure, coins arrondis), pas un surlignage collé au texte.
+// ============================================================================
+test('journal large : la case PAX est une pastille', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await gotoPctac(page);
+  await page.locator('.pax-select-option[data-pax="Adversaire"]').click();
+  await page.fill('#remarques_input', 'Pastille');
+  await page.click('#addLogBtn');
+  const cell = page.locator('#logTable .pax-cell').first();
+  await expect(cell).toBeVisible();
+  const st = await cell.evaluate((el) => {
+    const cs = getComputedStyle(el);
+    return { pad: parseFloat(cs.paddingLeft), radius: parseFloat(cs.borderTopLeftRadius) };
+  });
+  expect.soft(st.pad, 'marge intérieure').toBeGreaterThanOrEqual(6);
+  expect.soft(st.radius, 'coins arrondis').toBeGreaterThanOrEqual(6);
+});
+
+// ============================================================================
+// Photos : les filtres de catégorie sont des cibles tactiles de 44 px
+// (26 px mesurés sur téléphone).
+// ============================================================================
+test('photos : filtres de catégorie à 44 px', async ({ page }) => {
+  await gotoPctac(page);
+  await clickTab(page, 'view-photos');
+  const filters = page.locator('#photo-filter-container button');
+  await expect(filters.first()).toBeVisible();
+  for (const f of await filters.all()) {
+    const r = await f.boundingBox();
+    expect.soft(r?.height ?? 0, `filtre « ${await f.innerText()} »`).toBeGreaterThanOrEqual(44);
+  }
+});
+
+// Photos : le formulaire dit ce qu'il fait (« Dashboard Opération »,
+// jargon anglais, ne disait pas qu'on ajoute une photo).
+test('photos : le titre du formulaire est « Ajouter une photo »', async ({ page }) => {
+  await gotoPctac(page);
+  await clickTab(page, 'view-photos');
+  await expect(page.locator('#view-photos h3').first()).toHaveText(/Ajouter une photo/);
 });
