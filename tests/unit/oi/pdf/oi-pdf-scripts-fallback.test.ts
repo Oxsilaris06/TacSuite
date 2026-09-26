@@ -240,3 +240,40 @@ describe('R4 — « Corriger la saisie » au téléchargement', () => {
         }
     });
 });
+
+describe('R5 — PDF PATRACDVR séparé : même passe d’écritures que l’OI', () => {
+    const member = (trigramme: string) => ({ trigramme, fonction: 'Équipier', cellule: 'India', principales: '', secondaires: '', afis: '', grenades: '', equipement: '', equipement2: '', tenue: '', gpb: '', dir: '' });
+
+    async function loadPatrac(pdfMake: unknown): Promise<typeof import('@oi/pdf/patrac-doc.js')> {
+        vi.resetModules();
+        vi.doMock('pdfmake', () => ({ default: pdfMake }));
+        return import('@oi/pdf/patrac-doc.js');
+    }
+
+    it('un nom arabe part avec la police de repli, enregistrée avant le rendu', async () => {
+        const pdfMake = { addVirtualFileSystem: vi.fn(), addFonts: vi.fn(), createPdf: vi.fn(() => ({ getBlob: async () => new Blob(['%PDF']) })) };
+        try {
+            const { buildPatracDocDefinition, renderPatracPdfBlob } = await loadPatrac(pdfMake);
+            await renderPatracPdfBlob(buildPatracDocDefinition({ rows: [{ vehicle: 'VL1', members: [member('محمد')] }], unassigned: [], unite: 'PSIG', dateOp: '2026-09-26' }));
+            const dd = (pdfMake.createPdf.mock.calls[0] as unknown as [TDocumentDefinitions])[0];
+            const node = textNodes(dd.content, 'محمد')[0]!;
+            expect(segmentsOf(node).find((s) => s.text.includes('محمد'))?.font).toBe('NotoSansArabic');
+        } finally {
+            vi.doUnmock('pdfmake');
+        }
+    });
+
+    it('« Corriger la saisie » : rien n’est rendu', async () => {
+        const pdfMake = { addVirtualFileSystem: vi.fn(), addFonts: vi.fn(), createPdf: vi.fn() };
+        confirmSpy.mockResolvedValue(false);
+        try {
+            const { buildPatracDocDefinition, renderPatracPdfBlob } = await loadPatrac(pdfMake);
+            const { OiScriptsCancelledError } = await import('@oi/pdf/theme.js');
+            await expect(renderPatracPdfBlob(buildPatracDocDefinition({ rows: [{ vehicle: 'VL1', members: [member('李')] }], unassigned: [], unite: 'PSIG', dateOp: '' })))
+                .rejects.toBeInstanceOf(OiScriptsCancelledError);
+            expect(pdfMake.createPdf).not.toHaveBeenCalled();
+        } finally {
+            vi.doUnmock('pdfmake');
+        }
+    });
+});

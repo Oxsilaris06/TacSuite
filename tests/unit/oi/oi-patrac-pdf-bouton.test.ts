@@ -18,12 +18,15 @@ const toastSpy = vi.hoisted(() => vi.fn());
 vi.mock('@shared/feedback.js', () => ({ confirmDialog: vi.fn(async () => true), toast: toastSpy, promptDialog: vi.fn(async () => null) }));
 
 const FONTS = path.resolve(__dirname, '../../../src/apps/oi/pdf/fonts');
+/** R5 : simule « Corriger la saisie » dans la passe d'écritures du rendu. */
+const renderCancel = vi.hoisted(() => ({ on: false }));
 
 vi.mock('@oi/pdf/patrac-doc.js', async (importOriginal) => {
     const original = await importOriginal<typeof import('@oi/pdf/patrac-doc.js')>();
     return {
         ...original,
         renderPatracPdfBlob: async (dd: TDocumentDefinitions): Promise<Blob> => {
+            if (renderCancel.on) throw new (await import('@oi/pdf/theme.js')).OiScriptsCancelledError();
             const pdfMake = (await import('pdfmake')).default as unknown as {
                 virtualfs: { writeFileSync(name: string, data: Uint8Array): void };
                 setFonts(f: unknown): void;
@@ -113,5 +116,20 @@ describe('generatePatracdvrPdf — PDF produit par le moteur de l’OI', () => {
 
         expect(click).not.toHaveBeenCalled();
         expect(toastSpy).toHaveBeenCalledWith('Aucun membre dans le PATRACDVR.', { kind: 'error' });
+    });
+
+    it('R5 — « Corriger la saisie » : ni erreur ni fichier, seulement « Génération annulée. »', async () => {
+        const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+        vi.spyOn(console, 'error').mockImplementation(() => {});
+        renderCancel.on = true;
+        try {
+            await import('@oi/patrac.js');
+            await window.generatePatracdvrPdf();
+        } finally {
+            renderCancel.on = false;
+        }
+        expect(click).not.toHaveBeenCalled();
+        expect(toastSpy.mock.calls.filter((c) => (c[1] as { kind?: string } | undefined)?.kind === 'error')).toEqual([]);
+        expect(toastSpy).toHaveBeenCalledWith('Génération annulée.', { kind: 'info' });
     });
 });
