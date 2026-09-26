@@ -1977,3 +1977,11 @@ test('photos : filtres de catégorie à 44 px', async ({ page }) => {
     expect.soft(r?.height ?? 0, `filtre « ${await f.innerText()} »`).toBeGreaterThanOrEqual(44);
   }
 });
+
+// Photos : le formulaire dit ce qu'il fait (« Dashboard Opération »,
+// jargon anglais, ne disait pas qu'on ajoute une photo).
+test('photos : le titre du formulaire est « Ajouter une photo »', async ({ page }) => {
+  await gotoPctac(page);
+  await clickTab(page, 'view-photos');
+  await expect(page.locator('#view-photos h3').first()).toHaveText(/Ajouter une photo/);
+});
