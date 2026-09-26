@@ -214,6 +214,17 @@ function stampUpdatedAt<T extends StampedItem>(items: readonly T[], stored: read
   });
 }
 
+/**
+ * Revue de sécurité côté client du 2026-09-26 (C-3) : un tableau stocké peut
+ * contenir autre chose que des objets (archive forgée importée en
+ * remplacement, corruption). Les lecteurs n'en rendent que les objets : un
+ * `null` ne peut plus faire lever le rendu au démarrage et bloquer l'export
+ * et le RESET. Le prochain enregistrement réécrit la liste assainie.
+ */
+function objectsOnly<T>(list: T[] | null | undefined): T[] {
+  return (list ?? []).filter((item) => item !== null && typeof item === 'object' && !Array.isArray(item));
+}
+
 export const Storage: PctacStorageContract = {
   /**
    * Sauvegarde les données du journal.
@@ -238,7 +249,7 @@ export const Storage: PctacStorageContract = {
    * (storage.js:37-39)
    */
   loadLogData(modeId: PctacModeId = currentModeId()): PctacLogEntry[] {
-    return Persist.get(scopedKey(LOCAL_STORAGE_KEY, modeId), { validator: isArray, fallback: [] });
+    return objectsOnly(Persist.get<PctacLogEntry[]>(scopedKey(LOCAL_STORAGE_KEY, modeId), { validator: isArray, fallback: [] }));
   },
 
   /**
@@ -285,7 +296,7 @@ export const Storage: PctacStorageContract = {
    * et la fusion de doublons doit lire/écrire cette CIBLE, pas l'écran.
    */
   loadCollection(key: string, modeId: PctacModeId = currentModeId()): PctacCollectionItem[] {
-    return Persist.get(scopedKey(key, modeId), { validator: isArray, fallback: [] });
+    return objectsOnly(Persist.get<PctacCollectionItem[]>(scopedKey(key, modeId), { validator: isArray, fallback: [] }));
   },
 
   /**

@@ -164,7 +164,10 @@ export const LogManager: LogManagerContract = {
    * logManager.js:76-78
    */
   getLieuHistory(): string[] {
-    return Persist.get(scopedKey('pcTacLieuHistory'), { validator: Array.isArray, fallback: [] }) || [];
+    // C-3 (revue de sécurité du 2026-09-26) : chaînes seulement, sinon le
+    // rendu des suggestions levait au démarrage.
+    const raw: unknown[] = Persist.get(scopedKey('pcTacLieuHistory'), { validator: Array.isArray, fallback: [] }) || [];
+    return raw.filter((l): l is string => typeof l === 'string');
   },
 
   /**

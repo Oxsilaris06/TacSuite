@@ -105,3 +105,14 @@ describe('Fusion de doublon à l’import (R1/A-4) et galerie', () => {
         expect(gallery.map((p: { id: string }) => p.id)).toContain('fc1_sync');
     });
 });
+
+describe('D-1 (revue de sécurité du 2026-09-26) : noms d’entrées d’images validés', () => {
+    it('import complet : une entrée au nom hors format n’est jamais stockée, les autres oui', async () => {
+        scopeState.scope = { categories: ['adversaires', 'photos'], mode: 'replace', full: true };
+        await Archive.importFile(await makeZip('forcene', {
+            [ADVERSARIES_KEY]: [{ id: 'a9', nom: 'X', hasImage: true }],
+        }, { a9: SYNC, 'x"><img src=y': SYNC, ['b'.repeat(200)]: SYNC }));
+        expect(imageStoreState.store.get('a9')).toBe(SYNC);
+        expect([...imageStoreState.store.keys()].every((k) => /^[A-Za-z0-9_.:-]{1,128}$/.test(k))).toBe(true);
+    });
+});

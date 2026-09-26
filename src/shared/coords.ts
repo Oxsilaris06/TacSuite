@@ -73,6 +73,11 @@ export interface UtmCoords {
 /**
  * WGS84 (lat,lon) → UTM. Retourne {zone, band, easting, northing, hemisphere}.
  */
+/** Position WGS84 plausible : nombres finis, latitude dans [-90, 90], longitude dans [-180, 180]. */
+export function isWgs84(lat: number, lon: number): boolean {
+    return Number.isFinite(lat) && Number.isFinite(lon) && Math.abs(lat) <= 90 && Math.abs(lon) <= 180;
+}
+
 export function latLngToUtm(lat: number, lon: number): UtmCoords {
   lon = normLon(lon);
   const zone = utmZone(lat, lon);
