@@ -1,120 +1,45 @@
 # TacSuite
 
-Suite d'outils tactiques — portage TypeScript de PC-Tac et 
-Générateur d'Ordre Initial, à partir prototypes vanilla JS de
-[GStart-main](https://github.com/Oxsilaris06/GStart-main).
+Outils tactiques qui fonctionnent sans connexion : conduite d'une intervention et rédaction de l'ordre initial.
 
-## Applications
+**Ouvrir TacSuite : https://oxsilaris06.github.io/TacSuite/**
 
-- **Portail** (`/`) — page de garde : accès aux deux applications, thème
- clair/sombre, indicateur en ligne/hors ligne.
-- **PC-Tac** (`/pctac/`) — poste de commandement tactique : main courante,
- cartographie MapLibre (dessin, mesure, zones hors-ligne, traces GPX
- importées avec rejeu timelapse), plan d'action,
- géolocalisation d'équipe (Tchap), export PDF, archive `.pctac.zip`.
-- **Générateur d'OI** (`/oi/`) — assistant pas à pas de rédaction d'Ordre
- Initial : cartographie, PATRACDVR, génération et export document
- (PDF, HTML, `.oi.zip`).
+![Portail de TacSuite](docs/portail.webp)
 
- deux applications communiquent via pont d'archive : `.oi.zip`
-exporté depuis Générateur d'OI est importable dans PC-Tac.
+## Les deux applications
 
-## Stack
+**PC-Tac**, poste de commandement tactique :
+- main courante horodatée, entrées importantes marquées d'une étoile ;
+- fiches des personnes (adversaires, otages, victimes) avec photos annotées ;
+- carte : dessin, mesures, carroyage, traces GPX, zones téléchargées pour le hors ligne, suivi d'équipe en temps réel ;
+- rapport PDF et synthèse A3, archive `.pctac.zip`.
 
-- **Frontend** : Vite (multi-page : portail + `pctac/` + `oi/`) + TypeScript
- (mode strict), vanilla — sans framework UI.
-- **Cartographie** : MapLibre GL.- **PWA** : `vite-plugin-pwa` (stratégie `injectManifest`), Service Worker
- maison (`public/sw.ts`) — chaque page précache sa propre copie hors ligne.
-- **Tests** : Vitest (unitaire), Playwright (E2E), diff visuel maison (`tests/visual/compare.mjs`, pixelmatch).
+**Générateur d'OI**, rédaction de l'ordre initial pas à pas :
+- huit étapes, de la situation à la finalisation, en version complète ou express ;
+- cartographie avec carroyage et captures intégrées au document ;
+- PDF prêt à présenter (A4 ou 16:9, clair ou sombre), archive `.oi.zip`.
 
-## Démarrage
+Un OI exporté s'importe dans PC-Tac.
+
+## Vos données restent sur l'appareil
+
+Pas de compte ni de serveur TacSuite : tout ce que vous saisissez reste dans le navigateur de l'appareil utilisé. Pour transmettre un travail, exportez son archive. Seuls les fonds de carte, la recherche d'adresse et, si vous l'activez, le suivi d'équipe passent par le réseau.
+
+## Hors ligne et sur téléphone
+
+Après une première visite en ligne, TacSuite s'ouvre sans réseau. Pour l'installer comme une application, utilisez le menu du navigateur : « Ajouter à l'écran d'accueil » sur téléphone, « Installer » sur ordinateur. Téléchargez à l'avance les zones de carte utiles.
+
+## Développement
 
 ```bash
-# Installation
 npm install
-
-# Serveur de développement (port 9678)
-npm run dev
-
-# Build de production
+npm run dev     # http://localhost:9678
+npm run test
 npm run build
-
-# Prévisualisation du build
-npm run preview
 ```
 
-## Tests
+Tests, déploiement et polices du PDF : [docs/DEVELOPPEMENT.md](docs/DEVELOPPEMENT.md).
 
-```bash
-npm run test         # Vitest (unitaire)
-npm run test:e2e     # Playwright (E2E)
-npm run test:visual  # Diff visuel vs baselines (tests/visual/baseline/)
-npm run typecheck    # tsc --noEmit
-npm run lint         # ESLint
-```
+## Crédits
 
- tests E2E et diff visuel ciblent serveur déjà démarré
-(`baseURL` dans `playwright.config.ts` / `tests/visual/compare.mjs`) —
-lancer `npm run dev` (ou `npm run build && npm run preview`) au préalable.
- test PWA offline (`tests/e2e/offline.spec.ts`) exige spécifiquement 
-serveur de preview (build), pas `dev` : aucun `sw.js` n'est buildé en mode
-développement.
-
-## Base URL de déploiement
-
- chemin de base est paramétrable via variable d'environnement
-`TACSUITE_BASE` (`vite.config.ts`) — `/` par défaut (dev, preview locale),
-`/TacSuite/` pour GitHub Pages :
-
-```bash
-TACSUITE_BASE=/TacSuite/ npm run build
-```
-
- ancres de navigation inter-apps (`<a href>` portail et docks
-PC-Tac/OI) sont en chemins relatifs pour rester correctes quelle que soit
- base.
-
-**Piège (P4.FIX, MINEUR R4)** : `vite.config.ts` relit `process.env.TACSUITE_BASE`
-à CHAQUE lancement config — variable doit donc être positionnée pour
-`preview` AUSSI, pas seulement pour `build`. `npm run build` avec
-`TACSUITE_BASE=/TacSuite/` suivi d' `npm run preview` NU (sans variable)
-repart en `base=/` : serveur de preview répond alors HTTP 200 sur TOUTES
- URL `/TacSuite/**` en renvoyant `dist/index.html` ( portail) — y compris
-pour `/TacSuite/pctac/index.html` ou `/TacSuite/manifest.webmanifest`, qui
-n'existent pourtant pas à cet emplacement dans `dist/`. Ce faux « zéro 404 »masque déploiement cassé. Commande correcte pour vérifier build Pages
-en local :
-
-```bash
-TACSUITE_BASE=/TacSuite/ npm run build
-TACSUITE_BASE=/TacSuite/ npx vite preview --port 9678 --strictPort
-```
-
-( workflow `.github/workflows/pages.yml` n'est pas concerné : il ne fait
-qu' `build`, avec `TACSUITE_BASE: /TacSuite/` déjà positionné.)
-
-## Déploiement
-
-GitHub Pages via GitHub Actions (`.github/workflows/pages.yml`) : chaque
-push sur `main` reconstruit (`TACSUITE_BASE=/TacSuite/`) et déploie
-`dist/`.
-
-## Documentation
-
- dossier `docs/` regroupe plan de portage (`PLAN.md`), specs de
-conversion (`SPEC-*.md`), décisions d'architecture (`DECISIONS-*.md`)
-et checklists fonctionnelles (`CHECKLIST-*.md`) héritées recette
-sur originaux.
-
-## Polices embarquées
-
- polices vectorielles suivantes sont embarquées dans PDF Générateur
-d'OI (**100 % hors ligne**, aucun accès réseau au rendu) :
-
-- **Oswald 500** (Medium) — titres et entêtes — 86 Ko- **JetBrains Mono 400** (Regular) — corps monospaced — 112 Ko- **JetBrains Mono 700** (Bold) — corps monospaced gras — 112 Ko
-Licence : **SIL Open Font License 1.1** (textes complets dans
-`src/apps/oi/pdf/fonts/OFL-*.txt`). Redistribution autorisée y compris
-embarquée dans PDF, sans obligation de licence sur document produit.
-
- fichiers TTF ne sont jamais servis ni bundlés — seul module TypeScript
-`src/apps/oi/pdf/fonts.generated.ts` (généré par `npm run gen:pdf-fonts`)
-contient leur codage base64 et entre dans bundle.
+Portage TypeScript des prototypes [GStart-main](https://github.com/Oxsilaris06/GStart-main). Cartographie : MapLibre GL. Polices du PDF : Oswald et JetBrains Mono (SIL Open Font License 1.1).
