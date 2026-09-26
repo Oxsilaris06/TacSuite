@@ -484,11 +484,12 @@ describe('galleryPages — galerie adaptative (décision 44, OrderHtmlPhotos.kt:
         expect(chip.canvas[0]).toMatchObject({ type: 'rect', r: expect.any(Number) });
     });
 
-    it('customTitle utilisé comme légende si renseigné, sinon repli "<titre> - Détail"', () => {
+    it('customTitle utilisé comme légende si renseigné, sinon repli sur le titre (la légende par défaut est posée en amont, `withDefaultCaptions`)', () => {
         const custom = galleryPages('Porte principale', [makePhoto({ id: 'photo-1', customTitle: 'Vue de face' })], photosBase64, p, geo);
         const fallback = galleryPages('Porte principale', [makePhoto({ id: 'photo-1' })], photosBase64, p, geo);
         expect(textsOf(custom[0] as Content)).toContain('Vue de face');
-        expect(textsOf(fallback[0] as Content)).toContain('Porte principale - Détail');
+        expect(textsOf(fallback[0] as Content)).toContain('Porte principale');
+        expect(textsOf(fallback[0] as Content)).not.toContain('Porte principale - Détail');
     });
 
     it('bug PDF-GALLERY-16-9 : les images tiennent dans la page RÉELLE sous le titre, en A4 ET en 16:9', () => {

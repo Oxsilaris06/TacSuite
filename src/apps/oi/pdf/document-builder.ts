@@ -79,7 +79,7 @@ import {
 } from './theme.js';
 import { breakLongTokens } from './text-utils.js';
 import { dateFr, oiModeLabel, oiPdfInfo } from './document-meta.js';
-import { applySectionRemovals, currentOiMode, isSectionRemoved, mergeLegacyBaptemePhotos, OI_BAPTEME_CONTAINER, OI_EXPRESS_PHOTO_CONTAINERS, pdfSectionTitle } from '@oi/sections.js';
+import { applySectionRemovals, currentOiMode, isSectionRemoved, mergeLegacyBaptemePhotos, OI_BAPTEME_CONTAINER, OI_EXPRESS_PHOTO_CONTAINERS, pdfSectionTitle, withDefaultCaptions } from '@oi/sections.js';
 import type {
     OiAdversary,
     OiEffractionBlock,
@@ -4361,16 +4361,16 @@ function buildExpressPages(ctx: BuildCtx): Content[] {
     const events = isSectionRemoved(formData, 'chronologie') ? [] : (formData.time_events ?? []);
 
     // TOUTES les photos (décision 24) : objectif, adversaire, puis plans ;
-    // légende = titre saisi, sinon la catégorie, numérotée s'il y en a
-    // plusieurs. Galerie adaptative (décision 44), mêmes règles que l'OI
+    // légende = titre saisi, sinon « catégorie (rang/total) » (posée par
+    // `withDefaultCaptions`). Galerie adaptative (décision 44), mêmes règles que l'OI
     // Complet : les plans chacun sur sa page, après les photos.
     const photoEntries = (plans: boolean): GalleryEntry[] => EXPRESS_PHOTOS.flatMap((c) => {
         const metas = (dynamicPhotos[c.id] ?? []).filter((m) => photosBase64[m.id] !== undefined);
         return metas
-            .map((m, i) => ({
+            .map((m) => ({
                 id: m.id,
                 ref: photosBase64[m.id] as string,
-                caption: m.customTitle?.trim() || (metas.length > 1 ? `${c.label} ${i + 1}` : c.label),
+                caption: m.customTitle || c.label,
                 tools: [],
                 size: ctx.photoSize(m.id),
                 isPlan: c.id === EXPRESS_PLAN_CONTAINER || isPlanPhotoId(m.id),
@@ -4586,7 +4586,8 @@ export function buildOiDocDefinition(
     // champ unique imprimé après la Mission (Nico 09-26), jamais perdues.
     const formData: OiFormData = {
         ...removed,
-        dynamic_photos: mergeLegacyBaptemePhotos(removed.dynamic_photos ?? {}, (data.formData.zmspcp_blocks ?? []).map((b) => b.id)),
+        // Photo sans légende : « nom du bouton (rang/total) » (Nico 09-26).
+        dynamic_photos: withDefaultCaptions(mergeLegacyBaptemePhotos(removed.dynamic_photos ?? {}, (data.formData.zmspcp_blocks ?? []).map((b) => b.id))),
     };
     const p = palette(isDark);
     const geo = pageGeometry(opts.format);

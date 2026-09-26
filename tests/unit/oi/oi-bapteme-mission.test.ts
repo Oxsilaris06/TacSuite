@@ -7,7 +7,7 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { mergeLegacyBaptemePhotos, OI_BAPTEME_CONTAINER } from '@oi/sections.js';
+import { mergeLegacyBaptemePhotos, OI_BAPTEME_CONTAINER, OI_PHOTO_CAPTION_MAX } from '@oi/sections.js';
 
 const html = readFileSync(path.resolve(__dirname, '../../../oi/index.html'), 'utf8');
 
@@ -99,5 +99,28 @@ describe('chargement d’un OI ancien', () => {
 
         const ids = Array.from(document.querySelectorAll(`#${OI_BAPTEME_CONTAINER} .image-preview`)).map((i) => i.id);
         expect(ids).toEqual(['img_bapt_1']);
+        // Légende restaurée : bornée à la limite du PDF, nom par défaut affiché.
+        const input = document.querySelector<HTMLInputElement>(`#${OI_BAPTEME_CONTAINER} .photo-title-input`)!;
+        expect(input.value).toBe('Portail');
+        expect(input.maxLength).toBe(OI_PHOTO_CAPTION_MAX);
+        expect(input.placeholder).toBe('Baptême terrain (1/1)');
+    });
+
+    it('après suppression d’une photo, les noms par défaut sont renumérotés', async () => {
+        vi.useFakeTimers();
+        try {
+            document.body.innerHTML = `<form id="oi-form"><div id="${OI_BAPTEME_CONTAINER}" class="image-preview-container">
+                <div class="image-preview-item"><img id="a" class="image-preview"><input class="photo-title-input"></div>
+                <div class="image-preview-item"><img id="b" class="image-preview"><input class="photo-title-input"></div>
+            </div></form>`;
+            await import('@oi/formulaires.js');
+            window.isFormLoading = false;
+            document.querySelector('.image-preview-item')!.remove();
+            window.syncDomToStore();
+            vi.advanceTimersByTime(600);
+            expect(document.querySelector<HTMLInputElement>('.photo-title-input')!.placeholder).toBe('Baptême terrain (1/1)');
+        } finally {
+            vi.useRealTimers();
+        }
     });
 });

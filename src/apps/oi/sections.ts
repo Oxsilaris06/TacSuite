@@ -263,3 +263,47 @@ export function nearestVisibleStep(fd: OiFormData | null | undefined, from: numb
     }
     return null;
 }
+
+/**
+ * Nom par défaut des photos d'un champ = libellé de son bouton (Nico
+ * 2026-09-26). « Effraction » : le bouton du bloc dit seulement « Ajouter
+ * Photo(s) », le nom vient de son titre « Photos Effraction ».
+ */
+const PHOTO_FIELD_LABELS: readonly (readonly [RegExp, string])[] = [
+    [/bapteme/, 'Baptême terrain'],
+    [/transport_pr_/, 'Transport PSIG → PR'],
+    [/transport_domicile_/, 'Transport PR → Domicile/LE'],
+    [/^photo_itin_ext_/, 'Extérieur'],
+    [/^photo_itin_int_/, 'Intérieur'],
+    [/^photo_empl_ao_/, 'Emplacement AO'],
+    [/^photo_effrac_/, 'Effraction'],
+    [/^photo_main_/, 'Photo principale'],
+    [/^photo_extra_/, 'Photos supplémentaires'],
+    [/^photo_renforts_/, 'Renforts'],
+];
+
+export function photoFieldLabel(containerId: string): string {
+    const express = OI_EXPRESS_PHOTO_CONTAINERS.find((c) => c.id === containerId);
+    if (express) return express.label;
+    return PHOTO_FIELD_LABELS.find(([re]) => re.test(containerId))?.[1] ?? 'Photo';
+}
+
+/**
+ * Légende par défaut d'une photo sans légende saisie : le nom du champ, puis
+ * son rang sur le nombre de photos du champ, « Baptême terrain (1/2) ».
+ * Rend une copie ; une légende saisie est gardée telle quelle.
+ */
+export function withDefaultCaptions<T extends { customTitle?: string }>(dynamicPhotos: Record<string, T[]>): Record<string, T[]> {
+    return Object.fromEntries(Object.entries(dynamicPhotos).map(([key, metas]) => [key, metas.map((m, i) =>
+        m.customTitle?.trim() ? m : { ...m, customTitle: `${photoFieldLabel(key)} (${i + 1}/${metas.length})` })]));
+}
+
+/**
+ * Longueur maximale d'une légende de photo (Nico 2026-09-26) : ce que le PDF
+ * imprime en entier dans sa mise en page la plus étroite (4 captures de
+ * téléphone par page), A4 comme 16:9, jusqu'à 6 badges d'outils
+ * d'effraction (mesuré : 583 sans outil, 450 avec 6). Au-delà (plus
+ * d'outils, mots très longs), le PDF coupe la légende par « … »
+ * (`fitCaption`). Tenue par `oi-photo-captions.test.ts`.
+ */
+export const OI_PHOTO_CAPTION_MAX = 450;

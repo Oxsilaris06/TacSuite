@@ -391,8 +391,9 @@ export const PanelsMethods = {
         const previews = Array.from(document.querySelectorAll<HTMLImageElement>('.image-preview-item img.image-preview'))
             .filter((img) => img.id.startsWith('img_'));
         const tiles = previews.map((img) => {
-            const title = (img.closest('.image-preview-item')
-                ?.querySelector<HTMLInputElement>('.photo-title-input')?.value || '').trim() || 'Photo';
+            // Légende saisie, sinon le nom par défaut du champ (« Baptême terrain (1/2) »).
+            const input = img.closest('.image-preview-item')?.querySelector<HTMLInputElement>('.photo-title-input');
+            const title = (input?.value.trim() || input?.placeholder || '').trim() || 'Photo';
             const on = img.id === current;
             return `
                 <button type="button" class="oi-carto-photo-tile${on ? ' selected' : ''}" data-id="${esc(img.id)}" title="${esc(title)}">
