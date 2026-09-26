@@ -17,6 +17,7 @@ import {
     ANNOUNCE_BANNER_ID,
     ANNOUNCE_CACHE_KEY,
     ANNOUNCE_DISMISS_KEY,
+    ANNOUNCE_PILL_ID,
     MAX_FUTURE_MS,
     announcementLayout,
     applyCachedAnnouncement,
@@ -276,6 +277,63 @@ describe('mémoire de fermeture', () => {
 
         await refreshAnnouncement({ fetchFn: async () => jsonResponse(ann({ texte: 'Deuxième.' })), now, storage: localStorage });
         expect(bannerText()).toBe('Deuxième.');
+    });
+});
+
+describe('pastille après fermeture (Nico 09-26)', () => {
+    const pill = (): HTMLButtonElement | null => document.getElementById(ANNOUNCE_PILL_ID) as HTMLButtonElement | null;
+    const dismiss = (): void => {
+        bannerEl()?.querySelector<HTMLButtonElement>('.release-card__close')?.click();
+    };
+    const header = (): void => {
+        document.body.innerHTML = '<header class="portal-header"><div class="portal-status"><span id="net-status"></span></div></header>';
+    };
+
+    it('fermer la carte laisse une pastille du niveau dans la barre d’état', async () => {
+        header();
+        await refreshAnnouncement({ fetchFn: async () => jsonResponse(ann({ niveau: 'important' })), now, storage: localStorage });
+        expect(pill()).toBeNull();
+        dismiss();
+        expect(bannerEl()).toBeNull();
+        expect(pill()?.textContent).toBe('Important');
+        expect(pill()?.dataset.level).toBe('important');
+        expect(pill()?.tagName).toBe('BUTTON');
+        expect(pill()?.parentElement?.classList.contains('portal-status')).toBe(true);
+    });
+
+    it('au rechargement, une annonce déjà fermée montre la pastille seule', () => {
+        const a = ann();
+        localStorage.setItem(ANNOUNCE_CACHE_KEY, JSON.stringify(a));
+        localStorage.setItem(ANNOUNCE_DISMISS_KEY, fingerprint(a));
+        applyCachedAnnouncement({ now, storage: localStorage });
+        expect(bannerEl()).toBeNull();
+        expect(pill()?.textContent).toBe('Nouveautés');
+    });
+
+    it('un clic sur la pastille rouvre la carte et oublie la fermeture', async () => {
+        header();
+        await refreshAnnouncement({ fetchFn: async () => jsonResponse(ann({ texte: 'Rouvrable.' })), now, storage: localStorage });
+        dismiss();
+        pill()!.click();
+        expect(bannerText()).toBe('Rouvrable.');
+        expect(pill()).toBeNull();
+        expect(localStorage.getItem(ANNOUNCE_DISMISS_KEY)).toBeNull();
+    });
+
+    it('une annonce retirée ou expirée efface aussi la pastille', async () => {
+        await refreshAnnouncement({ fetchFn: async () => jsonResponse(ann()), now, storage: localStorage });
+        dismiss();
+        expect(pill()).not.toBeNull();
+        await refreshAnnouncement({ fetchFn: async () => jsonResponse({ texte: '' }), now, storage: localStorage });
+        expect(pill()).toBeNull();
+    });
+
+    it('une nouvelle annonce remplace la pastille par sa carte', async () => {
+        await refreshAnnouncement({ fetchFn: async () => jsonResponse(ann({ texte: 'Première.' })), now, storage: localStorage });
+        dismiss();
+        await refreshAnnouncement({ fetchFn: async () => jsonResponse(ann({ texte: 'Deuxième.' })), now, storage: localStorage });
+        expect(bannerText()).toBe('Deuxième.');
+        expect(pill()).toBeNull();
     });
 });
 
