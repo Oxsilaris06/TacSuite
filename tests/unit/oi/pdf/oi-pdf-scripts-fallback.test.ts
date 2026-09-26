@@ -14,6 +14,8 @@ import type { Content, TDocumentDefinitions } from 'pdfmake/interfaces';
 
 const confirmSpy = vi.hoisted(() => vi.fn(async () => true));
 vi.mock('@shared/pdf-unsupported-dialog.js', () => ({ confirmUnsupportedChars: confirmSpy }));
+const toastSpy = vi.hoisted(() => vi.fn());
+vi.mock('@shared/feedback.js', async (orig) => ({ ...(await orig<typeof import('@shared/feedback.js')>()), toast: toastSpy }));
 
 import { buildOiDocDefinition } from '@oi/pdf/document-builder.js';
 import type { OiFormData } from '@shared/types/contracts.js';
@@ -213,6 +215,28 @@ describe('Écritures — greffe dans le moteur (engine-v3 · buildOiPdfBlob)', (
             expect(arabicFonts[0]!).toBeLessThan(pdfMake.createPdf.mock.invocationCallOrder[0]!);
         } finally {
             vi.doUnmock('pdfmake');
+        }
+    });
+});
+
+describe('R4 — « Corriger la saisie » au téléchargement', () => {
+    it('sortie silencieuse : aucun message d’erreur, aucun fichier', async () => {
+        vi.resetModules();
+        const pdfMake = { addVirtualFileSystem: vi.fn(), addFonts: vi.fn(), createPdf: vi.fn(() => ({ getBlob: async () => new Blob(['%PDF']) })) };
+        vi.doMock('pdfmake', () => ({ default: pdfMake }));
+        vi.spyOn(console, 'error').mockImplementation(() => {});
+        const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+        confirmSpy.mockResolvedValue(false);
+        toastSpy.mockClear();
+        try {
+            const { downloadOiPdfV3 } = await import('@oi/pdf/engine-v3.js');
+            await downloadOiPdfV3({ collect: async () => ({ formData: { adversaries: [ADV('WANG 张伟')] } as OiFormData, photosBase64: {}, isDark: false }) });
+            expect(click).not.toHaveBeenCalled();
+            expect(toastSpy.mock.calls.filter((c) => (c[1] as { kind?: string } | undefined)?.kind === 'error')).toEqual([]);
+            expect(toastSpy).toHaveBeenCalledWith('Génération annulée.', { kind: 'info' });
+        } finally {
+            vi.doUnmock('pdfmake');
+            vi.restoreAllMocks();
         }
     });
 });

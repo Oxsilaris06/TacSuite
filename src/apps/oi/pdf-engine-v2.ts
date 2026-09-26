@@ -42,7 +42,7 @@ import type {
 } from '@shared/types/contracts.js';
 import { createAnnotatedImageBlob } from '@oi/dessin.js';
 import { dbManager, Store } from '@oi/init.js';
-import { OiPdfFitRefusalError, type OiPdfFormat } from '@oi/pdf/theme.js';
+import { OiPdfFitRefusalError, OiScriptsCancelledError, type OiPdfFormat } from '@oi/pdf/theme.js';
 import { attachEditableTextLayer, createEditMatchState, type EditMatchStats } from '@oi/pdf-preview-edit.js';
 import { toast } from '@shared/feedback.js';
 import { showOiFitRefusal } from '@oi/validation.js';
@@ -465,7 +465,11 @@ async function runOpenPreview(deps?: OiPdfBuildDeps): Promise<void> {
         );
     } catch (error) {
         console.error('Preview Error:', error);
-        if (!isCancelled()) {
+        // R4 : « Corriger la saisie » est un choix, pas une panne ; le dernier
+        // aperçu réussi, s'il y en a un, reste affiché.
+        if (error instanceof OiScriptsCancelledError) {
+            if (!isCancelled()) toast('Génération annulée.', { kind: 'info' });
+        } else if (!isCancelled()) {
             // Parc Gendarmerie verrouillé (SPEC §1) : DevTools y est
             // généralement fermé par stratégie de groupe, et un message
             // générique rendait la panne INDIAGNOSTICABLE à distance — toutes
@@ -613,6 +617,7 @@ export const PDFEngineV2 = {
             // U19 — toast unique (@shared/feedback.js), plus de window.toast.
             // Décision 43 : un refus « une page = un usage » a sa fenêtre.
             if (e instanceof OiPdfFitRefusalError) void showOiFitRefusal(e);
+            else if (e instanceof OiScriptsCancelledError) toast('Génération annulée.', { kind: 'info' }); // R4
             else toast("Erreur lors de l'ouverture de la présentation.", { kind: 'error' });
         } finally {
             if (loader) loader.style.display = 'none';

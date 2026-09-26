@@ -22,7 +22,7 @@ import type { TDocumentDefinitions } from 'pdfmake/interfaces';
 
 import { buildOiDocDefinition, oiPdfFileName } from './document-builder.js';
 import { imageSizeFromDataUrl } from './image-size.js';
-import { OiPdfFitRefusalError, PDF_H2_BLOCK_PT, pageGeometry } from './theme.js';
+import { OiPdfFitRefusalError, OiScriptsCancelledError, PDF_H2_BLOCK_PT, pageGeometry } from './theme.js';
 import { PDF_FONT_VFS, PDF_FONTS } from './fonts.js';
 import { currentOiPdfOptions } from './options.js';
 import { acquirePdfLock, releasePdfLock } from './generation-lock.js';
@@ -600,6 +600,9 @@ export async function downloadOiPdfV3(deps?: {
             if (error instanceof OiPdfFitRefusalError) {
                 // Décision 43 : fenêtre persistante, « Aller au champ ».
                 void showOiFitRefusal(error);
+            } else if (error instanceof OiScriptsCancelledError) {
+                // R4 : « Corriger la saisie » est un choix, pas une panne.
+                toast('Génération annulée.', { kind: 'info' });
             } else {
                 // Message IDENTIQUE à pdf-engine-v2.ts (U19 : toast unique).
                 toast('Erreur de génération. Veuillez consulter les logs.', { kind: 'error' });

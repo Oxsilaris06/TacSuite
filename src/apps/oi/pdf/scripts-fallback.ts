@@ -33,6 +33,7 @@ import type { Content, TDocumentDefinitions } from 'pdfmake/interfaces';
 import { findUnsupported, replaceUnsupported, splitFontRuns, type FontCandidate, type HasGlyph } from '@shared/pdf-glyphs.js';
 import type { UnsupportedChars } from '@shared/pdf-unsupported-dialog.js';
 import { PDF_FONT_VFS } from './fonts.js';
+import { OiScriptsCancelledError } from './theme.js';
 
 /** Le strict nécessaire de l'instance pdfmake du navigateur. */
 export interface PdfMakeFontRegistry {
@@ -40,13 +41,9 @@ export interface PdfMakeFontRegistry {
     addFonts(fonts: Record<string, { normal: string; bold: string; italics: string; bolditalics: string }>): void;
 }
 
-/** « Corriger la saisie » : la génération s'arrête, rien n'est produit. */
-export class OiScriptsCancelledError extends Error {
-    constructor() {
-        super('Génération annulée : corrigez les caractères non imprimables signalés.');
-        this.name = 'OiScriptsCancelledError';
-    }
-}
+// Classe déclarée dans theme.ts (léger, déjà chargé par l'aperçu et le
+// téléchargement, R4) ; réexportée ici pour les appelants existants.
+export { OiScriptsCancelledError };
 
 const BODY = 'JetBrainsMono';
 const TITLE = 'Oswald';
