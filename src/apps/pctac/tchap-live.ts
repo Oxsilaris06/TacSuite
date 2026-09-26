@@ -22,6 +22,7 @@
  * si l'asset est copié dans public/ ultérieurement.
  */
 
+import { isWgs84 } from '@shared/coords.js';
 import maplibregl from 'maplibre-gl';
 import type { GeoJSONSource, Map as MapLibreMap, Marker as MapLibreMarker } from 'maplibre-gl';
 
@@ -550,11 +551,13 @@ function getMap(): MapLibreMap | null {
 }
 
 /* ─── parsing position ──────────────────────────────────────────────────── */
-function geoFromUri(uri: unknown): { lat: number; lon: number } | null {
+export function geoFromUri(uri: unknown): { lat: number; lon: number } | null {
   if (!uri) return null;
   const p = String(uri).replace(/^geo:/i, '').split(';')[0]?.split(',') ?? [];
   const lat = parseFloat(p[0] ?? ''), lon = parseFloat(p[1] ?? '');
-  return Number.isFinite(lat) && Number.isFinite(lon) ? { lat, lon } : null;
+  // D-3 (revue de sécurité du 2026-09-26) : hors bornes, MapLibre lève dans la
+  // boucle de synchronisation et gèle le suivi ; la position est ignorée.
+  return isWgs84(lat, lon) ? { lat, lon } : null;
 }
 /** Extrait un `geo:` URI depuis un contenu d'évènement Matrix (formes MSC3488/MSC3672). */
 function extractLoc(_type: string, c: Record<string, unknown> | undefined): { lat: number; lon: number } | null {

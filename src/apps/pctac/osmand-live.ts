@@ -19,6 +19,7 @@
  * `pcTacOsmandRelay` (cf. SHARED_KEYS) et ne partent jamais dans une archive.
  */
 
+import { isWgs84 } from '@shared/coords.js';
 import { Persist } from '@shared/persist.js';
 
 import { OSMAND_SENDER_PREFIX, acquireScreenWakeLock, acquireSweep, registerRemoteOperator, releaseScreenWakeLock, releaseSweep, removeRemoteMembers, upsert } from '@pctac/tchap-live.js';
@@ -144,7 +145,7 @@ function applyResponse(data: RelayResponse): void {
     // Le relais trie déjà par ts ; l'upsert gère en plus un point en retard
     // (tampon écoulé entre deux sondages) sans déplacer le marqueur.
     for (const p of points) {
-      if (!p || !Number.isFinite(p.lat) || !Number.isFinite(p.lon) || !Number.isFinite(p.ts)) continue;
+      if (!p || !isWgs84(p.lat, p.lon) || !Number.isFinite(p.ts)) continue; // D-3 : hors bornes ignoré
       // Point déjà vu (même opérateur, même `ts`) : le `rx >= since` du relais
       // le rejoue au sondage suivant. On l'ignore pour ne pas doubler la trace.
       if (seen.has(p.ts)) continue;

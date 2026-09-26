@@ -969,6 +969,10 @@ export const Archive: ArchiveContract = {
                 if (entry.dir) return;
                 // archive.js:218 — l'import accepte .txt ET .bin (l'export n'écrit que .txt).
                 const id = relPath.replace(/\.txt$/, '').replace(/\.bin$/, '');
+                // D-1 (revue de sécurité du 2026-09-26) : le nom d'entrée devient
+                // une clé du magasin d'images COMMUN aux quatre situations ; même
+                // format que les identifiants des collections (findUnsafeId).
+                if (!SAFE_ID.test(id)) return;
                 // C1 : accepter l'image quand son id EXACT (ex. une entrée de
                 // galerie `a1_sync` importée seule) ou son id de base a été
                 // ajouté/remplacé. Ne regarder que l'id de base retirait le
@@ -1006,6 +1010,7 @@ export const Archive: ArchiveContract = {
             gpxFolder.forEach((relPath, entry) => {
                 if (entry.dir) return;
                 const id = relPath.replace(/\.json$/, '');
+                if (!SAFE_ID.test(id)) return; // D-1 : même règle pour les traces
                 tasks.push(
                     entry.async('string')
                         .then((raw) => {
