@@ -690,6 +690,33 @@ describe('closeMobileSheet / toggleMobileDock', () => {
     it('toggleMobileDock ne lève pas si les éléments sont absents', () => {
         expect(() => window.toggleMobileDock()).not.toThrow();
     });
+
+    // Flake connu (1 exécution complète sur 6) : le recadrage partait d'un
+    // minuteur de 50 ms qui survivait au fichier de test, puis appelait
+    // `document` après le démontage de jsdom (ReferenceError, dessin.ts:869).
+    it('toggleMobileDock recadre la photo tout de suite, sans minuteur qui lui survive', () => {
+        vi.useFakeTimers();
+        const baseImage = oiState.baseImage;
+        try {
+            document.body.innerHTML = `
+                <div id="mobile-dock-fab"></div>
+                <div id="annotation-toolbar-panel"></div>
+                <div class="annotation-wrapper"></div>
+                <div class="annotation-canvas-container"></div>
+            `;
+            const canvas = document.createElement('canvas');
+            oiState.canvas = canvas;
+            oiState.baseImage = { naturalWidth: 640, naturalHeight: 480 } as HTMLImageElement;
+
+            window.toggleMobileDock();
+
+            expect(canvas.style.width).toBe('640px');
+            expect(vi.getTimerCount()).toBe(0);
+        } finally {
+            oiState.baseImage = baseImage;
+            vi.useRealTimers();
+        }
+    });
 });
 
 // ---------------------------------------------------------------------------
