@@ -12,6 +12,7 @@ import { describe, expect, it } from 'vitest';
 import {
   formatCoordsClipboard,
   latLngToMgrs,
+  looksLikeCoordinates,
   latLngToUtm,
   parseCoordinateInput,
   parseDecimalCoords,
@@ -304,5 +305,35 @@ describe('coords — formes de coordonnées légitimes préservées (R16)', () =
   it('case du carroyage actif reste une case (même hors du rectangle)', () => {
     expect(parseCoordinateInput('A1', grid)?.kind).toBe('cell');
     expect(parseCoordinateInput('D951', grid)?.kind).toBe('cell-out-of-grid');
+  });
+});
+
+// Nico 2026-09-26 : une position n'est jamais révélée sans nécessité pour la
+// carte. Une saisie qui ressemble à des coordonnées sans être lisible ne part
+// pas au géocodage (IGN, Nominatim).
+describe('coords — looksLikeCoordinates', () => {
+  it.each([
+    '48.8566 2.3522',
+    "48°51'N 2°21'E",
+    '48 51 30 N 2 21 08 E',
+    'N 48.85 E 2.35',
+    'lat 48.85 lon 2.35',
+    '31U DQ 5223 1234',
+    '31UDQ522',
+    '48°99 N 2',
+  ])('« %s » : coordonnées', (q) => {
+    expect(looksLikeCoordinates(q)).toBe(true);
+  });
+
+  it.each([
+    '12 rue de la Paix Paris',
+    '75001',
+    'D951',
+    'N7',
+    'A7 12',
+    'Genève gare Cornavin',
+    '3 rue 12',
+  ])('« %s » : adresse', (q) => {
+    expect(looksLikeCoordinates(q)).toBe(false);
   });
 });

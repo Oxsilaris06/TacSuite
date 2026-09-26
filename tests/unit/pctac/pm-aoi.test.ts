@@ -32,6 +32,11 @@ vi.mock('@pctac/planmap/tiles.js', () => ({
 const toastSpy = vi.hoisted(() => vi.fn());
 const confirmSpy = vi.hoisted(() => vi.fn(async () => true));
 vi.mock('@shared/feedback.js', () => ({ toast: toastSpy, confirmDialog: confirmSpy }));
+const prefetchPowerLinesMock = vi.hoisted(() => vi.fn(async () => ({ missing: 0 })));
+vi.mock('@shared/power-lines.js', async (orig) => ({
+    ...(await orig<typeof import('@shared/power-lines.js')>()),
+    prefetchPowerLines: prefetchPowerLinesMock,
+}));
 
 import { AoiMethods } from '@pctac/planmap/aoi.js';
 import { AOI_INDEX_KEY, AOI_MAX_TILES } from '@pctac/planmap/constants.js';
@@ -464,5 +469,33 @@ describe('_createAoiProgressBar (planMap.js:5508-5564) — surface AoiProgressUi
 
         const host = document.getElementById('plan_map_host');
         expect(host?.querySelector('#plan_aoi_progress')).not.toBeNull();
+    });
+});
+
+// Nico 2026-09-26 : la position n'est jamais révélée sans nécessité pour la
+// carte. Les lignes électriques (Overpass, Enedis) ne sont préchargées avec
+// la zone que si leur couche est affichée.
+describe('_runAoiDownload — lignes électriques seulement si leur couche est affichée', () => {
+    it('couche éteinte (ou absente) : aucune requête, l’emprise n’est pas envoyée', async () => {
+        prefetchPowerLinesMock.mockClear();
+        prefetchTilesMock.mockResolvedValueOnce({ total: 10, ok: 10, fail: 0, aborted: false });
+        const state = makeFakeState(null);
+        state.overlays = { state: { powerOn: false } } as unknown as typeof state.overlays;
+
+        await AoiMethods._runAoiDownload.call(state, makeBbox(), 13, 18, [], 10);
+
+        expect(prefetchPowerLinesMock).not.toHaveBeenCalled();
+    });
+
+    it('couche affichée : préchargées avec la zone', async () => {
+        prefetchPowerLinesMock.mockClear();
+        prefetchTilesMock.mockResolvedValueOnce({ total: 10, ok: 10, fail: 0, aborted: false });
+        const state = makeFakeState(null);
+        state.overlays = { state: { powerOn: true } } as unknown as typeof state.overlays;
+        const bbox = makeBbox();
+
+        await AoiMethods._runAoiDownload.call(state, bbox, 13, 18, [], 10);
+
+        expect(prefetchPowerLinesMock).toHaveBeenCalledWith(bbox);
     });
 });

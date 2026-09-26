@@ -96,7 +96,9 @@
 import maplibregl from 'maplibre-gl';
 import type { AddLayerObject, MapMouseEvent, MapTouchEvent, SkySpecification } from 'maplibre-gl';
 
+import { COORDS_NOT_READ, looksLikeCoordinates, parseCoordinateInput } from '@shared/coords.js';
 import { confirmDialog, toast } from '@shared/feedback.js';
+import { esc as escapeHtml } from '@shared/ui-platform.js';
 import { createMapOverlays, mountOverlayControls } from '@shared/map-overlays.js';
 import { Store } from '@oi/init.js';
 
@@ -499,6 +501,20 @@ export const MapCoreMethods = {
         if (gps) {
             if (this.map) this.map.flyTo({ center: [gps.lng, gps.lat], zoom: 17, speed: 1.4 });
             resultsBox.innerHTML = `<div class="oi-carto-search-result">Point GPS centré : ${gps.lat.toFixed(5)}, ${gps.lng.toFixed(5)}</div>`;
+            return;
+        }
+        // Coordonnées lues sur place comme dans PC-Tac (DMS, MGRS, case du
+        // carroyage) ; illisibles, elles ne partent jamais à Nominatim : la
+        // position ne doit pas être révélée sans nécessité (Nico 2026-09-26).
+        const coord = parseCoordinateInput(q, this.overlays?.state.grid ?? null);
+        if (coord?.kind === 'point' || coord?.kind === 'cell') {
+            if (this.map) this.map.flyTo({ center: [coord.lng, coord.lat], zoom: 17, speed: 1.4 });
+            const what = coord.kind === 'cell' ? `Case ${coord.cell}` : coord.label;
+            resultsBox.innerHTML = `<div class="oi-carto-search-result">Point centré : ${escapeHtml(what)}</div>`;
+            return;
+        }
+        if (coord?.kind === 'bad-range' || looksLikeCoordinates(q)) {
+            resultsBox.innerHTML = `<em style="color: var(--danger-red);">${escapeHtml(coord?.kind === 'bad-range' ? 'Coordonnées hors plage (latitude ±90°, longitude ±180°).' : COORDS_NOT_READ)}</em>`;
             return;
         }
 

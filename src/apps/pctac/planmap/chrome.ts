@@ -54,7 +54,7 @@ import maplibregl from 'maplibre-gl';
 
 import { escHtml, GPX_PLAY_SPEEDS } from './constants.js';
 import { showBusy, hideBusy } from '@pctac/busy.js';
-import { parseCoordinateInput } from '@shared/coords.js';
+import { COORDS_NOT_READ, looksLikeCoordinates, parseCoordinateInput } from '@shared/coords.js';
 import { geocodeAddress, type GeocodeHit } from './search.js';
 import type { PlanMapInternal } from './types.js';
 
@@ -408,6 +408,12 @@ export const ChromeMethods = {
                     <span class="material-symbols-outlined" style="font-size: 16px; color: var(--ao-green);">my_location</span>
                     Point ${word} centré : ${escHtml(label)}
                 </div>`;
+            return;
+        }
+
+        // Coordonnées illisibles : jamais envoyées au géocodage (position non révélée).
+        if (looksLikeCoordinates(q)) {
+            resultsBox.innerHTML = `<em style="color: var(--danger-red);">${COORDS_NOT_READ}</em>`;
             return;
         }
 

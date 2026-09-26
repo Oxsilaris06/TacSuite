@@ -103,3 +103,18 @@ describe('C17 — case hors carroyage → géocodage (carroyage actif)', () => {
         expect(args[2]).toBe('Case A1');
     });
 });
+
+describe('position jamais révélée (Nico 09-26) : coordonnées illisibles, rien ne part au géocodage', () => {
+    it('« 48°99 N 2 » : aucun appel réseau, le message le dit', async () => {
+        const { input, resultsBox } = mountSearchDom();
+        const fetchSpy = vi.fn();
+        vi.stubGlobal('fetch', fetchSpy);
+        const { instance } = makeInstance(GRID);
+
+        input.value = '48°99 N 2';
+        await instance._searchAddress();
+
+        expect(fetchSpy).not.toHaveBeenCalled();
+        expect(resultsBox.textContent).toMatch(/Coordonnées non reconnues.*Rien n'a été envoyé/);
+    });
+});

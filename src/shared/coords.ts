@@ -418,3 +418,26 @@ export function parseCoordinateInput(str: string, grid?: GridCellSpec | null): C
     if (grid && looksLikeGridCell(q)) return parseGridCell(q, grid);
     return null;
 }
+
+/** Message des recherches (PC-Tac, OI) devant des coordonnées illisibles. */
+export const COORDS_NOT_READ = "Coordonnées non reconnues (formats : 48.8566, 2.3522 · 48°51'24\"N 2°21'08\"E · MGRS 31U DQ 52237 12345). Rien n'a été envoyé.";
+
+/** Mots admis dans une saisie de coordonnées : points cardinaux et étiquettes. */
+const COORD_WORDS = /^(?:[nsewo]|lat|lon|lng|long|latitude|longitude)$/i;
+
+/**
+ * Vrai si la saisie ressemble à des coordonnées, lisibles ou non : deux
+ * nombres au moins et, à part eux, seulement des points cardinaux ou des
+ * étiquettes (« lat », « lon »), ou un début de référence MGRS (« 31U DQ »).
+ * Une telle saisie ne part JAMAIS au géocodage : la position ne doit pas être
+ * révélée à un service tiers sans nécessité pour la carte (Nico 2026-09-26).
+ * Une adresse (« 12 rue de la Paix »), un code postal seul ou une route
+ * (« D951 ») n'en sont pas.
+ */
+export function looksLikeCoordinates(str: string): boolean {
+    const q = str.trim();
+    if (/^\d{1,2}[C-HJ-NP-X]\s*[A-HJ-NP-Z]{2}\s*\d/i.test(q)) return true;
+    const numbers = q.match(/\d+(?:[.,]\d+)?/g) ?? [];
+    const words = q.replace(/[\d.,;:°'"’′″+\-/\s]+/g, ' ').trim().split(' ').filter(Boolean);
+    return numbers.length >= 2 && words.every((w) => COORD_WORDS.test(w));
+}
