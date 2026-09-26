@@ -1942,3 +1942,23 @@ test('portail sur téléphone : deux applications à l’écran, thème à 44 px
   expect.soft(second, 'seconde carte').not.toBeNull();
   expect.soft((title?.y ?? 9999) + (title?.height ?? 0), 'titre OI sous la ligne de flottaison').toBeLessThanOrEqual(844);
 });
+
+// ============================================================================
+// Journal sur tablette et bureau : la case PAX est une pastille (marge
+// intérieure, coins arrondis), pas un surlignage collé au texte.
+// ============================================================================
+test('journal large : la case PAX est une pastille', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await gotoPctac(page);
+  await page.locator('.pax-select-option[data-pax="Adversaire"]').click();
+  await page.fill('#remarques_input', 'Pastille');
+  await page.click('#addLogBtn');
+  const cell = page.locator('#logTable .pax-cell').first();
+  await expect(cell).toBeVisible();
+  const st = await cell.evaluate((el) => {
+    const cs = getComputedStyle(el);
+    return { pad: parseFloat(cs.paddingLeft), radius: parseFloat(cs.borderTopLeftRadius) };
+  });
+  expect.soft(st.pad, 'marge intérieure').toBeGreaterThanOrEqual(6);
+  expect.soft(st.radius, 'coins arrondis').toBeGreaterThanOrEqual(6);
+});
