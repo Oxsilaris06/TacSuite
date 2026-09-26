@@ -59,7 +59,7 @@ import { Persist } from '@shared/persist.js';
 import { GPX_INDEX_KEY, SHAPES_KEY } from '@pctac/planmap/constants.js';
 import { circleDiameter, formatDistance, measureTotalMeters, shapeCoords } from '@pctac/planmap/geo.js';
 import type { LngLatTuple, PlanGpxTrack, PlanShape } from '@pctac/planmap/types.js';
-import { findUnsupported, replaceUnsupported, splitFontRuns, type FontCandidate } from '@shared/pdf-glyphs.js';
+import { EMOJI_SEQUENCE, findUnsupported, replaceUnsupported, splitFontRuns, type FontCandidate } from '@shared/pdf-glyphs.js';
 import { EXTRA_FONT_KEYS, glyphTester, loadExtraFontVfs } from '@shared/pdf-fonts/index.js';
 import { confirmUnsupportedChars, type UnsupportedChars } from '@shared/pdf-unsupported-dialog.js';
 
@@ -230,12 +230,6 @@ export function transliterateGreek(str: string): string {
 
 /** Vérificateur de glyphes actif pendant un export (R23). `null` hors export. */
 let glyphChecker: ((codePoint: number) => boolean) | null = null;
-
-/**
- * Séquence émoji (pictogramme, variantes, teintes, liaisons ZWJ) : même motif
- * que `@shared/pdf-glyphs`, qui ne l'exporte pas.
- */
-const EMOJI_SEQUENCE = /\p{Extended_Pictographic}(?:\uFE0F|[\u{1F3FB}-\u{1F3FF}]|\u200D\p{Extended_Pictographic}\uFE0F?)*/gu;
 
 /**
  * sanitizeWinAnsi(s, hasGlyph?)
