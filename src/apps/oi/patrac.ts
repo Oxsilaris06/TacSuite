@@ -841,7 +841,12 @@ function patracBatchShowTargets(): void {
         const b = document.createElement('button');
         b.type = 'button';
         b.className = 'add-btn patrac-batch-target-btn';
-        b.innerHTML = '<span class="material-symbols-outlined" aria-hidden="true">directions_car</span> ' + name;
+        // SEC-3 : le nom vient de l'archive, jamais interprété comme du HTML.
+        const icon = document.createElement('span');
+        icon.className = 'material-symbols-outlined';
+        icon.setAttribute('aria-hidden', 'true');
+        icon.textContent = 'directions_car';
+        b.append(icon, ' ' + name);
         b.onclick = () => patracBatchMoveTo(row.querySelector<HTMLElement>('.patracdvr-members-container'));
         wrap.appendChild(b);
     });

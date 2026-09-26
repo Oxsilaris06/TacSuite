@@ -132,3 +132,23 @@ describe('SEC-2 — fiche adversaire rechargée', () => {
         expect(document.querySelector('.adversary-entry')!.id).toBe('adv_1');
     });
 });
+
+describe('SEC-3 — cibles du déplacement groupé du PATRACDVR', () => {
+    it('le nom du véhicule est posé comme du texte', async () => {
+        const TAG = '<img src=x onerror="window.__oiXss=1">';
+        document.body.innerHTML = `<div id="patracdvr_container"></div><div id="unassigned_members_container"></div>
+            <div id="rame_vl_container"></div><div id="patracBatchTargets" style="display:none"></div>`;
+        await import('@oi/articulation.js');
+        await import('@oi/patrac.js');
+        window.addPatracdvrRow(TAG, [{ trigramme: 'ABC', cellule: 'India 1', fonction: 'Chef', dir: '' }]);
+        window.togglePatracBatchMode(true);
+        document.querySelector<HTMLElement>('.patracdvr-member-btn')!.click();
+
+        window.patracBatchShowTargets();
+
+        const wrap = document.getElementById('patracBatchTargets')!;
+        expect(wrap.querySelector('img')).toBeNull();
+        expect(wrap.querySelector('.patrac-batch-target-btn')!.textContent).toContain(TAG);
+        window.togglePatracBatchMode(false);
+    });
+});
