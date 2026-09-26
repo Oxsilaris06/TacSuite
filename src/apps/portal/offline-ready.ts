@@ -15,6 +15,8 @@
  * dossier (`/pctac/`) ou son `index.html`.
  */
 
+import { SW_FONTS_MARK_URL } from '@shared/sw-routes.js';
+
 /** Candides à chercher dans le précache pour une page d'application. */
 export function offlineCandidates(pageUrl: string): string[] {
     const dir = pageUrl.endsWith('/') ? pageUrl : `${pageUrl}/`;
@@ -93,8 +95,13 @@ export async function hasIconFontCached(deps: OfflineCheckDeps = {}): Promise<bo
         // Précachée dès la première visite (portail compris, Nico 2026-09-26) ;
         // un ancien service worker la range encore dans `tacsuite-fonts`.
         const names = typeof cache.keys === 'function' ? await cache.keys() : [FONT_CACHE_NAME];
+        // Hors `tacsuite-fonts`, la police ne compte que si le worker ACTIF la
+        // sert (marque posée à son activation) : celle d'un worker en attente
+        // ne sert à rien tant qu'il n'a pas pris la main.
+        const activeServesPrecache = !!(await cache.match(SW_FONTS_MARK_URL));
         let inspected = false;
         for (const name of names) {
+            if (name !== FONT_CACHE_NAME && !activeServesPrecache) continue;
             const named = await cache.open(name);
             if (!named || typeof named.keys !== 'function') continue;
             inspected = true;

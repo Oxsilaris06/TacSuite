@@ -46,6 +46,13 @@ export const SW_PROTOCOL_CACHE = 'tacsuite-sw-protocol';
 
 /** URL de la marque, dans {@link SW_PROTOCOL_CACHE}. */
 export const SW_PROTOCOL_MARK_URL = '/__tacsuite_sw_protocol';
+/**
+ * Marque posée à l'activation par un worker qui sert les polices depuis le
+ * précache (Nico 2026-09-26). Sans elle, une police trouvée au précache peut
+ * venir d'un worker encore EN ATTENTE (décision 28) : l'ancien worker actif
+ * ne la servirait pas, et le badge « Prêt hors ligne » mentirait.
+ */
+export const SW_FONTS_MARK_URL = '/__tacsuite_fonts_precached';
 
 /**
  * Faut-il forcer l'activation à l'installation ?

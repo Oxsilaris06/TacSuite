@@ -18,7 +18,7 @@ import { test, expect, type BrowserContext, type Page } from '@playwright/test';
  * `navigator.serviceWorker.controller` — non-null seulement après que
  * `self.clients.claim()` (public/sw.ts, handler `activate`) a pris effet,
  * ce qui ne peut arriver qu'une fois l'étape `install` (précache complet,
- * ~38 entrées) entièrement résolue (contrat du cycle de vie SW : `activate`
+ * ~116 entrées, polices comprises) entièrement résolue (contrat du cycle de vie SW : `activate`
  * ne démarre qu'après la résolution de tous les `waitUntil` d'`install`).
  */
 
@@ -78,6 +78,33 @@ test.describe('PWA offline', () => {
             await page.close();
         }
 
+        await context.setOffline(false);
+    });
+
+    /**
+     * Test 2 bis (Nico 2026-09-26) : la SEULE visite du portail suffit. Hors
+     * ligne, PC-Tac et l'OI s'ouvrent avec leur police d'icônes (sinon les
+     * boutons affichent « lock_person », « edit »…), et le portail annonce
+     * « Prêt hors ligne ».
+     */
+    test('portail seul en ligne : PC-Tac et OI hors ligne avec leurs icônes', async ({ context }) => {
+        const portal = await context.newPage();
+        await portal.goto('/', { waitUntil: 'domcontentloaded' });
+        await waitForServiceWorkerControl(portal);
+        await expect(portal.locator('#offline-pctac')).toBeVisible({ timeout: 10_000 });
+        await portal.close();
+
+        await context.setOffline(true);
+        for (const url of ['/pctac/', '/oi/']) {
+            const page = await context.newPage();
+            await page.goto(url, { waitUntil: 'domcontentloaded' });
+            const icons = await page.evaluate(async () => {
+                await document.fonts.load('24px "Material Symbols Outlined"');
+                return document.fonts.check('24px "Material Symbols Outlined"');
+            });
+            expect(icons, `${url} : police d'icônes hors ligne`).toBe(true);
+            await page.close();
+        }
         await context.setOffline(false);
     });
 
