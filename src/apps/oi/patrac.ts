@@ -127,6 +127,7 @@ import { memberConfig, multiSelectAttributes, quickEditMapping } from '@oi/init.
 import { oiState } from '@oi/state.js';
 import { acquirePdfLock, releasePdfLock } from '@oi/pdf/generation-lock.js';
 import { currentOiPdfOptions } from '@oi/pdf/options.js';
+import { OiScriptsCancelledError } from '@oi/pdf/theme.js';
 import { confirmDialog, promptDialog, toast } from '@shared/feedback.js';
 import { esc } from '@shared/ui-platform.js';
 import type { OiFormData, OiMemberConfig, OiPatracMember } from '@shared/types/contracts.js';
@@ -841,7 +842,12 @@ function patracBatchShowTargets(): void {
         const b = document.createElement('button');
         b.type = 'button';
         b.className = 'add-btn patrac-batch-target-btn';
-        b.innerHTML = '<span class="material-symbols-outlined" aria-hidden="true">directions_car</span> ' + name;
+        // SEC-3 : le nom vient de l'archive, jamais interprété comme du HTML.
+        const icon = document.createElement('span');
+        icon.className = 'material-symbols-outlined';
+        icon.setAttribute('aria-hidden', 'true');
+        icon.textContent = 'directions_car';
+        b.append(icon, ' ' + name);
         b.onclick = () => patracBatchMoveTo(row.querySelector<HTMLElement>('.patracdvr-members-container'));
         wrap.appendChild(b);
     });
@@ -1425,6 +1431,8 @@ async function generatePatracdvrPdf(): Promise<void> {
         setTimeout(() => URL.revokeObjectURL(a.href), 2000);
         toast('PDF PATRACDVR généré', { kind: 'success' });
     } catch (e) {
+        // R5 : « Corriger la saisie » est un choix, pas une panne.
+        if (e instanceof OiScriptsCancelledError) { toast('Génération annulée.', { kind: 'info' }); return; }
         console.error('[PATRACDVR PDF] échec:', e);
         // patrac.js:1197 — `e` est `unknown` en TS strict (`useUnknownInCatchVariables`),
         // même précédent que `@pctac/main.ts:582,614`.

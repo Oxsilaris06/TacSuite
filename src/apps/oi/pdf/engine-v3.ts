@@ -21,7 +21,8 @@
 import type { TDocumentDefinitions } from 'pdfmake/interfaces';
 
 import { buildOiDocDefinition, oiPdfFileName } from './document-builder.js';
-import { OiPdfFitRefusalError, PDF_H2_BLOCK_PT, pageGeometry } from './theme.js';
+import { imageSizeFromDataUrl } from './image-size.js';
+import { OiPdfFitRefusalError, OiScriptsCancelledError, PDF_H2_BLOCK_PT, pageGeometry } from './theme.js';
 import { PDF_FONT_VFS, PDF_FONTS } from './fonts.js';
 import { currentOiPdfOptions } from './options.js';
 import { acquirePdfLock, releasePdfLock } from './generation-lock.js';
@@ -188,6 +189,43 @@ function planPhoto(
 }
 
 /**
+ * SEC-6 (revue neuve du 2026-09-26) — un JPEG qui traverse tel quel garde ses
+ * métadonnées : image d'archive ancienne, ou gardée brute après un échec du
+ * ré-encodage anti-EXIF. On retire ici les segments APP1 (Exif, XMP) et APP13
+ * (Photoshop/IPTC) avant le début des données (SOS) ; le reste (JFIF, profil
+ * ICC, tables, SOF, données compressées) est gardé octet pour octet. Toute
+ * autre entrée, ou un JPEG sans ces segments, est rendue inchangée.
+ */
+export function stripJpegMetadata(dataUrl: string): string {
+    const comma = dataUrl.indexOf(',');
+    if (!dataUrl.startsWith('data:image/jpeg') || comma < 0) return dataUrl;
+    let bin: string;
+    try {
+        bin = atob(dataUrl.slice(comma + 1));
+    } catch {
+        return dataUrl;
+    }
+    const byte = (i: number): number => bin.charCodeAt(i);
+    if (byte(0) !== 0xff || byte(1) !== 0xd8) return dataUrl;
+    const parts: string[] = [bin.slice(0, 2)];
+    let removed = false;
+    let i = 2;
+    while (i + 4 <= bin.length && byte(i) === 0xff) {
+        const marker = byte(i + 1);
+        if (marker === 0xff) { parts.push('\xff'); i += 1; continue; } // remplissage
+        if (marker === 0xda || marker === 0xd9) break; // SOS/EOI : plus aucune métadonnée
+        if (marker === 0x01 || (marker >= 0xd0 && marker <= 0xd7)) { parts.push(bin.slice(i, i + 2)); i += 2; continue; }
+        const end = i + 2 + ((byte(i + 2) << 8) | byte(i + 3));
+        if (marker === 0xe1 || marker === 0xed) removed = true;
+        else parts.push(bin.slice(i, end));
+        i = end;
+    }
+    if (!removed) return dataUrl;
+    parts.push(bin.slice(i));
+    return `${dataUrl.slice(0, comma + 1)}${btoa(parts.join(''))}`;
+}
+
+/**
  * Détection de capacité (PAS d'UA sniffing, R4-c) — vrai sur tout navigateur
  * récent (Chromium/Firefox/Safari 17+), faux sur le vieux WebKit qui n'a ni
  * `createImageBitmap` avec options de redimensionnement ni `OffscreenCanvas`.
@@ -226,7 +264,7 @@ async function normalizeOnePhotoLegacy(id: string, dataUrl: string, pass: PhotoP
         const size = { width: img.naturalWidth, height: img.naturalHeight };
         const plan = planPhoto(id, dataUrl, size, () => hasTransparency(img, size.width, size.height), pass, box);
         if (plan.passthrough) {
-            return dataUrl;
+            return stripJpegMetadata(dataUrl);
         }
         const canvas = document.createElement('canvas');
         canvas.width = plan.target.width;
@@ -276,7 +314,7 @@ async function normalizeOnePhotoModern(id: string, dataUrl: string, pass: PhotoP
         const size = { width: bitmap.width, height: bitmap.height };
         const plan = planPhoto(id, dataUrl, size, () => hasTransparency(bitmap, size.width, size.height), pass, box);
         if (plan.passthrough) {
-            return dataUrl;
+            return stripJpegMetadata(dataUrl);
         }
         // 2e décodage AVEC redimensionnement natif (`resizeQuality: 'high'`)
         // seulement s'il faut réduire : le navigateur redimensionne pendant le
@@ -446,11 +484,14 @@ export async function buildOiPdfBlob(
     data: OiPdfCollectedData,
     opts: { format: OiPdfFormat; sortie?: PdfSortie; onProgress?: PhotoNormalizeProgress },
 ): Promise<Blob> {
+    // R2 : la galerie se compose sur les tailles d'ORIGINE ; la réduction
+    // (budget de la sortie Partage) ne baisse que la définition embarquée.
+    const photoSizes = Object.fromEntries(Object.entries(data.photosBase64).map(([id, url]) => [id, imageSizeFromDataUrl(url)]));
     const photosBase64 = await normalizePhotos(data.photosBase64, opts.onProgress, {
         format: opts.format,
         sortie: opts.sortie ?? 'impression',
     });
-    const docDefinition: TDocumentDefinitions = buildOiDocDefinition({ ...data, photosBase64 }, opts);
+    const docDefinition: TDocumentDefinitions = buildOiDocDefinition({ ...data, photosBase64 }, { format: opts.format, photoSizes });
 
     const pdfMake = (await import('pdfmake')).default;
     if (!fontsRegistered) {
@@ -559,6 +600,9 @@ export async function downloadOiPdfV3(deps?: {
             if (error instanceof OiPdfFitRefusalError) {
                 // Décision 43 : fenêtre persistante, « Aller au champ ».
                 void showOiFitRefusal(error);
+            } else if (error instanceof OiScriptsCancelledError) {
+                // R4 : « Corriger la saisie » est un choix, pas une panne.
+                toast('Génération annulée.', { kind: 'info' });
             } else {
                 // Message IDENTIQUE à pdf-engine-v2.ts (U19 : toast unique).
                 toast('Erreur de génération. Veuillez consulter les logs.', { kind: 'error' });

@@ -191,7 +191,7 @@ import { LOCAL_STORAGE_KEY, Store, dbManager, memberConfig } from '@oi/init.js';
 import { collectCoherence } from '@oi/coherence.js';
 import { createAnnotatedImageBlob } from '@oi/dessin.js';
 import { setupQuickEditPanel } from '@oi/patrac.js';
-import { reencodeSansExif } from '@oi/outils.js';
+import { isSafeId, reencodeSansExif } from '@oi/outils.js';
 // R2-T4 — validation inline (nouveau module, cf. son en-tête).
 import { attachValidation, required } from '@oi/validation.js';
 import { confirmDialog, toast } from '@shared/feedback.js';
@@ -434,7 +434,9 @@ async function removeAdversary(id: string): Promise<void> {
 function addAdversary(data: OiAdversary | null = null): void {
     const container = document.getElementById('adversaries_container');
     if (!container) return;
-    const id = data?.id ? data.id : `adv_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    // SEC-2 : l'id d'une fiche rechargée (archive, stockage) est réinjecté dans
+    // une quinzaine d'attributs et de gestionnaires en ligne : forme sûre ou neuf.
+    const id = isSafeId(data?.id) ? data.id : `adv_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
     const div = document.createElement('div');
     div.className = 'collapsible-container adversary-entry open';
@@ -450,8 +452,7 @@ function addAdversary(data: OiAdversary | null = null): void {
     // reconnue comme « appel », contrairement à `getData(...)` chez articulation.ts).
     void (container.children.length + 1);
     // Échappement HTML de toute valeur restaurée (évite corruption du reload/PDF et self-XSS).
-    const e = (v: unknown): string => (window.UIPlatform ? window.UIPlatform.esc(v) : String(v == null ? '' : v)
-        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;'));
+    const e = esc;
     const nameVal = (data?.nom_adversaire as string | undefined) || '';
     const nameValSafe = e(nameVal);
     const title = nameVal ? `Adversaire: ${e(nameVal)}` : 'Adversaire';
@@ -505,7 +506,7 @@ function addAdversary(data: OiAdversary | null = null): void {
 
                     <label for="naissance_adv_${id}">Naissance&nbsp;:</label>
                     <div class="adv-duo">
-                        <input type="date" id="naissance_adv_${id}" name="naissance_adv_${id}" class="adv-field" data-field="date_naissance" value="${(data?.date_naissance as string | undefined) || ''}" oninput="syncDomToStore()">
+                        <input type="date" id="naissance_adv_${id}" name="naissance_adv_${id}" class="adv-field" data-field="date_naissance" value="${e(data?.date_naissance)}" oninput="syncDomToStore()">
                         <input type="text" id="lieu_adv_${id}" name="lieu_adv_${id}" class="adv-field" data-field="lieu_naissance" placeholder="Lieu de naissance" value="${e(data?.lieu_naissance)}" oninput="syncDomToStore()">
                     </div>
 
@@ -1013,6 +1014,8 @@ async function loadFormData(): Promise<boolean> {
 
                 if (previewContainer && fileDataArray) {
                     for (const imgData of fileDataArray) {
+                        // SEC-1 : un id forgé (archive, stockage) n'atteint jamais le DOM.
+                        if (!isSafeId(imgData.id)) continue;
                         const imageBlob = await dbManager.getItem(imgData.id);
                         if (imageBlob) {
                             // On convertit en Base64 pour éviter les erreurs "local resource" en file://
@@ -1064,18 +1067,18 @@ async function loadFormData(): Promise<boolean> {
 
                             interactiveItem.innerHTML = `
                                         <img id="${esc(imgData.id)}" class="image-preview" src="${esc(previewUrl)}" style="display:block;"
-                                            data-annotations='${(imgData.annotations || '[]').replace(/'/g, '&apos;')}'
-                                            data-tools='${(imgData.tools || '[]').replace(/'/g, '&apos;')}'
-                                            data-other-tools='${(imgData.other_tools || '').replace(/'/g, '&apos;')}'
+                                            data-annotations="${esc(imgData.annotations || '[]')}"
+                                            data-tools="${esc(imgData.tools || '[]')}"
+                                            data-other-tools="${esc(imgData.other_tools || '')}"
                                         >
                                         <input type="text" class="photo-title-input" placeholder="Légende de la photo..."
-                                            value="${(imgData.customTitle || '').replace(/"/g, '&quot;')}"
+                                            value="${esc(imgData.customTitle || '')}"
                                             style="width: 100%; margin-top: 5px; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); color: white; border-radius: 4px; padding: 2px 5px; font-size: 0.8em;"
                                             oninput="syncDomToStore()">
                                         <div style="display: flex; gap: 5px; margin-top: 5px;">
-                                            <button type="button" class="add-btn" style="background-color: var(--accent-blue); padding: 4px 8px;" onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation()" onclick="openAnnotationModal('${imgData.id}')" aria-label="Annoter la photo"><span class="material-symbols-outlined" style="font-size: 1.2em;">edit</span></button>
-                                            ${isEffrac ? `<button type="button" class="add-btn" style="background-color: var(--effraction-gold); padding: 4px 8px;" onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation()" onclick="openEffractionToolsModal('${imgData.id}')" aria-label="Sélectionner les outils d'effraction"><span class="material-symbols-outlined" style="font-size: 1.2em;">hardware</span></button>` : ''}
-                                            <button type="button" class="remove-btn" style="padding: 4px 8px;" onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation()" onclick="removeImage('${imgData.id}', this.closest('.image-preview-item'))" aria-label="Supprimer la photo">&times;</button>
+                                            <button type="button" class="add-btn" style="background-color: var(--accent-blue); padding: 4px 8px;" onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation()" onclick="openAnnotationModal(this.closest('.image-preview-item').querySelector('.image-preview').id)" aria-label="Annoter la photo"><span class="material-symbols-outlined" style="font-size: 1.2em;">edit</span></button>
+                                            ${isEffrac ? `<button type="button" class="add-btn" style="background-color: var(--effraction-gold); padding: 4px 8px;" onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation()" onclick="openEffractionToolsModal(this.closest('.image-preview-item').querySelector('.image-preview').id)" aria-label="Sélectionner les outils d'effraction"><span class="material-symbols-outlined" style="font-size: 1.2em;">hardware</span></button>` : ''}
+                                            <button type="button" class="remove-btn" style="padding: 4px 8px;" onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation()" onclick="removeImage(this.closest('.image-preview-item').querySelector('.image-preview').id, this.closest('.image-preview-item'))" aria-label="Supprimer la photo">&times;</button>
                                         </div>`;
                             previewContainer.appendChild(interactiveItem);
                         }
@@ -1583,8 +1586,17 @@ async function applyArchiveImport(parsed: OiParsedArchiveOk, cats: readonly OiIm
         }
     }
 
+    // SEC-1 : une référence de photo à id forgé est retirée avant tout stockage.
+    const photos = oiCurrent.dynamic_photos;
+    if (photos && typeof photos === 'object') {
+        for (const [k, list] of Object.entries(photos as Record<string, unknown>)) {
+            if (Array.isArray(list)) (photos as Record<string, unknown>)[k] = list.filter((p) => isSafeId((p as { id?: unknown } | null)?.id));
+        }
+    }
+
     const snapshot = localStorage.getItem(KEY);
     let imgFail = 0;
+    let imgRaw = 0; // R7 : gardées sans ré-encodage, donc EXIF/GPS possible
     try {
         // Images AVANT le localStorage (clearAllImages mute le Store → flush).
         if (importImages && dbManager) {
@@ -1599,6 +1611,7 @@ async function applyArchiveImport(parsed: OiParsedArchiveOk, cats: readonly OiIm
                     imagesFolder.forEach((relPath, entry) => {
                         if (entry.dir) return;
                         const k = decodeURIComponent(relPath.replace(/\.bin$/, '').replace(/\.txt$/, ''));
+                        if (!isSafeId(k)) { imgFail++; return; } // SEC-1 : id forgé, jamais stocké
                         tasks.push(entry.async('arraybuffer')
                             .then(async (ab) => {
                                 const brut = new Blob([ab], { type: parsed.imageMeta[k] || '' });
@@ -1615,6 +1628,7 @@ async function applyArchiveImport(parsed: OiParsedArchiveOk, cats: readonly OiIm
                                 try {
                                     aStocker = await reencodeSansExif(brut);
                                 } catch (err) {
+                                    imgRaw++;
                                     console.warn('[OI Archive] image gardée telle quelle, sans ré-encodage (EXIF possible) :', k, err);
                                 }
                                 await dbManager.putItem(k, aStocker);
@@ -1641,11 +1655,13 @@ async function applyArchiveImport(parsed: OiParsedArchiveOk, cats: readonly OiIm
         // élément) ; repli sur c.label jamais emprunté en pratique.
         const labels = selected.map((c) => c.label.split(' (')[0] ?? c.label).join(', ');
         const warn = imgFail > 0 ? ` (${imgFail} photo(s) ignorée(s))` : '';
+        const raw = imgRaw > 0 ? ` ${imgRaw} image(s) importée(s) sans nettoyage des métadonnées (position possible).` : '';
         window.isFormLoading = true;
-        toast(`Import effectué : ${labels}${warn}. Rechargement…`, { kind: 'success' });
+        toast(`Import effectué : ${labels}${warn}.${raw} Rechargement…`, raw ? { kind: 'error', duration: 6000 } : { kind: 'success' });
         // R2-T2b : `toast` non bloquant — court délai avant reload pour laisser le
-        // message visible (même rationale que `importSession` ci-dessus).
-        setTimeout(() => location.reload(), 600);
+        // message visible (même rationale que `importSession` ci-dessus) ; plus
+        // long quand il y a un avertissement à lire (R7).
+        setTimeout(() => location.reload(), raw ? 6000 : 600);
     } catch (e) {
         console.error('[OI Archive] import sélectif échec:', e);
         toast("Erreur d'import : " + (e instanceof Error ? e.message : String(e)), { kind: 'error' });

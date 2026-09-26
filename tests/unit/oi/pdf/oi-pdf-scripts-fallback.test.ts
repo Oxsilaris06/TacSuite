@@ -14,6 +14,8 @@ import type { Content, TDocumentDefinitions } from 'pdfmake/interfaces';
 
 const confirmSpy = vi.hoisted(() => vi.fn(async () => true));
 vi.mock('@shared/pdf-unsupported-dialog.js', () => ({ confirmUnsupportedChars: confirmSpy }));
+const toastSpy = vi.hoisted(() => vi.fn());
+vi.mock('@shared/feedback.js', async (orig) => ({ ...(await orig<typeof import('@shared/feedback.js')>()), toast: toastSpy }));
 
 import { buildOiDocDefinition } from '@oi/pdf/document-builder.js';
 import type { OiFormData } from '@shared/types/contracts.js';
@@ -211,6 +213,65 @@ describe('Écritures — greffe dans le moteur (engine-v3 · buildOiPdfBlob)', (
             const arabicFonts = pdfMake.addFonts.mock.invocationCallOrder.filter((_o, i) => 'NotoSansArabic' in (pdfMake.addFonts.mock.calls[i]![0] as object));
             expect(arabicFonts).toHaveLength(1);
             expect(arabicFonts[0]!).toBeLessThan(pdfMake.createPdf.mock.invocationCallOrder[0]!);
+        } finally {
+            vi.doUnmock('pdfmake');
+        }
+    });
+});
+
+describe('R4 — « Corriger la saisie » au téléchargement', () => {
+    it('sortie silencieuse : aucun message d’erreur, aucun fichier', async () => {
+        vi.resetModules();
+        const pdfMake = { addVirtualFileSystem: vi.fn(), addFonts: vi.fn(), createPdf: vi.fn(() => ({ getBlob: async () => new Blob(['%PDF']) })) };
+        vi.doMock('pdfmake', () => ({ default: pdfMake }));
+        vi.spyOn(console, 'error').mockImplementation(() => {});
+        const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+        confirmSpy.mockResolvedValue(false);
+        toastSpy.mockClear();
+        try {
+            const { downloadOiPdfV3 } = await import('@oi/pdf/engine-v3.js');
+            await downloadOiPdfV3({ collect: async () => ({ formData: { adversaries: [ADV('WANG 张伟')] } as OiFormData, photosBase64: {}, isDark: false }) });
+            expect(click).not.toHaveBeenCalled();
+            expect(toastSpy.mock.calls.filter((c) => (c[1] as { kind?: string } | undefined)?.kind === 'error')).toEqual([]);
+            expect(toastSpy).toHaveBeenCalledWith('Génération annulée.', { kind: 'info' });
+        } finally {
+            vi.doUnmock('pdfmake');
+            vi.restoreAllMocks();
+        }
+    });
+});
+
+describe('R5 — PDF PATRACDVR séparé : même passe d’écritures que l’OI', () => {
+    const member = (trigramme: string) => ({ trigramme, fonction: 'Équipier', cellule: 'India', principales: '', secondaires: '', afis: '', grenades: '', equipement: '', equipement2: '', tenue: '', gpb: '', dir: '' });
+
+    async function loadPatrac(pdfMake: unknown): Promise<typeof import('@oi/pdf/patrac-doc.js')> {
+        vi.resetModules();
+        vi.doMock('pdfmake', () => ({ default: pdfMake }));
+        return import('@oi/pdf/patrac-doc.js');
+    }
+
+    it('un nom arabe part avec la police de repli, enregistrée avant le rendu', async () => {
+        const pdfMake = { addVirtualFileSystem: vi.fn(), addFonts: vi.fn(), createPdf: vi.fn(() => ({ getBlob: async () => new Blob(['%PDF']) })) };
+        try {
+            const { buildPatracDocDefinition, renderPatracPdfBlob } = await loadPatrac(pdfMake);
+            await renderPatracPdfBlob(buildPatracDocDefinition({ rows: [{ vehicle: 'VL1', members: [member('محمد')] }], unassigned: [], unite: 'PSIG', dateOp: '2026-09-26' }));
+            const dd = (pdfMake.createPdf.mock.calls[0] as unknown as [TDocumentDefinitions])[0];
+            const node = textNodes(dd.content, 'محمد')[0]!;
+            expect(segmentsOf(node).find((s) => s.text.includes('محمد'))?.font).toBe('NotoSansArabic');
+        } finally {
+            vi.doUnmock('pdfmake');
+        }
+    });
+
+    it('« Corriger la saisie » : rien n’est rendu', async () => {
+        const pdfMake = { addVirtualFileSystem: vi.fn(), addFonts: vi.fn(), createPdf: vi.fn() };
+        confirmSpy.mockResolvedValue(false);
+        try {
+            const { buildPatracDocDefinition, renderPatracPdfBlob } = await loadPatrac(pdfMake);
+            const { OiScriptsCancelledError } = await import('@oi/pdf/theme.js');
+            await expect(renderPatracPdfBlob(buildPatracDocDefinition({ rows: [{ vehicle: 'VL1', members: [member('李')] }], unassigned: [], unite: 'PSIG', dateOp: '' })))
+                .rejects.toBeInstanceOf(OiScriptsCancelledError);
+            expect(pdfMake.createPdf).not.toHaveBeenCalled();
         } finally {
             vi.doUnmock('pdfmake');
         }
