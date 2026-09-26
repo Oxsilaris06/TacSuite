@@ -322,3 +322,23 @@ describe('Revue du 25/09 — export incomplet (A10)', () => {
         expect(readTombstones('forcene').map((t) => t.itemId)).toEqual(['remote1']);
     });
 });
+
+describe('import d’un journal .json ancien format (revue client D-2)', () => {
+    const legacy = (logEntries: unknown[]): File => new File(
+        [JSON.stringify({ metadata: { appName: 'PC Tac Log' }, logEntries })],
+        'journal.json', { type: 'application/json' },
+    );
+
+    it('refuse un identifiant hors format ou une entrée qui n’est pas un objet, sans rien modifier', async () => {
+        localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify([{ id: 'l0', heure: '08:00', pax: 'Inter', remarques: 'avant' }]));
+        const before = localStorage.getItem(LOCAL_STORAGE_KEY);
+        await expect(Archive.importFile(legacy([{ id: `x');alert(1);('`, heure: '09:00' }]))).rejects.toThrow(/identifiant/);
+        await expect(Archive.importFile(legacy(['texte', null]))).rejects.toThrow(/entrée/);
+        expect(localStorage.getItem(LOCAL_STORAGE_KEY)).toBe(before);
+    });
+
+    it('importe un journal sain', async () => {
+        await Archive.importFile(legacy([{ id: 'l1', heure: '09:00', pax: 'Inter', remarques: 'RAS' }]));
+        expect(localStorage.getItem(LOCAL_STORAGE_KEY)).toContain('RAS');
+    });
+});

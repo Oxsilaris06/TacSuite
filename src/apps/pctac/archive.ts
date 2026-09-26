@@ -1134,7 +1134,18 @@ export const Archive: ArchiveContract = {
             ? obj as { metadata?: { appName?: string }; logEntries?: unknown }
             : null;
         if (o && o.metadata && o.metadata.appName === 'PC Tac Log' && Array.isArray(o.logEntries)) {
-            const logEntries = o.logEntries as PctacLogEntry[]; // structure best-effort, comme l'original
+            // Frontière de confiance, comme l'archive .pctac.zip : une entrée qui
+            // n'est pas un objet ou un id hors format refuse le fichier entier,
+            // avant toute écriture.
+            // Une entrée sans id (très ancien export) en reçoit un.
+            for (const e of o.logEntries as unknown[]) {
+                if (!e || typeof e !== 'object' || Array.isArray(e)) throw new Error('Journal refusé : entrée illisible. Aucune donnée modifiée.');
+                const entry = e as { id?: unknown };
+                if (entry.id === undefined || entry.id === null || entry.id === '') entry.id = `legacy_${Math.random().toString(36).slice(2, 10)}`;
+                const id = String(entry.id);
+                if (!SAFE_ID.test(id)) throw new Error(`Journal refusé : identifiant d'entrée invalide (« ${id.slice(0, 40)} »). Aucune donnée modifiée.`);
+            }
+            const logEntries = o.logEntries as PctacLogEntry[];
             const fallback = FREE_MODE_COLORS[0]?.hex ?? '';
             logEntries.forEach((e) => { if (e && e.paxColor) e.paxColor = safeHexColor(e.paxColor, fallback); }); // A1
             const key = scopedKey(LOCAL_STORAGE_KEY, 'forcene');
