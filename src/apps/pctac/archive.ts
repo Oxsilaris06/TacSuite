@@ -1138,10 +1138,14 @@ export const Archive: ArchiveContract = {
             const key = scopedKey(LOCAL_STORAGE_KEY, 'forcene');
             const current: PctacLogEntry[] = readCollectionList(localStorage.getItem(key)) as unknown as PctacLogEntry[];
             const ids = new Set(current.map((l) => l.id));
-            logEntries.forEach((e) => { if (!ids.has(e.id)) current.push(e); });
-            try {
-                localStorage.setItem(key, JSON.stringify(current));
-            } catch {
+            // Audit du 26/09 : champs texte par défaut, puis écriture par
+            // saveLogData, qui trie par (date, heure) ; l'écran et le PDF ne
+            // trient pas, un ajout en queue restait dans le désordre.
+            logEntries.forEach((e) => {
+                if (ids.has(e.id)) return;
+                current.push({ ...e, heure: e.heure || '00:00', pax: e.pax || '', lieu: e.lieu || '', remarques: e.remarques || '' });
+            });
+            if (!Storage.saveLogData(current, 'forcene')) {
                 throw new Error("Import du journal impossible (stockage insuffisant).");
             }
             return { ok: true };
