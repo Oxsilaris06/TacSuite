@@ -249,7 +249,7 @@ function wireUI(): void {
  */
 async function forgetStation(): Promise<void> {
   const ok = await confirmDialog({
-    message: 'Oublier ce poste ? Les identifiants Tchap (ProConnect ou jeton) et la clé du relais OsmAnd sont effacés de cet appareil ; la session Tchap est révoquée si le réseau le permet. Il faudra se reconnecter.',
+    message: 'Oublier ce poste ? Les identifiants Tchap (ProConnect ou jeton) et la clé du relais OsmAnd sont effacés de cet appareil ; la session Tchap est révoquée si le réseau le permet (un jeton manuel ferme aussi la session Tchap Web d’où il a été copié). Il faudra se reconnecter.',
     confirmLabel: 'Oublier ce poste',
     danger: true,
   });
@@ -260,7 +260,7 @@ async function forgetStation(): Promise<void> {
   const urlEl = $('osm_url'); if (urlEl instanceof HTMLInputElement) urlEl.value = '';
   const keyEl = $('osm_key'); if (keyEl instanceof HTMLInputElement) keyEl.value = '';
   const tchap = await forgetTchap();
-  if (tchap === 'revoked') toast('Poste oublié. Session Tchap révoquée.', { kind: 'success' });
+  if (tchap === 'revoked') toast('Poste oublié. Révocation demandée à Tchap.', { kind: 'success' });
   else if (tchap === 'not-revoked') toast('Poste oublié sur cet appareil. Révocation impossible : fermez la session depuis Tchap (Paramètres, Sessions).', { kind: 'error', duration: 8000 });
   else toast('Poste oublié.', { kind: 'success' });
 }
