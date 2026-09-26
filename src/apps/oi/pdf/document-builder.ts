@@ -4183,94 +4183,224 @@ const EXPRESS_PHOTOS = OI_EXPRESS_PHOTO_CONTAINERS;
 /** Captures de plan : une par rangée, sur toute la largeur. */
 const EXPRESS_PLAN_CONTAINER = 'photo_container_express_carte_preview_container';
 
-/** Au-delà, le PATRACDVR express passe sur deux tableaux côte à côte. */
-const EXPRESS_PATRAC_SPLIT = 10;
+/*
+ * Modèle physique de l'OI Express densifié (décision 43, audit A6). JetBrains
+ * Mono NL est à chasse fixe (600/1000 em par glyphe, toutes graisses) : les
+ * largeurs et les retours à la ligne se calculent EXACTEMENT, sans rendu
+ * d'essai. Hauteur d'une ligne = police × interligne × 1,32 em (ascendante −
+ * descendante de la police). Les tableaux sont à interligne 1, le texte à 1,15.
+ */
+const EX_GLYPH_EM = 0.6;
+const EX_ASC_DESC_EM = 1.32;
+const EX_TEXT_LH = 1.15;
+const EX_PAD_X = 3;
+const EX_PAD_Y = 1;
+const EX_RULE = 0.5;
+/** Paliers (pt) : texte de l'ordre, puis tableaux (chronologie, PATRACDVR). 8 pt au minimum (décision 43). */
+const EX_TEXT_STEPS = [10, 9, 8] as const;
+const EX_TABLE_STEPS = [9, 8] as const;
+/** En-tête d'une ligne (Oswald 14 à interligne 1, filet et marges). */
+const EX_HEADER_PT = 30;
+const EX_GAP_PT = 5;
+const EX_COL_GAP_PT = 12;
+/** Réserve contre les arrondis (marges de titres, filets). */
+const EX_SAFETY_PT = 10;
+
+const exChars = (s: string): number => [...s].length;
+const exTextLinePt = (f: number): number => f * EX_TEXT_LH * EX_ASC_DESC_EM;
+const exRowPt = (lines: number, f: number): number => lines * f * EX_ASC_DESC_EM + 2 * EX_PAD_Y + EX_RULE;
+
+/** Lignes d'un texte replié mot à mot dans `widthPt` à `f` pt (retours saisis compris ; mot trop long coupé). */
+function exWrapLines(text: string, widthPt: number, f: number): number {
+    const cpl = Math.max(1, Math.floor(widthPt / (f * EX_GLYPH_EM)));
+    return text.split('\n').reduce((sum, seg) => {
+        let lines = 1;
+        let cur = 0;
+        for (const w of seg.split(/\s+/).filter(Boolean)) {
+            const n = exChars(w);
+            if (cur > 0 && cur + 1 + n <= cpl) { cur += 1 + n; continue; }
+            if (cur > 0) lines++;
+            lines += Math.ceil(n / cpl) - 1;
+            cur = n % cpl || cpl;
+        }
+        return sum + lines;
+    }, 0);
+}
+
+/** Valeurs en lignes d'au plus `maxChars` caractères, séparées par « / » (décision 9 : une valeur n'est jamais coupée). */
+function exPackValues(values: string[], maxChars: number): string[] {
+    const lines: string[] = [];
+    let cur = '';
+    values.forEach((v, i) => {
+        const tok = i < values.length - 1 ? `${v} /` : v;
+        if (cur && exChars(cur) + 1 + exChars(tok) <= maxChars) cur += ` ${tok}`;
+        else {
+            if (cur) lines.push(cur);
+            cur = tok;
+        }
+    });
+    if (cur) lines.push(cur);
+    return lines.length ? lines : ['-'];
+}
 
 type ExpressRow = { vehicle: string; m: OiPatracMember };
-
-/** Valeurs d'une ligne PATRACDVR express : tout sur UNE ligne, joint par « / ». */
-function expressPatracTexts(m: OiPatracMember): { armes: string; eqpt: string } {
-    const join = (...vs: Array<string | undefined>): string => vs.flatMap(patracValues).join(' / ') || '-';
-    return { armes: join(m.principales, m.secondaires, m.afis), eqpt: join(m.grenades, m.equipement, m.equipement2, m.tenue, m.gpb) };
-}
+type ExCol = { label: string; values: (r: ExpressRow) => string[]; bold?: boolean };
 
 /**
- * PATRACDVR condensé de l'OI express : une rangée par membre (VL, PAX,
- * cellule, fonction, armes, équipement), deux tableaux côte à côte au-delà de
- * `EXPRESS_PATRAC_SPLIT` membres. Retourne le rendu et son coût (pt) au
- * palier donné, calculés sur les MÊMES colonnes.
+ * Tableau mesuré (Express), en caractères (police à chasse fixe) : chaque
+ * colonne reçoit au moins sa plus longue valeur (jamais coupée) et au plus son
+ * texte sur une ligne ; ÉQUIPEMENT (`starCol`) prend le reste. Entre les deux,
+ * les largeurs des autres colonnes à valeurs sont choisies pour que le tableau
+ * compte le moins de lignes (descente coordonnée, deux passes). Les valeurs
+ * passent à la ligne entre elles (« / », décision 9). Retourne les largeurs
+ * (pt) et les lignes de chaque case, dont se déduisent exactement les hauteurs.
  */
-function expressPatrac(rows: ExpressRow[], p: OiPdfPalette, widthPt: number, fontPx: number): { node: Content; costPt: number } {
-    const halves = rows.length > EXPRESS_PATRAC_SPLIT ? [rows.slice(0, Math.ceil(rows.length / 2)), rows.slice(Math.ceil(rows.length / 2))] : [rows];
-    const gap = mm(4);
-    const tableW = (widthPt - gap * (halves.length - 1)) / halves.length;
-    // Largeurs FIXES (et non `auto`) : le coût estimé porte sur les largeurs
-    // réellement rendues. Une colonne auto élargie par une fonction longue
-    // rétrécissait armes/équipement et faisait déborder la page.
-    const shares = [0.07, 0.08, 0.12, 0.18, 0.25, 0.30];
-    const cellPad = 8; // marges internes d'une cellule (LAYOUT_BORDERED)
-    const colW = shares.map((f) => tableW * f - cellPad);
-    const line = effracLinePt(fontPx);
-    const rowPt = (r: ExpressRow): number => {
-        const t = expressPatracTexts(r.m);
-        const texts = [r.vehicle, r.m.trigramme, patracValues(r.m.cellule).join(' / '), patracValues(r.m.fonction).join(' / '), t.armes, t.eqpt];
-        return Math.max(line, ...texts.map((x, i) => textLinePt(x || '-', fontPx, colW[i] as number))) + EFFRAC_ROW_VPAD_PT;
+function exMeasure(cols: ExCol[], rows: ExpressRow[], f: number, widthPt: number, starCol: number): { widths: number[]; cells: Array<Array<{ text: string; lines: number }>> } {
+    const c = f * EX_GLYPH_EM;
+    const n = cols.length;
+    const roomC = Math.floor((widthPt - n * (2 * EX_PAD_X + EX_RULE + 0.5) - EX_RULE) / c);
+    const vals = rows.map((r) => cols.map((col) => col.values(r)));
+    const nat = cols.map((col, j) => Math.max(exChars(col.label), ...vals.map((v) => exChars((v[j] as string[]).join(' / ') || '-'))));
+    const min = cols.map((col, j) => Math.max(exChars(col.label), ...vals.flatMap((v) => (v[j] as string[]).map((x, k, a) => exChars(x) + (k < a.length - 1 ? 2 : 0)))));
+    const sum = (a: number[]): number => a.reduce((s, x) => s + x, 0);
+    const toPt = (w: number[]): number[] => w.map((x) => x * c + 0.5);
+    if (sum(min) > roomC) {
+        // Valeurs démesurées : largeurs réduites en proportion, pdfmake coupe.
+        const widths = toPt(min.map((w) => Math.floor((w * roomC) / sum(min))));
+        const cells = vals.map((v) => v.map((xs, j) => {
+            const t = xs.join(' / ') || '-';
+            return { text: t, lines: exWrapLines(t, widths[j] as number, f) };
+        }));
+        return { widths, cells };
+    }
+    const packed = new Map<string, string[]>();
+    const pack = (i: number, j: number, w: number): string[] => {
+        const key = `${i}:${j}:${w}`;
+        let lines = packed.get(key);
+        if (!lines) packed.set(key, (lines = exPackValues(vals[i]?.[j] as string[], w)));
+        return lines;
     };
-    const tables = halves.map((part) => ({
+    const total = (w: number[]): number => rows.reduce((s, _, i) => s + Math.max(...w.map((x, j) => pack(i, j, x).length)), 0);
+    const withStar = (w: number[]): number[] => w.map((x, j) => (j === starCol ? roomC - sum(w) + x : x));
+    // Départ : les autres colonnes à leur largeur naturelle si ÉQUIPEMENT y garde sa plus longue valeur, sinon à leur minimum.
+    let w = withStar(nat);
+    if ((w[starCol] as number) < (min[starCol] as number)) w = withStar(min);
+    for (let pass = 0; pass < 2; pass++) {
+        for (let j = 0; j < n; j++) {
+            if (j === starCol || min[j] === nat[j]) continue;
+            let best = w;
+            let bestLines = total(w);
+            for (let x = min[j] as number; x <= (nat[j] as number); x++) {
+                const cand = withStar(w.map((y, k) => (k === j ? x : y)));
+                if ((cand[starCol] as number) < (min[starCol] as number)) break;
+                const lines = total(cand);
+                if (lines < bestLines) { best = cand; bestLines = lines; }
+            }
+            w = best;
+        }
+    }
+    const widths = toPt(w);
+    const cells = vals.map((v, i) => v.map((_, j) => {
+        const lines = pack(i, j, w[j] as number);
+        return { text: lines.join('\n'), lines: lines.length };
+    }));
+    return { widths, cells };
+}
+
+/** Table d'un bloc de l'Express : titre et libellés en en-tête répété, jamais laissé seul en bas de page, rangées jamais coupées. */
+function exTable(title: string, labels: string[], widths: Array<number | string>, body: TableCell[][], p: OiPdfPalette, f: number): Content {
+    const n = labels.length;
+    return {
         table: {
-            widths: shares.map((f) => `${Math.round(f * 1000) / 10}%`),
-            headerRows: 1,
+            widths,
+            headerRows: 2,
+            keepWithHeaderRows: 1,
+            dontBreakRows: true,
             body: [
-                ['VL', 'PAX', 'CEL.', 'FONCTION', 'ARMES', 'ÉQUIPEMENT'].map((t) => ({ text: t, bold: true, fillColor: p.headerRow, alignment: 'center', borderColor: cellBorder(p) }) as TableCell),
-                ...part.map((r) => {
-                    const t = expressPatracTexts(r.m);
-                    return [
-                        { text: r.vehicle, bold: true, fillColor: r.vehicle ? p.headerRow : undefined, borderColor: cellBorder(p) },
-                        { text: r.m.trigramme || '-', bold: true, borderColor: cellBorder(p) },
-                        { text: patracValues(r.m.cellule).join(' / ') || '-', borderColor: cellBorder(p) },
-                        { text: patracValues(r.m.fonction).join(' / ') || '-', borderColor: cellBorder(p) },
-                        { text: t.armes, borderColor: cellBorder(p) },
-                        { text: t.eqpt, borderColor: cellBorder(p) },
-                    ] as TableCell[];
-                }),
+                // Cases couvertes par le `colSpan` : même bordure (pdfmake trace le filet case par case).
+                [{ text: title, colSpan: n, bold: true, color: p.accent, border: [false, false, false, false] }, ...Array.from({ length: n - 1 }, () => ({ text: '', border: [false, false, false, false] }))],
+                labels.map((t) => ({ text: t, bold: true, fillColor: p.headerRow, noWrap: true, borderColor: cellBorder(p) }) as TableCell),
+                ...body,
             ],
         },
-        layout: LAYOUT_BORDERED,
-        fontSize: fontPx,
-    }) as Content);
-    const costPt = Math.max(...halves.map((part) => line + EFFRAC_ROW_VPAD_PT + part.reduce((sum, r) => sum + rowPt(r), 0)));
-    const node: Content = tables.length === 1 ? (tables[0] as Content) : { columns: tables.map((t) => ({ width: tableW, stack: [t] })), columnGap: gap };
-    return { node, costPt };
+        layout: { hLineWidth: (i: number) => (i === 0 ? 0 : EX_RULE), vLineWidth: () => EX_RULE, paddingLeft: () => EX_PAD_X, paddingRight: () => EX_PAD_X, paddingTop: () => EX_PAD_Y, paddingBottom: () => EX_PAD_Y },
+        fontSize: f,
+        lineHeight: 1,
+        margin: [0, EX_GAP_PT, 0, 0],
+    } as Content;
 }
 
 /**
- * PDF de l'OI express : l'ordre en DEUX pages (décision Nico 2026-09-24),
- * puis TOUTES les photos (décision 24) en galerie adaptative (décision 44).
- * Trois dispositions de l'ordre, essayées dans l'ordre ; la première qui tient
- * ENTIÈREMENT (page 1, et page 2) au plus grand palier de police possible
- * (11 → 7) est retenue :
- *  - A : page 1 = l'ordre, chronologie et PATRACDVR ; page 2 = les photos ;
- *  - B : page 1 = l'ordre et la chronologie ; page 2 = PATRACDVR puis photos ;
- *  - C : page 1 = situation, mission, exécution ; page 2 = chronologie,
- *        PATRACDVR, puis photos.
- * Si même C ne tient pas au palier plancher (textes démesurés), C est rendue
- * au plancher et pdfmake pagine : rien n'est jamais tronqué. Les coûts sont
- * ceux du reste du document, sur les largeurs réellement rendues.
+ * PATRACDVR de l'Express : UN tableau pleine largeur, une rangée par membre
+ * (VL, PAX, cellule, fonction, armes, équipement, DIR si renseigné), largeurs
+ * mesurées, membres non assignés sous « NON ASSIGNÉS ». Rendu et coût (pt)
+ * calculés sur les mêmes lignes.
+ */
+function expressPatrac(ctx: BuildCtx, f: number): { node: Content; costPt: number } | null {
+    const { formData, p, geo } = ctx;
+    const assigned: ExpressRow[] = [];
+    for (const row of formData.patracdvr_rows ?? []) row.members.forEach((m, idx) => assigned.push({ vehicle: idx === 0 ? row.vehicle : '', m }));
+    const unassigned: ExpressRow[] = (formData.patracdvr_unassigned ?? []).map((m) => ({ vehicle: '', m }));
+    const all = [...assigned, ...unassigned];
+    if (!all.length) return null;
+    const cols: ExCol[] = [
+        { label: 'VL', values: (r) => (r.vehicle.trim() ? [r.vehicle.trim()] : []), bold: true },
+        { label: 'PAX', values: (r) => [r.m.trigramme.trim() || '-'], bold: true },
+        { label: 'CEL.', values: (r) => patracValues(r.m.cellule) },
+        { label: 'FONCTION', values: (r) => patracValues(r.m.fonction) },
+        { label: 'ARMES', values: (r) => [r.m.principales, r.m.secondaires, r.m.afis].flatMap(patracValues) },
+        { label: 'ÉQUIPEMENT', values: (r) => [r.m.grenades, r.m.equipement, r.m.equipement2, r.m.tenue, r.m.gpb].flatMap(patracValues) },
+    ];
+    if (all.some((r) => r.m.dir?.trim())) cols.push({ label: 'DIR', values: (r) => (r.m.dir?.trim() ? [r.m.dir.trim()] : []), bold: true });
+    const { widths, cells } = exMeasure(cols, all, f, geo.contentWidthPt, 5);
+    const rowCells = (i: number): TableCell[] => (cells[i] as Array<{ text: string }>).map((cell, j) => ({
+        text: j === 0 && !(all[i] as ExpressRow).vehicle ? '' : cell.text,
+        bold: cols[j]?.bold,
+        fillColor: j === 0 && (all[i] as ExpressRow).vehicle ? p.headerRow : undefined,
+        borderColor: cellBorder(p),
+    }) as TableCell);
+    const lines = (i: number): number => Math.max(1, ...(cells[i] as Array<{ lines: number }>).map((cell) => cell.lines));
+    const body: TableCell[][] = assigned.map((_, i) => rowCells(i));
+    let costPt = EX_GAP_PT + 2 * exRowPt(1, f) + assigned.reduce((s, _, i) => s + exRowPt(lines(i), f), 0);
+    if (unassigned.length) {
+        body.push([{ text: 'NON ASSIGNÉS', colSpan: cols.length, bold: true, fillColor: p.headerRow, borderColor: cellBorder(p) }, ...cols.slice(1).map(() => ({}))]);
+        unassigned.forEach((_, k) => body.push(rowCells(assigned.length + k)));
+        costPt += exRowPt(1, f) + unassigned.reduce((s, _, k) => s + exRowPt(lines(assigned.length + k), f), 0);
+    }
+    return { node: exTable(pdfSectionTitle(formData, 'patracdvr'), cols.map((c) => c.label), widths, body, p, f), costPt };
+}
+
+/** Chronologie de l'Express : heure à sa largeur, événement replié ; titre en en-tête du tableau (jamais seul en bas de page). */
+function expressChrono(ctx: BuildCtx, events: OiTimeEvent[], f: number): { node: Content; costPt: number } | null {
+    if (!events.length) return null;
+    const { formData, p, geo } = ctx;
+    const hourW = Math.max(exChars('Heure'), ...events.map((e) => exChars(e.hour || '-'))) * f * EX_GLYPH_EM + 0.5;
+    const eventW = geo.contentWidthPt - hourW - 2 * (2 * EX_PAD_X + EX_RULE) - EX_RULE;
+    const body = events.map((e): TableCell[] => [
+        { text: e.hour || '-', noWrap: true, borderColor: cellBorder(p) },
+        { text: [{ text: breakLongTokens(e.type), bold: true }, { text: ` : ${breakLongTokens(e.description)}` }], borderColor: cellBorder(p) },
+    ]);
+    const costPt = EX_GAP_PT + 2 * exRowPt(1, f) + events.reduce((s, e) => s + exRowPt(exWrapLines(`${e.type} : ${e.description}`, eventW, f), f), 0);
+    return { node: exTable(pdfSectionTitle(formData, 'chronologie'), ['Heure', 'Événement'], [hourW, '*'], body, p, f), costPt };
+}
+
+/**
+ * PDF de l'OI Express densifié (décision 43) : en-tête d'une ligne, blocs sans
+ * encadrement, police par bloc (texte 10 → 8 pt, tableaux 9 → 8 pt).
+ *  1. L'ordre entier sur UNE page (situation, mission, exécution, NO-GO / UDA,
+ *     chronologie, PATRACDVR) au plus grand palier qui tient ;
+ *  2. sinon l'ordre en page 1 et le PATRACDVR seul à partir de la page 2 ;
+ *  3. si l'ordre seul déborde même à 8 pt (textes démesurés), il continue sur
+ *     la page suivante — titres des tableaux en en-tête répété, rangées jamais
+ *     coupées, rien de tronqué.
+ * Puis TOUTES les photos (décision 24) en galerie adaptative (décision 44).
  */
 function buildExpressPages(ctx: BuildCtx): Content[] {
     const { formData, p, geo, photosBase64, dynamicPhotos } = ctx;
     const W = geo.contentWidthPt;
-    const half = (W - mm(6)) / 2;
-    const members: ExpressRow[] = [];
-    for (const row of formData.patracdvr_rows ?? []) {
-        row.members.forEach((m, idx) => members.push({ vehicle: idx === 0 ? row.vehicle : '', m }));
-    }
+    const half = (W - EX_COL_GAP_PT) / 2;
+    const H = geo.contentHeightPt - EX_SAFETY_PT;
     const events = isSectionRemoved(formData, 'chronologie') ? [] : (formData.time_events ?? []);
-    // Même réserve que le reste du document. Mesuré sur 9 cas (2026-09-24) :
-    // les coûts estimés dépassent le rendu réel de 5 à 10 %, direction sûre ;
-    // une marge supplémentaire refusait à tort des dispositions qui tiennent.
-    const available = geo.contentHeightPt - EFFRAC_FITS_SAFETY_PT;
-    const HEADER_PT = 56;
 
     // TOUTES les photos (décision 24) : objectif, adversaire, puis plans ;
     // légende = titre saisi, sinon la catégorie, numérotée s'il y en a
@@ -4291,117 +4421,98 @@ function buildExpressPages(ctx: BuildCtx): Content[] {
     });
     const galleryEntries = [...photoEntries(false), ...photoEntries(true)];
 
-    // Coûts (pt) au palier `f`.
+    const nogo = isSectionRemoved(formData, 'no_go') || isBlankOrDash(formData.no_go) ? '' : str(formData.no_go).trim();
+    const uda = isSectionRemoved(formData, 'uda') || isBlankOrDash(formData.uda) ? '' : str(formData.uda).trim();
+    const nogoLine = [nogo && `NO-GO : ${nogo}`, uda && `UDA : ${uda}`].filter(Boolean).join('   |   ');
+    const dateExec = dateFr(formData.date_execution);
+    const heure = strOr(formData.heure_execution);
+
+    // Coût (pt) de l'ordre hors tableaux, au palier `f`.
+    const title = (f: number): number => exTextLinePt(f) + 1;
     const corePt = (f: number): number => {
-        const situationPt = cardWithTitlePt(
-            textLinePt(`SITUATION GÉNÉRALE : ${strOr(formData.situation_generale)}`, f, half - 16) +
-            textLinePt(`SITUATION PARTICULIÈRE : ${strOr(formData.situation_particuliere)}`, f, half - 16),
-        );
-        const missionPt = cardWithTitlePt(textLinePt(strOr(formData.missions_psig), Math.round(f * 1.2), half - 16));
-        const execPt = cardWithTitlePt(
-            Math.round(f * 1.2) * PDF_LINE_ADVANCE_EM + textLinePt(`IDÉE DE MANŒUVRE / ACTION : ${strOr(formData.action_body_text)}`, f, W - 16),
-        );
-        return HEADER_PT + Math.max(situationPt, missionPt) + STACKED_CARD_GAP_PT + execPt;
+        const lines = (t: string, w: number, ff = f): number => exWrapLines(t, w, ff) * exTextLinePt(ff);
+        const left = title(f) + lines(`SITUATION GÉNÉRALE : ${strOr(formData.situation_generale)}`, half) + lines(`SITUATION PARTICULIÈRE : ${strOr(formData.situation_particuliere)}`, half);
+        const right = title(f) + lines(strOr(formData.missions_psig), half, f + 1) + EX_GAP_PT + title(f)
+            + lines(`DATE D'EXÉCUTION : ${dateExec || '-'}   HEURE H : ${heure}`, half)
+            + lines(`IDÉE DE MANŒUVRE / ACTION : ${strOr(formData.action_body_text)}`, half);
+        return EX_HEADER_PT + Math.max(left, right) + (nogoLine ? EX_GAP_PT + lines(nogoLine, W) : 0);
     };
-    const chronoPt = (f: number): number =>
-        events.length ? STACKED_CARD_GAP_PT + cardWithTitlePt(effracLinePt(f) + EFFRAC_ROW_VPAD_PT + events.reduce((sum, e) => sum + chronoEventPt(e, f, (W - 16) * 0.78), 0)) : 0;
-    const patracPt = (f: number): number => (members.length ? STACKED_CARD_GAP_PT + EFFRAC_H3_PT + expressPatrac(members, p, W, f).costPt : 0);
-    // Les photos ont leurs propres pages (galerie adaptative) : l'ordre n'a
-    // plus à leur garder de place.
-    const photosNeedPt = 0;
+    const chronoPt = (f: number): number => expressChrono(ctx, events, f)?.costPt ?? 0;
+    const patracPt = (f: number): number => expressPatrac(ctx, f)?.costPt ?? 0;
 
-    // `flow` : aucun saut forcé — la page 1 se remplit, la suite (chronologie
-    // coupée entre deux rangées, en-tête répété) passe en page 2 avant les
-    // photos. Dernier recours avant trois pages.
-    type Layout = { p1: Array<'chrono' | 'patrac'>; p2: Array<'chrono' | 'patrac'>; flow?: boolean };
-    const layouts: Layout[] = [
-        { p1: ['chrono', 'patrac'], p2: [] },
-        { p1: ['chrono'], p2: ['patrac'] },
-        { p1: [], p2: ['chrono', 'patrac'] },
-        { p1: ['chrono', 'patrac'], p2: [], flow: true },
-    ];
-    const partPt = (part: 'chrono' | 'patrac', f: number): number => (part === 'chrono' ? chronoPt(f) : patracPt(f));
-    const fits = (l: Layout, f: number): boolean =>
-        l.flow
-            ? corePt(f) + chronoPt(f) + patracPt(f) + photosNeedPt <= 2 * available
-            : corePt(f) + l.p1.reduce((sum, x) => sum + partPt(x, f), 0) <= available &&
-              l.p2.reduce((sum, x) => sum + partPt(x, f), 0) + photosNeedPt <= available;
-    // 1) Tout l'ordre sur la page 1 (disposition A) dès que la police reste
-    //    lisible (≥ 9 px) : un ordre court tient alors sur une seule page.
-    // 2) Sinon, la lisibilité d'abord : au plus grand palier, la première
-    //    disposition qui tient.
-    const layoutA = layouts[0] as Layout;
-    const aStep = FIT_FONT_STEPS.find((step) => step >= 9 && fits(layoutA, step));
-    let chosen: { layout: Layout; fontPx: number } | null = aStep !== undefined ? { layout: layoutA, fontPx: aStep } : null;
-    for (const step of chosen ? [] : FIT_FONT_STEPS) {
-        const layout = layouts.find((l) => fits(l, step));
-        if (layout) { chosen = { layout, fontPx: step }; break; }
-    }
-    const { layout, fontPx } = chosen ?? { layout: layouts[3] as Layout, fontPx: FIT_FONT_FLOOR };
+    // 1) Tout sur une page, au plus grand palier ; 2) sinon PATRACDVR à part.
+    const pairs = EX_TEXT_STEPS.flatMap((fT) => EX_TABLE_STEPS.filter((fP) => fP <= fT).map((fP) => ({ fT, fP })));
+    const onePage = pairs.find(({ fT, fP }) => corePt(fT) + chronoPt(fP) + patracPt(fP) <= H);
+    const orderFit = onePage ?? pairs.find(({ fT, fP }) => corePt(fT) + chronoPt(fP) <= H);
+    const { fT, fP } = orderFit ?? { fT: 8, fP: 8 };
 
+    const exTitle = (t: string): Content => ({ text: t.toLocaleUpperCase('fr-FR'), bold: true, color: p.accent, margin: [0, 0, 0, 1] });
+    const opName = isBlankOrDash(formData.nom_operation) ? '' : str(formData.nom_operation).trim();
+    const redac = [formData.trigramme_redacteur, formData.unite_redacteur].map((v) => str(v).trim()).filter(Boolean).join(' — ');
+    const headerInfo = [opName && `OP : ${opName}`, dateFr(formData.date_op), redac && `Rédacteur : ${redac}`].filter(Boolean).join('   ·   ');
     const header: Content = {
-        columns: [
-            { text: 'OI EXPRESS', font: 'Oswald', fontSize: 26, color: p.accent, width: '*' },
+        stack: [
             {
-                stack: [
-                    { text: `Opération : ${strOr(formData.date_op)}`, bold: true, alignment: 'right' },
-                    { text: `Rédacteur : ${strOr([formData.trigramme_redacteur, formData.unite_redacteur].filter(Boolean).join(' — '))}`, fontSize: 9, alignment: 'right', color: p.muted },
+                columns: [
+                    { text: 'OI EXPRESS', font: 'Oswald', fontSize: 14, color: p.accent, width: 'auto', lineHeight: 1 },
+                    { text: headerInfo, fontSize: 9, bold: true, alignment: 'right', width: '*', margin: [0, 4, 0, 0], lineHeight: 1 },
                 ],
-                width: 'auto',
+                columnGap: 12,
             },
+            { canvas: [{ type: 'line', x1: 0, y1: 0, x2: W, y2: 0, lineWidth: 1, lineColor: p.accent }], margin: [0, 2, 0, 4] },
         ],
-        margin: [0, 0, 0, 8],
     };
-    const situationCard = card(
-        [
-            h3(pdfSectionTitle(formData, 'situation'), p),
-            labelValue('Situation générale', strOr(formData.situation_generale), p, { valueBold: true }, { anchors: ctx.anchors, ref: fieldAnchor('situation_generale') }),
-            labelValue('Situation particulière', strOr(formData.situation_particuliere), p, { valueBold: true }, { anchors: ctx.anchors, ref: fieldAnchor('situation_particuliere') }),
-        ],
-        p,
-        { unbreakable: false },
-    );
+    // Ancrages d'édition dans l'ordre d'affichage (`pdf-preview-edit.ts` en dépend).
+    const left: Content[] = [
+        exTitle(pdfSectionTitle(formData, 'situation')),
+        labelValue('Situation générale', strOr(formData.situation_generale), p, { valueBold: true }, { anchors: ctx.anchors, ref: fieldAnchor('situation_generale') }),
+        labelValue('Situation particulière', strOr(formData.situation_particuliere), p, { valueBold: true }, { anchors: ctx.anchors, ref: fieldAnchor('situation_particuliere') }),
+    ];
     registerPdfEditAnchor(ctx.anchors, fieldAnchor('missions_psig'), strOr(formData.missions_psig));
-    const missionCard = card(
-        [h3(pdfSectionTitle(formData, 'mission'), p), { text: strOr(formData.missions_psig), bold: true, fontSize: Math.round(fontPx * 1.2), preserveLeadingSpaces: true }],
-        p,
-        { unbreakable: false },
-    );
-    const execCard = card(
-        [
-            h3(pdfSectionTitle(formData, 'execution'), p),
-            grid2(
-                [fv(ctx, "Date d'exécution", 'date_execution')],
-                [fv(ctx, 'Heure H', 'heure_execution', { fontSize: Math.round(fontPx * 1.2), valueColor: p.accent, valueBold: true })],
-            ),
-            fv(ctx, 'Idée de Manœuvre / Action', 'action_body_text'),
-        ],
-        p,
-        { unbreakable: false },
-    );
-    const gapNode = (): Content => ({ text: '', margin: [0, STACKED_CARD_GAP_PT, 0, 0] });
-    const partNodes = (part: 'chrono' | 'patrac'): Content[] => {
-        if (part === 'chrono') {
-            return events.length ? [gapNode(), card([h3(pdfSectionTitle(formData, 'chronologie'), p), chronoTableFor(events, p)], p, { unbreakable: false })] : [];
-        }
-        return members.length ? [gapNode(), h3(pdfSectionTitle(formData, 'patracdvr'), p), expressPatrac(members, p, W, fontPx).node] : [];
-    };
+    registerPdfEditAnchor(ctx.anchors, fieldAnchor('date_execution'), dateExec || '-');
+    registerPdfEditAnchor(ctx.anchors, fieldAnchor('heure_execution'), heure);
+    const right: Content[] = [
+        exTitle(pdfSectionTitle(formData, 'mission')),
+        { text: breakLongTokens(strOr(formData.missions_psig)), bold: true, fontSize: fT + 1, preserveLeadingSpaces: true },
+        { ...(exTitle(pdfSectionTitle(formData, 'execution')) as object), margin: [0, EX_GAP_PT, 0, 1] } as Content,
+        {
+            text: [
+                { text: "DATE D'EXÉCUTION : ", bold: true, color: p.accent }, { text: dateExec || '-' },
+                { text: '   HEURE H : ', bold: true, color: p.accent }, { text: heure, bold: true, color: p.accent },
+            ],
+        },
+        fv(ctx, 'Idée de Manœuvre / Action', 'action_body_text'),
+    ];
+    const nogoNode: Content[] = nogoLine
+        ? [{
+            text: [
+                ...(nogo ? [{ text: 'NO-GO : ', bold: true, color: p.danger }, { text: breakLongTokens(nogo), bold: true, color: p.danger }] : []),
+                ...(nogo && uda ? [{ text: '   |   ' }] : []),
+                ...(uda ? [{ text: 'UDA : ', bold: true, color: p.accent }, { text: breakLongTokens(uda) }] : []),
+            ],
+            margin: [0, EX_GAP_PT, 0, 0],
+        } as Content]
+        : [];
+    const chrono = expressChrono(ctx, events, fP);
+    const patracFont = onePage ? fP : (EX_TABLE_STEPS.find((f) => patracPt(f) - EX_GAP_PT <= H) ?? 8);
+    const patrac = expressPatrac(ctx, patracFont);
 
     const page1: Content = {
-        stack: [header, grid2([situationCard], [missionCard]), gapNode(), execCard, ...layout.p1.flatMap(partNodes)],
-        fontSize: fontPx,
+        stack: [
+            header,
+            { columns: [{ stack: left, width: '*' }, { stack: right, width: '*' }], columnGap: EX_COL_GAP_PT },
+            ...nogoNode,
+            ...(chrono ? [chrono.node] : []),
+            // L'ordre déborde déjà de sa page (textes démesurés) : le PATRACDVR suit sans saut.
+            ...((onePage || !orderFit) && patrac ? [patrac.node] : []),
+        ],
+        fontSize: fT,
+        lineHeight: EX_TEXT_LH,
     };
-    const p2Parts = layout.p2.flatMap(partNodes);
-    // Photos et plans : galerie adaptative, à partir d'une nouvelle page.
     const photoPages = adaptiveGalleryPages('ANNEXES', galleryEntries, p, geo).map((page, i) =>
         i === 0 ? ({ ...(page as object), pageBreak: 'before' } as Content) : page);
-    if (layout.flow) {
-        // Tout d'un bloc : pdfmake coupe là où la page 1 est pleine.
-        return [{ stack: (page1 as { stack: Content[] }).stack, fontSize: fontPx }, ...photoPages];
-    }
-    if (!p2Parts.length) return [page1, ...photoPages];
-    const page2: Content = { stack: p2Parts, fontSize: fontPx, pageBreak: 'before' };
-    return [page1, page2, ...photoPages];
+    const page2: Content[] = !onePage && orderFit && patrac ? [{ stack: [{ ...(patrac.node as object), margin: [0, 0, 0, 0] } as Content], pageBreak: 'before' }] : [];
+    return [page1, ...page2, ...photoPages];
 }
 
 /** Section du formulaire (`sections.ts`) dont le retrait (×) omet toute la section du PDF. */
