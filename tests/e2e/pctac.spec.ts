@@ -616,6 +616,8 @@ test.describe('PC-Tac — Checklist fonctionnelle', () => {
   // l'état interne fiable à vérifier en headless (le pitch/bearing MapLibre
   // réel dépend du rendu WebGL, non déterministe en CI).
   test('Plan — bascule 2D/3D relief (#plan_btn_3d)', async ({ page }) => {
+    const skyErrors: string[] = [];
+    page.on('console', (m) => { if (m.type() === 'error' && /sky/i.test(m.text())) skyErrors.push(m.text()); });
     await step('clic sur le FAB 3D bascule window.PlanMap.is3D', async () => {
       await clickTab(page, 'view-plan');
       await page.waitForTimeout(1200);
@@ -637,6 +639,13 @@ test.describe('PC-Tac — Checklist fonctionnelle', () => {
         () => (window as unknown as { PlanMap: { is3D: boolean } }).PlanMap.is3D,
       );
       expect.soft(afterToggleBack).toBe(false);
+      // Retour en 2D : le ciel est vraiment retiré, sans erreur de validation
+      // MapLibre (setSky(null) était refusé : « sky: object expected, null found »).
+      const skyAfter = await page.evaluate(
+        () => (window as unknown as { PlanMap: { map: { getSky: () => unknown } } }).PlanMap.map.getSky() ?? null,
+      );
+      expect.soft(skyAfter).toBeNull();
+      expect.soft(skyErrors).toEqual([]);
     });
   });
 
