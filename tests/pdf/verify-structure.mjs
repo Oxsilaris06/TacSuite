@@ -714,7 +714,7 @@ export function assertB1_noOrphanPage(text, images) {
 // véhicules, direction) : `buildPatracPage` (document-builder.ts) rend CES
 // valeurs telles quelles (jamais `.toUpperCase()`), donc une casse EXISTANTE
 // tout-capitales dans le texte extrait signe une valeur SAISIE ainsi par
-// l'utilisateur (ex. « SHARAN », « GILETTE »), pas un artefact de mise en forme.
+// l'utilisateur (ex. « SHARAN », « TESTVIL »), pas un artefact de mise en forme.
 const UPPER_CLASS = 'A-ZÀÂÄÉÈÊËÏÎÔÖÙÛÜÇ';
 const WORD_SPLIT_TAIL_RE = new RegExp(`^[${UPPER_CLASS}]{2,}$`);
 const WORD_SPLIT_HEAD_RE = new RegExp(`^[${UPPER_CLASS}]{1,4}$`);
@@ -745,7 +745,7 @@ function lineTokens(line) {
  * B2 — anti-césure verticale : aucun mot du Store scindé en fragments
  * empilés dans le tableau PATRACDVR (constat terrain : « SHARA\nN »,
  * « GILE\nTTE », « KODIA\nQ\nBANA » — colonnes trop étroites pour
- * `SHARAN`/`GILETTE`/`KODIAQ`, pas de césure au tiret). Portée volontairement
+ * `SHARAN`/`TESTVIL`/`KODIAQ`, pas de césure au tiret). Portée volontairement
  * restreinte à la section PATRACDVR (entre le marqueur `MARKERS[13]` et la
  * page finale `MARKERS[14]`, ou la fin du document si celle-ci est absente) :
  * hors de cette section, les libellés STATIQUES du gabarit produisent de

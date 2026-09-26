@@ -147,8 +147,8 @@
         "cat": "- Si décelé, dynamiser jusqu'au domicile.\n- Si retranchement, cellule effrac traite la porte",
         "place_chef": "-",
         "members": [
-          "PRC",
-          "RTI"
+          "KLO",
+          "BRV"
         ]
       }
     ],
@@ -190,7 +190,7 @@
           {
             "id": "hyp_synth_1",
             "title": "Hypothèse 1",
-            "effrac": "MHX : MultiPry\nBSN : Multisledge",
+            "effrac": "DLT : MultiPry\nBSN : Multisledge",
             "degag": "Dégagement en arrière de la cellule par la façade ALPHA, repli vers le point de regroupement secondaire",
             "assaut": "Entrée India puis Effrac",
             "desc": "Nettoyage du palier si besoin, test de la porte India 1 puis, si fermé, effraction manuelle aux outils (MultiPry / Multisledge) en frappe coordonnée avec le binôme de sécurité, repli immédiat en cas de résistance imprévue ou de tiers non identifié sur zone."
@@ -198,7 +198,7 @@
           {
             "id": "hyp_synth_2",
             "title": "Hypothèse 2",
-            "effrac": "Si échec effrac manuelle : MHX MultiPry / BSN Bélier lourd",
+            "effrac": "Si échec effrac manuelle : DLT MultiPry / ECH Bélier lourd",
             "degag": "Dégagement en arrière de la cellule",
             "assaut": "Entrée India puis effrac",
             "desc": "Echec de l'effraction manuelle : rearticulation immédiate sur le bélier lourd, sécurisation du palier, information du chef de dispositif avant toute nouvelle tentative de franchissement."
