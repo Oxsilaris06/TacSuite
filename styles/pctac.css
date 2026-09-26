@@ -2984,6 +2984,15 @@ body.light-mode .pctac-liens-btn-row--wa:hover { background: #bee9ce; box-shadow
  * panneau, et les règles ne valent que sous lui (une requête de conteneur
  * sans conteneur de ce nom ne s'applique pas). Une seule copie des règles.
  * ════════════════════════════════════════════════════════════════════════ */
+/* Pastille PAX du tableau (tablette, bureau) : sans marge ni arrondi, la
+   couleur posée en ligne ressemblait à un surlignage de texte. */
+#logTable .pax-cell {
+    display: inline-block;
+    padding: 2px 10px;
+    border-radius: var(--radius-full);
+    white-space: nowrap;
+}
+
 @media (max-width: 640px) {
     #view-main-courante {
         container: logcards / inline-size;
