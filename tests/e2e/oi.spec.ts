@@ -107,6 +107,11 @@ async function goToFinalStepAndOpenPreview(page: Page): Promise<void> {
   await page.locator('#previewBtn').waitFor({ state: 'visible' });
   await page.waitForTimeout(400);
   await page.locator('#previewBtn').click();
+  // U6 : un OI incomplet (celui des tests) demande d'abord « Incohérences
+  // détectées — Générer quand même ? » ; on génère quand même.
+  const generateAnyway = page.locator('[data-tac-confirm="ok"]');
+  await generateAnyway.or(page.locator('#presentationModal[open]')).first().waitFor();
+  if (await generateAnyway.isVisible()) await generateAnyway.click();
 }
 
 /**
@@ -132,35 +137,20 @@ async function step(name: string, fn: () => Promise<void>): Promise<void> {
 }
 
 /**
- * Spécifique OI (pas d'équivalent dans pctac.spec.ts) : l'original utilise
- * `prompt()`/`confirm()` NATIFS partout dans le flux PATRACDVR (création VL,
- * création PAX, cellule en lot, suppression drag&drop vers la poubelle...).
- * Playwright n'auto-résout PAS un `prompt()` avec le texte voulu (seulement
- * `dialog.accept()` sans argument → chaîne vide, qui échoue silencieusement
- * les validations de longueur de `addManualMember`/`addCellBatch`).
- *
- * CORRIGÉ (défaut de test constaté à l'exécution, PAS une régression du
- * portage) : le brouillon posait un `page.once('dialog', ...)` DANS
- * `withPrompt()`, en supposant qu'il se déclencherait AVANT le handler
- * persistant `page.on('dialog', ...)` posé par `beforeEach` (« FIFO d'ajout
- * des listeners »). À l'exécution c'est l'INVERSE qui est vrai (Node
- * `EventEmitter` : le PREMIER listener AJOUTÉ est le premier appelé — celui
- * de `beforeEach`, ajouté avant le début du corps du test, précède
- * nécessairement celui de `withPrompt()`, ajouté pendant le test) : le
- * handler persistant consommait le dialogue en premier (chaîne vide), puis
- * le `once()` de `withPrompt()` tentait de le ré-accepter → exception
- * `"Cannot accept dialog which is already handled!"` qui plantait la page en
- * cascade (VL/PAX jamais créés avec le bon trigramme, tous les tests
- * PATRACDVR/Articulation qui en dépendent échouaient). Remplacé par un seul
- * handler PERSISTANT (posé une fois dans `beforeEach`) qui consulte une
- * valeur "en attente" positionnée par `withPrompt()` juste avant l'action —
- * aucun risque d'ordre de listeners.
+ * Saisie demandée par l'appli (création VL, PAX, cellule en lot…). U25 : les
+ * `prompt()` natifs sont devenus `promptDialog()` (`src/shared/feedback.ts`,
+ * `<dialog class="tac-confirm-dialog">` avec un champ) : `page.on('dialog')`
+ * ne les voit plus. L'action ouvre la fenêtre ; on y tape la valeur, « Valider »,
+ * et la fenêtre doit disparaître. (Pas Entrée : elle rouvre aujourd'hui la
+ * fenêtre, le bouton déclencheur reprenant le focus — défaut de feedback.ts
+ * relevé par l'atelier UI-2.)
  */
-let pendingPromptValue: string | null = null;
-
-async function withPrompt<T>(value: string, action: () => Promise<T>): Promise<T> {
-  pendingPromptValue = value;
-  return action();
+async function withPrompt(page: Page, value: string, action: () => Promise<unknown>): Promise<void> {
+  await action();
+  const input = page.locator('dialog.tac-confirm-dialog .tac-confirm-input');
+  await input.fill(value);
+  await page.locator('dialog.tac-confirm-dialog .tac-confirm-btn--ok').click();
+  await expect(input).toHaveCount(0);
 }
 
 /**
@@ -169,7 +159,7 @@ async function withPrompt<T>(value: string, action: () => Promise<T>): Promise<T
  * injecté, PAS un dialogue navigateur natif) — `page.on('dialog')` (handler
  * `beforeEach` ci-dessous) ne les intercepte donc plus (cette API Playwright
  * ne couvre QUE les vrais `alert()`/`confirm()`/`prompt()`/`beforeunload` du
- * moteur ; `prompt()`, lui, reste natif dans le flux PATRACDVR — inchangé).
+ * moteur ; les saisies passent par `withPrompt()` ci-dessus).
  * Chaque site d'appel qui ouvrait un `confirm()` bloquant est désormais
  * cliqué explicitement via ce sélecteur stable (`data-tac-confirm="ok"`, posé
  * par `confirmDialog()`) — même helper que `tests/e2e/pctac.spec.ts`.
@@ -199,22 +189,8 @@ test.use({ launchOptions: { channel: 'chromium' } });
 
 test.describe('OI — Checklist fonctionnelle', () => {
   test.beforeEach(async ({ page }) => {
-    // Handler global UNIQUE (voir justification ci-dessus) : un `prompt()`
-    // consomme `pendingPromptValue` s'il est positionné (par `withPrompt()`,
-    // remis à `null` aussitôt lu — usage à UN seul coup, comme `page.once()`
-    // était censé se comporter) sinon accepte avec une chaîne VIDE
-    // (comportement délibérément permissif, jamais une annulation) ; tout
-    // `confirm()`/`alert()` est accepté sans texte.
-    pendingPromptValue = null;
-    page.on('dialog', (dialog) => {
-      if (dialog.type() === 'prompt') {
-        const value = pendingPromptValue ?? '';
-        pendingPromptValue = null;
-        void dialog.accept(value);
-      } else {
-        void dialog.accept();
-      }
-    });
+    // Dialogue NATIF résiduel (aucun attendu depuis U25) : accepté sans texte.
+    page.on('dialog', (dialog) => void dialog.accept());
     await gotoOi(page);
   });
 
@@ -267,15 +243,18 @@ test.describe('OI — Checklist fonctionnelle', () => {
   });
 
   test('Navigation — étape et étapes visitées persistées après rechargement (oiWizardStep/oiVisitedSteps)', async ({ page }) => {
-    await step('atteindre l\'étape 3 (index 2) puis recharger', async () => {
+    // U17 : « complétée » = visitée ET sans incohérence. L'Environnement (index
+    // 2) n'en a aucune à vide ; la Situation vide (date manquante) jamais.
+    await step('visiter les étapes 3 puis 4 (index 2, 3) puis recharger', async () => {
       await goToStepViaBullet(page, 2);
-      await expect.soft(page.locator('.wizard-step').nth(2)).toHaveClass(/active/, { timeout: 1500 });
+      await goToStepViaBullet(page, 3);
+      await expect.soft(page.locator('.wizard-step').nth(3)).toHaveClass(/active/, { timeout: 1500 });
       await page.reload();
       await page.waitForLoadState('domcontentloaded');
-      await expect.soft(page.locator('.wizard-step').nth(2)).toHaveClass(/active/, { timeout: 1500 });
+      await expect.soft(page.locator('.wizard-step').nth(3)).toHaveClass(/active/, { timeout: 1500 });
     });
-    await step('les puces déjà visitées portent la classe completed (navigation.js:13-14)', async () => {
-      await expect.soft(page.locator('.wizard-progress-step').nth(0)).toHaveClass(/completed/, { timeout: 1500 });
+    await step('les puces déjà visitées portent la classe completed (navigation.ts, U17)', async () => {
+      await expect.soft(page.locator('.wizard-progress-step').nth(2)).toHaveClass(/completed/, { timeout: 1500 });
     });
   });
 
@@ -461,8 +440,8 @@ test.describe('OI — Checklist fonctionnelle', () => {
   test('Articulation — rame VL réordonnable par glisser-déposer SOURIS (synchronisée depuis le PATRACDVR)', async ({ page }) => {
     await step('créer 2 VL dans le PATRACDVR (étape 7) pour peupler la rame VL (étape 6)', async () => {
       await goToStepViaBullet(page, 6);
-      await withPrompt('VL-ALPHA', () => page.locator('#addManualVehicleBtn').click());
-      await withPrompt('VL-BRAVO', () => page.locator('#addManualVehicleBtn').click());
+      await withPrompt(page, 'VL-ALPHA', () => page.locator('#addManualVehicleBtn').click());
+      await withPrompt(page, 'VL-BRAVO', () => page.locator('#addManualVehicleBtn').click());
       await expect.soft(page.locator('#patracdvr_container .patracdvr-vehicle-row')).toHaveCount(2, { timeout: 1500 });
     });
     await step('la rame VL (étape 6) se synchronise automatiquement (refreshRameVL, non destructif)', async () => {
@@ -486,7 +465,14 @@ test.describe('OI — Checklist fonctionnelle', () => {
       // `timeout` généreux (défaut `actionTimeout: 2000` trop juste pour un
       // DnD HTML5 natif complet, cf. commentaires ci-dessus) — même patron
       // que les téléchargements PDF de ce fichier (5000-8000ms).
-      await chips.nth(1).dragTo(chips.nth(0), { timeout: 4000 });
+      // Lâcher dans la moitié HAUTE du 1er (articulation.ts `_setupRameDropZone` :
+      // insertion avant l'élément dont le milieu est sous le pointeur) ; le
+      // centre exact (défaut de `dragTo`) tombe pile sur le milieu : rien ne bouge.
+      // Défilement doux (oi.css `scroll-behavior: smooth`) : le point visé était
+      // calculé en plein défilement (3 échecs sur 4). Mouvement réduit = défilement
+      // immédiat (oi.css, media prefers-reduced-motion).
+      await page.emulateMedia({ reducedMotion: 'reduce' });
+      await chips.nth(1).dragTo(chips.nth(0), { timeout: 4000, targetPosition: { x: 20, y: 4 } });
       await expect.soft(chips.nth(0)).toContainText('VL-BRAVO', { timeout: 1500 });
       await expect.soft(chips.nth(1)).toContainText('VL-ALPHA', { timeout: 1500 });
     });
@@ -498,13 +484,13 @@ test.describe('OI — Checklist fonctionnelle', () => {
   test('PATRACDVR — création VL/PAX manuels (prompt), cellule en lot, plafonds India(5)/AO(8)', async ({ page }) => {
     await goToStepViaBullet(page, 6);
     await step('création VL manuel (prompt, addManualVehicle)', async () => {
-      await withPrompt('KODIAQ-E2E', () => page.locator('#addManualVehicleBtn').click());
+      await withPrompt(page, 'KODIAQ-E2E', () => page.locator('#addManualVehicleBtn').click());
       await expect
         .soft(page.locator('.patracdvr-vehicle-row[data-vehicle-name="KODIAQ-E2E"]'))
         .toHaveCount(1, { timeout: 1500 });
     });
     await step('création PAX manuel (prompt, addManualMember) : trigramme 2-4 caractères', async () => {
-      await withPrompt('ABC', () => page.locator('#addManualMemberBtn').click());
+      await withPrompt(page, 'ABC', () => page.locator('#addManualMemberBtn').click());
       await expect
         .soft(page.locator('#unassigned_members_container .patracdvr-member-btn[data-trigramme="ABC"]'))
         .toHaveCount(1, { timeout: 1500 });
@@ -513,7 +499,7 @@ test.describe('OI — Checklist fonctionnelle', () => {
       // Résolu (patrac.ts:286-297) : `input.split(/[\s,;]+/)` — séparateurs
       // espace/virgule/point-virgule tous acceptés et interchangeables ;
       // "IND1, IND2" (virgule + espace) est donc une valeur valide confirmée.
-      await withPrompt('IND1, IND2', () =>
+      await withPrompt(page, 'IND1, IND2', () =>
         page.locator('.cell-batch-btn[data-cell="India"]').click()
       );
       await expect
@@ -524,8 +510,8 @@ test.describe('OI — Checklist fonctionnelle', () => {
 
   test('PATRACDVR — drag&drop souris (non-affectés → véhicule → poubelle avec confirmation)', async ({ page }) => {
     await goToStepViaBullet(page, 6);
-    await withPrompt('VECT-E2E', () => page.locator('#addManualVehicleBtn').click());
-    await withPrompt('XYZ', () => page.locator('#addManualMemberBtn').click());
+    await withPrompt(page, 'VECT-E2E', () => page.locator('#addManualVehicleBtn').click());
+    await withPrompt(page, 'XYZ', () => page.locator('#addManualMemberBtn').click());
     // Corrigé (défaut de test, même nature que le commentaire de
     // « Articulation — rame VL réordonnable » ci-dessus) : un `dragTo()`
     // immédiatement après la création du PAX (juste avant, via prompt) n'a
@@ -563,7 +549,7 @@ test.describe('OI — Checklist fonctionnelle', () => {
 
   test('PATRACDVR — panneau quick-edit (sélection PAX, couplage cellule↔fonction)', async ({ page }) => {
     await goToStepViaBullet(page, 6);
-    await withPrompt('QED', () => page.locator('#addManualMemberBtn').click());
+    await withPrompt(page, 'QED', () => page.locator('#addManualMemberBtn').click());
     const member = page.locator('.patracdvr-member-btn[data-trigramme="QED"]');
 
     // Corrigé (défaut de test) : `addManualMember` (patrac.ts:267-271) appelle
@@ -589,8 +575,8 @@ test.describe('OI — Checklist fonctionnelle', () => {
 
   test('PATRACDVR — mode batch (sélection multiple, désaffectation en lot)', async ({ page }) => {
     await goToStepViaBullet(page, 6);
-    await withPrompt('BA1', () => page.locator('#addManualMemberBtn').click());
-    await withPrompt('BA2', () => page.locator('#addManualMemberBtn').click());
+    await withPrompt(page, 'BA1', () => page.locator('#addManualMemberBtn').click());
+    await withPrompt(page, 'BA2', () => page.locator('#addManualMemberBtn').click());
 
     await step('activer le mode batch (togglePatracBatchMode, body.patrac-batch-mode)', async () => {
       await page.locator('#patracBatchToggleBtn').click();
@@ -620,7 +606,7 @@ test.describe('OI — Checklist fonctionnelle', () => {
 
   test('PATRACDVR — menu contextuel (cloner/supprimer un membre)', async ({ page }) => {
     await goToStepViaBullet(page, 6);
-    await withPrompt('CTX', () => page.locator('#addManualMemberBtn').click());
+    await withPrompt(page, 'CTX', () => page.locator('#addManualMemberBtn').click());
 
     // Corrigé (défaut de test — bug de POSITIONNEMENT PRÉEXISTANT, vérifié
     // VERBATIM dans l'ORIGINAL, PAS une régression du portage : `4.html:4889`
@@ -660,7 +646,7 @@ test.describe('OI — Checklist fonctionnelle', () => {
 
   test('PATRACDVR — génération PDF autonome (pdf-lib) déclenche un téléchargement', async ({ page }) => {
     await goToStepViaBullet(page, 6);
-    await withPrompt('PDF', () => page.locator('#addManualMemberBtn').click());
+    await withPrompt(page, 'PDF', () => page.locator('#addManualMemberBtn').click());
     await step('#patracdvrPdfBtn → generatePatracdvrPdf() → download', async () => {
       const downloadPromise = page.waitForEvent('download', { timeout: 5000 }).catch(() => null);
       await page.locator('#patracdvrPdfBtn').click();
@@ -674,7 +660,7 @@ test.describe('OI — Checklist fonctionnelle', () => {
     await goToStepViaBullet(page, 0);
     await page.locator('#situation_generale').fill('Doit survivre au reset PATRAC');
     await goToStepViaBullet(page, 6);
-    await withPrompt('RST', () => page.locator('#addManualMemberBtn').click());
+    await withPrompt(page, 'RST', () => page.locator('#addManualMemberBtn').click());
 
     await step('#resetPatracdvrBtn vide le PATRACDVR (confirmDialog, R2-T2b)', async () => {
       await page.locator('#resetPatracdvrBtn').click();
@@ -724,7 +710,8 @@ test.describe('OI — Checklist fonctionnelle', () => {
       await expect.soft(page.locator('#custom_bg_preview_container').locator(':scope > *')).not.toHaveCount(0, { timeout: 2000 });
     });
     await step('suppression du fond perso (removeCustomBackground, résidu window)', async () => {
-      await page.locator('button', { hasText: 'Rétablir' }).click();
+      // « Rétablir » seul est ambigu : chaque section retirée (décision 10) a le sien.
+      await page.locator('[data-action="remove-custom-background"]').click();
       // Corrigé (défaut de test) : `updateCustomBgPreview()` (medias.ts:349-350)
       // ne VIDE PAS le conteneur en l'absence de fond perso — il y insère un
       // `<p>` de substitution (« Aucun fond personnalisé. Fond par défaut
@@ -837,14 +824,16 @@ test.describe('OI — Checklist fonctionnelle', () => {
     await expect.soft(page.locator('#cartographyModal')).toBeVisible({ timeout: 2000 });
     await expect.soft(page.locator('canvas.maplibregl-canvas')).toBeVisible({ timeout: 3000 });
 
-    await step('poser un pin « Rassemblement » : clic carte → roue de création → persisté (cartography.pins)', async () => {
-      // Le bouton ping n'ouvre plus la modale : clic sur zone vide → roue de
-      // création (_openCreatePinWheel, pins.ts) → segment « Rassemblement »
-      // pose directement le pin (_quickPlacePing).
-      const map = page.locator('canvas.maplibregl-canvas');
-      await map.click({ position: { x: 120, y: 120 } });
+    await step('poser un pin « Rassemblement » : FAB ping → roue → « Ajouter entité » → persisté (cartography.pins)', async () => {
+      // Un simple clic sur la carte ne crée plus rien (seul l'appui long le
+      // fait, pins.ts `_wireLongPressForPing`) ; le FAB ping ouvre la roue de
+      // création au centre de la vue (map-core.ts, parité PC-Tac). « Ajouter
+      // entité » ouvre le panneau des entités, dont « Rassemblement » pose
+      // directement le pin (_openEntityPickerPanel → _quickPlacePing).
+      await page.locator('#oi_carto_btn_ping').click();
       await expect.soft(page.locator('.oi-wheel')).toBeVisible({ timeout: 1500 });
-      await page.locator('.oi-wheel button[title="Rassemblement"]').click();
+      await page.locator('.oi-wheel').getByRole('button', { name: 'Ajouter entité' }).click();
+      await page.locator('.oi-carto-inline-panel').getByRole('button', { name: 'Rassemblement' }).click();
       await expect.poll(cartoPinsCount, { timeout: 2000 }).toBe(1);
       // _quickPlacePing rouvre la roue d'OPTIONS du pin ~80 ms après la pose
       // (pins.ts:571) : la fermer (bouton central) avant l'étape dessin.
@@ -857,7 +846,17 @@ test.describe('OI — Checklist fonctionnelle', () => {
       await expect.soft(page.locator('#oi_carto_draw_dock')).toHaveClass(/open/, { timeout: 1500 });
       await page.locator('.oi-carto-draw-btn[data-tool="rectangle"]').click();
       const box = await page.locator('canvas.maplibregl-canvas').boundingBox();
-      if (box) {
+      const precisionStart = page.locator('#oi_carto_draw_precision_start');
+      if (box && (await precisionStart.isVisible())) {
+        // Écran étroit : tracé de précision au réticule (draw.ts) — « Débuter
+        // tracé », viser en déplaçant la carte, « Valider ».
+        await precisionStart.click();
+        await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+        await page.mouse.down();
+        await page.mouse.move(box.x + box.width / 2 - 100, box.y + box.height / 2 - 100, { steps: 5 });
+        await page.mouse.up();
+        await page.locator('#oi_carto_draw_precision_confirm').click();
+      } else if (box) {
         await page.mouse.move(box.x + 60, box.y + 60);
         await page.mouse.down();
         await page.mouse.move(box.x + 160, box.y + 160, { steps: 5 });
@@ -1172,9 +1171,11 @@ test.describe('OI — Checklist fonctionnelle', () => {
     await step('produire un export de session réel via window.exportSession() (résidu window)', async () => {
       await page.locator('#date_op').fill('2026-08-01');
       await page.locator('#situation_generale').fill('SESSION IMPORTÉE E2E — doit survivre au reload');
-      await page.waitForTimeout(700); // laisser le debounce écrire dans le Store avant l'export
-      sessionJson = await page.evaluate(() => localStorage.getItem('tactical_oi_data') || '{}');
-      expect(sessionJson).toContain('SESSION IMPORTÉE E2E');
+      // Synchro différée (500 ms) puis écriture du Store : plus de 700 ms mesurés,
+      // on attend l'écriture elle-même plutôt qu'un délai fixe.
+      const stored = (): Promise<string> => page.evaluate(() => localStorage.getItem('tactical_oi_data') || '{}');
+      await expect.poll(stored, { timeout: 3000 }).toContain('SESSION IMPORTÉE E2E');
+      sessionJson = await stored();
     });
 
     await step('recharger sur un état VIERGE distinct, puis importer le fichier .json ci-dessus', async () => {
@@ -1250,20 +1251,16 @@ test.describe('OI — Checklist fonctionnelle', () => {
     });
     await step('réduire/agrandir le dock (toggleDock, persisté dockCollapsed)', async () => {
       await page.locator('#dockToggleBtn').click();
-      const collapsedAfterClick = await page.locator('#dockMenu').getAttribute('class');
+      await expect.soft(page.locator('#dockMenu')).toHaveClass(/collapsed/, { timeout: 1000 });
       await page.reload();
       await page.waitForLoadState('domcontentloaded');
-      const collapsedAfterReload = await page.locator('#dockMenu').getAttribute('class');
-      expect.soft(collapsedAfterClick?.includes('collapsed')).toBe(collapsedAfterReload?.includes('collapsed'));
-      // Corrigé (défaut de test) : `.dock-menu.collapsed .dock-menu-item:
-      // not(#dockToggleBtn)` est masqué en CSS (styles/oi.css:3335) — si l'on
-      // n'annule pas ce repli avant l'étape suivante, `#darkModeToggle` reste
-      // caché et son clic échoue. Ré-agrandir le dock pour ne pas polluer les
-      // étapes suivantes de ce test.
-      if (collapsedAfterReload?.includes('collapsed')) {
-        await page.locator('#dockToggleBtn').click();
-        await expect.soft(page.locator('#dockMenu')).not.toHaveClass(/collapsed/, { timeout: 1000 });
-      }
+      // Le repli est reposé par l'init asynchrone (main.ts) : une lecture
+      // immédiate de la classe, sans attente, était une course.
+      await expect.soft(page.locator('#dockMenu')).toHaveClass(/collapsed/, { timeout: 3000 });
+      // `.dock-menu.collapsed` masque les autres items (styles/oi.css) :
+      // ré-agrandir pour que `#darkModeToggle` reste cliquable ensuite.
+      await page.locator('#dockToggleBtn').click();
+      await expect.soft(page.locator('#dockMenu')).not.toHaveClass(/collapsed/, { timeout: 1000 });
     });
     await step('bascule thème clair/sombre persistée (handleThemeToggle, clé theme)', async () => {
       await expect.soft(page.locator('body')).toHaveClass(/dark-mode/);
@@ -1341,7 +1338,7 @@ test.describe('OI — Checklist fonctionnelle', () => {
       await page.locator('#createAdversaryBtn').click();
       await page.locator('#adversaries_container input[data-field="nom_adversaire"]').first().fill('PONT-ADV-E2E');
       await goToStepViaBullet(page, 6);
-      await withPrompt('PNT', () => page.locator('#addManualMemberBtn').click());
+      await withPrompt(page, 'PNT', () => page.locator('#addManualMemberBtn').click());
       await page.waitForTimeout(700);
 
       const downloadPromise = page.waitForEvent('download', { timeout: 5000 }).catch(() => null);
@@ -1424,3 +1421,156 @@ test('capture de la carte vers « OI Express — Carte » : photo ajoutée, aucu
   expect(errors).toEqual([]);
 });
 
+
+// ============================================================================
+// Ergonomie (atelier UI-2, 2026-09-26)
+// ============================================================================
+
+test.describe('OI — ergonomie', () => {
+  /** Boutons visibles de `scope` dont un côté fait moins de 44 px (cible tactile). */
+  async function smallButtons(page: Page, scope: string): Promise<string[]> {
+    return page.locator(scope).evaluateAll((roots) => roots.flatMap((root) =>
+      Array.from(root.querySelectorAll('button')).flatMap((b) => {
+        const r = b.getBoundingClientRect();
+        if (!r.width || getComputedStyle(b).visibility === 'hidden') return [];
+        return Math.min(r.width, r.height) < 43.5 ? [`${b.className || b.textContent?.trim()} ${Math.round(r.width)}x${Math.round(r.height)}`] : [];
+      })));
+  }
+
+  test('cibles tactiles ≥ 44 px : tutoriel, ordre des sections, suppression d\'un VL', async ({ page }) => {
+    await gotoOi(page);
+    await page.locator('#dockMenu .ptuto-dock').click();
+    await expect(page.locator('.ptuto-panel')).toBeVisible();
+    expect(await smallButtons(page, '.ptuto-panel')).toEqual([]);
+    await page.keyboard.press('Escape');
+
+    await goToStepViaBullet(page, 6);
+    await withPrompt(page, 'VL-CIBLE', () => page.locator('#addManualVehicleBtn').click());
+    expect(await smallButtons(page, '.vehicle-header')).toEqual([]);
+
+    await goToFinalStepAndOpenPreview(page);
+    await page.locator('#pdfSectionOrderToggleBtn').click();
+    await expect(page.locator('.pdf-section-order-move-btn').first()).toBeVisible();
+    // Le panneau s'ouvre en s'agrandissant : mesurer une fois posé.
+    await expect.poll(() => smallButtons(page, '#presentationModal .pdf-section-order-move-btns')).toEqual([]);
+  });
+
+  test('tutoriel : la recherche est un seul champ (pas de cadre dans le cadre)', async ({ page }) => {
+    await gotoOi(page);
+    await page.locator('#dockMenu .ptuto-dock').click();
+    const input = page.locator('.ptuto-search input');
+    await expect(input).toBeVisible();
+    const style = await input.evaluate((el) => {
+      const cs = getComputedStyle(el);
+      return { border: cs.borderTopWidth, margin: cs.marginBottom, bg: cs.backgroundColor };
+    });
+    expect(style).toEqual({ border: '0px', margin: '0px', bg: 'rgba(0, 0, 0, 0)' });
+  });
+
+  test('tutoriel : titres sans l\'habillage des titres de l\'OI (barre, soulignement, capitales)', async ({ page }) => {
+    await gotoOi(page);
+    await page.locator('#dockMenu .ptuto-dock').click();
+    for (const sel of ['.ptuto-head h2', '.ptuto-step-title']) {
+      const style = await page.locator(sel).first().evaluate((el) => ({
+        bar: getComputedStyle(el, '::before').content,
+        underline: getComputedStyle(el).borderBottomWidth,
+        caps: getComputedStyle(el).textTransform,
+      }));
+      expect(style, sel).toEqual({ bar: 'none', underline: '0px', caps: 'none' });
+    }
+  });
+
+  /** Éléments visibles portant un liseré latéral épais (bordure gauche ≥ 3 px plus
+   *  épaisse que les autres, ou pseudo-élément barre collée à gauche). */
+  async function thickSideStripes(page: Page): Promise<string[]> {
+    return page.evaluate(() => Array.from(document.querySelectorAll<HTMLElement>('body *')).flatMap((el) => {
+      if (!el.offsetParent && getComputedStyle(el).position !== 'fixed') return [];
+      const cs = getComputedStyle(el);
+      const left = parseFloat(cs.borderLeftWidth);
+      const name = `${el.tagName.toLowerCase()}.${String(el.className).split(' ')[0]}`;
+      const out: string[] = [];
+      if (left >= 3 && left > parseFloat(cs.borderTopWidth) && cs.borderLeftStyle !== 'none') out.push(`${name} border-left ${left}px`);
+      const b = getComputedStyle(el, '::before');
+      if (b.content !== 'none' && b.position === 'absolute' && b.left === '0px' && b.top === '0px' && b.bottom === '0px' && parseFloat(b.width) >= 3 && parseFloat(b.width) <= 8) {
+        out.push(`${name}::before ${b.width}`);
+      }
+      return out;
+    }));
+  }
+
+  test('aucun liseré latéral épais (PATRACDVR, articulation, finalisation)', async ({ page }) => {
+    await gotoOi(page);
+    await goToStepViaBullet(page, 6);
+    await withPrompt(page, 'VL-LIS', () => page.locator('#addManualVehicleBtn').click());
+    await withPrompt(page, 'LIS', () => page.locator('#addManualMemberBtn').click());
+    const found = await thickSideStripes(page);
+    await goToStepViaBullet(page, 5);
+    await page.locator('#addMoicpBtn').click();
+    found.push(...await thickSideStripes(page));
+    await goToStepViaBullet(page, 7);
+    found.push(...await thickSideStripes(page));
+    expect([...new Set(found)]).toEqual([]);
+  });
+
+  test('articulation : l\'en-tête d\'un bloc tient dans la largeur (chevron visible)', async ({ page }) => {
+    await gotoOi(page);
+    await goToStepViaBullet(page, 5);
+    for (const btn of ['#addMoicpBtn', '#addZmspcpBtn', '#addEffractionBtn']) await page.locator(btn).click();
+    const overflow = await page.locator('.articulation-block > .collapsible-header').evaluateAll((hs) =>
+      hs.flatMap((h) => {
+        const box = h.getBoundingClientRect();
+        return Array.from(h.querySelectorAll('*')).some((c) => c.getBoundingClientRect().right > box.right + 1)
+          ? [h.textContent?.trim().slice(0, 30)] : [];
+      }));
+    expect(overflow).toEqual([]);
+  });
+
+  test('chronologie : un événement se lit d\'un bloc (type, heure et suppression sur une ligne)', async ({ page }) => {
+    await gotoOi(page);
+    await goToStepViaBullet(page, 4);
+    for (let i = 0; i < 2; i++) await page.locator('[data-action="add-time-event"]').click();
+    const item = page.locator('#time_events_container .time-item').first();
+    const top = async (sel: string): Promise<number> => (await item.locator(sel).boundingBox())!.y;
+    expect(Math.abs((await top('.time-type-select')) - (await top('.remove-btn')))).toBeLessThan(8);
+    expect(Math.abs((await top('.time-type-select')) - (await top('.time-hour-input')))).toBeLessThan(8);
+    // Deux lignes au plus : les champs d'un même événement restent groupés.
+    expect((await item.boundingBox())!.height).toBeLessThan(180);
+  });
+
+  test('sections : crayon et × restent sur la ligne du titre', async ({ page }) => {
+    await gotoOi(page);
+    for (const n of [4, 5]) {
+      await goToStepViaBullet(page, n);
+      const wrapped = await page.locator('.wizard-step.active .oi-section-heading').evaluateAll((hs) =>
+        hs.flatMap((h) => {
+          const label = h.querySelector('.oi-section-label')?.getBoundingClientRect();
+          const tools = h.querySelector('.oi-section-tools')?.getBoundingClientRect();
+          if (!label || !tools || !tools.width) return [];
+          return tools.top >= label.bottom - 2 ? [h.textContent?.replace(/\s+/g, ' ').trim().slice(0, 30)] : [];
+        }));
+      expect(wrapped, `étape ${n + 1}`).toEqual([]);
+    }
+  });
+
+  test('un champ qui prend le focus n\'est pas caché sous le dock', async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: 'reduce' }); // défilement immédiat
+    await gotoOi(page);
+    await goToStepViaBullet(page, 4);
+    for (let i = 0; i < 4; i++) await page.locator('[data-action="add-time-event"]').click();
+    await page.evaluate(() => window.scrollTo(0, 0));
+    const dock = await page.locator('#dockMenu').boundingBox();
+    // Parcours clavier réel : Tab de champ en champ dans la chronologie.
+    await page.locator('#time_events_container .time-type-select').first().focus();
+    for (let i = 0; i < 15; i++) {
+      await page.keyboard.press('Tab');
+      const box = await page.evaluate(() => {
+        const el = document.activeElement as HTMLElement | null;
+        if (!el || !el.closest('#time_events_container')) return null;
+        const r = el.getBoundingClientRect();
+        return { bottom: r.bottom, name: el.className };
+      });
+      if (!box) break;
+      expect(dock && box.bottom <= dock.y, `${box.name} sous le dock`).toBe(true);
+    }
+  });
+});

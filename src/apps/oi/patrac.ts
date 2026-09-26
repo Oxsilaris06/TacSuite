@@ -175,7 +175,7 @@ function addPatracdvrRow(vehicleName: string, members: readonly Partial<OiPatrac
 
     row.innerHTML = `
                 <div class="vehicle-header">
-                    <span class="vehicle-name" onclick="renameVehicle(this)" title="Cliquer pour renommer">${vehicleName}</span>
+                    <span class="vehicle-name" onclick="renameVehicle(this)" title="Cliquer pour renommer">${esc(vehicleName)}</span>
                     <button type="button" class="remove-btn" title="Supprimer le véhicule" aria-label="Supprimer le véhicule"><span class="material-symbols-outlined">close</span></button>
                 </div>
                 <div class="patracdvr-members-container"></div>`;
@@ -469,7 +469,7 @@ function updateMemberButtonVisuals(btn: HTMLElement): void {
 
     const cellDisplay = cellule !== 'Sans' ? cellule : '';
     // NOUVEAU: Affichage DIR
-    const dirDisplay = dir ? `<br><span class="dir-info">DIR: ${dir}</span>` : '';
+    const dirDisplay = dir ? `<br><span class="dir-info">DIR: ${esc(dir)}</span>` : '';
 
     // Gestion multi-fonctions pour l'affichage (troncature si trop long)
     let functionDisplay = '';
@@ -484,11 +484,11 @@ function updateMemberButtonVisuals(btn: HTMLElement): void {
 
     const separation = (cellDisplay && functionDisplay) ? '' : '';
 
-    btn.innerHTML = `<span class="trigramme">${trigramme}</span><span class="fonction">${cellDisplay}${separation}${functionDisplay}</span>${dirDisplay}`;
+    btn.innerHTML = `<span class="trigramme">${esc(trigramme)}</span><span class="fonction">${esc(cellDisplay + separation + functionDisplay)}</span>${dirDisplay}`;
 
     // Si le membre est dans le conteneur "Personnel à attribuer", on masque la fonction/cellule.
     if (btn.closest('#unassigned_members_container')) {
-        btn.innerHTML = `<span class="trigramme">${trigramme}</span>`;
+        btn.innerHTML = `<span class="trigramme">${esc(trigramme)}</span>`;
     }
 }
 
@@ -996,7 +996,7 @@ export function openQuickEditModal(memberId: string): void {
     trigrammeDiv.innerHTML = `
         <h5>Trigramme</h5>
         <input type="text" id="modal_quick_edit_trigramme_input" placeholder="ABC"
-               value="${originalTrigramme}"
+               value="${esc(originalTrigramme)}"
                style="padding: 12px; font-size: 1.1em; width:100%; box-sizing:border-box; background: var(--bg-interactive); border: 1px solid var(--border-color); color: var(--text-primary); border-radius: 8px;">
     `;
     content.appendChild(trigrammeDiv);
@@ -1007,7 +1007,7 @@ export function openQuickEditModal(memberId: string): void {
     dirDiv.innerHTML = `
         <h5>DIR (Canal Radio)</h5>
         <input type="text" id="modal_quick_edit_dir_input" placeholder="Ex: 42"
-               value="${modalTempData.dir || ''}"
+               value="${esc(modalTempData.dir || '')}"
                style="padding: 12px; font-size: 1.1em; width:100%; box-sizing:border-box; background: var(--bg-interactive); border: 1px solid var(--border-color); color: var(--text-primary); border-radius: 8px;">
     `;
     content.appendChild(dirDiv);

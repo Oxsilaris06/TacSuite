@@ -276,6 +276,8 @@
             /* Fluid typography de base */
             font-size: clamp(14px, 1vw + 10px, 16px);
             scroll-behavior: smooth;
+            /* Le dock flottant (fixe, en bas) ne cache plus le champ qui prend le focus. */
+            scroll-padding-bottom: 120px;
         }
 
         body {
@@ -689,6 +691,35 @@
 
             .wizard-step .dynamic-list-item:has(#date_naissance) {
                 flex-direction: row;
+            }
+        }
+
+        /* Chronologie sur téléphone : type, heure et × sur une ligne, description
+           dessous ; un événement forme un bloc au lieu de quatre champs empilés
+           plus éloignés entre eux que de l'événement suivant. */
+        @media (max-width: 479px) {
+            .dynamic-list-item.time-item {
+                display: grid;
+                grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 44px;
+                gap: var(--space-2);
+                padding: var(--space-3);
+                border: 1px solid var(--border-color);
+                border-radius: var(--radius-md);
+            }
+
+            /* id : surclasse la règle globale des champs (spécificité 0,5,1). */
+            #time_events_container .time-item > input,
+            #time_events_container .time-item > select {
+                margin-block-end: 0;
+            }
+
+            .time-item > .remove-btn {
+                grid-column: 3;
+                grid-row: 1;
+            }
+
+            .time-item > .time-description-input {
+                grid-column: 1 / -1;
             }
         }
 
@@ -1475,17 +1506,6 @@
             text-transform: none;
         }
 
-        .patracdvr-member-btn::before {
-            content: '';
-            position: absolute;
-            left: 0;
-            top: 0;
-            bottom: 0;
-            width: 4px;
-            background-color: var(--border-color);
-            transition: background-color var(--transition-fast);
-        }
-
         .patracdvr-member-btn:hover {
             border-color: var(--text-secondary);
             transform: translateY(-2px);
@@ -1497,10 +1517,6 @@
             background-color: rgba(59, 130, 246, 0.05);
             box-shadow: 0 0 0 2px var(--ring-color), var(--shadow-md);
             transform: translateY(-2px);
-        }
-
-        .patracdvr-member-btn.member-active::before {
-            background-color: var(--accent-blue);
         }
 
         .patracdvr-member-btn .trigramme {
@@ -1578,7 +1594,8 @@
             padding: 6px;
             background: transparent;
             color: var(--text-secondary);
-            min-height: unset;
+            min-height: 44px;
+            min-width: 44px;
         }
 
         .vehicle-header .remove-btn:hover {
@@ -1677,11 +1694,11 @@
         }
 
         .moicp-member {
-            border-left: 3px solid var(--accent-blue);
+            border-color: var(--accent-blue);
         }
 
         .zmspcp-member {
-            border-left: 3px solid var(--moicp-zmspcp-purple);
+            border-color: var(--moicp-zmspcp-purple);
         }
 
         .art-member-trigramme {
@@ -2252,7 +2269,7 @@
             line-height: 1.4;
             color: var(--text-muted);
             background: var(--bg-interactive);
-            border-left: 3px solid var(--danger-red);
+            border: 1px solid var(--danger-red);
             white-space: pre-line;
             overflow-wrap: anywhere;
         }
@@ -2584,8 +2601,8 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            width: 28px;
-            height: 28px;
+            width: 44px;
+            height: 44px;
             border-radius: var(--radius-sm);
             color: var(--text-secondary);
         }
@@ -2682,6 +2699,7 @@
             border-radius: var(--radius-md);
             width: 48px;
             height: 48px;
+            padding: 0;
             font-size: 24px;
             cursor: pointer;
             transition: all var(--transition-quick) var(--ease-out-spring);
@@ -3778,7 +3796,7 @@ body.light-mode .image-preview-item button[onclick^="openAnnotationModal"] {
 .qe-field-dir.qe-field-dir { flex:1 1 120px; }
 .qe-field-label-accent.qe-field-label-accent { font-size:0.78em; margin-bottom:2px; color:var(--accent-blue); }
 .mt-10.mt-10 { margin-top: 10px; }
-.card-accent-blue.card-accent-blue { margin-top: 15px; border-left: 4px solid var(--accent-blue); }
+.card-accent-blue.card-accent-blue { margin-top: 15px; }
 .heading-accent-blue.heading-accent-blue { color: var(--accent-blue); }
 .mt-25.mt-25 { margin-top: 25px; }
 .finalisation-check-text.finalisation-check-text { text-align:center; margin-top: 20px; }
@@ -3902,11 +3920,20 @@ textarea[aria-invalid="true"]:focus-visible {
         .oi-section-heading {
             display: flex;
             align-items: center;
-            flex-wrap: wrap;
             gap: var(--space-2);
+            flex: 1 1 auto;
+            min-width: 0;
+        }
+
+        /* Le libellé passe à la ligne ; crayon et × restent sur celle du titre. */
+        .oi-section-label {
+            flex: 1 1 0;
+            min-width: 0;
+            overflow-wrap: anywhere;
         }
 
         .oi-section-tools {
+            flex-shrink: 0;
             display: inline-flex;
             gap: var(--space-1);
             margin-left: auto;

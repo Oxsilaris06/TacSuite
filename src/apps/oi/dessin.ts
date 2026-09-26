@@ -719,8 +719,14 @@ function setActiveTool(toolId: OiAnnotationTool): void {
 
 function setAnnotationColor(color: string, element: HTMLElement): void {
     oiState.currentAnnotationColor = color;
-    document.querySelectorAll('.color-circle').forEach((el) => el.classList.remove('active'));
-    if (element) element.classList.add('active');
+    document.querySelectorAll('.color-circle').forEach((el) => {
+        el.classList.remove('active');
+        el.setAttribute('aria-pressed', 'false');
+    });
+    if (element) {
+        element.classList.add('active');
+        element.setAttribute('aria-pressed', 'true');
+    }
     const selected = oiState.selectedAnnotation;
     if (selected && selected.color !== color) {
         pushAnnotationHistory();

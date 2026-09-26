@@ -167,9 +167,9 @@ function applyPinVisual(
     // --- 1) Marqueur = icône Material colorée, halo blanc, ancrée au centre --- (oi_cartographie.js:919-925)
     pinWrap.innerHTML = `
         <span class="material-symbols-outlined" style="
-            font-size: 38px; color: ${color}; line-height: 1;
+            font-size: 38px; color: ${esc(color)}; line-height: 1;
             text-shadow: 0 0 2px #fff, 0 0 2px #fff, 0 0 2px #fff, 0 0 2px #fff, 0 2px 4px rgba(0,0,0,0.6);
-            font-variation-settings: 'FILL' 1;">${icon}</span>`;
+            font-variation-settings: 'FILL' 1;">${esc(icon)}</span>`;
 
     // --- 1bis) Badge photo (photo↔pin, port de PC-Tac planmap/pins.ts:311-333) :
     // coin bas-gauche du pin, recréé à chaque passage (l'innerHTML ci-dessus
@@ -368,7 +368,7 @@ export const PinsMethods = {
             const list = groups[fonc] ?? [];
             const first = list[0];
             const ic = first ? oiIconForMember(first.dataset.fonction, first.dataset.cellule) : 'badge';
-            title.innerHTML = `<span class="material-symbols-outlined" style="font-size:15px; vertical-align:middle;">${ic}</span> ${fonc}`;
+            title.innerHTML = `<span class="material-symbols-outlined" style="font-size:15px; vertical-align:middle;">${esc(ic)}</span> ${esc(fonc)}`;
             container.appendChild(title);
             const row = document.createElement('div');
             row.className = 'oi-carto-ping-list';
