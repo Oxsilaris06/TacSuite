@@ -667,6 +667,25 @@ describe('buildOiPdfBlob', () => {
 
         expect(toDataURLSpy).toHaveBeenCalledWith('image/jpeg', 0.72);
     });
+
+    it('R2 — sortie Partage : la galerie est composée sur les tailles d’origine, pas sur les photos réduites', async () => {
+        const header = (w: number, h: number): string =>
+            'data:image/jpeg;base64,' + btoa(String.fromCharCode(0xff, 0xd8, 0xff, 0xc0, 0, 11, 8, h >> 8, h & 255, w >> 8, w & 255, 1, 1, 0x11, 0, 0xff, 0xd9));
+        // Ré-encodage simulé : la photo sort réduite à 300 × 225 px.
+        vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({ drawImage: vi.fn() } as unknown as CanvasRenderingContext2D);
+        vi.spyOn(HTMLCanvasElement.prototype, 'toDataURL').mockImplementation(() => header(300, 225));
+        const { buildOiPdfBlob } = await loadEngineV3();
+        fakeImageState.naturalWidth = 4000;
+        fakeImageState.naturalHeight = 3000;
+        const data = makeCollectedData({ dynamic_photos: { photo_container_transport_pr_preview_container: [{ id: 'img_t1' }] } } as unknown as Partial<OiFormData>);
+        data.photosBase64 = { img_t1: header(4000, 3000) };
+
+        await buildOiPdfBlob(data, { format: 'a4', sortie: 'partage' });
+
+        const dd = (createPdfMock.mock.calls[0] as unknown[] | undefined)?.[0];
+        expect(JSON.stringify(dd)).toContain(header(300, 225)); // la définition a bien baissé
+        expect(JSON.stringify(dd)).not.toContain('basse définition'); // pas la taille sur la page
+    });
 });
 
 // ===========================================================================

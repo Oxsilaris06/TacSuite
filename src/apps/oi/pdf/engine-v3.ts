@@ -21,6 +21,7 @@
 import type { TDocumentDefinitions } from 'pdfmake/interfaces';
 
 import { buildOiDocDefinition, oiPdfFileName } from './document-builder.js';
+import { imageSizeFromDataUrl } from './image-size.js';
 import { OiPdfFitRefusalError, PDF_H2_BLOCK_PT, pageGeometry } from './theme.js';
 import { PDF_FONT_VFS, PDF_FONTS } from './fonts.js';
 import { currentOiPdfOptions } from './options.js';
@@ -483,11 +484,14 @@ export async function buildOiPdfBlob(
     data: OiPdfCollectedData,
     opts: { format: OiPdfFormat; sortie?: PdfSortie; onProgress?: PhotoNormalizeProgress },
 ): Promise<Blob> {
+    // R2 : la galerie se compose sur les tailles d'ORIGINE ; la réduction
+    // (budget de la sortie Partage) ne baisse que la définition embarquée.
+    const photoSizes = Object.fromEntries(Object.entries(data.photosBase64).map(([id, url]) => [id, imageSizeFromDataUrl(url)]));
     const photosBase64 = await normalizePhotos(data.photosBase64, opts.onProgress, {
         format: opts.format,
         sortie: opts.sortie ?? 'impression',
     });
-    const docDefinition: TDocumentDefinitions = buildOiDocDefinition({ ...data, photosBase64 }, opts);
+    const docDefinition: TDocumentDefinitions = buildOiDocDefinition({ ...data, photosBase64 }, { format: opts.format, photoSizes });
 
     const pdfMake = (await import('pdfmake')).default;
     if (!fontsRegistered) {

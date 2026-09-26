@@ -4557,7 +4557,13 @@ export interface OiPdfDocDefinitionWithAnchors extends TDocumentDefinitions {
     pdfEditAnchors: OiPdfEditAnchor[];
 }
 
-export function buildOiDocDefinition(data: OiPdfCollectedData, opts: { format: OiPdfFormat }): OiPdfDocDefinitionWithAnchors {
+export function buildOiDocDefinition(
+    data: OiPdfCollectedData,
+    // `photoSizes` (R2) : dimensions des photos d'ORIGINE, prioritaires sur
+    // celles lues dans `photosBase64` (réduites pour le budget de la sortie
+    // Partage) — la réduction ne change que la définition, jamais la mise en page.
+    opts: { format: OiPdfFormat; photoSizes?: Record<string, ImageSize | null> },
+): OiPdfDocDefinitionWithAnchors {
     const { isDark } = data;
     // Sections retirées (×, `sections.ts`) : données masquées dans une COPIE —
     // l'OI garde tout, « Rétablir » rend la section intacte.
@@ -4577,7 +4583,7 @@ export function buildOiDocDefinition(data: OiPdfCollectedData, opts: { format: O
     const anchors: OiPdfEditAnchor[] = [];
     const sizes = new Map(Object.entries(data.photosBase64).map(([id, url]) => [id, imageSizeFromDataUrl(url)]));
     const ctx: BuildCtx = {
-        photoSize: (id) => sizes.get(id) ?? null,
+        photoSize: (id) => opts.photoSizes?.[id] ?? sizes.get(id) ?? null,
         formData,
         photosBase64,
         dynamicPhotos,
