@@ -152,3 +152,36 @@ describe('SEC-3 — cibles du déplacement groupé du PATRACDVR', () => {
         window.togglePatracBatchMode(false);
     });
 });
+
+describe('R7 — image importée sans nettoyage des métadonnées', () => {
+    it('le nombre d’images gardées brutes est dit à l’utilisateur', async () => {
+        await import('@oi/formulaires.js');
+        const { dbManager } = await import('@oi/init.js');
+        Object.assign(dbManager, { db: {} });
+        vi.spyOn(dbManager, 'clearAllImages').mockResolvedValue();
+        vi.spyOn(dbManager, 'putItem').mockResolvedValue();
+        vi.spyOn(window, 'setTimeout').mockImplementation((() => 0) as unknown as typeof setTimeout);
+        vi.spyOn(console, 'warn').mockImplementation(() => {});
+        reencodeSpy.mockRejectedValueOnce(new Error('canvas indisponible'));
+
+        const zip = new JSZip();
+        zip.file('manifest.json', JSON.stringify({ appName: 'OI', version: 1 }));
+        zip.file('data.json', JSON.stringify({
+            tactical_oi_data: JSON.stringify({ dynamic_photos: { photo_situation: [{ id: 'img_a' }, { id: 'img_b' }] } }),
+        }));
+        zip.folder('images')!.file('img_a.bin', new Uint8Array([1]));
+        zip.folder('images')!.file('img_b.bin', new Uint8Array([1]));
+        const file = new File([await zip.generateAsync({ type: 'arraybuffer' })], 'x.oi.zip');
+
+        const done = window.importArchive(file);
+        await vi.waitFor(() => expect(document.querySelectorAll('.import-cat-cb').length).toBeGreaterThan(0));
+        document.getElementById('importSelectConfirmBtn')!.click();
+        await done;
+
+        expect(toastSpy).toHaveBeenCalledWith(
+            expect.stringContaining('1 image(s) importée(s) sans nettoyage des métadonnées (position possible)'),
+            expect.anything(),
+        );
+        Object.assign(dbManager, { db: null });
+    });
+});
