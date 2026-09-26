@@ -448,6 +448,18 @@ describe('_toggleGpxTrack / _removeGpxTrack', () => {
         expect(JSON.parse(localStorage.getItem(GPX_INDEX_KEY) ?? '[]')).toEqual([]);
     });
 
+    it('audit du 26/09 : le bouton de suppression d’une trace demande confirmation', async () => {
+        const { fake, id } = await withOneTrack();
+        confirmAnswer = false;
+        await fake._confirmRemoveGpxTrack(id);
+        expect(fake._gpxTracks).toHaveLength(1);
+        expect(gpxDisk.has(id)).toBe(true);
+
+        confirmAnswer = true;
+        await fake._confirmRemoveGpxTrack(id);
+        expect(fake._gpxTracks).toHaveLength(0);
+    });
+
     it('identifiant inconnu : sans effet, sans exception', async () => {
         const { fake } = await withOneTrack();
         expect(() => fake._toggleGpxTrack('inexistant')).not.toThrow();

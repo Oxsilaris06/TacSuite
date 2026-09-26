@@ -694,6 +694,22 @@ export const GpxMethods = {
         this._renderGpxList();
     },
 
+    /**
+     * Bouton poubelle d'une trace : confirmation d'abord (audit du 26/09 : un
+     * seul appui supprimait, sur un bouton de 28 px collé à « Masquer »), même
+     * règle que pour un jour ou pour toutes les traces.
+     */
+    async _confirmRemoveGpxTrack(this: PlanMapInternal, id: string): Promise<void> {
+        const t = this._gpxTracks.find((x) => x.id === id);
+        if (!t) return;
+        const ok = await confirmDialog({
+            message: `Supprimer la trace « ${t.name} » ? Cette action est irréversible.`,
+            confirmLabel: 'Supprimer',
+            danger: true,
+        });
+        if (ok) this._removeGpxTrack(id);
+    },
+
     /** Supprime définitivement une trace (index, mémoire et IndexedDB). */
     _removeGpxTrack(this: PlanMapInternal, id: string): void {
         const i = this._gpxTracks.findIndex((x) => x.id === id);
