@@ -200,6 +200,54 @@ describe('normalizePhotos — voie de repli (jsdom, sans createImageBitmap/Offsc
 // `resizeQuality:'high'`, qualité JPEG 0.85), et que la voie de repli
 // (`Image`/canvas) n'est PAS sollicitée dans ce cas.
 // ===========================================================================
+// ===========================================================================
+// SEC-6 (revue neuve du 2026-09-26) : un JPEG déjà à la bonne définition
+// traversait le PDF octet pour octet, EXIF et GPS compris (image d'archive
+// ancienne, ou gardée brute après un échec du ré-encodage anti-EXIF).
+// ===========================================================================
+describe('normalizePhotos — traversée d’un JPEG sans ses métadonnées (SEC-6)', () => {
+    const seg = (marker: number, payload: string): number[] => {
+        const body = Array.from(payload, (c) => c.charCodeAt(0));
+        const len = body.length + 2;
+        return [0xff, marker, len >> 8, len & 0xff, ...body];
+    };
+    /** JPEG minimal : JFIF, Exif (GPS), XMP, Photoshop/IPTC, SOF0 100×80, SOS, données. */
+    const JPEG = [
+        0xff, 0xd8,
+        ...seg(0xe0, 'JFIF\0\x01\x01\0\0\x01\0\x01\0\0'),
+        ...seg(0xe1, 'Exif\0\0GPSLatitude 48/1,51/1'),
+        ...seg(0xe1, 'http://ns.adobe.com/xap/1.0/\0<x:xmpmeta/>'),
+        ...seg(0xed, 'Photoshop 3.0\x008BIM'),
+        0xff, 0xc0, 0, 11, 8, 0, 80, 0, 100, 1, 1, 0x11, 0,
+        0xff, 0xda, 0, 8, 1, 1, 0, 0, 0x3f, 0,
+        0x12, 0x34, 0xff, 0x00, 0x56,
+        0xff, 0xd9,
+    ];
+    const toUrl = (b: number[]): string => 'data:image/jpeg;base64,' + btoa(String.fromCharCode(...b));
+    const bytesOf = (url: string): string => atob(url.slice(url.indexOf(',') + 1));
+
+    it('retire APP1 (Exif, XMP) et APP13, garde JFIF, SOF et les données', async () => {
+        const { normalizePhotos } = await loadEngineV3();
+        const result = await normalizePhotos({ p: toUrl(JPEG) });
+        const out = bytesOf(result.p ?? '');
+        expect(out).not.toContain('Exif');
+        expect(out).not.toContain('xmpmeta');
+        expect(out).not.toContain('Photoshop');
+        expect(out.startsWith('\xff\xd8\xff\xe0')).toBe(true);
+        expect(out).toContain('JFIF');
+        expect(out.endsWith('\x12\x34\xff\x00\x56\xff\xd9')).toBe(true);
+        const { imageSizeFromDataUrl } = await import('@oi/pdf/image-size.js');
+        expect(imageSizeFromDataUrl(result.p ?? '')).toEqual({ widthPx: 100, heightPx: 80 });
+    });
+
+    it('JPEG sans métadonnée : rendu à l’identique', async () => {
+        const { normalizePhotos } = await loadEngineV3();
+        const clean = [0xff, 0xd8, ...JPEG.slice(JPEG.indexOf(0xc0) - 1)];
+        const url = toUrl(clean);
+        expect((await normalizePhotos({ p: url })).p).toBe(url);
+    });
+});
+
 describe('normalizePhotos — voie moderne (createImageBitmap/OffscreenCanvas, doubles globaux)', () => {
     function makeFakeBitmap(width: number, height: number): { width: number; height: number; close: ReturnType<typeof vi.fn> } {
         return { width, height, close: vi.fn() };
