@@ -59,7 +59,8 @@ describe('photoBilanText — ce que l’utilisateur lit', () => {
 
         expect(text).toMatch(/^3 photos non intégrées :/);
         expect(text).toMatch(/« Face » \(Adversaire\) : absente de la base/);
-        expect(text).toMatch(/Photo sans légende \(Cheminement\) : annotations non fusionnées/);
+        // Sans légende : le nom par défaut du formulaire et du PDF (Nico 09-26).
+        expect(text).toMatch(/« Extérieur \(1\/1\) » \(Cheminement\) : annotations non fusionnées/);
         expect(text).toMatch(/Fond personnalisé : image illisible/);
     });
 

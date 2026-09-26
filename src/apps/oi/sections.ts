@@ -300,10 +300,12 @@ export function withDefaultCaptions<T extends { customTitle?: string }>(dynamicP
 
 /**
  * Longueur maximale d'une légende de photo (Nico 2026-09-26) : ce que le PDF
- * imprime en entier dans sa mise en page la plus étroite (4 captures de
- * téléphone par page), A4 comme 16:9, jusqu'à 6 badges d'outils
- * d'effraction (mesuré : 583 sans outil, 450 avec 6). Au-delà (plus
- * d'outils, mots très longs), le PDF coupe la légende par « … »
+ * imprime en entier dans le pire cas que le formulaire permet, la mise en
+ * page la plus étroite (4 captures de téléphone par page), A4 comme 16:9,
+ * avec les 12 outils d'effraction du catalogue plus « Outil Nouveau / Autre »
+ * à sa longueur maximale (`maxlength` de `#effrac_other_tools`), mots longs
+ * compris (mesuré : 229 dans ce pire cas, 510 à 583 sans outil). Au-delà
+ * (données anciennes, mots démesurés), le PDF coupe la légende par « … »
  * (`fitCaption`). Tenue par `oi-photo-captions.test.ts`.
  */
-export const OI_PHOTO_CAPTION_MAX = 450;
+export const OI_PHOTO_CAPTION_MAX = 200;

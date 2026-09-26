@@ -1080,7 +1080,7 @@ async function loadFormData(): Promise<boolean> {
                                         >
                                         <input type="text" class="photo-title-input" maxlength="${OI_PHOTO_CAPTION_MAX}" aria-label="Légende de la photo"
                                             value="${esc(imgData.customTitle || '')}"
-                                            style="width: 100%; margin-top: 5px; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); color: white; border-radius: 4px; padding: 2px 5px; font-size: 0.8em;"
+                                            style="width: 100%; margin-top: 5px; background: var(--bg-interactive); border: 1px solid var(--border-color); color: var(--text-primary); border-radius: 4px; padding: 2px 5px; font-size: 0.8em;"
                                             oninput="syncDomToStore()">
                                         <div style="display: flex; gap: 5px; margin-top: 5px;">
                                             <button type="button" class="add-btn" style="background-color: var(--accent-blue); padding: 4px 8px;" onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation()" onclick="openAnnotationModal(this.closest('.image-preview-item').querySelector('.image-preview').id)" aria-label="Annoter la photo"><span class="material-symbols-outlined" style="font-size: 1.2em;">edit</span></button>
