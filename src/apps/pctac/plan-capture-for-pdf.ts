@@ -19,6 +19,12 @@
  * quand l'onglet Plan n'avait jamais été ouvert.
  */
 
+import { imageSizeFromDataUrl } from '@shared/image-size.js';
+
+// Taille lue dans les en-têtes, 128 Ko au plus (la version d'ici décodait tout
+// le base64 de chaque photo). Réexportée pour pdf-export et pdf-a3.
+export { imageSizeFromDataUrl };
+
 export interface PlanPrintCapture {
     /** Image JPEG (ou PNG si la conversion échoue). */
     dataUrl: string;
@@ -49,43 +55,6 @@ export interface PlanCaptureRequest {
 interface PlanMapForCapture {
     captureToDataUrl?: (options?: { targetWidthPx?: number }) => Promise<string | null>;
     map?: { resize?: () => void; getBearing?: () => number; getContainer?: () => HTMLElement } | null;
-}
-
-/** Taille d'une image PNG ou JPEG lue dans ses en-têtes, sans décodage. */
-export function imageSizeFromDataUrl(dataUrl: string): { widthPx: number; heightPx: number } | null {
-    const comma = dataUrl.indexOf(',');
-    if (!dataUrl.startsWith('data:image/') || comma < 0) return null;
-    let bytes: Uint8Array;
-    try {
-        const bin = atob(dataUrl.slice(comma + 1));
-        bytes = new Uint8Array(bin.length);
-        for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-    } catch {
-        return null;
-    }
-    const u32 = (o: number): number => ((bytes[o]! << 24) >>> 0) + (bytes[o + 1]! << 16) + (bytes[o + 2]! << 8) + bytes[o + 3]!;
-    // PNG : signature puis IHDR (largeur à 16, hauteur à 20).
-    if (bytes.length >= 24 && bytes[0] === 0x89 && bytes[1] === 0x50) {
-        const widthPx = u32(16), heightPx = u32(20);
-        return widthPx > 0 && heightPx > 0 ? { widthPx, heightPx } : null;
-    }
-    // JPEG : on parcourt les segments jusqu'au premier SOFn.
-    if (bytes.length >= 4 && bytes[0] === 0xff && bytes[1] === 0xd8) {
-        let o = 2;
-        while (o + 9 < bytes.length) {
-            if (bytes[o] !== 0xff) return null;
-            const marker = bytes[o + 1]!;
-            const len = (bytes[o + 2]! << 8) + bytes[o + 3]!;
-            const isSof = marker >= 0xc0 && marker <= 0xcf && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc;
-            if (isSof) {
-                const heightPx = (bytes[o + 5]! << 8) + bytes[o + 6]!;
-                const widthPx = (bytes[o + 7]! << 8) + bytes[o + 8]!;
-                return widthPx > 0 && heightPx > 0 ? { widthPx, heightPx } : null;
-            }
-            o += 2 + len;
-        }
-    }
-    return null;
 }
 
 /**
