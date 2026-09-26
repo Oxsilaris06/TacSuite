@@ -2913,6 +2913,7 @@ body.light-mode .pctac-liens-btn-row--wa:hover { background: #bee9ce; box-shadow
 .pctac-reset-warning-text { margin: 15px 0; font-size: 0.9em; color: var(--text-muted); }
 .pctac-actions-row-gap10 { display: flex; gap: 10px; }
 .pctac-btn-danger-bg { background: var(--danger-fill); color: #fff; border: 1px solid var(--danger-fill); }
+.pctac-btn-forget { color: var(--danger-red); border-color: var(--danger-red); }
 .pctac-btn-bg-input { background: var(--bg-input); color: var(--text-main); border: 1px solid var(--border-glass); }
 #resetModalTitle { color: var(--danger-red); }
 

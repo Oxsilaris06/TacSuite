@@ -145,12 +145,15 @@ interface MatrixWellKnownClient {
 
 interface OidcDiscoveryMeta {
   device_authorization_endpoint?: string | undefined;
+  revocation_endpoint?: string | undefined;
   token_endpoint?: string | undefined;
   registration_endpoint?: string | undefined;
 }
 
 interface OidcEndpoints {
   issuer: string;
+  /** RFC 7009 ; absent si le fournisseur ne l'annonce pas. */
+  revocationEndpoint?: string | undefined;
   deviceEndpoint: string;
   tokenEndpoint: string;
   registrationEndpoint: string;
@@ -1115,6 +1118,7 @@ async function discoverOidc(hs: string): Promise<OidcEndpoints> {
     deviceEndpoint: meta?.device_authorization_endpoint || issuer + '/oauth2/device',
     tokenEndpoint: meta?.token_endpoint || issuer + '/oauth2/token',
     registrationEndpoint: meta?.registration_endpoint || issuer + '/oauth2/registration',
+    revocationEndpoint: meta?.revocation_endpoint,
   };
 }
 async function registerClient(o: OidcEndpoints): Promise<string> {
@@ -1507,6 +1511,51 @@ export function registerRemoteOperator(sender: string, nom: string | null, fonct
   if (nom) names.set(sender, nom);
   const a = cfg.assign[sender] = cfg.assign[sender] || {};
   a.fonction = fonction || null;
+}
+
+/** Délai de la révocation distante : au-delà, l'effacement local suffit. */
+const FORGET_TIMEOUT_MS = 5000;
+
+/**
+ * « Oublier ce poste » (Nico, 26/09) : arrête la session, révoque côté serveur
+ * si le réseau le permet (refresh token ProConnect par RFC 7009, sinon
+ * `/logout` Matrix avec le jeton manuel), puis efface TOUT de l'appareil :
+ * configuration, identifiants, curseur de synchronisation. L'effacement local
+ * ne dépend jamais du réseau.
+ * @returns 'revoked' si le serveur a accepté la révocation, 'not-revoked' si
+ *   un identifiant existait mais n'a pas pu être révoqué, 'nothing' sinon.
+ */
+export async function forgetTchap(): Promise<'revoked' | 'not-revoked' | 'nothing'> {
+  const hs = cfg.hs?.replace(/\/$/, '');
+  const manual = cfg.token;
+  const rt = cfg.oidc?.refreshToken || refreshToken;
+  const cid = cfg.oidc?.clientId || cfg.clientId;
+  stop(true);
+  for (const k of Object.keys(cfg) as Array<keyof TlCfg>) if (k !== 'assign') Reflect.deleteProperty(cfg, k);
+  cfg.assign = {};
+  accessToken = null; refreshToken = null; oidc = null;
+  for (const k of [LS_KEY, LS_SINCE_KEY]) { try { localStorage.removeItem(k); } catch { /* stockage indisponible */ } }
+  for (const id of ['tl_hs', 'tl_room', 'tl_token', 'tl_clientid']) { const el = $(id); if (el instanceof HTMLInputElement) el.value = ''; }
+  status('Poste oublié.', 'var(--text-muted)');
+
+  if (!hs || (!rt && !manual)) return 'nothing';
+  const signal = typeof AbortSignal.timeout === 'function' ? AbortSignal.timeout(FORGET_TIMEOUT_MS) : null;
+  try {
+    if (rt && cid) {
+      const o = await discoverOidc(hs);
+      if (!o.revocationEndpoint) return 'not-revoked';
+      const r = await fetch(o.revocationEndpoint, {
+        method: 'POST', signal,
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({ token: rt, token_type_hint: 'refresh_token', client_id: cid }),
+      });
+      return r.ok ? 'revoked' : 'not-revoked';
+    }
+    const r = await fetch(hs + '/_matrix/client/v3/logout', { method: 'POST', signal, headers: { Authorization: 'Bearer ' + manual } });
+    return r.ok ? 'revoked' : 'not-revoked';
+  } catch {
+    return 'not-revoked';
+  }
 }
 
 export const TchapLive = { startManual, startOidc, stop, wireUI, upsert, registerRemoteOperator };
