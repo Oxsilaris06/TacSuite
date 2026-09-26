@@ -18,6 +18,7 @@ import {
     type CachesLike,
     type OfflineCheckDeps,
 } from '../../src/apps/portal/offline-ready.js';
+import { SW_FONTS_MARK_URL } from '../../src/shared/sw-routes.js';
 
 function fakeCaches(hits: readonly string[]): CachesLike & { calls: Array<[string, unknown]> } {
     const calls: Array<[string, unknown]> = [];
@@ -168,9 +169,26 @@ describe('R11 — le badge dépend de l’application, pas seulement du portail'
 });
 
 describe('polices précachées dès la première visite (Nico 09-26)', () => {
+    const precacheOnly = (hits: readonly string[]): CachesLike => ({
+        match: fakeCaches(hits).match,
+        async keys() { return ['workbox-precache-v2-https://x/', 'tacsuite-fonts']; },
+        async open(name: string) {
+            const urls = name.startsWith('workbox-precache') ? ['https://x/assets/material-symbols-outlined-Bz.woff2?__WB_REVISION__=1'] : [];
+            return { async keys() { return urls.map((url) => ({ url })); } };
+        },
+    });
+
+    it('précache d’un worker ENCORE EN ATTENTE (ancien worker actif, sans la marque) : pas prêt', async () => {
+        await expect(hasIconFontCached({ serviceWorker: { controller: {} }, caches: precacheOnly(['https://x/pctac/']) })).resolves.toBe(false);
+    });
+
+    it('précache d’un worker actif qui sert les polices (marque posée à l’activation) : prêt', async () => {
+        await expect(hasIconFontCached({ serviceWorker: { controller: {} }, caches: precacheOnly(['https://x/pctac/', SW_FONTS_MARK_URL]) })).resolves.toBe(true);
+    });
+
     it('la police d’icônes trouvée dans le précache Workbox suffit', async () => {
         const caches: CachesLike = {
-            match: fakeCaches(['https://x/pctac/']).match,
+            match: fakeCaches(['https://x/pctac/', SW_FONTS_MARK_URL]).match,
             async keys() { return ['workbox-precache-v2-https://x/', 'tacsuite-fonts']; },
             async open(name: string) {
                 const urls = name.startsWith('workbox-precache') ? ['https://x/assets/material-symbols-outlined-Bz.woff2?__WB_REVISION__=1'] : [];

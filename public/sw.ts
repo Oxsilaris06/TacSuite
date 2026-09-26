@@ -30,6 +30,7 @@ import { CacheFirst, StaleWhileRevalidate } from 'workbox-strategies';
 import { ExpirationPlugin } from 'workbox-expiration';
 
 import {
+    SW_FONTS_MARK_URL,
     SW_PROTOCOL_CACHE,
     SW_PROTOCOL_MARK_URL,
     isTileRequest,
@@ -125,6 +126,11 @@ self.addEventListener('activate', (event) => {
             try {
                 const cache = await caches.open(SW_PROTOCOL_CACHE);
                 await cache.put(SW_PROTOCOL_MARK_URL, new Response('1'));
+                // Ce worker sert les polices depuis le précache (Nico 2026-09-26) :
+                // le badge « Prêt hors ligne » peut s'y fier, et les copies de
+                // l'ancien cache d'exécution (~4 Mio) ne servent plus.
+                await cache.put(SW_FONTS_MARK_URL, new Response('1'));
+                await caches.delete('tacsuite-fonts');
             } catch {
                 // Best-effort : sans marque, une prochaine mise à jour forcera
                 // l'activation — dégradation acceptable.
