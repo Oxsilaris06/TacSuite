@@ -418,17 +418,26 @@ describe('buildOiDocDefinition — PATRACDVR, colonne DIR conditionnelle', () =>
         };
     }
 
-    it("aucun membre n'a de dir : colonne DIR absente, EQPT/GREN. en '*'", () => {
+    // Décision 43 (audit F04) : largeurs MESURÉES (nombres) à la place des colonnes
+    // `auto` + `noWrap`, qui fusionnaient les valeurs empilées et se chevauchaient.
+    // ÉQUIPEMENT prend le reste de la largeur : c'est la plus large ici.
+    const patracWidths = (json: string): number[] => JSON.parse(/"widths":(\[[\d.,]+\])/.exec(json)?.[1] ?? '[]') as number[];
+
+    it("aucun membre n'a de dir : colonne DIR absente, EQPT/GREN. prend le reste", () => {
         const json = JSON.stringify(buildOiDocDefinition(collect(patracFormData('')), { format: 'a4' }));
 
-        expect(json).toContain('"widths":["auto","auto","auto","auto","auto","auto","auto","*"]');
+        const w = patracWidths(json);
+        expect(w).toHaveLength(8);
+        expect(Math.max(...w)).toBe(w[7]);
         expect(json).not.toContain('"text":"DIR"');
     });
 
-    it("un membre a un dir non vide : colonne DIR présente, EQPT/GREN. en '*'", () => {
+    it("un membre a un dir non vide : colonne DIR présente, EQPT/GREN. prend le reste", () => {
         const json = JSON.stringify(buildOiDocDefinition(collect(patracFormData('G1')), { format: 'a4' }));
 
-        expect(json).toContain('"widths":["auto","auto","auto","auto","auto","auto","auto","*","auto"]');
+        const w = patracWidths(json);
+        expect(w).toHaveLength(9);
+        expect(Math.max(...w)).toBe(w[7]);
         expect(json).toContain('"text":"DIR"');
     });
 
@@ -802,7 +811,7 @@ describe('buildOiDocDefinition — tableaux de données : grille p.border, jamai
             `{"text":"VL","bold":true,"fillColor":"${pal.headerRow}","alignment":"center","borderColor":["${pal.border}","${pal.border}","${pal.border}","${pal.border}"]}`,
         );
         expect(json).toContain(
-            `{"text":"ABC","bold":true,"alignment":"center","noWrap":true,"borderColor":["${pal.border}","${pal.border}","${pal.border}","${pal.border}"]}`,
+            `{"text":"ABC","bold":true,"alignment":"center","borderColor":["${pal.border}","${pal.border}","${pal.border}","${pal.border}"]}`,
         );
     });
 });
@@ -820,12 +829,14 @@ describe('buildOiDocDefinition — alignement centré du roster PATRACDVR (arbit
     it('les colonnes CELLULE/FONCTION/PPALE/SEC./AFIS/EQPT+GREN. sont centrées, comme VL/DIR/en-tête', () => {
         const json = JSON.stringify(buildOiDocDefinition(collect({ patracdvr_rows: [makePatracRow()] }), { format: 'a4' }));
 
-        expect(json).toContain('{"text":"AO1","alignment":"center","noWrap":true,"borderColor":');
-        expect(json).toContain('{"text":"Chef inter","alignment":"center","noWrap":true,"borderColor":');
-        expect(json).toContain('{"text":"UMP9","alignment":"center","noWrap":true,"borderColor":');
-        expect(json).toContain('{"text":"PSA","alignment":"center","noWrap":true,"borderColor":');
-        expect(json).toContain('{"text":"PIE","alignment":"center","noWrap":true,"borderColor":');
-        expect(json).toContain('{"text":"GENL / UBAS","fontSize":8,"alignment":"center","borderColor":');
+        // Décision 43 : plus de `noWrap` (il fusionnait les valeurs empilées) ni
+        // d'ÉQUIPEMENT à 8 px fixes (il suit la police du tableau).
+        expect(json).toContain('{"text":"AO1","alignment":"center","borderColor":');
+        expect(json).toContain('{"text":"Chef inter","alignment":"center","borderColor":');
+        expect(json).toContain('{"text":"UMP9","alignment":"center","borderColor":');
+        expect(json).toContain('{"text":"PSA","alignment":"center","borderColor":');
+        expect(json).toContain('{"text":"PIE","alignment":"center","borderColor":');
+        expect(json).toContain('{"text":"GENL / UBAS","alignment":"center","borderColor":');
     });
 });
 
