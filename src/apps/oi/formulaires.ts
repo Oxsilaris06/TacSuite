@@ -1609,64 +1609,71 @@ async function applyArchiveImport(parsed: OiParsedArchiveOk, cats: readonly OiIm
     }
 
     const snapshot = localStorage.getItem(KEY);
-    // Audit du 26/09 : photos en place mises de côté AVANT de les effacer, et
-    // remises si l'import échoue ensuite (même patron que l'import PC-Tac).
-    let imagesBefore: Map<string, Blob> | null = null;
+    // Audit et revue de sécurité du 26/09 : les photos en place ne sont plus
+    // effacées d'avance. Les photos de l'archive sont écrites une à une, puis
+    // les anciennes absentes de l'archive ne sont retirées qu'après le succès
+    // du formulaire. Un échec, ou même un onglet qui plante en cours de route,
+    // laisse les photos d'origine en place.
+    let beforeKeys: Set<string> | null = null;
+    const written = new Set<string>();
+    const overwritten = new Map<string, Blob>(); // même id réécrit : ancienne version, remise sur échec
     let imgFail = 0;
     let imgRaw = 0; // R7 : gardées sans ré-encodage, donc EXIF/GPS possible
     try {
-        // Images AVANT le localStorage (clearAllImages mute le Store → flush).
         if (importImages && dbManager) {
             if (!dbManager.db) { try { await dbManager.init(); } catch { /* … */ } }
             if (dbManager.db) {
-                // Photos en place illisibles : on n'efface rien sans pouvoir les
-                // remettre, l'import est annulé.
-                const before = new Map<string, Blob>();
+                // Photos en place illisibles : l'import est annulé, rien n'est touché.
                 try {
-                    for (const key of await dbManager.getAllKeys()) {
-                        const blob = await dbManager.getItem(String(key));
-                        if (blob) before.set(String(key), blob);
-                    }
+                    beforeKeys = new Set((await dbManager.getAllKeys()).map(String));
                 } catch {
                     throw new Error('photos en place illisibles, rien n’a été modifié.');
                 }
-                imagesBefore = before;
-                try { await dbManager.clearAllImages(); } catch { /* … */ }
                 // JUSTIFICATION cast : cf. detectImportCategories.
                 const zip = parsed.zip as JSZip;
                 const imagesFolder = zip.folder('images');
                 if (imagesFolder) {
-                    const tasks: Promise<void>[] = [];
+                    const entries: Array<{ k: string; entry: JSZip.JSZipObject }> = [];
                     imagesFolder.forEach((relPath, entry) => {
                         if (entry.dir) return;
                         let k: string;
                         // Nom mal encodé (« %E0 ») : cette image seule est ignorée.
                         try { k = decodeURIComponent(relPath.replace(/\.bin$/, '').replace(/\.txt$/, '')); } catch { imgFail++; return; }
                         if (!isSafeId(k)) { imgFail++; return; } // SEC-1 : id forgé, jamais stocké
-                        tasks.push(entry.async('arraybuffer')
-                            .then(async (ab) => {
-                                const brut = new Blob([ab], { type: parsed.imageMeta[k] || '' });
-                                // Ré-encodage canvas à l'ENTRÉE (audit PDF du
-                                // 2026-09-25, F09) : les images d'une archive
-                                // importée étaient stockées telles quelles,
-                                // EXIF et coordonnées GPS compris. Si le
-                                // ré-encodage échoue, l'original est CONSERVÉ
-                                // (un import d'archive restaure des données, il
-                                // ne les jette pas) mais c'est signalé : c'est
-                                // la seule image encore susceptible de porter
-                                // une position.
-                                let aStocker = brut;
-                                try {
-                                    aStocker = await reencodeSansExif(brut);
-                                } catch (err) {
-                                    imgRaw++;
-                                    console.warn('[OI Archive] image gardée telle quelle, sans ré-encodage (EXIF possible) :', k, err);
-                                }
-                                await dbManager.putItem(k, aStocker);
-                            })
-                            .catch((err: unknown) => { imgFail++; console.warn('[OI Archive] image ignorée:', k, err); }));
+                        entries.push({ k, entry });
                     });
-                    await Promise.allSettled(tasks);
+                    // Une image à la fois : une seule décompressée en mémoire.
+                    for (const { k, entry } of entries) {
+                        try {
+                            const ab = await entry.async('arraybuffer');
+                            const brut = new Blob([ab], { type: parsed.imageMeta[k] || '' });
+                            // Ré-encodage canvas à l'ENTRÉE (audit PDF du
+                            // 2026-09-25, F09) : les images d'une archive
+                            // importée étaient stockées telles quelles,
+                            // EXIF et coordonnées GPS compris. Si le
+                            // ré-encodage échoue, l'original est CONSERVÉ
+                            // (un import d'archive restaure des données, il
+                            // ne les jette pas) mais c'est signalé : c'est
+                            // la seule image encore susceptible de porter
+                            // une position.
+                            let aStocker = brut;
+                            try {
+                                aStocker = await reencodeSansExif(brut);
+                            } catch (err) {
+                                imgRaw++;
+                                console.warn('[OI Archive] image gardée telle quelle, sans ré-encodage (EXIF possible) :', k, err);
+                            }
+                            if (beforeKeys.has(k) && !overwritten.has(k)) {
+                                const old = await dbManager.getItem(k);
+                                if (old) overwritten.set(k, old);
+                            }
+                            await dbManager.putItem(k, aStocker);
+                            written.add(k);
+                        } catch (err) {
+                            imgFail++;
+                            console.warn('[OI Archive] image ignorée:', k, err);
+                        }
+                    }
                 }
             }
         }
@@ -1676,6 +1683,13 @@ async function applyArchiveImport(parsed: OiParsedArchiveOk, cats: readonly OiIm
         } catch {
             if (snapshot === null) localStorage.removeItem(KEY); else localStorage.setItem(KEY, snapshot);
             throw new Error("Espace de stockage insuffisant (quota localStorage). Données d'origine restaurées.");
+        }
+
+        // Formulaire écrit : les anciennes photos absentes de l'archive partent.
+        if (beforeKeys && dbManager) {
+            for (const key of beforeKeys) {
+                if (!written.has(key)) { try { await dbManager.deleteItem(key); } catch { /* best-effort */ } }
+            }
         }
 
         if (Store && typeof Store.loadFromStorage === 'function') {
@@ -1695,10 +1709,10 @@ async function applyArchiveImport(parsed: OiParsedArchiveOk, cats: readonly OiIm
         setTimeout(() => location.reload(), raw ? 6000 : 600);
     } catch (e) {
         console.error('[OI Archive] import sélectif échec:', e);
-        if (imagesBefore && dbManager) {
+        if (beforeKeys && dbManager) {
             try {
-                await dbManager.clearAllImages();
-                for (const [key, blob] of imagesBefore) await dbManager.putItem(key, blob);
+                for (const key of written) if (!beforeKeys.has(key)) await dbManager.deleteItem(key);
+                for (const [key, blob] of overwritten) await dbManager.putItem(key, blob);
             } catch (err) { console.error('[OI Archive] photos d’origine non remises:', err); }
         }
         toast("Erreur d'import : " + (e instanceof Error ? e.message : String(e)), { kind: 'error' });
