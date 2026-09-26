@@ -1063,7 +1063,7 @@ async function loadFormData(): Promise<boolean> {
                             const isEffrac = previewId.includes('effrac');
 
                             interactiveItem.innerHTML = `
-                                        <img id="${imgData.id}" class="image-preview" src="${previewUrl}" style="display:block;"
+                                        <img id="${esc(imgData.id)}" class="image-preview" src="${esc(previewUrl)}" style="display:block;"
                                             data-annotations='${(imgData.annotations || '[]').replace(/'/g, '&apos;')}'
                                             data-tools='${(imgData.tools || '[]').replace(/'/g, '&apos;')}'
                                             data-other-tools='${(imgData.other_tools || '').replace(/'/g, '&apos;')}'
@@ -1127,15 +1127,15 @@ function checkCoherence(): boolean {
     const recapFinalisation = document.getElementById('recap_finalisation');
     if (recapFinalisation) {
         let recapHtml = '<h4>Synthèse des Éléments Clés :</h4><ul>';
-        recapHtml += `<li>Opération du ${getVal('date_op') || 'N/A'} - H: ${getVal('heure_execution') || 'N/A'}</li>`;
+        recapHtml += `<li>Opération du ${esc(getVal('date_op').split('-').reverse().join('/')) || 'N/A'} - H: ${esc(getVal('heure_execution')) || 'N/A'}</li>`;
         if (Store.state.formData.adversaries) {
             Store.state.formData.adversaries.forEach((adv, i) => {
-                recapHtml += `<li>Objectif ${i + 1} : ${adv.nom_adversaire || 'Sans Nom'}</li>`;
+                recapHtml += `<li>Objectif ${i + 1} : ${esc(adv.nom_adversaire) || 'Sans Nom'}</li>`;
             });
         }
-        recapHtml += `<li>Équipe INDIA : ${indiaMembers.map((m) => m.trigramme).join(', ') || 'N/A'}</li>`;
-        recapHtml += `<li>Équipe AO : ${aoMembers.map((m) => m.trigramme).join(', ') || 'N/A'}</li>`;
-        recapHtml += `<li>Hypothèses : ${(Store.state.formData.hypotheses || []).slice(0, 1).join(', ').substring(0, 30) || 'N/A'}</li>`;
+        recapHtml += `<li>Équipe INDIA : ${esc(indiaMembers.map((m) => m.trigramme).join(', ')) || 'N/A'}</li>`;
+        recapHtml += `<li>Équipe AO : ${esc(aoMembers.map((m) => m.trigramme).join(', ')) || 'N/A'}</li>`;
+        recapHtml += `<li>Hypothèses : ${esc((Store.state.formData.hypotheses || []).slice(0, 1).join(', ').substring(0, 30)) || 'N/A'}</li>`;
         recapHtml += '</ul>';
         recapFinalisation.innerHTML = recapHtml;
     }

@@ -80,6 +80,7 @@ import { legacyCaptureColors } from '@shared/h2c-colors.js';
 import { drawOverlayLegend, overlayLegend } from '@shared/map-overlays.js';
 
 import type { OICartoInternal, OiCartoPhotoTarget } from './types.js';
+import { esc } from '@shared/ui-platform.js';
 
 /** Attente maximale du rendu de la carte avant capture (tuiles, nouvelle définition). */
 export const CAPTURE_IDLE_TIMEOUT_MS = 8000;
@@ -263,7 +264,7 @@ export const CaptureMethods = {
         if (sel) {
             const targets = this._getPhotoTargets();
             sel.innerHTML = targets.length
-                ? targets.map((t) => `<option value="${t.id}">${t.label}</option>`).join('')
+                ? targets.map((t) => `<option value="${esc(t.id)}">${esc(t.label)}</option>`).join('')
                 : '<option value="">Aucun champ photo disponible</option>';
         }
         setCaptureStatus('');

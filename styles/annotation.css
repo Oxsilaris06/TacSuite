@@ -205,6 +205,8 @@
         .annotation-toolbar .color-circle {
             width: 26px;
             height: 26px;
+            padding: 0;
+            cursor: pointer;
             border-radius: 50%;
             border: 2px solid transparent;
             transition: transform var(--transition-quick), box-shadow var(--transition-quick);

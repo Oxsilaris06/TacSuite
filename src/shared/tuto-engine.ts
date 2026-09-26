@@ -170,6 +170,10 @@ function buildCss(accent: string): string {
 .ptuto-search input{ flex:1; min-width:0; background:none; border:none; outline:none;
   color:#f6f6f7; font:400 16px/1 'Inter',sans-serif; } /* 16px : évite l'auto-zoom iOS au focus */
 .ptuto-search input::placeholder{ color:#6f6f78; }
+/* Les pages hôtes stylent tous leurs champs (OI : input:not(…)×5, spécificité 0,5,1) :
+   la classe répétée garde un seul cadre, celui de .ptuto-search. */
+.ptuto-search .ptuto-q.ptuto-q.ptuto-q.ptuto-q.ptuto-q{ width:auto; height:auto; margin:0; padding:0;
+  border:none; border-radius:0; background:none; box-shadow:none; }
 .ptuto-search-clear{ display:none; flex:0 0 auto; width:36px; align-self:stretch; padding:0;
   background:none; border:none; color:#8a8a91; cursor:pointer; border-radius:8px;
   align-items:center; justify-content:center; }
@@ -204,6 +208,9 @@ function buildCss(accent: string): string {
 .ptuto-step-kicker{ font:600 11px/1 'Inter',sans-serif; letter-spacing:.8px;
   text-transform:uppercase; color:var(--ptuto-accent); margin-bottom:8px; }
 .ptuto-step-title{ margin:0 0 12px; font:700 22px/1.25 'Inter',sans-serif; }
+/* titres de la page hôte (OI : h2 en capitales, barre bleue, soulignement) neutralisés */
+.ptuto-panel h2{ display:block; border:none; padding:0; text-transform:none; letter-spacing:normal; }
+.ptuto-panel h2::before{ content:none; }
 .ptuto-step-body{ margin:0 0 16px; font-size:15px; line-height:1.6; color:#dcdce0; }
 .ptuto-step-body strong{ color:#fff; }
 
@@ -248,6 +255,9 @@ function buildCss(accent: string): string {
   border:1px solid rgba(255,255,255,.16); background:rgba(255,255,255,.05); color:#f6f6f7; }
 .ptuto-nav button:hover{ background:rgba(255,255,255,.10); }
 .ptuto-nav button.ptuto-primary{ background:var(--ptuto-accent); border-color:var(--ptuto-accent); color:#fff; }
+/* cibles tactiles ≥ 44 px (téléphone, tablette, gants) */
+.ptuto-x, .ptuto-menu-btn, .ptuto-toc-item, .ptuto-spotbtn, .ptuto-nav button, .ptuto-spot-callout button{ min-height:44px; }
+.ptuto-x{ min-width:44px; }
 .ptuto-nav button.ptuto-primary:hover{ filter:brightness(1.08); }
 .ptuto-nav button:disabled{ opacity:.4; cursor:default; }
 .ptuto-nav button .material-symbols-outlined{ font-size:18px; }
@@ -633,6 +643,7 @@ class Tuto implements PocheTutoInstance {
     const search = el('div', 'ptuto-search', '<span class="material-symbols-outlined">search</span>');
     const input = el('input');
     input.type = 'text'; // 'text' (pas 'search') : évite la déco native en doublon
+    input.className = 'ptuto-q';
     input.placeholder = 'Rechercher une fonction…';
     input.setAttribute('aria-label', 'Rechercher dans le tutoriel');
     input.setAttribute('autocomplete', 'off');

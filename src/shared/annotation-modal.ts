@@ -78,11 +78,11 @@ const MARKUP = `
                 <!-- 3. Couleurs et Actions (Bas) -->
                 <div id="dock-bottom" class="mobile-dock horizontal">
                     <div class="color-picker horizontal" style="display: flex; gap: 10px; justify-content: center; align-items: center;">
-                        <div class="color-circle active color-circle-red" data-action="set-annotation-color" data-color="#c0392b"></div>
-                        <div class="color-circle color-circle-green" data-action="set-annotation-color" data-color="#2ecc71"></div>
-                        <div class="color-circle color-circle-blue" data-action="set-annotation-color" data-color="#3498db"></div>
-                        <div class="color-circle color-circle-yellow" data-action="set-annotation-color" data-color="#f1c40f"></div>
-                        <div class="color-circle color-circle-white" data-action="set-annotation-color" data-color="#ffffff"></div>
+                        <button type="button" class="color-circle active color-circle-red" data-action="set-annotation-color" data-color="#c0392b" aria-label="Rouge" aria-pressed="true"></button>
+                        <button type="button" class="color-circle color-circle-green" data-action="set-annotation-color" data-color="#2ecc71" aria-label="Vert" aria-pressed="false"></button>
+                        <button type="button" class="color-circle color-circle-blue" data-action="set-annotation-color" data-color="#3498db" aria-label="Bleu" aria-pressed="false"></button>
+                        <button type="button" class="color-circle color-circle-yellow" data-action="set-annotation-color" data-color="#f1c40f" aria-label="Jaune" aria-pressed="false"></button>
+                        <button type="button" class="color-circle color-circle-white" data-action="set-annotation-color" data-color="#ffffff" aria-label="Blanc" aria-pressed="false"></button>
                     </div>
                     
                     <div style="width: 1px; height: 30px; background: rgba(255,255,255,0.2); margin: 0 10px;"></div>
