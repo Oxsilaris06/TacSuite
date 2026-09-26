@@ -1101,16 +1101,16 @@ function processSync(data: MatrixSyncResponse, initial: boolean): void {
 async function jsonOrEmpty(r: Response): Promise<Record<string, unknown>> {
   try { return (await r.json()) as Record<string, unknown>; } catch { return {}; }
 }
-async function discoverOidc(hs: string): Promise<OidcEndpoints> {
+async function discoverOidc(hs: string, signal: AbortSignal | null = aborter?.signal ?? null): Promise<OidcEndpoints> {
   let issuer = DEFAULT_ISSUER;
   try {
-    const r = await fetch(hs.replace(/\/$/, '') + '/.well-known/matrix/client');
+    const r = await fetch(hs.replace(/\/$/, '') + '/.well-known/matrix/client', { signal });
     const wk = (await r.json()) as MatrixWellKnownClient;
     issuer = wk['org.matrix.msc2965.authentication']?.issuer || wk['m.authentication']?.issuer || issuer;
   } catch { /* repli sur DEFAULT_ISSUER */ }
   let meta: OidcDiscoveryMeta | null = null;
   try {
-    const r = await fetch(issuer.replace(/\/$/, '') + '/.well-known/openid-configuration');
+    const r = await fetch(issuer.replace(/\/$/, '') + '/.well-known/openid-configuration', { signal });
     meta = (await r.json()) as OidcDiscoveryMeta;
   } catch { /* endpoints par défaut ci-dessous */ }
   return {
@@ -1156,10 +1156,17 @@ async function pollToken(o: OidcEndpoints, cid: string, deviceCode: string, inte
   }
   throw new Error("délai d'autorisation dépassé");
 }
+/** Session arrêtée (Stop, « Oublier ce poste ») pendant un await : on sort sans rien écrire. */
+function assertRunning(): void {
+  if (!running) throw new DOMException('session arrêtée', 'AbortError');
+}
 async function doRefresh(): Promise<void> {
   if (!oidc || !refreshToken || !clientId) throw new Error('refresh : session OIDC absente');
-  const r = await fetch(oidc.tokenEndpoint, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ grant_type: 'refresh_token', refresh_token: refreshToken, client_id: clientId }) });
+  const r = await fetch(oidc.tokenEndpoint, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ grant_type: 'refresh_token', refresh_token: refreshToken, client_id: clientId }), signal: aborter?.signal ?? null });
   const j = (await jsonOrEmpty(r)) as OidcTokenResponse;
+  // Revue de sécurité du 26/09 : un Stop ou « Oublier ce poste » pendant le
+  // renouvellement ne doit rien réécrire (le jeton neuf ressusciterait).
+  assertRunning();
   if (!r.ok || !j.access_token) throw new Error(`refresh ${r.status} ${j.error || ''}`.trim());
   accessToken = j.access_token;
   if (j.refresh_token) refreshToken = j.refresh_token; // rotation
@@ -1174,6 +1181,8 @@ async function ensureToken(): Promise<void> {
 /* ─── requêtes /sync (token courant + refresh transparent) ─────────────── */
 async function api<T>(path: string, retried?: boolean): Promise<T> {
   await ensureToken();
+  assertRunning();
+  if (!cfg.hs) throw new Error('homeserver absent');
   const res = await fetch(cfg.hs?.replace(/\/$/, '') + path, { headers: { Authorization: 'Bearer ' + accessToken }, signal: aborter?.signal ?? null });
   if (res.status === 401 && authMode === 'oidc' && refreshToken && !retried) { await doRefresh(); return api<T>(path, true); }
   if (!res.ok) { const b = await res.text().catch(() => ''); throw new Error(`HTTP ${res.status} ${b.slice(0, 120)}`); }
@@ -1303,6 +1312,7 @@ async function startOidc(): Promise<void> {
   setDot('var(--civil-yellow)'); status('Authentification ProConnect…');
   try {
     oidc = await discoverOidc(cfg.hs);
+    assertRunning();
     clientId = cfg.oidc?.clientId || cfg.clientId || (val('tl_clientid') || '').trim() || null;
     // reprise via refresh token
     if (cfg.oidc?.refreshToken && clientId) {
@@ -1317,6 +1327,7 @@ async function startOidc(): Promise<void> {
     showDevice(da);
     jlog("en attente d'autorisation ProConnect…", 'var(--civil-yellow)');
     const tok = await pollToken(oidc, clientId, da.device_code, da.interval, da.expires_in);
+    assertRunning();
     hideDevice();
     if (!tok.access_token) throw new Error('token : access_token manquant');
     accessToken = tok.access_token; refreshToken = tok.refresh_token ?? null; expiresAt = Date.now() + (tok.expires_in || 300) * 1000;
@@ -1533,29 +1544,38 @@ export async function forgetTchap(): Promise<'revoked' | 'not-revoked' | 'nothin
   stop(true);
   for (const k of Object.keys(cfg) as Array<keyof TlCfg>) if (k !== 'assign') Reflect.deleteProperty(cfg, k);
   cfg.assign = {};
-  accessToken = null; refreshToken = null; oidc = null;
+  accessToken = null; refreshToken = null; oidc = null; clientId = null; authMode = null;
   for (const k of [LS_KEY, LS_SINCE_KEY]) { try { localStorage.removeItem(k); } catch { /* stockage indisponible */ } }
   for (const id of ['tl_hs', 'tl_room', 'tl_token', 'tl_clientid']) { const el = $(id); if (el instanceof HTMLInputElement) el.value = ''; }
   status('Poste oublié.', 'var(--text-muted)');
 
   if (!hs || (!rt && !manual)) return 'nothing';
+  // Un seul délai pour tout : découverte OIDC comprise (revue du 26/09).
   const signal = typeof AbortSignal.timeout === 'function' ? AbortSignal.timeout(FORGET_TIMEOUT_MS) : null;
-  try {
-    if (rt && cid) {
-      const o = await discoverOidc(hs);
-      if (!o.revocationEndpoint) return 'not-revoked';
-      const r = await fetch(o.revocationEndpoint, {
-        method: 'POST', signal,
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: new URLSearchParams({ token: rt, token_type_hint: 'refresh_token', client_id: cid }),
-      });
-      return r.ok ? 'revoked' : 'not-revoked';
-    }
-    const r = await fetch(hs + '/_matrix/client/v3/logout', { method: 'POST', signal, headers: { Authorization: 'Bearer ' + manual } });
-    return r.ok ? 'revoked' : 'not-revoked';
-  } catch {
-    return 'not-revoked';
+  // Les DEUX identifiants sont révoqués quand ils coexistent (revue du 26/09 :
+  // un refresh token périmé restait stocké à côté d'un jeton manuel actif).
+  const results: boolean[] = [];
+  if (rt && cid) {
+    try {
+      const o = await discoverOidc(hs, signal);
+      if (!o.revocationEndpoint) results.push(false);
+      else {
+        const r = await fetch(o.revocationEndpoint, {
+          method: 'POST', signal,
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({ token: rt, token_type_hint: 'refresh_token', client_id: cid }),
+        });
+        results.push(r.ok);
+      }
+    } catch { results.push(false); }
   }
+  if (manual) {
+    try {
+      const r = await fetch(hs + '/_matrix/client/v3/logout', { method: 'POST', signal, headers: { Authorization: 'Bearer ' + manual } });
+      results.push(r.ok);
+    } catch { results.push(false); }
+  }
+  return results.every(Boolean) ? 'revoked' : 'not-revoked';
 }
 
 export const TchapLive = { startManual, startOidc, stop, wireUI, upsert, registerRemoteOperator };
