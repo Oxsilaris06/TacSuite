@@ -33,6 +33,8 @@ export interface CachesLike {
     match(request: string, options?: { ignoreSearch?: boolean }): Promise<unknown>;
     /** Optionnel : son absence empêche seulement de vérifier la police. */
     open?(name: string): Promise<CacheLike>;
+    /** Noms des caches : la police peut être au précache Workbox ou au cache des polices. */
+    keys?(): Promise<readonly string[]>;
 }
 
 export interface OfflineCheckDeps {
@@ -71,9 +73,10 @@ export async function isPageReadyOffline(pageUrl: string, deps: OfflineCheckDeps
 }
 
 /**
- * La police d'icônes Material Symbols est-elle en cache ? Elles vit dans
- * `tacsuite-fonts`, alimenté à la PREMIÈRE ouverture de PC-Tac ou de l'OI
- * (elle est exclue du précache, cf. vite.config.ts). Tant qu'elle manque,
+ * La police d'icônes Material Symbols est-elle en cache ? Elle est précachée
+ * dès la première visite, portail compris (vite.config.ts, Nico 2026-09-26) ;
+ * un ancien service worker la rangeait dans `tacsuite-fonts` à la première
+ * ouverture de PC-Tac ou de l'OI. Tant qu'elle manque,
  * l'application s'ouvre hors ligne mais tous les boutons à icône seule
  * affichent le mot de ligature (« delete », « edit »…).
  *
@@ -87,10 +90,18 @@ export async function hasIconFontCached(deps: OfflineCheckDeps = {}): Promise<bo
         : (typeof caches !== 'undefined' ? caches : null);
     if (!cache || typeof cache.open !== 'function') return null;
     try {
-        const fontCache = await cache.open(FONT_CACHE_NAME);
-        if (!fontCache || typeof fontCache.keys !== 'function') return null;
-        const keys = await fontCache.keys();
-        return keys.some((k) => ICON_FONT_RE.test(typeof k === 'string' ? k : (k.url ?? '')));
+        // Précachée dès la première visite (portail compris, Nico 2026-09-26) ;
+        // un ancien service worker la range encore dans `tacsuite-fonts`.
+        const names = typeof cache.keys === 'function' ? await cache.keys() : [FONT_CACHE_NAME];
+        let inspected = false;
+        for (const name of names) {
+            const named = await cache.open(name);
+            if (!named || typeof named.keys !== 'function') continue;
+            inspected = true;
+            const keys = await named.keys();
+            if (keys.some((k) => ICON_FONT_RE.test(typeof k === 'string' ? k : (k.url ?? '')))) return true;
+        }
+        return inspected ? false : null;
     } catch {
         return null;
     }

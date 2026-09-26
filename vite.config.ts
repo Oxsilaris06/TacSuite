@@ -99,16 +99,17 @@ export default defineConfig({
         // Fichiers buildes a precacher (chemins relatifs a dist/, cf. structure
         // reelle observee : index.html + pctac/index.html + oi/index.html a la
         // racine de chaque dossier, assets/**, icones et manifest a la racine).
-        // Polices (assets/**/*.{woff,woff2}) volontairement EXCLUES du precache
-        // statique : la police Material Symbols pese ~4 Mo (glyphes variables),
-        // au-dela de la limite Workbox (2 Mo/fichier) — cf. runtime caching
-        // StaleWhileRevalidate dans public/sw.ts (mise en cache opportuniste
-        // des polices memes origine, sans limite de taille par fichier).
+        // Polices woff2 PRECACHEES (Nico 2026-09-26) : une premiere visite en
+        // ligne, portail compris, suffit pour que PC-Tac et l'OI s'ouvrent hors
+        // ligne avec leurs icones (Material Symbols, ~4 Mo) et leurs polices.
+        // Avant, elles n'entraient en cache qu'a l'ouverture de chaque appli.
+        // Les .woff (repli des vieux navigateurs) restent au cache d'execution
+        // de public/sw.ts.
         globPatterns: [
           'index.html',
           'pctac/index.html',
           'oi/index.html',
-          'assets/**/*.{js,mjs,css}',
+          'assets/**/*.{js,mjs,css,woff2}',
           'manifest.webmanifest',
           'favicon.ico',
           '*.png',
@@ -129,7 +130,8 @@ export default defineConfig({
         // relevee pour que le worker et les chunks pdfmake entrent au precache — sans
         // quoi la generation et l'apercu PDF hors ligne seraient silencieusement casses.
         // Taille reelle mesuree du plus gros chunk (phase build actuelle) : ~1,4 Mo.
-        maximumFileSizeToCacheInBytes: 3 * 1024 * 1024,
+        // Relevee a 5 Mio pour la police d'icones Material Symbols (~3,8 Mio).
+        maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
       },
     }),
   ],
