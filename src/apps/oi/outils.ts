@@ -246,6 +246,13 @@ export async function reencodeSansExif(imageBlob: Blob, quality = 0.95): Promise
     return new Blob([octets], { type: imageBlob.type === 'image/png' ? 'image/png' : 'image/jpeg' });
 }
 
+/**
+ * Identifiant venu d'une archive ou du stockage local (photo, fiche
+ * adversaire) : seule une forme sûre est acceptée, car il est réinjecté dans
+ * des attributs `id` et des sélecteurs (revue neuve du 2026-09-26, SEC-1/2).
+ */
+export const isSafeId = (v: unknown): v is string => typeof v === 'string' && /^[\w-]{1,128}$/.test(v);
+
 /** Détecte PNG (signature IHDR) pour choisir embedPng vs embedJpg (pdf-lib). */
 // outils.js:191-195
 export function isPngArrayBuffer(buffer: unknown): boolean {

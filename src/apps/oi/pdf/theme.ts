@@ -287,6 +287,16 @@ export function fitErrorLine(e: OiPdfFitError): string {
     return `${e.section} — ${fitExcessText(e)} : ${e.details}.`;
 }
 
+/** « Corriger la saisie » (écritures non imprimables, décision 44) : la
+ *  génération s'arrête, rien n'est produit — c'est un choix de l'utilisateur,
+ *  pas une panne (R4 : jamais de message d'erreur). */
+export class OiScriptsCancelledError extends Error {
+    constructor() {
+        super('Génération annulée : corrigez les caractères non imprimables signalés.');
+        this.name = 'OiScriptsCancelledError';
+    }
+}
+
 /**
  * Erreur agrégée levée par `buildOiDocDefinition` quand AU MOINS une section
  * d'un usage ne tient pas sur une page, même au palier plancher 7 px — REFUS

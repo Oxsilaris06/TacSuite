@@ -223,5 +223,8 @@ export async function renderPatracPdfBlob(docDefinition: TDocumentDefinitions): 
         pdfMake.addFonts(PDF_FONTS);
         fontsReady = true;
     }
+    // R5 : même passe d'écritures non latines que l'OI (avertissement, police
+    // de repli) ; « Corriger la saisie » lève OiScriptsCancelledError.
+    await (await import('./scripts-fallback.js')).applyOiScriptFallback(docDefinition, pdfMake);
     return pdfMake.createPdf(docDefinition).getBlob();
 }
