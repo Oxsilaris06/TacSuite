@@ -448,8 +448,12 @@ async function render(ctx: RenderContext): Promise<Uint8Array> {
 
 let busy = false;
 
-/** Génère et télécharge la synthèse A3. Rend `false` si rien n'a été produit. */
-export async function buildA3Pdf(options: PdfOptions): Promise<boolean> {
+/**
+ * Génère et télécharge la synthèse A3. Rend `false` si rien n'a été produit, et
+ * `'complet'` quand la situation ne tient pas et que l'utilisateur demande le
+ * rapport complet : l'appelant le lance une fois son verrou de génération relâché.
+ */
+export async function buildA3Pdf(options: PdfOptions): Promise<boolean | 'complet'> {
     if (busy) {
         toast('Une synthèse A3 est déjà en cours de génération.', { kind: 'info' });
         return false;
@@ -520,11 +524,7 @@ export async function buildA3Pdf(options: PdfOptions): Promise<boolean> {
                 confirmLabel: 'Générer le rapport complet',
                 cancelLabel: 'Fermer',
             });
-            if (full) {
-                const { PdfExport } = await import('@pctac/pdf-export.js');
-                await PdfExport.buildPdf({ ...options, kind: 'complet' });
-            }
-            return false;
+            return full ? 'complet' : false;
         }
 
         overlay('Synthèse A3 : dessin…');

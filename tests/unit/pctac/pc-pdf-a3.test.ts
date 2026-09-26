@@ -147,6 +147,30 @@ describe('buildA3Pdf', () => {
         expect(text).toContain('Portail nord [C4]');
     });
 
+    it('refus A3 : « Générer le rapport complet » produit bien le rapport complet', async () => {
+        seed();
+        const many = Array.from({ length: 400 }, (_, i) => ({
+            id: `a${i}`, nom: `DURAND${i}`, prenom: 'Marc', status: 'active',
+            armes: 'Fusil de chasse calibre 12, pistolet automatique', position: `Étage ${i}`,
+            signalement: 'Homme de type européen, 1 m 80, corpulence forte, barbe, veste sombre',
+        }));
+        localStorage.setItem('pcTacAdversaries', JSON.stringify(many));
+        vi.doMock('@shared/pdf-options.js', async (orig) => ({
+            ...(await orig<typeof import('@shared/pdf-options.js')>()),
+            askPdfOptions: async () => ({ ...OPTIONS }),
+        }));
+        vi.spyOn(console, 'error').mockImplementation(() => {});
+        const { openPdfDialog } = await import('@pctac/pdf-export.js');
+        const pending = openPdfDialog();
+        await vi.waitFor(() => expect(document.querySelector('dialog')?.textContent ?? '').toContain('Synthèse A3 impossible'), { timeout: 20000 });
+        document.querySelector<HTMLElement>('[data-tac-confirm="ok"]')!.click();
+        await pending;
+        vi.doUnmock('@shared/pdf-options.js');
+        expect(captured.blob).toBeDefined();
+        expect(captured.name).toMatch(/^PC-Tac_/);
+        expect(captured.name).not.toMatch(/Synthese-A3/);
+    }, 60000);
+
     it('un nom arabe est imprimé sans « ? » (police de repli)', async () => {
         seed({ advNom: 'بن محمد' });
         const { buildA3Pdf } = await import('@pctac/pdf-a3.js');
