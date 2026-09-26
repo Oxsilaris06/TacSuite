@@ -1865,3 +1865,20 @@ test('fiche sur bureau : pleine largeur sans fiche, deux colonnes ensuite', asyn
   expect(two.list).toBeGreaterThan(200);
   expect(two.fiche).toBeLessThan(two.layout - two.list);
 });
+
+// ============================================================================
+// Thème clair : un champ qui prend le focus garde son fond clair (le voile
+// noir à 50 % du thème sombre rendait le texte illisible, en plein soleil).
+// ============================================================================
+test('thème clair : le champ actif reste lisible (fond clair au focus)', async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('theme', 'light'));
+  await gotoPctac(page);
+  const field = page.locator('#remarques_input');
+  await field.focus();
+  await page.waitForTimeout(500); // fin de la transition de fond
+  const bg = await field.evaluate((el) => getComputedStyle(el).backgroundColor);
+  // Canal rouge du fond (rgb ou rgba) : clair = au-dessus de 200.
+  const red = Number(/\d+/.exec(bg)?.[0]);
+  const alpha = Number(/rgba\([^)]*,\s*([\d.]+)\)/.exec(bg)?.[1] ?? 1);
+  expect(red >= 200 || alpha < 0.2, `fond du champ actif en thème clair : ${bg}`).toBe(true);
+});
