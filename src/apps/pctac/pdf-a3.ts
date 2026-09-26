@@ -540,7 +540,7 @@ export async function buildA3Pdf(options: PdfOptions): Promise<boolean> {
         link.click();
         setTimeout(() => { try { URL.revokeObjectURL(link.href); } catch { /* sans effet */ } }, 30000);
         const over = budget !== null && bytes.length > budget ? ' (au-dessus de la cible Partage : trop de photos)' : '';
-        toast(`Synthèse A3 générée : ${formatBytes(bytes.length)}${over}.`, { kind: over ? 'info' : 'success' });
+        toast(`Synthèse A3 prête : ${formatBytes(bytes.length)}${over}.`, { kind: over ? 'info' : 'success' });
         return true;
     } catch (e) {
         console.error('Synthèse A3 :', e);
