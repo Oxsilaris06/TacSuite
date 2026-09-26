@@ -200,6 +200,7 @@ import { confirmDialog, toast } from '@shared/feedback.js';
 // un attribut construit en innerHTML passe par `esc` (import direct, jamais le
 // repli brut `window.UIPlatform ? … : value`).
 import { esc } from '@shared/ui-platform.js';
+import { archiveSizeVerdict, zipEntrySizes } from '@shared/archive-limits.js';
 import type {
     OiAdversary,
     OiAnnotation,
@@ -1388,6 +1389,9 @@ async function parseArchive(file: File): Promise<OiParsedArchive> {
     } catch {
         return { ok: false, error: "Fichier illisible : ce n'est pas une archive .oi.zip valide (ou elle est corrompue)." };
     }
+    // Audit du 26/09 : une « zip bomb » est refusée avant toute décompression.
+    const tooBig = archiveSizeVerdict(zipEntrySizes(zip), file.size);
+    if (tooBig) return { ok: false, error: tooBig };
 
     const dataFile = zip.file('data.json');
     if (!dataFile) return { ok: false, error: 'Archive invalide : « data.json » introuvable. Fichier non reconnu.' };
