@@ -1922,3 +1922,23 @@ test('mesure sur téléphone : tous les boutons de la barre restent dans l’éc
     expect.soft(r.x + r.width, `bouton « ${await b.innerText()} » coupé à droite`).toBeLessThanOrEqual(390);
   }
 });
+
+// ============================================================================
+// Portail (destination du bouton « maison » du dock), téléphone 390×844 :
+// les deux applications se voient sans défiler et le bouton de thème est
+// une cible tactile de 44 px.
+// ============================================================================
+test('portail sur téléphone : deux applications à l’écran, thème à 44 px', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/');
+  await page.waitForLoadState('domcontentloaded');
+  const toggle = await page.locator('#theme-toggle').boundingBox();
+  expect.soft(toggle?.height ?? 0, 'hauteur du bouton de thème').toBeGreaterThanOrEqual(44);
+  const cards = page.locator('.app-card');
+  await expect(cards).toHaveCount(2);
+  const second = await cards.nth(1).boundingBox();
+  // Le titre de la seconde carte (OI) doit être visible sans défiler.
+  const title = await cards.nth(1).locator('.app-card__title').boundingBox();
+  expect.soft(second, 'seconde carte').not.toBeNull();
+  expect.soft((title?.y ?? 9999) + (title?.height ?? 0), 'titre OI sous la ligne de flottaison').toBeLessThanOrEqual(844);
+});

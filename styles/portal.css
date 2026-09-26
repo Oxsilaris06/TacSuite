@@ -410,6 +410,7 @@ body {
 .theme-toggle {
     display: inline-flex;
     align-items: center;
+    min-height: 44px;
     gap: var(--toggle-gap);
     padding: var(--toggle-padding-block) var(--toggle-padding-inline);
     border: var(--tac-border-width) solid var(--toggle-border);
@@ -899,6 +900,34 @@ body {
     .portal-header__bar {
         flex-direction: column;
         align-items: flex-start;
+    }
+
+    /* Carte compacte : vignette à gauche, texte à droite, pour voir les deux
+       applications sans défiler (la vignette carrée pleine largeur poussait
+       l'OI à plus d'un écran et demi). */
+    .app-card {
+        display: grid;
+        grid-template-columns: 5.5rem 1fr;
+        align-items: center;
+        column-gap: var(--tac-space-4);
+        row-gap: var(--tac-space-1);
+    }
+
+    .app-card__media {
+        grid-row: 1 / span 3;
+    }
+
+    .app-card__head,
+    .app-card__footer {
+        justify-content: flex-start;
+    }
+
+    .app-card__desc {
+        text-align: left;
+    }
+
+    .app-card__footer {
+        padding-top: var(--tac-zero);
     }
 }
 
