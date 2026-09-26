@@ -289,7 +289,16 @@ function injectStyles(): void {
   margin: 0 0 var(--tac-space-2, 8px);
   font-size: 16px;
   font-weight: 700;
+  /* Neutralise le h2 de l'OI (oi.css : capitales, soulignement, barre bleue). */
+  display: block;
+  border: 0;
+  padding: 0;
+  font-family: inherit;
+  color: inherit;
+  text-transform: none;
+  letter-spacing: normal;
 }
+.tac-confirm-title::before { content: none; }
 .tac-confirm-message {
   margin: 0;
   white-space: pre-line;
@@ -349,6 +358,8 @@ function injectStyles(): void {
 
 const MAX_VISIBLE_TOASTS = 3;
 const DEFAULT_TOAST_DURATION = 4000;
+/** Un succès se lit d'un coup d'œil : plus court, il ne recouvre pas longtemps l'action principale. */
+const SUCCESS_TOAST_DURATION = 2500;
 /** Doit couvrir la durée de la transition CSS (`--tac-duration-fast`, 150ms) avant retrait du DOM. */
 const LEAVE_DELAY_MS = 200;
 /** Délai d'annulation par défaut d'un `undoableToast` (décision 31). */
@@ -627,7 +638,8 @@ function buildToast(config: BuildToastConfig): HTMLElement {
  * retirée immédiatement pour faire de la place.
  */
 export function toast(message: string, options: ToastOptions = {}): void {
-  const { kind = 'info', duration = DEFAULT_TOAST_DURATION, action } = options;
+  const { kind = 'info', action } = options;
+  const duration = options.duration ?? (kind === 'success' ? SUCCESS_TOAST_DURATION : DEFAULT_TOAST_DURATION);
   const config: BuildToastConfig = { message, kind, duration };
   if (action) config.action = action;
   buildToast(config);
