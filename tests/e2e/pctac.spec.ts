@@ -1985,3 +1985,30 @@ test('photos : le titre du formulaire est « Ajouter une photo »', async ({ pag
   await clickTab(page, 'view-photos');
   await expect(page.locator('#view-photos h3').first()).toHaveText(/Ajouter une photo/);
 });
+
+test('téléphone : champs de saisie et boutons « Ajouter » d\'au moins 44 px (mesuré : 41 et 37 px)', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'chromium-mobile', 'cibles tactiles du téléphone');
+  await gotoPctac(page);
+  const small: string[] = [];
+  for (const viewId of ['view-main-courante', 'view-adversaires', 'view-otages', 'view-amis', 'view-photos']) {
+    await clickTab(page, viewId);
+    await expect(page.locator(`#${viewId}`)).toHaveClass(/active/);
+    small.push(...await page.locator(`#${viewId}`).evaluate((root) =>
+      Array.from(root.querySelectorAll<HTMLElement>('input, select, .add-btn')).flatMap((el) => {
+        if (el instanceof HTMLInputElement && ['checkbox', 'radio', 'range', 'color', 'file', 'hidden'].includes(el.type)) return [];
+        const r = el.getBoundingClientRect();
+        if (!r.width || getComputedStyle(el).visibility === 'hidden') return [];
+        return r.height < 43.5 ? [`${root.id} ${el.id || el.className} ${Math.round(r.height)}px`] : [];
+      })));
+  }
+  expect(small).toEqual([]);
+});
+
+test('bureau : les options du sélecteur de situation font 44 px (mesuré : 34 px)', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'chromium-desktop', 'sur téléphone, liste native');
+  await gotoPctac(page);
+  const heights = await page.locator('.mode-selector-option').evaluateAll((els) =>
+    els.filter((e) => e.getBoundingClientRect().width > 0).map((e) => Math.round(e.getBoundingClientRect().height)));
+  expect(heights.length).toBeGreaterThan(0);
+  expect(Math.min(...heights)).toBeGreaterThanOrEqual(44);
+});
