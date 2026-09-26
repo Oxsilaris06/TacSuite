@@ -1512,6 +1512,19 @@ test.describe('OI — ergonomie', () => {
     expect([...new Set(found)]).toEqual([]);
   });
 
+  test('articulation : l\'en-tête d\'un bloc tient dans la largeur (chevron visible)', async ({ page }) => {
+    await gotoOi(page);
+    await goToStepViaBullet(page, 5);
+    for (const btn of ['#addMoicpBtn', '#addZmspcpBtn', '#addEffractionBtn']) await page.locator(btn).click();
+    const overflow = await page.locator('.articulation-block > .collapsible-header').evaluateAll((hs) =>
+      hs.flatMap((h) => {
+        const box = h.getBoundingClientRect();
+        return Array.from(h.querySelectorAll('*')).some((c) => c.getBoundingClientRect().right > box.right + 1)
+          ? [h.textContent?.trim().slice(0, 30)] : [];
+      }));
+    expect(overflow).toEqual([]);
+  });
+
   test('un champ qui prend le focus n\'est pas caché sous le dock', async ({ page }) => {
     await page.emulateMedia({ reducedMotion: 'reduce' }); // défilement immédiat
     await gotoOi(page);

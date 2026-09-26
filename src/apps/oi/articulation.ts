@@ -134,10 +134,10 @@ export function addMoicp(data?: Partial<OiMoicpBlock> | null): void {
 
     div.innerHTML = `
         <div class="collapsible-header" style="background: color-mix(in srgb, var(--accent-blue) 12%, transparent); color: var(--accent-blue); border-radius: var(--radius-md) var(--radius-md) 0 0;">
-            <h3 class="block-title" style="margin: 0; display: flex; align-items: center; gap: 10px;">
+            <h3 class="block-title" style="margin: 0; display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0;">
                 <span class="material-symbols-outlined">shield</span>
                 <input type="text" class="block-title-input" value="${esc(data?.title || 'Inter ' + blockIndex)}"
-                    style="background: transparent; border: none; border-bottom: 1px solid rgba(59, 130, 246, 0.3); color: var(--accent-blue); font-size: 1.1em; font-weight: bold; padding: 2px 5px; width: 220px;"
+                    style="background: transparent; border: none; border-bottom: 1px solid rgba(59, 130, 246, 0.3); color: var(--accent-blue); font-size: 1.1em; font-weight: bold; padding: 2px 5px; width: 100%; min-width: 0;"
                     onclick="event.stopPropagation()" oninput="syncDomToStore()">
             </h3>
             <div style="display: flex; align-items: center; gap: 8px;">
@@ -235,10 +235,10 @@ export function addZmspcp(data?: Partial<OiZmspcpBlock> | null): void {
 
     div.innerHTML = `
         <div class="collapsible-header" style="background: color-mix(in srgb, var(--moicp-zmspcp-purple) 12%, transparent); color: var(--moicp-zmspcp-purple, #8e44ad); border-radius: var(--radius-md) var(--radius-md) 0 0;">
-            <h3 class="block-title" style="margin: 0; display: flex; align-items: center; gap: 10px;">
+            <h3 class="block-title" style="margin: 0; display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0;">
                 <span class="material-symbols-outlined">visibility</span>
                 <input type="text" class="block-title-input" value="${esc(data?.title || 'Appui Observation ' + blockIndex)}"
-                    style="background: transparent; border: none; border-bottom: 1px solid rgba(142, 68, 173, 0.3); color: var(--moicp-zmspcp-purple, #8e44ad); font-size: 1.1em; font-weight: bold; padding: 2px 5px; width: 220px;"
+                    style="background: transparent; border: none; border-bottom: 1px solid rgba(142, 68, 173, 0.3); color: var(--moicp-zmspcp-purple, #8e44ad); font-size: 1.1em; font-weight: bold; padding: 2px 5px; width: 100%; min-width: 0;"
                     onclick="event.stopPropagation()" oninput="syncDomToStore()">
             </h3>
             <div style="display: flex; align-items: center; gap: 8px;">
@@ -950,10 +950,10 @@ export function addEffraction(data?: Partial<OiEffractionBlock> | null): void {
 
     div.innerHTML = `
         <div class="collapsible-header" style="background: color-mix(in srgb, var(--effraction-gold) 12%, transparent); color: var(--effraction-gold); border-radius: var(--radius-md) var(--radius-md) 0 0;">
-            <h3 class="block-title" style="margin: 0; display: flex; align-items: center; gap: 10px;">
+            <h3 class="block-title" style="margin: 0; display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0;">
                 <span class="material-symbols-outlined">hardware</span>
                 <input type="text" class="block-title-input" value="${esc(data?.title || 'Effraction ' + blockIndex)}"
-                    style="background: transparent; border: none; border-bottom: 1px solid rgba(212, 175, 55, 0.3); color: var(--effraction-gold); font-size: 1.1em; font-weight: bold; padding: 2px 5px; width: 220px;"
+                    style="background: transparent; border: none; border-bottom: 1px solid rgba(212, 175, 55, 0.3); color: var(--effraction-gold); font-size: 1.1em; font-weight: bold; padding: 2px 5px; width: 100%; min-width: 0;"
                     onclick="event.stopPropagation()" oninput="syncDomToStore()">
             </h3>
             <div style="display: flex; align-items: center; gap: 8px;">
