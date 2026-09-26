@@ -27,7 +27,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // U19 — toast unique (`@shared/feedback.js`) mocké.
 const toastSpy = vi.hoisted(() => vi.fn());
-vi.mock('@shared/feedback.js', () => ({ toast: toastSpy }));
+// Décision 43 : le refus « une page = un usage » passe par une fenêtre persistante.
+const confirmSpy = vi.hoisted(() => vi.fn(() => Promise.resolve(false)));
+vi.mock('@shared/feedback.js', () => ({ toast: toastSpy, confirmDialog: confirmSpy }));
 
 import type { OiFormData, OiPdfCollectedData } from '@shared/types/contracts.js';
 
@@ -720,6 +722,22 @@ describe('downloadOiPdfV3', () => {
         }
 
         expect(toDataURLSpy).toHaveBeenCalledWith('image/jpeg', 0.72);
+    });
+
+    it('refus « une page = un usage » : fenêtre persistante qui nomme la fiche et dit combien retirer, pas de toast (décision 43)', async () => {
+        const { downloadOiPdfV3 } = await loadEngineV3();
+        confirmSpy.mockClear();
+        const atcd = Array.from({ length: 40 }, (_, i) => `- ${2024 - i} : VIOLENCE AGGRAVEE PAR DEUX CIRCONSTANCES SUIVIE D'INCAPACITE`).join('\n');
+        const adversaries = [{ id: 'adv1', nom_adversaire: 'MARTIN Paul', antecedents_adversaire: atcd, me_list: [], etat_esprit_list: [], volume_list: [], vehicules_list: [] }];
+
+        await downloadOiPdfV3({ collect: () => Promise.resolve(makeCollectedData({ adversaries })) });
+
+        expect(confirmSpy).toHaveBeenCalledTimes(1);
+        expect(confirmSpy).toHaveBeenCalledWith(expect.objectContaining({
+            message: expect.stringMatching(/Fiche Adversaire 1 : MARTIN Paul — environ \d+ lignes? de trop/),
+            confirmLabel: 'Aller au champ',
+        }));
+        expect(toastSpy).not.toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ kind: 'error' }));
     });
 
     it("en cas d'échec de createPdf, toast est appelé avec kind 'error' et le message exact", async () => {
