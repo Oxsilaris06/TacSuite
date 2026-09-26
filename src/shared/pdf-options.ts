@@ -12,7 +12,7 @@
  * les lisent au lieu de porter leurs propres constantes.
  */
 
-import { ensureFeedbackStyles } from '@shared/feedback.js';
+import { ensureFeedbackStyles, isBackdropClick } from '@shared/feedback.js';
 
 export type PdfTheme = 'clair' | 'sombre';
 export type PdfSortie = 'impression' | 'partage';
@@ -250,7 +250,7 @@ export function askPdfOptions(options: AskPdfOptions): Promise<PdfOptions | null
 
         okBtn.addEventListener('click', () => close(form.read()));
         cancelBtn.addEventListener('click', () => close(null));
-        dialog.addEventListener('click', (e) => { if (e.target === dialog) close(null); });
+        dialog.addEventListener('click', (e) => { if (isBackdropClick(dialog, e)) close(null); });
         dialog.addEventListener('cancel', (e) => { e.preventDefault(); close(null); });
         dialog.addEventListener('keydown', (e) => { if (e.key === 'Escape') close(null); });
         dialog.addEventListener('close', settle);

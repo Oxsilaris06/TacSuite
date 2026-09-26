@@ -305,3 +305,17 @@ describe('délégation d\'événements : aucun id dans un gestionnaire en ligne 
     expect(rename).toHaveBeenCalledWith("p'1");
   });
 });
+
+describe('bindModalBackdrop — fermeture au fond seulement', () => {
+  it('un toucher dans la marge intérieure (30 px) ne ferme pas la saisie ; hors de la boîte, si', () => {
+    document.body.innerHTML = '<dialog class="modal" open><input id="saisie"></dialog>';
+    const dialog = document.querySelector<HTMLDialogElement>('dialog.modal')!;
+    dialog.close = vi.fn(() => { dialog.removeAttribute('open'); });
+    dialog.getBoundingClientRect = () => ({ left: 100, top: 100, right: 600, bottom: 500, width: 500, height: 400, x: 100, y: 100, toJSON: () => ({}) });
+    UI.bindModalBackdrop();
+    dialog.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: 115, clientY: 115 }));
+    expect(dialog.close).not.toHaveBeenCalled();
+    dialog.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: 50, clientY: 50 }));
+    expect(dialog.close).toHaveBeenCalledTimes(1);
+  });
+});
