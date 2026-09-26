@@ -1605,6 +1605,9 @@ async function applyArchiveImport(parsed: OiParsedArchiveOk, cats: readonly OiIm
     }
 
     const snapshot = localStorage.getItem(KEY);
+    // Audit du 26/09 : photos en place mises de côté AVANT de les effacer, et
+    // remises si l'import échoue ensuite (même patron que l'import PC-Tac).
+    let imagesBefore: Map<string, Blob> | null = null;
     let imgFail = 0;
     let imgRaw = 0; // R7 : gardées sans ré-encodage, donc EXIF/GPS possible
     try {
@@ -1612,6 +1615,18 @@ async function applyArchiveImport(parsed: OiParsedArchiveOk, cats: readonly OiIm
         if (importImages && dbManager) {
             if (!dbManager.db) { try { await dbManager.init(); } catch { /* … */ } }
             if (dbManager.db) {
+                // Photos en place illisibles : on n'efface rien sans pouvoir les
+                // remettre, l'import est annulé.
+                const before = new Map<string, Blob>();
+                try {
+                    for (const key of await dbManager.getAllKeys()) {
+                        const blob = await dbManager.getItem(String(key));
+                        if (blob) before.set(String(key), blob);
+                    }
+                } catch {
+                    throw new Error('photos en place illisibles, rien n’a été modifié.');
+                }
+                imagesBefore = before;
                 try { await dbManager.clearAllImages(); } catch { /* … */ }
                 // JUSTIFICATION cast : cf. detectImportCategories.
                 const zip = parsed.zip as JSZip;
@@ -1620,7 +1635,9 @@ async function applyArchiveImport(parsed: OiParsedArchiveOk, cats: readonly OiIm
                     const tasks: Promise<void>[] = [];
                     imagesFolder.forEach((relPath, entry) => {
                         if (entry.dir) return;
-                        const k = decodeURIComponent(relPath.replace(/\.bin$/, '').replace(/\.txt$/, ''));
+                        let k: string;
+                        // Nom mal encodé (« %E0 ») : cette image seule est ignorée.
+                        try { k = decodeURIComponent(relPath.replace(/\.bin$/, '').replace(/\.txt$/, '')); } catch { imgFail++; return; }
                         if (!isSafeId(k)) { imgFail++; return; } // SEC-1 : id forgé, jamais stocké
                         tasks.push(entry.async('arraybuffer')
                             .then(async (ab) => {
@@ -1674,6 +1691,12 @@ async function applyArchiveImport(parsed: OiParsedArchiveOk, cats: readonly OiIm
         setTimeout(() => location.reload(), raw ? 6000 : 600);
     } catch (e) {
         console.error('[OI Archive] import sélectif échec:', e);
+        if (imagesBefore && dbManager) {
+            try {
+                await dbManager.clearAllImages();
+                for (const [key, blob] of imagesBefore) await dbManager.putItem(key, blob);
+            } catch (err) { console.error('[OI Archive] photos d’origine non remises:', err); }
+        }
         toast("Erreur d'import : " + (e instanceof Error ? e.message : String(e)), { kind: 'error' });
     }
 }
