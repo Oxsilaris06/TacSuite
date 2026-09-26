@@ -1537,6 +1537,21 @@ test.describe('OI — ergonomie', () => {
     expect((await item.boundingBox())!.height).toBeLessThan(180);
   });
 
+  test('sections : crayon et × restent sur la ligne du titre', async ({ page }) => {
+    await gotoOi(page);
+    for (const n of [4, 5]) {
+      await goToStepViaBullet(page, n);
+      const wrapped = await page.locator('.wizard-step.active .oi-section-heading').evaluateAll((hs) =>
+        hs.flatMap((h) => {
+          const label = h.querySelector('.oi-section-label')?.getBoundingClientRect();
+          const tools = h.querySelector('.oi-section-tools')?.getBoundingClientRect();
+          if (!label || !tools || !tools.width) return [];
+          return tools.top >= label.bottom - 2 ? [h.textContent?.replace(/\s+/g, ' ').trim().slice(0, 30)] : [];
+        }));
+      expect(wrapped, `étape ${n + 1}`).toEqual([]);
+    }
+  });
+
   test('un champ qui prend le focus n\'est pas caché sous le dock', async ({ page }) => {
     await page.emulateMedia({ reducedMotion: 'reduce' }); // défilement immédiat
     await gotoOi(page);
