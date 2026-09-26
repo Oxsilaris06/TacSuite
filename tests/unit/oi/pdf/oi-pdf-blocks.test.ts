@@ -441,6 +441,23 @@ describe('galleryPages — galerie adaptative (décision 44, OrderHtmlPhotos.kt:
         expect(textsOf(nette[0] as Content)).not.toContain('basse définition');
     });
 
+    it('image minuscule (1×1 px) : légende, mention et badges gardent la largeur de la CELLULE, jamais celle de l’image', () => {
+        // Gate CI volumetric-stress (C5) : une image de 1 px posée à 150 ppi
+        // mesure 0,48 pt ; la légende composée dans une colonne aussi étroite
+        // tombait un caractère par ligne, débordait sur une page blanche et
+        // n'était plus lisible (« rien n'est tronqué »).
+        const TINY = { widthPx: 1, heightPx: 1 };
+        const metas = [makePhoto({ id: 'photo-1', customTitle: 'Bapteme terrain zmspcp_vol_1 — cliche 1', tools: '["Pied de biche"]' }), makePhoto({ id: 'photo-2' })];
+        const pages = galleryPages('G', metas, photosBase64, p, geo, sizes({ 'photo-1': TINY, 'photo-2': TINY }));
+        expect(pages).toHaveLength(1);
+        const cellWidth = (geo.contentWidthPt - 12) / 2;
+        const cells = walk(pages[0]).filter((n) => typeof n.width === 'number' && Array.isArray(n.stack));
+        const captionCell = cells.find((c) => textsOf(c as Content).includes('Bapteme terrain zmspcp_vol_1 — cliche 1'));
+        expect(captionCell?.width as number).toBeCloseTo(cellWidth, 1);
+        const [img] = imagesOf(pages[0] as Content);
+        expect((img?.fit as number[])[0]).toBeLessThanOrEqual((1 / 150) * 72 + 0.01);
+    });
+
     it('convention de saut de page : pageBreak "before" sur toutes sauf la première', () => {
         const pages = galleryPages('Galerie', photos(3), photosBase64, p, geo);
         expect((pages[0] as { pageBreak?: string }).pageBreak).toBeUndefined();
