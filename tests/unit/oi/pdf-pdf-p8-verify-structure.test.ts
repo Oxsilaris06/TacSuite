@@ -299,8 +299,10 @@ describe('assertA3_sectionOrder()', () => {
     });
 
     it('PASS --lenient : un marqueur conditionnel manquant devient SKIP, pas un FAIL', () => {
+        // Sans fiche adversaire, un PDF réel numérote ses sections dérivées à
+        // partir de 2 (audit F18) : le texte simulé est décalé d'un rang.
         const text = MARKERS.filter((m: { n: number }) => m.n !== 4)
-            .map((m: { text: string }) => m.text)
+            .map((m: { text: string; numbered?: boolean }) => (m.numbered ? m.text.replace(/^(\d+)\./, (_all, n: string) => `${Number(n) - 1}.`) : m.text))
             .join('\n');
         const r = assertA3_sectionOrder(text, { lenient: true });
         expect(r.ok).toBe(true);
@@ -344,7 +346,8 @@ describe('assertA3_sectionOrder()', () => {
         const text = [
             'ORDRE INITIAL',
             '1. SITUATION GLOBALE',
-            'CIBLES(S)',
+            'CIBLE(S)',
+            '2.1 FICHE ADVERSAIRE : X',
             '3. ENVIRONNEMENT ET AMIS',
             "4. MISSION DE L'UNITÉ",
             '5. EXÉCUTION',
@@ -362,7 +365,8 @@ describe('assertA3_sectionOrder()', () => {
         const text = [
             'ORDRE INITIAL',
             '1. SITUATION GLOBALE',
-            'CIBLES(S)',
+            'CIBLE(S)',
+            '2.1 FICHE ADVERSAIRE : X',
             '3. ENVIRONNEMENT ET AMIS',
             "5. MISSION DE L'UNITÉ", // devrait être « 4. » — TRANSPORT (#6) est absent
             '6. EXÉCUTION',
@@ -372,6 +376,30 @@ describe('assertA3_sectionOrder()', () => {
             'AVEZ-VOUS DES QUESTIONS ?',
         ].join('\n\n');
         const r = assertA3_sectionOrder(text, { lenient: true });
+        expect(r.ok).toBe(false);
+        expect(r.detail).toMatch(/numérotation rompue/);
+    });
+
+    // Audit PDF du 2026-09-25 (F18) : sans adversaire, le créneau « 2. » est
+    // libéré — la numérotation dérivée commence à 2, jamais de saut 1 → 3.
+    const sansAdversaire = (first: number): string => [
+        'ORDRE INITIAL',
+        '1. SITUATION GLOBALE',
+        'CIBLE(S)',
+        `${first}. ENVIRONNEMENT ET AMIS`,
+        `${first + 1}. MISSION DE L'UNITÉ`,
+        `${first + 2}. EXÉCUTION`,
+        `${first + 3}. ARTICULATION & ORDRES DE MOUVEMENT`,
+        'AVEZ-VOUS DES QUESTIONS ?',
+    ].join('\n\n');
+
+    it('PASS : sans fiche adversaire, les sections dérivées commencent à 2', () => {
+        const r = assertA3_sectionOrder(sansAdversaire(2), { lenient: true });
+        expect(r.ok).toBe(true);
+    });
+
+    it('FAIL : sans fiche adversaire mais numérotation à partir de 3 (saut 1 → 3, audit F18)', () => {
+        const r = assertA3_sectionOrder(sansAdversaire(3), { lenient: true });
         expect(r.ok).toBe(false);
         expect(r.detail).toMatch(/numérotation rompue/);
     });

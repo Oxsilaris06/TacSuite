@@ -213,6 +213,7 @@
                 <div class="wizard-step oi-grid" data-oi-section="situation">
                     <h2>1. Situation</h2>
                     <label for="date_op">Date de l'opération:</label><input type="date" id="date_op" data-action="sync-dom-to-store">
+                    <label for="nom_operation">Nom de l'opération (facultatif):</label><input type="text" id="nom_operation" maxlength="60" placeholder="Nom de code, ex. HIBOU 26" data-action="sync-dom-to-store">
                     <label for="situation_generale">1.1 Générale:</label><textarea id="situation_generale" data-action="sync-dom-to-store"></textarea>
                     <label for="situation_particuliere">1.2 Particulière:</label><textarea
                         id="situation_particuliere" data-action="sync-dom-to-store"></textarea>
@@ -537,14 +538,13 @@ présumé de (Nom Adversaire 1) et (Nom Adversaire 2) après avoir bouclé celui
                             <span class="material-symbols-outlined">expand_more</span>
                         </div>
                         <div class="collapsible-content" style="display: flex; flex-direction: column; gap: 15px;">
-                            <p>Vous pouvez remplacer le fond par défaut (Grille Tactique) par une image de votre choix.
+                            <p>Image facultative (logo d'unité, photo) imprimée en filigrane discret au centre de la page de garde et de la dernière page du PDF. Sans image, le PDF n'a pas de fond.
                             </p>
                             <div style="display: flex; gap: 10px;">
                                 <button type="button" class="add-btn"
                                     data-action="trigger-file-input" data-target="custom_bg_input">📂 Choisir
                                     Image</button>
-                                <button type="button" class="remove-btn" data-action="remove-custom-background"><span class="material-symbols-outlined" aria-hidden="true">restore</span> Rétablir
-                                    Défaut</button>
+                                <button type="button" class="remove-btn" data-action="remove-custom-background"><span class="material-symbols-outlined" aria-hidden="true">delete</span> Retirer le fond</button>
                             </div>
                             <input type="file" id="custom_bg_input" class="photo-input sr-only-input"
                                 accept="image/jpeg, image/png, image/jpg" data-action="handle-custom-background-change">
