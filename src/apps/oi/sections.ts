@@ -31,7 +31,7 @@ export interface OiSectionDef {
 
 export const OI_SECTIONS: readonly OiSectionDef[] = [
     { id: 'situation', label: 'Situation', pdf: 'SITUATION GLOBALE', removable: false, step: 0 },
-    { id: 'adversaires', label: 'Adversaire(s)', pdf: 'CIBLES(S)', removable: true, step: 1 },
+    { id: 'adversaires', label: 'Adversaire(s)', pdf: 'CIBLE(S)', removable: true, step: 1 },
     { id: 'environnement', label: 'Environnement', pdf: 'ENVIRONNEMENT ET AMIS', removable: true, step: 2 },
     { id: 'mission', label: "Mission de l'unité", pdf: "MISSION DE L'UNITÉ", removable: false, step: 3 },
     { id: 'execution', label: 'Exécution', pdf: 'EXÉCUTION', removable: false, step: 4 },

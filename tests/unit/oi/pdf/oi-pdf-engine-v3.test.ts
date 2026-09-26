@@ -629,7 +629,7 @@ describe('downloadOiPdfV3', () => {
         vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:mock-url');
     });
 
-    it("produit un <a> dont l'attribut download vaut exactement OI_<date>_<trigramme>.pdf et déclenche un clic", async () => {
+    it("produit un <a> dont l'attribut download vaut OI_Complet_<date>_<heure>_<trigramme>.pdf (audit F23) et déclenche un clic", async () => {
         const { downloadOiPdfV3 } = await loadEngineV3();
         let capturedDownload: string | null = null;
         const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (
@@ -641,7 +641,7 @@ describe('downloadOiPdfV3', () => {
         await downloadOiPdfV3({ collect: () => Promise.resolve(makeCollectedData()) });
 
         expect(clickSpy).toHaveBeenCalledTimes(1);
-        expect(capturedDownload).toBe('OI_2026-05-15_REF.pdf');
+        expect(capturedDownload).toMatch(/^OI_Complet_2026-05-15_\d{2}h\d{2}_REF\.pdf$/);
     });
 
     it('masque le loader (#pdfLoadingModal.style.display === "none") aussi bien en succès qu\'en échec (branche finally)', async () => {

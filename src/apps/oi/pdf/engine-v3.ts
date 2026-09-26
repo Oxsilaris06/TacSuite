@@ -455,6 +455,7 @@ export async function buildOiPdfBlob(
         pdfMake.addFonts(PDF_FONTS);
         fontsRegistered = true;
     }
+    await (await import('./scripts-fallback.js')).applyOiScriptFallback(docDefinition, pdfMake); // écritures non latines (décision 44)
 
     return pdfMake.createPdf(docDefinition).getBlob();
 }
