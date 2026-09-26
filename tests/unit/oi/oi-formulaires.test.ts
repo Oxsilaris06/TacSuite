@@ -382,6 +382,15 @@ describe('oi-formulaires — persistance du formulaire OI', () => {
             expect(Store.state.formData.oi_mode).toBe('express');
         });
 
+        it('la synthèse donne la date au format français', async () => {
+            localStorage.setItem('tactical_oi_data', JSON.stringify({ date_op: '2026-08-01', heure_execution: '06:00' }));
+            await import('@oi/formulaires.js');
+
+            window.checkCoherence();
+
+            expect(document.getElementById('recap_finalisation')!.textContent).toContain('Opération du 01/08/2026 - H: 06:00');
+        });
+
         it('signale une chronologie incomplète (< 3 étapes)', async () => {
             localStorage.setItem('tactical_oi_data', JSON.stringify({
                 date_op: '2026-08-01',

@@ -1127,7 +1127,7 @@ function checkCoherence(): boolean {
     const recapFinalisation = document.getElementById('recap_finalisation');
     if (recapFinalisation) {
         let recapHtml = '<h4>Synthèse des Éléments Clés :</h4><ul>';
-        recapHtml += `<li>Opération du ${esc(getVal('date_op')) || 'N/A'} - H: ${esc(getVal('heure_execution')) || 'N/A'}</li>`;
+        recapHtml += `<li>Opération du ${esc(getVal('date_op').split('-').reverse().join('/')) || 'N/A'} - H: ${esc(getVal('heure_execution')) || 'N/A'}</li>`;
         if (Store.state.formData.adversaries) {
             Store.state.formData.adversaries.forEach((adv, i) => {
                 recapHtml += `<li>Objectif ${i + 1} : ${esc(adv.nom_adversaire) || 'Sans Nom'}</li>`;
