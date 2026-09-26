@@ -72,6 +72,30 @@ describe('import .oi.zip : les photos en place ne sont jamais perdues sur un éc
         expect(toastSpy).toHaveBeenCalledWith(expect.stringContaining('1 photo(s) ignorée(s)'), expect.anything());
     });
 
+    it('revue du 26/09 : même identifiant réécrit puis échec : l’ancienne version revient', async () => {
+        const store = await fakeImageDb({ img_new: 'ancienne' });
+        const realSet = localStorage.setItem.bind(localStorage);
+        vi.spyOn(localStorage, 'setItem').mockImplementation((k: string, v: string) => {
+            if (k === 'tactical_oi_data' && v.includes('img_new')) throw new DOMException('plein', 'QuotaExceededError');
+            realSet(k, v);
+        });
+        await runImport(await archive({ 'img_new.bin': 'nouvelle' }));
+        expect(await store.get('img_new')!.text()).toBe('ancienne');
+    });
+
+    it('revue du 26/09 : aucune photo en place n’est retirée avant l’écriture du formulaire (onglet qui plante)', async () => {
+        const store = await fakeImageDb({ img_old: 'ancienne' });
+        let presentAuMomentDeLEcriture: string[] | null = null;
+        const realSet = localStorage.setItem.bind(localStorage);
+        vi.spyOn(localStorage, 'setItem').mockImplementation((k: string, v: string) => {
+            if (k === 'tactical_oi_data' && v.includes('img_new') && !presentAuMomentDeLEcriture) presentAuMomentDeLEcriture = [...store.keys()].sort();
+            realSet(k, v);
+        });
+        await runImport(await archive({ 'img_new.bin': 'nouvelle' }));
+        expect(presentAuMomentDeLEcriture).toEqual(['img_new', 'img_old']);
+        expect([...store.keys()]).toEqual(['img_new']);
+    });
+
     it('photos en place illisibles : import annulé, rien n’est effacé', async () => {
         const store = await fakeImageDb({ img_old: 'ancienne' });
         const { dbManager } = await import('@oi/init.js');

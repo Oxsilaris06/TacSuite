@@ -33,4 +33,11 @@ describe('archiveSizeVerdict', () => {
     const entries = Array.from({ length: 5 }, (_, i) => ({ name: `images/p${i}.bin`, size: 1024 * MB }));
     expect(archiveSizeVerdict(entries, 5 * 1024 * MB)).toMatch(/trop volumineux/);
   });
+
+  it('revue du 26/09 : une bombe sous 512 Mo est refusée par son taux PAR ENTRÉE', () => {
+    expect(archiveSizeVerdict([{ name: 'images/a.bin', size: 511 * MB, compressed: 1 * MB }], 1 * MB)).toMatch(/trop volumineux/);
+    // Une photo (déjà compressée) ou un JSON ordinaire passent.
+    expect(archiveSizeVerdict([{ name: 'images/p.bin', size: 40 * MB, compressed: 39 * MB }], 39 * MB)).toBeNull();
+    expect(archiveSizeVerdict([{ name: 'data.json', size: 40 * MB, compressed: 2 * MB }], 2 * MB)).toBeNull();
+  });
 });
