@@ -161,7 +161,10 @@ function applyPinVisual(
     onPhotoClick?: () => void,
 ): void {
     const def = OI_PIN_DEFS[pin.kind] || OI_PIN_FALLBACK;
-    const color = pin.color || def.color;   // couleur personnalisée prioritaire
+    // Couleur personnalisée prioritaire, mais elle vient de l'archive et
+    // atteint du CSS : #rgb ou #rrggbb seulement (SEC-5, même règle que
+    // safePinColor de PC-Tac), sinon la couleur du type.
+    const color = /^#[0-9a-f]{3}(?:[0-9a-f]{3})?$/i.test(pin.color ?? '') ? (pin.color as string) : def.color;
     const icon = pin.icon || def.icon;       // icône auto/personnalisée prioritaire
 
     // --- 1) Marqueur = icône Material colorée, halo blanc, ancrée au centre --- (oi_cartographie.js:919-925)

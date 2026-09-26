@@ -560,6 +560,24 @@ describe('_wireLongPressForPing — câblé depuis _bindUi (map-core.ts)', () =>
 });
 
 describe('_renderPins — CŒUR du module (oi_cartographie.js:904-985)', () => {
+    // SEC-5 (revue neuve du 2026-09-26) : la couleur d'un pin vient de
+    // l'archive ; seule une couleur hex simple atteint le CSS.
+    it('couleur forgée : repli sur la couleur du type ; hex simple gardé', () => {
+        const render = (color: string | null): { icon: HTMLElement; label: HTMLElement } => {
+            const fake = makeFakeThis({ map: {} as unknown as OICartoInternal['map'], _loadPins: () => [makePin({ id: 'p1', color })] });
+            PinsMethods._renderPins.call(fake);
+            const entry = fake.markers.get('p1') as { pin: { getElement(): HTMLElement }; label: { getElement(): HTMLElement } };
+            return { icon: entry.pin.getElement().querySelector<HTMLElement>('.material-symbols-outlined')!, label: entry.label.getElement() };
+        };
+        const def = render(null);
+        const forged = render('red; background-image: url(https://exemple.invalid/x)');
+        expect(forged.icon.style.color).toBe(def.icon.style.color);
+        expect(forged.icon.getAttribute('style')).not.toContain('url(');
+        expect(forged.label.style.borderLeftColor).toBe(def.label.style.borderLeftColor);
+        expect(forged.label.getAttribute('style')).not.toContain('url(');
+        expect(render('#abc').label.style.borderLeftColor).toBe('rgb(170, 187, 204)');
+    });
+
     it('sans carte (this.map === null) : ne fait rien, ne jette pas', () => {
         const fake = makeFakeThis({ map: null, _loadPins: () => [makePin({ id: 'p1' })] });
         expect(() => PinsMethods._renderPins.call(fake)).not.toThrow();
