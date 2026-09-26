@@ -39,6 +39,7 @@ import {
 import { GPX_INDEX_KEY, GRID_KEY, OVERLAYS_KEY, PINS_KEY } from '@pctac/planmap/constants.js';
 import { safePinColor, safePinIcon } from '@pctac/planmap/pin-safe.js';
 import { recordTombstone } from '@pctac/tombstones.js';
+import { archiveSizeVerdict, zipEntrySizes } from '@shared/archive-limits.js';
 import { isTacticalGridSpec } from '@shared/tactical-grid.js';
 import { PCTAC_MODES, SHARED_KEYS, currentModeId, persistModeId, scopedKey, type PctacModeId } from '@pctac/modes.js';
 import { findDuplicatePerson, normalizeDob } from '@pctac/fiche.js';
@@ -793,6 +794,9 @@ export const Archive: ArchiveContract = {
         let zip: JSZip;
         try { zip = await JSZip.loadAsync(buf); }
         catch { throw new Error("Archive illisible : ce n'est pas un fichier .pctac.zip valide (ou il est corrompu)."); }
+        // Audit du 26/09 : une « zip bomb » est refusée avant toute décompression.
+        const tooBig = archiveSizeVerdict(zipEntrySizes(zip), file.size);
+        if (tooBig) throw new Error(tooBig);
 
         // PC1.a — VALIDATION DU MANIFEST AVANT TOUTE MODIFICATION.
         // L'export écrit manifest.json { appName: 'PC TAC', version, createdAt }.
@@ -1189,6 +1193,8 @@ export const Archive: ArchiveContract = {
             if (typeof JSZip !== 'function') throw new Error('JSZip indisponible (réseau ?). Impossible de lire l\'archive.');
             try { zip = await JSZip.loadAsync(await file.arrayBuffer()); }
             catch { throw new Error('Ce n\'est pas une archive .oi.zip valide (ou elle est corrompue).'); }
+            const tooBig = archiveSizeVerdict(zipEntrySizes(zip), file.size);
+            if (tooBig) throw new Error(tooBig);
 
             const dataFile = zip.file('data.json');
             if (!dataFile) throw new Error('Archive invalide : « data.json » introuvable.');
