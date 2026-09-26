@@ -453,11 +453,15 @@ export const UI: UIContract = {
    */
   getContrastYIQ(hexcolor: string | null | undefined): string {
     if (!hexcolor || hexcolor === 'undefined') return '#ffffff';
-    const r = parseInt(hexcolor.slice(1, 3), 16);
-    const g = parseInt(hexcolor.slice(3, 5), 16);
-    const b = parseInt(hexcolor.slice(5, 7), 16);
-    const yiq = ((r * 299) + (g * 587) + (b * 114)) / 1000;
-    return (yiq >= 128) ? '#000000' : '#ffffff';
+    // Luminance relative WCAG : le noir ou le blanc, le plus contrasté des
+    // deux (toujours au moins 4,58:1). Le seuil YIQ 128 laissait « Inter »
+    // (#3498db) en blanc à 3,1:1.
+    const lin = (i: number): number => {
+      const c = parseInt(hexcolor.slice(i, i + 2), 16) / 255;
+      return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+    };
+    const l = 0.2126 * lin(1) + 0.7152 * lin(3) + 0.0722 * lin(5);
+    return (l + 0.05) / 0.05 >= 1.05 / (l + 0.05) ? '#000000' : '#ffffff';
   },
 
   /**
@@ -674,7 +678,9 @@ export const UI: UIContract = {
         paxText = entry.pax === 'Adversaire' ? lex.adv.paxChip
           : entry.pax === 'Otage' ? lex.host.paxChip
           : paxInfo.text;
-        paxFontColor = paxInfo.fontColor;
+        // Couleur du texte calculée comme en mode libre : la fontColor de
+        // config.ts (celle du PDF) laissait « Inter » à 3,1:1 à l'écran.
+        paxFontColor = this.getContrastYIQ(paxColor);
       } else {
         // A1 — couleur validée : une valeur forgée (archive, ancien export)
         // retombe sur la couleur par défaut.
