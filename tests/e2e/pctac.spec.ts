@@ -1962,3 +1962,18 @@ test('journal large : la case PAX est une pastille', async ({ page }) => {
   expect.soft(st.pad, 'marge intérieure').toBeGreaterThanOrEqual(6);
   expect.soft(st.radius, 'coins arrondis').toBeGreaterThanOrEqual(6);
 });
+
+// ============================================================================
+// Photos : les filtres de catégorie sont des cibles tactiles de 44 px
+// (26 px mesurés sur téléphone).
+// ============================================================================
+test('photos : filtres de catégorie à 44 px', async ({ page }) => {
+  await gotoPctac(page);
+  await clickTab(page, 'view-photos');
+  const filters = page.locator('#photo-filter-container button');
+  await expect(filters.first()).toBeVisible();
+  for (const f of await filters.all()) {
+    const r = await f.boundingBox();
+    expect.soft(r?.height ?? 0, `filtre « ${await f.innerText()} »`).toBeGreaterThanOrEqual(44);
+  }
+});
