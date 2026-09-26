@@ -50,6 +50,7 @@ import { fitErrorLine } from '@oi/pdf/theme.js';
 import { formatBytes, type PdfSortie } from '@shared/pdf-options.js';
 import { currentOiPdfOptions } from '@oi/pdf/options.js';
 import { acquirePdfLock, releasePdfLock } from '@oi/pdf/generation-lock.js';
+import { notePhotoIssue } from '@oi/photo-bilan.js';
 
 // Mission « robustesse alignement » (édition en place, cf. JSDoc `pdf-preview-
 // edit.ts`) — hook de mesure, JAMAIS lu par le code applicatif : posé après
@@ -653,6 +654,7 @@ export const PDFEngineV2 = {
                                         finalBlob = await createAnnotatedImageBlob(blob, annotations);
                                     } catch (err) {
                                         console.warn(`Échec fusion annotations pour ${photoMeta.id}, utilisation original.`, err);
+                                        notePhotoIssue(photoMeta.id, 'annotation');
                                     }
                                 }
                                 photosBase64[photoMeta.id] = await this.blobToBase64(finalBlob);
@@ -665,6 +667,8 @@ export const PDFEngineV2 = {
                 });
             }
             await Promise.all(promises);
+            // Point 11 : photo absente de la base ou illisible à la lecture, relevée pour le bilan (photo-bilan.ts).
+            for (const metas of Object.values(dynamicPhotos)) for (const m of metas) if (!(m.id in photosBase64)) notePhotoIssue(m.id, 'absente');
         }
 
         // --- NOUVEAU: Collecte du fond personnalisé ---
