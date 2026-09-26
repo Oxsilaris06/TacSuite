@@ -39,7 +39,7 @@ vi.mock('maplibre-gl', () => {
         constructor(public sw?: unknown, public ne?: unknown) {}
         extend(): this { return this; }
     }
-    return { default: { LngLatBounds: FakeLngLatBounds } };
+    return { LngLatBounds: FakeLngLatBounds };
 });
 
 interface FakeGeoJson { type: string; features: Array<{ geometry: { coordinates: LngLatTuple[] }; properties: Record<string, unknown> }> }

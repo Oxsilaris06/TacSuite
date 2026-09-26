@@ -33,7 +33,7 @@
  * (lecture seule).
  */
 
-import maplibregl from 'maplibre-gl';
+import * as maplibregl from 'maplibre-gl';
 import type { GeoJSONSource, MapMouseEvent, MapTouchEvent } from 'maplibre-gl';
 
 import { SHAPES_KEY } from './constants.js';

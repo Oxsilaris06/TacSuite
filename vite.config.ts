@@ -65,6 +65,9 @@ export default defineConfig({
       '@oi': fileURLToPath(new URL('./src/apps/oi', import.meta.url)),
     },
   },
+  // Worker de MapLibre 6 (module ESM qui importe du code partagé) : regroupé
+  // en module, voir src/shared/maplibre-worker.ts.
+  worker: { format: 'es' },
   build: {
     rollupOptions: {
       input: {

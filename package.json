@@ -28,7 +28,7 @@
     "heic-to": "1.5.2",
     "html2canvas": "1.4.1",
     "jszip": "3.10.1",
-    "maplibre-gl": "4.7.1",
+    "maplibre-gl": "6.11.2",
     "material-symbols": "0.45.10",
     "mgrs": "2.2.0",
     "pdf-lib": "1.17.1",
@@ -38,6 +38,7 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.62.1",
+    "@types/geojson": "7946.0.16",
     "@types/node": "^26.1.2",
     "@types/pdfmake": "0.3.3",
     "@typescript/native": "npm:typescript@^7.0.2",

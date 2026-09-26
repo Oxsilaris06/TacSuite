@@ -25,7 +25,7 @@ vi.mock('maplibre-gl', () => {
         _fire(type: string): void { this._listeners.get(type)?.(); }
     }
     class FakeLngLatBounds { extend(): this { return this; } }
-    return { default: { Marker: FakeMarker, LngLatBounds: FakeLngLatBounds } };
+    return { Marker: FakeMarker, LngLatBounds: FakeLngLatBounds, setWorkerUrl: () => {} };
 });
 
 import { PINS_KEY } from '../../../src/apps/pctac/planmap/constants.js';

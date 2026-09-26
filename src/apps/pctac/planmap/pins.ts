@@ -40,7 +40,7 @@
  */
 
 import { mgrsOf } from '@shared/tactical-grid.js';
-import maplibregl from 'maplibre-gl';
+import * as maplibregl from 'maplibre-gl';
 import type { GeoJSONSource, LngLat, MapMouseEvent } from 'maplibre-gl';
 
 import { Storage } from '@pctac/storage.js';

@@ -70,7 +70,7 @@ vi.mock('maplibre-gl', () => {
         // Aide de test (pas de la surface maplibre réelle) :
         _fire(type: string): void { this._listeners.get(type)?.(); }
     }
-    return { default: { Marker: FakeMarker } };
+    return { Marker: FakeMarker };
 });
 
 // Capture des options passées à `OIWheel` (groupe `wheel.ts`, hors périmètre

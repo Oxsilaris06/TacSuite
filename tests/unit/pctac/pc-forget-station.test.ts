@@ -13,7 +13,8 @@ vi.mock('maplibre-gl', () => {
     getElement(): HTMLElement { return document.createElement('div'); }
   }
   class FakeLngLatBounds { extend(): this { return this; } }
-  return { default: { Marker: FakeMarker, LngLatBounds: FakeLngLatBounds } };
+  // Exports NOMMÉS : MapLibre 6 est en ESM seule, le code fait `import * as maplibregl`.
+  return { Marker: FakeMarker, LngLatBounds: FakeLngLatBounds };
 });
 const h = vi.hoisted(() => ({ confirm: true, toasts: [] as string[] }));
 vi.mock('@shared/feedback.js', async (orig) => ({

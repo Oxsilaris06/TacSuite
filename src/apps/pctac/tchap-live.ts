@@ -23,7 +23,7 @@
  */
 
 import { isWgs84 } from '@shared/coords.js';
-import maplibregl from 'maplibre-gl';
+import * as maplibregl from 'maplibre-gl';
 import type { GeoJSONSource, Map as MapLibreMap, Marker as MapLibreMarker } from 'maplibre-gl';
 
 import { Persist } from '@shared/persist.js';

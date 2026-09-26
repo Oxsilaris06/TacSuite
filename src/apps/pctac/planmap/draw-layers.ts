@@ -243,7 +243,7 @@ export const DrawLayersMethods = {
             if (this.drawTool || this.moveState || this._gesture) return;
             if (this._wheelJustClosed && Date.now() - this._wheelJustClosed < 250) return;
             // Zone de détection à tolérance tactile (±12px autour du point de clic)
-            const bbox: [maplibregl.PointLike, maplibregl.PointLike] = [
+            const bbox: [PointLike, PointLike] = [
                 [e.point.x - 12, e.point.y - 12],
                 [e.point.x + 12, e.point.y + 12],
             ];

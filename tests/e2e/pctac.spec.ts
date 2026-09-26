@@ -1430,10 +1430,12 @@ test('traces GPX — import, masquage, persistance et suppression', async ({ pag
     await page.waitForTimeout(350);
   };
   /** Nombre de features publiées sur la source GL des traces. */
-  const featureCount = (): Promise<number> => page.evaluate(() => {
+  // API publique `getData()` : l'interne `_data` a disparu avec MapLibre 6.
+  const featureCount = (): Promise<number> => page.evaluate(async () => {
     const src = (window as unknown as { PlanMap?: { map?: { getSource(id: string): unknown } } })
-      .PlanMap?.map?.getSource('plan-gpx-src') as { _data?: { features?: unknown[] } } | undefined;
-    return src?._data?.features?.length ?? -1;
+      .PlanMap?.map?.getSource('plan-gpx-src') as { getData?: () => Promise<{ features?: unknown[] }> } | undefined;
+    const data = await src?.getData?.();
+    return data?.features?.length ?? -1;
   });
 
   await page.goto('/pctac/', { waitUntil: 'domcontentloaded' });
@@ -1715,10 +1717,12 @@ test('traces GPX — groupement par jour, actions groupées et timelapse', async
     await page.locator('#plan_btn_gpx').click();
     await page.waitForTimeout(350);
   };
-  const featureCount = (): Promise<number> => page.evaluate(() => {
+  // API publique `getData()` : l'interne `_data` a disparu avec MapLibre 6.
+  const featureCount = (): Promise<number> => page.evaluate(async () => {
     const src = (window as unknown as { PlanMap?: { map?: { getSource(id: string): unknown } } })
-      .PlanMap?.map?.getSource('plan-gpx-src') as { _data?: { features?: unknown[] } } | undefined;
-    return src?._data?.features?.length ?? -1;
+      .PlanMap?.map?.getSource('plan-gpx-src') as { getData?: () => Promise<{ features?: unknown[] }> } | undefined;
+    const data = await src?.getData?.();
+    return data?.features?.length ?? -1;
   });
   const playLayers = (): Promise<string[]> => page.evaluate(() => {
     const map = (window as unknown as { PlanMap: { map: { getStyle(): { layers: Array<{ id: string }> } } } }).PlanMap.map;

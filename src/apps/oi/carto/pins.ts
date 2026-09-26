@@ -87,7 +87,7 @@
  * (lecture seule).
  */
 
-import maplibregl from 'maplibre-gl';
+import * as maplibregl from 'maplibre-gl';
 import type { MapMouseEvent, MapTouchEvent, Marker, PointLike } from 'maplibre-gl';
 
 import { confirmDialog, toast } from '@shared/feedback.js';

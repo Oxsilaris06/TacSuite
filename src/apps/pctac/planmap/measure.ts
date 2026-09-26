@@ -67,7 +67,7 @@
  * (lecture seule).
  */
 
-import maplibregl from 'maplibre-gl';
+import * as maplibregl from 'maplibre-gl';
 import type { PointLike } from 'maplibre-gl';
 
 import { formatAzimuth, magneticDeclination } from './azimuth.js';

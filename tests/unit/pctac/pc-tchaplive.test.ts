@@ -33,7 +33,7 @@ vi.mock('maplibre-gl', () => {
     getElement(): HTMLElement { return document.createElement('div'); }
   }
   class FakeLngLatBounds { extend(): this { return this; } }
-  return { default: { Marker: FakeMarker, LngLatBounds: FakeLngLatBounds } };
+  return { Marker: FakeMarker, LngLatBounds: FakeLngLatBounds };
 });
 
 const LS_KEY = 'pcTacTchapLive';

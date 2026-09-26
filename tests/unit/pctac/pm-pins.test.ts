@@ -60,7 +60,7 @@ vi.mock('maplibre-gl', () => {
         _fire(type: string): void { this._listeners.get(type)?.(); }
         _lastDraggable(): boolean | undefined { return this._draggableCalls.at(-1); }
     }
-    return { default: { Marker: FakeMarker } };
+    return { Marker: FakeMarker };
 });
 
 /** Construit un `this` factice conforme à `PlanMapInternal` pour `PinsMethods`. */

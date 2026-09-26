@@ -128,6 +128,20 @@ function fakeMarkerMap(): { flyTo: ReturnType<typeof vi.fn> } & Record<string, u
         isMoving: () => false,
         terrain: undefined,
         transform: { renderWorldCopies: false },
+        // MapLibre 6 : Marker et Popup lisent la projection sur `_camera.transform`.
+        _camera: {
+            transform: {
+                renderWorldCopies: false,
+                width: 800,
+                height: 600,
+                isLocationOccluded: () => false,
+                locationToScreenPoint: () => fakePoint(100, 100),
+                getCoveringTilesDetailsProvider: () => ({ allowWorldCopies: () => false }),
+                getPitch: () => 0,
+                pitch: 0,
+                bearing: 0,
+            },
+        },
         project: () => fakePoint(100, 100),
         getBearing: () => 0,
         getPitch: () => 0,

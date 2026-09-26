@@ -31,7 +31,7 @@
  * autre sous-module de méthodes ; seul `index.ts` les assemble.
  */
 
-import maplibregl from 'maplibre-gl';
+import * as maplibregl from 'maplibre-gl';
 
 import { GpxStore } from '@pctac/image-store.js';
 import { confirmDialog } from '@shared/feedback.js';

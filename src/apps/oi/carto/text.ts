@@ -39,7 +39,7 @@
  * comblé vs l'ancienne version bucket-dédié (non câblée, cf. historique git).
  */
 
-import maplibregl from 'maplibre-gl';
+import * as maplibregl from 'maplibre-gl';
 import type { Marker } from 'maplibre-gl';
 
 import { promptDialog } from '@shared/feedback.js';

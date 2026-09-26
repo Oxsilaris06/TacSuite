@@ -38,7 +38,7 @@
  * autre sous-module de méthodes ; seul `index.ts` les assemble.
  */
 
-import maplibregl from 'maplibre-gl';
+import * as maplibregl from 'maplibre-gl';
 
 import { GPX_CASING_LAYER, GPX_LINE_LAYER, GPX_PLAY_SRC } from './constants.js';
 import type { ExpressionSpecification } from '@maplibre/maplibre-gl-style-spec';

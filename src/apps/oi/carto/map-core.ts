@@ -93,7 +93,8 @@
  * (lecture seule).
  */
 
-import maplibregl from 'maplibre-gl';
+import * as maplibregl from 'maplibre-gl';
+import '@shared/maplibre-worker.js';
 import type { AddLayerObject, MapMouseEvent, MapTouchEvent, SkySpecification } from 'maplibre-gl';
 
 import { COORDS_NOT_READ, looksLikeCoordinates, parseCoordinateInput, parseDecimalCoords } from '@shared/coords.js';
@@ -185,7 +186,7 @@ export const MapCoreMethods = {
             zoom: savedView.zoom,
             pitch: savedView.pitch || 0,
             bearing: savedView.bearing || 0,
-            preserveDrawingBuffer: true, // requis pour la future capture (Lot A3)
+            canvasContextAttributes: { preserveDrawingBuffer: true }, // requis pour la capture (MapLibre 5+ : option déplacée ici)
             // Ortho IGN d'outre-mer : le blanc « hors couverture » devient transparent
             // (retours terrain 2026-10-02, cf. `@shared/ign-ortho`) — parité PC-Tac.
             ...ignOrthoMapOptions(maplibregl),

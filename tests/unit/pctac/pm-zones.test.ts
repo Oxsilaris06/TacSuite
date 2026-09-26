@@ -58,7 +58,8 @@ vi.mock('maplibre-gl', () => {
         getLngLat(): unknown { return this._lngLat; }
     }
     class FakeLngLatBounds { extend(): this { return this; } }
-    return { default: { Marker: FakeMarker, LngLatBounds: FakeLngLatBounds } };
+    // Exports NOMMÉS : MapLibre 6 est en ESM seule, le code fait `import * as maplibregl`.
+    return { setWorkerUrl: () => {}, Marker: FakeMarker, LngLatBounds: FakeLngLatBounds };
 });
 
 // ============================================================
@@ -626,7 +627,9 @@ function layer(id: string): LayerSpec {
 function layerKeeps(id: string, type: 'Polygon' | 'LineString', properties: Record<string, unknown>): boolean {
     const spec = layer(id);
     if (spec.filter === undefined) return true;
-    return featureFilter(spec.filter as never).filter({ zoom: 0 }, { type, properties });
+    // MapLibre 6 (style-spec 26) exige le `rootKey` : il ne sert qu'à préfixer les
+    // avertissements d'expression, « filter » est la clé de la section.
+    return featureFilter(spec.filter as never, 'filter').filter({ zoom: 0 }, { type, properties });
 }
 
 const ZONE_PROPS = { shapeId: 'z', zone: true, area: 10, fillOpacity: 0.18, strokeWidth: 3, color: '#ef4444' };
@@ -703,7 +706,8 @@ describe('couche fond de zone — opacité par zone (décision 4)', () => {
     function fillOpacityOf(properties: Record<string, unknown>): number {
         const expression = layer('plan-shapes-fill').paint?.['fill-opacity'];
         const spec = (latest as unknown as { paint_fill: Record<string, unknown> }).paint_fill['fill-opacity'];
-        const parsed = createPropertyExpression(expression, spec as Parameters<typeof createPropertyExpression>[1]);
+        // MapLibre 6 (style-spec 26) : `rootKey` s'insère en 2e position.
+        const parsed = createPropertyExpression(expression, 'paint', spec as Parameters<typeof createPropertyExpression>[2]);
         if (parsed.result !== 'success') throw new Error('expression fill-opacity invalide');
         return parsed.value.evaluate({ zoom: 0 }, { type: 'Polygon', properties }) as number;
     }

@@ -246,7 +246,8 @@ describe('map-core.ts — les cercles des points sont posés au chargement du st
                 addControl(): void {}
             }
             class Control {}
-            return { default: { Map: FakeMap, NavigationControl: Control, ScaleControl: Control } };
+            // addProtocol : `ignOrthoMapOptions` l'appelle à la construction.
+            return { Map: FakeMap, NavigationControl: Control, ScaleControl: Control, setWorkerUrl: () => {}, addProtocol: () => {} };
         });
         document.body.innerHTML = '<div id="plan_map"></div>';
         const { MapCoreMethods } = await import('../../../src/apps/pctac/planmap/map-core.js');

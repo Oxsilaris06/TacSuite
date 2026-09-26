@@ -35,7 +35,7 @@ vi.mock('maplibre-gl', () => {
         remove(): this { return this; }
         getElement(): HTMLElement { return this._element; }
     }
-    return { default: { Marker: FakeMarker } };
+    return { Marker: FakeMarker };
 });
 
 import { TextMethods } from '../../../src/apps/oi/carto/text.js';

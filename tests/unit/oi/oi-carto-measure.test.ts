@@ -25,7 +25,7 @@ vi.mock('maplibre-gl', () => {
         remove(): this { this._element.remove(); return this; }
         getElement(): HTMLElement { return this._element; }
     }
-    return { default: { Marker: FakeMarker } };
+    return { Marker: FakeMarker };
 });
 
 import { MeasureMethods } from '../../../src/apps/oi/carto/measure.js';

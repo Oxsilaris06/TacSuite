@@ -13,7 +13,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { buildPlayTrack, playClockLabel, pointAtFraction, progressAtTime } from '../../../src/apps/pctac/planmap/gpx-play.js';
 import type { LngLatTuple, PlanGpxTrack } from '../../../src/apps/pctac/planmap/types.js';
 
-vi.mock('maplibre-gl', () => ({ default: { Marker: class {} } }));
+vi.mock('maplibre-gl', () => ({ Marker: class {} }));
 
 const TRACK: PlanGpxTrack = { id: 't', name: 'T', color: '#a855f7', visible: true };
 

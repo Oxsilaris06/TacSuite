@@ -41,7 +41,7 @@
  * Source de l'UX portée : `@pctac/planmap/measure.ts` (lecture seule).
  */
 
-import maplibregl from 'maplibre-gl';
+import * as maplibregl from 'maplibre-gl';
 import type { GeoJSONSource } from 'maplibre-gl';
 
 import { circlePolygon, geoEdgeNorth } from '@shared/geo-shapes.js';

@@ -35,7 +35,8 @@ vi.mock('maplibre-gl', () => {
         remove(): this { return this; }
         getElement(): HTMLElement { return this._element; }
     }
-    return { default: { Marker: FakeMarker } };
+    // Exports NOMMÉS : MapLibre 6 est en ESM seule, le code fait `import * as maplibregl`.
+    return { setWorkerUrl: () => {}, Marker: FakeMarker };
 });
 
 /** Plan au repos : une forme verrouillée en stockage, son cadenas déjà posé sur la carte. */

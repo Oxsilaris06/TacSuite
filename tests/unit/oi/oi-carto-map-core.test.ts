@@ -49,7 +49,8 @@ const { mapLibreState, mapOptions, addProtocolSpy } = vi.hoisted(() => ({
 // Mock minimal de 'maplibre-gl' : `.Map` piloté par `mapLibreState.hasMap` pour
 // tester la garde `open()` (oi_cartographie.js:297) ; la classe factice garde ses
 // options (branchement de l'ortho IGN, cf. `_init`) et n'a que les deux méthodes
-// que `_init()` appelle sur la carte.
+// que `_init()` appelle sur la carte. Exports NOMMÉS : depuis MapLibre 6 la
+// distribution est ESM seule et le code source fait `import * as maplibregl`.
 vi.mock('maplibre-gl', () => {
     class FakeMap {
         constructor(options: Record<string, unknown>) { mapOptions.push(options); }
@@ -58,14 +59,13 @@ vi.mock('maplibre-gl', () => {
     }
     class FakeControl {}
     return {
-        default: {
-            get Map() {
-                return mapLibreState.hasMap ? FakeMap : undefined;
-            },
-            NavigationControl: FakeControl,
-            ScaleControl: FakeControl,
-            addProtocol: addProtocolSpy,
+        setWorkerUrl: () => {},
+        get Map() {
+            return mapLibreState.hasMap ? FakeMap : undefined;
         },
+        NavigationControl: FakeControl,
+        ScaleControl: FakeControl,
+        addProtocol: addProtocolSpy,
     };
 });
 

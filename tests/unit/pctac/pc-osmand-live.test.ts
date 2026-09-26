@@ -26,7 +26,7 @@ vi.mock('maplibre-gl', () => {
     getElement(): HTMLElement { return this.rec.element ?? document.createElement('div'); }
   }
   class FakeLngLatBounds { extend(): this { return this; } }
-  return { default: { Marker: FakeMarker, LngLatBounds: FakeLngLatBounds } };
+  return { Marker: FakeMarker, LngLatBounds: FakeLngLatBounds };
 });
 
 const OP_A = { ts: 1_700_000_000_000, rx: 1_700_000_000_000, lat: 48.1, lon: 2.1 };

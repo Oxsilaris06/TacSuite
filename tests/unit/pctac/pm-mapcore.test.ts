@@ -67,7 +67,8 @@ vi.mock('maplibre-gl', () => {
         on(): void {}
     }
     class FakeControl {}
-    return { default: { Map: FakeMap, NavigationControl: FakeControl, ScaleControl: FakeControl, addProtocol: addProtocolSpy } };
+    // Exports NOMMÉS : MapLibre 6 est en ESM seule, le code fait `import * as maplibregl`.
+    return { setWorkerUrl: () => {}, Map: FakeMap, NavigationControl: FakeControl, ScaleControl: FakeControl, addProtocol: addProtocolSpy };
 });
 
 import { ignLayerIds } from '@shared/ign-territoires.js';

@@ -38,7 +38,7 @@ vi.mock('maplibre-gl', () => {
         getElement(): HTMLElement { return this._element; }
         getLngLat(): unknown { return this._lngLat; }
     }
-    return { default: { Marker: FakeMarker } };
+    return { Marker: FakeMarker };
 });
 
 /** Narrowing sans `!` (interdit par la mission) : jette explicitement si null/undefined. */

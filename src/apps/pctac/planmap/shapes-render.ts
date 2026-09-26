@@ -56,7 +56,7 @@
  * (lecture seule).
  */
 
-import maplibregl from 'maplibre-gl';
+import * as maplibregl from 'maplibre-gl';
 import type { GeoJSONSource } from 'maplibre-gl';
 
 import { ZONE_FILL_LEVELS, coordAt, polygonAreaM2, shapeCoords, zoneFillOpacity } from './geo.js';
