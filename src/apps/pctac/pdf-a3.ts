@@ -7,7 +7,7 @@
  *
  * Chaîne :
  *  1. collecte (situation courante) : fiches triées par priorité, faits
- *     marquants (entrées étoilées + changements de statut automatiques),
+ *     marquants (entrées en favori seulement, Nico 09-26),
  *     points du plan (case + MGRS), forces amies, photos de la galerie ;
  *  2. écritures : caractères sans police annoncés AVANT la génération
  *     (`confirmUnsupportedChars`), puis remplacés ;
@@ -124,14 +124,14 @@ async function collect(): Promise<Collected> {
     const byId = new Map(adversaries.map((a) => [str(a.id), ficheTitle('adv', modeId, a)]));
     const resolveLink = (id: string): string => byId.get(id) ?? id;
 
-    // Faits marquants : entrées étoilées, et changements de statut automatiques
-    // (pas les points posés ou retirés sur le plan, marqués « Carte »).
-    const faitsLogs = logs.filter((e) => e.favori || (e.auto && e.pax !== 'Carte'));
+    // Faits marquants : entrées en favori SEULEMENT (Nico, 09-26, modifie la
+    // décision 41). Une entrée automatique n'y figure que si on l'a étoilée.
+    const faitsLogs = logs.filter((e) => e.favori);
     const faits = faitsLogs.map((e) => {
         const [y, m, d] = str(e.date).split('-');
         const when = `${d && m && y ? `${d}/${m} ` : ''}${str(e.heure)}`;
         const who = e.auto ? 'Statut' : paxChipLabel(str(e.pax), mode);
-        const line = `${e.favori ? '● ' : ''}${when} ${who} — ${str(e.lieu) ? `${str(e.lieu)} — ` : ''}${str(e.remarques)}`;
+        const line = `${when} ${who} — ${str(e.lieu) ? `${str(e.lieu)} — ` : ''}${str(e.remarques)}`;
         texts.push({ where: `Main courante ${str(e.heure)}`, text: line });
         return line;
     });
@@ -165,7 +165,7 @@ async function collect(): Promise<Collected> {
             photos: photos.map(({ id, title, widthPx, heightPx }) => ({ id, title, widthPx, heightPx })),
             adv: { header: `${mode.adv.plural.toUpperCase()} (${adversaries.length})`, fiches: advBlocks },
             host: { header: `${mode.host.plural.toUpperCase()} (${hostages.length})`, fiches: hostBlocks },
-            faits: { header: `FAITS MARQUANTS (${faits.length})`, legend: '(● = entrée marquée ; « Statut » = changement automatique)', entries: faits },
+            faits: { header: `FAITS MARQUANTS (${faits.length})`, legend: '(entrées marquées d’une étoile dans la main courante)', entries: faits },
             points: { header: `POINTS DU PLAN (${points.length})`, items: points },
             amis: { header: `FORCES AMIES (${amis.length})`, items: amis },
         },

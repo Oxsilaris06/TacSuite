@@ -79,8 +79,11 @@ describe('buildA3Pdf', () => {
         expect(text).toContain('DURAND');
         expect(text).toContain('BERNARD');
         expect(text).toContain('Contact établi avec le requérant');
-        expect(text).toContain('neutralisé');
+        // Faits marquants = entrées en favori SEULEMENT (Nico, 09-26) : ni les
+        // statuts automatiques ni les entrées ordinaires.
+        expect(text).not.toContain('neutralisé');
         expect(text).not.toContain('Arrivée sur les lieux ordinaire');
+        expect(text).toContain('FAITS MARQUANTS (1)');
         expect(text).not.toContain('Point posé');
         expect(text).toContain('Portail nord');
         expect(text).toContain('B3');
@@ -89,6 +92,18 @@ describe('buildA3Pdf', () => {
         expect(text).toContain('LEROY');
         expect(captured.name).toMatch(/^PC-Tac_Synthese-A3_.*\.pdf$/);
         expect(captured.name).not.toMatch(/['’]/);
+    });
+
+    it('un statut automatique mis en favori figure parmi les faits marquants', async () => {
+        seed();
+        const logs = JSON.parse(localStorage.getItem('pcTacLogData')!) as Array<Record<string, unknown>>;
+        logs[2] = { ...logs[2], favori: true };
+        localStorage.setItem('pcTacLogData', JSON.stringify(logs));
+        const { buildA3Pdf } = await import('@pctac/pdf-a3.js');
+        await expect(buildA3Pdf(OPTIONS)).resolves.toBe(true);
+        const { text } = await readPdf();
+        expect(text).toContain('FAITS MARQUANTS (2)');
+        expect(text).toContain('neutralisé');
     });
 
     it('un caractère non imprimable est annoncé ; « Corriger la saisie » n’exporte rien', async () => {
