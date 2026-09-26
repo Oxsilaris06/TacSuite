@@ -481,7 +481,7 @@ function addAdversary(data: OiAdversary | null = null): void {
                 <div class="adv-section-body">
                     <div class="adv-section-body-inner">
                         <label for="input_main_${id}">Photo principale&nbsp;:</label>
-                        <div id="photo_main_${id}" class="image-preview-container single-photo photo-display-area" data-is-single="true" style="margin-bottom: 5px;"></div>
+                        <div id="photo_main_${id}" class="image-preview-container single-photo photo-display-area" data-is-single="true" data-no-caption style="margin-bottom: 5px;"></div>
                         <button type="button" class="add-btn adv-photo-btn" onclick="document.getElementById('input_main_${id}').click()"><span class="material-symbols-outlined" aria-hidden="true">add_a_photo</span> Photo principale</button>
                         <input type="file" id="input_main_${id}" name="input_main_${id}" class="sr-only-input" accept="image/*" onchange="handleFileChange(this, 'photo_main_${id}', true)">
 
@@ -1087,6 +1087,8 @@ async function loadFormData(): Promise<boolean> {
                                             ${isEffrac ? `<button type="button" class="add-btn" style="background-color: var(--effraction-gold); padding: 4px 8px;" onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation()" onclick="openEffractionToolsModal(this.closest('.image-preview-item').querySelector('.image-preview').id)" aria-label="Sélectionner les outils d'effraction"><span class="material-symbols-outlined" style="font-size: 1.2em;">hardware</span></button>` : ''}
                                             <button type="button" class="remove-btn" style="padding: 4px 8px;" onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation()" onclick="removeImage(this.closest('.image-preview-item').querySelector('.image-preview').id, this.closest('.image-preview-item'))" aria-label="Supprimer la photo">&times;</button>
                                         </div>`;
+                            // Photo principale d'adversaire : jamais de légende (Nico 09-26).
+                            if (previewContainer.hasAttribute('data-no-caption')) interactiveItem.querySelector('.photo-title-input')?.remove();
                             previewContainer.appendChild(interactiveItem);
                         }
                     }

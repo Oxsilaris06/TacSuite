@@ -280,6 +280,7 @@ const PHOTO_FIELD_LABELS: readonly (readonly [RegExp, string])[] = [
     [/^photo_main_/, 'Photo principale'],
     [/^photo_extra_/, 'Photos supplémentaires'],
     [/^photo_renforts_/, 'Renforts'],
+    [/photo_logo_unite/, 'Logo unité'],
 ];
 
 export function photoFieldLabel(containerId: string): string {

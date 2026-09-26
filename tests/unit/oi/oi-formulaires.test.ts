@@ -619,6 +619,14 @@ describe('oi-formulaires — persistance du formulaire OI', () => {
             expect(btn?.getAttribute('aria-expanded')).toBe('false');
         });
 
+        it('photo principale de la fiche adversaire : champ sans légende (Nico 09-26)', async () => {
+            await import('@oi/formulaires.js');
+            stubCrossModuleWindow();
+            window.addAdversary({ id: 'adv_p', nom_adversaire: 'X', me_list: [], etat_esprit_list: [], volume_list: [], vehicules_list: [] });
+            expect(document.getElementById('photo_main_adv_p')?.hasAttribute('data-no-caption')).toBe(true);
+            expect(document.getElementById('photo_extra_adv_p')?.hasAttribute('data-no-caption')).toBe(false);
+        });
+
         it('addAdversary(null) crée une fiche dépliée et synchronise (débouncé) ; addAdversary(data) ne synchronise pas (restauration)', async () => {
             vi.useFakeTimers();
             const mod = await import('@oi/formulaires.js');

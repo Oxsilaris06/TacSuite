@@ -821,7 +821,7 @@ export const oiTutoData: TutoData = {
         },
         {
           title: "Légender, annoter et gérer une photo",
-          body: "Sous chaque miniature, le champ de légende saisit le titre repris dans le PDF, 200 caractères au plus (ce que le PDF imprime toujours en entier). Laissé vide, le PDF imprime le nom du bouton suivi du rang, par exemple « Baptême terrain (1/2) », affiché en grisé dans le champ. Le bouton bleu (icône « edit ») ouvre l'éditeur d'annotation, le bouton doré (icône « hardware », uniquement sur les photos d'effraction) ouvre les outils d'effraction, et le bouton « × » supprime la photo. On réordonne les photos en les faisant glisser (glisser-déposer).",
+          body: "Sous chaque miniature (sauf la photo principale d'un adversaire, qui n'a pas de légende), le champ de légende saisit le titre repris dans le PDF, 200 caractères au plus (ce que le PDF imprime toujours en entier). Laissé vide, le PDF imprime le nom du bouton suivi du rang, par exemple « Baptême terrain (1/2) », affiché en grisé dans le champ. Le bouton bleu (icône « edit ») ouvre l'éditeur d'annotation, le bouton doré (icône « hardware », uniquement sur les photos d'effraction) ouvre les outils d'effraction, et le bouton « × » supprime la photo. On réordonne les photos en les faisant glisser (glisser-déposer).",
           terms: [
             "Baptême terrain (1/2)",
             "edit",

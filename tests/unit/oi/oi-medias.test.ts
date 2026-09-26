@@ -323,6 +323,13 @@ describe('handleFileChange — champ limité (data-max-photos, « Baptême terra
         expect(inputs.map((i) => i.placeholder)).toEqual(['Baptême terrain (1/2)', 'Baptême terrain (2/2)']);
     });
 
+    it('champ sans légende (photo principale d’adversaire) : aucun champ de légende', async () => {
+        document.body.insertAdjacentHTML('beforeend', '<div id="photo_main_a1" data-no-caption></div>');
+        await handleFileChange(makeFileInput([makeFile('a.jpg')]), 'photo_main_a1', true);
+        expect(document.querySelectorAll('#photo_main_a1 .image-preview')).toHaveLength(1);
+        expect(document.querySelectorAll('#photo_main_a1 .photo-title-input')).toHaveLength(0);
+    });
+
     it('un champ sans limite reçoit toutes les photos', async () => {
         const added = await handleFileChange(makeFileInput([makeFile('a.jpg'), makeFile('b.jpg'), makeFile('c.jpg')]), 'adversary_photo_preview_container', false);
         expect(added).toBe(3);

@@ -123,10 +123,27 @@ describe('helpers photo OI', () => {
     });
 });
 
-describe('légende des photos « Baptême terrain » importées', () => {
-    it('champ unique sous la Mission comme ancien champ par bloc : « Baptême terrain »', () => {
-        expect(oiPhotoTitle('photo_container_bapteme_terrain_preview_container', {})).toBe('Baptême terrain');
-        expect(oiPhotoTitle('photo_bapteme_z1', {})).toBe('Baptême terrain');
+describe('légende par défaut des photos importées : celle de l’OI, « nom du bouton (rang/total) » (Nico 09-26)', () => {
+    it('légende saisie gardée ; sinon le nom du champ de l’OI et le rang', () => {
+        expect(oiPhotoTitle('photo_container_bapteme_terrain_preview_container', {}, 1, 2)).toBe('Baptême terrain (1/2)');
+        expect(oiPhotoTitle('photo_itin_ext_m1', {}, 1, 1)).toBe('Extérieur (1/1)');
+        expect(oiPhotoTitle('photo_container_transport_domicile_preview_container', {}, 2, 3)).toBe('Transport PR → Domicile/LE (2/3)');
+        expect(oiPhotoTitle('photo_extra_adv1', { customTitle: ' Vue avant ' }, 1, 3)).toBe('Vue avant');
+    });
+
+    it('ancien OI : les photos « Baptême Terrain » de chaque bloc ZMSPCP sont numérotées ensemble, comme dans l’OI', async () => {
+        const file = await buildOiZip({
+            oiData: {
+                zmspcp_blocks: [{ id: 'z1' }, { id: 'z2' }],
+                dynamic_photos: { photo_bapteme_z2: [{ id: 'img_b2' }], photo_bapteme_z1: [{ id: 'img_b1' }] },
+            },
+            imagesMeta: { img_b1: 'image/png', img_b2: 'image/png' },
+            imageFiles: { 'img_b1.bin': b64('B1'), 'img_b2.bin': b64('B2') },
+        });
+        await Archive.importOiArchive(file);
+        const byId = new Map(Storage.loadCollection(PHOTOS_KEY).map((p) => [p.id, p]));
+        expect(byId.get(stableOiPhotoId('img_b1'))?.title).toBe('Baptême terrain (1/2)');
+        expect(byId.get(stableOiPhotoId('img_b2'))?.title).toBe('Baptême terrain (2/2)');
     });
 });
 
@@ -140,8 +157,8 @@ describe('importOiArchive — toutes les photos', () => {
         expect(photos).toHaveLength(5);
         const byId = new Map(photos.map((p) => [p.id, p]));
         expect(byId.get(stableOiPhotoId('img_a1'))).toMatchObject({ title: 'Vue avant', category: 'neutralized' });
-        expect(byId.get(stableOiPhotoId('img_a2'))).toMatchObject({ title: 'Adversaire — photo supplémentaire', category: 'neutralized' });
-        expect(byId.get(stableOiPhotoId('img_obj1'))).toMatchObject({ title: 'Objectif', category: 'location' });
+        expect(byId.get(stableOiPhotoId('img_a2'))).toMatchObject({ title: 'Photos supplémentaires (2/3)', category: 'neutralized' });
+        expect(byId.get(stableOiPhotoId('img_obj1'))).toMatchObject({ title: 'Objectif (1/2)', category: 'location' });
         expect(byId.get(stableOiPhotoId('img_obj2'))).toMatchObject({ title: 'Objectif nuit', category: 'location' });
 
         // Les octets sont bien dans le magasin.
