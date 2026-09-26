@@ -1903,6 +1903,8 @@
         #plan_draw_dock.open {
             display: flex;
         }
+        /* Masqué pendant une mesure : la barre de mesure le recouvrait (measure.ts). */
+        #plan_draw_dock[hidden] { display: none; }
 
         #plan_draw_dock .plan-draw-btn,
         #plan_draw_dock #plan_draw_undo,
