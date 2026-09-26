@@ -136,7 +136,7 @@ describe('Annuler', () => {
 
     it('sans rien tracer : fermeture directe, sans question', async () => {
         await openSession();
-        document.querySelector<HTMLElement>('.annotation-close-btn')!.click();
+        document.getElementById('annotation_cancel_header')!.click();
         await flush();
         expect(confirmSpy).not.toHaveBeenCalled();
         expect(modal.open).toBe(false);

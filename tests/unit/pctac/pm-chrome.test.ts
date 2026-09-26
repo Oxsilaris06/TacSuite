@@ -425,6 +425,28 @@ describe('_showHint / _hideHint — cycle propre (planMap.js:5566-5593)', () => 
         expect(hint?.style.display).toBe('none');
     });
 
+    it('téléphone : la barre d\'onglets collante recouvre le haut de la carte, la bulle se pose dessous', () => {
+        // Constat UI-1 (diag-draw390) : carte plein écran, bulle « (clic ici
+        // pour annuler) » à demi cachée sous la barre d'onglets.
+        document.body.innerHTML = `<nav class="main-tab-bar"></nav><div class="plan-map-wrap"><div id="plan_map"></div></div>`;
+        const rect = (top: number, bottom: number) => ({ top, bottom, left: 0, right: 390, width: 390, height: bottom - top, x: 0, y: top, toJSON: () => ({}) });
+        vi.spyOn(document.querySelector('.main-tab-bar')!, 'getBoundingClientRect').mockReturnValue(rect(10, 70));
+        vi.spyOn(document.querySelector('.plan-map-wrap')!, 'getBoundingClientRect').mockReturnValue(rect(0, 660));
+        const { instance } = createFakePlanMap();
+        instance._showHint('Tracez la forme');
+        expect(document.getElementById('plan_hint')?.style.top).toBe('80px');
+    });
+
+    it('barre d\'onglets au-dessus de la carte (ou masquée en écran scindé) : bulle à 10 px du haut', () => {
+        document.body.innerHTML = `<nav class="main-tab-bar"></nav><div class="plan-map-wrap"><div id="plan_map"></div></div>`;
+        const rect = (top: number, bottom: number) => ({ top, bottom, left: 0, right: 390, width: 390, height: bottom - top, x: 0, y: top, toJSON: () => ({}) });
+        vi.spyOn(document.querySelector('.main-tab-bar')!, 'getBoundingClientRect').mockReturnValue(rect(10, 70));
+        vi.spyOn(document.querySelector('.plan-map-wrap')!, 'getBoundingClientRect').mockReturnValue(rect(200, 860));
+        const { instance } = createFakePlanMap();
+        instance._showHint('Tracez la forme');
+        expect(document.getElementById('plan_hint')?.style.top).toBe('10px');
+    });
+
     it('un second _showHint réutilise le même élément #plan_hint (pas de doublon)', () => {
         mountMapDom();
         const { instance } = createFakePlanMap();

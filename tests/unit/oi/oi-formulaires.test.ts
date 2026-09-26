@@ -391,6 +391,18 @@ describe('oi-formulaires — persistance du formulaire OI', () => {
             expect(document.getElementById('recap_finalisation')!.textContent).toContain('Opération du 01/08/2026 - H: 06:00');
         });
 
+        it('synthèse : une rubrique vide se lit « non renseigné », jamais « N/A » (constat UI-2)', async () => {
+            localStorage.setItem('tactical_oi_data', JSON.stringify({}));
+            await import('@oi/formulaires.js');
+
+            window.checkCoherence();
+
+            const text = document.getElementById('recap_finalisation')!.textContent ?? '';
+            expect(text).not.toContain('N/A');
+            expect(text).toContain('Équipe INDIA : non renseigné');
+            expect(text).toContain('Hypothèses : non renseigné');
+        });
+
         it('signale une chronologie incomplète (< 3 étapes)', async () => {
             localStorage.setItem('tactical_oi_data', JSON.stringify({
                 date_op: '2026-08-01',

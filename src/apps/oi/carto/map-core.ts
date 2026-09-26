@@ -818,9 +818,10 @@ export const MapCoreMethods = {
         try { this.map.setTerrain(null); } catch { /* déjà retiré */ }
         try {
             if (typeof this.map.setSky === 'function') {
-                // oi_cartographie.js:1655 — `setSky(null)` : cf. note de tête de
-                // fichier (adaptation de typage pur, comportement runtime inchangé).
-                this.map.setSky(null as unknown as SkySpecification);
+                // `setSky(null)` (oi_cartographie.js:1655) est refusé par
+                // MapLibre 4.7 (erreur en console, ciel laissé) : `undefined`
+                // le retire, comme au PC-Tac (1eceaea).
+                this.map.setSky(undefined as unknown as SkySpecification);
             }
         } catch { /* ciel optionnel */ }
         try {
