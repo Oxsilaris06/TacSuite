@@ -321,6 +321,31 @@ describe('coords — looksLikeCoordinates', () => {
     '31U DQ 5223 1234',
     '31UDQ522',
     '48°99 N 2',
+    // Revue du 26/09 : ces saisies partaient au géocodage.
+    '48.85 2.35 près du portail',
+    'portail 48.85 2.35',
+    'GPS 48.8566 2.3522',
+    'WGS84 48.8566 2.3522',
+    'RDV 48.8566,2.3522',
+    '(48.8566, 2.3522)',
+    '[2.3522, 48.8566]',
+    '48.8566N,2.3522E (portail)',
+    '48.8566 2.3522 alt 35',
+    'N 48.8566 E 2.3522 portail',
+    '48,8566 2,3522',
+    '31U 452237 5411234',
+    'UTM 31U 452237 5411234',
+    'MGRS 31U DQ 52237 12345',
+    'portail 31U DQ 52237 12345',
+    'X 652000 Y 6862000',
+    'Lambert 93 652000 6862000',
+    'x=652000 y=6862000',
+    'geo:48.8566,2.3522',
+    'https://www.google.com/maps/@48.8566,2.3522,17z',
+    'https://www.openstreetmap.org/#map=17/48.8566/2.3522',
+    'lat=48.85&lon=2.35',
+    '8FW4V75V+8Q',
+    '48d51m24sN 2d21m08sE',
   ])('« %s » : coordonnées', (q) => {
     expect(looksLikeCoordinates(q)).toBe(true);
   });
@@ -333,7 +358,26 @@ describe('coords — looksLikeCoordinates', () => {
     'A7 12',
     'Genève gare Cornavin',
     '3 rue 12',
+    '12 rue Jeanne d’Arc 45000 Orléans',
+    '10 Downing Street London',
+    'Bâtiment 3, 12 avenue de la Gare 75012 Paris',
   ])('« %s » : adresse', (q) => {
     expect(looksLikeCoordinates(q)).toBe(false);
+  });
+});
+
+describe('coords — saisies étiquetées lues sur place', () => {
+  it.each([
+    ['GPS 48.8566 2.3522', 48.8566, 2.3522],
+    ['(48.8566, 2.3522)', 48.8566, 2.3522],
+    ['geo:48.8566,2.3522', 48.8566, 2.3522],
+    ['MGRS 31U DQ 52237 12345', null, null],
+  ])('« %s » : point', (q, lat, lng) => {
+    const r = parseCoordinateInput(q);
+    expect(r?.kind).toBe('point');
+    if (lat !== null && r?.kind === 'point') {
+      expect(r.lat).toBeCloseTo(lat, 4);
+      expect(r.lng).toBeCloseTo(lng as number, 4);
+    }
   });
 });

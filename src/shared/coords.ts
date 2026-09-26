@@ -399,7 +399,11 @@ export function parseGridCell(str: string, grid: GridCellSpec | null | undefined
  * `null` = à traiter comme une adresse (géocodage réseau).
  */
 export function parseCoordinateInput(str: string, grid?: GridCellSpec | null): CoordinateInput | null {
-    const q = str.trim();
+    // Étiquette (« GPS », « WGS84 », « MGRS », « geo: ») et crochets autour
+    // retirés : « (48.8566, 2.3522) » ou « GPS 48.8566 2.3522 » se lisent sur place.
+    const q = str.trim()
+        .replace(/^(?:gps|wgs\s*84|mgrs|coord(?:onn[ée]es)?|geo)\b\s*[:=]?\s*/i, '')
+        .replace(/^[([{]\s*(.*?)\s*[)\]}]$/, '$1');
     if (!q) return null;
 
     const dec = parseDecimalCoords(q);
@@ -420,23 +424,42 @@ export function parseCoordinateInput(str: string, grid?: GridCellSpec | null): C
 }
 
 /** Message des recherches (PC-Tac, OI) devant des coordonnées illisibles. */
-export const COORDS_NOT_READ = "Coordonnées non reconnues (formats : 48.8566, 2.3522 · 48°51'24\"N 2°21'08\"E · MGRS 31U DQ 52237 12345). Rien n'a été envoyé.";
+export const COORDS_NOT_READ = "Coordonnées non reconnues (formats lus : 48.8566, 2.3522 · 48°51'24\"N 2°21'08\"E · 31U DQ 52237 12345). Rien n'a été envoyé.";
 
-/** Mots admis dans une saisie de coordonnées : points cardinaux et étiquettes. */
+/** Mots admis dans une saisie faite seulement de nombres : points cardinaux et étiquettes. */
 const COORD_WORDS = /^(?:[nsewo]|lat|lon|lng|long|latitude|longitude)$/i;
 
 /**
- * Vrai si la saisie ressemble à des coordonnées, lisibles ou non : deux
- * nombres au moins et, à part eux, seulement des points cardinaux ou des
- * étiquettes (« lat », « lon »), ou un début de référence MGRS (« 31U DQ »).
- * Une telle saisie ne part JAMAIS au géocodage : la position ne doit pas être
- * révélée à un service tiers sans nécessité pour la carte (Nico 2026-09-26).
- * Une adresse (« 12 rue de la Paix »), un code postal seul ou une route
- * (« D951 ») n'en sont pas.
+ * Motifs de coordonnées, où qu'ils soient dans la saisie et quels que soient
+ * les mots autour (revue du 26/09 : « 48.85 2.35 près du portail » partait).
+ */
+const COORD_PATTERNS: readonly RegExp[] = [
+    // Deux décimaux (point ou virgule), cardinaux et séparateurs permis entre eux.
+    /-?\d{1,3}[.,]\d{2,}\s*°?\s*[NSEOW]?\s*[\s,;/]\s*[NSEOW]?\s*-?\d{1,3}[.,]\d{2,}/i,
+    // Degrés et minutes (48°51', 48d51m).
+    /\d{1,3}\s*[°d]\s*\d{1,2}\s*['’′m]/i,
+    // Référence MGRS ou UTM : zone et bande (31U), puis carré ou chiffres.
+    /\b\d{1,2}[C-HJ-NP-X]\s*(?:[A-HJ-NP-Z]{2}\s*)?\d{3,}/i,
+    // Deux nombres de 5 chiffres ou plus (abscisse et ordonnée UTM ou Lambert).
+    /\d{5,}\D+\d{5,}/,
+    // Liens et paramètres de carte : geo:, lat=, lon=, @lat,lng, #map=, adresses web.
+    /\bgeo:|\b(?:lat|lon|lng)(?:itude)?\s*[=:]|@-?\d+\.\d+,-?\d+\.\d+|#map=|https?:\/\//i,
+    // Plus Code (8FW4V75V+8Q).
+    /\b[23456789CFGHJMPQRVWX]{4,8}\+[23456789CFGHJMPQRVWX]{2,3}\b/i,
+];
+
+/**
+ * Vrai si la saisie contient des coordonnées, lisibles ou non : un motif de
+ * `COORD_PATTERNS`, ou deux nombres au moins sans autre mot que des points
+ * cardinaux ou des étiquettes (« 48 51 30 N 2 21 08 E »). Une telle saisie ne
+ * part JAMAIS au géocodage : la position ne doit pas être révélée à un service
+ * tiers sans nécessité pour la carte (Nico 2026-09-26). Une adresse
+ * (« 12 rue de la Paix 75002 Paris »), un code postal ou une route (« D951 »)
+ * n'en contiennent pas.
  */
 export function looksLikeCoordinates(str: string): boolean {
     const q = str.trim();
-    if (/^\d{1,2}[C-HJ-NP-X]\s*[A-HJ-NP-Z]{2}\s*\d/i.test(q)) return true;
+    if (COORD_PATTERNS.some((re) => re.test(q))) return true;
     const numbers = q.match(/\d+(?:[.,]\d+)?/g) ?? [];
     const words = q.replace(/[\d.,;:°'"’′″+\-/\s]+/g, ' ').trim().split(' ').filter(Boolean);
     return numbers.length >= 2 && words.every((w) => COORD_WORDS.test(w));
