@@ -47,7 +47,7 @@
  * §6.3 `noUncheckedIndexedAccess` : `coordAt`/`shapeCoords` de `./geo.js`,
  * jamais `!`. Chaque site de repli neutre est commenté individuellement.
  *
- * Source : `/home/nico/Bureau/Web/GStart-main/modules/pctac/planMap.js`
+ * Source : `GStart-main/modules/pctac/planMap.js`
  * (lecture seule).
  */
 

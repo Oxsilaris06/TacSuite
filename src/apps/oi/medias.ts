@@ -94,7 +94,7 @@
  *     `<HTMLImageElement>` (ce dernier pour lire `.src` dans `syncAllThumbnails`)
  *     — même précédent que `outils.ts`, `articulation.ts`, `@pctac/ui.ts`.
  *
- * Source : `/home/nico/Bureau/Web/GStart-main/modules/medias.js` (lecture
+ * Source : `GStart-main/modules/medias.js` (lecture
  * seule).
  */
 import { Store, dbManager } from '@oi/init.js';

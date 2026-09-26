@@ -83,7 +83,7 @@
  *     casts `as HTMLDialogElement | null` / `as HTMLInputElement | null`
  *     (éléments STATIQUES de `oi/index.html`, jamais recréés).
  *
- * Source : `/home/nico/Bureau/Web/GStart-main/modules/oi_cartographie.js`
+ * Source : `GStart-main/modules/oi_cartographie.js`
  * (lecture seule).
  */
 

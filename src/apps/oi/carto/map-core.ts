@@ -89,7 +89,7 @@
  *    différée n'y accède (vérifié par `tsc --noEmit`, même principe que
  *    `@pctac/planmap/map-core.ts`, note de tête de fichier).
  *
- * Source : `/home/nico/Bureau/Web/GStart-main/modules/oi_cartographie.js`
+ * Source : `GStart-main/modules/oi_cartographie.js`
  * (lecture seule).
  */
 

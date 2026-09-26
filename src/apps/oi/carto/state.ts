@@ -54,7 +54,7 @@
  * `console.warn` (TODO explicite dans map-persistence.ts pour brancher un
  * jour un toast). Comportement de LECTURE en cas nominal inchangé.
  *
- * Source : `/home/nico/Bureau/Web/GStart-main/modules/oi_cartographie.js`
+ * Source : `GStart-main/modules/oi_cartographie.js`
  * (lecture seule).
  */
 

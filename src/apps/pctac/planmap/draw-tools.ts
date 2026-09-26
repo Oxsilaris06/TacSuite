@@ -29,7 +29,7 @@
  * `_undo`/`_redo` vs `_loadShapes`/`_saveShapes` reste délibérée, ne pas
  * uniformiser (SPEC-PCTAC-CONVERSION §6).
  *
- * Source : `/home/nico/Bureau/Web/GStart-main/modules/pctac/planMap.js`
+ * Source : `GStart-main/modules/pctac/planMap.js`
  * (lecture seule).
  */
 

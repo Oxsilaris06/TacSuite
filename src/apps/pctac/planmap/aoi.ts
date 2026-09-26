@@ -21,7 +21,7 @@
  * comme l'original (planMap.js:5417), et NON redéclarées dans `AoiMethods`
  * (SPEC-PLANMAP-SPLIT.md §4.16, note).
  *
- * Source : `/home/nico/Bureau/Web/GStart-main/modules/pctac/planMap.js`
+ * Source : `GStart-main/modules/pctac/planMap.js`
  * (lecture seule).
  */
 

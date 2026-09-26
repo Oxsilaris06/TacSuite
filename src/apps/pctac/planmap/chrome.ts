@@ -46,7 +46,7 @@
  *    coercion native `ToString` d'une assignation `.value = undefined`, même
  *    idiome que `text-modal.ts` (`_bindTextModalOnce`).
  *
- * Source : `/home/nico/Bureau/Web/GStart-main/modules/pctac/planMap.js`
+ * Source : `GStart-main/modules/pctac/planMap.js`
  * (lecture seule).
  */
 

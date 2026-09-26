@@ -44,7 +44,7 @@
  * `_toggleStreetLabels` et `_initStreetLabels`, ne l'invoquent qu'après
  * `init()` réussi) — même principe que draw-layers.ts.
  *
- * Source : `/home/nico/Bureau/Web/GStart-main/modules/pctac/planMap.js`
+ * Source : `GStart-main/modules/pctac/planMap.js`
  * (lecture seule).
  */
 

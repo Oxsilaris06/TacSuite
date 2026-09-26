@@ -8,7 +8,7 @@
  * (délégation one-liner, sans `this` : ces méthodes n'en ont pas besoin) et
  * les deux helpers `shapeCoords`/`coordAt` imposés par §6.3.
  *
- * Source : `/home/nico/Bureau/Web/GStart-main/modules/pctac/planMap.js`
+ * Source : `GStart-main/modules/pctac/planMap.js`
  * (lecture seule).
  */
 

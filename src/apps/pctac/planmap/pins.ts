@@ -35,7 +35,7 @@
  *   - `getSource<GeoJSONSource>(...)` (générique explicite, comme
  *     `planmap/draw-tools.ts`) pour appeler `.setData(...)`.
  *
- * Source : `/home/nico/Bureau/Web/GStart-main/modules/pctac/planMap.js`
+ * Source : `GStart-main/modules/pctac/planMap.js`
  * (lecture seule).
  */
 

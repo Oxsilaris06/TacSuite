@@ -34,7 +34,7 @@
  * ne doit JAMAIS écrire `coords: []` sur cette shape — elle a `center`/`rings`
  * uniquement, exactement comme l'original (planMap.js:2576-2582).
  *
- * Source : `/home/nico/Bureau/Web/GStart-main/modules/pctac/planMap.js`
+ * Source : `GStart-main/modules/pctac/planMap.js`
  * (lecture seule).
  */
 

@@ -15,7 +15,7 @@
  * autre sous-module de méthodes ; SEUL `index.ts` les importe tous, et SEUL
  * `index.ts` a un `export default` dans `planmap/`.
  *
- * Source : `/home/nico/Bureau/Web/GStart-main/modules/pctac/planMap.js`
+ * Source : `GStart-main/modules/pctac/planMap.js`
  * (lecture seule).
  */
 

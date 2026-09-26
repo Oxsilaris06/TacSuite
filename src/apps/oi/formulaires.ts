@@ -181,7 +181,7 @@
  *    `Promise<T>` ci-dessus), déjà exploitée côté consommateur par
  *    `presentation.ts` via cast pour LIRE cette valeur.
  *
- * Source : `/home/nico/Bureau/Web/GStart-main/modules/formulaires.js`
+ * Source : `GStart-main/modules/formulaires.js`
  * (lecture seule).
  */
 

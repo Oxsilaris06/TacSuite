@@ -2,7 +2,7 @@
  * contracts.ts — Interfaces des contrats globaux `window.*` de TacSuite.
  * =====================================================================
  *
- * Source de vérité : lecture du code de `/home/nico/Bureau/Web/GStart-main`
+ * Source de vérité : lecture du code de `GStart-main`
  * (LECTURE SEULE). Chaque signature est relevée sur le code RÉEL, pas déduite.
  * Les références `fichier:ligne` renvoient à l'original.
  *

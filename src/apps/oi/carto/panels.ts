@@ -39,7 +39,7 @@
  *     comportement (`opts.map || null` dans `OIWheel` traite déjà `undefined`
  *     et `null` de façon identique).
  *
- * Source : `/home/nico/Bureau/Web/GStart-main/modules/oi_cartographie.js`
+ * Source : `GStart-main/modules/oi_cartographie.js`
  * (lecture seule).
  */
 

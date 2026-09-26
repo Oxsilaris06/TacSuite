@@ -10,7 +10,7 @@
  * pour typer leur `this`, à l'identique de `PlanMapInternal` côté PC-Tac
  * (`@pctac/planmap/types.ts`, patron SPEC-PLANMAP-SPLIT.md §1.2).
  *
- * Source : `/home/nico/Bureau/Web/GStart-main/modules/oi_cartographie.js`
+ * Source : `GStart-main/modules/oi_cartographie.js`
  * (lecture seule, objet littéral `const OICarto = {...}`, lignes 269-1667).
  */
 

@@ -118,7 +118,7 @@
  *    `saveQuickEditModalChanges`) : cast standard sur un objet de forme connue
  *    (`OiPatracMember` / `modalTempData`), aucun `any`.
  *
- * Source : `/home/nico/Bureau/Web/GStart-main/modules/patrac.js` (lecture
+ * Source : `GStart-main/modules/patrac.js` (lecture
  * seule).
  */
 

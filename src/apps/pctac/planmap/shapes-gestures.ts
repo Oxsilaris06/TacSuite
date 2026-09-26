@@ -51,7 +51,7 @@
  * socle commun) : `./types.js` (types uniquement), `@shared/shape-gestures.js`,
  * `maplibre-gl`. Aucune autre.
  *
- * Source : `/home/nico/Bureau/Web/GStart-main/modules/pctac/planMap.js`
+ * Source : `GStart-main/modules/pctac/planMap.js`
  * (lecture seule).
  */
 
