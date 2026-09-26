@@ -383,14 +383,11 @@ export const MapCoreMethods = {
         try { map.setTerrain(null); } catch {}
         try {
             if (typeof map.setSky === 'function') {
-                // Adaptation TS nécessaire (non listée aux pièges de la mission, requise
-                // pour un `tsc --noEmit` vide) : le typage `maplibre-gl` déclare
-                // `setSky(sky: SkySpecification): this` (paramètre requis, sans `null`),
-                // alors que l'implémentation JS accepte `null` pour retirer le ciel —
-                // c'est le comportement documenté et utilisé par l'original
-                // (planMap.js:608). Assertion `as unknown as SkySpecification` : seul
-                // le typage change, le runtime reçoit `null` à l'identique.
-                map.setSky(null as unknown as SkySpecification);
+                // Retirer le ciel = `undefined` (Style.setSky, maplibre-gl 4.7) : `null`
+                // est refusé par le validateur (« sky: object expected, null found »)
+                // et le ciel restait posé. Le typage public exige un paramètre, d'où
+                // l'assertion (seul le typage change).
+                map.setSky(undefined as unknown as SkySpecification);
             }
         } catch {}
         try {
