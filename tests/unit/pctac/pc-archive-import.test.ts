@@ -337,6 +337,18 @@ describe('import d’un journal .json ancien format (revue client D-2)', () => {
         expect(localStorage.getItem(LOCAL_STORAGE_KEY)).toBe(before);
     });
 
+    it('audit du 26/09 : les entrées importées rejoignent l’ordre chronologique et reçoivent les champs par défaut', async () => {
+        localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify([
+            { id: 'l0', date: '2026-09-26', heure: '10:00', pax: 'Inter', lieu: '', remarques: 'local' },
+        ]));
+        await Archive.importFile(legacy([
+            { id: 'l1', date: '2026-09-26', heure: '08:00', remarques: 'importée avant' },
+        ]));
+        const saved = JSON.parse(localStorage.getItem(LOCAL_STORAGE_KEY) ?? '[]') as Array<Record<string, string>>;
+        expect(saved.map((e) => e.id)).toEqual(['l1', 'l0']);
+        expect(saved[0]).toMatchObject({ pax: '', lieu: '', heure: '08:00' });
+    });
+
     it('importe un journal sain', async () => {
         await Archive.importFile(legacy([{ id: 'l1', heure: '09:00', pax: 'Inter', remarques: 'RAS' }]));
         expect(localStorage.getItem(LOCAL_STORAGE_KEY)).toContain('RAS');
