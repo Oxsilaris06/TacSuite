@@ -191,7 +191,7 @@ import { LOCAL_STORAGE_KEY, Store, dbManager, memberConfig } from '@oi/init.js';
 import { collectCoherence } from '@oi/coherence.js';
 import { createAnnotatedImageBlob } from '@oi/dessin.js';
 import { setupQuickEditPanel } from '@oi/patrac.js';
-import { reencodeSansExif } from '@oi/outils.js';
+import { isSafeId, reencodeSansExif } from '@oi/outils.js';
 // R2-T4 — validation inline (nouveau module, cf. son en-tête).
 import { attachValidation, required } from '@oi/validation.js';
 import { confirmDialog, toast } from '@shared/feedback.js';
@@ -1013,6 +1013,8 @@ async function loadFormData(): Promise<boolean> {
 
                 if (previewContainer && fileDataArray) {
                     for (const imgData of fileDataArray) {
+                        // SEC-1 : un id forgé (archive, stockage) n'atteint jamais le DOM.
+                        if (!isSafeId(imgData.id)) continue;
                         const imageBlob = await dbManager.getItem(imgData.id);
                         if (imageBlob) {
                             // On convertit en Base64 pour éviter les erreurs "local resource" en file://
@@ -1064,18 +1066,18 @@ async function loadFormData(): Promise<boolean> {
 
                             interactiveItem.innerHTML = `
                                         <img id="${esc(imgData.id)}" class="image-preview" src="${esc(previewUrl)}" style="display:block;"
-                                            data-annotations='${(imgData.annotations || '[]').replace(/'/g, '&apos;')}'
-                                            data-tools='${(imgData.tools || '[]').replace(/'/g, '&apos;')}'
-                                            data-other-tools='${(imgData.other_tools || '').replace(/'/g, '&apos;')}'
+                                            data-annotations="${esc(imgData.annotations || '[]')}"
+                                            data-tools="${esc(imgData.tools || '[]')}"
+                                            data-other-tools="${esc(imgData.other_tools || '')}"
                                         >
                                         <input type="text" class="photo-title-input" placeholder="Légende de la photo..."
-                                            value="${(imgData.customTitle || '').replace(/"/g, '&quot;')}"
+                                            value="${esc(imgData.customTitle || '')}"
                                             style="width: 100%; margin-top: 5px; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); color: white; border-radius: 4px; padding: 2px 5px; font-size: 0.8em;"
                                             oninput="syncDomToStore()">
                                         <div style="display: flex; gap: 5px; margin-top: 5px;">
-                                            <button type="button" class="add-btn" style="background-color: var(--accent-blue); padding: 4px 8px;" onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation()" onclick="openAnnotationModal('${imgData.id}')" aria-label="Annoter la photo"><span class="material-symbols-outlined" style="font-size: 1.2em;">edit</span></button>
-                                            ${isEffrac ? `<button type="button" class="add-btn" style="background-color: var(--effraction-gold); padding: 4px 8px;" onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation()" onclick="openEffractionToolsModal('${imgData.id}')" aria-label="Sélectionner les outils d'effraction"><span class="material-symbols-outlined" style="font-size: 1.2em;">hardware</span></button>` : ''}
-                                            <button type="button" class="remove-btn" style="padding: 4px 8px;" onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation()" onclick="removeImage('${imgData.id}', this.closest('.image-preview-item'))" aria-label="Supprimer la photo">&times;</button>
+                                            <button type="button" class="add-btn" style="background-color: var(--accent-blue); padding: 4px 8px;" onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation()" onclick="openAnnotationModal(this.closest('.image-preview-item').querySelector('.image-preview').id)" aria-label="Annoter la photo"><span class="material-symbols-outlined" style="font-size: 1.2em;">edit</span></button>
+                                            ${isEffrac ? `<button type="button" class="add-btn" style="background-color: var(--effraction-gold); padding: 4px 8px;" onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation()" onclick="openEffractionToolsModal(this.closest('.image-preview-item').querySelector('.image-preview').id)" aria-label="Sélectionner les outils d'effraction"><span class="material-symbols-outlined" style="font-size: 1.2em;">hardware</span></button>` : ''}
+                                            <button type="button" class="remove-btn" style="padding: 4px 8px;" onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation()" onclick="removeImage(this.closest('.image-preview-item').querySelector('.image-preview').id, this.closest('.image-preview-item'))" aria-label="Supprimer la photo">&times;</button>
                                         </div>`;
                             previewContainer.appendChild(interactiveItem);
                         }
@@ -1583,6 +1585,14 @@ async function applyArchiveImport(parsed: OiParsedArchiveOk, cats: readonly OiIm
         }
     }
 
+    // SEC-1 : une référence de photo à id forgé est retirée avant tout stockage.
+    const photos = oiCurrent.dynamic_photos;
+    if (photos && typeof photos === 'object') {
+        for (const [k, list] of Object.entries(photos as Record<string, unknown>)) {
+            if (Array.isArray(list)) (photos as Record<string, unknown>)[k] = list.filter((p) => isSafeId((p as { id?: unknown } | null)?.id));
+        }
+    }
+
     const snapshot = localStorage.getItem(KEY);
     let imgFail = 0;
     try {
@@ -1599,6 +1609,7 @@ async function applyArchiveImport(parsed: OiParsedArchiveOk, cats: readonly OiIm
                     imagesFolder.forEach((relPath, entry) => {
                         if (entry.dir) return;
                         const k = decodeURIComponent(relPath.replace(/\.bin$/, '').replace(/\.txt$/, ''));
+                        if (!isSafeId(k)) { imgFail++; return; } // SEC-1 : id forgé, jamais stocké
                         tasks.push(entry.async('arraybuffer')
                             .then(async (ab) => {
                                 const brut = new Blob([ab], { type: parsed.imageMeta[k] || '' });
