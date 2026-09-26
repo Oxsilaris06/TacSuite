@@ -1483,6 +1483,8 @@ test('traces GPX — import, masquage, persistance et suppression', async ({ pag
   await expect.soft(page.locator('.plan-gpx-name')).toHaveText('Reconnaissance Sud');
 
   await page.locator('[data-gpx-act="remove"]').click();
+  // Audit du 26/09 : la suppression d'une trace demande confirmation.
+  await clickConfirmDialogOk(page);
   await page.waitForTimeout(700);
   expect.soft(await featureCount()).toBe(0);
   await expect.soft(page.locator('.plan-gpx-empty')).toHaveCount(1);
