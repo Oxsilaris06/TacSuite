@@ -74,6 +74,21 @@ describe('favoris de la main courante (Mo4)', () => {
         expect(stars).toBe(3);
     });
 
+    it('un statut automatique mis en favori est compté et porte l’étoile au journal des actions (décision 45)', async () => {
+        set('pcTacLogData', [
+            log('e1', '08:15', 'Arrivée', { favori: true }),
+            log('s1', '08:40', 'ADV DURAND Marc : neutralisé', { pax: 'Adversaire', auto: true, favori: true }),
+            log('s2', '08:50', 'ADV MARTIN Luc : blessé', { pax: 'Adversaire', auto: true }),
+        ]);
+        const bytes = (await generatePdfBytes({ ...OPTS }))!;
+        const pages = await pdfPagesText(bytes);
+        expect(pages.join(' ')).toContain('Entrées marquées importantes : 2');
+        let stars = 0;
+        for (let i = 0; i < pages.length; i++) stars += (await pdfPageOperators(bytes, i)).split('0.96 0.68 0.05 rg').length - 1;
+        // Légende + favori de la main courante + statut étoilé du journal des actions.
+        expect(stars).toBe(3);
+    });
+
     it('sans favori : ni légende ni étoile', async () => {
         set('pcTacLogData', [log('e1', '08:15', 'Arrivée')]);
         const bytes = (await generatePdfBytes({ ...OPTS }))!;

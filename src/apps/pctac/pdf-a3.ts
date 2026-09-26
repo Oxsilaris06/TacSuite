@@ -130,7 +130,9 @@ async function collect(): Promise<Collected> {
     const faits = faitsLogs.map((e) => {
         const [y, m, d] = str(e.date).split('-');
         const when = `${d && m && y ? `${d}/${m} ` : ''}${str(e.heure)}`;
-        const who = e.auto ? 'Statut' : paxChipLabel(str(e.pax), mode);
+        // Entrée automatique étoilée : « Carte » pour un point du plan, sinon
+        // « Statut » (changement de statut d'une fiche).
+        const who = e.auto ? (str(e.pax) === 'Carte' ? 'Carte' : 'Statut') : paxChipLabel(str(e.pax), mode);
         const line = `${when} ${who} — ${str(e.lieu) ? `${str(e.lieu)} — ` : ''}${str(e.remarques)}`;
         texts.push({ where: `Main courante ${str(e.heure)}`, text: line });
         return line;
