@@ -1580,7 +1580,8 @@
             padding: 6px;
             background: transparent;
             color: var(--text-secondary);
-            min-height: unset;
+            min-height: 44px;
+            min-width: 44px;
         }
 
         .vehicle-header .remove-btn:hover {
@@ -2586,8 +2587,8 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            width: 28px;
-            height: 28px;
+            width: 44px;
+            height: 44px;
             border-radius: var(--radius-sm);
             color: var(--text-secondary);
         }

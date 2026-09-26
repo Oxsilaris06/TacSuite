@@ -248,6 +248,9 @@ function buildCss(accent: string): string {
   border:1px solid rgba(255,255,255,.16); background:rgba(255,255,255,.05); color:#f6f6f7; }
 .ptuto-nav button:hover{ background:rgba(255,255,255,.10); }
 .ptuto-nav button.ptuto-primary{ background:var(--ptuto-accent); border-color:var(--ptuto-accent); color:#fff; }
+/* cibles tactiles ≥ 44 px (téléphone, tablette, gants) */
+.ptuto-x, .ptuto-menu-btn, .ptuto-toc-item, .ptuto-spotbtn, .ptuto-nav button, .ptuto-spot-callout button{ min-height:44px; }
+.ptuto-x{ min-width:44px; }
 .ptuto-nav button.ptuto-primary:hover{ filter:brightness(1.08); }
 .ptuto-nav button:disabled{ opacity:.4; cursor:default; }
 .ptuto-nav button .material-symbols-outlined{ font-size:18px; }
