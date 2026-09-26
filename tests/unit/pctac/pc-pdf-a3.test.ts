@@ -133,6 +133,20 @@ describe('buildA3Pdf', () => {
         expect(overlay().style.display).toBe('none');
     });
 
+    it('les cases du carroyage connues après la capture du plan sont imprimées', async () => {
+        seed();
+        let mapCaptured = false;
+        const png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAMAAAACCAYAAACddGYaAAAAEklEQVR4nGNgYGD4z8DAwMAAAAoAAtXcWr8AAAAASUVORK5CYII=';
+        Reflect.set(window, 'PlanMap', {
+            captureToDataUrl: async () => { mapCaptured = true; return png; },
+            getPinsSummary: () => [{ label: 'Portail nord', mgrs: '31U DQ 12345 67890', cell: mapCaptured ? 'C4' : '', lat: 47.1, lng: 1.6 }],
+        });
+        const { buildA3Pdf } = await import('@pctac/pdf-a3.js');
+        await expect(buildA3Pdf(OPTIONS)).resolves.toBe(true);
+        const { text } = await readPdf();
+        expect(text).toContain('Portail nord [C4]');
+    });
+
     it('un nom arabe est imprimé sans « ? » (police de repli)', async () => {
         seed({ advNom: 'بن محمد' });
         const { buildA3Pdf } = await import('@pctac/pdf-a3.js');
