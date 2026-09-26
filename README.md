@@ -1,6 +1,6 @@
 # TacSuite
 
-Suite d'outils tactiques Gendarmerie — portage TypeScript de PC-Tac et 
+Suite d'outils tactiques — portage TypeScript de PC-Tac et 
 Générateur d'Ordre Initial, à partir prototypes vanilla JS de
 [GStart-main](https://github.com/Oxsilaris06/GStart-main).
 
