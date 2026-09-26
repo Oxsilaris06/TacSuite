@@ -36,7 +36,7 @@ export interface TextRun {
 
 const STRONG = /[\p{L}\p{M}]/u;
 const WHITESPACE = /\s/u;
-const EMOJI_SEQUENCE = /\p{Extended_Pictographic}(?:\uFE0F|[\u{1F3FB}-\u{1F3FF}]|\u200D\p{Extended_Pictographic}\uFE0F?)*/gu;
+export const EMOJI_SEQUENCE = /\p{Extended_Pictographic}(?:\uFE0F|[\u{1F3FB}-\u{1F3FF}]|\u200D\p{Extended_Pictographic}\uFE0F?)*/gu;
 
 export function isRtlCodePoint(cp: number): boolean {
     return (cp >= 0x0590 && cp <= 0x08ff) || (cp >= 0xfb1d && cp <= 0xfdff) || (cp >= 0xfe70 && cp <= 0xfeff);
