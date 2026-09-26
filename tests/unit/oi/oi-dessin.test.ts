@@ -739,3 +739,17 @@ describe('changeZoom / resetZoom', () => {
         expect(() => window.resetZoom()).not.toThrow();
     });
 });
+
+describe('audit du 26/09 : opacité d’une zone', () => {
+    it('fillOpacity garde 0 (contour seul), convertit la chaîne du curseur, borne et replie sur 0,5', async () => {
+        const { fillOpacity } = await import('@oi/dessin.js');
+        expect(fillOpacity(0)).toBe(0);
+        expect(fillOpacity('0')).toBe(0);
+        expect(fillOpacity('0.3')).toBe(0.3);
+        expect(fillOpacity(1)).toBe(1);
+        expect(fillOpacity(undefined)).toBe(0.5);
+        expect(fillOpacity('x')).toBe(0.5);
+        expect(fillOpacity(7)).toBe(1);
+        expect(fillOpacity(-1)).toBe(0);
+    });
+});

@@ -173,6 +173,17 @@ let gestureStart: OiResizeGestureStart | OiRotateGestureStart | null = null;
 // ---------------------------------------------------------------------------
 
 // outils.js:8-15
+/**
+ * Opacité de remplissage d'une zone, toujours un nombre dans [0, 1] (audit du
+ * 26/09 : `opacity || 0.5` changeait un 0 voulu, contour seul, en 50 %, et la
+ * création stockait la chaîne du curseur). Illisible : 0,5 par défaut.
+ */
+export function fillOpacity(v: unknown): number {
+    const n = typeof v === 'string' && v.trim() !== '' ? Number(v) : v;
+    if (typeof n !== 'number' || !Number.isFinite(n)) return 0.5;
+    return Math.min(1, Math.max(0, n));
+}
+
 export function hexToRgb(hex: string): { r: number; g: number; b: number } | null {
     const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
     // outils.js:10-14 — noUncheckedIndexedAccess : la regex a exactement 3
@@ -590,7 +601,7 @@ function setContextualTools(selection: OiAnnotation | null): void {
         zoneSettings.style.display = selection.type === 'location' ? 'flex' : 'none';
         if (selection.type === 'location') {
             const co = document.getElementById('circle_opacity') as HTMLInputElement | null;
-            if (co) co.value = String(selection.opacity || 0.5);
+            if (co) co.value = String(fillOpacity(selection.opacity));
         }
     }
 }
@@ -655,7 +666,7 @@ function updateZoneText(val: string): void {
 function updateZoneOpacity(val: string): void {
     const selected = oiState.selectedAnnotation;
     if (selected && selected.type === 'location') {
-        selected.opacity = parseFloat(val);
+        selected.opacity = fillOpacity(val);
         redrawCanvas();
         const targetId = oiState.annotationModal?.dataset.targetPreviewId;
         if (targetId) {
@@ -1029,7 +1040,7 @@ function drawAnnotation(annotation: OiAnnotationWithBounds): void {
             ctx.beginPath();
             ctx.arc(annotation.x, annotation.y, radius, 0, 2 * Math.PI);
             const rgb = hexToRgb(color) || { r: 91, g: 155, b: 213 };
-            ctx.fillStyle = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${annotation.opacity || 0.5})`;
+            ctx.fillStyle = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${fillOpacity(annotation.opacity)})`;
             ctx.fill();
             ctx.strokeStyle = color; // Couleur personnalisée pour le bord
             ctx.lineWidth = 3;
@@ -1438,14 +1449,9 @@ function handleDrawEnd(e: MouseEvent | TouchEvent): void {
             final.radius = Math.sqrt(Math.pow(final.endX - final.startX, 2) + Math.pow(final.endY - final.startY, 2));
             final.text = oiState.zoneText;
             const circleOpacityEl = document.getElementById('circle_opacity') as HTMLInputElement | null;
-            // dessin.js:911 — ÉCART DE CONTRAT : l'original affecte directement
-            // la STRING `.value` (ou le nombre 0.5 par défaut) à `final.opacity`,
-            // SANS parseFloat (contrairement à `updateZoneOpacity` qui parse en
-            // interne) ; comportement runtime réel `string | number` alors que
-            // `OiShapeAnnotation.opacity` est typé `number`. Porté tel quel
-            // (fidélité) ; cast `unknown` justifié, `contracts.ts` inchangé
-            // (hors périmètre, interdiction commune (2)).
-            final.opacity = (circleOpacityEl?.value || 0.5) as unknown as number;
+            // Nombre dans [0, 1], 0 compris (audit du 26/09 ; l'original
+            // stockait la chaîne du curseur, dessin.js:911).
+            final.opacity = fillOpacity(circleOpacityEl?.value);
             final.color = oiState.currentAnnotationColor;
             if (final.radius < 5) return;
         }
@@ -1632,7 +1638,7 @@ function drawAnnotationOnContext(
             context.beginPath();
             context.arc(annotation.x, annotation.y, radius, 0, 2 * Math.PI);
             const rgb = hexToRgb(color) || { r: 91, g: 155, b: 213 };
-            context.fillStyle = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${annotation.opacity || 0.5})`;
+            context.fillStyle = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${fillOpacity(annotation.opacity)})`;
             context.fill();
             context.strokeStyle = color;
             context.lineWidth = 3;
