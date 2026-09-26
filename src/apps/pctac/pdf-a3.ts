@@ -94,6 +94,25 @@ function sideBlocks(side: FicheSide, items: Rec[], resolveLink: (id: string) => 
     });
 }
 
+/**
+ * Points du plan : libellé, case du carroyage, MGRS (décision 41, pas de
+ * décimal). Relu APRÈS la capture du plan : c'est elle qui prépare la carte
+ * (et donc le carroyage) quand l'onglet Plan n'a jamais été ouvert.
+ */
+function collectPointItems(texts?: Collected['texts']): string[] {
+    let pins: Rec[] = [];
+    try {
+        const planMap = (window as unknown as { PlanMap?: { getPinsSummary?: () => unknown } }).PlanMap;
+        const raw = planMap?.getPinsSummary?.();
+        if (Array.isArray(raw)) pins = raw.filter((p): p is Rec => !!p && typeof p === 'object');
+    } catch { pins = []; }
+    return pins.map((p) => {
+        const item = `${str(p.label) || 'Point'} [${str(p.cell) || '-'}] ${str(p.mgrs) || 'MGRS N/C'}`;
+        texts?.push({ where: `Point ${str(p.label)}`, text: item });
+        return item;
+    });
+}
+
 async function collect(): Promise<Collected> {
     const mode = currentMode();
     const modeId = currentModeId();
@@ -117,17 +136,7 @@ async function collect(): Promise<Collected> {
         return line;
     });
 
-    let pins: Rec[] = [];
-    try {
-        const planMap = (window as unknown as { PlanMap?: { getPinsSummary?: () => unknown } }).PlanMap;
-        const raw = planMap?.getPinsSummary?.();
-        if (Array.isArray(raw)) pins = raw.filter((p): p is Rec => !!p && typeof p === 'object');
-    } catch { pins = []; }
-    const points = pins.map((p) => {
-        const item = `${str(p.label) || 'Point'} [${str(p.cell) || '-'}] ${str(p.mgrs) || 'MGRS N/C'}`;
-        texts.push({ where: `Point ${str(p.label)}`, text: item });
-        return item;
-    });
+    const points = collectPointItems(texts);
 
     const friends = Storage.loadCollection('pcTacFriends') as unknown as Rec[];
     const amis = friends.map((f) => {
@@ -493,6 +502,8 @@ export async function buildA3Pdf(options: PdfOptions): Promise<boolean> {
             ? await capturePlanForPdf({ targetWidthPx: targetPixels(PHOTO_COLUMN_MM * MM, options.sortie), jpegQuality: PDF_IMAGE_PROFILES[options.sortie].jpegQuality })
             : null;
         input.plan = plan ? { widthPx: plan.widthPx, heightPx: plan.heightPx } : null;
+        // Cases du carroyage connues seulement une fois la carte prête (voir collectPointItems).
+        if (plan) input.points = { ...input.points, items: collectPointItems().map(clean) };
 
         // Mesure avec la vraie chaîne de polices (document jetable).
         overlay('Synthèse A3 : mise en page…');
