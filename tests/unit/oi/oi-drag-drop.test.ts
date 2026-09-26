@@ -411,3 +411,27 @@ describe('photo glissée vers un champ limité (data-max-photos, « Baptême ter
         expect(full.querySelectorAll('.image-preview-item')).toHaveLength(2);
     });
 });
+
+describe('photo principale d’adversaire (champ sans légende) et glisser-déposer', () => {
+    it('une photo d’un autre champ n’y entre pas, et elle n’en sort pas vers un autre champ', async () => {
+        await import('@oi/drag-drop.js');
+        window.syncDomToStore = vi.fn();
+        document.body.innerHTML = `
+            <div id="photo_extra_a1" class="image-preview-container"><div id="e1_item" class="image-preview-item draggable"><img id="e1" class="image-preview"><input class="photo-title-input" value="Vue avant"></div></div>
+            <div id="photo_main_a1" class="image-preview-container" data-no-caption><div id="m1_item" class="image-preview-item draggable"><img id="m1" class="image-preview"></div></div>`;
+        const extra = document.getElementById('photo_extra_a1')!;
+        const main = document.getElementById('photo_main_a1')!;
+        window.initializeDragDropListeners();
+
+        const e1 = document.getElementById('e1_item')!;
+        e1.classList.add('dragging');
+        main.dispatchEvent(makeDragEvent('dragover'));
+        expect(extra.contains(e1)).toBe(true);
+        e1.classList.remove('dragging');
+
+        const m1 = document.getElementById('m1_item')!;
+        m1.classList.add('dragging');
+        extra.dispatchEvent(makeDragEvent('dragover'));
+        expect(main.contains(m1)).toBe(true);
+    });
+});

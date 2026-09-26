@@ -1442,15 +1442,18 @@ export const Archive: ArchiveContract = {
         );
         for (const [key, entries] of Object.entries(galleryPhotos)) {
             if (key.startsWith('photo_main_')) continue;
-            for (const [index, entry] of entries.entries()) {
+            // Rang compté sur les photos importées, comme l'OI (une image absente
+            // ou illisible est écartée, les autres passent).
+            const readable: { entry: OiDynamicPhotoEntry; imgId: string; dataUrl: string }[] = [];
+            for (const entry of entries) {
                 const imgId = entry && typeof entry.id === 'string' ? entry.id : '';
-                if (!imgId) continue;
-                const dataUrl = await readPhotoDataUrl(imgId);
-                if (!dataUrl) continue; // photo illisible : les autres passent
-
+                const dataUrl = imgId ? await readPhotoDataUrl(imgId) : null;
+                if (dataUrl) readable.push({ entry, imgId, dataUrl });
+            }
+            for (const [index, { entry, imgId, dataUrl }] of readable.entries()) {
                 const pcId = stableOiPhotoId(imgId);
                 const existing = photoById.get(pcId);
-                const derivedTitle = oiPhotoTitle(key, entry, index + 1, entries.length);
+                const derivedTitle = oiPhotoTitle(key, entry, index + 1, readable.length);
                 const annotations = parseAnnotations(entry.annotations);
                 const importedAnnotationSig = annotations.length ? JSON.stringify(annotations) : '';
 

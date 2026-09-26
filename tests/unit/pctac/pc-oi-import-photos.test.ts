@@ -131,6 +131,18 @@ describe('légende par défaut des photos importées : celle de l’OI, « nom d
         expect(oiPhotoTitle('photo_extra_adv1', { customTitle: ' Vue avant ' }, 1, 3)).toBe('Vue avant');
     });
 
+    it('le rang compte seulement les photos importées (une image absente de l’archive ne compte pas)', async () => {
+        const file = await buildOiZip({
+            oiData: { dynamic_photos: { photo_extra_adv1: [{ id: 'img_x1' }, { id: 'img_x2' }, { id: 'img_x3' }] } },
+            imagesMeta: { img_x1: 'image/png', img_x3: 'image/png' },
+            imageFiles: { 'img_x1.bin': b64('X1'), 'img_x3.bin': b64('X3') },
+        });
+        await Archive.importOiArchive(file);
+        const byId = new Map(Storage.loadCollection(PHOTOS_KEY).map((p) => [p.id, p]));
+        expect(byId.get(stableOiPhotoId('img_x1'))?.title).toBe('Photos supplémentaires (1/2)');
+        expect(byId.get(stableOiPhotoId('img_x3'))?.title).toBe('Photos supplémentaires (2/2)');
+    });
+
     it('ancien OI : les photos « Baptême Terrain » de chaque bloc ZMSPCP sont numérotées ensemble, comme dans l’OI', async () => {
         const file = await buildOiZip({
             oiData: {
