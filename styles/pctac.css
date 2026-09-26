@@ -755,7 +755,7 @@
             align-items: center;
             justify-content: center;
             gap: var(--tac-space-1);
-            min-height: 34px;
+            min-height: 44px;
             padding: var(--tac-space-1) var(--space-3);
             background: transparent;
             border: none;
@@ -783,13 +783,6 @@
 
         .mode-selector-option:active {
             transform: scale(0.97);
-        }
-
-        /* Tablette au doigt : cible de 44 px. La souris garde la barre fine. */
-        @media (pointer: coarse) {
-            .mode-selector-option {
-                min-height: 44px;
-            }
         }
 
         /* Sous 900 px le selecteur quitte le coin (il chevaucherait le titre)
@@ -1903,6 +1896,8 @@
         #plan_draw_dock.open {
             display: flex;
         }
+        /* Masqué pendant une mesure : la barre de mesure le recouvrait (measure.ts). */
+        #plan_draw_dock[hidden] { display: none; }
 
         #plan_draw_dock .plan-draw-btn,
         #plan_draw_dock #plan_draw_undo,
@@ -2486,6 +2481,13 @@
                 grid-template-columns: repeat(7, 1fr);
                 gap: 2px;
                 padding: 2px;
+            }
+
+            /* Cibles tactiles de 44 px (mesuré : champs 41 px, « Ajouter » 37 px). */
+            input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="file"]),
+            select,
+            .add-btn {
+                min-height: 44px;
             }
 
             .tab-btn {

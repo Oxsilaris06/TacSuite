@@ -554,6 +554,13 @@ export const ChromeMethods = {
             document.getElementById('plan_map')?.parentElement?.appendChild(hint);
         }
         hint.textContent = msg + ' (clic ici pour annuler)';
+        // Téléphone, carte plein écran : la barre d'onglets collante recouvre
+        // le haut de la carte ; la bulle se pose sous elle. Masquée (écran
+        // scindé) ou au-dessus de la carte : 10 px comme avant.
+        const bar = document.querySelector('.main-tab-bar');
+        const wrap = hint.parentElement;
+        const covered = bar && wrap ? bar.getBoundingClientRect().bottom - wrap.getBoundingClientRect().top : 0;
+        hint.style.top = `${Math.max(0, covered) + 10}px`;
         hint.style.display = 'block';
     },
 

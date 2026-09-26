@@ -46,6 +46,7 @@ import {
 } from '@shared/shape-gestures.js';
 import type { ShapeGestureDeps } from '@shared/shape-gestures.js';
 
+import { queryShapeFeatures } from './constants.js';
 import type { LngLatObj, LngLatTuple, OICartoInternal, OiCartoShape } from './types.js';
 
 /** Les 5 couleurs du dock dessin OI (oi/index.html, `.oi-carto-draw-color`). */
@@ -164,7 +165,7 @@ export const ShapeEditMethods = {
             if (!this._selectedShapeId || this._gesture || this.overlays?.isCapturing()) return;
             let hits: unknown[] = [];
             try {
-                hits = map.queryRenderedFeatures(e.point, { layers: ['oi-carto-shapes-fill', 'oi-carto-shapes-line'] });
+                hits = queryShapeFeatures(map, e.point);
             } catch { /* couches pas encore prêtes : on désélectionne quand même */ }
             if (!hits.length) this._deselectShape();
         }, 'shapeDeselectClick'));

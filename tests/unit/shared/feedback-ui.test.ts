@@ -98,12 +98,13 @@ describe('toasts sur téléphone', () => {
     // ajouté » par-dessus le bouton d'ajout et les cartes du journal.
     vi.useFakeTimers();
     toast('Événement ajouté', { kind: 'success' });
-    vi.advanceTimersByTime(3000);
+    vi.advanceTimersByTime(2000);
     toast('Événement ajouté', { kind: 'success' });
     toast('Événement ajouté', { kind: 'success' });
     expect(document.querySelectorAll('.tac-toast')).toHaveLength(1);
-    // Relancé au dernier appel : encore là 3,9 s après, parti après 4 s.
-    vi.advanceTimersByTime(3900);
+    // Relancé au dernier appel : encore là 2,4 s après, parti après 2,5 s
+    // (durée d'un succès).
+    vi.advanceTimersByTime(2400);
     expect(document.querySelectorAll('.tac-toast')).toHaveLength(1);
     vi.advanceTimersByTime(400);
     expect(document.querySelectorAll('.tac-toast')).toHaveLength(0);
@@ -172,6 +173,53 @@ describe('fenêtres de confirmation et de saisie', () => {
     expect(document.querySelector('.tac-confirm-dialog')).not.toBeNull();
     dialog.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: 5, clientY: 5 }));
     await expect(p).resolves.toBeNull();
+  });
+});
+
+describe('fenêtres : titre neutre dans l’OI', () => {
+  it('le titre neutralise le style h2 de l’OI (capitales, soulignement, barre bleue)', () => {
+    // Constat UI-2 (a4-desktop-light-07) : oi.css pose sur tout h2 capitales,
+    // bordure basse et une barre bleue en ::before.
+    void confirmDialog({ title: 'Supprimer ?', message: 'Définitif.' });
+    const body = rule('.tac-confirm-title');
+    expect(body).toMatch(/text-transform:\s*none/);
+    expect(body).toMatch(/border:\s*0/);
+    expect(body).toMatch(/padding:\s*0/);
+    expect(body).toMatch(/display:\s*block/);
+    expect(rule('.tac-confirm-title::before')).toMatch(/content:\s*none/);
+  });
+});
+
+describe('toast de succès', () => {
+  it('se retire plus tôt qu’un message ordinaire : il recouvrait l’action principale plusieurs secondes', () => {
+    vi.useFakeTimers();
+    toast('PDF généré : 32 Ko.', { kind: 'success' });
+    toast('Information.', { kind: 'info' });
+    vi.advanceTimersByTime(3000);
+    const texts = Array.from(document.querySelectorAll('.tac-toast')).map((t) => t.textContent);
+    expect(texts.some((t) => t?.includes('PDF généré'))).toBe(false);
+    expect(texts.some((t) => t?.includes('Information.'))).toBe(true);
+  });
+
+  it('une durée explicite reste respectée', () => {
+    vi.useFakeTimers();
+    toast('PDF généré : 12 Mo, au-delà du plafond.', { kind: 'success', duration: 8000 });
+    vi.advanceTimersByTime(3000);
+    expect(document.querySelectorAll('.tac-toast')).toHaveLength(1);
+  });
+});
+
+describe('saisie validée par Entrée', () => {
+  it('Entrée dans le champ annule l’action par défaut : sinon le focus rendu au bouton déclencheur le réactive et rouvre la fenêtre', async () => {
+    // Constat (atelier UI-2, dbg-enter) : « KODIAQ » + Entrée crée le VL puis
+    // la fenêtre de saisie se rouvre, au bureau comme au téléphone.
+    const p = promptDialog({ message: 'Nom du VL :' });
+    const input = document.querySelector<HTMLInputElement>('.tac-confirm-input')!;
+    input.value = 'KODIAQ';
+    const ev = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true });
+    input.dispatchEvent(ev);
+    expect(ev.defaultPrevented).toBe(true);
+    await expect(p).resolves.toBe('KODIAQ');
   });
 });
 
