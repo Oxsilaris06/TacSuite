@@ -1675,15 +1675,18 @@ export async function openPdfDialog(): Promise<void> {
     if (options.kind === 'a3') {
         if (refuseWhileGenerating()) return;
         pdfGenerating = true;
+        let next: boolean | 'complet' = false;
         try {
             const { buildA3Pdf } = await import('@pctac/pdf-a3.js');
-            await buildA3Pdf(options);
+            next = await buildA3Pdf(options);
         } catch (e) {
             console.error('PDF A3 :', e);
             toast(`Synthèse A3 impossible : ${e instanceof Error ? e.message : String(e)}`, { kind: 'error' });
         } finally {
             pdfGenerating = false;
         }
+        // Refus A3, « Générer le rapport complet » : verrou relâché avant.
+        if (next === 'complet') await PdfExport.buildPdf({ ...options, kind: 'complet' });
         return;
     }
     await PdfExport.buildPdf(options);
