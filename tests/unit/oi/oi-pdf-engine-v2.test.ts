@@ -390,6 +390,26 @@ describe('openPreview', () => {
         expect(toastSpy).not.toHaveBeenCalledWith("Erreur lors de l'ouverture de la présentation.", expect.anything());
     });
 
+    it('R4 — « Corriger la saisie » (écritures non imprimables) : ni erreur ni message technique, aperçu et présentation', async () => {
+        const { OiScriptsCancelledError } = await import('@oi/pdf/scripts-fallback.js');
+        const { content } = buildPresentationDom();
+        vi.spyOn(console, 'error').mockImplementation(() => {});
+        toastSpy.mockClear();
+
+        await PDFEngineV2.openPreview({
+            collect: () => Promise.resolve(makeCollectedData()),
+            buildBlob: () => Promise.reject(new OiScriptsCancelledError()),
+        });
+        await PDFEngineV2.openPresentInPlace({
+            collect: () => Promise.resolve(makeCollectedData()),
+            buildBlob: () => Promise.reject(new OiScriptsCancelledError()),
+        });
+
+        expect(content.querySelector('.pdf-preview-error')).toBeNull();
+        expect(toastSpy.mock.calls.filter((c) => (c[1] as { kind?: string } | undefined)?.kind === 'error')).toEqual([]);
+        expect(toastSpy).toHaveBeenCalledWith('Génération annulée.', { kind: 'info' });
+    });
+
     it("affiche un message d'erreur si renderPdf (pdf.js) échoue, en gardant le bouton de téléchargement exploitable", async () => {
         const { content } = buildPresentationDom();
         vi.spyOn(console, 'error').mockImplementation(() => {});
