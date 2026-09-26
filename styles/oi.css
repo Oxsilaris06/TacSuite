@@ -1477,17 +1477,6 @@
             text-transform: none;
         }
 
-        .patracdvr-member-btn::before {
-            content: '';
-            position: absolute;
-            left: 0;
-            top: 0;
-            bottom: 0;
-            width: 4px;
-            background-color: var(--border-color);
-            transition: background-color var(--transition-fast);
-        }
-
         .patracdvr-member-btn:hover {
             border-color: var(--text-secondary);
             transform: translateY(-2px);
@@ -1499,10 +1488,6 @@
             background-color: rgba(59, 130, 246, 0.05);
             box-shadow: 0 0 0 2px var(--ring-color), var(--shadow-md);
             transform: translateY(-2px);
-        }
-
-        .patracdvr-member-btn.member-active::before {
-            background-color: var(--accent-blue);
         }
 
         .patracdvr-member-btn .trigramme {
@@ -1680,11 +1665,11 @@
         }
 
         .moicp-member {
-            border-left: 3px solid var(--accent-blue);
+            border-color: var(--accent-blue);
         }
 
         .zmspcp-member {
-            border-left: 3px solid var(--moicp-zmspcp-purple);
+            border-color: var(--moicp-zmspcp-purple);
         }
 
         .art-member-trigramme {
@@ -2255,7 +2240,7 @@
             line-height: 1.4;
             color: var(--text-muted);
             background: var(--bg-interactive);
-            border-left: 3px solid var(--danger-red);
+            border: 1px solid var(--danger-red);
             white-space: pre-line;
             overflow-wrap: anywhere;
         }
@@ -3782,7 +3767,7 @@ body.light-mode .image-preview-item button[onclick^="openAnnotationModal"] {
 .qe-field-dir.qe-field-dir { flex:1 1 120px; }
 .qe-field-label-accent.qe-field-label-accent { font-size:0.78em; margin-bottom:2px; color:var(--accent-blue); }
 .mt-10.mt-10 { margin-top: 10px; }
-.card-accent-blue.card-accent-blue { margin-top: 15px; border-left: 4px solid var(--accent-blue); }
+.card-accent-blue.card-accent-blue { margin-top: 15px; }
 .heading-accent-blue.heading-accent-blue { color: var(--accent-blue); }
 .mt-25.mt-25 { margin-top: 25px; }
 .finalisation-check-text.finalisation-check-text { text-align:center; margin-top: 20px; }
