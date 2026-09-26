@@ -21,3 +21,9 @@ entities.json
 
 # Brouillons, medias et outillage de presentation : jamais versionnes (ae32760, 114 Mo, purge du 2026-09-25).
 scratch/
+
+# Secrets locaux, jamais versionnés (revue de sécurité du 2026-09-26, D-16).
+.env
+.env.*
+*.pem
+*.key

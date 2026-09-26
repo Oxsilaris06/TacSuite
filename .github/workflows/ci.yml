@@ -8,6 +8,10 @@ on:
     branches:
       - main
 
+# Moindre privilège (revue de sécurité du 2026-09-26, D-10).
+permissions:
+  contents: read
+
 jobs:
   check:
     runs-on: ubuntu-latest
