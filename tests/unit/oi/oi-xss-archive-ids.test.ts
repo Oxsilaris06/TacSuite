@@ -88,6 +88,7 @@ describe('SEC-1 — identifiant de photo restaurée', () => {
         const stored: string[] = [];
         Object.assign(dbManager, { db: {} });
         vi.spyOn(dbManager, 'clearAllImages').mockResolvedValue();
+        vi.spyOn(dbManager, 'getAllKeys').mockResolvedValue([]);
         vi.spyOn(dbManager, 'putItem').mockImplementation(async (k: string) => { stored.push(k); });
         vi.spyOn(window, 'setTimeout').mockImplementation((() => 0) as unknown as typeof setTimeout);
 
@@ -159,6 +160,7 @@ describe('R7 — image importée sans nettoyage des métadonnées', () => {
         const { dbManager } = await import('@oi/init.js');
         Object.assign(dbManager, { db: {} });
         vi.spyOn(dbManager, 'clearAllImages').mockResolvedValue();
+        vi.spyOn(dbManager, 'getAllKeys').mockResolvedValue([]);
         vi.spyOn(dbManager, 'putItem').mockResolvedValue();
         vi.spyOn(window, 'setTimeout').mockImplementation((() => 0) as unknown as typeof setTimeout);
         vi.spyOn(console, 'warn').mockImplementation(() => {});
