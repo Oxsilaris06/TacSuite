@@ -1810,6 +1810,11 @@ async function resetAllData(keepPatrac: boolean = true): Promise<void> {
 
     // Clear everything
     localStorage.removeItem(LOCAL_STORAGE_KEY);
+    // Audit du 26/09 : le journal de l'OI (gardé sur l'appareil, 500 lignes)
+    // peut contenir du contenu opérationnel ; vidé aussi en mémoire, sinon la
+    // prochaine écriture débouncée le réécrirait.
+    localStorage.removeItem('gstart_captured_logs');
+    if (Array.isArray(window.__capturedLogs)) window.__capturedLogs.length = 0;
     if (dbManager) await dbManager.clearAllImages();
 
     if (patracBackup) {

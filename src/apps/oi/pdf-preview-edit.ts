@@ -907,7 +907,6 @@ export async function attachEditableTextLayer(
     const pageNumber = Number(pageEl.dataset.pageNumber ?? '0');
     const textContent = await page.getTextContent();
     const items = textContent.items as TextContentItem[];
-    console.log(`[frag-dump] page ${pageNumber}:`, JSON.stringify(items.map((it) => ('str' in it ? [it.str, Math.round((it.transform as number[])[5] ?? 0)] : ['<marker>']))));
 
     /**
      * Reconstruction(s) EN COURS — PLUSIEURS hypothèses candidates en

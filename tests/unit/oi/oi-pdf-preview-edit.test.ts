@@ -254,6 +254,20 @@ describe('createEditMatchState', () => {
 });
 
 describe('attachEditableTextLayer', () => {
+    it('audit du 26/09 : le texte de la page ne passe jamais par la console (journal gardé sur l’appareil)', async () => {
+        const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+        const form = buildForm();
+        addField(form, 'mission', 'ABC');
+        const state = createEditMatchState([anchor('#mission', 'ABC')]);
+        const { pageEl, overlay } = buildPageEl(1);
+        const page = fakePage([{ str: 'DUPONT Jean 12 rue des Lilas', transform: [1, 0, 0, 1, 10, 50], width: 30, height: 12 }]);
+
+        await attachEditableTextLayer(page, pageEl, overlay, fakeViewport(), 1, state, vi.fn(async () => {}));
+
+        expect(JSON.stringify(logSpy.mock.calls)).not.toContain('DUPONT');
+        logSpy.mockRestore();
+    });
+
     it('pose une zone cliquable pour un ancrage résolu par un fragment unique', async () => {
         const form = buildForm();
         addField(form, 'mission', 'ABC');
