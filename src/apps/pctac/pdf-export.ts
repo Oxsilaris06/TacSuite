@@ -975,7 +975,9 @@ async function renderReport(data: ReportData, settings: RenderSettings): Promise
     context.y -= 18;
     // Mo4 — favoris (« Marquer comme important ») : légende, puis étoile à
     // côté de l'heure. L'ordre reste chronologique : la main courante fait foi.
-    const favorisCount = logData.filter((e) => e.favori).length;
+    // Compte sur tout le journal : un statut automatique étoilé (journal des
+    // actions) est aussi un fait marquant de la synthèse A3 (décision 45).
+    const favorisCount = allLogs.filter((e) => e.favori).length;
     if (favorisCount > 0) {
         drawStar(context.margin + 4, context.y + 3, 4);
         pdfPage().drawText(`Entrées marquées importantes : ${favorisCount}`, { x: context.margin + 12, y: context.y, size: 9, font, color: themeColors.text });
@@ -1516,6 +1518,8 @@ async function renderReport(data: ReportData, settings: RenderSettings): Promise
                     y = context.y;
                 } else if (i === 0) {
                     pdfPage().drawText(sanitizeWinAnsi(entry.heure), { x: context.margin + 5, y, size: 9, font, color: themeColors.text });
+                    // Statut étoilé : même étoile que dans la main courante.
+                    if (entry.favori) drawStar(context.margin + 5 + font.widthOfTextAtSize(sanitizeWinAnsi(entry.heure), 9) + 7, y + 3, 4);
                 }
                 const line = lines[i];
                 if (line) pdfPage().drawText(sanitizeWinAnsi(line), { x: context.margin + 5 + cCols[0], y, size: 9, font, color: themeColors.text });
