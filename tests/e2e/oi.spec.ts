@@ -1078,12 +1078,16 @@ test.describe('OI — Checklist fonctionnelle', () => {
     });
 
     await step('#presentHereBtn appelle window.open(blob:…, "_blank")', async () => {
-      await page.locator('#presentHereBtn').click();
-      await expect
-        .poll(() => page.evaluate(() => (window as unknown as { __openCalls: unknown[] }).__openCalls.length), {
-          timeout: 10000,
-        })
-        .toBeGreaterThan(0);
+      // Même course que le téléchargement (3ee6fd4) : le verrou « une
+      // génération à la fois » refuse le clic tant que l'aperçu se rend.
+      // On attend la première page, puis on reclique tant que rien ne s'ouvre.
+      await expect.soft(page.locator('#presentation-content canvas.pdf-preview-canvas').first()).toBeVisible({ timeout: 15000 });
+      const openCalls = (): Promise<number> => page.evaluate(() => (window as unknown as { __openCalls: unknown[] }).__openCalls.length);
+      for (let i = 0; i < 6 && (await openCalls()) === 0; i++) {
+        await page.locator('#presentHereBtn').click();
+        await expect.poll(openCalls, { timeout: 5000 }).toBeGreaterThan(0).catch(() => {});
+      }
+      await expect.poll(openCalls, { timeout: 1000 }).toBeGreaterThan(0);
       const calls = await page.evaluate(
         () => (window as unknown as { __openCalls: Array<{ url: string; target: string }> }).__openCalls,
       );
