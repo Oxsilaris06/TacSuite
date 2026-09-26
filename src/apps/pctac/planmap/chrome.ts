@@ -212,7 +212,7 @@ export const ChromeMethods = {
             const id = btn.closest<HTMLElement>('[data-gpx-id]')?.dataset.gpxId;
             if (!id) return;
             if (act === 'toggle') this._toggleGpxTrack(id);
-            else if (act === 'remove') this._removeGpxTrack(id);
+            else if (act === 'remove') void this._confirmRemoveGpxTrack(id);
             else if (act === 'color') this._openGpxColorMenu({ id });
         };
 

@@ -589,6 +589,7 @@ export interface PlanMapInternal extends PlanMapState, PlanMapContract {
     _importGpxFiles(files: readonly File[], limits?: { maxBytes: number; maxPoints: number }): Promise<void>;
     _toggleGpxTrack(id: string): void;
     _removeGpxTrack(id: string): void;
+    _confirmRemoveGpxTrack(id: string): Promise<void>;
     _fitGpxTracks(): void;
     _loadGpxTracks(): Promise<void>;
     _toggleGpxDayFold(day: string): void;
