@@ -741,6 +741,38 @@ function lineTokens(line) {
   return tokens;
 }
 
+/** Lit `formData` d'une fixture `{ formData, … }` ; `{ error }` si absente ou illisible (jamais de PASS silencieux). */
+function loadFixtureFormData(fixturePath) {
+  if (!existsSync(fixturePath)) {
+    return { error: `fixture introuvable : ${fixturePath}` };
+  }
+  let fixture;
+  try {
+    fixture = JSON.parse(readFileSync(fixturePath, 'utf8'));
+  } catch (err) {
+    return { error: `JSON invalide dans ${fixturePath} : ${err instanceof Error ? err.message : String(err)}` };
+  }
+  const formData = fixture && typeof fixture === 'object' ? fixture.formData : undefined;
+  if (!formData || typeof formData !== 'object') {
+    return { error: `${fixturePath} ne contient pas de clé "formData" exploitable` };
+  }
+  return { formData };
+}
+
+/** Mots (suites de lettres, en capitales) de toutes les chaînes de `formData` — vocabulaire de B2. */
+function fixtureVocabulary(formData) {
+  const vocab = new Set();
+  const letters = new RegExp(`[${UPPER_CLASS}]+`, 'g');
+  (function walk(value) {
+    if (typeof value === 'string') {
+      for (const w of value.toLocaleUpperCase('fr').match(letters) ?? []) vocab.add(w);
+    } else if (value !== null && typeof value === 'object') {
+      Object.values(value).forEach(walk);
+    }
+  })(formData);
+  return vocab;
+}
+
 /**
  * B2 — anti-césure verticale : aucun mot du Store scindé en fragments
  * empilés dans le tableau PATRACDVR (constat terrain : « SHARA\nN »,
@@ -755,8 +787,23 @@ function lineTokens(line) {
  * (± `WORD_SPLIT_COLUMN_TOLERANCE`), d'un token tout-capitales de 1 à 4
  * lettres en tête de ligne suivante — combinaison ≥ 4 lettres, ni l'un ni
  * l'autre n'étant un en-tête littéral du tableau.
+ *
+ * AVEC `--fixture` (gate CI, 2026-09-26) : le PATRACDVR du Complet empile
+ * désormais ses rangées sans interligne et ses valeurs une par ligne
+ * (décision 9, c2f7005) — deux trigrammes ou deux « PSA » de membres voisins
+ * se retrouvent à la même colonne sur deux lignes adjacentes, ce que la seule
+ * géométrie prend pour une césure. Le vocabulaire de la fixture (mots de
+ * toutes ses chaînes, en capitales) tranche : la paire n'est retenue que si sa
+ * concaténation est un mot saisi et que ses deux morceaux ne sont pas, tous
+ * deux, des mots saisis. Sans `--fixture`, heuristique géométrique inchangée.
  */
-export function assertB2_noVerticalWordSplit(text) {
+export function assertB2_noVerticalWordSplit(text, fixturePath) {
+  let vocab = null;
+  if (fixturePath) {
+    const loaded = loadFixtureFormData(fixturePath);
+    if (loaded.error) return { ok: false, detail: loaded.error };
+    vocab = fixtureVocabulary(loaded.formData);
+  }
   const pages = splitPages(text);
   const patracMarker = MARKERS[13]; // '9. RÉCAPITULATIF PATRACDVR' (numéro CANONIQUE — dynamique en vrai, cf. `numberedMarkerSuffix`)
   const finalMarker = MARKERS[14]; // 'AVEZ-VOUS DES QUESTIONS ?'
@@ -790,6 +837,11 @@ export function assertB2_noVerticalWordSplit(text) {
           if (Math.abs(tail.col - head.col) > WORD_SPLIT_COLUMN_TOLERANCE) continue;
           const combined = tail.text + head.text;
           if (combined.length < 4) continue;
+          // Avec --fixture : une paire n'est un mot cassé que si le mot
+          // entier est saisi dans la fixture et que ses deux morceaux ne sont
+          // pas, tous deux, des valeurs saisies (« ALF » sur « BRV », « PSA »
+          // sur « PSA » : deux membres empilés, pas une césure).
+          if (vocab && (!vocab.has(combined) || (vocab.has(tail.text) && vocab.has(head.text)))) continue;
           hits.push({ page: pi + 1, fragment1: tail.text, fragment2: head.text, combined });
         }
       }
@@ -1250,6 +1302,11 @@ const FIXTURE_INTEGRITY_MIN_LEN = 12;
 // (`adversaries[]`, `time_events[]`, `hypotheses[]`, `patracdvr_rows[]`…) —
 // aucune n'a fait échouer C5, aucune autre clé n'a donc été ajoutée ici.
 const FIXTURE_INTEGRITY_SKIP_KEYS = new Set(['id', 'annotations', 'tools', 'title', 'options', 'cartography']);
+// Attributs à choix multiple d'un membre PATRACDVR (séparateur `', '`),
+// rendus une valeur par ligne (décision 9, c2f7005 ; `patracValues`,
+// document-builder.ts) — seulement sous ces conteneurs (portée étroite).
+const PATRAC_CONTAINER_KEYS = new Set(['patracdvr_rows', 'patracdvr_unassigned']);
+const PATRAC_MULTI_VALUE_KEYS = new Set(['cellule', 'fonction', 'principales', 'secondaires', 'afis', 'equipement', 'equipement2', 'grenades', 'tenue', 'gpb']);
 
 /**
  * Parcourt récursivement `formData` (fixture `{ formData, photosBase64?,
@@ -1260,20 +1317,27 @@ const FIXTURE_INTEGRITY_SKIP_KEYS = new Set(['id', 'annotations', 'tools', 'titl
  */
 function collectFixtureIntegrityStrings(formData) {
   const found = new Set();
-  function walk(value, key) {
+  function walk(value, key, inPatrac) {
     if (key !== undefined && FIXTURE_INTEGRITY_SKIP_KEYS.has(key)) return;
     if (typeof value === 'string') {
       const t = value.trim();
       if (t.length >= FIXTURE_INTEGRITY_MIN_LEN && t !== '-') {
-        found.add(t);
+        if (inPatrac && PATRAC_MULTI_VALUE_KEYS.has(key)) {
+          // Choix multiple « UBAS, GPBL, Casque lourd » : le PDF l'imprime
+          // une valeur par ligne (`patracValues`, « Sans » écarté) — chaque
+          // valeur doit être entière, la chaîne jointe n'existe pas au rendu.
+          t.split(',').map((x) => x.trim()).filter((x) => x && x !== 'Sans').forEach((x) => found.add(x));
+        } else {
+          found.add(t);
+        }
       }
     } else if (Array.isArray(value)) {
-      value.forEach((v) => walk(v, key));
+      value.forEach((v) => walk(v, key, inPatrac));
     } else if (value !== null && typeof value === 'object') {
-      Object.entries(value).forEach(([k, v]) => walk(v, k));
+      Object.entries(value).forEach(([k, v]) => walk(v, k, inPatrac || PATRAC_CONTAINER_KEYS.has(k)));
     }
   }
-  walk(formData, undefined);
+  walk(formData, undefined, false);
   return Array.from(found);
 }
 
@@ -1385,19 +1449,9 @@ export function assertC5_fixtureIntegrity(text, fixturePath) {
   if (!fixturePath) {
     return { ok: true, skip: true, detail: 'SKIP — --fixture non fourni, assertion non applicable' };
   }
-  if (!existsSync(fixturePath)) {
-    return { ok: false, detail: `fixture introuvable : ${fixturePath}` };
-  }
-  let fixture;
-  try {
-    fixture = JSON.parse(readFileSync(fixturePath, 'utf8'));
-  } catch (err) {
-    return { ok: false, detail: `JSON invalide dans ${fixturePath} : ${err instanceof Error ? err.message : String(err)}` };
-  }
-  const formData = fixture && typeof fixture === 'object' ? fixture.formData : undefined;
-  if (!formData || typeof formData !== 'object') {
-    return { ok: false, detail: `${fixturePath} ne contient pas de clé "formData" exploitable` };
-  }
+  const loaded = loadFixtureFormData(fixturePath);
+  if (loaded.error) return { ok: false, detail: loaded.error };
+  const { formData } = loaded;
   const expected = collectFixtureIntegrityStrings(formData);
   if (expected.length === 0) {
     return { ok: false, detail: `${fixturePath} ne fournit aucune chaîne exploitable (≥ ${FIXTURE_INTEGRITY_MIN_LEN} car.) pour l'intégrité` };
@@ -1591,7 +1645,7 @@ function main() {
     // Guardrail pagination CONSERVÉ/ADAPTÉ (missions PG.GUARD/PG.REFIX/
     // GD.GUARDS) — toujours évaluées, INDÉPENDANTES de --lenient.
     { code: 'B1', ...assertB1_noOrphanPage(text, images) },
-    { code: 'B2', ...assertB2_noVerticalWordSplit(text) },
+    { code: 'B2', ...assertB2_noVerticalWordSplit(text, opts.fixture) },
     { code: 'B5', ...assertB5_noEmptyFieldDominatedPage(text) },
     { code: 'B6', ...assertB6_verticalFillRatio(bboxPages, text) },
     { code: 'B9', ...assertB9_noTrailingTitle(text) },
