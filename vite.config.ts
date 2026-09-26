@@ -1,11 +1,43 @@
 import { fileURLToPath, URL } from 'node:url';
-import { defineConfig } from 'vite';
+import { defineConfig, type Plugin } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
+
+// Sécurité du serveur de DÉVELOPPEMENT (revue du 2026-09-26) : il sert tout le
+// dossier du dépôt, fichiers non versionnés compris, et il est joignable hors
+// de la machine (écoute réseau, démonstration par Funnel). Rien de ce qui
+// n'est pas l'application ne doit sortir : fichiers locaux (registres, notes,
+// jetons du relais, rapports d'essai, outillage) refusés, et le point
+// `/__open-in-editor` (ouvre un fichier dans l'éditeur du poste) bloqué.
+const DEV_FS_DENY = [
+  '.env', '.env.*', '*.{crt,pem,key}', '**/.git/**',
+  '*.md', '*.yaml', '*.yml', '*.log', 'entities.json', 'tokens.json', 'vite.funnel*.config.ts',
+  '**/tools/osmand-relay/**', '**/graphify-out/**', '**/scratch/**', '**/docs/**',
+  '**/playwright-report/**', '**/test-results/**', '**/tests/visual/diffs/**',
+  '**/.claude/**', '**/.agents/**', '**/.continue/**', '**/.kiro/**', '**/.openhands/**',
+  '**/.impeccable/**', '**/.github/**', '**/.ai/**', '**/node_modules/playwright*/**',
+];
+
+const devServerGuard: Plugin = {
+  name: 'tacsuite-dev-server-guard',
+  apply: 'serve',
+  configureServer(server) {
+    // Posé AVANT les middlewares internes de Vite (appel direct, pas de retour).
+    server.middlewares.use((req, res, next) => {
+      if ((req.url ?? '').includes('/__open-in-editor')) {
+        res.statusCode = 403;
+        res.end('Interdit');
+        return;
+      }
+      next();
+    });
+  },
+};
 
 // Multi-page app: portail + PC-Tac + Generateur d'OI.
 // base est parametrable via TACSUITE_BASE (ex: '/TacSuite/' pour GitHub Pages).
 export default defineConfig({
   base: process.env.TACSUITE_BASE ?? '/',
+  server: { fs: { deny: DEV_FS_DENY } },
   resolve: {
     alias: {
       '@shared': fileURLToPath(new URL('./src/shared', import.meta.url)),
@@ -23,6 +55,7 @@ export default defineConfig({
     },
   },
   plugins: [
+    devServerGuard,
     VitePWA({
       // SW maison (public/sw.ts) plutot qu'un SW genere : controle explicite
       // du routage (tuiles carto exclues, secours de navigation par page).
