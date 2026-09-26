@@ -59,7 +59,7 @@ node tests/pdf/verify-structure.mjs <fichier.pdf> \
 | `--format=a4\|16:9` | `a4` | Dimensions de page attendues pour A1 (voir tableau ci-dessous). |
 | `--photos=N` | `0` | Limite haute nombre d'images embarquées pour A6. |
 | `--sample=<fichier.json>` | (aucun) | Active A8 : vérifie que chaque chaîne de `expect[]` apparaît dans texte extrait. Sans cette option, A8 est SKIP (non applicable). |
-| `--fixture=<fichier.json>` | (aucun) | Active C5 (anti-troncature ÉTENDUE) : dérive automatiquement les chaînes attendues de `formData` (même fixture que celle passée à `generate-from-fixture.mjs`) — zéro curation manuelle, zéro désaccord de données possible. Sans cette option, C5 est SKIP. |
+| `--fixture=<fichier.json>` | (aucun) | Active C5 (anti-troncature ÉTENDUE) : dérive automatiquement les chaînes attendues de `formData` (même fixture que celle passée à `generate-from-fixture.mjs`) — zéro curation manuelle, zéro désaccord de données possible. Sans cette option, C5 est SKIP. Donne aussi à B2 le vocabulaire de la fixture (voir « Gate CI du 2026-09-26 »). |
 | `--json` | — | Émet **en plus** lignes lisibles (pas à place) objet `{ ok, file, assertions: [{ code, ok, detail }] }` sur stdout, en dernière ligne. |
 | `--lenient` | mode strict | marqueur **conditionnel** (A3, indices 4/8/10/11/12/13) absent devient `SKIP` au lieu de faire échouer A3 — l'ordre marqueurs **présents** reste asserté. |
 
@@ -132,7 +132,7 @@ disparu avec elles (un seul comportement désormais, l'ancien « voie A »).
 | Code | Garde | Seuil |
 |---|---|---|
 | **B1** | Anti-page-orpheline | ≥ 120 caractères non blancs par page (hors garde/finale/photo). |
-| **B2** | Anti-césure verticale (PATRACDVR) | Aucun mot capitalisé scindé sur 2 lignes adjacentes même colonne. |
+| **B2** | Anti-césure verticale (PATRACDVR) | Aucun mot capitalisé scindé sur 2 lignes adjacentes même colonne. Avec `--fixture` : seulement si le mot entier est saisi dans la fixture (gate CI du 2026-09-26). |
 | **B5** | Anti-page-libellés-vides | < 4 champs `LABEL : -` ou < 250 car. de tels libellés par page. |
 | **B6** | Anti-page-clairsemée | Ratio remplissage vertical ≥ 35 % (hors finale). **Recalibré P4** : les pages-usage à contrat dur (fiche adversaire, ZMSPCP, MOICP — toujours 1 page) sont exemptées (aération légitime d'un petit dossier) ; une page effraction (« MISSION & CARACTÉRISTIQUES »/« HYPOTHÈSES … ») reste couverte SEULEMENT si une AUTRE page du MÊME bloc la suit immédiatement (continuation suspecte) — sa dernière page est, elle aussi, exemptée. Les pages composites historiques (couverture, environnement, mission+exécution, articulation vue d'ensemble, CAT, PATRACDVR) restent couvertes sans exemption. |
 | **B9** | Anti-titre-orphelin-en-bas-de-page | DERNIÈRE ligne non blanche d'une page (hors finale, pied de page retiré) ne matche jamais une signature statique de titre/en-tête (« Hypothèses d'Effraction », « DANGEROSITÉ », « LOCALISATION », « MOBILITÉ », « IDENTITÉ », « ATCD », « Composition par Cellule », en-tête de table…). |
@@ -151,7 +151,39 @@ AUTONOMES, plus aucune continuation « (SUITE) » pour ces 4 usages. Toujours
 | **C2** | Fiche adversaire = 1 page | Spillover : toute page portant une signature de contenu fiche (IDENTITÉ/DANGEROSITÉ/LOCALISATION/MOBILITÉ/ATCD) SANS porter son propre titre « N.M FICHE ADVERSAIRE : » ⇒ FAIL. |
 | **C3** | Bloc ZMSPCP/MOICP = 1 page | Spillover : toute page portant « Composition par Cellule » SANS titre « ARTICULATION : ZMSPCP/MOICP - » ⇒ FAIL. |
 | **C4** | Cellule effraction = pages autonomes | (a) Spillover : contenu Hypothèses d'Effraction sans titre effraction sur la même page ⇒ FAIL. (b) Contiguïté : les plages « HYPOTHÈSES a-b » d'un même titre de base doivent être strictement croissantes et non chevauchantes (proxy texte de « aucune hypothèse scindée/dupliquée/omise »). |
-| **C5** | Anti-troncature ÉTENDUE | Si `--fixture=<json>` fourni : chaque chaîne texte libre ≥ 12 car. de `formData` (hors clés `id`/`annotations`/`tools`/`title`/`options`, jamais rendues verbatim) doit être retrouvée dans `pdftotext` — substring exact, ou à défaut couverture par SAC DE MOTS ≥ 90 % (repli anti-intercalation de colonnes `grid2()`, cf. JSDoc `assertC5_fixtureIntegrity`). Sans `--fixture`, SKIP. |
+| **C5** | Anti-troncature ÉTENDUE | Si `--fixture=<json>` fourni : chaque chaîne texte libre ≥ 12 car. de `formData` (hors clés `id`/`annotations`/`tools`/`title`/`options`, jamais rendues verbatim) doit être retrouvée dans `pdftotext` — substring exact, ou à défaut couverture par SAC DE MOTS ≥ 90 % (repli anti-intercalation de colonnes `grid2()`, cf. JSDoc `assertC5_fixtureIntegrity`). Attributs à choix multiple d'un membre PATRACDVR : chaque valeur entière (gate CI du 2026-09-26). Sans `--fixture`, SKIP. |
+
+## Gate CI du 2026-09-26 : B1, B2, C5 revues une par une
+
+Les trois étapes PDF de la CI passaient à `f9d703a` et échouaient à `fe7a25b`.
+Chaque échec a été classé : vraie régression (code corrigé) ou heuristique
+calée sur l'ancienne mise en page (garde adaptée étroitement). Aucune
+assertion supprimée.
+
+| Échec | Verdict | Suite donnée |
+|---|---|---|
+| volumetric-stress **B1** (60 pages orphelines) et **C5** (56 légendes « manquantes ou TRONQUÉES ») | **Vraie régression** de la galerie adaptative (`b52afcd`). Une image basse définition (1 px dans la fixture, jamais agrandie au-delà de 150 ppi) mesure 0,48 pt ; la légende, la mention « basse définition » et les badges étaient composés dans une colonne de la largeur de l'IMAGE : un caractère par ligne, débordement sur une page blanche, légende illisible. | Code corrigé (`blocks.ts::galleryPageBody`) : la colonne prend la largeur de la cellule de `layoutGallery`, l'image centrée dedans. Même fonction pour le Complet et l'Express. B1 et C5 **inchangées**. |
+| long-case **B2** (36 paires), volumetric-stress **B2** (20), real-shape **B2** (1) | **Heuristique dépassée**. Le PATRACDVR du Complet (décision 9, `c2f7005`) empile ses rangées sans interligne et ses valeurs une par ligne : « ALF » sur « BRV » (deux membres), « PSA » sur « PSA », « UBAS / » sur « GPBL / » (deux valeurs d'une case) sont à la même colonne sur deux lignes adjacentes, ce que la géométrie seule prend pour une césure. Rendu regardé : aucun mot coupé. | B2 adaptée **seulement avec `--fixture`** : une paire n'est retenue que si sa concaténation est un mot saisi dans la fixture (mots en capitales de toutes ses chaînes) et que ses deux morceaux ne sont pas, tous deux, des mots saisis. Fixture absente ou illisible ⇒ FAIL explicite. Sans `--fixture`, heuristique géométrique inchangée. |
+| real-shape **C5** (« UBAS, GPBL, Casque lourd ») | **Heuristique dépassée**. Valeur à choix multiple d'un membre PATRACDVR (séparateur `', '`), imprimée une valeur par ligne (`patracValues`, décision 9) : la chaîne jointe n'existe pas au rendu, chaque valeur y est entière. | C5 exige, pour les seuls attributs à choix multiple (`cellule`, `fonction`, `principales`, `secondaires`, `afis`, `equipement`, `equipement2`, `grenades`, `tenue`, `gpb`) sous `patracdvr_rows`/`patracdvr_unassigned`, **chaque valeur** entière (« Sans » écarté). Ailleurs, une liste à virgules reste exigée telle quelle. |
+
+Tests : `tests/unit/oi/pdf/oi-pdf-gate-ci.test.ts` (B2 avec vocabulaire, C5
+choix multiple, avec leurs contre-épreuves) et le test « image minuscule » de
+`oi-pdf-blocks.test.ts` (rouge sur l'ancien code : colonne de 0,48 pt).
+
+**Contre-épreuve** sur de vrais PDF fautifs, produits par le générateur de la
+CI avec un défaut injecté le temps de la génération puis retiré :
+
+```
+# « SHARAN » imprimé « SHAR » / « AN » dans la case VL (long-case, --fixture)
+FAIL B2 — 1 mot(s) probablement cassé(s) verticalement dans le PATRACDVR : page 9 « SHAR » + « AN » = « SHARAN »
+# légendes de galerie coupées à 20 caractères (volumetric-stress)
+FAIL C5 — 81/137 présente(s) — manquante(s) ou TRONQUÉE(S) (56) : "Bapteme terrain zmspcp_vol_1 — cliche 1", …
+# galerie d'avant le correctif (fe7a25b) : pages vraiment orphelines
+FAIL B1 — 60 page(s) orpheline(s) — < 120 caractères non blancs (hors garde/finale/photo) : page 5 (110 car.), page 6 (45 car.), …
+```
+
+Après correctifs, les trois étapes de la CI (mêmes commandes) : 19/19
+assertions chacune.
 
 ## Garde d'audit PDF (D1, audit du 2026-09-25)
 
