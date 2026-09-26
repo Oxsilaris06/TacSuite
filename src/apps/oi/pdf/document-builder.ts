@@ -4586,8 +4586,12 @@ export function buildOiDocDefinition(
     // champ unique imprimé après la Mission (Nico 09-26), jamais perdues.
     const formData: OiFormData = {
         ...removed,
-        // Photo sans légende : « nom du bouton (rang/total) » (Nico 09-26).
-        dynamic_photos: withDefaultCaptions(mergeLegacyBaptemePhotos(removed.dynamic_photos ?? {}, (data.formData.zmspcp_blocks ?? []).map((b) => b.id))),
+        // Photo sans légende : « nom du bouton (rang/total) » (Nico 09-26),
+        // compté sur les photos imprimées (une photo sans image est écartée).
+        dynamic_photos: withDefaultCaptions(Object.fromEntries(
+            Object.entries(mergeLegacyBaptemePhotos(removed.dynamic_photos ?? {}, (data.formData.zmspcp_blocks ?? []).map((b) => b.id)))
+                .map(([key, metas]) => [key, metas.filter((m) => data.photosBase64[m.id] !== undefined)]),
+        )),
     };
     const p = palette(isDark);
     const geo = pageGeometry(opts.format);

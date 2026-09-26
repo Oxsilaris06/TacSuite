@@ -10,6 +10,7 @@
  * « N photos non intégrées : … », puis « Télécharger quand même » ou « Annuler ».
  */
 
+import { photoFieldLabel } from '@oi/sections.js';
 import { confirmDialog } from '@shared/feedback.js';
 import type { OiFormData } from '@shared/types/contracts.js';
 
@@ -51,10 +52,13 @@ export function notePhotoIssue(id: string, issue: PhotoIssue): void {
 function photoLabel(formData: OiFormData, id: string): string {
     if (id === 'custom_pdf_background') return 'Fond personnalisé';
     for (const [field, metas] of Object.entries(formData.dynamic_photos ?? {})) {
-        const meta = metas.find((m) => m.id === id);
+        const index = metas.findIndex((m) => m.id === id);
+        const meta = metas[index];
         if (!meta) continue;
         const section = SECTIONS.find(([re]) => re.test(field))?.[1] ?? 'OI';
-        return `${meta.customTitle.trim() ? `« ${meta.customTitle.trim()} »` : 'Photo sans légende'} (${section})`;
+        // Sans légende : le nom par défaut que le formulaire affiche (Nico 09-26).
+        const name = meta.customTitle.trim() || `${photoFieldLabel(field)} (${index + 1}/${metas.length})`;
+        return `« ${name} » (${section})`;
     }
     return 'Photo';
 }

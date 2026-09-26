@@ -104,6 +104,8 @@ describe('chargement d’un OI ancien', () => {
         expect(input.value).toBe('Portail');
         expect(input.maxLength).toBe(OI_PHOTO_CAPTION_MAX);
         expect(input.placeholder).toBe('Baptême terrain (1/1)');
+        // Couleurs du thème, jamais du blanc figé (invisible en thème clair).
+        expect(input.style.color).toBe('var(--text-primary)');
     });
 
     it('après suppression d’une photo, les noms par défaut sont renumérotés', async () => {
