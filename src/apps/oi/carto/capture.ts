@@ -207,7 +207,9 @@ function drawNorthAndScale(
     scale: { px: number; label: string } | null,
 ): void {
     const m = 10 * dpr;
-    const r = 18 * dpr;
+    // Tailles pensées pour l'impression : l'image (2 880 px) occupe ~275 mm,
+    // soit ~10 px/mm ; texte de 15 px CSS ≈ 8 pt sur le papier.
+    const r = 22 * dpr;
     ctx.save();
     ctx.translate(m + r, m + r);
     ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
@@ -224,7 +226,7 @@ function drawNorthAndScale(
     ctx.closePath();
     ctx.fill();
     ctx.fillStyle = '#111111';
-    ctx.font = `700 ${Math.round(9 * dpr)}px Inter, system-ui, sans-serif`;
+    ctx.font = `700 ${Math.round(12 * dpr)}px Inter, system-ui, sans-serif`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText('N', 0, -r * 0.74);
@@ -233,7 +235,7 @@ function drawNorthAndScale(
     ctx.save();
     const pad = 6 * dpr;
     const bar = 4 * dpr;
-    const fontPx = Math.round(11 * dpr);
+    const fontPx = Math.round(15 * dpr);
     ctx.font = `600 ${fontPx}px Inter, system-ui, sans-serif`;
     const boxW = Math.max(scale.px, ctx.measureText(scale.label).width) + 2 * pad;
     const boxH = fontPx + bar + 3 * pad;
