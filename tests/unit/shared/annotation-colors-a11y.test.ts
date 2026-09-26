@@ -30,3 +30,18 @@ describe('pastilles de couleur de l’annotation', () => {
         expect(pressed).toEqual([blue]);
     });
 });
+
+describe('en-tête et réglages de l’annotation', () => {
+    it('une seule façon de fermer : « Annuler » (plus de × qui la double)', () => {
+        const modal = mountAnnotationModal({ memberTool: false });
+        expect(modal.querySelector('.annotation-close-btn')).toBeNull();
+        expect(modal.querySelectorAll('[data-action="close-annotation-modal"]')).toHaveLength(1);
+    });
+
+    it('chaque curseur porte un nom accessible', () => {
+        const modal = mountAnnotationModal({ memberTool: false });
+        const sliders = Array.from(modal.querySelectorAll<HTMLInputElement>('input[type="range"]'));
+        expect(sliders.length).toBe(4);
+        for (const s of sliders) expect(s.getAttribute('aria-label'), s.id).toBeTruthy();
+    });
+});
