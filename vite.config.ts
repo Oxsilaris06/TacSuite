@@ -2,20 +2,36 @@ import { fileURLToPath, URL } from 'node:url';
 import { defineConfig, type Plugin } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
 
-// Sécurité du serveur de DÉVELOPPEMENT (revue du 2026-09-26) : il sert tout le
-// dossier du dépôt, fichiers non versionnés compris, et il est joignable hors
-// de la machine (écoute réseau, démonstration par Funnel). Rien de ce qui
-// n'est pas l'application ne doit sortir : fichiers locaux (registres, notes,
-// jetons du relais, rapports d'essai, outillage) refusés, et le point
-// `/__open-in-editor` (ouvre un fichier dans l'éditeur du poste) bloqué.
-const DEV_FS_DENY = [
-  '.env', '.env.*', '*.{crt,pem,key}', '**/.git/**',
-  '*.md', '*.yaml', '*.yml', '*.log', 'entities.json', 'tokens.json', 'vite.funnel*.config.ts',
-  '**/tools/osmand-relay/**', '**/graphify-out/**', '**/scratch/**', '**/docs/**',
-  '**/playwright-report/**', '**/test-results/**', '**/tests/visual/diffs/**',
-  '**/.claude/**', '**/.agents/**', '**/.continue/**', '**/.kiro/**', '**/.openhands/**',
-  '**/.impeccable/**', '**/.github/**', '**/.ai/**', '**/node_modules/playwright*/**',
-];
+// Sécurité du serveur de DÉVELOPPEMENT (revue du 2026-09-26) : il est joignable
+// hors de la machine (écoute réseau, démonstration par Funnel) alors que le
+// dossier du dépôt contient des fichiers locaux non versionnés (registres,
+// notes, jetons du relais, rapports d'essai, outillage). Liste d'AUTORISATION,
+// fermée par défaut : seuls les dossiers de l'application sont servis ; un
+// fichier ajouté plus tard à la racine reste privé sans rien retoucher ici. La
+// liste de refus reste en seconde barrière (secrets, dépôt git, notes).
+const APP_DIRS = ['index.html', 'pctac', 'oi', 'src', 'styles', 'public', 'node_modules'];
+export const DEV_SERVER_FS = {
+  strict: true,
+  allow: APP_DIRS.map((p) => fileURLToPath(new URL(`./${p}`, import.meta.url))),
+  deny: [
+    '.env', '.env.*', '*.{crt,pem,key}', '**/.git/**',
+    '*.md', '*.yaml', '*.yml', '*.log', 'entities.json', 'tokens.json', 'vite.funnel*.config.ts',
+    '**/tools/osmand-relay/**', '**/graphify-out/**', '**/scratch/**', '**/docs/**',
+    '**/playwright-report/**', '**/test-results/**', '**/tests/visual/diffs/**',
+    '**/.claude/**', '**/.agents/**', '**/.continue/**', '**/.kiro/**', '**/.openhands/**',
+    '**/.impeccable/**', '**/.github/**', '**/.ai/**', '**/node_modules/playwright*/**',
+  ],
+};
+
+// `/__open-in-editor` ouvre un fichier dans l'éditeur du poste. Vite le monte par
+// connect, qui compare le chemin sans tenir compte de la casse : la garde fait
+// de même, après décodage des %XX.
+export function isEditorRequest(url: string): boolean {
+  const pathname = url.split('?')[0] ?? '';
+  let decoded = pathname;
+  try { decoded = decodeURIComponent(pathname); } catch { /* %XX invalide : chemin brut */ }
+  return decoded.toLowerCase().includes('/__open-in-editor');
+}
 
 const devServerGuard: Plugin = {
   name: 'tacsuite-dev-server-guard',
@@ -23,7 +39,7 @@ const devServerGuard: Plugin = {
   configureServer(server) {
     // Posé AVANT les middlewares internes de Vite (appel direct, pas de retour).
     server.middlewares.use((req, res, next) => {
-      if ((req.url ?? '').includes('/__open-in-editor')) {
+      if (isEditorRequest(req.url ?? '')) {
         res.statusCode = 403;
         res.end('Interdit');
         return;
@@ -37,9 +53,9 @@ const devServerGuard: Plugin = {
 // base est parametrable via TACSUITE_BASE (ex: '/TacSuite/' pour GitHub Pages).
 export default defineConfig({
   base: process.env.TACSUITE_BASE ?? '/',
-  // Vitest charge ses modules par ce même serveur (dont tools/osmand-relay) : la
-  // liste de refus ne vaut que pour le serveur de développement.
-  server: process.env.VITEST ? {} : { fs: { deny: DEV_FS_DENY } },
+  // Vitest charge ses modules par ce même serveur (dont tools/osmand-relay) : les
+  // listes ne valent que pour le serveur de développement.
+  server: process.env.VITEST ? {} : { fs: DEV_SERVER_FS },
   resolve: {
     alias: {
       '@shared': fileURLToPath(new URL('./src/shared', import.meta.url)),
