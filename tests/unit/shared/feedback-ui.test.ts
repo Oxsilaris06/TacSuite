@@ -175,6 +175,20 @@ describe('fenêtres de confirmation et de saisie', () => {
   });
 });
 
+describe('saisie validée par Entrée', () => {
+  it('Entrée dans le champ annule l’action par défaut : sinon le focus rendu au bouton déclencheur le réactive et rouvre la fenêtre', async () => {
+    // Constat (atelier UI-2, dbg-enter) : « KODIAQ » + Entrée crée le VL puis
+    // la fenêtre de saisie se rouvre, au bureau comme au téléphone.
+    const p = promptDialog({ message: 'Nom du VL :' });
+    const input = document.querySelector<HTMLInputElement>('.tac-confirm-input')!;
+    input.value = 'KODIAQ';
+    const ev = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true });
+    input.dispatchEvent(ev);
+    expect(ev.defaultPrevented).toBe(true);
+    await expect(p).resolves.toBe('KODIAQ');
+  });
+});
+
 describe('bandeaux', () => {
   it('pas de liseré latéral coloré épais (règle du projet) : le niveau se lit à la pastille et au fond', () => {
     showBanner('b1', { message: 'Nouvelle version prête.', level: 'info' });

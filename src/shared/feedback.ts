@@ -1078,7 +1078,12 @@ export function promptDialog(options: PromptDialogOptions): Promise<string | nul
     });
     dialog.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') requestClose(null);
-      else if (e.key === 'Enter' && e.target === input) requestClose(input.value);
+      else if (e.key === 'Enter' && e.target === input) {
+        // Sans preventDefault, Entrée réactive le bouton qui reprend le focus
+        // à la fermeture et rouvre la fenêtre.
+        e.preventDefault();
+        requestClose(input.value);
+      }
     });
     dialog.addEventListener('close', () => settle(pendingResult));
 
