@@ -823,9 +823,11 @@ test.describe('PC-Tac — Checklist fonctionnelle', () => {
       // l'outil measure soit réellement actif et aucun label n'apparaît.
       await page.waitForTimeout(200);
       const box = await page.locator('#plan_map').boundingBox();
+      // Autour du centre : le haut de la carte passe sous la barre d'onglets
+      // collante sur téléphone (390 px), un clic à +80 px y tombait.
       if (box) {
-        await page.mouse.click(box.x + 80, box.y + 80);
-        await page.mouse.click(box.x + 220, box.y + 180);
+        await page.mouse.click(box.x + box.width / 2 - 60, box.y + box.height / 2 - 60);
+        await page.mouse.click(box.x + box.width / 2 + 60, box.y + box.height / 2 + 40);
       }
       // Sélecteur précisé : `text=/\d+\s?(m|km)/` seul était ambigu (matchait
       // aussi le contrôle d'échelle natif MapLibre, toujours présent —
@@ -1082,9 +1084,9 @@ test.describe('PC-Tac — Checklist fonctionnelle', () => {
         mimeType: 'application/zip',
         buffer,
       });
-      // R2-T2a : Archive.importFile ouvre désormais confirmDialog() (danger:true,
-      // « Les données actuelles seront remplacées. ») au lieu de confirm() natif.
-      await clickConfirmDialogOk(page);
+      // L'import ouvre la fenêtre de portée (#importScopeModal, fusion par
+      // défaut, rien n'est écrasé) : « Importer » la valide.
+      await page.locator('#importScopeConfirm').click();
       await expect
         .soft(page.locator('#logTable tbody tr', { hasText: 'Lieu Import ZIP E2E' }))
         .toBeVisible({ timeout: 3000 });
@@ -1495,6 +1497,10 @@ test('traces GPX — import, masquage, persistance et suppression', async ({ pag
 // ============================================================================
 
 test('ligne droite + nom déplaçable le long du tracé et rotatif', async ({ page }) => {
+  // À 768 px et moins, la ligne droite se pose au réticule (mode précision,
+  // draw-tools.ts `drawPrecisionMode`, conçu pour les gants), pas au glisser :
+  // ce parcours à la souris ne concerne que les écrans larges.
+  test.skip((page.viewportSize()?.width ?? 0) <= 768, 'ligne droite au réticule sous 769 px');
   await page.goto('/pctac/', { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(1000);
   await page.evaluate(() => { (window as unknown as { UI?: { switchMainView?: (v: string) => void } }).UI?.switchMainView?.('view-plan'); });
