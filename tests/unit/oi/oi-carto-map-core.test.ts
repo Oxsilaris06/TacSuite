@@ -1259,7 +1259,9 @@ describe('_disable3D (oi_cartographie.js:1652-1666)', () => {
         MapCoreMethods._disable3D.call(fake);
 
         expect(map.setTerrain).toHaveBeenCalledWith(null);
-        expect(map.setSky).toHaveBeenCalledWith(null);
+        // MapLibre 4.7 refuse `setSky(null)` (erreur de validation en console) :
+        // `undefined` retire le ciel.
+        expect(map.setSky).toHaveBeenCalledWith(undefined);
         expect(map.setLayoutProperty).toHaveBeenCalledWith('buildings-3d', 'visibility', 'none');
         expect(fake.is3D).toBe(false);
         expect(document.getElementById('oi_carto_btn_3d')?.classList.contains('active')).toBe(false);
