@@ -71,6 +71,8 @@ export default defineConfig({
         main: fileURLToPath(new URL('./index.html', import.meta.url)),
         pctac: fileURLToPath(new URL('./pctac/index.html', import.meta.url)),
         oi: fileURLToPath(new URL('./oi/index.html', import.meta.url)),
+        // Page servie par GitHub Pages pour toute adresse inconnue du site.
+        notfound: fileURLToPath(new URL('./404.html', import.meta.url)),
       },
     },
   },

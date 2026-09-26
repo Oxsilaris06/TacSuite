@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="fr">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>TacSuite — Page introuvable</title>
+  <meta name="robots" content="noindex" />
+  <meta name="theme-color" content="#0a0a0b" />
+  <link rel="icon" href="/favicon.ico" sizes="any" />
+  <link rel="icon" href="/favicon-96x96.png" type="image/png" sizes="96x96" />
+  <link rel="stylesheet" href="/styles/tacsuite-tokens.css" />
+  <link rel="stylesheet" href="/styles/portal.css" />
+
+  <!-- Même thème que le portail (choix mémorisé, sinon préférence système). -->
+  <script>
+    try {
+      var t = localStorage.getItem('tacsuite.portal.theme');
+      if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t);
+    } catch (e) { /* localStorage indisponible : préférence système. */ }
+  </script>
+
+  <!-- Polices du portail (Oswald pour les titres, Inter pour le texte). -->
+  <script type="module">
+    import '@fontsource/oswald/600.css';
+    import '@fontsource/inter/400.css';
+    import '@fontsource/inter/600.css';
+  </script>
+</head>
+
+<body>
+  <!-- Servie par GitHub Pages pour toute adresse inconnue sous le site : les
+       liens sont absolus (%BASE_URL% remplacé au build), quelle que soit la
+       profondeur de l'adresse demandée. -->
+  <div class="portal">
+    <header class="portal-header">
+      <div class="portal-header__bar">
+        <p class="portal-title">Tac<span class="portal-title__accent">Suite</span></p>
+      </div>
+    </header>
+
+    <main class="notfound">
+      <p class="notfound__code">Erreur 404</p>
+      <h1 class="notfound__title">Page introuvable</h1>
+      <p class="notfound__text">
+        Cette adresse ne mène à aucune page de TacSuite. Le lien est peut-être incomplet ou ancien.
+        Les données enregistrées sur cet appareil ne sont pas touchées.
+      </p>
+      <nav class="notfound__links" aria-label="Pages de TacSuite">
+        <a class="notfound__link notfound__link--primary" href="%BASE_URL%">Retour au portail</a>
+        <a class="notfound__link" href="%BASE_URL%pctac/">PC-Tac</a>
+        <a class="notfound__link" href="%BASE_URL%oi/">Ordre initial</a>
+      </nav>
+    </main>
+
+    <footer class="portal-footer">
+      <p>TacSuite - Suite d'outil tactique Gendarmerie</p>
+    </footer>
+  </div>
+</body>
+
+</html>

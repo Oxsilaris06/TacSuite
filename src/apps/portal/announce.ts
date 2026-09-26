@@ -36,6 +36,8 @@ export const ANNOUNCE_CACHE_KEY = 'tacsuite.portal.announce';
 export const ANNOUNCE_DISMISS_KEY = 'tacsuite.portal.announce.dismissed';
 /** Identifiant du bandeau (un seul : un nouvel appel remplace en place). */
 export const ANNOUNCE_BANNER_ID = 'portal-announce';
+/** Pastille laissée dans la barre d'état quand la carte est fermée (Nico, 09-26). */
+export const ANNOUNCE_PILL_ID = 'portal-announce-pill';
 
 export const MAX_TEXT_LEN = 280;
 /** Validité maximale d'une annonce : 30 jours après maintenant. */
@@ -118,6 +120,38 @@ function removeAnnouncementCard(animate: boolean): void {
     const done = (): void => { el.remove(); };
     el.addEventListener('animationend', done, { once: true });
     setTimeout(done, CARD_EXIT_FALLBACK_MS);
+}
+
+function removeAnnouncementPill(): void {
+    if (typeof document === 'undefined') return;
+    document.getElementById(ANNOUNCE_PILL_ID)?.remove();
+}
+
+/** Retire carte et pastille : annonce expirée, retirée ou invalide. */
+function clearAnnouncement(): void {
+    removeAnnouncementCard(false);
+    removeAnnouncementPill();
+}
+
+/**
+ * Carte fermée : seule reste la pastille du niveau (« Nouveautés »…), à côté
+ * de « En ligne ». Un clic rouvre la carte.
+ */
+function renderAnnouncementPill(a: Announcement, onOpen: () => void): void {
+    if (typeof document === 'undefined') return;
+    const pill = document.createElement('button');
+    pill.type = 'button';
+    pill.id = ANNOUNCE_PILL_ID;
+    pill.className = 'release-pill';
+    pill.dataset.level = a.niveau;
+    pill.setAttribute('aria-label', `Afficher l’annonce : ${CHIP_LABEL[a.niveau]}`);
+    pill.textContent = CHIP_LABEL[a.niveau];
+    pill.addEventListener('click', onOpen);
+    const previous = document.getElementById(ANNOUNCE_PILL_ID);
+    if (previous) { previous.replaceWith(pill); return; }
+    const status = document.querySelector('.portal-status');
+    if (status) status.prepend(pill);
+    else document.body.prepend(pill);
 }
 
 /**
@@ -334,6 +368,15 @@ function readDismissed(storage: AnnounceStorage | null): string | null {
     }
 }
 
+function eraseDismissed(storage: AnnounceStorage | null): void {
+    if (!storage) return;
+    try {
+        storage.removeItem(ANNOUNCE_DISMISS_KEY);
+    } catch {
+        /* ignore */
+    }
+}
+
 function writeDismissed(storage: AnnounceStorage | null, fp: string): void {
     if (!storage) return;
     try {
@@ -351,16 +394,32 @@ function writeDismissed(storage: AnnounceStorage | null, fp: string): void {
 function applyAnnouncement(a: Announcement, opts: AnnounceOptions): void {
     const storage = opts.storage !== undefined ? opts.storage : defaultStorage();
     const fp = fingerprint(a);
+    const showPill = (): void => renderAnnouncementPill(a, () => {
+        eraseDismissed(storage);
+        removeAnnouncementPill();
+        renderAnnouncementCard(a, dismiss);
+        const card = document.getElementById(ANNOUNCE_BANNER_ID);
+        if (card) {
+            card.setAttribute('tabindex', '-1');
+            try { card.focus({ preventScroll: true }); } catch { /* environnement sans focus */ }
+        }
+    });
+    const dismiss = (): void => {
+        writeDismissed(storage, fp);
+        showPill();
+    };
     if (readDismissed(storage) === fp) {
         removeAnnouncementCard(false);
+        showPill();
         return;
     }
+    removeAnnouncementPill();
     // C1 — même annonce déjà à l'écran (cache puis réseau, évènement `online`) :
     // rien à reconstruire, l'entrée animée n'est pas coupée et un lecteur
     // d'écran n'entend pas l'alerte une seconde fois.
     const shown = typeof document === 'undefined' ? null : document.getElementById(ANNOUNCE_BANNER_ID);
     if (shown && shown.dataset.fp === fp && shown.dataset.closing !== 'true') return;
-    renderAnnouncementCard(a, () => writeDismissed(storage, fp));
+    renderAnnouncementCard(a, dismiss);
 }
 
 /** Affiche la dernière annonce valide connue, si elle n'est pas expirée. */
@@ -373,7 +432,7 @@ export function applyCachedAnnouncement(opts: AnnounceOptions = {}): void {
     if (!fresh) {
         // Expirée : on l'efface pour ne jamais la remontrer.
         eraseCache(storage);
-        removeAnnouncementCard(false);
+        clearAnnouncement();
         return;
     }
     applyAnnouncement(fresh, opts);
@@ -431,7 +490,7 @@ export async function refreshAnnouncement(opts: AnnounceOptions = {}): Promise<v
     }
     if (outcome.kind === 'invalid') {
         eraseCache(storage);
-        removeAnnouncementCard(false);
+        clearAnnouncement();
         return;
     }
     writeCache(storage, outcome.ann);

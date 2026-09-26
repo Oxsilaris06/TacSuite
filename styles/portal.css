@@ -373,12 +373,14 @@ body {
 /* --- Barre d'etat ---------------------------------------------------------- */
 .portal-status {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     gap: var(--statusbar-gap);
 }
 
 .net-status {
     display: inline-flex;
+    white-space: nowrap;
     align-items: center;
     gap: var(--badge-gap);
     padding: var(--badge-padding-block) var(--badge-padding-inline);
@@ -672,20 +674,24 @@ body {
 }
 
 @media (prefers-color-scheme: light) {
-    :root:not([data-theme]) .release-card {
+    :root:not([data-theme]) .release-card,
+    :root:not([data-theme]) .release-pill {
         --release-danger: var(--tac-red-650);
     }
 }
 
-:root[data-theme='light'] .release-card {
+:root[data-theme='light'] .release-card,
+:root[data-theme='light'] .release-pill {
     --release-danger: var(--tac-red-650);
 }
 
-.release-card[data-level='important'] {
+.release-card[data-level='important'],
+.release-pill[data-level='important'] {
     --release-accent: var(--color-warning);
 }
 
-.release-card[data-level='alerte'] {
+.release-card[data-level='alerte'],
+.release-pill[data-level='alerte'] {
     --release-accent: var(--release-danger);
 }
 
@@ -834,6 +840,133 @@ body {
 @keyframes release-card-out {
     from { opacity: 1; transform: none; }
     to { opacity: 0; transform: var(--release-lift); }
+}
+
+/* --- Page 404 (404.html, servie par GitHub Pages) ------------------------ */
+.notfound {
+    display: grid;
+    justify-items: start;
+    gap: var(--tac-space-4);
+    max-width: var(--release-body-measure);
+    padding-block: var(--tac-space-6);
+}
+
+.notfound__code {
+    margin: var(--tac-zero);
+    font-family: var(--badge-font);
+    font-size: var(--badge-size);
+    letter-spacing: var(--status-tracking);
+    text-transform: uppercase;
+    color: var(--color-text-muted);
+}
+
+.notfound__title {
+    margin: var(--tac-zero);
+    font-family: var(--tac-font-title);
+    font-size: clamp(2rem, 6vw, 3rem);
+    font-weight: var(--release-title-weight);
+    line-height: var(--release-title-leading);
+    letter-spacing: var(--release-title-tracking);
+    text-transform: uppercase;
+    text-wrap: balance;
+}
+
+.notfound__text {
+    margin: var(--tac-zero);
+    line-height: var(--release-body-leading);
+    color: var(--color-text-muted);
+    text-wrap: pretty;
+}
+
+.notfound__links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--tac-space-3);
+    margin-top: var(--tac-space-2);
+}
+
+.notfound__link {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+    padding: var(--toggle-padding-block) var(--toggle-padding-inline);
+    border: var(--tac-border-width) solid var(--toggle-border);
+    border-radius: var(--toggle-radius);
+    background: var(--toggle-bg);
+    color: var(--toggle-fg);
+    font-size: var(--tac-size-xs);
+    font-weight: var(--tac-weight-semibold);
+    letter-spacing: var(--status-tracking);
+    text-transform: uppercase;
+    text-decoration: none;
+    transition: background var(--card-transition), color var(--card-transition),
+        border-color var(--card-transition);
+}
+
+.notfound__link:hover {
+    background: var(--toggle-bg-hover);
+    color: var(--toggle-fg-hover);
+    border-color: var(--color-border-strong);
+}
+
+.notfound__link--primary {
+    border-color: color-mix(in srgb, var(--color-primary) var(--release-accent-border), transparent);
+    color: var(--color-primary);
+}
+
+.notfound__link:active {
+    transform: var(--release-close-press);
+}
+
+.notfound__link:focus-visible {
+    outline: none;
+    box-shadow: var(--focus-ring);
+}
+
+/* Pastille laissee dans la barre d'etat quand la carte est fermee (Nico,
+   09-26) : meme pastille que dans la carte, cliquable pour la rouvrir. Hauteur
+   tactile de 44 px, comme le bouton de theme. */
+.release-pill {
+    --release-accent: var(--color-primary);
+    --release-danger: var(--color-danger);
+    display: inline-flex;
+    align-items: center;
+    gap: var(--badge-gap);
+    min-height: 44px;
+    padding: var(--badge-padding-block) var(--badge-padding-inline);
+    border: var(--tac-border-width) solid color-mix(in srgb, var(--release-accent) var(--release-accent-border), transparent);
+    border-radius: var(--badge-radius);
+    background: color-mix(in srgb, var(--release-accent) var(--release-accent-fill), transparent);
+    color: var(--release-accent);
+    font-family: var(--badge-font);
+    font-size: var(--badge-size);
+    letter-spacing: var(--status-tracking);
+    text-transform: uppercase;
+    white-space: nowrap;
+    cursor: pointer;
+    animation: release-card-fade-in var(--release-in) var(--release-ease) both;
+    transition: background var(--card-transition);
+}
+
+.release-pill::before {
+    content: '';
+    width: var(--release-chip-dot);
+    height: var(--release-chip-dot);
+    border-radius: var(--tac-radius-pill);
+    background: currentColor;
+}
+
+.release-pill:hover {
+    background: color-mix(in srgb, var(--release-accent) calc(var(--release-accent-fill) * 2), transparent);
+}
+
+.release-pill:active {
+    transform: var(--release-close-press);
+}
+
+.release-pill:focus-visible {
+    outline: none;
+    box-shadow: var(--focus-ring);
 }
 
 /* Mouvement reduit : fondus seuls, sans deplacement. */
