@@ -37,7 +37,9 @@ const devServerGuard: Plugin = {
 // base est parametrable via TACSUITE_BASE (ex: '/TacSuite/' pour GitHub Pages).
 export default defineConfig({
   base: process.env.TACSUITE_BASE ?? '/',
-  server: { fs: { deny: DEV_FS_DENY } },
+  // Vitest charge ses modules par ce même serveur (dont tools/osmand-relay) : la
+  // liste de refus ne vaut que pour le serveur de développement.
+  server: process.env.VITEST ? {} : { fs: { deny: DEV_FS_DENY } },
   resolve: {
     alias: {
       '@shared': fileURLToPath(new URL('./src/shared', import.meta.url)),
