@@ -14,7 +14,7 @@
 npm install
 npm run dev          # serveur de développement, http://localhost:9678
 npm run build        # build de production dans dist/
-npm run preview      # sert le build
+npm run preview      # sert le build (port 4173 ; ajouter -- --port 9678 pour les tests)
 npm run test         # tests unitaires (Vitest)
 npm run typecheck    # tsc --noEmit
 npm run lint         # ESLint
@@ -22,7 +22,7 @@ npm run test:e2e     # tests de bout en bout (Playwright)
 npm run test:visual  # comparaison visuelle avec tests/visual/baseline/
 ```
 
-Les tests de bout en bout et la comparaison visuelle visent un serveur déjà lancé (`baseURL` dans `playwright.config.ts` et `tests/visual/compare.mjs`) : lancez `npm run dev`, ou `npm run build` puis `npm run preview`, avant. Le test hors ligne (`tests/e2e/offline.spec.ts`) exige le serveur de preview, car le mode développement ne produit pas de `sw.js`.
+Les tests de bout en bout et la comparaison visuelle visent un serveur déjà lancé sur le port 9678 (`baseURL` dans `playwright.config.ts` et `tests/visual/compare.mjs`) : lancez `npm run dev`, ou `npm run build` puis `npm run preview -- --port 9678`, avant. Le test hors ligne (`tests/e2e/offline.spec.ts`) exige le serveur de preview, car le mode développement ne produit pas de `sw.js`.
 
 La CI vérifie aussi la structure des PDF de l'OI : `tests/pdf/generate-from-fixture.mjs` génère un PDF à partir d'une fixture de `tests/pdf/fixtures/`, puis `tests/pdf/verify-structure.mjs` le contrôle (voir `.github/workflows/ci.yml`).
 
@@ -39,13 +39,13 @@ TACSUITE_BASE=/TacSuite/ npx vite preview --port 9678 --strictPort
 
 Chaque push sur `main` reconstruit le site avec `TACSUITE_BASE=/TacSuite/` et le publie sur GitHub Pages (`.github/workflows/pages.yml`).
 
-## Polices du PDF
+## Polices des PDF
 
-Le PDF de l'OI embarque ses polices, pour un rendu entièrement hors ligne :
+Les PDF embarquent leurs polices, pour un rendu entièrement hors ligne :
 
-- Oswald 500 pour les titres ;
-- JetBrains Mono 400 et 700 pour le texte.
+- Oswald 500 pour les titres, JetBrains Mono 400 et 700 pour le texte de l'OI (`src/apps/oi/pdf/fonts/`, module `src/apps/oi/pdf/fonts.generated.ts`) ;
+- Noto Sans 400 et 700, Noto Sans Arabic 400 : corps de la synthèse A3 de PC-Tac, et repli pour le grec, le cyrillique et l'arabe (`src/shared/pdf-fonts/`, module `fonts-extra.generated.ts`, chargé à la demande).
 
-Licence SIL Open Font License 1.1 (textes complets dans `src/apps/oi/pdf/fonts/OFL-*.txt`) : la redistribution est permise, y compris embarquée dans un PDF, sans contrainte sur le document produit.
+Toutes sont sous SIL Open Font License 1.1 (textes complets dans `src/apps/oi/pdf/fonts/OFL-*.txt` et `src/shared/pdf-fonts/OFL-NotoSans.txt`) : la redistribution est permise, y compris embarquée dans un PDF, sans contrainte sur le document produit.
 
-Les fichiers TTF ne sont ni servis ni inclus tels quels : seul `src/apps/oi/pdf/fonts.generated.ts`, produit par `npm run gen:pdf-fonts`, contient leur encodage base64 et entre dans le bundle.
+Les fichiers TTF ne sont ni servis ni inclus tels quels : `npm run gen:pdf-fonts` produit les deux modules TypeScript qui portent leur encodage base64.

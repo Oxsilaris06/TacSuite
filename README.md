@@ -23,11 +23,19 @@ Un OI exporté s'importe dans PC-Tac.
 
 ## Vos données restent sur l'appareil
 
-Pas de compte ni de serveur TacSuite : tout ce que vous saisissez reste dans le navigateur de l'appareil utilisé. Pour transmettre un travail, exportez son archive. Seuls les fonds de carte, la recherche d'adresse et, si vous l'activez, le suivi d'équipe passent par le réseau.
+Pas de compte : ce que vous saisissez reste dans le navigateur de l'appareil utilisé. Pour transmettre un travail, exportez son archive.
+
+Passent par le réseau :
+- les fonds de carte et la recherche d'adresse ;
+- les lignes électriques : l'emprise de la zone affichée ou téléchargée est envoyée à OpenStreetMap (Overpass) et à Enedis ;
+- la note de version du portail, lue sur GitHub ;
+- si vous l'activez, le suivi d'équipe (Tchap ou relais OsmAnd).
 
 ## Hors ligne et sur téléphone
 
-Après une première visite en ligne, TacSuite s'ouvre sans réseau. Pour l'installer comme une application, utilisez le menu du navigateur : « Ajouter à l'écran d'accueil » sur téléphone, « Installer » sur ordinateur. Téléchargez à l'avance les zones de carte utiles.
+Ouvrez une fois en ligne chaque application (PC-Tac et Générateur d'OI) : elles s'ouvrent ensuite sans réseau. Téléchargez à l'avance les zones de carte utiles.
+
+Pour installer TacSuite comme une application : sur Android et sur ordinateur, menu du navigateur puis « Installer » ou « Ajouter à l'écran d'accueil » ; sur iPhone, bouton Partager puis « Sur l'écran d'accueil ».
 
 ## Développement
 
@@ -38,8 +46,8 @@ npm run test
 npm run build
 ```
 
-Tests, déploiement et polices du PDF : [docs/DEVELOPPEMENT.md](docs/DEVELOPPEMENT.md).
+Tests, déploiement et polices des PDF : [docs/DEVELOPPEMENT.md](docs/DEVELOPPEMENT.md).
 
 ## Crédits
 
-Portage TypeScript des prototypes [GStart-main](https://github.com/Oxsilaris06/GStart-main). Cartographie : MapLibre GL. Polices du PDF : Oswald et JetBrains Mono (SIL Open Font License 1.1).
+Cartographie : MapLibre GL. Polices des PDF : Oswald, JetBrains Mono, Noto Sans et Noto Sans Arabic (SIL Open Font License 1.1).
