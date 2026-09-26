@@ -195,6 +195,10 @@ import { reencodeSansExif } from '@oi/outils.js';
 // R2-T4 — validation inline (nouveau module, cf. son en-tête).
 import { attachValidation, required } from '@oi/validation.js';
 import { confirmDialog, toast } from '@shared/feedback.js';
+// Sécurité (revue côté client du 2026-09-26, C-1) : toute valeur insérée dans
+// un attribut construit en innerHTML passe par `esc` (import direct, jamais le
+// repli brut `window.UIPlatform ? … : value`).
+import { esc } from '@shared/ui-platform.js';
 import type {
     OiAdversary,
     OiAnnotation,
@@ -220,7 +224,7 @@ function addDynamicField(containerId: string, value: string = ''): void {
     const item = document.createElement('div');
     item.className = 'dynamic-list-item';
     const fieldId = `dyn_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
-    item.innerHTML = `<label for="${fieldId}" class="sr-only">Champ dynamique</label><input type="text" id="${fieldId}" class="dynamic-input" value="${value}" oninput="syncDomToStore()"><button type="button" class="remove-btn" onclick="this.parentElement.remove(); syncDomToStore();" aria-label="Supprimer le champ"><span class="material-symbols-outlined">close</span></button>`;
+    item.innerHTML = `<label for="${fieldId}" class="sr-only">Champ dynamique</label><input type="text" id="${fieldId}" class="dynamic-input" value="${esc(value)}" oninput="syncDomToStore()"><button type="button" class="remove-btn" onclick="this.parentElement.remove(); syncDomToStore();" aria-label="Supprimer le champ"><span class="material-symbols-outlined">close</span></button>`;
     container.appendChild(item);
 }
 
@@ -315,7 +319,7 @@ function addMeField(value: string = '', containerId: string = 'me_container', fr
     item.className = 'dynamic-list-item';
     const meIndex = currentItems.length + 1;
     const fieldId = `me_${containerId}_${meIndex}_${Date.now()}`;
-    const safeVal = (window.UIPlatform ? window.UIPlatform.esc(value) : value);
+    const safeVal = esc(value);
     item.innerHTML = `<label for="${fieldId}">ME${meIndex}:</label><input type="text" id="${fieldId}" name="${fieldId}" class="me-input" value="${safeVal}" oninput="syncDomToStore()"><button type="button" class="remove-btn" onclick="this.parentElement.remove(); syncDomToStore();" aria-label="Supprimer ce moyen employé"><span class="material-symbols-outlined">close</span></button>`;
     container.appendChild(item);
 }
@@ -331,7 +335,7 @@ function addMaField(value: string = '', containerId: string = 'ma_container'): v
     if (!container) return;
     const maIndex = container.querySelectorAll('.dynamic-list-item').length + 1;
     const fieldId = `ma_${containerId}_${maIndex}_${Date.now()}`;
-    const safeVal = (window.UIPlatform ? window.UIPlatform.esc(value) : value);
+    const safeVal = esc(value);
     const item = document.createElement('div');
     item.className = 'dynamic-list-item';
     item.innerHTML = `<label for="${fieldId}">MA${maIndex}:</label><textarea id="${fieldId}" name="${fieldId}" class="ma-input" rows="4" placeholder="Décrire le mode d'action envisagé..." oninput="syncDomToStore()">${safeVal}</textarea><button type="button" class="remove-btn" onclick="this.parentElement.remove(); syncDomToStore();" aria-label="Supprimer ce mode d'action"><span class="material-symbols-outlined">close</span></button>`;
@@ -382,9 +386,9 @@ function addTimeEvent(type_from_load?: string, hour_from_load: string = '', desc
                 <label for="${selectId}" class="sr-only">Type d'événement</label>
                 <select id="${selectId}" class="time-type-select" onchange="syncDomToStore()">${optionsHtml}</select>
                 <label for="${hourId}" class="sr-only">Heure</label>
-                <input type="time" id="${hourId}" class="time-hour-input" value="${hour}" onchange="syncDomToStore()">
+                <input type="time" id="${hourId}" class="time-hour-input" value="${esc(hour)}" onchange="syncDomToStore()">
                 <label for="${descId}" class="sr-only">Description</label>
-                <input type="text" id="${descId}" class="time-description-input" placeholder="Description" value="${desc || ''}" oninput="syncDomToStore()">
+                <input type="text" id="${descId}" class="time-description-input" placeholder="Description" value="${esc(desc)}" oninput="syncDomToStore()">
                 <button type="button" class="remove-btn" onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation()" onclick="this.parentElement.remove(); syncDomToStore();" aria-label="Supprimer cet événement"><span class="material-symbols-outlined">close</span></button>`;
     container.appendChild(item);
 }
@@ -1518,7 +1522,6 @@ function showImportSelectModal(cats: readonly OiImportCategory[]): Promise<strin
         const cancelBtn = document.getElementById('importSelectCancelBtn') as HTMLButtonElement | null;
         const closeBtn = document.getElementById('importSelectCloseBtn') as HTMLButtonElement | null;
         if (!modal || !list || !allCb || !confirmBtn) { resolve(null); return; }
-        const esc = (v: unknown): string => (window.UIPlatform ? window.UIPlatform.esc(v) : String(v));
 
         list.innerHTML = '';
         cats.forEach((c) => {
