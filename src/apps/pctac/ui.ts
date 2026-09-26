@@ -1120,7 +1120,7 @@ export const UI: UIContract = {
     if (filterContainer) {
       bindPhotoFilters(filterContainer);
       filterContainer.innerHTML = PHOTO_CATEGORIES.map((cat) => `
-                <button type="button" class="tab-btn ${filterCategory === cat.id ? 'active' : ''}" data-photo-filter="${esc(cat.id)}" style="padding: 6px 12px; font-size: 0.8em; width: auto; flex-direction: row; min-height: unset;">
+                <button type="button" class="tab-btn ${filterCategory === cat.id ? 'active' : ''}" data-photo-filter="${esc(cat.id)}" style="padding: 6px 12px; font-size: 0.8em; width: auto; flex-direction: row; min-height: 44px;">
                     <span>${esc(photoCategoryLabel(cat))}</span>
                 </button>
             `).join('');
