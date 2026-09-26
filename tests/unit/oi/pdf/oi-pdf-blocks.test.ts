@@ -452,7 +452,7 @@ describe('galleryPages — galerie adaptative (décision 44, OrderHtmlPhotos.kt:
         expect(pages).toHaveLength(1);
         const cellWidth = (geo.contentWidthPt - 12) / 2;
         const cells = walk(pages[0]).filter((n) => typeof n.width === 'number' && Array.isArray(n.stack));
-        const captionCell = cells.find((c) => textsOf(c as Content).includes('Bapteme terrain zmspcp_vol_1 — cliche 1'));
+        const captionCell = cells.find((c) => textsOf(c as unknown as Content).includes('Bapteme terrain zmspcp_vol_1 — cliche 1'));
         expect(captionCell?.width as number).toBeCloseTo(cellWidth, 1);
         const [img] = imagesOf(pages[0] as Content);
         expect((img?.fit as number[])[0]).toBeLessThanOrEqual((1 / 150) * 72 + 0.01);
