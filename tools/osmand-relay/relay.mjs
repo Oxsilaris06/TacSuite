@@ -422,6 +422,27 @@ function cli(argv) {
     process.stdout.write(`Jeton révoqué : ${truncateToken(token)}\n`);
     return 'done';
   }
+  // Après une fuite : nouvelle clé de lecture (à recopier dans les réglages de
+  // PC-Tac) ou nouveau jeton pour un opérateur (nouvelle URL à recoller dans
+  // son OsmAnd). Le relais en marche relit le fichier aussitôt (fs.watch).
+  if (cmd === 'rotate-key') {
+    tokens.readKey = crypto.randomBytes(32).toString('hex');
+    writeTokensFile(file, tokens);
+    process.stdout.write(`Nouvelle readKey (à recopier dans PC-Tac, l'ancienne ne vaut plus) :\n${tokens.readKey}\n`);
+    return 'done';
+  }
+  if (cmd === 'rotate') {
+    const old = argv[3];
+    if (!old || !(old in tokens.operators)) { process.stderr.write('jeton inconnu\n'); return 'error'; }
+    const meta = tokens.operators[old];
+    const token = crypto.randomBytes(16).toString('hex');
+    delete tokens.operators[old];
+    tokens.operators[token] = meta;
+    writeTokensFile(file, tokens);
+    process.stdout.write(`Jeton renouvelé : ${meta?.nom || ''} (${truncateToken(old)} remplacé par ${truncateToken(token)})\n`);
+    process.stdout.write(`URL OsmAnd à coller :\n${osmAndUrl(base, token)}\n`);
+    return 'done';
+  }
   if (cmd === 'list') {
     process.stdout.write(`readKey : ${truncateToken(tokens.readKey)}\n`);
     const entries = Object.entries(tokens.operators);
