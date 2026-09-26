@@ -390,6 +390,14 @@ const EFFRAC_CARD_VPAD_PT = 16;
  * page porte son titre ».
  */
 const MISSION_EXEC_SEP_MARGIN_PT = 14;
+
+/**
+ * Photos « Baptême terrain » sous la Mission (Nico 09-26) : hauteur minimale
+ * laissée aux photos sur la page de la Mission, et marge de sécurité ajoutée à
+ * l'estimation de la Mission (`missionPagePt`, conforme au rendu mesuré).
+ */
+const BAPTEME_MIN_PHOTOS_PT = mm(60);
+const BAPTEME_LEAD_SAFETY_PT = 20;
 /**
  * Marge de sécurité globale soustraite de la hauteur utile de page avant
  * toute décision fit-to-page (imprécision résiduelle du repli des mots,
@@ -2032,39 +2040,44 @@ function buildMissionExecutionPages(ctx: BuildCtx, num: () => number): Content[]
     const execNum = num();
     const availablePt = geo.contentHeightPt - EFFRAC_FITS_SAFETY_PT;
 
-    // Photos « Baptême terrain » (Nico 09-26) : sous la Mission, avant
-    // l'Exécution. La Mission ouvre la première page de la galerie (elle ne
-    // reste jamais seule sur une page) ; l'Exécution suit sur sa propre page.
-    const bapteme = ctx.dynamicPhotos[OI_BAPTEME_CONTAINER] ?? [];
-    if (bapteme.some((meta) => ctx.photosBase64[meta.id] !== undefined)) {
-        const execPages = buildExecution(ctx, execNum);
-        const [execFirst, ...execRest] = execPages;
-        const execution: Content[] = [{ stack: [execFirst as Content], pageBreak: 'before' }, ...execRest];
-        const leadHeightPt = missionPagePt(ctx, baseFontSize) + 2 * MISSION_EXEC_SEP_MARGIN_PT + EFFRAC_FITS_SAFETY_PT;
-        const title = 'Baptême terrain';
-        // Mission trop longue pour laisser une vraie place aux photos : page
-        // Mission seule, puis la galerie sur ses propres pages.
-        if (geo.contentHeightPt - PDF_H2_BLOCK_PT - leadHeightPt < mm(80)) {
-            const gallery = galleryPages(title, bapteme, ctx.photosBase64, p, geo, ctx.photoSize);
-            const [gFirst, ...gRest] = gallery;
-            return [buildMission(ctx, missionNum), { stack: [gFirst as Content], pageBreak: 'before' }, ...gRest, ...execution];
-        }
-        const lead: Content = {
-            stack: [
-                h2(`${missionNum}. ${pdfSectionTitle(ctx.formData, 'mission')}`, p, geo.contentWidthPt),
-                missionBodyContent(ctx, baseFontSize),
-                {
-                    canvas: [{ type: 'line', x1: 0, y1: 0, x2: geo.contentWidthPt, y2: 0, lineWidth: 1, lineColor: p.border }],
-                    margin: [0, MISSION_EXEC_SEP_MARGIN_PT, 0, MISSION_EXEC_SEP_MARGIN_PT],
-                },
-            ],
-            fontSize: baseFontSize,
-        };
-        return [...galleryPages(title, bapteme, ctx.photosBase64, p, geo, ctx.photoSize, { content: lead, heightPt: leadHeightPt }), ...execution];
-    }
     const steps = Array.from(new Set<number>([baseFontSize, ...FIT_FONT_STEPS]))
         .filter((f) => f <= baseFontSize)
         .sort((a, b) => b - a);
+
+    // Photos « Baptême terrain » (Nico 09-26) : sous la Mission, avant
+    // l'Exécution. La Mission ouvre la première page de la galerie, au plus
+    // grand palier qui laisse au moins BAPTEME_MIN_PHOTOS_PT aux photos (elle
+    // ne reste seule que si même le palier plancher ne le permet pas) ;
+    // l'Exécution suit sur sa propre page. La Mission est construite AVANT
+    // l'Exécution : les zones de correction de l'aperçu suivent l'ordre des pages.
+    const bapteme = ctx.dynamicPhotos[OI_BAPTEME_CONTAINER] ?? [];
+    if (bapteme.some((meta) => ctx.photosBase64[meta.id] !== undefined)) {
+        const title = 'Baptême terrain';
+        const leadPt = (fontPx: number): number => missionPagePt(ctx, fontPx) + 2 * MISSION_EXEC_SEP_MARGIN_PT + BAPTEME_LEAD_SAFETY_PT;
+        const fontPx = steps.find((f) => geo.contentHeightPt - PDF_H2_BLOCK_PT - leadPt(f) >= BAPTEME_MIN_PHOTOS_PT);
+        let head: Content[];
+        if (fontPx !== undefined) {
+            const lead: Content = {
+                stack: [
+                    h2(`${missionNum}. ${pdfSectionTitle(ctx.formData, 'mission')}`, p, geo.contentWidthPt),
+                    missionBodyContent(ctx, fontPx),
+                    {
+                        canvas: [{ type: 'line', x1: 0, y1: 0, x2: geo.contentWidthPt, y2: 0, lineWidth: 1, lineColor: p.border }],
+                        margin: [0, MISSION_EXEC_SEP_MARGIN_PT, 0, MISSION_EXEC_SEP_MARGIN_PT],
+                    },
+                ],
+                fontSize: fontPx,
+            };
+            head = galleryPages(title, bapteme, ctx.photosBase64, p, geo, ctx.photoSize, { content: lead, heightPt: leadPt(fontPx) });
+        } else {
+            // Mission trop longue même au palier plancher : seule, puis la galerie.
+            const mission = buildMission(ctx, missionNum);
+            const [gFirst, ...gRest] = galleryPages(title, bapteme, ctx.photosBase64, p, geo, ctx.photoSize);
+            head = [mission, { stack: [gFirst as Content], pageBreak: 'before' }, ...gRest];
+        }
+        const [execFirst, ...execRest] = buildExecution(ctx, execNum);
+        return [...head, { stack: [execFirst as Content], pageBreak: 'before' }, ...execRest];
+    }
 
     const mergedPage = (fontPx: number): Content => ({
         stack: [
@@ -2094,9 +2107,10 @@ function buildMissionExecutionPages(ctx: BuildCtx, num: () => number): Content[]
     // derrière MISSION puis débordait sur une page sans titre (anomalie A) ;
     // ses pages de continuation éventuelles (cas limite) portent déjà LEUR
     // PROPRE `pageBreak:'before'` (`buildExecutionOverflowPages`).
-    const execPages = buildExecution(ctx, execNum);
-    const [execFirst, ...execRest] = execPages;
-    return [buildMission(ctx, missionNum), { stack: [execFirst as Content], pageBreak: 'before' }, ...execRest];
+    // Mission construite AVANT l'Exécution : zones de correction dans l'ordre des pages.
+    const mission = buildMission(ctx, missionNum);
+    const [execFirst, ...execRest] = buildExecution(ctx, execNum);
+    return [mission, { stack: [execFirst as Content], pageBreak: 'before' }, ...execRest];
 }
 
 /** Photos de la section « TRANSPORT » (pdf-engine-v2.ts:1032-1039) : PR avant domicile, ordre conservé (§3.4 règle 3). Titre NU et numéro portés par le registre de sections (`OI_PDF_SECTIONS`, §5/§6 SPEC-2026-08-18-pdf-et-champs.md) — plus aucune mention de « logistique ». */

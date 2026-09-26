@@ -638,6 +638,36 @@ describe('buildOiDocDefinition — ordre des photos', () => {
         expect(JSON.stringify(content).split('"image":"baptphoto"').length - 1).toBe(1);
     });
 
+    // Photo portrait réelle (90 × 160) : la galerie lit sa forme dans l'en-tête JPEG.
+    const PORTRAIT = 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAA0JCgsKCA0LCgsODg0PEyAVExISEyccHhcgLikxMC4pLSwzOko+MzZGNywtQFdBRkxOUlNSMj5aYVpQYEpRUk//wAALCACgAFoBAREA/8QAFQABAQAAAAAAAAAAAAAAAAAAAAH/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/9oACAEBAAA/AIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD//2Q==';
+    const DEFAULT_MISSION = "\n\nINTERPELLER L'OBJECTIF.\n\nASSISTER LORS DE LA PERQUISITION.\n\nCONDUITE AU LIEU DE GAV.";
+
+    it.each([
+        ['16:9', 'mission de 2 lignes', 'Boucler le pavillon et interpeller le mis en cause.\nConduite au lieu de GAV.'],
+        ['a4', 'texte pré-rempli de l’étape 4', DEFAULT_MISSION],
+        ['16:9', 'texte pré-rempli de l’étape 4', DEFAULT_MISSION],
+    ] as const)('%s, %s : la Mission ne reste pas seule, la photo est sur sa page', (format, _label, missions_psig) => {
+        const formData: OiFormData = { missions_psig, dynamic_photos: { photo_container_bapteme_terrain_preview_container: [makePhotoMeta('baptphoto')] } };
+        const dd = buildOiDocDefinition(collect(formData, { baptphoto: PORTRAIT }), { format });
+        const content = dd.content as Content[];
+        const missionPage = content.findIndex((page) => JSON.stringify(page).includes("MISSION DE L'UNITÉ"));
+        expect(JSON.stringify(content[missionPage])).toContain('"image":"baptphoto"');
+    });
+
+    it.each(['avec', 'sans'] as const)('zones de correction de l’aperçu dans l’ordre des pages, %s photo de baptême : Mission avant Exécution', (avec) => {
+        const formData: OiFormData = {
+            missions_psig: 'Boucler le pavillon.',
+            date_execution: '2026-09-26',
+            ...(avec === 'avec' ? { dynamic_photos: { photo_container_bapteme_terrain_preview_container: [makePhotoMeta('baptphoto')] } } : {}),
+        };
+        const dd = buildOiDocDefinition(collect(formData, { baptphoto: PORTRAIT }), { format: 'a4' });
+        const order = dd.pdfEditAnchors.map((a) => JSON.stringify(a));
+        const mission = order.findIndex((a) => a.includes('missions_psig'));
+        const date = order.findIndex((a) => a.includes('date_execution'));
+        expect(mission).toBeGreaterThanOrEqual(0);
+        expect(mission).toBeLessThan(date);
+    });
+
     it('sans photo de baptême, Mission et Exécution restent fusionnées sur une page', () => {
         const dd = buildOiDocDefinition(collect({ missions_psig: 'INTERPELLER L’OBJECTIF.' }, {}), { format: 'a4' });
         const content = dd.content as Content[];
@@ -2197,6 +2227,12 @@ describe('buildOiDocDefinition — anomalie A : repli « Mission + Exécution »
             ),
         };
     }
+
+    it('repli sur deux pages : zones de correction de la Mission avant celles de l’Exécution', () => {
+        const dd = buildOiDocDefinition(collect(heavyMissionExecutionFormData()), { format: 'a4' });
+        const order = dd.pdfEditAnchors.map((a) => JSON.stringify(a));
+        expect(order.findIndex((a) => a.includes('missions_psig'))).toBeLessThan(order.findIndex((a) => a.includes('date_execution')));
+    });
 
     it.each(['a4', '16:9'] as const)(
         'RÉGRESSION — chronologie + hypothèses volumineuses (aucun palier ne fait tenir la fusion) : EXÉCUTION est une page top-level DISTINCTE portant SON PROPRE pageBreak, aucune donnée perdue (%s)',

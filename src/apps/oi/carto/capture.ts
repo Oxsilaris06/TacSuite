@@ -279,8 +279,9 @@ export const CaptureMethods = {
     },
 
     /** Liste des conteneurs photo de l'OI ciblables par l'export.
-     *  2 champs statiques (Transport) + champs par bloc dynamique (MOICP / ZMSPCP /
-     *  Effraction), chacun étiqueté avec le titre éditable de son bloc. */
+     *  Champs statiques (Transport ×2, et « Baptême terrain » sous la Mission en
+     *  OI Complet) + champs par bloc dynamique (MOICP, ZMSPCP pour l'Emplacement
+     *  AO seulement, Effraction), étiquetés avec le titre éditable du bloc. */
     // oi_cartographie.js:1185-1210
     _getPhotoTargets(): OiCartoPhotoTarget[] {
         const targets: OiCartoPhotoTarget[] = [
