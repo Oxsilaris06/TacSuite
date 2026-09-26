@@ -300,6 +300,19 @@ describe('_buildMeasureControls / _updateMeasureControls / _removeMeasureControl
     });
 });
 
+describe('dock de dessin pendant la mesure (atelier UI-1, capture fix-measure390)', () => {
+    it('masqué tant que la barre de mesure est posée (elle le recouvrait), rendu à la sortie', () => {
+        document.body.innerHTML = '<div><div id="plan_map"></div><div id="plan_draw_dock" class="open"></div></div>';
+        const { fake } = makeFakeThis();
+        const dock = document.getElementById('plan_draw_dock')!;
+        fake._buildMeasureControls();
+        expect(dock.hidden).toBe(true);
+        fake._removeMeasureControls();
+        expect(dock.hidden).toBe(false);
+        expect(dock.classList.contains('open')).toBe(true);
+    });
+});
+
 describe('_measureUndoVertex (planMap.js:2497-2504)', () => {
     it('ne jette pas sans _measureState', () => {
         const { fake } = makeFakeThis();

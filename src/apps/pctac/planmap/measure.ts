@@ -252,6 +252,10 @@ export const MeasureMethods = {
         bar.appendChild(mkBtn('Quitter', 'close', 'rgba(239,68,68,0.95)', '#fff', () => this._cancelMeasure()));
         parent.appendChild(bar);
         this._measureControls = bar;
+        // Le dock de dessin passait sous la barre : masqué le temps de la
+        // mesure (la barre porte Terminer et Quitter), rendu par _removeMeasureControls.
+        const dock = document.getElementById('plan_draw_dock');
+        if (dock) dock.hidden = true;
         this._updateMeasureControls();
     },
 
@@ -267,6 +271,8 @@ export const MeasureMethods = {
         if (this._measureControls) { try { this._measureControls.remove(); } catch { /* déjà retiré du DOM — sans effet */ } this._measureControls = null; }
         this._measurePointBtn = null;
         this._measureUndoBtn = null;
+        const dock = document.getElementById('plan_draw_dock');
+        if (dock) dock.hidden = false;
     },
 
     /** Retire le dernier sommet posé (correction sous stress). */
