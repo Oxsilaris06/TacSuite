@@ -314,6 +314,40 @@ export interface GpxStoredTrack {
   times: GpxStoredTimes | null;
 }
 
+/**
+ * Trace nettoyée, ou `null` si rien n'est exploitable (audit du 26/09 : une
+ * trace malformée venue d'une archive faisait échouer le chargement de TOUTES
+ * les traces). Points gardés : [lng, lat] finis dans les bornes WGS84 (une
+ * altitude en 3e valeur est retirée). Temps gardés alignés sur les points
+ * gardés ; un temps illisible devient `null` (point non daté).
+ */
+export function normalizeGpxTrack(coords: unknown, times: unknown): GpxStoredTrack | null {
+  if (!Array.isArray(coords)) return null;
+  const hasTimes = Array.isArray(times);
+  const outCoords: GpxStoredSegments = [];
+  const outTimes: GpxStoredTimes = [];
+  coords.forEach((seg: unknown, i) => {
+    if (!Array.isArray(seg)) return;
+    const segTimes: unknown = hasTimes ? (times as unknown[])[i] : undefined;
+    const keptPts: Array<[number, number]> = [];
+    const keptTimes: Array<number | null> = [];
+    seg.forEach((pt: unknown, j) => {
+      if (!Array.isArray(pt)) return;
+      const [lng, lat] = pt as unknown[];
+      if (typeof lng !== 'number' || typeof lat !== 'number' || !Number.isFinite(lng) || !Number.isFinite(lat)) return;
+      if (lng < -180 || lng > 180 || lat < -90 || lat > 90) return;
+      keptPts.push([lng, lat]);
+      const t: unknown = Array.isArray(segTimes) ? segTimes[j] : null;
+      keptTimes.push(typeof t === 'number' && Number.isFinite(t) ? t : null);
+    });
+    if (!keptPts.length) return;
+    outCoords.push(keptPts);
+    outTimes.push(keptTimes);
+  });
+  if (!outCoords.length) return null;
+  return { coords: outCoords, times: hasTimes ? outTimes : null };
+}
+
 /** Version de l'enveloppe écrite aujourd'hui. Avant elle : un tableau nu, sans temps. */
 const GPX_RECORD_VERSION = 2;
 
@@ -334,8 +368,10 @@ const GPX_RECORD_VERSION = 2;
 export const GpxStore = {
   /** Enregistre une trace. No-op si l'id ou les coordonnées manquent. */
   async put(id: string, track: GpxStoredTrack): Promise<void> {
-    if (!id || !track || !Array.isArray(track.coords) || !track.coords.length) return;
-    const rec = { v: GPX_RECORD_VERSION, coords: track.coords, times: track.times ?? null };
+    if (!id || !track) return;
+    const clean = normalizeGpxTrack(track.coords, track.times);
+    if (!clean) return;
+    const rec = { v: GPX_RECORD_VERSION, coords: clean.coords, times: clean.times };
     await withStore('readwrite', (store) => store.put(rec, id), GPX_STORE);
   },
 
@@ -349,18 +385,15 @@ export const GpxStore = {
         req.onsuccess = (): void => {
           const v = req.result as unknown;
           // Forme historique : le tableau de segments écrit tel quel, sans temps.
+          // Nettoyée aussi à la LECTURE : une trace malformée déjà stockée
+          // (avant l'audit du 26/09) ne bloque plus les autres.
           if (Array.isArray(v)) {
-            out = { coords: v as GpxStoredSegments, times: null };
+            out = normalizeGpxTrack(v, null);
             return;
           }
           if (v && typeof v === 'object') {
             const rec = v as { coords?: unknown; times?: unknown };
-            if (Array.isArray(rec.coords)) {
-              out = {
-                coords: rec.coords as GpxStoredSegments,
-                times: Array.isArray(rec.times) ? (rec.times as GpxStoredTimes) : null,
-              };
-            }
+            out = normalizeGpxTrack(rec.coords, rec.times);
           }
         };
       }, GPX_STORE);
