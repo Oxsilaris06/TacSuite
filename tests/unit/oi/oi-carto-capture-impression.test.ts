@@ -306,7 +306,7 @@ describe('_exportToField — capture faite avant la fin du chargement', () => {
             const close = vi.fn();
             s._closeCaptureModal = close;
             vi.spyOn(HTMLCanvasElement.prototype, 'toBlob').mockImplementation(function (cb: BlobCallback) { cb(new Blob(['x'], { type: 'image/jpeg' })); });
-            const handle = vi.fn(async () => {});
+            const handle = vi.fn(async () => 1);
             (window as unknown as Record<string, unknown>).handleFileChange = handle;
 
             await s._exportToField('photo_container_express_carte_preview_container');
@@ -342,6 +342,38 @@ describe('_exportToField — champ photo plein (« Baptême terrain » : 2 photo
             expect(status?.textContent).toMatch(/2 photos au plus/);
             expect(status?.getAttribute('role')).toBe('alert');
         } finally {
+            delete (window as unknown as Record<string, unknown>).handleFileChange;
+        }
+    });
+});
+
+describe('_exportToField — capture non ajoutée (stockage saturé, champ rempli entre-temps)', () => {
+    it('pas de succès annoncé, la fenêtre reste ouverte avec le refus', async () => {
+        class FakeDataTransfer {
+            private readonly list: File[] = [];
+            items = { add: (f: File): void => { this.list.push(f); } };
+            get files(): File[] { return this.list; }
+        }
+        vi.stubGlobal('DataTransfer', FakeDataTransfer);
+        const filesDesc = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'files');
+        Object.defineProperty(HTMLInputElement.prototype, 'files', { configurable: true, get: () => null, set: () => {} });
+        document.body.insertAdjacentHTML('beforeend', '<dialog id="oi_carto_capture_modal" open><div class="modal-content"></div></dialog>');
+        try {
+            const methods = await load(vi.fn());
+            const s = state(methods, makeMap());
+            s._captureCanvas = vi.fn(async () => document.createElement('canvas'));
+            const close = vi.fn();
+            s._closeCaptureModal = close;
+            vi.spyOn(HTMLCanvasElement.prototype, 'toBlob').mockImplementation(function (cb: BlobCallback) { cb(new Blob(['x'], { type: 'image/jpeg' })); });
+            (window as unknown as Record<string, unknown>).handleFileChange = vi.fn(async () => 0);
+
+            await s._exportToField('photo_container_transport_pr_preview_container');
+
+            expect(close).not.toHaveBeenCalled();
+            expect(toastSpy).not.toHaveBeenCalledWith(expect.stringMatching(/ajoutée au champ/), expect.anything());
+            expect(document.querySelector('#oi_carto_capture_modal .oi-carto-capture-status')?.textContent).toMatch(/non ajoutée/);
+        } finally {
+            if (filesDesc) Object.defineProperty(HTMLInputElement.prototype, 'files', filesDesc);
             delete (window as unknown as Record<string, unknown>).handleFileChange;
         }
     });

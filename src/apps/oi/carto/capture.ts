@@ -570,7 +570,7 @@ export const CaptureMethods = {
         // toute capture, affiché dans la fenêtre (un toast y serait caché).
         const field = document.getElementById(containerId);
         if (field && photoRoom(field) <= 0) {
-            setCaptureStatus(`Ce champ accepte ${field.dataset.maxPhotos} photos au plus : supprimez-en une pour y ajouter la capture.`, 'error');
+            setCaptureStatus(`Champ plein (${field.dataset.maxPhotos} photos au plus) : supprimez-en pour y ajouter la capture.`, 'error');
             return;
         }
         const canvas = await this._captureCanvas();
@@ -586,7 +586,12 @@ export const CaptureMethods = {
             const fakeInput = document.createElement('input');
             fakeInput.type = 'file';
             fakeInput.files = dt.files;
-            await window.handleFileChange(fakeInput, containerId, false);
+            // Rien d'ajouté (stockage saturé, champ rempli entre-temps) : pas de
+            // succès annoncé, la fenêtre reste ouverte avec le refus.
+            if ((await window.handleFileChange(fakeInput, containerId, false)) === 0) {
+                setCaptureStatus('Capture non ajoutée au champ photo.', 'error');
+                return;
+            }
             if (canvas.dataset.chargementIncomplet !== '1') this._closeCaptureModal();
             // U19 — toast unique (@shared/feedback.js).
             toast('Capture de carte ajoutée au champ photo.', { kind: 'success' });

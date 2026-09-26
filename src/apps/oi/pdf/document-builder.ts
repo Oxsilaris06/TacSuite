@@ -45,7 +45,7 @@ import {
     card,
     figure,
     galleryPages,
-    splitGalleryPage,
+    splitGalleryPages,
     galleryToolsReservePt,
     grid2,
     h1,
@@ -2039,11 +2039,11 @@ function buildMissionExecutionPages(ctx: BuildCtx, num: () => number): Content[]
     // puis UNE page de photos (1 = toute la page, 2 = moitié-moitié), puis
     // l'Exécution. Mission construite AVANT l'Exécution : zones de correction
     // de l'aperçu dans l'ordre des pages.
-    const bapteme = splitGalleryPage('Baptême terrain', ctx.dynamicPhotos[OI_BAPTEME_CONTAINER] ?? [], ctx.photosBase64, p, geo, ctx.photoSize);
-    if (bapteme) {
+    const bapteme = splitGalleryPages('Baptême terrain', ctx.dynamicPhotos[OI_BAPTEME_CONTAINER] ?? [], ctx.photosBase64, p, geo, ctx.photoSize);
+    if (bapteme.length > 0) {
         const mission = buildMission(ctx, missionNum);
         const [execFirst, ...execRest] = buildExecution(ctx, execNum);
-        return [mission, bapteme, { stack: [execFirst as Content], pageBreak: 'before' }, ...execRest];
+        return [mission, ...bapteme, { stack: [execFirst as Content], pageBreak: 'before' }, ...execRest];
     }
 
     const mergedPage = (fontPx: number): Content => ({

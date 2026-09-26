@@ -154,7 +154,7 @@ export function layoutGallery(photos: readonly GalleryPhoto[], box: GalleryBox, 
  * découpe qui leur donne le plus de surface. L'ensemble est centré dans la
  * hauteur, deux images côte à côte alignées sur leur milieu. Mêmes plafond de
  * définition et proportions que `layoutGallery`. Au-delà de deux images,
- * seules les deux premières sont placées (l'OI en refuse une troisième).
+ * seules les deux premières sont placées (l'appelant fait une page par paire).
  */
 export function layoutSplitPage(photos: readonly GalleryPhoto[], box: GalleryBox, options: GalleryOptions = {}): GallerySlot[] {
     const gap = options.gap ?? 12;
@@ -164,7 +164,7 @@ export function layoutSplitPage(photos: readonly GalleryPhoto[], box: GalleryBox
     const place = (cols: number): GallerySlot[] => {
         const rows = shown.length / cols;
         const cellWidth = (box.width - (cols - 1) * gap) / cols;
-        const cellHeight = (box.height - (rows - 1) * gap) / rows - caption;
+        const cellHeight = Math.max(0, (box.height - (rows - 1) * gap) / rows - caption);
         const sizes = shown.map((p) => {
             const r = aspect(p);
             const { width, lowRes } = sized(p, Math.min(cellWidth, cellHeight * r), ppi);

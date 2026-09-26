@@ -664,13 +664,13 @@ describe('buildOiDocDefinition — ordre des photos', () => {
         expect(land!.margin[1]).toBeGreaterThan(port!.margin[1]!);
     });
 
-    it('au-delà de deux photos de baptême (ancien OI), seules les deux premières sont imprimées', () => {
+    it('ancien OI à 3 photos de baptême : toutes imprimées, deux par page, avant l’Exécution', () => {
         const photosBase64 = { b1: jpeg(4000, 3000), b2: jpeg(4001, 3000), b3: jpeg(4002, 3000) };
         const content = buildOiDocDefinition(collect({ missions_psig: 'X.', dynamic_photos: baptPhotos('b1', 'b2', 'b3') }, photosBase64), { format: 'a4' }).content as Content[];
-        const all = imagesOf(content).map((i) => i.image);
-        expect(all).toContain('b1');
-        expect(all).toContain('b2');
-        expect(all).not.toContain('b3');
+        const pageOf = (needle: string): number => content.findIndex((page) => JSON.stringify(page).includes(needle));
+        expect(pageOf('"image":"b2"')).toBe(pageOf('"image":"b1"'));
+        expect(pageOf('"image":"b3"')).toBe(pageOf('"image":"b1"') + 1);
+        expect(pageOf('EXÉCUTION')).toBe(pageOf('"image":"b3"') + 1);
     });
 
     it('ancienne donnée : photos « Baptême Terrain » d’un bloc ZMSPCP imprimées après la Mission, jamais perdues', () => {

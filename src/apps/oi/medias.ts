@@ -144,17 +144,12 @@ export async function handleFileChange(
 
     // medias.js:40 — capture locale (`files`) : `HTMLInputElement.files` est
     // `FileList | null` côté TS, jamais gardé dans l'original.
-    // Champ limité (`data-max-photos`) : les photos en trop sont refusées,
-    // jamais stockées, et le message le dit.
-    const chosen = Array.from(input.files ?? []);
-    const files = chosen.slice(0, Math.max(0, photoRoom(previewContainer)));
-    const overLimit = chosen.length - files.length;
-    if (overLimit > 0) {
-        const max = previewContainer.dataset.maxPhotos;
-        toast(files.length === 0 && photoRoom(previewContainer) <= 0
-            ? `Ce champ accepte ${max} photos au plus : supprimez-en une pour en ajouter une autre.`
-            : `Ce champ accepte ${max} photos au plus : ${overLimit} non ajoutée${overLimit > 1 ? 's' : ''}.`, { kind: 'error' });
-    }
+    // Champ limité (`data-max-photos`) : au-delà de la place, les photos sont
+    // refusées, jamais stockées, et le message le dit. Compté à l'ajout : une
+    // photo illisible ne prend pas la place d'une photo valide.
+    const files = Array.from(input.files ?? []);
+    const room = photoRoom(previewContainer);
+    let overLimit = 0;
     let added = 0;
     if (files.length > 0) {
         // U26 — état de chargement pendant l'import (compression + IndexedDB) :
@@ -170,6 +165,10 @@ export async function handleFileChange(
         const refused: string[] = [];
         let heicRefused = false;
         for (const file of files) {
+            if (added >= room) {
+                overLimit++;
+                continue;
+            }
             progressEl.textContent = `Import de la photo ${added + 1}/${total}…`;
             // Capture de carte (`carto/capture.ts`, fichier `carte_…`) : clé
             // `img_plan_…`, le PDF met un plan seul sur sa page (décision 44).
@@ -248,6 +247,12 @@ export async function handleFileChange(
         previewContainer.removeAttribute('aria-busy');
         input.disabled = false;
         if (added > 0) toast(`${added} photo${added > 1 ? 's' : ''} ajoutée${added > 1 ? 's' : ''}`, { kind: 'success' });
+        if (overLimit > 0) {
+            const max = previewContainer.dataset.maxPhotos;
+            toast(added === 0
+                ? `Champ plein (${max} photos au plus) : supprimez-en pour en ajouter.`
+                : `Ce champ accepte ${max} photos au plus : ${overLimit} non ajoutée${overLimit > 1 ? 's' : ''}.`, { kind: 'error' });
+        }
         if (refused.length) {
             const why = heicRefused
                 ? 'Photo HEIC non convertible (hors ligne ?) ou image illisible.'

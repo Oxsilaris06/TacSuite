@@ -29,6 +29,7 @@ import {
     galleryAllTools,
     galleryPages,
     galleryToolsReservePt,
+    splitGalleryPages,
     grid2,
     h1,
     h2,
@@ -499,6 +500,56 @@ describe('galleryPages — galerie adaptative (décision 44, OrderHtmlPhotos.kt:
         const a4 = imagesOf(galleryPages('G', photos(1), photosBase64, p, pageGeometry('a4'), sizes({ 'photo-1': PAYSAGE }))[0] as Content)[0];
         const w169 = imagesOf(galleryPages('G', photos(1), photosBase64, p, pageGeometry('16:9'), sizes({ 'photo-1': PAYSAGE }))[0] as Content)[0];
         expect((w169?.fit as number[])[1]).toBeLessThan((a4?.fit as number[])[1] as number);
+    });
+});
+
+describe('légendes de galerie trop longues pour la page', () => {
+    const sizeOf = (): { widthPx: number; heightPx: number } => ({ widthPx: 4000, heightPx: 3000 });
+    const captionsOf = (pages: Content[]): string[] => {
+        const out: string[] = [];
+        JSON.stringify(pages, (_k, v: unknown) => {
+            if (v && typeof v === 'object' && 'characterSpacing' in v && 'text' in v) out.push(String((v as { text: unknown }).text));
+            return v;
+        });
+        return out;
+    };
+
+    it.each(['galleryPages', 'splitGalleryPages'] as const)('%s : une légende de 5000 caractères est raccourcie (« … »), une courte reste entière', (fn) => {
+        const build = fn === 'galleryPages' ? galleryPages : splitGalleryPages;
+        const long = 'Portail vert, digicode 4521B, chien dans la cour. '.repeat(100);
+        const [cap] = captionsOf(build('G', [makePhoto({ id: 'a', customTitle: long })], { a: 'img' }, p, geo, sizeOf));
+        expect(cap!.endsWith('…')).toBe(true);
+        expect(cap!.length).toBeLessThan(long.length);
+        expect(captionsOf(build('G', [makePhoto({ id: 'a', customTitle: 'Portail vert' })], { a: 'img' }, p, geo, sizeOf))).toEqual(['Portail vert']);
+    });
+});
+
+describe('splitGalleryPages — « Baptême terrain » (décision 46)', () => {
+    const base64 = { a: 'imgA', b: 'imgB', c: 'imgC', d: 'imgD', e: 'imgE' };
+    const metas = (...ids: string[]): OiPhotoMeta[] => ids.map((id) => makePhoto({ id }));
+    const sized = (map: Record<string, [number, number]>) => (id: string) => (map[id] ? { widthPx: map[id][0], heightPx: map[id][1] } : null);
+    const body = (page: Content): Record<string, unknown> => (page as ContentStack).stack[1] as unknown as Record<string, unknown>;
+
+    it('deux paysages : une page, côte à côte', () => {
+        const pages = splitGalleryPages('Baptême', metas('a', 'b'), base64, p, geo, sized({ a: [4000, 3000], b: [4000, 3000] }));
+        expect(pages).toHaveLength(1);
+        expect(body(pages[0]!).columns).toBeDefined();
+    });
+
+    it('deux photos très larges de largeurs différentes : l’une sous l’autre, jamais deux colonnes qui débordent', () => {
+        const pages = splitGalleryPages('Baptême', metas('a', 'b'), base64, p, geo, sized({ a: [4000, 1800], b: [4000, 2000] }));
+        expect(body(pages[0]!).columns).toBeUndefined();
+        expect(body(pages[0]!).stack).toHaveLength(2);
+    });
+
+    it('ancien OI à 5 photos : toutes imprimées, deux par page, numérotées sur le total', () => {
+        const pages = splitGalleryPages('Baptême', metas('a', 'b', 'c', 'd', 'e'), base64, p, geo);
+        expect(pages.map(titleOf)).toEqual(['BAPTÊME — PHOTOS 1-2/5', 'BAPTÊME — PHOTOS 3-4/5', 'BAPTÊME — PHOTO 5/5']);
+        pages.forEach((page) => expect((page as ContentStack).pageBreak).toBe('before'));
+    });
+
+    it('aucune photo avec image : aucune page', () => {
+        expect(splitGalleryPages('Baptême', metas('z'), base64, p, geo)).toEqual([]);
     });
 });
 
