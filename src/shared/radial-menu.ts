@@ -280,22 +280,33 @@ export class RadialMenu {
     const n = this.options.length;
     // Rayon adaptatif : plus compact sur mobile (< 480px de largeur écran)
     const vw = typeof window !== 'undefined' ? window.innerWidth : 1024;
-    const radius = vw < 480 ? Math.min(this.radius, 86) : Math.max(this.radius, 96);
+    const btnSize = vw < 480 ? 52 : 58;
+    // Au-delà de 6 options, l'étiquette posée sous un bouton latéral passait
+    // sous le bouton voisin (constat UI-1 du 25/09 : « Inter » sous Oscar sur
+    // téléphone). Le voisin doit commencer sous l'étiquette : r·sin(2π/n) ≥
+    // bouton + 22 px (écart 6 + étiquette 16). Plafonné pour tenir dans une
+    // carte de téléphone (358 px de large).
+    const minRadius = n > 6 ? Math.min(vw < 480 ? 116 : 130, Math.ceil((btnSize + 22) / Math.sin((2 * Math.PI) / n))) : 0;
+    const radius = Math.max(minRadius, vw < 480 ? Math.min(this.radius, 86) : Math.max(this.radius, 96));
     // Pour 1-2 options, on étale en arc semi-circulaire pour éviter les superpositions.
     const arcSpan = n <= 2 ? Math.PI : 2 * Math.PI;
     const arcStart = n <= 2 ? -Math.PI / 2 - arcSpan / 2 : -Math.PI / 2; // 12h
-    const btnSize = vw < 480 ? 52 : 58;
     // Rayon utile total (bouton compris) pour le clamp de _position().
     this._extent = radius + btnSize / 2 + 10;
     const wrap = document.createElement('div');
     wrap.className = this.wrapperClassName;
+    // Mouvement réduit : fondu seul, ni rebond ni changement d'échelle.
+    let reduceMotion = false;
+    try {
+      reduceMotion = typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    } catch { /* préférence illisible : animation normale */ }
     wrap.style.cssText = `
             position: absolute;
             width: ${radius * 2 + btnSize + 36}px;
             height: ${radius * 2 + btnSize + 36}px;
-            transform: translate(-50%, -50%) scale(0.85);
+            transform: translate(-50%, -50%)${reduceMotion ? '' : ' scale(0.85)'};
             opacity: 0;
-            transition: transform 160ms cubic-bezier(.34,1.56,.64,1), opacity 140ms ease-out;
+            transition: ${reduceMotion ? 'opacity 140ms ease-out' : 'transform 160ms cubic-bezier(.34,1.56,.64,1), opacity 140ms ease-out'};
             z-index: 60;
             pointer-events: none;
         `;

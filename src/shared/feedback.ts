@@ -115,18 +115,23 @@ function injectStyles(): void {
   const style = document.createElement('style');
   style.id = STYLE_ID;
   style.textContent = `
+/* Centré par left/right: 0 + margin auto, avec une largeur PROPRE : calé à
+   left: 50%, un élément fixe ne dispose que de la moitié droite de l'écran
+   (195 px sur un téléphone de 390 px) et le texte d'un toast à bouton
+   s'écrivait une syllabe par ligne (constat UI-1 du 25/09). */
 .tac-toast-container {
   position: fixed;
-  left: 50%;
-  bottom: var(--tac-space-5, 24px);
-  transform: translateX(-50%);
+  left: 0;
+  right: 0;
+  bottom: calc(var(--tac-space-5, 24px) + env(safe-area-inset-bottom, 0px));
+  margin-inline: auto;
+  width: min(92vw, 420px);
   z-index: ${TOP_Z};
   display: flex;
   flex-direction: column-reverse;
   gap: var(--tac-space-2, 8px);
   align-items: center;
   pointer-events: none;
-  max-width: min(92vw, 420px);
 }
 .tac-toast {
   pointer-events: auto;
@@ -196,15 +201,26 @@ function injectStyles(): void {
   padding: var(--tac-space-2, 8px) var(--tac-space-3, 12px);
   padding-top: calc(var(--tac-space-2, 8px) + env(safe-area-inset-top, 0px));
   border: 1px solid var(--border-light, var(--color-border, #3a3f4b));
-  border-left-width: 4px;
   border-radius: 0;
   background: var(--bg-container, var(--color-surface, #1b1d24));
   color: var(--text-main, var(--color-text, #e6e8ee));
   font: 500 13.5px/1.4 var(--font-ui, system-ui, sans-serif);
 }
-.tac-banner--info { border-left-color: var(--accent-fill, var(--color-primary, #3b82f6)); }
-.tac-banner--important { border-left-color: #d97706; background: color-mix(in srgb, #d97706 12%, var(--bg-container, var(--color-surface, #1b1d24))); }
-.tac-banner--alert { border-left-color: var(--danger-red, var(--color-danger, #c8344a)); background: color-mix(in srgb, var(--danger-red, var(--color-danger, #c8344a)) 14%, var(--bg-container, var(--color-surface, #1b1d24))); }
+/* Niveau : pastille devant le message (comme les toasts) et fond teinté,
+   jamais de liseré latéral épais (règle du projet). */
+.tac-banner--info { --tac-banner-dot: var(--accent-fill, var(--color-primary, #3b82f6)); }
+.tac-banner--important { --tac-banner-dot: #d97706; background: color-mix(in srgb, #d97706 12%, var(--bg-container, var(--color-surface, #1b1d24))); }
+.tac-banner--alert { --tac-banner-dot: var(--danger-red, var(--color-danger, #c8344a)); background: color-mix(in srgb, var(--danger-red, var(--color-danger, #c8344a)) 14%, var(--bg-container, var(--color-surface, #1b1d24))); }
+.tac-banner-message::before {
+  content: '';
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: var(--tac-space-2, 8px);
+  border-radius: 50%;
+  vertical-align: 0.1em;
+  background: var(--tac-banner-dot);
+}
 .tac-banner-message { flex: 1 1 auto; min-width: 0; }
 .tac-banner-action {
   appearance: none;
@@ -284,12 +300,15 @@ function injectStyles(): void {
   gap: var(--tac-space-2, 8px);
   margin-top: var(--tac-space-5, 24px);
 }
+/* Pas de raccourci font : « font: 600 13.5px/1 inherit » était invalide
+   (inherit ne peut pas servir de famille) et donc ignoré ; les boutons
+   prennent la typographie de boutons de l'application, comme avant. */
 .tac-confirm-btn {
   appearance: none;
+  min-height: 44px;
   border: 1px solid var(--border-light);
   border-radius: var(--tac-radius-sm, 6px);
   padding: var(--tac-space-2, 8px) var(--tac-space-4, 16px);
-  font: 600 13.5px/1 inherit;
   cursor: pointer;
   background: transparent;
   color: var(--text-main);
@@ -306,6 +325,7 @@ function injectStyles(): void {
 
 .tac-confirm-input {
   width: 100%;
+  min-height: 44px;
   margin-top: var(--tac-space-2, 8px);
   padding: 8px 10px;
   border: 1px solid var(--border-light);
@@ -463,7 +483,24 @@ function ensureToastContainer(): HTMLElement {
     el.setAttribute('aria-live', 'polite');
     document.body.appendChild(el);
   }
+  // Recalculé à chaque toast : le dock peut être replié ou déplié entre-temps.
+  el.style.bottom = toastBottomOffset();
   return el;
+}
+
+/**
+ * Hauteur à laisser libre en bas d'écran. Le dock flottant des applications
+ * (`#dockMenu`, PC-Tac et OI, fixé en bas au centre comme les toasts) passait
+ * sous les toasts : le toast masquait le dock (constat UI-1 du 25/09). Rend ''
+ * (position de la feuille) sans dock rendu dans la moitié basse de l'écran.
+ */
+function toastBottomOffset(): string {
+  const dock = document.getElementById('dockMenu');
+  if (!dock) return '';
+  const r = dock.getBoundingClientRect();
+  const vh = window.innerHeight;
+  if (r.height === 0 || r.top < vh / 2) return '';
+  return `${Math.round(vh - r.top + 8)}px`;
 }
 
 /**
@@ -520,6 +557,20 @@ function buildToast(config: BuildToastConfig): HTMLElement {
   const container = ensureToastContainer();
 
   const visible = Array.from(container.children) as HTMLElement[];
+  // Même message déjà affiché, sans bouton : on relance son décompte au lieu
+  // d'empiler un doublon (trois « Événement ajouté » couvraient le bouton
+  // d'ajout, constat UI-1 du 25/09). Un toast à action n'est jamais fusionné.
+  if (!config.action) {
+    const same = visible.find((c) => !toastDone.has(c) && !c.querySelector('button')
+      && c.textContent === config.message && c.classList.contains(`tac-toast--${config.kind}`));
+    if (same) {
+      const timer = toastTimers.get(same);
+      if (timer) clearTimeout(timer.id);
+      toastTimers.delete(same);
+      if (config.duration > 0) startToastTimer(same, config.duration);
+      return same;
+    }
+  }
   if (visible.length >= MAX_VISIBLE_TOASTS) {
     const oldest = visible[0];
     // L'éviction d'un toast d'annulation vaut « commit » (décision 31).
@@ -625,14 +676,28 @@ function undoShortcutLabel(): string {
 }
 
 /**
- * Annonce accessible : « … supprimé. Ctrl+Z pour annuler. » (R12). Idempotent
- * si l'appelant a déjà mentionné le raccourci.
+ * Sans pointeur fin (téléphone, tablette tactile), aucun clavier n'est
+ * probable : citer Ctrl+Z n'apporte rien (constat UI-1 du 25/09). Sans
+ * `matchMedia` (jsdom), on garde l'annonce.
+ */
+function keyboardLikely(): boolean {
+  try {
+    return typeof window.matchMedia !== 'function' || window.matchMedia('(any-pointer: fine)').matches;
+  } catch {
+    return true;
+  }
+}
+
+/**
+ * Annonce accessible : « … supprimé. Ctrl+Z pour annuler. » (R12), réduite à
+ * « … supprimé. » sans clavier probable (le bouton « Annuler » reste).
+ * Idempotent si l'appelant a déjà mentionné le raccourci.
  */
 function undoMessageWithShortcut(message: string): string {
   const trimmed = message.trim();
   if (/pour annuler/i.test(trimmed)) return trimmed;
   const sentence = /[.!?…]\s*$/.test(trimmed) ? trimmed : `${trimmed}.`;
-  return `${sentence} ${undoShortcutLabel()} pour annuler.`;
+  return keyboardLikely() ? `${sentence} ${undoShortcutLabel()} pour annuler.` : sentence;
 }
 
 /* =========================================================================
@@ -750,6 +815,20 @@ export function hideBanner(id: string): void {
  * ========================================================================= */
 
 /**
+ * Clic sur le FOND d'une fenêtre modale : la cible est le `<dialog>` lui-même,
+ * mais un toucher dans son remplissage aussi. Seul un point HORS de sa boîte
+ * est le fond (constat UI-1 du 25/09 : un toucher à côté d'un bouton annulait
+ * la fenêtre, et la saisie en cours). Sans mise en page (jsdom, boîte nulle),
+ * on ne peut pas trancher : fond.
+ */
+function isBackdropClick(dialog: HTMLElement, e: MouseEvent): boolean {
+  if (e.target !== dialog) return false;
+  const r = dialog.getBoundingClientRect();
+  if (r.width === 0 && r.height === 0) return true;
+  return e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom;
+}
+
+/**
  * Ouvre une boîte de confirmation modale (`<dialog>` natif) et résout une
  * fois l'utilisateur·rice statué·e. Remplace `confirm()` — MÊME contrat
  * `Promise<boolean>` (true = confirmé, false = annulé/Escape/clic hors
@@ -851,7 +930,7 @@ export function confirmDialog(options: ConfirmDialogOptions): Promise<ConfirmDia
     // Clic sur le fond (le `<dialog>` lui-même, jamais un enfant) = annulation
     // — même piège documenté dans `src/apps/pctac/ui.ts` (backdrop natif).
     dialog.addEventListener('click', (e) => {
-      if (e.target === dialog) requestClose(false);
+      if (isBackdropClick(dialog, e)) requestClose(false);
     });
     // Escape natif (`<dialog>` réel) : on intercepte 'cancel' pour piloter la
     // fermeture nous-même plutôt que de laisser la UA fermer sans passer par
@@ -991,7 +1070,7 @@ export function promptDialog(options: PromptDialogOptions): Promise<string | nul
     okBtn.addEventListener('click', () => requestClose(input.value));
     cancelBtn.addEventListener('click', () => requestClose(null));
     dialog.addEventListener('click', (e) => {
-      if (e.target === dialog) requestClose(null);
+      if (isBackdropClick(dialog, e)) requestClose(null);
     });
     dialog.addEventListener('cancel', (e) => {
       e.preventDefault();
