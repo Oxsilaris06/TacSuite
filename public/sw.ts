@@ -36,6 +36,8 @@ import {
     isTileRequest,
     shouldSkipWaitingOnInstall,
     serveFromNetwork,
+    NAV_NETWORK_TIMEOUT_MS,
+    withTimeout,
 } from '../src/shared/sw-routes.js';
 
 declare const self: ServiceWorkerGlobalScope;
@@ -160,11 +162,15 @@ self.addEventListener('fetch', (event) => {
         (async () => {
             try {
                 // navigationPreload : réponse pré-lancée par le navigateur en parallèle.
-                const preloadResp = await event.preloadResponse;
+                // Un seul délai pour le préchargement et la requête : au-delà, la
+                // copie précachée (catch ci-dessous), comme hors ligne.
+                const deadline = Date.now() + NAV_NETWORK_TIMEOUT_MS;
+                const left = (): number => Math.max(0, deadline - Date.now());
+                const preloadResp = (await withTimeout(Promise.resolve(event.preloadResponse), left())) as Response | undefined;
                 // A13 — une erreur serveur (5xx) n'est pas une page : la copie
                 // précachée prend le relais, comme hors ligne.
                 if (preloadResp && serveFromNetwork(preloadResp.status)) return preloadResp;
-                const net = await fetch(req);
+                const net = await withTimeout(fetch(req), left());
                 if (serveFromNetwork(net.status)) return net;
                 throw new Error(`HTTP ${net.status}`);
             } catch {

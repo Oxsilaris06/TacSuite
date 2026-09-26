@@ -74,3 +74,21 @@ export function shouldSkipWaitingOnInstall(hasActiveWorker: boolean, hasProtocol
 export function serveFromNetwork(status: number): boolean {
     return status < 500;
 }
+
+/**
+ * Audit du 26/09 — délai laissé au réseau pour une navigation. Au-delà, la
+ * copie précachée est servie : sur un réseau qui répond à peine (une barre en
+ * zone rurale), la page restait blanche jusqu'au délai du navigateur.
+ */
+export const NAV_NETWORK_TIMEOUT_MS = 3000;
+
+/** `p`, ou un rejet « délai dépassé » au bout de `ms`. */
+export function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error(`délai réseau dépassé (${ms} ms)`)), ms);
+        p.then(
+            (v) => { clearTimeout(timer); resolve(v); },
+            (e: unknown) => { clearTimeout(timer); reject(e instanceof Error ? e : new Error(String(e))); },
+        );
+    });
+}
