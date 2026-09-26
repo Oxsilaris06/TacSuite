@@ -26,14 +26,15 @@ Un OI exporté s'importe dans PC-Tac.
 Pas de compte : ce que vous saisissez reste dans le navigateur de l'appareil utilisé. Pour transmettre un travail, exportez son archive.
 
 Passent par le réseau :
-- les fonds de carte et la recherche d'adresse ;
-- les lignes électriques : l'emprise de la zone affichée ou téléchargée est envoyée à OpenStreetMap (Overpass) et à Enedis ;
+- les fonds de carte ;
+- la recherche d'adresse : le texte saisi seulement, jamais des coordonnées ;
+- les lignes électriques, seulement si vous affichez leur couche : l'emprise de la zone est alors envoyée à OpenStreetMap (Overpass) et à Enedis ;
 - la note de version du portail, lue sur GitHub ;
 - si vous l'activez, le suivi d'équipe (Tchap ou relais OsmAnd).
 
 ## Hors ligne et sur téléphone
 
-Ouvrez une fois en ligne chaque application (PC-Tac et Générateur d'OI) : elles s'ouvrent ensuite sans réseau. Téléchargez à l'avance les zones de carte utiles.
+Une première visite en ligne suffit, même du seul portail : PC-Tac et le Générateur d'OI s'ouvrent ensuite sans réseau. Téléchargez à l'avance les zones de carte utiles.
 
 Pour installer TacSuite comme une application : sur Android et sur ordinateur, menu du navigateur puis « Installer » ou « Ajouter à l'écran d'accueil » ; sur iPhone, bouton Partager puis « Sur l'écran d'accueil ».
 
