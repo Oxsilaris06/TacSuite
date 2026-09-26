@@ -96,7 +96,7 @@ import { attachPinGestures, createDblZoomSuppressor } from '@shared/pin-gestures
 import type { PinGestureHandle } from '@shared/pin-gestures.js';
 import { esc } from '@shared/ui-platform.js';
 
-import { OI_PIN_DEFS, OI_PIN_FALLBACK, oiIconForMember } from './constants.js';
+import { OI_PIN_DEFS, OI_PIN_FALLBACK, oiIconForMember, queryShapeFeatures } from './constants.js';
 import type { LngLatObj, OICartoInternal, OiCartoPendingPin, OiCartoPin, OiCartoPinKind } from './types.js';
 import { OIWheel } from './wheel.js';
 
@@ -810,9 +810,7 @@ export const PinsMethods = {
         };
         const isOnFeature = (point: PointLike): boolean => {
             try {
-                return map.queryRenderedFeatures(point, {
-                    layers: ['oi-carto-shapes-fill', 'oi-carto-shapes-line'],
-                }).length > 0;
+                return queryShapeFeatures(map, point).length > 0;
             } catch { return false; } // couches pas encore posées (avant _initDrawingLayers)
         };
         const showRing = (clientX: number, clientY: number): HTMLDivElement => {

@@ -64,6 +64,7 @@ function makeFakeMap() {
         unproject: vi.fn((p: [number, number]) => ({ lng: p[0] / 100, lat: p[1] / 100 })),
         getCanvas: vi.fn(() => canvas),
         queryRenderedFeatures: vi.fn((): { properties: Record<string, unknown> }[] => []),
+        getLayer: vi.fn((): unknown => ({})),
         on: vi.fn(),
         off: vi.fn(),
         dragPan: { enable: vi.fn(), disable: vi.fn() },
@@ -446,6 +447,22 @@ describe('_bindShapeEditGestures — désélection', () => {
         m.queryRenderedFeatures.mockReturnValue([]);
         onClick({ point: { x: 10, y: 10 } });
 
+        expect(fake._selectedShapeId).toBeNull();
+    });
+
+    it('fond de carte en cours de changement (couches formes absentes) : aucune requête, donc aucune erreur MapLibre', () => {
+        // Constat : « The layer 'oi-carto-shapes-fill' does not exist » après
+        // un changement de fond — queryRenderedFeatures journalise une erreur
+        // par couche absente (il ne jette pas : le try ne la voyait pas).
+        const rect: OiCartoShape = { id: 'r1', type: 'rectangle', color: '#ef4444', coords: RECT_COORDS };
+        const { fake, map } = makeFakeThis({ shapes: [rect] });
+        const m = assertNonNull(map);
+        fake._bindShapeEditGestures();
+        fake._selectShape('r1');
+        m.getLayer.mockReturnValue(undefined);
+        const clickCall = m.on.mock.calls.find(c => c[0] === 'click' && typeof c[1] === 'function');
+        (assertNonNull(clickCall)[1] as (e: unknown) => void)({ point: { x: 10, y: 10 } });
+        expect(m.queryRenderedFeatures).not.toHaveBeenCalled();
         expect(fake._selectedShapeId).toBeNull();
     });
 

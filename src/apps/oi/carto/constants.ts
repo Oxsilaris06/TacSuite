@@ -13,7 +13,7 @@
  * (lecture seule).
  */
 
-import type { StyleSpecification } from 'maplibre-gl';
+import type { Map as MaplibreMap, MapGeoJSONFeature, PointLike, StyleSpecification } from 'maplibre-gl';
 
 /* =====================================================================
  * OVERLAYS IGN — LiDAR HD (ombrages) + fond Plan IGN couleur + courbes de
@@ -340,3 +340,16 @@ export const OI_ICON_CATALOG: { id: string; label: string }[] = [
     { id: 'crisis_alert', label: 'Menace' },
     { id: 'videocam', label: 'Caméra' },
 ];
+
+/** Couches des formes dessinées (draw.ts::_initDrawingLayers). */
+export const OI_SHAPE_LAYERS = ['oi-carto-shapes-fill', 'oi-carto-shapes-line'];
+
+/**
+ * Formes sous `point`, sur les seules couches présentes. Après un changement
+ * de fond, elles manquent jusqu'à leur recréation : MapLibre journalise
+ * alors une erreur par couche absente (sans jeter).
+ */
+export function queryShapeFeatures(map: Pick<MaplibreMap, 'getLayer' | 'queryRenderedFeatures'>, point: PointLike): MapGeoJSONFeature[] {
+    const layers = OI_SHAPE_LAYERS.filter((id) => map.getLayer(id));
+    return layers.length ? map.queryRenderedFeatures(point, { layers }) : [];
+}
