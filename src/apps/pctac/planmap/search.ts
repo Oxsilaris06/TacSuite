@@ -14,6 +14,8 @@
  * dépendance PC-Tac. `fetch` est injecté avec `globalThis.fetch` par défaut.
  */
 
+import { looksLikeCoordinates } from '@shared/coords.js';
+
 /** Endpoint BAN (Géoplateforme IGN). */
 export const BAN_ENDPOINT = 'https://data.geopf.fr/geocodage/search';
 /** Endpoint de repli (hors France, ou BAN indisponible). */
@@ -125,7 +127,9 @@ export async function geocodeAddress(
     timeoutMs: number = GEOCODE_TIMEOUT_MS,
 ): Promise<GeocodeHit[]> {
     const query = q.trim();
-    if (!query) return [];
+    // Des coordonnées ne partent jamais au géocodage : la position ne serait
+    // révélée à l'IGN ou à Nominatim sans nécessité (Nico 2026-09-26).
+    if (!query || looksLikeCoordinates(query)) return [];
     // B4 — résultats BAN sous le seuil : gardés en repli, marqués `weak`.
     let weak: GeocodeHit[] = [];
     try {

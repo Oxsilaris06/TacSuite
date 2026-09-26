@@ -289,15 +289,20 @@ export const AoiMethods = {
         } catch { /* persistance non bloquante */ }
 
         // Lignes électriques de la zone (décision Nico 2026-09-24 : gardées dans
-        // le pack hors ligne). Non bloquant : un échec Overpass n'annule pas le pack.
+        // le pack hors ligne), SEULEMENT si leur couche est affichée : sinon
+        // l'emprise de la zone partirait vers Overpass et Enedis sans
+        // nécessité pour la carte (Nico 2026-09-26, jamais). Non bloquant : un
+        // échec Overpass n'annule pas le pack.
         let powerNote = '';
-        try {
-            ui.setLabel('Lignes électriques de la zone…');
-            const pw = await prefetchPowerLines(bbox);
-            powerNote = pw === null ? ' Lignes électriques : zone trop grande, non préchargées.'
-                : pw.missing ? ` Lignes électriques : ${pw.missing} tuile(s) indisponible(s), relance pour compléter.`
-                : ' Lignes électriques incluses.';
-        } catch { powerNote = ' Lignes électriques non préchargées (réseau).'; }
+        if (this.overlays?.state.powerOn) {
+            try {
+                ui.setLabel('Lignes électriques de la zone…');
+                const pw = await prefetchPowerLines(bbox);
+                powerNote = pw === null ? ' Lignes électriques : zone trop grande, non préchargées.'
+                    : pw.missing ? ` Lignes électriques : ${pw.missing} tuile(s) indisponible(s), relance pour compléter.`
+                    : ' Lignes électriques incluses.';
+            } catch { powerNote = ' Lignes électriques non préchargées (réseau).'; }
+        }
 
         if (result.fail === 0) {
             ui.setLabel(`Zone téléchargée : ${result.ok.toLocaleString('fr-FR')} tuiles en cache hors-ligne.${powerNote}`);

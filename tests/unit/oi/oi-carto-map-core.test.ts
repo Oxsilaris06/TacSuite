@@ -950,6 +950,32 @@ describe('_searchAddress (oi_cartographie.js:567-612)', () => {
         expect(fetchSpy).not.toHaveBeenCalled();
     });
 
+    it('DMS ou MGRS lus sur place : centrage sans aucun appel réseau (position jamais révélée)', async () => {
+        const input = document.getElementById('oi_carto_address_input') as HTMLInputElement;
+        const fetchSpy = vi.fn();
+        vi.stubGlobal('fetch', fetchSpy);
+        for (const q of [`48°51'24"N 2°21'08"E`, '31U DQ 52237 12345']) {
+            const flyTo = vi.fn();
+            const fake = makeFakeThis({ map: { flyTo } as unknown as OICartoInternal['map'] });
+            input.value = q;
+            await MapCoreMethods._searchAddress.call(fake);
+            expect(flyTo).toHaveBeenCalledTimes(1);
+        }
+        expect(fetchSpy).not.toHaveBeenCalled();
+    });
+
+    it('coordonnées illisibles : rien n’est envoyé, le message le dit', async () => {
+        const input = document.getElementById('oi_carto_address_input') as HTMLInputElement;
+        input.value = '48°99 N 2';
+        const fetchSpy = vi.fn();
+        vi.stubGlobal('fetch', fetchSpy);
+
+        await MapCoreMethods._searchAddress.call(makeFakeThis());
+
+        expect(fetchSpy).not.toHaveBeenCalled();
+        expect(document.getElementById('oi_carto_search_results')?.textContent).toMatch(/Coordonnées non reconnues.*Rien n'a été envoyé/);
+    });
+
     it('champ vide (espaces) ⇒ ne fetch pas', async () => {
         const input = document.getElementById('oi_carto_address_input') as HTMLInputElement;
         input.value = '   ';

@@ -114,6 +114,12 @@ describe('search — geocodeAddress : BAN d’abord, Nominatim en repli', () => 
     it('requête vide → aucun appel réseau', async () => {
         const fetchImpl = vi.fn();
         await expect(geocodeAddress('   ', fetchImpl as unknown as FetchLike, 0)).resolves.toEqual([]);
+    });
+
+    it('des coordonnées illisibles ne partent jamais au géocodage (position non révélée)', async () => {
+        const fetchImpl = vi.fn();
+        await expect(geocodeAddress('48 51 N 2 21', fetchImpl as unknown as FetchLike, 0)).resolves.toEqual([]);
+        expect(fetchImpl).not.toHaveBeenCalled();
         expect(fetchImpl).not.toHaveBeenCalled();
     });
 });
