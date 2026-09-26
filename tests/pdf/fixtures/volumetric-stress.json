@@ -118,20 +118,20 @@
       "KODIAQ BANA"
     ],
     "colonne_progression_order": [
-      "GRD",
-      "RTI",
-      "GLS",
-      "MHX",
-      "PRC",
-      "PPR"
+      "ALF",
+      "BRV",
+      "CHL",
+      "DLT",
+      "KLO",
+      "GLF"
     ],
     "ordre_penetration_order": [
-      "GRD",
-      "RTI",
-      "GLS",
-      "MHX",
-      "PRC",
-      "PPR"
+      "ALF",
+      "BRV",
+      "CHL",
+      "DLT",
+      "KLO",
+      "GLF"
     ],
     "adversaries": [
       {
@@ -634,9 +634,9 @@
         "cat": "CAT ZMSPCP 1 : mesure operationnelle detaillee decrivant une consigne precise a appliquer sur zone, avec rappel des conditions de declenchement et des criteres de repli immediat en cas d'opposition franche. Rappel de coordination : maintenir la liaison radio permanente avec le poste de commandement tactique et rendre compte de toute anomalie sonore ou lumineuse constatee a proximite immediate du dispositif. Point de vigilance 1 : ne jamais engager seul une action hors zone de couverture directe, conserver une distance de securite suffisante et anticiper les axes de fuite pietons et vehicules environnants. CAT ZMSPCP 1 : mesure operationnelle detaillee decrivant une consigne precise a appliquer sur zone, avec rappel des conditions de declenchement et des criteres de repli immediat en cas d'opposition franche. Rappel de coordination : maintenir la liaison radio permanente avec le poste de commandement tactique et rendre compte de toute anomalie sonore ou lumineuse constatee a proximite immediate du dispositif. Point de vigilance 1 : ne jamais engager seul une action hors zone de couverture directe, conserver  TOK1-HU7KXAN0DQ3GT6JW9MZCP2FS5IV8LYBO1ER4HU7KXAN0DQ3GT6JW9MZ https://exemple-test-1.example.com//chemin//sous-chemin//ressource-identifiant-1-longue-suite-de-caracteres-pour-tester-le-cesurage une distance de securite suffisante et anticiper les axes de fuite pietons et vehicules environnants. CAT ZMSPCP 1 : mesure operationnelle detaillee decrivant une consigne precise a appliquer sur zone, avec rappel des conditions de declenchement et des criteres de repli immediat en cas d'opposition franche. Rappel de coordination : maintenir la liaison radio permanente avec le poste de commandement tactique et rendre compte de toute anomalie sonore ou lumineuse constatee a proximite immediate du dispositif. Point de vigilance 1 : ne jamais engager seul une action hors zone de couverture directe, conserver une distance de securite suffisante et anticiper les axes de fuite pietons et vehicules environnants. CAT ZMSPCP 1 : mesure operationnelle detaillee decrivant une consigne precise a appliquer sur zone, avec rappel des conditions de declenchement et des criteres de.",
         "place_chef": "Angle Nord-Est du batiment B.",
         "members": [
-          "GRD",
-          "RTI",
-          "GLS"
+          "ALF",
+          "BRV",
+          "CHL"
         ]
       },
       {
@@ -649,9 +649,9 @@
         "cat": "CAT ZMSPCP 2 : mesure operationnelle detaillee decrivant une consigne precise a appliquer sur zone, avec rappel des conditions de declenchement et des criteres de repli immediat en cas d'opposition franche. Rappel de coordination : maintenir la liaison radio permanente avec le poste de commandement tactique et rendre compte de toute anomalie sonore ou lumineuse constatee a proximite immediate du dispositif. Point de vigilance 2 : ne jamais engager seul une action hors zone de couverture directe, conserver une distance de securite suffisante et anticiper les axes de fuite pietons et vehicules environnants. CAT ZMSPCP 2 : mesure operationnelle detaillee decrivant une consigne precise a appliquer sur zone, avec rappel des conditions de declenchement et des criteres de repli immediat en cas d'opposition franche. Rappel de coordination : maintenir la liaison radio permanente avec le poste de commandement tactique et rendre compte de toute anomalie sonore ou lumineuse constatee a proximite immediate du dispositif. Point de vigilance 2 : ne jamais engager seul une action hors zone de couverture directe, conserver  TOK2-O1ER4HU7KXAN0DQ3GT6JW9MZCP2FS5IV8LYBO1ER4HU7KXAN0DQ3GT6 https://exemple-test-2.example.com//chemin//sous-chemin//ressource-identifiant-2-longue-suite-de-caracteres-pour-tester-le-cesurage une distance de securite suffisante et anticiper les axes de fuite pietons et vehicules environnants. CAT ZMSPCP 2 : mesure operationnelle detaillee decrivant une consigne precise a appliquer sur zone, avec rappel des conditions de declenchement et des criteres de repli immediat en cas d'opposition franche. Rappel de coordination : maintenir la liaison radio permanente avec le poste de commandement tactique et rendre compte de toute anomalie sonore ou lumineuse constatee a proximite immediate du dispositif. Point de vigilance 2 : ne jamais engager seul une action hors zone de couverture directe, conserver une distance de securite suffisante et anticiper les axes de fuite pietons et vehicules environnants. CAT ZMSPCP 2 : mesure operationnelle detaillee decrivant une consigne precise a appliquer sur zone, avec rappel des conditions de declenchement et des criteres de.",
         "place_chef": "Angle Nord-Est du batiment B.",
         "members": [
-          "GRD",
-          "RTI",
-          "GLS"
+          "ALF",
+          "BRV",
+          "CHL"
         ]
       }
     ],
@@ -666,9 +666,9 @@
         "cat": "CAT MOICP 1 : mesure operationnelle detaillee decrivant une consigne precise a appliquer sur zone, avec rappel des conditions de declenchement et des criteres de repli immediat en cas d'opposition franche. Rappel de coordination : maintenir la liaison radio permanente avec le poste de commandement tactique et rendre compte de toute anomalie sonore ou lumineuse constatee a proximite immediate du dispositif. Point de vigilance 1 : ne jamais engager seul une action hors zone de couverture directe, conserver une distance de securite suffisante et anticiper les axes de fuite pietons et vehicules environnants. CAT MOICP 1 : mesure operationnelle detaillee decrivant une consigne precise a appliquer sur zone, avec rappel des conditions de declenchement et des criteres de repli immediat en cas d'opposition franche. Rappel de coordination : maintenir la liaison radio permanente avec le poste de commandement tactique et rendre compte de toute anomalie sonore ou lumineuse constatee a proximite immediate du dispositif. Point de vigilance 1 : ne jamais engager seul une action hors zone de couverture directe, conserver  TOK1-HU7KXAN0DQ3GT6JW9MZCP2FS5IV8LYBO1ER4HU7KXAN0DQ3GT6JW9MZ https://exemple-test-1.example.com//chemin//sous-chemin//ressource-identifiant-1-longue-suite-de-caracteres-pour-tester-le-cesurage une distance de securite suffisante et anticiper les axes de fuite pietons et vehicules environnants. CAT MOICP 1 : mesure operationnelle detaillee decrivant une consigne precise a appliquer sur zone, avec rappel des conditions de declenchement et des criteres de repli immediat en cas d'opposition franche. Rappel de coordination : maintenir la liaison radio permanente avec le poste de commandement tactique et rendre compte de toute anomalie sonore ou lumineuse constatee a proximite immediate du dispositif. Point de vigilance 1 : ne jamais engager seul une action hors zone de couverture directe, conserver une distance de securite suffisante et anticiper les axes de fuite pietons et vehicules environnants. CAT MOICP 1 : mesure operationnelle detaillee decrivant une consigne precise a appliquer sur zone, avec rappel des conditions de declenchement et des criteres de repli.",
         "place_chef": "Palier du 3e etage, batiment B.",
         "members": [
-          "MHX",
-          "PRC",
-          "PPR"
+          "DLT",
+          "KLO",
+          "GLF"
         ]
       },
       {
@@ -681,9 +681,9 @@
         "cat": "CAT MOICP 2 : mesure operationnelle detaillee decrivant une consigne precise a appliquer sur zone, avec rappel des conditions de declenchement et des criteres de repli immediat en cas d'opposition franche. Rappel de coordination : maintenir la liaison radio permanente avec le poste de commandement tactique et rendre compte de toute anomalie sonore ou lumineuse constatee a proximite immediate du dispositif. Point de vigilance 2 : ne jamais engager seul une action hors zone de couverture directe, conserver une distance de securite suffisante et anticiper les axes de fuite pietons et vehicules environnants. CAT MOICP 2 : mesure operationnelle detaillee decrivant une consigne precise a appliquer sur zone, avec rappel des conditions de declenchement et des criteres de repli immediat en cas d'opposition franche. Rappel de coordination : maintenir la liaison radio permanente avec le poste de commandement tactique et rendre compte de toute anomalie sonore ou lumineuse constatee a proximite immediate du dispositif. Point de vigilance 2 : ne jamais engager seul une action hors zone de couverture directe, conserver  TOK2-O1ER4HU7KXAN0DQ3GT6JW9MZCP2FS5IV8LYBO1ER4HU7KXAN0DQ3GT6 https://exemple-test-2.example.com//chemin//sous-chemin//ressource-identifiant-2-longue-suite-de-caracteres-pour-tester-le-cesurage une distance de securite suffisante et anticiper les axes de fuite pietons et vehicules environnants. CAT MOICP 2 : mesure operationnelle detaillee decrivant une consigne precise a appliquer sur zone, avec rappel des conditions de declenchement et des criteres de repli immediat en cas d'opposition franche. Rappel de coordination : maintenir la liaison radio permanente avec le poste de commandement tactique et rendre compte de toute anomalie sonore ou lumineuse constatee a proximite immediate du dispositif. Point de vigilance 2 : ne jamais engager seul une action hors zone de couverture directe, conserver une distance de securite suffisante et anticiper les axes de fuite pietons et vehicules environnants. CAT MOICP 2 : mesure operationnelle detaillee decrivant une consigne precise a appliquer sur zone, avec rappel des conditions de declenchement et des criteres de repli.",
         "place_chef": "Palier du 3e etage, batiment B.",
         "members": [
-          "MHX",
-          "PRC",
-          "PPR"
+          "DLT",
+          "KLO",
+          "GLF"
         ]
       }
     ],
@@ -791,7 +791,7 @@
         "vehicle": "SHARAN",
         "members": [
           {
-            "trigramme": "GRD",
+            "trigramme": "ALF",
             "fonction": "Chef inter",
             "cellule": "India 1",
             "principales": "UMP9",
@@ -805,7 +805,7 @@
             "dir": ""
           },
           {
-            "trigramme": "RTI",
+            "trigramme": "BRV",
             "fonction": "Inter",
             "cellule": "India 1",
             "principales": "G36",
@@ -819,7 +819,7 @@
             "dir": ""
           },
           {
-            "trigramme": "GLS",
+            "trigramme": "CHL",
             "fonction": "Sans",
             "cellule": "India 1",
             "principales": "FAP",
@@ -838,7 +838,7 @@
         "vehicle": "KODIAQ BANA",
         "members": [
           {
-            "trigramme": "MHX",
+            "trigramme": "DLT",
             "fonction": "Chef dispo",
             "cellule": "India 2",
             "principales": "UMP9",
@@ -852,7 +852,7 @@
             "dir": ""
           },
           {
-            "trigramme": "PRC",
+            "trigramme": "KLO",
             "fonction": "Inter",
             "cellule": "India 2",
             "principales": "G36",
@@ -866,7 +866,7 @@
             "dir": ""
           },
           {
-            "trigramme": "PPR",
+            "trigramme": "GLF",
             "fonction": "Sans",
             "cellule": "India 2",
             "principales": "FAP",

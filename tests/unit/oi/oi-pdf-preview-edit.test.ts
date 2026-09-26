@@ -206,7 +206,7 @@ describe('resolveEditCandidates', () => {
         const btn = document.createElement('button');
         btn.className = 'patracdvr-member-btn';
         btn.dataset.trigramme = 'GHI';
-        btn.dataset.dir = 'PSIG ANTIBES';
+        btn.dataset.dir = 'PSIG LAVILLE';
         form.appendChild(btn);
 
         // Même sélecteur, même rang (0, implicite) — SEUL le datasetKey diffère,
@@ -214,7 +214,7 @@ describe('resolveEditCandidates', () => {
         // vs `patracMemberDatasetAnchor('GHI', 'dir', …)` (document-builder.ts).
         const candidates = resolveEditCandidates([
             { selector: '.patracdvr-member-btn', index: 0, value: 'GHI', kind: 'dataset', datasetKey: 'trigramme' },
-            { selector: '.patracdvr-member-btn', index: 0, value: 'PSIG ANTIBES', kind: 'dataset', datasetKey: 'dir' },
+            { selector: '.patracdvr-member-btn', index: 0, value: 'PSIG LAVILLE', kind: 'dataset', datasetKey: 'dir' },
         ]);
 
         // AVANT LE CORRECTIF : size === 1 (les 2 ancrages collisionnaient sur
@@ -700,9 +700,9 @@ describe('attachEditableTextLayer', () => {
 
     it('un fragment plausible pour PLUSIEURS ancrages de valeurs DIFFÉRENTES (préfixe commun) est ignoré — ambigu, aucune zone posée pour aucun des deux, sans corrompre les ancrages suivants', async () => {
         const form = buildForm();
-        addField(form, 'p', 'PSIG GILETTE');
+        addField(form, 'p', 'PSIG TESTVIL');
         addField(form, 'q', 'PSIG ALPHA');
-        const state = createEditMatchState([anchor('#p', 'PSIG GILETTE'), anchor('#q', 'PSIG ALPHA')]);
+        const state = createEditMatchState([anchor('#p', 'PSIG TESTVIL'), anchor('#q', 'PSIG ALPHA')]);
         const { pageEl, overlay } = buildPageEl(1);
         const page = fakePage([
             { str: 'PSIG', transform: [1, 0, 0, 1, 10, 50], width: 20, height: 12 }, // préfixe commun aux 2 ancrages : ambigu
@@ -735,14 +735,14 @@ describe('attachEditableTextLayer', () => {
 
     it('un fragment situé dans la marge basse (pied de page, position verticale) ne consomme JAMAIS un ancrage — même si son texte prolongerait la valeur attendue', async () => {
         const form = buildForm();
-        addField(form, 'amies', 'PSIG GILETTE');
-        const state = createEditMatchState([anchor('#amies', 'PSIG GILETTE')]);
+        addField(form, 'amies', 'PSIG TESTVIL');
+        const state = createEditMatchState([anchor('#amies', 'PSIG TESTVIL')]);
         const { pageEl, overlay } = buildPageEl(1);
         // Seuil de pied de page ABSOLU (FOOTER_ZONE_PT), indépendant de la hauteur de page — le viewport par défaut suffit.
         const viewport = fakeViewport();
         const page = fakePage([
-            { str: 'PSIG GILETTE', transform: [1, 0, 0, 1, 10, 5], width: 60, height: 10 }, // pied de page (y=5 < FOOTER_ZONE_PT=34)
-            { str: 'PSIG GILETTE', transform: [1, 0, 0, 1, 10, 90], width: 60, height: 10 }, // corps
+            { str: 'PSIG TESTVIL', transform: [1, 0, 0, 1, 10, 5], width: 60, height: 10 }, // pied de page (y=5 < FOOTER_ZONE_PT=34)
+            { str: 'PSIG TESTVIL', transform: [1, 0, 0, 1, 10, 90], width: 60, height: 10 }, // corps
         ]);
 
         await attachEditableTextLayer(page, pageEl, overlay, viewport, 1, state, vi.fn(async () => {}));
@@ -904,22 +904,22 @@ describe("commitEdit — chemin dataset (pastilles/boutons PATRACDVR)", () => {
         expect(overlay.querySelector('.pdf-edit-input')).toBeNull();
     });
 
-    it("RÉGRESSION end-to-end (mesure navigateur RÉEL, campagne PATRACDVR — cas exact mesuré : trigramme 'GHI' + dir 'PSIG ANTIBES' du MÊME membre) — cliquer le fragment DIR ouvre l'éditeur DIR (jamais le trigramme), et réciproquement, même si les 2 ancrages partagent sélecteur et rang", async () => {
-        const btn = patracMemberEl('GHI', 'PSIG ANTIBES');
+    it("RÉGRESSION end-to-end (mesure navigateur RÉEL, campagne PATRACDVR — cas exact mesuré : trigramme 'GHI' + dir 'PSIG LAVILLE' du MÊME membre) — cliquer le fragment DIR ouvre l'éditeur DIR (jamais le trigramme), et réciproquement, même si les 2 ancrages partagent sélecteur et rang", async () => {
+        const btn = patracMemberEl('GHI', 'PSIG LAVILLE');
         window.updateMemberButtonVisuals = vi.fn();
         window.updateArticulationDisplay = vi.fn();
         const state = createEditMatchState([
             { selector: '.patracdvr-member-btn', index: 0, value: 'GHI', kind: 'dataset', datasetKey: 'trigramme' },
-            { selector: '.patracdvr-member-btn', index: 0, value: 'PSIG ANTIBES', kind: 'dataset', datasetKey: 'dir' },
+            { selector: '.patracdvr-member-btn', index: 0, value: 'PSIG LAVILLE', kind: 'dataset', datasetKey: 'dir' },
         ]);
         const { pageEl, overlay } = buildPageEl(1);
         // Reproduit le découpage RÉEL observé (pdf.js, page PATRACDVR) : le
         // trigramme est UN fragment, la valeur DIR est scindée en 2 (« PSIG »
-        // puis « ANTIBES ») — cf. capture navigateur réel, frag-dump page 14.
+        // puis « LAVILLE ») — cf. capture navigateur réel, frag-dump page 14.
         const page = fakePage([
             { str: 'GHI', transform: [1, 0, 0, 1, 10, 50], width: 20, height: 12 },
             { str: 'PSIG', transform: [1, 0, 0, 1, 200, 50], width: 30, height: 12 },
-            { str: 'ANTIBES', transform: [1, 0, 0, 1, 240, 50], width: 40, height: 12 },
+            { str: 'LAVILLE', transform: [1, 0, 0, 1, 240, 50], width: 40, height: 12 },
         ]);
         const regenerate = vi.fn(async () => {});
 
@@ -927,14 +927,14 @@ describe("commitEdit — chemin dataset (pastilles/boutons PATRACDVR)", () => {
         expect(state.stats.anchorsResolved).toBe(2); // trigramme ET dir, tous deux résolus (pas une seule entrée partagée)
 
         const hits = overlay.querySelectorAll<HTMLButtonElement>('.pdf-edit-hit');
-        expect(hits).toHaveLength(3); // 1 (GHI) + 2 (PSIG, ANTIBES — même champ dir)
+        expect(hits).toHaveLength(3); // 1 (GHI) + 2 (PSIG, LAVILLE — même champ dir)
 
-        const dirHit = Array.from(hits).find((h) => h.getAttribute('aria-label')?.includes('ANTIBES'));
-        if (!dirHit) throw new Error('zone DIR (ANTIBES) absente');
+        const dirHit = Array.from(hits).find((h) => h.getAttribute('aria-label')?.includes('LAVILLE'));
+        if (!dirHit) throw new Error('zone DIR (LAVILLE) absente');
         dirHit.click();
         const dirEditor = overlay.querySelector<HTMLInputElement>('.pdf-edit-input');
         if (!dirEditor) throw new Error('éditeur DIR absent');
-        expect(dirEditor.value).toBe('PSIG ANTIBES'); // JAMAIS 'GHI' — cf. régression mesurée
+        expect(dirEditor.value).toBe('PSIG LAVILLE'); // JAMAIS 'GHI' — cf. régression mesurée
         dirEditor.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
         dirEditor.dispatchEvent(new Event('blur'));
 
@@ -943,12 +943,12 @@ describe("commitEdit — chemin dataset (pastilles/boutons PATRACDVR)", () => {
         trigHit.click();
         const trigEditor = overlay.querySelector<HTMLInputElement>('.pdf-edit-input');
         if (!trigEditor) throw new Error('éditeur trigramme absent');
-        expect(trigEditor.value).toBe('GHI'); // JAMAIS 'PSIG ANTIBES'
+        expect(trigEditor.value).toBe('GHI'); // JAMAIS 'PSIG LAVILLE'
         trigEditor.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
         trigEditor.dispatchEvent(new Event('blur'));
 
         expect(btn.dataset.trigramme).toBe('GHI'); // rien commité (Échap dans les 2 cas) — champ toujours intact
-        expect(btn.dataset.dir).toBe('PSIG ANTIBES');
+        expect(btn.dataset.dir).toBe('PSIG LAVILLE');
         expect(regenerate).not.toHaveBeenCalled();
     });
 });

@@ -67,7 +67,7 @@ function cas(): PatracDocInput {
             vehicle: 'SHARAN-BANALISÉ-LONG',
             members: [
                 member({ trigramme: 'TAA', fonction: 'Chef de bord', principales: 'HK416A5, UMP9, Benelli M4', tenue: 'Tenue d’intervention, Gilet-porte-plaques-lourd' }),
-                member({ trigramme: 'TBA', equipement: 'Bélier œil-de-bœuf 250 €', dir: 'PSIG-GILETTE-SUD' }),
+                member({ trigramme: 'TBA', equipement: 'Bélier œil-de-bœuf 250 €', dir: 'PSIG-TESTVIL-SUD' }),
                 member({ trigramme: 'TCA' }),
             ],
         },
@@ -124,7 +124,7 @@ describe('PDF PATRACDVR séparé — rendu pdfmake avec les polices de l’OI', 
     it('adapte les colonnes : aucun mot coupé ni sorti du tableau', async () => {
         const all = await pages(await render(cas()));
         const words = all.flatMap((items) => pageText(items).split(' '));
-        for (const w of ['Gilet-porte-plaques-lourd', 'PSIG-GILETTE-SUD', 'HK416A5', 'd’intervention']) {
+        for (const w of ['Gilet-porte-plaques-lourd', 'PSIG-TESTVIL-SUD', 'HK416A5', 'd’intervention']) {
             expect(words).toContain(w);
         }
         const right = A4_LANDSCAPE_WIDTH - 20;
@@ -139,7 +139,7 @@ describe('PDF PATRACDVR séparé — rendu pdfmake avec les polices de l’OI', 
         for (const it of all.flat()) expect(it.x + it.width).toBeLessThanOrEqual(A4_LANDSCAPE_WIDTH - 20);
         // Seul le mot démesuré est coupé : les autres restent entiers.
         const words = all.flatMap((items) => pageText(items).split(' '));
-        for (const w of ['PSIG-GILETTE-SUD', 'FONCTION', 'CELLULE', 'Équipier']) expect(words).toContain(w);
+        for (const w of ['PSIG-TESTVIL-SUD', 'FONCTION', 'CELLULE', 'Équipier']) expect(words).toContain(w);
         expect(words.filter((w) => w === 'Gilet-porte-plaques-lourd')).toHaveLength(2);
     });
 });

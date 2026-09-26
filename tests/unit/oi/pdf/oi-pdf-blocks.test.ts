@@ -215,7 +215,7 @@ describe('grid2 (OrderPdfStyle.kt:115-116, T7)', () => {
 
 describe('pill (OrderPdfStyle.kt:137-139, T11/T12)', () => {
     it('table 1x1 avec bordure accent', () => {
-        const result = pill('MHX', p) as ContentTable;
+        const result = pill('DLT', p) as ContentTable;
         expect(result.table.body).toHaveLength(1);
         expect(result.layout).toBe(LAYOUT_PILL);
     });

@@ -914,7 +914,7 @@ export async function attachEditableTextLayer(
      * parallèle tant qu'un fragment commun ne les a pas départagées (cf.
      * JSDoc de fichier, garantie 1 : pdf.js émet le texte MOT PAR MOT, deux
      * valeurs voisines de la fenêtre peuvent partager un premier mot — ex.
-     * mesuré « Depart GILETTE » / « Depart LE », deux événements de
+     * mesuré « Depart TESTVIL » / « Depart LE », deux événements de
      * chronologie DIFFÉRENTS commençant tous deux par « Depart »). Vide =
      * aucune reconstruction en cours. Portée à CETTE page (jamais rejouée
      * d'une page à l'autre, cf. JSDoc `EditMatchState`).
@@ -941,7 +941,7 @@ export async function attachEditableTextLayer(
         // DIFFÉRENTES restent en lice, même si l'un d'eux égale déjà sa cible
         // (un frère encore viable pourrait continuer au fragment suivant : ex.
         // « Depart » seul NE DOIT PAS trancher entre « Depart » et « Depart
-        // GILETTE » avant d'avoir vu si un mot de plus suit).
+        // TESTVIL » avant d'avoir vu si un mot de plus suit).
         if ((list.length === 1 || allIdentical) && fullMatch) {
             const winner = list.reduce((a, b) => (a.index <= b.index ? a : b));
             resolveAnchor(state, winner.index, fragIdxs, items, viewport, dpr, pageNumber, overlay, regenerate);

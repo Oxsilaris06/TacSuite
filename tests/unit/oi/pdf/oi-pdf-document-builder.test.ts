@@ -325,7 +325,7 @@ describe('buildOiDocDefinition — finalisation (§4 SPEC-2026-08-18-pdf-et-cham
     // jamais ») — l'ajout des cartes UDA/Place du Chef de Dispo (§4.1/§4.2)
     // au-dessus a fait déborder « 7. CONDUITES À TENIR GÉNÉRALES » sur une
     // page orpheline sans titre (reproduit sur données réelles,
-    // /home/nico/Bureau/OI-Archive-ANONYME.oi.zip : le champ Liaison finissait
+    // une archive d’OI réelle anonymisée, hors dépôt : le champ Liaison finissait
     // scindé, sa dernière ligne seule sur une page quasi vide). Avant le
     // correctif, cette page ne portait AUCUN essai de palier de police
     // (`unbreakable:false` partout, jamais de `fontSize` explicite).
@@ -338,7 +338,7 @@ describe('buildOiDocDefinition — finalisation (§4 SPEC-2026-08-18-pdf-et-cham
             formData.no_go = '- Armes a feu';
             formData.uda = 'Article L435-1 du CSI + légitime défense';
             formData.place_chef_dispo = 'Ici';
-            formData.cat_liaison = 'TOM: \nDIR: 4471\nGestuelle et visuelle entre les éléments INDIA';
+            formData.cat_liaison = 'TOM: \nDIR: 0000\nGestuelle et visuelle entre les éléments INDIA';
             const json = JSON.stringify(buildOiDocDefinition(collect(formData), { format }));
 
             expect(json, `pas de « (SUITE) » à ce volume réaliste (${format})`).not.toContain('(SUITE)');
