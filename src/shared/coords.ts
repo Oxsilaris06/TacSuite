@@ -232,6 +232,9 @@ function isLon(v: number): boolean {
  * `'bad-range'` si elle correspond mais sort des bornes.
  */
 export function parseDecimalCoords(str: string): { lat: number; lng: number } | 'bad-range' | null {
+    // « 48,85 » : un seul nombre à virgule française, pas un couple (audit du
+    // 26/09 : lu 48° N 85° E). Un couple entier s'écrit « 48, 2 » ou « 48 2 ».
+    if (/^\s*-?\d{1,3},\d+\s*$/.test(str)) return null;
     const m = str.match(/^\s*(-?\d{1,3}(?:[.,]\d+)?)\s*[,;\s]\s*(-?\d{1,3}(?:[.,]\d+)?)\s*$/);
     if (!m) return null;
     const lat = parseFloat((m[1] ?? '').replace(',', '.'));
@@ -261,13 +264,15 @@ interface RawDmsComponent { nums: number[]; hemi: string | null }
  */
 function tokenizeDms(input: string): DmsComponent[] | null {
     const norm = normalizeDms(input);
-    const re = /([NSEWnsew])|(\d+(?:\.\d+)?)/g;
+    // « O » (Ouest, saisie française) vaut W.
+    const re = /([NSEWOnsewo])|(\d+(?:\.\d+)?)/g;
     const comps: RawDmsComponent[] = [];
     let cur: RawDmsComponent = { nums: [], hemi: null };
     let match: RegExpExecArray | null;
     while ((match = re.exec(norm)) !== null) {
         if (match[1]) {
-            const letter = match[1].toUpperCase();
+            const upper = match[1].toUpperCase();
+            const letter = upper === 'O' ? 'W' : upper;
             if (cur.nums.length) {
                 // Hémisphère EN TÊTE déjà posé : la lettre courante ouvre la
                 // composante SUIVANTE ; sinon elle ferme la composante courante.
@@ -316,7 +321,7 @@ function looksLikeDms(str: string): boolean {
     // Aucune suite de 2 lettres ou plus (un hémisphère légitime est isolé).
     if (/\p{L}{2,}/u.test(str)) return false;
     // Aucune lettre en dehors des hémisphères N/S/E/W (accents compris).
-    return !/\p{L}/u.test(str.replace(/[NSEWnsew]/g, ''));
+    return !/\p{L}/u.test(str.replace(/[NSEWOnsewo]/g, ''));
 }
 
 /**
@@ -326,13 +331,17 @@ function looksLikeDms(str: string): boolean {
 export function parseDmsCoords(str: string): { lat: number; lng: number } | 'bad-range' | null {
     // La présence d'au moins une lettre d'hémisphère est le signal DMS (sinon
     // une paire de nombres entiers serait ambiguë avec une paire décimale).
-    if (!/[NSEWnsew]/.test(str)) return null;
+    if (!/[NSEWOnsewo]/.test(str)) return null;
     // Une adresse contient un n/s/e/w au milieu d'un mot : la rejeter AVANT de
     // tokeniser, pour ne pas voler la recherche d'adresse (R16).
     if (!looksLikeDms(str)) return null;
     const comps = tokenizeDms(str);
     if (!comps || comps.length !== 2) return null;
     const [a, b] = comps as [DmsComponent, DmsComponent];
+    // Deux hémisphères du même axe (« 48°N 2°S ») : faute de frappe probable,
+    // jamais devinée (audit du 26/09 : lu 2° Ouest, 200 km d'écart).
+    const axis = (h: string | null): string | null => (h === 'N' || h === 'S' ? 'lat' : h === 'E' || h === 'W' ? 'lon' : null);
+    if (axis(a.hemi) !== null && axis(a.hemi) === axis(b.hemi)) return null;
     let lat: number, lng: number;
     const aIsLon = a.hemi === 'E' || a.hemi === 'W';
     const bIsLat = b.hemi === 'N' || b.hemi === 'S';
@@ -434,6 +443,8 @@ const COORD_WORDS = /^(?:[nsewo]|lat|lon|lng|long|latitude|longitude)$/i;
  * les mots autour (revue du 26/09 : « 48.85 2.35 près du portail » partait).
  */
 const COORD_PATTERNS: readonly RegExp[] = [
+    // Un nombre seul à virgule française (« 48,85 ») : latitude incomplète.
+    /^-?\d{1,3},\d+$/,
     // Deux décimaux (point ou virgule), cardinaux et séparateurs permis entre eux.
     /-?\d{1,3}[.,]\d{2,}\s*°?\s*[NSEOW]?\s*[\s,;/]\s*[NSEOW]?\s*-?\d{1,3}[.,]\d{2,}/i,
     // Degrés et minutes (48°51', 48d51m).

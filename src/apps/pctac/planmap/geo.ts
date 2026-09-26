@@ -13,6 +13,7 @@
  */
 
 import { circlePolygon as sharedCirclePolygon, geoEdgeNorth as sharedGeoEdgeNorth, labelAnchorForLine, rectPolygon as sharedRectPolygon } from '@shared/geo-shapes.js';
+import { parseDecimalCoords } from '@shared/coords.js';
 
 import type { LngLatObj, LngLatTuple, PlanShape } from './types.js';
 
@@ -43,18 +44,9 @@ export function coordAt(s: PlanShape, i: number): LngLatTuple {
  */
 // planMap.js:811-822 (méthode _parseGps)
 export function parseGps(str: string): { lat: number; lng: number } | null {
-    const m = str.match(/^\s*(-?\d{1,3}(?:[.,]\d+)?)\s*[,;\s]\s*(-?\d{1,3}(?:[.,]\d+)?)\s*$/);
-    if (!m) return null;
-    // Gère la virgule décimale française : on remplace seulement si pas de séparateur ambigu.
-    // m[1]/m[2] : la regex a exactement 2 groupes capturants NON optionnels, donc
-    // toujours renseignés ici — `noUncheckedIndexedAccess` les type `string | undefined` ;
-    // repli '' neutre en observable (parseFloat('') → NaN → `return null` juste après,
-    // branche déjà présente dans l'original pour toute entrée non numérique).
-    const lat = parseFloat((m[1] ?? '').replace(',', '.'));
-    const lng = parseFloat((m[2] ?? '').replace(',', '.'));
-    if (isNaN(lat) || isNaN(lng)) return null;
-    if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return null;
-    return { lat, lng };
+    // Parseur partagé (virgule française, « 48,85 » refusé : audit du 26/09).
+    const r = parseDecimalCoords(str);
+    return r && r !== 'bad-range' ? r : null;
 }
 
 /**

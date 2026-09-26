@@ -96,7 +96,7 @@
 import maplibregl from 'maplibre-gl';
 import type { AddLayerObject, MapMouseEvent, MapTouchEvent, SkySpecification } from 'maplibre-gl';
 
-import { COORDS_NOT_READ, looksLikeCoordinates, parseCoordinateInput } from '@shared/coords.js';
+import { COORDS_NOT_READ, looksLikeCoordinates, parseCoordinateInput, parseDecimalCoords } from '@shared/coords.js';
 import { confirmDialog, toast } from '@shared/feedback.js';
 import { esc as escapeHtml } from '@shared/ui-platform.js';
 import { createMapOverlays, mountOverlayControls } from '@shared/map-overlays.js';
@@ -477,17 +477,12 @@ export const MapCoreMethods = {
     /** Détecte des coordonnées GPS décimales "lat, lng". Retourne {lat,lng} ou null. */
     // oi_cartographie.js:557-565
     _parseGps(this: OICartoInternal, str: string): { lat: number; lng: number } | null {
-        const m = str.match(/^\s*(-?\d{1,3}(?:[.,]\d+)?)\s*[,;\s]\s*(-?\d{1,3}(?:[.,]\d+)?)\s*$/);
-        if (!m) return null;
-        // oi_cartographie.js:560-561 — la regex a exactement 2 groupes
-        // capturants NON optionnels, donc toujours renseignés ici (cf. note de
-        // tête de fichier).
-        const lat = parseFloat((m[1] ?? '').replace(',', '.'));
-        const lng = parseFloat((m[2] ?? '').replace(',', '.'));
-        if (isNaN(lat) || isNaN(lng)) return null;
-        if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return null;
-        return { lat, lng };
+        // Parseur partagé avec PC-Tac (audit du 26/09 : la copie locale lisait
+        // « 48,85 » comme 48° N 85° E).
+        const r = parseDecimalCoords(str);
+        return r && r !== 'bad-range' ? r : null;
     },
+
 
     // oi_cartographie.js:567-612
     async _searchAddress(this: OICartoInternal): Promise<void> {
