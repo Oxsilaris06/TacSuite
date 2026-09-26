@@ -208,6 +208,9 @@ function buildCss(accent: string): string {
 .ptuto-step-kicker{ font:600 11px/1 'Inter',sans-serif; letter-spacing:.8px;
   text-transform:uppercase; color:var(--ptuto-accent); margin-bottom:8px; }
 .ptuto-step-title{ margin:0 0 12px; font:700 22px/1.25 'Inter',sans-serif; }
+/* titres de la page hôte (OI : h2 en capitales, barre bleue, soulignement) neutralisés */
+.ptuto-panel h2{ display:block; border:none; padding:0; text-transform:none; letter-spacing:normal; }
+.ptuto-panel h2::before{ content:none; }
 .ptuto-step-body{ margin:0 0 16px; font-size:15px; line-height:1.6; color:#dcdce0; }
 .ptuto-step-body strong{ color:#fff; }
 

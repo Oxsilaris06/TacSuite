@@ -1467,6 +1467,19 @@ test.describe('OI — ergonomie', () => {
     expect(style).toEqual({ border: '0px', margin: '0px', bg: 'rgba(0, 0, 0, 0)' });
   });
 
+  test('tutoriel : titres sans l\'habillage des titres de l\'OI (barre, soulignement, capitales)', async ({ page }) => {
+    await gotoOi(page);
+    await page.locator('#dockMenu .ptuto-dock').click();
+    for (const sel of ['.ptuto-head h2', '.ptuto-step-title']) {
+      const style = await page.locator(sel).first().evaluate((el) => ({
+        bar: getComputedStyle(el, '::before').content,
+        underline: getComputedStyle(el).borderBottomWidth,
+        caps: getComputedStyle(el).textTransform,
+      }));
+      expect(style, sel).toEqual({ bar: 'none', underline: '0px', caps: 'none' });
+    }
+  });
+
   test('un champ qui prend le focus n\'est pas caché sous le dock', async ({ page }) => {
     await page.emulateMedia({ reducedMotion: 'reduce' }); // défilement immédiat
     await gotoOi(page);
