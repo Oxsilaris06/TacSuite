@@ -38,7 +38,12 @@ Variables d'environnement reconnues :
 node relay.mjs add "Dupont" "Inter"   # crée un jeton et affiche l'URL OsmAnd
 node relay.mjs revoke <jeton>          # révoque
 node relay.mjs list                    # jetons tronqués à 6 caractères
+node relay.mjs rotate <jeton>          # nouveau jeton, même opérateur (après une fuite)
+node relay.mjs rotate-key              # nouvelle readKey (à recopier dans PC-Tac)
 ```
+
+Le relais en marche relit le fichier de jetons dès qu'il change : un jeton
+révoqué ou renouvelé cesse de valoir sans redémarrage.
 
 `add` affiche une URL prête à coller dans OsmAnd :
 

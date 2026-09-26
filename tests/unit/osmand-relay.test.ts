@@ -369,6 +369,30 @@ describe('Relais OsmAnd — divers', () => {
   });
 });
 
+describe('Relais OsmAnd — renouvellement après fuite (revue dev D-13)', () => {
+  it('rotate-key remplace la readKey ; rotate remplace le jeton d’un opérateur en gardant son nom', () => {
+    const { file } = makeTokensFile();
+    const env = { ...process.env, TOKENS_FILE: file };
+    execFileSync(process.execPath, [RELAY_PATH, 'add', 'Martin', 'Medic'], { env, encoding: 'utf8' });
+    const before = JSON.parse(fs.readFileSync(file, 'utf8')) as { readKey: string; operators: Record<string, { nom: string }> };
+    const oldToken = Object.keys(before.operators)[0] as string;
+
+    const outKey = execFileSync(process.execPath, [RELAY_PATH, 'rotate-key'], { env, encoding: 'utf8' });
+    const afterKey = JSON.parse(fs.readFileSync(file, 'utf8')) as { readKey: string };
+    expect(afterKey.readKey).toHaveLength(64);
+    expect(afterKey.readKey).not.toBe(before.readKey);
+    expect(outKey).toContain(afterKey.readKey);
+
+    const outTok = execFileSync(process.execPath, [RELAY_PATH, 'rotate', oldToken], { env, encoding: 'utf8' });
+    const after = JSON.parse(fs.readFileSync(file, 'utf8')) as { operators: Record<string, { nom: string }> };
+    const tokens = Object.keys(after.operators);
+    expect(tokens).toHaveLength(1);
+    expect(tokens[0]).not.toBe(oldToken);
+    expect(after.operators[tokens[0] as string]?.nom).toBe('Martin');
+    expect(outTok).toContain(`/p?t=${tokens[0]}`);
+  });
+});
+
 describe('Relais OsmAnd — mémoire bornée des compteurs', () => {
   it('purge les entrées de limite par IP expirées (aucune fuite)', async () => {
     const { file } = makeTokensFile({ [OP_TOKEN]: { nom: 'Dupont', fonction: 'Inter' } });
