@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Download, type Page } from '@playwright/test';
 import JSZip from 'jszip';
 
 /**
@@ -1028,9 +1028,17 @@ test.describe('OI — Checklist fonctionnelle', () => {
     await goToFinalStepAndOpenPreview(page);
     await expect.soft(page.locator('#presentationModal')).toBeVisible({ timeout: 5000 });
     await step('#downloadPdfBtn → fichier OI_<date>_<trigramme>.pdf (nom non vérifié finement ici)', async () => {
-      const downloadPromise = page.waitForEvent('download', { timeout: 15000 }).catch(() => null);
-      await page.locator('#downloadPdfBtn').click();
-      const download = await downloadPromise;
+      // Le verrou « une génération à la fois » (generation-lock.ts, F23)
+      // refuse le clic tant que l'aperçu ouvert par #previewBtn se rend
+      // (« Un PDF est déjà en cours… ») : on reclique jusqu'à ce qu'il
+      // soit libre. Constaté : 2 échecs sur 3 isolé, bureau.
+      await expect.soft(page.locator('#presentation-content canvas.pdf-preview-canvas').first()).toBeVisible({ timeout: 15000 });
+      let download: Download | null = null;
+      for (let i = 0; i < 6 && !download; i++) {
+        const downloadPromise = page.waitForEvent('download', { timeout: 5000 }).catch(() => null);
+        await page.locator('#downloadPdfBtn').click();
+        download = await downloadPromise;
+      }
       expect.soft(download).not.toBeNull();
       if (download) expect.soft(download.suggestedFilename()).toMatch(/^OI_.*\.pdf$/);
     });
