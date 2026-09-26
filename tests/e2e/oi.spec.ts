@@ -1525,6 +1525,18 @@ test.describe('OI — ergonomie', () => {
     expect(overflow).toEqual([]);
   });
 
+  test('chronologie : un événement se lit d\'un bloc (type, heure et suppression sur une ligne)', async ({ page }) => {
+    await gotoOi(page);
+    await goToStepViaBullet(page, 4);
+    for (let i = 0; i < 2; i++) await page.locator('[data-action="add-time-event"]').click();
+    const item = page.locator('#time_events_container .time-item').first();
+    const top = async (sel: string): Promise<number> => (await item.locator(sel).boundingBox())!.y;
+    expect(Math.abs((await top('.time-type-select')) - (await top('.remove-btn')))).toBeLessThan(8);
+    expect(Math.abs((await top('.time-type-select')) - (await top('.time-hour-input')))).toBeLessThan(8);
+    // Deux lignes au plus : les champs d'un même événement restent groupés.
+    expect((await item.boundingBox())!.height).toBeLessThan(180);
+  });
+
   test('un champ qui prend le focus n\'est pas caché sous le dock', async ({ page }) => {
     await page.emulateMedia({ reducedMotion: 'reduce' }); // défilement immédiat
     await gotoOi(page);
