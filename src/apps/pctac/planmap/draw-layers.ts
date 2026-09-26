@@ -46,7 +46,7 @@
  * this.map;` sert à faire traverser le narrowing non-null aux fermetures
  * imbriquées (callbacks `map.on(...)`), où `this.map` ne serait pas re-narrowé.
  *
- * Source : `/home/nico/Bureau/Web/GStart-main/modules/pctac/planMap.js`
+ * Source : `GStart-main/modules/pctac/planMap.js`
  * (lecture seule).
  */
 

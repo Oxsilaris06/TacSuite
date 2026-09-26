@@ -2,7 +2,7 @@
 
 > **Document opposable.** Source : `GStart-main/modules/pctac/planMap.js`
 > (5 596 LOC, **lu intégralement**, LECTURE SEULE). Cible :
-> `/home/nico/Bureau/Web/TacSuite/src/apps/pctac/planmap/`.
+> `TacSuite/src/apps/pctac/planmap/`.
 > À lire conjointement avec `docs/SPEC-CONTRATS.md` (conventions communes,
 > imports, `window.*`, ordre d'init), `docs/SPEC-CONTRATS.md` §2.1 (contrat
 > `PlanMapContract`).

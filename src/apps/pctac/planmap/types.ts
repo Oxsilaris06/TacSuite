@@ -6,7 +6,7 @@
  * sans dépendance de paquet PC-Tac, dont les 20 autres sous-modules de
  * `planmap/` n'importent que par `import type`. AUCUN runtime ici.
  *
- * Source : `/home/nico/Bureau/Web/GStart-main/modules/pctac/planMap.js`
+ * Source : `GStart-main/modules/pctac/planMap.js`
  * (lecture seule).
  */
 

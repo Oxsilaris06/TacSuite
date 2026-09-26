@@ -59,7 +59,7 @@
  *    capture locale (`?? ''`) ou un typage explicite de l'accumulateur —
  *    mêmes idiomes que `carto/map-core.ts` (`_parseGps`) et `init.ts`.
  *
- * Source : `/home/nico/Bureau/Web/GStart-main/modules/outils.js` (lecture
+ * Source : `GStart-main/modules/outils.js` (lecture
  * seule).
  */
 import type { PDFDocument, PDFImage } from 'pdf-lib';

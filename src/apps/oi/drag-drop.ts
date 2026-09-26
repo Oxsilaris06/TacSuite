@@ -83,7 +83,7 @@
  *    explicite `reduce<{ offset: number; element?: HTMLElement }>`, même
  *    précédent que `getDragAfterElement` (`outils.ts:290`).
  *
- * Source : `/home/nico/Bureau/Web/GStart-main/modules/drag.js` (lecture
+ * Source : `GStart-main/modules/drag.js` (lecture
  * seule). Cf. `docs/SPEC-OI-CONVERSION.md` §5, `PAQUETS-OI.json`
  * (`oi-drag-drop`).
  */

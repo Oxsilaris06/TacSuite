@@ -24,7 +24,7 @@
  * par le `::backdrop` intrinsèque du dialog qui suit automatiquement son
  * hôte. Seul le `<dialog>` lui-même reste à reparenter.
  *
- * Source : `/home/nico/Bureau/Web/GStart-main/modules/pctac/planMap.js`
+ * Source : `GStart-main/modules/pctac/planMap.js`
  * (lecture seule). Port VERBATIM à l'origine (typage uniquement, cf. §8.3
  * SPEC-PCTAC-CONVERSION.md) ; adapté pour R2-T1 (suppression du backdrop
  * partagé, `<dialog>` natif).

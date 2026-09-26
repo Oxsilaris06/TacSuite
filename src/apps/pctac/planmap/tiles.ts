@@ -8,7 +8,7 @@
  * boucles). `tileUrl` est du code mort interne (0 appelant) : conservé avec
  * son en-tête `@deprecated`.
  *
- * Source : `/home/nico/Bureau/Web/GStart-main/modules/pctac/planMap.js`
+ * Source : `GStart-main/modules/pctac/planMap.js`
  * (lecture seule).
  */
 

@@ -10,7 +10,7 @@
  * renommage de variable locale. Les commentaires FR d'origine sont recopiés
  * mot pour mot : ils portent les invariants.
  *
- * Source : `/home/nico/Bureau/Web/GStart-main/modules/pctac/planMap.js:5054-5291`
+ * Source : `GStart-main/modules/pctac/planMap.js:5054-5291`
  * (lecture seule).
  */
 

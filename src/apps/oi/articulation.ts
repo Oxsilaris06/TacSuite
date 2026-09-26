@@ -85,7 +85,7 @@
  *     plus lieu d'être (import ESM statique, toujours résolu) — voir
  *     `_enableTouchSort` ci-dessous.
  *
- * Source : `/home/nico/Bureau/Web/GStart-main/modules/articulation.js`
+ * Source : `GStart-main/modules/articulation.js`
  * (lecture seule).
  */
 

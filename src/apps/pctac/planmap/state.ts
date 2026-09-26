@@ -9,7 +9,7 @@
  *
  * `SafeMethods` : la garde `_safe` (planMap.js:335), corps VERBATIM.
  *
- * Source : `/home/nico/Bureau/Web/GStart-main/modules/pctac/planMap.js`
+ * Source : `GStart-main/modules/pctac/planMap.js`
  * (lecture seule).
  */
 

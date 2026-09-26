@@ -9,7 +9,7 @@
  * (aucune URL, aucun paramètre, aucun libellé modifié). FEUILLE : n'importe
  * aucun autre fichier de `carto/` ni de `@oi/` (SPEC-OI-CONVERSION.md §6.2).
  *
- * Source : `/home/nico/Bureau/Web/GStart-main/modules/oi_cartographie.js`
+ * Source : `GStart-main/modules/oi_cartographie.js`
  * (lecture seule).
  */
 

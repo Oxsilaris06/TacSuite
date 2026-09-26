@@ -38,7 +38,7 @@
  * (:1499). Conservé tel quel : c'est le comportement de la source OI, pas un
  * oubli de portage.
  *
- * Source : `/home/nico/Bureau/Web/GStart-main/modules/oi_cartographie.js`
+ * Source : `GStart-main/modules/oi_cartographie.js`
  * (lecture seule, lignes 1310-1603).
  */
 

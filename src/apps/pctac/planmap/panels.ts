@@ -13,7 +13,7 @@
  * aucun changement d'échappement HTML, aucun `addEventListener` en lieu et
  * place des affectations `el.onclick = …` (§6.6).
  *
- * Source : `/home/nico/Bureau/Web/GStart-main/modules/pctac/planMap.js`
+ * Source : `GStart-main/modules/pctac/planMap.js`
  * (lecture seule).
  */
 

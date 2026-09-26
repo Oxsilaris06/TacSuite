@@ -15,7 +15,7 @@
  * 5. Aucun nom n'est déclaré deux fois (count des clés).
  *
  * Source (original) :
- * `/home/nico/Bureau/Web/GStart-main/modules/oi_cartographie.js` (L.269-1681).
+ * `GStart-main/modules/oi_cartographie.js` (L.269-1681).
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';

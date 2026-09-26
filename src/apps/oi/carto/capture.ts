@@ -39,7 +39,7 @@
  *     `strict`), narrowing `e instanceof Error` avant `.message` (idiome déjà
  *     en place, `src/shared/ui-platform.ts`).
  *
- * Source : `/home/nico/Bureau/Web/GStart-main/modules/oi_cartographie.js`
+ * Source : `GStart-main/modules/oi_cartographie.js`
  * (lecture seule).
  *
  * DURCISSEMENTS PORTÉS DE `@pctac/planmap/capture.ts` (mission R3-e, dernière

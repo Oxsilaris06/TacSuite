@@ -5,7 +5,7 @@
  * Les 11 exports de SPEC-PLANMAP-SPLIT.md §4.0 (planMap.js:23-130), recopiés
  * VERBATIM (aucune URL, aucun nombre modifié).
  *
- * Source : `/home/nico/Bureau/Web/GStart-main/modules/pctac/planMap.js`
+ * Source : `GStart-main/modules/pctac/planMap.js`
  * (lecture seule).
  */
 

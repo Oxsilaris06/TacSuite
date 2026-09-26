@@ -13,7 +13,7 @@
  * §5.1 pièges (PlanWheel structurel : la roue `Wheel` de @pctac/wheel.js est
  * assignable à `PlanWheel` par typage structurel, SANS import de son type).
  *
- * Source : `/home/nico/Bureau/Web/GStart-main/modules/pctac/planMap.js`
+ * Source : `GStart-main/modules/pctac/planMap.js`
  * (lecture seule).
  */
 
