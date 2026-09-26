@@ -35,7 +35,6 @@ import type {
     ContextPageSize,
     CustomTableLayout,
     DynamicContent,
-    Size,
     TableCell,
     TDocumentDefinitions,
 } from 'pdfmake/interfaces';
@@ -3699,90 +3698,6 @@ function patracValues(v: string | undefined): string[] {
 }
 
 /**
- * Case « code court » (FONCTION, PPALE, SEC., AFIS) : une valeur par ligne,
- * séparées par « / » (décision Nico 2026-09-24, « valeurs empilées »). Chaque
- * ligne reste un code court `noWrap` — la colonne `auto` prend la largeur du
- * plus long CODE, pas de la liste, et rien n'est jamais coupé.
- */
-function patracStackText(v: string | undefined): string {
-    return patracValues(v).join(' /\n') || '-';
-}
-
-/** Nombre de lignes de la case empilée la plus haute d'un membre (≥ 1). */
-function patracStackLines(m: OiPatracMember): number {
-    return Math.max(1, ...[m.fonction, m.principales, m.secondaires, m.afis].map((v) => patracValues(v).length));
-}
-
-/** Texte combiné de la colonne EQPT/GREN. (`join`) — extrait pour être mesuré (coût pt) ET rendu par le MÊME code (`buildPatracPage`, anomalie E). */
-function patracEqptText(m: OiPatracMember): string {
-    return [m.equipement, m.equipement2, m.grenades, m.tenue, m.gpb].flatMap(patracValues).join(' / ') || '-';
-}
-
-/**
- * Cellules d'UNE rangée du tableau PATRACDVR — extrait pour être partagé par
- * toutes les pages de continuation à titre distinct (`buildPatracPage`,
- * anomalie E ; jamais « (SUITE) », garde C1).
- *
- * `edit` (mission « tout le texte modifiable ») ancre les 3 SEULES colonnes
- * libres — VL, PAX (trigramme), DIR : `CELLULE`/`FONCTION`/`PPALE`/`SEC.`/
- * `AFIS` restent des pastilles à choix fermé (jamais ancrées, cf. JSDoc
- * `patracMemberDatasetAnchor`) et `EQPT/GREN.` (`patracEqptText`) reste
- * exclue car AGRÉGEANT 5 champs distincts en une seule chaîne jointe — même
- * catégorie que les valeurs composées déjà exclues ailleurs (cf. JSDoc
- * `pdf-preview-edit.ts`, « PÉRIMÈTRE EXACT »).
- */
-function patracRowCells(
-    r: { vehicle: string; m: OiPatracMember },
-    hasDir: boolean,
-    p: OiPdfPalette,
-    edit?: { anchors: OiPdfEditAnchor[]; vehicleUniq: Map<string, number>; trigUniq: Map<string, number> },
-): TableCell[] {
-    if (edit) {
-        registerPdfEditAnchor(edit.anchors, patracVehicleDatasetAnchor(r.vehicle, edit.vehicleUniq), r.vehicle);
-        registerPdfEditAnchor(edit.anchors, patracMemberDatasetAnchor(r.m.trigramme, 'trigramme', edit.trigUniq), r.m.trigramme);
-        if (hasDir) registerPdfEditAnchor(edit.anchors, patracMemberDatasetAnchor(r.m.trigramme, 'dir', edit.trigUniq), r.m.dir);
-    }
-    const cells: TableCell[] = [
-        { text: r.vehicle, bold: true, fillColor: r.vehicle ? p.headerRow : undefined, alignment: 'center', noWrap: true, borderColor: cellBorder(p) },
-        { text: r.m.trigramme || '-', bold: true, alignment: 'center', noWrap: true, borderColor: cellBorder(p) },
-        { text: r.m.cellule || '-', alignment: 'center', noWrap: true, borderColor: cellBorder(p) },
-        { text: patracStackText(r.m.fonction), alignment: 'center', noWrap: true, borderColor: cellBorder(p) },
-        { text: patracStackText(r.m.principales), alignment: 'center', noWrap: true, borderColor: cellBorder(p) },
-        { text: patracStackText(r.m.secondaires), alignment: 'center', noWrap: true, borderColor: cellBorder(p) },
-        { text: patracStackText(r.m.afis), alignment: 'center', noWrap: true, borderColor: cellBorder(p) },
-        { text: patracEqptText(r.m), fontSize: 8, alignment: 'center', borderColor: cellBorder(p) },
-    ];
-    if (hasDir) {
-        cells.push({ text: r.m.dir || '', bold: true, alignment: 'center', noWrap: true, borderColor: cellBorder(p) });
-    }
-    return cells;
-}
-
-/**
- * Coût (pt) d'UNE rangée du tableau PATRACDVR au palier `fontPx` — modèle
- * physique partagé (`EFFRAC_ROW_VPAD_PT`, `effracLinePt`). Les colonnes
- * « code court » sont `noWrap` (toujours 1 ligne, cf. JSDoc `buildPatracPage`) ;
- * seule EQPT/GREN. peut s'envelopper, à une taille FIXE 8 px (`patracRowCells`,
- * indépendante de `fontPx`) — la rangée prend donc la hauteur du plus grand
- * des deux. `eqptColWidthPt` reste une approximation (largeur RÉELLE de la
- * colonne `*` inconnue avant la mise en page pdfmake, les autres colonnes
- * étant `auto`) — direction SÛRE (sous-estimer la largeur, comme
- * `EFFRAC_FITS_SAFETY_PT`) plutôt qu'un calcul exact hors de portée d'un
- * module PUR sans pdfmake en valeur.
- */
-function patracRowPt(fontPx: number, eqptText: string, eqptColWidthPt: number, stackLines = 1): number {
-    const eqptLines = wrappedLinesWithNewlines(eqptText, estimateCharsPerLine(8, eqptColWidthPt));
-    // Cases empilées (choix multiples, `patracStackText`) : une ligne par valeur.
-    const linePt = Math.max(stackLines * effracLinePt(fontPx), eqptLines * effracLinePt(8));
-    return linePt + EFFRAC_ROW_VPAD_PT;
-}
-
-/** Coût (pt) de la rangée d'en-tête (libellés courts, toujours 1 ligne, au palier `fontPx`). */
-function patracHeaderRowPt(fontPx: number): number {
-    return effracLinePt(fontPx) + EFFRAC_ROW_VPAD_PT;
-}
-
-/**
  * Étiquette de plage « MEMBRES 21-40 »/« MEMBRE 21 » (1-based, position dans
  * le tableau aplati `allRows`) d'un groupe d'indices CONTIGU de
  * `packCardsByBudget` — titre autonome de page de continuation du tableau
@@ -3793,6 +3708,9 @@ function patracRangeLabel(indices: number[]): string {
     const last = (indices[indices.length - 1] as number) + 1;
     return first === last ? `MEMBRE ${first}` : `MEMBRES ${first}-${last}`;
 }
+
+/** Paliers (pt) du PATRACDVR de l'OI Complet : 8 pt au minimum (décision 43). */
+const PATRAC_FONT_STEPS = [11, 10, 9, 8] as const;
 
 /**
  * Section 10 — « 7. RÉCAPITULATIF PATRACDVR » (pdf-engine-v2.ts:1219-1280),
@@ -3809,8 +3727,8 @@ function patracRangeLabel(indices: number[]): string {
  * plancher 7 px, une seule page ne peut physiquement contenir qu'environ
  * 20-22 rangées (A4) avant de heurter `contentHeightPt` (541/485 pt),
  * largement en-deçà d'unités réelles de plusieurs dizaines de membres.
- * 1) essaie D'ABORD la table ENTIÈRE sur UNE SEULE page, paliers 11→7
- * (`fitUsageToPage`, remplace `patracFontPx`) — couvre les unités réalistes ;
+ * 1) essaie D'ABORD la table ENTIÈRE sur UNE SEULE page, paliers 11→8
+ * (hauteurs exactes des rangées mesurées) — couvre les unités réalistes ;
  * 2) SEULEMENT si même le palier plancher ne suffit pas, pagine par budget
  * de hauteur réel (`packCardsByBudget`, réserve la place de l'en-tête —
  * répété sur CHAQUE page, `headerRows:1` par table) sur des pages
@@ -3820,13 +3738,13 @@ function patracRangeLabel(indices: number[]): string {
  */
 function buildPatracPage(ctx: BuildCtx, num: () => number): Content | null {
     const { formData, p, geo, anchors } = ctx;
-    const rows = formData.patracdvr_rows ?? [];
-    const allRows: Array<{ vehicle: string; m: OiPatracMember }> = [];
-    for (const row of rows) {
-        row.members.forEach((m, idx) => {
-            allRows.push({ vehicle: idx === 0 ? row.vehicle : '', m });
-        });
+    const assigned: ExpressRow[] = [];
+    for (const row of formData.patracdvr_rows ?? []) {
+        row.members.forEach((m, idx) => assigned.push({ vehicle: idx === 0 ? row.vehicle : '', m }));
     }
+    // Membres non assignés (audit F16) : listés sous « NON ASSIGNÉS », comme le PDF PATRACDVR.
+    const unassigned: ExpressRow[] = (formData.patracdvr_unassigned ?? []).map((m) => ({ vehicle: '', m }));
+    const allRows = [...assigned, ...unassigned];
     if (allRows.length === 0) {
         return null;
     }
@@ -3835,74 +3753,87 @@ function buildPatracPage(ctx: BuildCtx, num: () => number): Content | null {
     const sectionNum = num();
     const title = `${sectionNum}. ${pdfSectionTitle(formData, 'patracdvr')}`;
 
+    // Largeurs MESURÉES (audit F04 : les colonnes `auto` + `noWrap` fusionnaient
+    // les valeurs empilées sur une ligne et se chevauchaient) : police à chasse
+    // fixe, chaque case « code court » empile une valeur par ligne (décision 9,
+    // « / », jamais coupée) à la largeur de sa plus longue valeur ; EQPT/GREN.
+    // prend le reste de la largeur, à la taille du tableau.
     const hasDir = allRows.some((r) => r.m.dir.trim() !== '');
-    // Largeurs adaptées (modèle pagination v2, mission PG.IMPL point 5 — banc
-    // `pdfmake-pagination-bench` q3 : une colonne à largeur FIXE trop étroite
-    // SANS `noWrap` casse un mot sans espace lettre à lettre ("KODIA Q BANA",
-    // "SHARA N", "PSIG GILE TTE" constatés sur `long-case.json` p.15 avant ce
-    // correctif). Toutes les colonnes « code court » (VL, PAX, CELLULE,
-    // FONCTION, PPALE, SEC., AFIS, DIR) passent donc en `auto` + `noWrap` sur
-    // leurs cellules (largeur = celle du plus long libellé RENCONTRÉ, jamais
-    // coupée) ; seule EQPT/GREN. (texte combiné potentiellement long) reste
-    // `*` et garde son retour à la ligne normal.
-    const widths: Size[] = hasDir
-        ? ['auto', 'auto', 'auto', 'auto', 'auto', 'auto', 'auto', '*', 'auto']
-        : ['auto', 'auto', 'auto', 'auto', 'auto', 'auto', 'auto', '*'];
-    const headers = ['VL', 'PAX', 'CELLULE', 'FONCTION', 'PPALE', 'SEC.', 'AFIS', 'EQPT/GREN.', ...(hasDir ? ['DIR'] : [])];
-    const headerRow: TableCell[] = headers.map((h) => ({
-        text: h,
-        bold: true,
-        fillColor: p.headerRow,
-        alignment: 'center',
-        borderColor: cellBorder(p),
-    }));
-    // Édition en place (mission « tout le texte modifiable ») — cf. JSDoc `patracRowCells`.
-    const editCtx = { anchors, vehicleUniq: countPatracVehicleNames(formData), trigUniq: countPatracTrigrammes(formData) };
-    const renderTable = (subset: Array<{ vehicle: string; m: OiPatracMember }>): Content => ({
-        table: { widths, headerRows: 1, body: [headerRow, ...subset.map((r) => patracRowCells(r, hasDir, p, editCtx))] },
-        layout: LAYOUT_BORDERED,
-    });
+    const cols: ExCol[] = [
+        { label: 'VL', values: (r) => (r.vehicle.trim() ? [r.vehicle.trim()] : []), bold: true },
+        { label: 'PAX', values: (r) => [r.m.trigramme.trim() || '-'], bold: true },
+        { label: 'CELLULE', values: (r) => (r.m.cellule.trim() ? [r.m.cellule.trim()] : []) },
+        { label: 'FONCTION', values: (r) => patracValues(r.m.fonction), stack: true },
+        { label: 'PPALE', values: (r) => patracValues(r.m.principales), stack: true },
+        { label: 'SEC.', values: (r) => patracValues(r.m.secondaires), stack: true },
+        { label: 'AFIS', values: (r) => patracValues(r.m.afis), stack: true },
+        { label: 'EQPT/GREN.', values: (r) => [r.m.equipement, r.m.equipement2, r.m.grenades, r.m.tenue, r.m.gpb].flatMap(patracValues) },
+        ...(hasDir ? [{ label: 'DIR', values: (r: ExpressRow) => (r.m.dir.trim() ? [r.m.dir.trim()] : []), bold: true }] : []),
+    ];
+    const measure = (fontPx: number): { widths: number[]; cells: ExCell[][]; costs: number[] } => {
+        const { widths, cells } = exMeasure(cols, allRows, fontPx, geo.contentWidthPt, 7);
+        // Le bandeau « NON ASSIGNÉS » voyage avec le premier non-assigné (jamais seul en bas de page).
+        const costs = cells.map((c, i) => exRowPt(exRowLines(c), fontPx) + (i === assigned.length ? exRowPt(1, fontPx) : 0));
+        return { widths, cells, costs };
+    };
+    const headerRow = (): TableCell[] => cols.map((c) => ({ text: c.label, bold: true, fillColor: p.headerRow, alignment: 'center', borderColor: cellBorder(p) }) as TableCell);
+    // Édition en place (mission « tout le texte modifiable ») : VL, PAX et DIR ancrés, dans l'ordre d'affichage.
+    const vehicleUniq = countPatracVehicleNames(formData);
+    const trigUniq = countPatracTrigrammes(formData);
+    const renderTable = (indices: number[], fontPx: number, m: { widths: number[]; cells: ExCell[][] }): Content => {
+        const body: TableCell[][] = [headerRow()];
+        for (const i of indices) {
+            const r = allRows[i] as ExpressRow;
+            if (i < assigned.length) registerPdfEditAnchor(anchors, patracVehicleDatasetAnchor(r.vehicle, vehicleUniq), r.vehicle);
+            registerPdfEditAnchor(anchors, patracMemberDatasetAnchor(r.m.trigramme, 'trigramme', trigUniq), r.m.trigramme);
+            if (hasDir) registerPdfEditAnchor(anchors, patracMemberDatasetAnchor(r.m.trigramme, 'dir', trigUniq), r.m.dir);
+            if (i === assigned.length) {
+                body.push([{ text: 'NON ASSIGNÉS', colSpan: cols.length, bold: true, fillColor: p.headerRow, borderColor: cellBorder(p) }, ...cols.slice(1).map(() => ({}))]);
+            }
+            body.push(exRowCells(cols, r, m.cells[i] as ExCell[], p, 'center'));
+        }
+        return {
+            table: { widths: m.widths, headerRows: 1, dontBreakRows: true, body },
+            layout: { hLineWidth: () => EX_RULE, vLineWidth: () => EX_RULE, paddingLeft: () => EX_PAD_X, paddingRight: () => EX_PAD_X, paddingTop: () => EX_PAD_Y, paddingBottom: () => EX_PAD_Y },
+            fontSize: fontPx,
+            lineHeight: 1,
+        } as Content;
+    };
 
-    // Approximation SÛRE (direction : sous-estimer) de la largeur réelle de la
-    // seule colonne à largeur `*`, cf. JSDoc `patracRowPt`.
-    const eqptColWidthPt = geo.contentWidthPt * 0.3;
-    const availablePt = geo.contentHeightPt - EFFRAC_FITS_SAFETY_PT;
-
-    // 1) UNE SEULE page, paliers 11→7 (budget de hauteur réel).
-    const computeCostPt = (fontPx: number): number =>
-        EFFRAC_H2_PT +
-        patracHeaderRowPt(fontPx) +
-        allRows.reduce((sum, r) => sum + patracRowPt(fontPx, patracEqptText(r.m), eqptColWidthPt, patracStackLines(r.m)), 0);
-    const fit = fitUsageToPage(computeCostPt, availablePt);
-    if ('fontPx' in fit) {
-        return { stack: [h2(title, p, geo.contentWidthPt), renderTable(allRows)], fontSize: fit.fontPx };
-    }
-
-    // 2) Multi-page assumé (cf. JSDoc de fonction) : chaque page répète l'en-tête
-    // de colonnes ET porte son titre — jamais de refus, jamais de perte de ligne.
-    const budgetPt = availablePt - EFFRAC_H2_PT;
-    let best: { groups: number[][]; fontPx: number } | null = null;
-    for (const fontPx of FIT_FONT_STEPS) {
-        const rowBudgetPt = budgetPt - patracHeaderRowPt(fontPx);
-        const costs = allRows.map((r) => patracRowPt(fontPx, patracEqptText(r.m), eqptColWidthPt, patracStackLines(r.m)));
-        const groups = packCardsByBudget(costs, rowBudgetPt);
-        if (best === null || groups.length < best.groups.length) {
-            best = { groups, fontPx };
+    // Hauteurs EXACTES (lignes mesurées) : la pagination n'a plus besoin de la
+    // marge pessimiste qui laissait des pages à 40 % vides (audit F05).
+    const availablePt = geo.contentHeightPt - EFFRAC_H2_PT - EX_SAFETY_PT;
+    const all = allRows.map((_, i) => i);
+    // 1) UNE SEULE page, au plus grand palier qui tient (11 → 8 pt).
+    for (const fontPx of PATRAC_FONT_STEPS) {
+        const m = measure(fontPx);
+        if (exRowPt(1, fontPx) + m.costs.reduce((a, c) => a + c, 0) <= availablePt) {
+            return { stack: [h2(title, p, geo.contentWidthPt), renderTable(all, fontPx, m)] };
         }
     }
-    const { groups, fontPx } = best as { groups: number[][]; fontPx: number };
+    // 2) Plusieurs pages : chaque page porte son titre distinct (jamais « (SUITE) »,
+    // garde C1) et répète l'en-tête de colonnes ; le palier retenu est celui qui
+    // donne le moins de pages (le plus grand à égalité).
+    let best: { groups: number[][]; fontPx: number; m: ReturnType<typeof measure> } | null = null;
+    for (const fontPx of PATRAC_FONT_STEPS) {
+        const m = measure(fontPx);
+        // Rangées jointives : pas d'écart entre elles (`packCardsByBudget` en compte un par carte).
+        const budget = availablePt - exRowPt(1, fontPx);
+        const groups: number[][] = [];
+        let used = Infinity;
+        m.costs.forEach((cost, i) => {
+            if (used + cost > budget) { groups.push([]); used = 0; }
+            (groups[groups.length - 1] as number[]).push(i);
+            used += cost;
+        });
+        if (best === null || groups.length < best.groups.length) best = { groups, fontPx, m };
+    }
+    const { groups, fontPx, m } = best as NonNullable<typeof best>;
     return {
-        stack: groups.map((indices, idx): Content => {
-            const subset = indices.map((i) => allRows[i] as (typeof allRows)[number]);
-            if (idx === 0) {
-                return { stack: [h2(title, p, geo.contentWidthPt), renderTable(subset)], fontSize: fontPx };
-            }
-            return {
-                stack: [h2(`${title} — ${patracRangeLabel(indices)}`, p, geo.contentWidthPt), renderTable(subset)],
-                fontSize: fontPx,
-                pageBreak: 'before',
-            };
-        }),
+        stack: groups.map((indices, idx): Content => ({
+            stack: [h2(idx === 0 ? title : `${title} — ${patracRangeLabel(indices)}`, p, geo.contentWidthPt), renderTable(indices, fontPx, m)],
+            ...(idx === 0 ? {} : { pageBreak: 'before' as const }),
+        })),
     };
 }
 
@@ -4244,7 +4175,8 @@ function exPackValues(values: string[], maxChars: number): string[] {
 }
 
 type ExpressRow = { vehicle: string; m: OiPatracMember };
-type ExCol = { label: string; values: (r: ExpressRow) => string[]; bold?: boolean };
+/** `stack` : une valeur par ligne (décision 9, cases « code court » du PATRACDVR de l'OI Complet). */
+type ExCol = { label: string; values: (r: ExpressRow) => string[]; bold?: boolean; stack?: boolean };
 
 /**
  * Tableau mesuré (Express), en caractères (police à chasse fixe) : chaque
@@ -4255,13 +4187,13 @@ type ExCol = { label: string; values: (r: ExpressRow) => string[]; bold?: boolea
  * passent à la ligne entre elles (« / », décision 9). Retourne les largeurs
  * (pt) et les lignes de chaque case, dont se déduisent exactement les hauteurs.
  */
-function exMeasure(cols: ExCol[], rows: ExpressRow[], f: number, widthPt: number, starCol: number): { widths: number[]; cells: Array<Array<{ text: string; lines: number }>> } {
+function exMeasure(cols: ExCol[], rows: ExpressRow[], f: number, widthPt: number, starCol: number): { widths: number[]; cells: ExCell[][] } {
     const c = f * EX_GLYPH_EM;
     const n = cols.length;
     const roomC = Math.floor((widthPt - n * (2 * EX_PAD_X + EX_RULE + 0.5) - EX_RULE) / c);
     const vals = rows.map((r) => cols.map((col) => col.values(r)));
-    const nat = cols.map((col, j) => Math.max(exChars(col.label), ...vals.map((v) => exChars((v[j] as string[]).join(' / ') || '-'))));
     const min = cols.map((col, j) => Math.max(exChars(col.label), ...vals.flatMap((v) => (v[j] as string[]).map((x, k, a) => exChars(x) + (k < a.length - 1 ? 2 : 0)))));
+    const nat = cols.map((col, j) => (col.stack ? (min[j] as number) : Math.max(exChars(col.label), ...vals.map((v) => exChars((v[j] as string[]).join(' / ') || '-')))));
     const sum = (a: number[]): number => a.reduce((s, x) => s + x, 0);
     const toPt = (w: number[]): number[] => w.map((x) => x * c + 0.5);
     if (sum(min) > roomC) {
@@ -4277,7 +4209,7 @@ function exMeasure(cols: ExCol[], rows: ExpressRow[], f: number, widthPt: number
     const pack = (i: number, j: number, w: number): string[] => {
         const key = `${i}:${j}:${w}`;
         let lines = packed.get(key);
-        if (!lines) packed.set(key, (lines = exPackValues(vals[i]?.[j] as string[], w)));
+        if (!lines) packed.set(key, (lines = exPackValues(vals[i]?.[j] as string[], cols[j]?.stack ? 1 : w)));
         return lines;
     };
     const total = (w: number[]): number => rows.reduce((s, _, i) => s + Math.max(...w.map((x, j) => pack(i, j, x).length)), 0);
@@ -4305,6 +4237,24 @@ function exMeasure(cols: ExCol[], rows: ExpressRow[], f: number, widthPt: number
         return { text: lines.join('\n'), lines: lines.length };
     }));
     return { widths, cells };
+}
+
+type ExCell = { text: string; lines: number };
+
+/** Nombre de lignes d'une rangée mesurée (sa case la plus haute). */
+function exRowLines(cells: ExCell[]): number {
+    return Math.max(1, ...cells.map((cell) => cell.lines));
+}
+
+/** Cases d'une rangée PATRACDVR mesurée : VL sur la première rangée du véhicule seulement, grisé. */
+function exRowCells(cols: ExCol[], r: ExpressRow, cells: ExCell[], p: OiPdfPalette, alignment?: 'center'): TableCell[] {
+    return cells.map((cell, j) => ({
+        text: j === 0 && !r.vehicle ? '' : cell.text,
+        bold: cols[j]?.bold,
+        alignment,
+        fillColor: j === 0 && r.vehicle ? p.headerRow : undefined,
+        borderColor: cellBorder(p),
+    }) as TableCell);
 }
 
 /** Table d'un bloc de l'Express : titre et libellés en en-tête répété, jamais laissé seul en bas de page, rangées jamais coupées. */
@@ -4353,13 +4303,8 @@ function expressPatrac(ctx: BuildCtx, f: number): { node: Content; costPt: numbe
     ];
     if (all.some((r) => r.m.dir?.trim())) cols.push({ label: 'DIR', values: (r) => (r.m.dir?.trim() ? [r.m.dir.trim()] : []), bold: true });
     const { widths, cells } = exMeasure(cols, all, f, geo.contentWidthPt, 5);
-    const rowCells = (i: number): TableCell[] => (cells[i] as Array<{ text: string }>).map((cell, j) => ({
-        text: j === 0 && !(all[i] as ExpressRow).vehicle ? '' : cell.text,
-        bold: cols[j]?.bold,
-        fillColor: j === 0 && (all[i] as ExpressRow).vehicle ? p.headerRow : undefined,
-        borderColor: cellBorder(p),
-    }) as TableCell);
-    const lines = (i: number): number => Math.max(1, ...(cells[i] as Array<{ lines: number }>).map((cell) => cell.lines));
+    const rowCells = (i: number): TableCell[] => exRowCells(cols, all[i] as ExpressRow, cells[i] as ExCell[], p);
+    const lines = (i: number): number => exRowLines(cells[i] as ExCell[]);
     const body: TableCell[][] = assigned.map((_, i) => rowCells(i));
     let costPt = EX_GAP_PT + 2 * exRowPt(1, f) + assigned.reduce((s, _, i) => s + exRowPt(lines(i), f), 0);
     if (unassigned.length) {
