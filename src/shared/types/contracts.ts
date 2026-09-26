@@ -1472,12 +1472,13 @@ export interface OiDragGlobals {
 
 /** `modules/medias.js` — photos et fond PDF personnalisé. */
 export interface OiMediaGlobals {
-    /** Upload + compression + vignette. `isSingle` remplace au lieu d'ajouter. */
+    /** Upload + compression + vignette. `isSingle` remplace au lieu d'ajouter.
+     *  Rend le nombre de photos ajoutées (champ limité : `data-max-photos`). */
     handleFileChange(
         input: HTMLInputElement,
         previewContainerId: string,
         isSingle: boolean,
-    ): Promise<void>;
+    ): Promise<number>;
     removeImage(imgId: string, itemElement: HTMLElement): Promise<void>;
     /** Re-génère toutes les vignettes depuis IndexedDB. */
     syncAllThumbnails(): void;

@@ -166,7 +166,7 @@ export const oiTutoData: TutoData = {
         },
         {
           title: "Rédiger la Mission de l'unité",
-          body: "Étape « 4. Mission de l'unité » : la zone de texte est pré-remplie avec « INTERPELLER L'OBJECTIF. », « ASSISTER LORS DE LA PERQUISITION. » et « CONDUITE AU LIEU DE GAV. ». Adaptez ce texte à votre mission. Juste dessous, le bouton « Baptême terrain » ajoute les photos du terrain : le PDF les place sous la Mission, avant l'Exécution (OI Complet).",
+          body: "Étape « 4. Mission de l'unité » : la zone de texte est pré-remplie avec « INTERPELLER L'OBJECTIF. », « ASSISTER LORS DE LA PERQUISITION. » et « CONDUITE AU LIEU DE GAV. ». Adaptez ce texte à votre mission. Juste dessous, le bouton « Baptême terrain » ajoute 2 photos du terrain au plus : le PDF leur donne une page après la Mission, avant l'Exécution, une photo en pleine page ou deux qui se la partagent (OI Complet).",
           terms: [
             "4. Mission de l'unité",
             "INTERPELLER L'OBJECTIF.",

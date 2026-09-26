@@ -79,6 +79,7 @@ import { toast } from '@shared/feedback.js';
 import { legacyCaptureColors } from '@shared/h2c-colors.js';
 import { drawOverlayLegend, overlayLegend } from '@shared/map-overlays.js';
 
+import { photoRoom } from '@oi/outils.js';
 import { OI_BAPTEME_CONTAINER } from '@oi/sections.js';
 import type { OICartoInternal, OiCartoPhotoTarget } from './types.js';
 import { esc } from '@shared/ui-platform.js';
@@ -563,6 +564,13 @@ export const CaptureMethods = {
         // l'original, résolue sur `window` (OiMediaGlobals, non importée).
         if (typeof window.handleFileChange !== 'function') {
             toast('Pipeline photo indisponible.', { kind: 'error' });
+            return;
+        }
+        // Champ limité plein (« Baptême terrain » : 2 photos) : refus avant
+        // toute capture, affiché dans la fenêtre (un toast y serait caché).
+        const field = document.getElementById(containerId);
+        if (field && photoRoom(field) <= 0) {
+            setCaptureStatus(`Ce champ accepte ${field.dataset.maxPhotos} photos au plus : supprimez-en une pour y ajouter la capture.`, 'error');
             return;
         }
         const canvas = await this._captureCanvas();

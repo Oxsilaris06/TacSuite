@@ -146,3 +146,46 @@ export function layoutGallery(photos: readonly GalleryPhoto[], box: GalleryBox, 
     }
     return pages;
 }
+
+/**
+ * Une page à une ou deux images de place fixe (photos « Baptême terrain » de
+ * l'OI, Nico 2026-09-26) : une image prend toute la zone ; deux se la
+ * partagent à parts égales, côte à côte ou l'une sous l'autre, selon la
+ * découpe qui leur donne le plus de surface. L'ensemble est centré dans la
+ * hauteur, deux images côte à côte alignées sur leur milieu. Mêmes plafond de
+ * définition et proportions que `layoutGallery`. Au-delà de deux images,
+ * seules les deux premières sont placées (l'OI en refuse une troisième).
+ */
+export function layoutSplitPage(photos: readonly GalleryPhoto[], box: GalleryBox, options: GalleryOptions = {}): GallerySlot[] {
+    const gap = options.gap ?? 12;
+    const caption = options.captionHeight ?? 14;
+    const ppi = options.maxUpscalePpi ?? 150;
+    const shown = photos.slice(0, 2);
+    const place = (cols: number): GallerySlot[] => {
+        const rows = shown.length / cols;
+        const cellWidth = (box.width - (cols - 1) * gap) / cols;
+        const cellHeight = (box.height - (rows - 1) * gap) / rows - caption;
+        const sizes = shown.map((p) => {
+            const r = aspect(p);
+            const { width, lowRes } = sized(p, Math.min(cellWidth, cellHeight * r), ppi);
+            return { width, height: width / r, lowRes };
+        });
+        // Hauteur de chaque rangée (image la plus haute + légende), puis
+        // décalage qui centre le tout dans la zone.
+        const rowHeights = Array.from({ length: rows }, (_, row) =>
+            Math.max(...sizes.slice(row * cols, (row + 1) * cols).map((z) => z.height)) + caption);
+        let top = (box.height - rowHeights.reduce((sum, h) => sum + h, 0) - (rows - 1) * gap) / 2;
+        const rowTops = rowHeights.map((h) => { const t = top; top += h + gap; return t; });
+        return shown.map((p, k) => {
+            const { width, height, lowRes } = sizes[k]!;
+            const row = Math.floor(k / cols);
+            const x = (k % cols) * (cellWidth + gap) + (cellWidth - width) / 2;
+            const y = rowTops[row]! + (rowHeights[row]! - caption - height) / 2;
+            return { id: p.id, x, y, width, height, captionY: y + height + CAPTION_GAP, lowRes };
+        });
+    };
+    const surface = (page: GallerySlot[]): number => page.reduce((sum, s) => sum + s.width * s.height, 0);
+    const sideBySide = place(shown.length);
+    const stacked = place(1);
+    return surface(stacked) > surface(sideBySide) ? stacked : sideBySide;
+}

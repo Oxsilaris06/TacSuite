@@ -370,3 +370,44 @@ describe('wireDraggableMember (SPEC §5.2, fusion patrac.js:224-226 — bonus, h
         expect(window.syncDomToStore).toHaveBeenCalled();
     });
 });
+
+describe('photo glissée vers un champ limité (data-max-photos, « Baptême terrain »)', () => {
+    const photoItem = (id: string): HTMLElement => {
+        const item = document.createElement('div');
+        item.className = 'image-preview-item draggable';
+        item.id = `${id}_item`;
+        item.innerHTML = `<img id="${id}" class="image-preview">`;
+        return item;
+    };
+
+    it('champ plein : la photo reste dans son champ d’origine ; champ non plein : elle y entre', async () => {
+        await import('@oi/drag-drop.js');
+        window.syncDomToStore = vi.fn();
+        document.body.innerHTML = `
+            <div id="source" class="image-preview-container"></div>
+            <div id="full" class="image-preview-container" data-max-photos="2"></div>
+            <div id="room" class="image-preview-container" data-max-photos="2"></div>`;
+        const source = document.getElementById('source')!;
+        const full = document.getElementById('full')!;
+        const room = document.getElementById('room')!;
+        full.append(photoItem('f1'), photoItem('f2'));
+        room.append(photoItem('r1'));
+        const moved = photoItem('m1');
+        source.append(moved);
+        window.initializeDragDropListeners();
+        moved.classList.add('dragging');
+
+        full.dispatchEvent(makeDragEvent('dragover'));
+        expect(source.contains(moved)).toBe(true);
+
+        room.dispatchEvent(makeDragEvent('dragover'));
+        expect(room.contains(moved)).toBe(true);
+
+        // Réordonner DANS un champ plein reste possible.
+        const inside = full.querySelector<HTMLElement>('#f1_item')!;
+        inside.classList.add('dragging');
+        moved.classList.remove('dragging');
+        full.dispatchEvent(makeDragEvent('dragover'));
+        expect(full.querySelectorAll('.image-preview-item')).toHaveLength(2);
+    });
+});

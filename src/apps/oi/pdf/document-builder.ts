@@ -45,6 +45,7 @@ import {
     card,
     figure,
     galleryPages,
+    splitGalleryPage,
     galleryToolsReservePt,
     grid2,
     h1,
@@ -64,7 +65,6 @@ import { imageSizeFromDataUrl, type ImageSize } from './image-size.js';
 import {
     documentFontPx,
     mm,
-    PDF_H2_BLOCK_PT,
     pageGeometry,
     palette,
     estimateCharsPerLine,
@@ -390,14 +390,6 @@ const EFFRAC_CARD_VPAD_PT = 16;
  * page porte son titre ».
  */
 const MISSION_EXEC_SEP_MARGIN_PT = 14;
-
-/**
- * Photos « Baptême terrain » sous la Mission (Nico 09-26) : hauteur minimale
- * laissée aux photos sur la page de la Mission, et marge de sécurité ajoutée à
- * l'estimation de la Mission (`missionPagePt`, conforme au rendu mesuré).
- */
-const BAPTEME_MIN_PHOTOS_PT = mm(60);
-const BAPTEME_LEAD_SAFETY_PT = 20;
 /**
  * Marge de sécurité globale soustraite de la hauteur utile de page avant
  * toute décision fit-to-page (imprécision résiduelle du repli des mots,
@@ -2039,44 +2031,19 @@ function buildMissionExecutionPages(ctx: BuildCtx, num: () => number): Content[]
     const missionNum = num();
     const execNum = num();
     const availablePt = geo.contentHeightPt - EFFRAC_FITS_SAFETY_PT;
-
     const steps = Array.from(new Set<number>([baseFontSize, ...FIT_FONT_STEPS]))
         .filter((f) => f <= baseFontSize)
         .sort((a, b) => b - a);
 
-    // Photos « Baptême terrain » (Nico 09-26) : sous la Mission, avant
-    // l'Exécution. La Mission ouvre la première page de la galerie, au plus
-    // grand palier qui laisse au moins BAPTEME_MIN_PHOTOS_PT aux photos (elle
-    // ne reste seule que si même le palier plancher ne le permet pas) ;
-    // l'Exécution suit sur sa propre page. La Mission est construite AVANT
-    // l'Exécution : les zones de correction de l'aperçu suivent l'ordre des pages.
-    const bapteme = ctx.dynamicPhotos[OI_BAPTEME_CONTAINER] ?? [];
-    if (bapteme.some((meta) => ctx.photosBase64[meta.id] !== undefined)) {
-        const title = 'Baptême terrain';
-        const leadPt = (fontPx: number): number => missionPagePt(ctx, fontPx) + 2 * MISSION_EXEC_SEP_MARGIN_PT + BAPTEME_LEAD_SAFETY_PT;
-        const fontPx = steps.find((f) => geo.contentHeightPt - PDF_H2_BLOCK_PT - leadPt(f) >= BAPTEME_MIN_PHOTOS_PT);
-        let head: Content[];
-        if (fontPx !== undefined) {
-            const lead: Content = {
-                stack: [
-                    h2(`${missionNum}. ${pdfSectionTitle(ctx.formData, 'mission')}`, p, geo.contentWidthPt),
-                    missionBodyContent(ctx, fontPx),
-                    {
-                        canvas: [{ type: 'line', x1: 0, y1: 0, x2: geo.contentWidthPt, y2: 0, lineWidth: 1, lineColor: p.border }],
-                        margin: [0, MISSION_EXEC_SEP_MARGIN_PT, 0, MISSION_EXEC_SEP_MARGIN_PT],
-                    },
-                ],
-                fontSize: fontPx,
-            };
-            head = galleryPages(title, bapteme, ctx.photosBase64, p, geo, ctx.photoSize, { content: lead, heightPt: leadPt(fontPx) });
-        } else {
-            // Mission trop longue même au palier plancher : seule, puis la galerie.
-            const mission = buildMission(ctx, missionNum);
-            const [gFirst, ...gRest] = galleryPages(title, bapteme, ctx.photosBase64, p, geo, ctx.photoSize);
-            head = [mission, { stack: [gFirst as Content], pageBreak: 'before' }, ...gRest];
-        }
+    // Photos « Baptême terrain » (Nico 09-26) : la Mission seule sur sa page,
+    // puis UNE page de photos (1 = toute la page, 2 = moitié-moitié), puis
+    // l'Exécution. Mission construite AVANT l'Exécution : zones de correction
+    // de l'aperçu dans l'ordre des pages.
+    const bapteme = splitGalleryPage('Baptême terrain', ctx.dynamicPhotos[OI_BAPTEME_CONTAINER] ?? [], ctx.photosBase64, p, geo, ctx.photoSize);
+    if (bapteme) {
+        const mission = buildMission(ctx, missionNum);
         const [execFirst, ...execRest] = buildExecution(ctx, execNum);
-        return [...head, { stack: [execFirst as Content], pageBreak: 'before' }, ...execRest];
+        return [mission, bapteme, { stack: [execFirst as Content], pageBreak: 'before' }, ...execRest];
     }
 
     const mergedPage = (fontPx: number): Content => ({
@@ -3473,7 +3440,7 @@ function buildEffractionPages(ctx: BuildCtx, block: OiEffractionBlock): Content[
  * `pdf-engine-v2.ts:1059-1189` : `for i < max(moicp, zmspcp, effrac)`, ordre
  * interne ZMSPCP → MOICP → EFFRACTION (§3.4 règle 4). Photos « Emplacement
  * AO » après chaque page ZMSPCP (§3.4 règle 3) ; « Baptême terrain » est
- * imprimé sous la Mission (`buildMissionExecutionPages`, Nico 09-26).
+ * imprimé après la Mission (`buildMissionExecutionPages`, Nico 09-26).
  *
  * CORRECTIF (rupture « premier bloc sans saut de page ») : le SEUL appelant
  * (`OI_PDF_SECTIONS['articulation'].build`) compose TOUJOURS ce résultat
@@ -3514,7 +3481,7 @@ function buildArticulationBlocksLoop(ctx: BuildCtx): Content[] {
     for (let i = 0; i < maxBlocks; i++) {
         const zmspcp = zmspcpBlocks[i];
         if (zmspcp) {
-            // « Baptême terrain » : imprimé sous la Mission (Nico 09-26), plus ici.
+            // « Baptême terrain » : imprimé après la Mission (Nico 09-26), plus ici.
             pushArticPage(buildZmspcpPage(ctx, zmspcp, memberToCell));
             const emplAo = dynamicPhotos[`photo_empl_ao_${zmspcp.id}`] ?? [];
             pushArticPages(galleryPages(`${pdfSectionTitle(ctx.formData, 'zmspcp')} : ${zmspcp.title || '-'} (Emplacement AO)`, emplAo, photosBase64, p, geo, ctx.photoSize));
@@ -4616,7 +4583,7 @@ export function buildOiDocDefinition(
     // l'OI garde tout, « Rétablir » rend la section intacte.
     const removed = applySectionRemovals(data.formData);
     // Anciennes photos « Baptême Terrain » par bloc ZMSPCP : reprises dans le
-    // champ unique imprimé sous la Mission (Nico 09-26), jamais perdues.
+    // champ unique imprimé après la Mission (Nico 09-26), jamais perdues.
     const formData: OiFormData = {
         ...removed,
         dynamic_photos: mergeLegacyBaptemePhotos(removed.dynamic_photos ?? {}, (data.formData.zmspcp_blocks ?? []).map((b) => b.id)),

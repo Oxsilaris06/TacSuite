@@ -47,7 +47,7 @@ import {
     splitAtcdBoundaries,
 } from '@oi/pdf/document-builder.js';
 import { SOFT_HYPHEN } from '@oi/pdf/text-utils.js';
-import { PDF_DARK, PDF_LIGHT } from '@oi/pdf/theme.js';
+import { pageGeometry, PDF_DARK, PDF_LIGHT } from '@oi/pdf/theme.js';
 import type {
     OiAdversary,
     OiEffractionBlock,
@@ -586,41 +586,94 @@ describe('buildOiDocDefinition — ordre des photos', () => {
         expect(extIdx).toBeLessThan(intIdx);
     });
 
-    it('baptême terrain SOUS la Mission et AVANT l’Exécution (Nico 09-26) ; emplacement AO après la page ZMSPCP', () => {
+    // Photo portrait réelle (90 × 160) : la galerie lit sa forme dans l'en-tête JPEG.
+    const PORTRAIT = 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAA0JCgsKCA0LCgsODg0PEyAVExISEyccHhcgLikxMC4pLSwzOko+MzZGNywtQFdBRkxOUlNSMj5aYVpQYEpRUk//wAALCACgAFoBAREA/8QAFQABAQAAAAAAAAAAAAAAAAAAAAH/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/9oACAEBAAA/AIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD//2Q==';
+    // JPEG réel (en-tête lu par la galerie) aux dimensions voulues.
+    const jpeg = (width: number, height: number): string => {
+        const bytes = Buffer.from(PORTRAIT.split(',')[1]!, 'base64');
+        const sof = bytes.indexOf(Buffer.from([0xff, 0xc0]));
+        bytes.writeUInt16BE(height, sof + 5);
+        bytes.writeUInt16BE(width, sof + 7);
+        return `data:image/jpeg;base64,${bytes.toString('base64')}`;
+    };
+    const baptPhotos = (...ids: string[]): OiFormData['dynamic_photos'] => ({ photo_container_bapteme_terrain_preview_container: ids.map(makePhotoMeta) });
+    const imagesOf = (node: unknown): { image: string; fit: [number, number] }[] => {
+        const out: { image: string; fit: [number, number] }[] = [];
+        JSON.stringify(node, (_k, v: unknown) => {
+            if (v && typeof v === 'object' && 'image' in v && 'fit' in v) out.push(v as { image: string; fit: [number, number] });
+            return v;
+        });
+        return out;
+    };
+
+    it.each(['a4', '16:9'] as const)('%s : Mission seule, puis la page Baptême terrain, puis l’Exécution (Nico 09-26) ; emplacement AO après la page ZMSPCP', (format) => {
         const formData: OiFormData = {
             missions_psig: 'INTERPELLER L’OBJECTIF.',
             zmspcp_blocks: [
                 { id: 'z1', title: 'ALPHA', zone: '-', mission: '-', secteur: '-', points_particuliers: '-', cat: '-', place_chef: '-', members: [] },
             ],
-            dynamic_photos: {
-                photo_container_bapteme_terrain_preview_container: [makePhotoMeta('baptphoto')],
-                photo_empl_ao_z1: [makePhotoMeta('aophoto')],
-            },
+            dynamic_photos: { ...baptPhotos('baptphoto'), photo_empl_ao_z1: [makePhotoMeta('aophoto')] },
         };
-        const photosBase64 = { baptphoto: 'data:image/jpeg;base64,BAPTPHOTO', aophoto: 'data:image/jpeg;base64,AOPHOTO' };
-        const dd = buildOiDocDefinition(collect(formData, photosBase64), { format: 'a4' });
-        const content = dd.content as Content[];
+        const photosBase64 = { baptphoto: jpeg(4000, 3000), aophoto: 'data:image/jpeg;base64,AOPHOTO' };
+        const content = buildOiDocDefinition(collect(formData, photosBase64), { format }).content as Content[];
         const pageOf = (needle: string): number => content.findIndex((page) => JSON.stringify(page).includes(needle));
 
         const missionPage = pageOf("MISSION DE L'UNITÉ");
+        expect(missionPage).toBeGreaterThanOrEqual(0);
+        expect(JSON.stringify(content[missionPage])).not.toContain('"image"');
+        expect(JSON.stringify(content[missionPage])).not.toContain('EXÉCUTION');
         const baptPage = pageOf('"image":"baptphoto"');
+        expect(baptPage).toBe(missionPage + 1);
+        expect(JSON.stringify(content[baptPage])).toContain('BAPTÊME TERRAIN');
+        expect((content[baptPage] as { pageBreak?: string }).pageBreak).toBe('before');
         const execPage = pageOf('EXÉCUTION');
-        const zmspcpPage = pageOf('ARTICULATION : ZMSPCP - ALPHA');
-        const aoPage = pageOf('"image":"aophoto"');
-        // La Mission porte les premières photos sur SA page, l'Exécution suit.
-        expect(baptPage).toBeGreaterThanOrEqual(0);
-        expect(baptPage).toBe(missionPage);
-        expect(execPage).toBeGreaterThan(baptPage);
+        expect(execPage).toBe(baptPage + 1);
         expect((content[execPage] as { pageBreak?: string }).pageBreak).toBe('before');
-        const json = JSON.stringify(content[missionPage]);
-        expect(json.indexOf("MISSION DE L'UNITÉ")).toBeLessThan(json.indexOf('"image":"baptphoto"'));
-        expect(json).toContain('BAPTÊME TERRAIN');
         // Plus rien du baptême dans l'articulation ; l'AO reste après sa page ZMSPCP.
-        expect(zmspcpPage).toBeGreaterThan(execPage);
-        expect(aoPage).toBeGreaterThan(zmspcpPage);
+        expect(pageOf('ARTICULATION : ZMSPCP - ALPHA')).toBeGreaterThan(execPage);
+        expect(pageOf('"image":"aophoto"')).toBeGreaterThan(pageOf('ARTICULATION : ZMSPCP - ALPHA'));
     });
 
-    it('ancienne donnée : photos « Baptême Terrain » d’un bloc ZMSPCP imprimées sous la Mission, jamais perdues', () => {
+    it.each(['a4', '16:9'] as const)('%s : une photo de baptême prend toute la page', (format) => {
+        const geo = pageGeometry(format);
+        for (const [w, h] of [[4000, 3000], [3000, 4000]] as const) {
+            const content = buildOiDocDefinition(collect({ missions_psig: 'X.', dynamic_photos: baptPhotos('b1') }, { b1: jpeg(w, h) }), { format }).content as Content[];
+            const [img] = imagesOf(content).filter((i) => i.image === 'b1');
+            // Toute la hauteur utile, au titre et à la légende près.
+            expect(img!.fit[1]).toBeGreaterThan(geo.contentHeightPt * 0.8);
+        }
+    });
+
+    it.each(['a4', '16:9'] as const)('%s : deux photos de baptême se partagent la page moitié-moitié', (format) => {
+        const geo = pageGeometry(format);
+        const content = buildOiDocDefinition(collect({ missions_psig: 'X.', dynamic_photos: baptPhotos('b1', 'b2') }, { b1: jpeg(4000, 3000), b2: jpeg(4001, 3000) }), { format }).content as Content[];
+        const page = content.findIndex((pg) => JSON.stringify(pg).includes('"image":"b1"'));
+        const imgs = imagesOf(content[page]);
+        expect(imgs.map((i) => i.image)).toEqual(['b1', 'b2']);
+        for (const img of imgs) {
+            expect(img.fit[0]).toBeLessThanOrEqual(geo.contentWidthPt / 2);
+            expect(img.fit[0]).toBeGreaterThan(geo.contentWidthPt * 0.45);
+        }
+        expect(JSON.stringify(content[page])).toContain('PHOTOS 1-2/2');
+    });
+
+    it('paysage et portrait côte à côte : le paysage descend pour s’aligner sur le milieu du portrait', () => {
+        const content = buildOiDocDefinition(collect({ missions_psig: 'X.', dynamic_photos: baptPhotos('b1', 'b2') }, { b1: jpeg(4000, 3000), b2: jpeg(3000, 4000) }), { format: 'a4' }).content as Content[];
+        const page = content.find((pg) => JSON.stringify(pg).includes('"image":"b1"')) as { stack: [unknown, { columns: { margin: number[] }[] }] };
+        const [land, port] = page.stack[1].columns;
+        expect(land!.margin[1]).toBeGreaterThan(port!.margin[1]!);
+    });
+
+    it('au-delà de deux photos de baptême (ancien OI), seules les deux premières sont imprimées', () => {
+        const photosBase64 = { b1: jpeg(4000, 3000), b2: jpeg(4001, 3000), b3: jpeg(4002, 3000) };
+        const content = buildOiDocDefinition(collect({ missions_psig: 'X.', dynamic_photos: baptPhotos('b1', 'b2', 'b3') }, photosBase64), { format: 'a4' }).content as Content[];
+        const all = imagesOf(content).map((i) => i.image);
+        expect(all).toContain('b1');
+        expect(all).toContain('b2');
+        expect(all).not.toContain('b3');
+    });
+
+    it('ancienne donnée : photos « Baptême Terrain » d’un bloc ZMSPCP imprimées après la Mission, jamais perdues', () => {
         const formData: OiFormData = {
             missions_psig: 'INTERPELLER L’OBJECTIF.',
             zmspcp_blocks: [
@@ -630,29 +683,14 @@ describe('buildOiDocDefinition — ordre des photos', () => {
         };
         const dd = buildOiDocDefinition(collect(formData, { baptphoto: 'data:image/jpeg;base64,BAPTPHOTO' }), { format: 'a4' });
         const content = dd.content as Content[];
+        const missionPage = content.findIndex((page) => JSON.stringify(page).includes("MISSION DE L'UNITÉ"));
         const baptPage = content.findIndex((page) => JSON.stringify(page).includes('"image":"baptphoto"'));
         const execPage = content.findIndex((page) => JSON.stringify(page).includes('EXÉCUTION'));
-        expect(baptPage).toBeGreaterThanOrEqual(0);
-        expect(JSON.stringify(content[baptPage])).toContain("MISSION DE L'UNITÉ");
-        expect(execPage).toBeGreaterThan(baptPage);
+        expect(baptPage).toBe(missionPage + 1);
+        expect(execPage).toBe(baptPage + 1);
         expect(JSON.stringify(content).split('"image":"baptphoto"').length - 1).toBe(1);
     });
 
-    // Photo portrait réelle (90 × 160) : la galerie lit sa forme dans l'en-tête JPEG.
-    const PORTRAIT = 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAA0JCgsKCA0LCgsODg0PEyAVExISEyccHhcgLikxMC4pLSwzOko+MzZGNywtQFdBRkxOUlNSMj5aYVpQYEpRUk//wAALCACgAFoBAREA/8QAFQABAQAAAAAAAAAAAAAAAAAAAAH/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/9oACAEBAAA/AIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD//2Q==';
-    const DEFAULT_MISSION = "\n\nINTERPELLER L'OBJECTIF.\n\nASSISTER LORS DE LA PERQUISITION.\n\nCONDUITE AU LIEU DE GAV.";
-
-    it.each([
-        ['16:9', 'mission de 2 lignes', 'Boucler le pavillon et interpeller le mis en cause.\nConduite au lieu de GAV.'],
-        ['a4', 'texte pré-rempli de l’étape 4', DEFAULT_MISSION],
-        ['16:9', 'texte pré-rempli de l’étape 4', DEFAULT_MISSION],
-    ] as const)('%s, %s : la Mission ne reste pas seule, la photo est sur sa page', (format, _label, missions_psig) => {
-        const formData: OiFormData = { missions_psig, dynamic_photos: { photo_container_bapteme_terrain_preview_container: [makePhotoMeta('baptphoto')] } };
-        const dd = buildOiDocDefinition(collect(formData, { baptphoto: PORTRAIT }), { format });
-        const content = dd.content as Content[];
-        const missionPage = content.findIndex((page) => JSON.stringify(page).includes("MISSION DE L'UNITÉ"));
-        expect(JSON.stringify(content[missionPage])).toContain('"image":"baptphoto"');
-    });
 
     it.each(['avec', 'sans'] as const)('zones de correction de l’aperçu dans l’ordre des pages, %s photo de baptême : Mission avant Exécution', (avec) => {
         const formData: OiFormData = {

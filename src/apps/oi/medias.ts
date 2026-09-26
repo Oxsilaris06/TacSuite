@@ -98,7 +98,7 @@
  * seule).
  */
 import { Store, dbManager } from '@oi/init.js';
-import { compressImage, reencodeSansExif } from '@oi/outils.js';
+import { compressImage, photoRoom, reencodeSansExif } from '@oi/outils.js';
 import { confirmDialog, toast } from '@shared/feedback.js';
 
 // ==================== MediaManager.js ====================
@@ -126,12 +126,12 @@ export async function handleFileChange(
     input: HTMLInputElement,
     previewContainerId: string,
     isSingle: boolean,
-): Promise<void> {
+): Promise<number> {
     // medias.js:29 — getElementById renvoie `HTMLElement | null` en TS strict ;
     // conteneur statique du gabarit, jamais absent en pratique (même précédent
     // que `articulation.ts`, cf. en-tête de ce fichier).
     const previewContainer = document.getElementById(previewContainerId);
-    if (!previewContainer) return;
+    if (!previewContainer) return 0;
 
     if (isSingle) {
         const existingImages = previewContainer.querySelectorAll<HTMLElement>('.image-preview');
@@ -144,8 +144,19 @@ export async function handleFileChange(
 
     // medias.js:40 — capture locale (`files`) : `HTMLInputElement.files` est
     // `FileList | null` côté TS, jamais gardé dans l'original.
-    const files = input.files;
-    if (files && files.length > 0) {
+    // Champ limité (`data-max-photos`) : les photos en trop sont refusées,
+    // jamais stockées, et le message le dit.
+    const chosen = Array.from(input.files ?? []);
+    const files = chosen.slice(0, Math.max(0, photoRoom(previewContainer)));
+    const overLimit = chosen.length - files.length;
+    if (overLimit > 0) {
+        const max = previewContainer.dataset.maxPhotos;
+        toast(files.length === 0 && photoRoom(previewContainer) <= 0
+            ? `Ce champ accepte ${max} photos au plus : supprimez-en une pour en ajouter une autre.`
+            : `Ce champ accepte ${max} photos au plus : ${overLimit} non ajoutée${overLimit > 1 ? 's' : ''}.`, { kind: 'error' });
+    }
+    let added = 0;
+    if (files.length > 0) {
         // U26 — état de chargement pendant l'import (compression + IndexedDB) :
         // input désactivé, conteneur aria-busy, compteur visuel minimal.
         input.disabled = true;
@@ -154,12 +165,11 @@ export async function handleFileChange(
         progressEl.className = 'upload-progress';
         previewContainer.appendChild(progressEl);
         const total = files.length;
-        let added = 0;
         // Fichiers que le navigateur ne sait pas décoder, même convertis
         // (HEIC) : refusés et nommés, jamais stockés (audit F10).
         const refused: string[] = [];
         let heicRefused = false;
-        for (const file of Array.from(files)) {
+        for (const file of files) {
             progressEl.textContent = `Import de la photo ${added + 1}/${total}…`;
             // Capture de carte (`carto/capture.ts`, fichier `carte_…`) : clé
             // `img_plan_…`, le PDF met un plan seul sur sa page (décision 44).
@@ -248,6 +258,7 @@ export async function handleFileChange(
     syncAllThumbnails();
     if (input) input.value = '';
     window.syncDomToStore();
+    return added;
 }
 
 // medias.js:107-127
