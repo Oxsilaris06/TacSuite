@@ -1063,7 +1063,7 @@ async function loadFormData(): Promise<boolean> {
                             const isEffrac = previewId.includes('effrac');
 
                             interactiveItem.innerHTML = `
-                                        <img id="${imgData.id}" class="image-preview" src="${previewUrl}" style="display:block;"
+                                        <img id="${esc(imgData.id)}" class="image-preview" src="${esc(previewUrl)}" style="display:block;"
                                             data-annotations='${(imgData.annotations || '[]').replace(/'/g, '&apos;')}'
                                             data-tools='${(imgData.tools || '[]').replace(/'/g, '&apos;')}'
                                             data-other-tools='${(imgData.other_tools || '').replace(/'/g, '&apos;')}'
