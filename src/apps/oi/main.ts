@@ -202,8 +202,11 @@ import { oiState } from '@oi/state.js';
 // R2-T4 — infrastructure de validation inline (nouveau module, pas un port
 // verbatim ; import nommé au même titre que `oiState` ci-dessus).
 import { attachValidation, required, lengthRange } from '@oi/validation.js';
-// P3 — compteurs de caractères calibrés PDF (nouveau module, cf. son en-tête).
-import { ARTICULATION_CAT_SOFT_MAX, EFFRACTION_HYP_FIELD_SOFT_MAX, charCounter } from '@oi/validation.js';
+// P3 — compteurs calibrés PDF : en caractères pour les hypothèses
+// d'effraction, en lignes (décision 43) pour l'ATCD et les CAT ZMSPCP/MOICP.
+import { EFFRACTION_HYP_FIELD_SOFT_MAX, charCounter, fitCounter } from '@oi/validation.js';
+import { adversaryFicheMarginLines, articulationMarginLines } from '@oi/pdf/document-builder.js';
+import type { OiAdversary, OiMoicpBlock, OiZmspcpBlock } from '@shared/types/contracts.js';
 
 // ── §12.2 — Imports applicatifs, ordre de 4.html:4517-4534 à la ligne près.
 // Tous en side-effect only : chaque module pose ses globales `window.*` à
@@ -707,15 +710,94 @@ function initOiStaticFieldValidation(): void {
  * périmètre.
  */
 const CHAR_COUNTER_DYNAMIC_FIELDS: ReadonlyArray<{ selector: string; softMax: number }> = [
-    { selector: '.moicp-cat', softMax: ARTICULATION_CAT_SOFT_MAX },
-    { selector: '.zmspcp-cat', softMax: ARTICULATION_CAT_SOFT_MAX },
     { selector: '.effrac-hyp-effrac', softMax: EFFRACTION_HYP_FIELD_SOFT_MAX },
     { selector: '.effrac-hyp-degag', softMax: EFFRACTION_HYP_FIELD_SOFT_MAX },
     { selector: '.effrac-hyp-assaut', softMax: EFFRACTION_HYP_FIELD_SOFT_MAX },
 ];
 
-/** Branche `charCounter` sur `el` s'il correspond à l'un des sélecteurs ci-dessus (l'élément lui-même OU un de ses descendants — un bloc MOICP/ZMSPCP/hypothèse entier est inséré d'un coup). */
+/** Élément de formulaire portant `.value`. */
+type FieldValueElement = HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement;
+
+/*
+ * Décision 43 — lecture d'une fiche adversaire ou d'un bloc ZMSPCP/MOICP
+ * depuis le DOM, pour les compteurs en lignes (la saisie en cours n'est pas
+ * encore dans le Store : synchro débouncée de 500 ms). Même lecture que
+ * `syncDomToStoreCore` (formulaires.ts), recopiée ici pour ne pas remanier la
+ * synchro d'un fichier partagé : à factoriser à la fusion.
+ */
+function readAdversaryEntry(entry: HTMLElement): OiAdversary {
+    const advId = entry.dataset.advId ?? '';
+    const adv: OiAdversary = { id: advId, me_list: [], etat_esprit_list: [], volume_list: [], vehicules_list: [] };
+    entry.querySelectorAll<FieldValueElement>('.adv-field').forEach((field) => {
+        const key = field.dataset.field;
+        if (key) adv[key] = field.value;
+    });
+    const values = (selector: string): string[] => Array.from(entry.querySelectorAll<FieldValueElement>(selector)).map((i) => i.value).filter(Boolean);
+    adv.me_list = values('.me-container .me-input');
+    adv.etat_esprit_list = window.getChipData(`esprit_${advId}`);
+    adv.volume_list = window.getChipData(`volume_${advId}`);
+    adv.vehicules_list = values('.vehicules-container .dynamic-input');
+    adv.ma_list = values('.ma-container .ma-input');
+    return adv;
+}
+
+function readArticulationBlock(kind: 'zmspcp' | 'moicp', block: HTMLElement): OiZmspcpBlock | OiMoicpBlock {
+    const v = (cls: string): string => block.querySelector<FieldValueElement>(`.${kind}-${cls}`)?.value || '';
+    const common = {
+        id: block.dataset.blockId ?? '',
+        title: block.querySelector<FieldValueElement>('.block-title-input')?.value || '',
+        mission: v('mission'),
+        points_particuliers: v('pp'),
+        cat: v('cat'),
+        place_chef: v('place-chef'),
+        members: Array.from(block.querySelectorAll<HTMLElement>('.articulation-member')).map((m) => m.dataset.trigramme ?? ''),
+    };
+    return kind === 'zmspcp'
+        ? { ...common, zone: v('zone'), secteur: v('secteur') }
+        : { ...common, objectif: v('objectif'), itineraire: v('itineraire') };
+}
+
+const pdfPageFormat = (): 'a4' | '16:9' => (window.pdfOutputFormat === '16:9' ? '16:9' : 'a4');
+
+/** `root` lui-même et ses descendants qui correspondent à `selector`. */
+function matching(root: ParentNode, selector: string): Element[] {
+    return [...(root instanceof Element && root.matches(selector) ? [root] : []), ...Array.from(root.querySelectorAll(selector))];
+}
+
+/**
+ * Décision 43 — compteurs EN LIGNES, même modèle que le solveur PDF, rouges
+ * dès que la page est pleine (avant le refus) : sous l'ATCD (marge de la
+ * fiche adversaire entière) et sous la CAT d'un bloc ZMSPCP/MOICP (marge de
+ * la page du bloc ; cellules et titres personnalisés lus dans le Store).
+ */
+function attachFitCounters(root: ParentNode): void {
+    for (const el of matching(root, '.adversary-entry [data-field="antecedents_adversaire"]')) {
+        const entry = el.closest<HTMLElement>('.adversary-entry');
+        if (!(el instanceof HTMLTextAreaElement) || !entry) continue;
+        fitCounter(el, {
+            scope: entry,
+            measure: () => adversaryFicheMarginLines(readAdversaryEntry(entry), {
+                hasPhoto: !!document.getElementById(`photo_main_${entry.dataset.advId ?? ''}`)?.querySelector('.image-preview-item'),
+                format: pdfPageFormat(),
+                index: Array.from(document.querySelectorAll('.adversary-entry')).indexOf(entry) + 1,
+            }),
+        });
+    }
+    for (const kind of ['zmspcp', 'moicp'] as const) {
+        for (const el of matching(root, `.${kind}-cat`)) {
+            const block = el.closest<HTMLElement>(`.${kind}-block`);
+            if (!(el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) || !block) continue;
+            fitCounter(el, {
+                scope: block,
+                measure: () => articulationMarginLines(kind, readArticulationBlock(kind, block), window.Store.state.formData, pdfPageFormat()),
+            });
+        }
+    }
+}
+
+/** Branche les compteurs sur `root` et ses descendants (une fiche, un bloc MOICP/ZMSPCP/hypothèse entier est inséré d'un coup) : en lignes pour l'ATCD et la CAT des blocs, en caractères pour les hypothèses d'effraction. */
 function attachDynamicCharCounters(root: ParentNode): void {
+    attachFitCounters(root);
     for (const { selector, softMax } of CHAR_COUNTER_DYNAMIC_FIELDS) {
         const targets: Element[] = [];
         if (root instanceof Element && root.matches(selector)) targets.push(root);
@@ -736,10 +818,13 @@ function attachDynamicCharCounters(root: ParentNode): void {
  * déclenchent la même détection).
  */
 function initOiDynamicCharCounters(): void {
-    const containerIds = ['moicp_container', 'zmspcp_container', 'effraction_container'];
+    const containerIds = ['adversaries_container', 'moicp_container', 'zmspcp_container', 'effraction_container'];
     for (const containerId of containerIds) {
         const container = document.getElementById(containerId);
         if (!container) continue;
+        // Blocs déjà restaurés par `loadFormData` (appelé plus tôt) : sans
+        // cela, seuls les blocs ajoutés ensuite avaient leur compteur.
+        attachDynamicCharCounters(container);
         const observer = new MutationObserver((mutations) => {
             for (const mutation of mutations) {
                 mutation.addedNodes.forEach((node) => {
