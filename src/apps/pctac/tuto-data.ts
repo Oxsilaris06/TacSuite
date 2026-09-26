@@ -94,6 +94,17 @@ export function pctacTutoData(): TutoData {
           tip: null
         },
         {
+          title: "Marquer une entrée importante (étoile)",
+          body: "L'étoile à côté de l'heure (« Marquer comme important ») met une entrée en favori ; un second appui la retire (« Retirer des favoris »). Les favoris sont les seuls faits marquants de la synthèse A3, changements de statut automatiques compris : un statut n'y figure que s'il est étoilé. Le rapport complet les compte et les marque d'une étoile. Dans l'en-tête du journal, l'étoile « N'afficher que les favoris » filtre la liste.",
+          selector: "#favorisLogBtn",
+          terms: [
+            "Marquer comme important",
+            "Retirer des favoris",
+            "N'afficher que les favoris"
+          ],
+          tip: "L'ordre du journal reste chronologique : l'étoile ne déplace pas l'entrée."
+        },
+        {
           title: `Onglets ${mode.adv.plural}, ${mode.host.plural}, Amis`,
           body: `Ces trois onglets ouvrent les repertoires de personnes : ${mode.adv.plural} (fiches des mis en cause), ${mode.host.plural} (personnes menacees) et Amis (forces amies engagees). Chaque onglet affiche son propre tableau de fiches et se remplit independamment.`,
           selector: null,
