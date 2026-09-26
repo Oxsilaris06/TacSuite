@@ -21,8 +21,9 @@
 
 import { isWgs84 } from '@shared/coords.js';
 import { Persist } from '@shared/persist.js';
+import { confirmDialog, toast } from '@shared/feedback.js';
 
-import { OSMAND_SENDER_PREFIX, acquireScreenWakeLock, acquireSweep, registerRemoteOperator, releaseScreenWakeLock, releaseSweep, removeRemoteMembers, upsert } from '@pctac/tchap-live.js';
+import { OSMAND_SENDER_PREFIX, acquireScreenWakeLock, forgetTchap, acquireSweep, registerRemoteOperator, releaseScreenWakeLock, releaseSweep, removeRemoteMembers, upsert } from '@pctac/tchap-live.js';
 
 const LS_KEY = 'pcTacOsmandRelay';
 const DEFAULT_URL = 'https://nico-ai-series-1.tailed318a.ts.net/osmand';
@@ -235,9 +236,33 @@ function wireUI(): void {
   const keyEl = $('osm_key'); if (keyEl instanceof HTMLInputElement) keyEl.value = cfg.key || '';
   $('osm_start')?.addEventListener('click', start);
   $('osm_stop')?.addEventListener('click', stop);
+  $('station_forget')?.addEventListener('click', () => { void forgetStation(); });
   for (const id of ['osm_url', 'osm_key']) { const el = $(id); if (el) el.addEventListener('change', persistFromInputs); }
   setButtons();
   setStatus('Prêt.');
+}
+
+/**
+ * « Oublier ce poste » : après confirmation, efface de l'appareil les
+ * identifiants Tchap (révoqués côté serveur si possible) et la configuration
+ * du relais OsmAnd (URL et clé de lecture).
+ */
+async function forgetStation(): Promise<void> {
+  const ok = await confirmDialog({
+    message: 'Oublier ce poste ? Les identifiants Tchap (ProConnect ou jeton) et la clé du relais OsmAnd sont effacés de cet appareil ; la session Tchap est révoquée si le réseau le permet. Il faudra se reconnecter.',
+    confirmLabel: 'Oublier ce poste',
+    danger: true,
+  });
+  if (!ok) return;
+  stop();
+  for (const k of Object.keys(cfg) as Array<keyof OsmandCfg>) Reflect.deleteProperty(cfg, k);
+  try { localStorage.removeItem(LS_KEY); } catch { /* stockage indisponible */ }
+  const urlEl = $('osm_url'); if (urlEl instanceof HTMLInputElement) urlEl.value = '';
+  const keyEl = $('osm_key'); if (keyEl instanceof HTMLInputElement) keyEl.value = '';
+  const tchap = await forgetTchap();
+  if (tchap === 'revoked') toast('Poste oublié. Session Tchap révoquée.', { kind: 'success' });
+  else if (tchap === 'not-revoked') toast('Poste oublié sur cet appareil. Révocation impossible : fermez la session depuis Tchap (Paramètres, Sessions).', { kind: 'error', duration: 8000 });
+  else toast('Poste oublié.', { kind: 'success' });
 }
 
 export const OsmandLive = { start, stop, wireUI };
