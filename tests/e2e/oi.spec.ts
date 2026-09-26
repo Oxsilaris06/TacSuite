@@ -1421,3 +1421,31 @@ test('capture de la carte vers « OI Express — Carte » : photo ajoutée, aucu
   expect(errors).toEqual([]);
 });
 
+
+// ============================================================================
+// Ergonomie (atelier UI-2, 2026-09-26)
+// ============================================================================
+
+test.describe('OI — ergonomie', () => {
+  test('un champ qui prend le focus n\'est pas caché sous le dock', async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: 'reduce' }); // défilement immédiat
+    await gotoOi(page);
+    await goToStepViaBullet(page, 4);
+    for (let i = 0; i < 4; i++) await page.locator('[data-action="add-time-event"]').click();
+    await page.evaluate(() => window.scrollTo(0, 0));
+    const dock = await page.locator('#dockMenu').boundingBox();
+    // Parcours clavier réel : Tab de champ en champ dans la chronologie.
+    await page.locator('#time_events_container .time-type-select').first().focus();
+    for (let i = 0; i < 15; i++) {
+      await page.keyboard.press('Tab');
+      const box = await page.evaluate(() => {
+        const el = document.activeElement as HTMLElement | null;
+        if (!el || !el.closest('#time_events_container')) return null;
+        const r = el.getBoundingClientRect();
+        return { bottom: r.bottom, name: el.className };
+      });
+      if (!box) break;
+      expect(dock && box.bottom <= dock.y, `${box.name} sous le dock`).toBe(true);
+    }
+  });
+});

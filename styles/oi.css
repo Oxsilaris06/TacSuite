@@ -276,6 +276,8 @@
             /* Fluid typography de base */
             font-size: clamp(14px, 1vw + 10px, 16px);
             scroll-behavior: smooth;
+            /* Le dock flottant (fixe, en bas) ne cache plus le champ qui prend le focus. */
+            scroll-padding-bottom: 120px;
         }
 
         body {
