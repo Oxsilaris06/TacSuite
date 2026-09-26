@@ -170,6 +170,10 @@ function buildCss(accent: string): string {
 .ptuto-search input{ flex:1; min-width:0; background:none; border:none; outline:none;
   color:#f6f6f7; font:400 16px/1 'Inter',sans-serif; } /* 16px : évite l'auto-zoom iOS au focus */
 .ptuto-search input::placeholder{ color:#6f6f78; }
+/* Les pages hôtes stylent tous leurs champs (OI : input:not(…)×5, spécificité 0,5,1) :
+   la classe répétée garde un seul cadre, celui de .ptuto-search. */
+.ptuto-search .ptuto-q.ptuto-q.ptuto-q.ptuto-q.ptuto-q{ width:auto; height:auto; margin:0; padding:0;
+  border:none; border-radius:0; background:none; box-shadow:none; }
 .ptuto-search-clear{ display:none; flex:0 0 auto; width:36px; align-self:stretch; padding:0;
   background:none; border:none; color:#8a8a91; cursor:pointer; border-radius:8px;
   align-items:center; justify-content:center; }
@@ -636,6 +640,7 @@ class Tuto implements PocheTutoInstance {
     const search = el('div', 'ptuto-search', '<span class="material-symbols-outlined">search</span>');
     const input = el('input');
     input.type = 'text'; // 'text' (pas 'search') : évite la déco native en doublon
+    input.className = 'ptuto-q';
     input.placeholder = 'Rechercher une fonction…';
     input.setAttribute('aria-label', 'Rechercher dans le tutoriel');
     input.setAttribute('autocomplete', 'off');

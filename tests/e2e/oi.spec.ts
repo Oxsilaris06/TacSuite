@@ -1455,6 +1455,18 @@ test.describe('OI — ergonomie', () => {
     await expect.poll(() => smallButtons(page, '#presentationModal .pdf-section-order-move-btns')).toEqual([]);
   });
 
+  test('tutoriel : la recherche est un seul champ (pas de cadre dans le cadre)', async ({ page }) => {
+    await gotoOi(page);
+    await page.locator('#dockMenu .ptuto-dock').click();
+    const input = page.locator('.ptuto-search input');
+    await expect(input).toBeVisible();
+    const style = await input.evaluate((el) => {
+      const cs = getComputedStyle(el);
+      return { border: cs.borderTopWidth, margin: cs.marginBottom, bg: cs.backgroundColor };
+    });
+    expect(style).toEqual({ border: '0px', margin: '0px', bg: 'rgba(0, 0, 0, 0)' });
+  });
+
   test('un champ qui prend le focus n\'est pas caché sous le dock', async ({ page }) => {
     await page.emulateMedia({ reducedMotion: 'reduce' }); // défilement immédiat
     await gotoOi(page);
