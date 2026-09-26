@@ -1480,6 +1480,38 @@ test.describe('OI — ergonomie', () => {
     }
   });
 
+  /** Éléments visibles portant un liseré latéral épais (bordure gauche ≥ 3 px plus
+   *  épaisse que les autres, ou pseudo-élément barre collée à gauche). */
+  async function thickSideStripes(page: Page): Promise<string[]> {
+    return page.evaluate(() => Array.from(document.querySelectorAll<HTMLElement>('body *')).flatMap((el) => {
+      if (!el.offsetParent && getComputedStyle(el).position !== 'fixed') return [];
+      const cs = getComputedStyle(el);
+      const left = parseFloat(cs.borderLeftWidth);
+      const name = `${el.tagName.toLowerCase()}.${String(el.className).split(' ')[0]}`;
+      const out: string[] = [];
+      if (left >= 3 && left > parseFloat(cs.borderTopWidth) && cs.borderLeftStyle !== 'none') out.push(`${name} border-left ${left}px`);
+      const b = getComputedStyle(el, '::before');
+      if (b.content !== 'none' && b.position === 'absolute' && b.left === '0px' && b.top === '0px' && b.bottom === '0px' && parseFloat(b.width) >= 3 && parseFloat(b.width) <= 8) {
+        out.push(`${name}::before ${b.width}`);
+      }
+      return out;
+    }));
+  }
+
+  test('aucun liseré latéral épais (PATRACDVR, articulation, finalisation)', async ({ page }) => {
+    await gotoOi(page);
+    await goToStepViaBullet(page, 6);
+    await withPrompt(page, 'VL-LIS', () => page.locator('#addManualVehicleBtn').click());
+    await withPrompt(page, 'LIS', () => page.locator('#addManualMemberBtn').click());
+    const found = await thickSideStripes(page);
+    await goToStepViaBullet(page, 5);
+    await page.locator('#addMoicpBtn').click();
+    found.push(...await thickSideStripes(page));
+    await goToStepViaBullet(page, 7);
+    found.push(...await thickSideStripes(page));
+    expect([...new Set(found)]).toEqual([]);
+  });
+
   test('un champ qui prend le focus n\'est pas caché sous le dock', async ({ page }) => {
     await page.emulateMedia({ reducedMotion: 'reduce' }); // défilement immédiat
     await gotoOi(page);

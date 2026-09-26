@@ -133,7 +133,7 @@ export function addMoicp(data?: Partial<OiMoicpBlock> | null): void {
     const defaultMission = data?.mission || DEFAULTS.missions.moicp;
 
     div.innerHTML = `
-        <div class="collapsible-header" style="background: color-mix(in srgb, var(--accent-blue) 12%, transparent); color: var(--accent-blue); border-left: 4px solid var(--accent-blue); border-radius: var(--radius-md) var(--radius-md) 0 0;">
+        <div class="collapsible-header" style="background: color-mix(in srgb, var(--accent-blue) 12%, transparent); color: var(--accent-blue); border-radius: var(--radius-md) var(--radius-md) 0 0;">
             <h3 class="block-title" style="margin: 0; display: flex; align-items: center; gap: 10px;">
                 <span class="material-symbols-outlined">shield</span>
                 <input type="text" class="block-title-input" value="${esc(data?.title || 'Inter ' + blockIndex)}"
@@ -234,7 +234,7 @@ export function addZmspcp(data?: Partial<OiZmspcpBlock> | null): void {
     const defaultMission = data?.mission || DEFAULTS.missions.zmspcp;
 
     div.innerHTML = `
-        <div class="collapsible-header" style="background: color-mix(in srgb, var(--moicp-zmspcp-purple) 12%, transparent); color: var(--moicp-zmspcp-purple, #8e44ad); border-left: 4px solid var(--moicp-zmspcp-purple, #8e44ad); border-radius: var(--radius-md) var(--radius-md) 0 0;">
+        <div class="collapsible-header" style="background: color-mix(in srgb, var(--moicp-zmspcp-purple) 12%, transparent); color: var(--moicp-zmspcp-purple, #8e44ad); border-radius: var(--radius-md) var(--radius-md) 0 0;">
             <h3 class="block-title" style="margin: 0; display: flex; align-items: center; gap: 10px;">
                 <span class="material-symbols-outlined">visibility</span>
                 <input type="text" class="block-title-input" value="${esc(data?.title || 'Appui Observation ' + blockIndex)}"
@@ -949,7 +949,7 @@ export function addEffraction(data?: Partial<OiEffractionBlock> | null): void {
     div.dataset.blockId = blockId;
 
     div.innerHTML = `
-        <div class="collapsible-header" style="background: color-mix(in srgb, var(--effraction-gold) 12%, transparent); color: var(--effraction-gold); border-left: 4px solid var(--effraction-gold); border-radius: var(--radius-md) var(--radius-md) 0 0;">
+        <div class="collapsible-header" style="background: color-mix(in srgb, var(--effraction-gold) 12%, transparent); color: var(--effraction-gold); border-radius: var(--radius-md) var(--radius-md) 0 0;">
             <h3 class="block-title" style="margin: 0; display: flex; align-items: center; gap: 10px;">
                 <span class="material-symbols-outlined">hardware</span>
                 <input type="text" class="block-title-input" value="${esc(data?.title || 'Effraction ' + blockIndex)}"
