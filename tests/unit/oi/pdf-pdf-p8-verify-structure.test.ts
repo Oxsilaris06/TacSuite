@@ -56,10 +56,10 @@ const joinPages = (pages: string[]) => pages.join('\f') + '\f';
 // MARKERS / PAGE_DIMENSIONS_PT — sanity sur les constantes verbatim SPEC §7
 // ===========================================================================
 describe('MARKERS (SPEC-PDF-V3.md §7, liste des 15 marqueurs)', () => {
-    it('contient exactement 15 marqueurs, numérotés 1..15 dans l\'ordre', () => {
-        expect(MARKERS).toHaveLength(15);
+    it('contient 14 marqueurs, numérotés 1..15 sans le n° 3 « CIBLE(S) » (retiré de la garde, Nico 09-28)', () => {
+        expect(MARKERS).toHaveLength(14);
         expect(MARKERS.map((m: { n: number }) => m.n)).toEqual(
-            Array.from({ length: 15 }, (_, i) => i + 1)
+            Array.from({ length: 15 }, (_, i) => i + 1).filter((n) => n !== 3)
         );
     });
 
@@ -71,8 +71,8 @@ describe('MARKERS (SPEC-PDF-V3.md §7, liste des 15 marqueurs)', () => {
     });
 
     it('le doublon historique « 7. » a disparu : #9 ARTICULATION reste « 7. », #14 PATRACDVR devient « 9. » (fix §6)', () => {
-        expect(MARKERS[8]).toMatchObject({ n: 9, text: '7. ARTICULATION & ORDRES DE MOUVEMENT' });
-        expect(MARKERS[13]).toMatchObject({ n: 14, text: '9. RÉCAPITULATIF PATRACDVR' });
+        expect(MARKERS[7]).toMatchObject({ n: 9, text: '7. ARTICULATION & ORDRES DE MOUVEMENT' });
+        expect(MARKERS[12]).toMatchObject({ n: 14, text: '9. RÉCAPITULATIF PATRACDVR' });
     });
 });
 

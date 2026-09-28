@@ -155,7 +155,6 @@ describe('buildOiDocDefinition — ordre des sections (SPEC-2026-08-18-pdf-et-ch
         const markers = [
             'ORDRE INITIAL',
             '1. SITUATION GLOBALE',
-            'CIBLE(S)',
             '2.1 FICHE ADVERSAIRE : DUPONT',
             '3. ENVIRONNEMENT ET AMIS',
             '4. TRANSPORT',
@@ -197,10 +196,9 @@ describe('buildOiDocDefinition — ordre des sections (SPEC-2026-08-18-pdf-et-ch
         expect(json).not.toContain('8. CONDUITES À TENIR GÉNÉRALES');
     });
 
-    it("sans aucun adversaire, la section CIBLE(S) affiche le repli et aucune fiche adversaire n'apparaît", () => {
+    it("sans aucun adversaire, aucune fiche adversaire n'apparaît", () => {
         const json = JSON.stringify(buildOiDocDefinition(collect({}), { format: 'a4' }));
 
-        expect(json).toContain('Aucune cible renseignée.');
         expect(json).not.toContain('FICHE ADVERSAIRE');
     });
 });
@@ -1286,20 +1284,26 @@ describe('buildOiDocDefinition — page unique ZMSPCP/MOICP, fit-to-page (missio
 // `tests/pdf/verify-structure.mjs`).
 // ===========================================================================
 describe('buildOiDocDefinition — correctif PG.REFIX round 1', () => {
-    it('page de garde : un `situation_generale`/`situation_particuliere` volumineux réduit le palier de police de `situationCard`/`ciblesCard` (grid2) sous le palier document', () => {
+    it('page de garde : une situation volumineuse réduit le palier de police de la carte Situation sous le palier document', () => {
         const longSituation = 'Reconduite du scenario de recette OI avec un jeu de donnees volontairement charge. '.repeat(6);
         const formData: OiFormData = { situation_generale: longSituation, situation_particuliere: longSituation };
-        const dd = buildOiDocDefinition(collect(formData), { format: 'a4' });
-        const json = JSON.stringify(dd);
+        const cover = (buildOiDocDefinition(collect(formData), { format: 'a4' }).content as Content[])[0];
 
-        // La grille couverture (`{ stack: [grid2(...)], fontSize: coverFontPx }`,
-        // document-builder.ts::buildCover) porte un `fontSize` explicite juste
-        // après la fermeture du `stack` qui enveloppe `grid2()` — <= 10 pour un
-        // volume aussi long (`coverCardFontPx`, bien SOUS le palier plancher
-        // `adaptivePagePx` de 9, cf. sa JSDoc).
-        const gridMatch = json.match(/"columnGap":[\d.]+\}\],"fontSize":(\d+)/);
-        expect(gridMatch).not.toBeNull();
-        expect(Number(gridMatch?.[1])).toBeLessThanOrEqual(10);
+        // `{ stack: [situationCard], fontSize: coverFontPx }` (buildCover).
+        const fontSize = (JSON.stringify(cover).match(/\}\],"fontSize":(\d+)\}\]\}$/) ?? [])[1];
+        expect(Number(fontSize)).toBeLessThanOrEqual(10);
+    });
+
+    it.each(['a4', '16:9'] as const)('%s : une situation générale longue tient sous le titre resserré, sans carte CIBLE(S) (Nico 09-28)', (format) => {
+        const para = "Le mis en cause, connu des services pour des faits de violences, s'est retranché au domicile familial après une dispute avec sa compagne. ";
+        const formData: OiFormData = { situation_generale: para.repeat(16), situation_particuliere: para.repeat(3), adversaries: [{ id: 'a1', nom_adversaire: 'DUPONT', me_list: [], etat_esprit_list: [], volume_list: [], vehicules_list: [] }] };
+        const cover = JSON.stringify((buildOiDocDefinition(collect(formData), { format }).content as Content[])[0]);
+
+        expect(cover).not.toContain('CIBLE(S)');
+        expect(cover).not.toContain('DUPONT');
+        // Titre resserré (8 mm au lieu de 35) et palier plancher au plus.
+        expect(cover).toContain(`"margin":[0,${(8 * 72) / 25.4}`);
+        expect(Number((cover.match(/\}\],"fontSize":(\d+)\}\]\}$/) ?? [])[1])).toBeGreaterThanOrEqual(8);
     });
 
     it("un bloc effraction SANS AUCUNE mesure technique, SANS hypothèse, SANS photo est OMIS (section vide = OMISE, jamais de page 'titre seul')", () => {
@@ -2025,142 +2029,6 @@ describe('internPhotoImages — D4 : internement/déduplication des images (poid
         expect(photoRefs.vide).toBe('');
         expect(images).toEqual({ a: PX });
     });
-});
-
-// ===========================================================================
-// RÉGRESSION (campagne de mesure, 2 pertes de données silencieuses) —
-// anomalie CRITIQUE #1 : la carte CIBLE(S) de la page de garde disparaît
-// (`ciblesCard` restait `unbreakable:true` par défaut, pdfmake supprime
-// SILENCIEUSEMENT un bloc insécable qui excède une page) au-delà d'un petit
-// nombre d'adversaires — page 2 restant blanche. Couvre 1/5/8/15/30
-// adversaires, A4 et 16:9 (mêmes seuils que la campagne de mesure).
-// ===========================================================================
-describe('buildOiDocDefinition — RÉGRESSION anomalie #1 : carte CIBLE(S) de la page de garde', () => {
-    function makeAdversaries(count: number): OiAdversary[] {
-        return Array.from({ length: count }, (_, i) => ({
-            id: `adv${i + 1}`,
-            nom_adversaire: `CIBLE ${String(i + 1).padStart(2, '0')} REGRESSION`,
-            stature_adversaire: '1m80',
-            ethnie_adversaire: 'Test',
-            me_list: [],
-            etat_esprit_list: [],
-            volume_list: [],
-            vehicules_list: [],
-        }));
-    }
-
-    /**
-     * `buildOiDocDefinition` ne fait QUE construire la `TDocumentDefinitions`
-     * (arbre déclaratif pdfmake) — la disparition d'un bloc `unbreakable:true`
-     * trop grand est un comportement du MOTEUR DE MISE EN PAGE de pdfmake, à
-     * l'exécution (`pdfMake.createPdf(...)`), invisible sur ce seul arbre : le
-     * JSON contient TOUJOURS les N entrées, que le rendu réel les affiche ou
-     * les supprime silencieusement. Un test `toContain('CIBLE 30')` ne peut
-     * donc JAMAIS détecter l'anomalie #1 (vérifié : il passe même SANS le
-     * correctif) — la preuve rendu réel est apportée séparément
-     * (`tests/pdf/generate-from-fixture.mjs` + `pdftotext`/`verify-structure.mjs`,
-     * cf. rapport de mission). Ce que CE test unitaire peut et doit vérifier
-     * directement, c'est la CAUSE structurelle : plus aucun `card()` portant
-     * « CIBLE(S) » ne doit rester `unbreakable:true` (`blocks.ts::card`,
-     * défaut historique qui faisait disparaître la carte).
-     */
-    function collectUnbreakableCardsContaining(node: unknown, needle: string, found: boolean[]): void {
-        if (node === null || typeof node !== 'object') {
-            return;
-        }
-        if (Array.isArray(node)) {
-            node.forEach((child) => collectUnbreakableCardsContaining(child, needle, found));
-            return;
-        }
-        const obj = node as Record<string, unknown>;
-        if ('unbreakable' in obj && 'table' in obj && JSON.stringify(obj).includes(needle)) {
-            found.push(obj.unbreakable === true);
-        }
-        for (const key of Object.keys(obj)) {
-            collectUnbreakableCardsContaining(obj[key], needle, found);
-        }
-    }
-
-    it.each([1, 5, 8, 15, 30])(
-        '%d adversaire(s) : la carte CIBLE(S) est TOUJOURS présente, chaque cible nommée apparaît, jamais de page top-level vide (A4 et 16:9)',
-        (count) => {
-            for (const format of ['a4', '16:9'] as const) {
-                const dd = buildOiDocDefinition(collect({ adversaries: makeAdversaries(count) }), { format });
-                const json = JSON.stringify(dd);
-
-                expect(json, `« CIBLE(S) » doit apparaître (${count} adv., ${format})`).toContain('CIBLE(S)');
-                for (let i = 1; i <= count; i++) {
-                    expect(json, `cible ${i} doit apparaître (${count} adv., ${format})`).toContain(
-                        `CIBLE ${String(i).padStart(2, '0')} REGRESSION`,
-                    );
-                }
-                // Aucune page top-level SANS AUCUN texte (`text`/labelValue) —
-                // reproduction directe du défaut mesuré (page 2 100 % blanche
-                // à 30 adversaires, avant correctif).
-                const content = dd.content as Content[];
-                content.forEach((page, idx) => {
-                    const pageJson = JSON.stringify(page);
-                    expect(pageJson.length, `page top-level ${idx} ne doit jamais être vide (${count} adv., ${format})`).toBeGreaterThan(0);
-                    expect(/"text"/.test(pageJson), `page top-level ${idx} doit porter du texte (${count} adv., ${format})`).toBe(true);
-                });
-
-                // La CAUSE de l'anomalie #1 : aucun `card()` contenant « CIBLE(S) »
-                // ne doit rester `unbreakable:true` (cf. JSDoc `collectUnbreakableCardsContaining`).
-                const unbreakableFlags: boolean[] = [];
-                collectUnbreakableCardsContaining(dd.content, 'CIBLE(S)', unbreakableFlags);
-                expect(unbreakableFlags.length, `au moins une carte CIBLE(S) attendue (${count} adv., ${format})`).toBeGreaterThan(0);
-                expect(
-                    unbreakableFlags.some(Boolean),
-                    `aucune carte CIBLE(S) ne doit être unbreakable:true (${count} adv., ${format})`,
-                ).toBe(false);
-            }
-        },
-    );
-
-    it("au-delà du seuil de la page 1, le débordement va sur des pages « CIBLE(S) — <plage> » AUTONOMES, JAMAIS « (SUITE) » (guardrail C1)", () => {
-        const dd = buildOiDocDefinition(collect({ adversaries: makeAdversaries(30) }), { format: 'a4' });
-        const json = JSON.stringify(dd);
-
-        expect(json).not.toContain('(SUITE)');
-        expect(json).not.toContain('(suite)');
-        expect(json).toMatch(/CIBLE\(S\) — \d+(-\d+)?/);
-    });
-
-    /**
-     * RÉGRESSION guardrail B1 (mesure `tests/pdf/verify-structure.mjs`,
-     * fixture `tests/pdf/fixtures/blind-a-combined-stress.json`, A4, 5
-     * adversaires) : le paqueteur glouton `packHypotheses` fait hériter le
-     * DERNIER groupe de débordement d'UN SEUL adversaire (page « CIBLE(S)
-     * — 5 » orpheline, 77 caractères non blancs — sous le seuil 120 de B1)
-     * quand le groupe 0 (page 1, grid2) absorbe tout le reste. Le rééquilibrage
-     * `rebalanceLastGroup` (JSDoc ci-dessus, guardrail préexistant) ne peut
-     * RIEN ici : son slice exclut structurellement le groupe 0, et il n'y a
-     * qu'UN SEUL groupe de débordement (pas de « groupe précédent » au sein
-     * du débordement pour piocher). Le correctif rééquilibre la frontière
-     * groupe 0 ↔ débordement elle-même — ce test vérifie sa signature
-     * structurelle directement observable au niveau JSON (sans rendu PDF
-     * réel) : plus AUCUNE page « CIBLE(S) — <N> » (plage à un seul numéro,
-     * jamais une plage « <N>-<M> ») n'apparaît, quel que soit le nombre
-     * total d'adversaires (2 à 30, un seul adversaire ne produit jamais de
-     * débordement) — un débordement à 1 seule cible serait TOUJOURS
-     * signalé par un tel titre à numéro unique.
-     */
-    it.each([2, 3, 4, 5, 6, 7, 8, 9, 10, 15, 30])(
-        '%d adversaire(s) : aucune page « CIBLE(S) — <N> » à un seul numéro (débordement à 1 seule cible), A4 et 16:9',
-        (count) => {
-            for (const format of ['a4', '16:9'] as const) {
-                const dd = buildOiDocDefinition(collect({ adversaries: makeAdversaries(count) }), { format });
-                const json = JSON.stringify(dd);
-                const overflowTitles = json.match(/CIBLE\(S\) — \d+(-\d+)?/g) ?? [];
-                const singleEntryTitles = overflowTitles.filter((title) => !/-\d+/.test(title));
-
-                expect(
-                    singleEntryTitles,
-                    `aucune page de débordement à 1 seule cible attendue (${count} adv., ${format}) — titres : ${JSON.stringify(overflowTitles)}`,
-                ).toHaveLength(0);
-            }
-        },
-    );
 });
 
 // ===========================================================================

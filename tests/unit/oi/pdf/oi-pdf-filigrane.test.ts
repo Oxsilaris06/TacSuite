@@ -100,12 +100,11 @@ describe('Fond personnalisé — filigrane discret', () => {
         expect(isWatermark(first), 'page finale : filigrane en premier').toBe(true);
     });
 
-    it.each([[false, PDF_LIGHT.bg], [true, PDF_DARK.bg]] as const)('sombre=%s : cartes Situation et Cibles à fond opaque (couleur de page) sous le filigrane', (dark, bg) => {
+    it.each([[false, PDF_LIGHT.bg], [true, PDF_DARK.bg]] as const)('sombre=%s : carte Situation à fond opaque (couleur de page) sous le filigrane', (dark, bg) => {
         const cover = (build(pngHeaderDataUrl(400, 200), dark).content as unknown[])[0];
         const cards = findNodes(cover, (n) => Array.isArray(n.stack) && JSON.stringify(n.stack).match(/SITUATION GLOBALE|CIBLE/) !== null && n.fillColor !== undefined);
         const titles = cards.map((c) => JSON.stringify(c.stack));
         expect(titles.some((t) => t.includes('SITUATION GLOBALE'))).toBe(true);
-        expect(titles.some((t) => /CIBLE/.test(t))).toBe(true);
         cards.forEach((c) => expect(c.fillColor).toBe(bg));
     });
 
