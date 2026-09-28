@@ -665,137 +665,41 @@ function ficheAdversaireTitleBar(text: string, p: OiPdfPalette): Content {
 }
 
 /**
- * Palier de police adaptatif de `situationCard`/`ciblesCard` (correctif
- * PG.REFIX round 1) — MÊME méthode que `adaptivePagePx()` (theme.ts,
- * elle-même un port verbatim de `OrderPdfStyle.kt`, jamais modifiée par ce
- * correctif) mais avec des seuils propres, environ MOITIÉ de ceux
- * d'`adaptivePagePx` : `grid2()` pose ces deux cartes en COLONNE ÉTROITE
- * (demi-largeur de page), alors qu'`adaptivePagePx` est calibrée pour un
- * contenu qui occupe la largeur de page ENTIÈRE (fiche adversaire, blocs
- * ZMSPCP/MOICP) — un volume qui tiendrait à son palier plancher (9 px) en
- * pleine largeur ne tient pas forcément en demi-largeur (mesuré au banc
- * `tests/pdf/generate-from-fixture.mjs` contre
- * `tests/pdf/fixtures/long-case.json` : palier 9 encore insuffisant, palier
- * 8 requis pour que les 2 colonnes tiennent sur la page 1 — défaut « carte
- * esseulée » du retour utilisateur). Repose sur la même formule volume =
- * caractères + (retours-ligne × 60), cf. JSDoc `adaptivePagePx`.
+ * Paliers de police de la carte Situation de la couverture, du plus lisible
+ * au plancher. Le palier retenu est le plus grand dont la carte, MESURÉE
+ * (`coverSituationPt`), tient sous le titre : plus de seuils de volume
+ * figés, qui laissaient déborder une situation générale longue (Nico
+ * 09-28). Plancher 8 : lisible en présentation.
  */
-function coverCardFontPx(fields: string[], extraLines = 0): number {
-    const chars = fields.reduce((sum, field) => sum + field.length, 0);
-    const lines = fields.reduce((sum, field) => sum + (field.match(/\n/g)?.length ?? 0), 0) + extraLines;
-    const total = chars + lines * 60;
-    if (total < 150) return 14;
-    if (total < 300) return 12;
-    if (total < 500) return 10;
-    if (total < 700) return 9;
-    return 8;
+const COVER_FONT_STEPS_PX = [14, 12, 10, 9, 8] as const;
+/**
+ * Distance (pt) entre le haut de la zone de contenu de page 1 et le haut de
+ * la carte Situation — mesurée (`pdftotext -bbox`) : fixe, indépendante du
+ * format (`marginsPt` identiques A4/16:9) et du volume de texte (titre
+ * `h1('ORDRE INITIAL', {boxed:true})` fontSize 36 + marges
+ * `COVER_TITLE_MARGINS_MM`).
+ */
+const COVER_CARD_TOP_PT = 260.5;
+/** Marges haut/bas (mm) du titre de couverture : aérées, puis resserrées quand la situation ne tient pas autrement. */
+const COVER_TITLE_MARGINS_MM = { airy: [35, 15], tight: [8, 6] } as const;
+/** Paddings horizontaux + filets d'une `card()` (LAYOUT_BORDERED : 4 + 4 + 1 + 1). */
+const CARD_HPAD_PT = 10;
+
+/** Hauteur (pt) de la carte Situation au palier `fontPx` sur la largeur de contenu `widthPt`. */
+function coverSituationPt(texts: string[], fontPx: number, widthPt: number): number {
+    return cardWithTitlePt(texts.reduce((sum, t) => sum + textLinePt(t, fontPx, widthPt - CARD_HPAD_PT), 0));
 }
 
 /* ==========================================================================
  * Section 1 — Page de garde « ORDRE INITIAL » (pdf-engine-v2.ts:816-855, §3.2 ligne 1).
+ * Plus de carte CIBLE(S) (Nico 09-28) : les cibles sont décrites par leurs
+ * fiches adversaires, la situation prend toute la largeur.
  * ======================================================================== */
-
-/** Taille de police FIXE (indépendante de `coverFontPx`) du nom d'une entrée CIBLES(S) — port verbatim du rendu ci-dessous. */
-const CIBLES_NAME_FONT_PX = 13;
-/**
- * Écart (pt) entre le bas du texte d'UNE entrée CIBLES(S) et le haut de la
- * suivante — mesuré (`pdftotext -bbox`, `adv30-a4.pdf`, mission « carte
- * CIBLES(S) qui disparaît ») : filet `canvas` + marge basse `[0,0,0,6]` du
- * bloc (rendu ci-dessous). N'est PAS un simple `+6` : la mesure réelle
- * (52,2 pt de pas entre deux noms consécutifs au palier plancher 8 px)
- * confirme ~12 pt une fois nom+détail soustraits.
- */
-const CIBLES_ENTRY_GAP_PT = 12;
-/**
- * Distance (pt) entre le haut de la zone de contenu de page 1 et le haut de
- * la ligne `h3('1. SITUATION GLOBALE')`/`h3('CIBLES(S)')` du `grid2` —
- * mesurée (`pdftotext -bbox`) : fixe, indépendante du format (`marginsPt`
- * identiques A4/16:9, `pageGeometry`) et du volume de texte (déterminée par
- * `h1('ORDRE INITIAL', {boxed:true})` fontSize 36 fixe + marges
- * `[0, mm(35), 0, mm(15)]` ci-dessous, elles-mêmes fixes).
- */
-const CIBLES_GRID_ROW_TOP_PT = 260.5;
-
-/** Nom/détail affichés d'UNE cible — PARTAGÉ entre le rendu (`renderCiblesEntry`) et son coût (`ciblesEntryPt`) : une seule source, jamais deux calculs divergents. */
-function ciblesEntryText(adv: OiAdversary): { nom: string; detail: string } {
-    const nom = strOr(adv.nom_adversaire, 'Inconnu');
-    const detail = [strOr(adv.stature_adversaire, ''), strOr(adv.ethnie_adversaire, '')].filter((v) => v !== '').join(' ');
-    return { nom, detail };
-}
-
-/** Coût (pt) d'UNE entrée CIBLES(S) (nom `CIBLES_NAME_FONT_PX` fixe + détail au palier `detailFontPx`) dans une colonne `columnWidthPt`. */
-function ciblesEntryPt(adv: OiAdversary, detailFontPx: number, columnWidthPt: number): number {
-    const { nom, detail } = ciblesEntryText(adv);
-    const namePt = textLinePt(nom, CIBLES_NAME_FONT_PX, columnWidthPt);
-    const detailPt = detail !== '' ? textLinePt(detail, detailFontPx, columnWidthPt) : 0;
-    return namePt + detailPt + CIBLES_ENTRY_GAP_PT;
-}
-
-/** Coût (pt) d'un SOUS-ENSEMBLE d'entrées CIBLES(S) empilées — somme des coûts individuels moins UN écart de fin (`CIBLES_ENTRY_GAP_PT` sépare deux entrées, la DERNIÈRE d'une page n'en a pas besoin après elle). */
-function ciblesRegionCostPt(subset: OiAdversary[], detailFontPx: number, columnWidthPt: number): number {
-    if (subset.length === 0) {
-        return 0;
-    }
-    return subset.reduce((sum, adv) => sum + ciblesEntryPt(adv, detailFontPx, columnWidthPt), 0) - CIBLES_ENTRY_GAP_PT;
-}
-
-/** Rendu d'UNE entrée CIBLES(S) — port verbatim (nom/détail/filet séparateur/marge) du rendu historique, factorisé pour être partagé par la page 1 (`grid2`) et les pages « CIBLES(S) — <plage> » de débordement. */
-function renderCiblesEntry(adv: OiAdversary, p: OiPdfPalette): Content {
-    const { nom, detail } = ciblesEntryText(adv);
-    return {
-        stack: [
-            { text: nom, bold: true, color: p.accent, fontSize: CIBLES_NAME_FONT_PX },
-            ...(detail !== '' ? [{ text: detail, color: p.muted, bold: true } as Content] : []),
-            { canvas: [{ type: 'line', x1: 0, y1: 6, x2: mm(55), y2: 6, lineWidth: 0.5, lineColor: p.border }] },
-        ],
-        margin: [0, 0, 0, 6],
-    };
-}
-
-/** Étiquette de plage « 3-4 »/« 3 » d'un sous-groupe de cibles CONTIGU au sein de l'ensemble complet — même idiome que `hypRangeLabel` (identité d'objet, groupes = slices de l'array d'origine). */
-function ciblesRangeLabel(group: OiAdversary[], all: OiAdversary[]): string {
-    const first = all.indexOf(group[0] as OiAdversary) + 1;
-    const last = all.indexOf(group[group.length - 1] as OiAdversary) + 1;
-    return first === last ? `${first}` : `${first}-${last}`;
-}
-
-/**
- * `packHypotheses` empaquette en GLOUTON (remplit une page au maximum avant
- * de passer à la suivante) : le tout DERNIER groupe hérite mécaniquement du
- * reliquat, parfois UNE SEULE entrée alors que les pages précédentes en
- * portent 6 (ex. 15 cibles pleine page → groupes 6/6/1, guardrail B1
- * anti-page-orpheline FAIL sur la page à 1 entrée). Rééquilibre les DEUX
- * DERNIERS groupes en une passe (jamais plus — reliquat borné par
- * construction à < 1 page pleine, un seul rééquilibrage suffit toujours à
- * l'éliminer) : fusionne puis coupe en deux moitiés d'effectif égal.
- * Vérifie `costPt` sur les deux nouvelles moitiés AVANT de les retenir —
- * direction sûre : un débordement (jamais observé en pratique, entrées
- * CIBLES(S) de taille quasi uniforme) fait simplement conserver
- * l'empaquetage glouton d'origine plutôt que d'introduire un dépassement.
- */
-function rebalanceLastGroup<T>(groups: T[][], costPt: (subset: T[]) => number, budgetPt: number): T[][] {
-    if (groups.length < 2) {
-        return groups;
-    }
-    const last = groups[groups.length - 1] as T[];
-    const prev = groups[groups.length - 2] as T[];
-    if (last.length >= prev.length) {
-        return groups;
-    }
-    const combined = [...prev, ...last];
-    const half = Math.ceil(combined.length / 2);
-    const newPrev = combined.slice(0, half);
-    const newLast = combined.slice(half);
-    if (costPt(newPrev) > budgetPt || costPt(newLast) > budgetPt) {
-        return groups;
-    }
-    return [...groups.slice(0, -2), newPrev, newLast];
-}
 
 function buildCover(ctx: BuildCtx): Content[] {
     const { formData, p, geo } = ctx;
     const bgSrc = resolveBgSrc(ctx);
-    // Cartes Situation et Cibles à fond opaque au-dessus du filigrane (audit F08).
+    // Carte Situation à fond opaque au-dessus du filigrane (audit F08).
     const opaque = bgSrc !== undefined ? { fillColor: p.bg } : {};
 
     // Case « OP » (décision 43, audit F19) : le nom de l'opération (champ
@@ -814,151 +718,52 @@ function buildCover(ctx: BuildCtx): Content[] {
         absolutePosition: { x: geo.widthPt - geo.marginsPt[2] - opCardWidthPt - 10, y: geo.marginsPt[1] },
     }];
 
-    // Palier de police adaptatif de la couverture (correctif PG.REFIX,
-    // addendum § Pagination v2) — même mécanique que `adaptivePagePx` ailleurs
-    // (fiche adversaire, blocs ZMSPCP/MOICP) : `situationCard`/`ciblesCard`
-    // sont posées côte à côte par `grid2` en DEMI-largeur de page, sous un
-    // budget vertical déjà réduit par les marges du `h1` (35mm haut/15mm
-    // bas, ligne ci-dessous) — un `situation_generale`/`situation_particuliere`
-    // volumineux au palier de police DOCUMENT (`baseFontSize`, jusqu'à 14 px)
-    // peut ne plus tenir sur la page 1 : pdfmake, `columns` n'étant PAS
-    // synchronisées entre elles pour la pagination, reporte alors la colonne
-    // entière en page 2 (« carte esseulée », défaut prouvé PG.REFIX round 1)
-    // au lieu de scinder proprement. Calculé sur les mêmes champs que le
-    // rendu (situation générale/particulière + un texte par cible) : réduit
-    // le palier AVANT que `card()` (insécable) ne soit mis en présence d'un
-    // contenu trop grand pour la place restante.
-    const adversaries = formData.adversaries ?? [];
-    const ciblesRemoved = isSectionRemoved(formData, 'adversaires');
-    const coverTextFields = [formData.situation_generale, formData.situation_particuliere].map(str);
-    const coverFontPx = coverCardFontPx(coverTextFields, adversaries.length);
+    // Palier de police et marges du titre : le plus grand palier qui tient
+    // sous le titre aéré, sinon sous le titre resserré, sinon le plancher
+    // (la carte, sécable, se scinde alors plutôt que d'être tronquée).
+    const generale = strOr(formData.situation_generale);
+    const particuliere = strOr(formData.situation_particuliere);
+    const texts = [`SITUATION GÉNÉRALE : ${generale}`, `SITUATION PARTICULIÈRE : ${particuliere}`];
+    const fits = (fontPx: number, titleMarginsMm: readonly number[]): boolean => {
+        const freedPt = mm(COVER_TITLE_MARGINS_MM.airy[0] + COVER_TITLE_MARGINS_MM.airy[1] - (titleMarginsMm[0] ?? 0) - (titleMarginsMm[1] ?? 0));
+        const budgetPt = geo.contentHeightPt - (COVER_CARD_TOP_PT - freedPt) - EFFRAC_FITS_SAFETY_PT;
+        return coverSituationPt(texts, fontPx, geo.contentWidthPt) <= budgetPt;
+    };
+    let titleMarginsMm: readonly number[] = COVER_TITLE_MARGINS_MM.airy;
+    let coverFontPx: number | undefined = COVER_FONT_STEPS_PX.find((px) => fits(px, COVER_TITLE_MARGINS_MM.airy));
+    if (coverFontPx === undefined) {
+        titleMarginsMm = COVER_TITLE_MARGINS_MM.tight;
+        coverFontPx = COVER_FONT_STEPS_PX.find((px) => fits(px, COVER_TITLE_MARGINS_MM.tight)) ?? COVER_FONT_STEPS_PX[COVER_FONT_STEPS_PX.length - 1];
+    }
 
     const situationCard = card(
         [
             h3(`1. ${pdfSectionTitle(formData, 'situation')}`, p),
-            labelValue('Situation générale', strOr(formData.situation_generale), p, { valueBold: true }, {
+            labelValue('Situation générale', generale, p, { valueBold: true }, {
                 anchors: ctx.anchors,
                 ref: fieldAnchor('situation_generale'),
             }),
-            labelValue('Situation particulière', strOr(formData.situation_particuliere), p, { valueBold: true }, {
+            labelValue('Situation particulière', particuliere, p, { valueBold: true }, {
                 anchors: ctx.anchors,
                 ref: fieldAnchor('situation_particuliere'),
             }),
         ],
         p,
         // Sécable (cf. JSDoc `card()`, blocks.ts) : filet de sécurité si même
-        // le palier de police le plus bas ne suffit pas à faire tenir un
-        // `situation_generale`/`situation_particuliere` très volumineux sur
-        // la page 1 — la carte se scinde alors normalement plutôt que d'être
-        // reportée EN BLOC (défaut « carte esseulée »).
+        // le palier plancher sous titre resserré ne suffit pas.
         { unbreakable: false, ...opaque },
     );
 
-    // CORRECTIF (carte CIBLES(S) qui disparaît, anomalie CRITIQUE) — l'ancien
-    // `ciblesCard` restait `unbreakable:true` par défaut (JUSTIFICATION
-    // fausse : « bornée à 2-3 lignes par entrée, ne peut réalistement pas
-    // dépasser une page » — mesure prouvée : dépassée dès 7-8 adversaires,
-    // pdfmake SUPPRIME alors la carte SANS AUCUNE erreur, page 2 restant
-    // blanche). Un simple `unbreakable:false` (comme `situationCard`) suffit
-    // à éliminer la disparition et la page blanche, mais laisse pdfmake
-    // couper le flux de caractères À N'IMPORTE QUEL ENDROIT (y compris EN
-    // PLEIN MILIEU d'une entrée, entre son nom et son détail) et peut semer
-    // une page de continuation quasi-VIDE (1 seule entrée orpheline, guardrail
-    // B1 anti-page-orpheline) — défaut mesuré à l'identique de celui qui avait
-    // fait RETIRER `unbreakable:false` lors d'une tentative antérieure
-    // (fixture `adv-5-atcd40.json`).
-    //
-    // Nouvelle mécanique, RÉUTILISE le paqueteur déjà éprouvé pour EXACTEMENT
-    // cette même classe de problème ailleurs dans ce module (`packHypotheses`,
-    // « une frontière légitime = un item, jamais coupé en son milieu ») :
-    // chaque ADVERSAIRE est une frontière légitime. La 1re page (grid2,
-    // demi-largeur, budget réduit par le titre `h1` au-dessus —
-    // `CIBLES_GRID_ROW_TOP_PT`, mesuré) reçoit autant d'entrées que son
-    // budget le permet, MÊME ZÉRO si `situationCard` occupe déjà toute la
-    // hauteur — jamais de carte esseulée. Le reste devient des pages
-    // « CIBLES(S) — <plage> » AUTONOMES pleine largeur (jamais « (SUITE) »,
-    // guardrail C1), MÊME titre distinct que `buildEffractionPages::hypRangeLabel`.
-    // `packHypotheses` ne peut renvoyer `null` que si une SEULE entrée, prise
-    // seule, ne tient pas sur une page dédiée pleine — pathologique pour une
-    // entrée de 2-3 lignes ; filet de repli conservé quand même (une seule
-    // carte insécable regroupant tout, JAMAIS de perte de cible).
-    const columnWidthPt = (geo.contentWidthPt - mm(6)) / 2;
-    const firstBudgetPt = Math.max(0, geo.contentHeightPt - CIBLES_GRID_ROW_TOP_PT - EFFRAC_H3_PT - EFFRAC_CARD_VPAD_PT - EFFRAC_FITS_SAFETY_PT);
-    const restBudgetPt = Math.max(0, geo.contentHeightPt - EFFRAC_H2_PT - EFFRAC_H3_PT - EFFRAC_CARD_VPAD_PT - EFFRAC_FITS_SAFETY_PT);
-    const regionCostPt = (subset: OiAdversary[]): number => ciblesRegionCostPt(subset, coverFontPx, columnWidthPt);
-    const ciblesGroups: OiAdversary[][] =
-        adversaries.length > 0 ? (packHypotheses(adversaries, regionCostPt, firstBudgetPt, restBudgetPt) ?? [adversaries]) : [[]];
-
-    // Rééquilibre les deux DERNIERS groupes de débordement entre eux (jamais
-    // le groupe 0, page 1/grid2 — colonne et budget distincts, exclus par le
-    // `.slice(1)` ci-dessous) : évite le reliquat « dernière page à 1 seule
-    // cible » du paqueteur glouton (cf. JSDoc `rebalanceLastGroup`, guardrail
-    // B1 anti-page-orpheline).
-    let ciblesFirstGroup: OiAdversary[] = ciblesGroups[0] ?? [];
-    let overflowGroups: OiAdversary[][] =
-        adversaries.length > 0 ? rebalanceLastGroup(ciblesGroups.slice(1), regionCostPt, restBudgetPt) : [];
-
-    // `rebalanceLastGroup` ne peut RIEN quand il ne reste qu'UN SEUL groupe
-    // de débordement (`groups.length < 2` en son sein) : son slice exclut
-    // structurellement le groupe 0, il n'a alors aucun « groupe précédent »
-    // au sein du débordement pour piocher. C'est PRÉCISÉMENT le cas mesuré
-    // (fixture `blind-a-combined-stress.json`, A4, 5 adversaires → groupe 0
-    // = 4, débordement = 1 seule cible, page « CIBLES(S) — 5 » orpheline
-    // sous le seuil B1). Rééquilibre alors la frontière groupe 0 ↔
-    // débordement — budgets et colonnes distincts (`firstBudgetPt`/
-    // `columnWidthPt` demi-page CONTRAINTE pour la page 1, `restBudgetPt`
-    // pleine page LARGE pour le débordement), donc pas un simple appel à
-    // `rebalanceLastGroup` (budget UNIQUE, partage 50/50). Ne garde sur la
-    // page 1 que le STRICT MINIMUM (1 cible — jamais 0 : la page 1 ne doit
-    // jamais afficher un encart « CIBLES(S) » vide tant que des cibles
-    // existent, cf. test « sans aucun adversaire... ») et bascule tout le
-    // reste sur le débordement, dont le budget est mesuré bien plus
-    // généreux que la colonne demi-page de la page 1 — mesuré déterminant :
-    // à 4-5 cibles, un partage à parts égales (2/2 ou 3/2) laisse encore le
-    // débordement sous le seuil B1 (108 car.), quand maximiser sa part (1
-    // page 1 / 3-4 débordement) l'en fait sortir. Ne retient le
-    // rééquilibrage que si les DEUX coûts tiennent dans leur budget
-    // respectif (direction sûre : sinon conserve l'empaquetage glouton
-    // d'origine, jamais de débordement introduit).
-    if (overflowGroups.length === 1) {
-        const onlyOverflow = overflowGroups[0] as OiAdversary[];
-        const combined = [...ciblesFirstGroup, ...onlyOverflow];
-        if (combined.length >= 2) {
-            const newFirst = combined.slice(0, 1);
-            const newOverflow = combined.slice(1);
-            if (regionCostPt(newFirst) <= firstBudgetPt && regionCostPt(newOverflow) <= restBudgetPt) {
-                ciblesFirstGroup = newFirst;
-                overflowGroups = [newOverflow];
-            }
-        }
-    }
-
-    const ciblesFirstBody: Content[] =
-        adversaries.length > 0
-            ? ciblesFirstGroup.map((adv) => renderCiblesEntry(adv, p))
-            : [{ text: 'Aucune cible renseignée.', color: p.muted }];
-    const ciblesCard = card([h3(pdfSectionTitle(formData, 'adversaires'), p), ...ciblesFirstBody], p, { unbreakable: false, ...opaque });
-    const overflowPages: Content[] = overflowGroups.map((group) => ({
-        stack: [
-            h2(`${pdfSectionTitle(formData, 'adversaires')} — ${ciblesRangeLabel(group, adversaries)}`, p, geo.contentWidthPt),
-            card([h3(pdfSectionTitle(formData, 'adversaires'), p), ...group.map((adv) => renderCiblesEntry(adv, p))], p, { unbreakable: false }),
-        ],
-        fontSize: coverFontPx,
-        pageBreak: 'before',
-    }));
-
-    const coverPage: Content = {
+    return [{
         stack: [
             // Filigrane de la couverture : posé dans le FOND de la page 1
             // (`buildOiDocDefinition`, `background`), seul calque que les fonds
             // de cellule des cartes recouvrent (pdfmake les insère juste après lui).
             ...opCard,
-            { stack: [h1('ORDRE INITIAL', p, { boxed: true })], margin: [0, mm(35), 0, mm(15)] },
-            // Adversaires retirés (×) : la situation prend toute la largeur.
-            { stack: [ciblesRemoved ? situationCard : grid2([situationCard], [ciblesCard])], fontSize: coverFontPx },
+            { stack: [h1('ORDRE INITIAL', p, { boxed: true })], margin: [0, mm(titleMarginsMm[0] ?? 0), 0, mm(titleMarginsMm[1] ?? 0)] },
+            { stack: [situationCard], fontSize: coverFontPx },
         ],
-    };
-    return [coverPage, ...(ciblesRemoved ? [] : overflowPages)];
+    }];
 }
 
 /**

@@ -266,7 +266,7 @@ Même liste que l'ordre des sections de l'étalon raster et que
 ```
 1.  ORDRE INITIAL
 2.  1. SITUATION GLOBALE
-3.  CIBLES(S)
+3.  CIBLE(S)                                      (retiré de la garde le 09-28)
 4.  2.1 FICHE ADVERSAIRE                          (conditionnel)
 5.  3. ENVIRONNEMENT ET AMIS
 6.  4. MISSION DE L'UNITÉ

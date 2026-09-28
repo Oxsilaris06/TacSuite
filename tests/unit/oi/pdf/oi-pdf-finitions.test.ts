@@ -130,10 +130,9 @@ describe('Métadonnées du document', () => {
 });
 
 describe('Libellés', () => {
-    it('« CIBLE(S) » (et non plus « CIBLES(S) »)', () => {
+    it('plus de carte « CIBLE(S) » sur la garde : les fiches adversaires la décrivent (Nico 09-28)', () => {
         const texts = allTexts(build({ adversaries: [ADV] }).content);
-        expect(texts).toContain('CIBLE(S)');
-        expect(texts.some((t) => t.includes('CIBLES(S)'))).toBe(false);
+        expect(texts.some((t) => t.includes('CIBLE'))).toBe(false);
     });
 
     it('effraction : toutes les mesures portent « mm »', () => {

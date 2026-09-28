@@ -103,7 +103,7 @@ import { assertD2_surPdf } from './assert-exif.mjs';
 export const MARKERS = [
   { n: 1, text: 'ORDRE INITIAL', conditional: false },
   { n: 2, text: '1. SITUATION GLOBALE', conditional: false },
-  { n: 3, text: 'CIBLE(S)', conditional: false },
+  // n° 3 « CIBLE(S) » retiré : plus de carte cibles sur la garde (Nico 09-28).
   { n: 4, text: '2.1 FICHE ADVERSAIRE', conditional: true },
   { n: 5, text: '3. ENVIRONNEMENT ET AMIS', conditional: false, numbered: true },
   { n: 6, text: '4. TRANSPORT', conditional: true, numbered: true },
@@ -805,8 +805,8 @@ export function assertB2_noVerticalWordSplit(text, fixturePath) {
     vocab = fixtureVocabulary(loaded.formData);
   }
   const pages = splitPages(text);
-  const patracMarker = MARKERS[13]; // '9. RÉCAPITULATIF PATRACDVR' (numéro CANONIQUE — dynamique en vrai, cf. `numberedMarkerSuffix`)
-  const finalMarker = MARKERS[14]; // 'AVEZ-VOUS DES QUESTIONS ?'
+  const patracMarker = MARKERS.find((m) => m.text.includes('PATRACDVR')); // '9. RÉCAPITULATIF PATRACDVR' (numéro CANONIQUE — dynamique en vrai, cf. `numberedMarkerSuffix`)
+  const finalMarker = MARKERS.find((m) => m.text === 'AVEZ-VOUS DES QUESTIONS ?'); // 'AVEZ-VOUS DES QUESTIONS ?'
   const normPages = pages.map((p) => normalize(p));
   // `.includes()` du SUFFIXE seul (pas `patracMarker.text` entier) : le
   // numéro canonique « 9. » ne tient QUE si aucune section dérivée n'est
