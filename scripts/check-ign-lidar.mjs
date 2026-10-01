@@ -22,6 +22,13 @@
  * C'est aussi le moyen de confirmer que `ELEVATION.CONTOUR.LINE` est bien le
  * nom de la ressource « courbes de niveau » : une ressource inexistante ne sert
  * AUCUNE tuile à aucun zoom, et la sonde le dit explicitement.
+ *
+ * Retours terrain 2026-10-02 : une seconde section compare, territoire par
+ * territoire (DROM, Saint-Pierre-et-Miquelon, Saint-Martin, Saint-Barthélemy), la
+ * table de couverture de `src/shared/ign-territoires.ts` à ce que la Géoplateforme
+ * sert réellement. Un écart (couche servie mais absente de la table, ou l'inverse)
+ * fait échouer le script : c'est le signal de mettre la table à jour (ex. le LiDAR HD
+ * qui arrive en Martinique). Demande Node ≥ 22.18 (import natif du .ts).
  */
 
 const WMTS_LAYERS = {
@@ -79,6 +86,58 @@ for (const [name, layer] of Object.entries(WMTS_LAYERS)) {
         console.log('  → AUCUNE tuile servie : ressource inexistante, renommée, ou service injoignable.');
     } else {
         console.log(`  → tuiles servies de z${minOk} à z${maxOk} (à comparer aux minzoom/maxzoom du style).`);
+    }
+}
+
+// ── Couverture par territoire ────────────────────────────────────────────────
+// Une tuile z14 sur une ville de chaque territoire. « Servie » = image HTTP 200 de
+// plus de 1,7 Ko : en dessous, c'est la tuile vide/blanche que la Géoplateforme rend
+// hors couverture (ortho blanche 1651 o, PNG transparent 722-852 o). La métropole
+// est sondée au point de contrôle ci-dessus (Chartreuse : relief, donc des courbes).
+const territoires = await import('../src/shared/ign-territoires.ts').catch(() => null);
+if (!territoires) {
+    console.log('\n(Node trop ancien pour importer le .ts : section « territoires » ignorée.)');
+} else {
+    const { IGN_METROPOLE, IGN_OUTRE_MER, ignTerritories } = territoires;
+    const VILLES = {
+        FR: [PROBE.lon, PROBE.lat],
+        '971': [-61.5331, 16.2411], // Pointe-à-Pitre
+        '972': [-61.0588, 14.6161], // Fort-de-France
+        '973': [-52.326, 4.9372], // Cayenne
+        '974': [55.4481, -20.8789], // Saint-Denis
+        '975': [-56.1773, 46.7766], // Saint-Pierre
+        '976': [45.2278, -12.7806], // Mamoudzou
+        '977': [-62.8498, 17.8963], // Gustavia
+        '978': [-63.0824, 18.0679], // Marigot
+    };
+    const FAMILLES = {
+        ortho: (z, x, y) => `https://data.geopf.fr/tms/1.0.0/HR.ORTHOIMAGERY.ORTHOPHOTOS/${z}/${x}/${y}.jpeg`,
+        planign: (z, x, y) => tileUrl(WMTS_LAYERS['Plan IGN v2 (fond couleur)'], z, x, y),
+        contours: (z, x, y) => tileUrl(WMTS_LAYERS['Courbes de niveau'], z, x, y),
+        lidar: (z, x, y) => tileUrl(WMTS_LAYERS['LiDAR HD MNT (sol nu)'], z, x, y),
+    };
+    const Z = 14;
+    console.log(`\n=== Couverture par territoire (tuile z${Z} sur la ville de référence) ===`);
+    for (const [famille, urlOf] of Object.entries(FAMILLES)) {
+        const attendus = new Set(ignTerritories(famille).map((t) => t.code));
+        console.log(`\n  ${famille} — table : ${[...attendus].join(' ')}`);
+        for (const t of [IGN_METROPOLE, ...IGN_OUTRE_MER]) {
+            const [lon, lat] = VILLES[t.code];
+            let servie = false;
+            let detail = '';
+            try {
+                const res = await fetch(urlOf(Z, lon2tile(lon, Z), lat2tile(lat, Z)));
+                const type = res.headers.get('content-type') || '';
+                const bytes = res.ok ? (await res.arrayBuffer()).byteLength : 0;
+                servie = res.ok && type.startsWith('image/') && bytes > 1700;
+                detail = `HTTP ${res.status} ${bytes} o`;
+            } catch (e) {
+                detail = String(e);
+            }
+            const accord = servie === attendus.has(t.code);
+            if (!accord) anyFailure = true;
+            console.log(`    ${t.code.padEnd(3)} ${t.label.padEnd(26)} ${servie ? 'servie ' : 'absente'}  ${detail}${accord ? '' : '   ← ÉCART avec la table : mettre ign-territoires.ts à jour'}`);
+        }
     }
 }
 
