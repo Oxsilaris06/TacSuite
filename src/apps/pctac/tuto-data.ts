@@ -70,12 +70,13 @@ export function pctacTutoData(): TutoData {
         },
         {
           title: "Modifier une entrée du journal",
-          body: "Chaque ligne du journal a un bouton de modification qui ouvre « Modifier l'entrée ». La « Date » y est modifiable et l'« Heure » peut être corrigée ; Enregistrer applique la correction et affiche « Fiche mise à jour », Annuler referme sans changement.",
+          body: "Chaque ligne du journal a un bouton de modification qui ouvre « Modifier l'entrée ». La « Date » y est modifiable, l'« Heure » peut être corrigée et la pastille « Pax » se change comme à la saisie ; Enregistrer applique la correction et affiche « Fiche mise à jour », Annuler referme sans changement.",
           selector: null,
           terms: [
             "Modifier l'entrée",
             "Date",
             "Heure",
+            "Pax",
             "Enregistrer",
             "Annuler",
             "Fiche mise à jour"
