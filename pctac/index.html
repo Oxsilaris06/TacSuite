@@ -659,7 +659,7 @@
     </dialog>
 
     <!-- Modale d'édition de log -->
-    <dialog class="modal pctac-modal-large" id="editModal" aria-labelledby="editModalTitle">
+    <dialog class="modal pctac-modal-large pctac-modal-scroll-90" id="editModal" aria-labelledby="editModalTitle">
         <h3 id="editModalTitle">Modifier l'entrée</h3>
         <input type="hidden" id="edit_id">
         <div class="form-row pctac-row-edit">
@@ -669,6 +669,11 @@
                 <label for="edit_lieu">Localisation</label>
                 <input type="text" id="edit_lieu" list="lieu_suggestions" autocomplete="off" class="pctac-textarea-lg">
             </div>
+        </div>
+        <!-- Pastilles PAX, remplies par UI.openEditModal (mêmes pastilles que la saisie) : boutons à aria-pressed. -->
+        <div class="pctac-mt-12">
+            <label>Pax</label>
+            <div class="pax-select" id="edit_pax_select" role="group" aria-label="Pax"></div>
         </div>
         <div class="pctac-mt-12">
             <label for="edit_remarques">Remarques</label>

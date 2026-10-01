@@ -62,8 +62,8 @@
  * `contracts.ts` (interdit par la mission) ; à signaler au gate.
  */
 
-import type { PctacLogEntry, UIContract } from '@shared/types/contracts.js';
-import { PDF_PAX_COLORS, FREE_MODE_COLORS, LONG_PRESS_DELAY, PHOTO_CATEGORIES, hostageStatusFromBlessures, safeHexColor } from '@pctac/config.js';
+import type { PctacLogEntry, PctacPaxMode, UIContract } from '@shared/types/contracts.js';
+import { CUSTOM_PAX_KEY, PDF_PAX_COLORS, FREE_MODE_COLORS, LONG_PRESS_DELAY, PHOTO_CATEGORIES, hostageStatusFromBlessures, safeHexColor } from '@pctac/config.js';
 import { Storage } from '@pctac/storage.js';
 import { ImageStore } from '@pctac/image-store.js';
 import { LogManager } from '@pctac/log-manager.js';
@@ -71,7 +71,8 @@ import { choiceDialog } from '@pctac/choice-dialog.js';
 import { diffOpenFiche } from '@pctac/fiche-conflict.js';
 import { esc } from '@shared/ui-platform.js';
 import { confirmDialog, isBackdropClick, promptDialog, toast } from '@shared/feedback.js';
-import { currentMode, currentModeId, photoCategoryLabel } from '@pctac/modes.js';
+import { currentMode, currentModeId, paxChipKeys, paxChipLabel, photoCategoryLabel } from '@pctac/modes.js';
+import { paxChipButton } from '@pctac/mode-ui.js';
 import {
   ageFromDob,
   defaultStatus,
@@ -383,6 +384,86 @@ function bindPaxArrowKeys(container: HTMLElement): void {
     next.focus();
     next.click();
   });
+}
+
+/**
+ * Retours terrain 2026-10-02 — pastille PAX de « Modifier l'entrée ».
+ *
+ * Un choix de pastille est le trio nom / mode / couleur, qui voyage EN BLOC : un
+ * « Oscar » libre n'est pas l'« Oscar » standard, et un nom sans sa couleur ne dit
+ * rien de la ligne. On compare et on écrit les trois ensemble, jamais champ par champ.
+ */
+interface EditPax { pax: string; paxMode: PctacPaxMode; paxColor: string }
+
+/** Le trio d'une entrée, avec les mêmes replis que la ligne du journal (`renderLogTable`). */
+function paxOfEntry(e: PctacLogEntry): EditPax {
+  return e.paxMode === 'standard'
+    ? { pax: e.pax, paxMode: 'standard', paxColor: '' }
+    : { pax: e.pax, paxMode: 'free', paxColor: safeHexColor(e.paxColor, FREE_MODE_COLORS[0]?.hex ?? '') };
+}
+
+/** Clé de comparaison : deux choix sont le même si leurs trois valeurs le sont. */
+const paxKey = (p: EditPax): string => JSON.stringify([p.paxMode, p.paxColor, p.pax]);
+
+/** Libellé tel que la pastille l'affiche (vocabulaire de la situation pour une clé standard). */
+const paxLabelOf = (p: EditPax): string => (p.paxMode === 'standard' ? paxChipLabel(p.pax) : p.pax);
+
+/** Le trio porté par une pastille (ses `data-*`). */
+const paxOfChip = (b: HTMLElement): EditPax => ({
+  pax: b.dataset.pax ?? '',
+  paxMode: b.dataset.paxMode === 'standard' ? 'standard' : 'free',
+  paxColor: b.dataset.paxColor ?? '',
+});
+
+/**
+ * Remplit `container` des pastilles PAX de la fenêtre : celles de la saisie (les
+ * quatre historiques, la cinquième de la situation, les intervenants
+ * personnalisés), puis, si la valeur de l'entrée n'y figure pas (entrée legacy,
+ * intervenant supprimé, autre situation), cette valeur elle-même : enfoncée,
+ * jamais perdue. Boutons à `aria-pressed` ; la classe `selected` donne le style
+ * commun avec la saisie (styles/pctac.css).
+ */
+function renderEditPaxChips(container: HTMLElement, entry: PctacLogEntry): void {
+  const mode = currentMode();
+  const extra = mode.extraPaxChip;
+  // Même bouton que la saisie (`paxChipButton`, mode-ui.ts), plus le trio qu'il porte.
+  const chip = (value: EditPax, cls: string, bg?: string, fg = bg ? UI.getContrastYIQ(bg) : undefined): HTMLButtonElement => {
+    const btn = paxChipButton(value.pax, paxLabelOf(value), cls, bg, fg);
+    btn.dataset.paxMode = value.paxMode;
+    btn.dataset.paxColor = value.paxColor;
+    return btn;
+  };
+  const chips = paxChipKeys(mode).map((key) => {
+    const value: EditPax = { pax: key, paxMode: 'standard', paxColor: '' };
+    return key === extra?.key ? chip(value, 'situation', extra.color, extra.fontColor) : chip(value, '');
+  });
+  for (const item of Storage.loadCollection(CUSTOM_PAX_KEY)) {
+    const name = typeof item.name === 'string' ? item.name : '';
+    if (!name) continue;
+    const color = safeHexColor(item.color, FREE_MODE_COLORS[0]?.hex ?? '');
+    chips.push(chip({ pax: name, paxMode: 'free', paxColor: color }, 'custom', color));
+  }
+  const own = paxOfEntry(entry);
+  let current = chips.find((b) => paxKey(paxOfChip(b)) === paxKey(own));
+  if (!current) {
+    // Valeur historique : la couleur de sa ligne (repli « Autre » comme le PDF).
+    const info = PDF_PAX_COLORS[own.pax] ?? PDF_PAX_COLORS['Autre'];
+    current = chip(own, 'legacy', own.paxMode === 'standard' ? (info?.color ?? '#2d2d2d') : own.paxColor);
+    chips.push(current);
+  }
+  const press = (target: HTMLElement): void => chips.forEach((b) => {
+    b.setAttribute('aria-pressed', String(b === target));
+    b.classList.toggle('selected', b === target);
+  });
+  chips.forEach((b) => b.addEventListener('click', () => press(b)));
+  press(current);
+  container.replaceChildren(...chips);
+}
+
+/** Pastille enfoncée de la fenêtre, ou `null` si la page n'a pas de rangée (rien à écrire alors). */
+function readEditPax(container: HTMLElement | null): EditPax | null {
+  const on = container?.querySelector<HTMLElement>('button[aria-pressed="true"]');
+  return on ? paxOfChip(on) : null;
 }
 
 /**
@@ -735,6 +816,9 @@ export const UI: UIContract = {
     (document.getElementById('edit_heure') as HTMLInputElement).value = entry.heure;
     (document.getElementById('edit_lieu') as HTMLInputElement).value = entry.lieu || '';
     (document.getElementById('edit_remarques') as HTMLTextAreaElement).value = entry.remarques || '';
+    // Retours terrain 2026-10-02 — la pastille PAX se change ici comme à la saisie.
+    const paxBox = document.getElementById('edit_pax_select');
+    if (paxBox) renderEditPaxChips(paxBox, entry);
     (document.getElementById('editModal') as HTMLDialogElement).showModal();
   },
 
@@ -750,11 +834,16 @@ export const UI: UIContract = {
     // Décision 30 — changer l'heure seule garde la date : on ne l'écrit que si
     // elle est renseignée (une entrée legacy sans date reste sans date).
     const date = (document.getElementById('edit_date') as HTMLInputElement).value;
+    // Retours terrain 2026-10-02 — la pastille PAX entre dans le diff comme un champ
+    // (sa clé de comparaison porte nom, mode et couleur) ; sans rangée dans la
+    // page, on n'y touche pas.
+    const chosen = readEditPax(document.getElementById('edit_pax_select'));
     const mine: Record<string, unknown> = {
       heure,
       lieu: (document.getElementById('edit_lieu') as HTMLInputElement).value.trim(),
       remarques: (document.getElementById('edit_remarques') as HTMLTextAreaElement).value.trim(),
       ...(date ? { date } : {}),
+      ...(chosen ? { pax: paxKey(chosen) } : {}),
     };
     // A5 (revue du 25/09, décision 29 appliquée au journal) — l'entrée a pu
     // changer ou disparaître dans un autre onglet pendant que la fenêtre était
@@ -765,19 +854,23 @@ export const UI: UIContract = {
       toast('Entrée supprimée dans un autre onglet : modification NON enregistrée.', { kind: 'error' });
       return;
     }
-    // V7 — seuls les champs de la fenêtre entrent dans le diff : un favori ou
-    // une pastille changés ailleurs ne sont pas des conflits.
-    const formOf = (e: PctacLogEntry): Record<string, unknown> => ({ heure: e.heure, lieu: e.lieu, remarques: e.remarques, date: e.date });
+    // V7 — seuls les champs de la fenêtre entrent dans le diff : un favori changé
+    // ailleurs n'est pas un conflit.
+    const formOf = (e: PctacLogEntry): Record<string, unknown> => ({ heure: e.heure, lieu: e.lieu, remarques: e.remarques, date: e.date, pax: paxKey(paxOfEntry(e)) });
     const base = formOf(editBase && editBase.id === id ? editBase : fresh);
     const norm = (v: unknown): string => String(v ?? '');
     const updated: Record<string, unknown> = {};
     for (const key of Object.keys(mine)) if (norm(mine[key]) !== norm(base[key])) updated[key] = mine[key];
-    const diff = diffOpenFiche(base, { ...mine, ...(date ? {} : { date: base.date }) }, formOf(fresh));
-    const labels: Record<string, string> = { heure: 'Heure', lieu: 'Lieu', remarques: 'Remarques', date: 'Date' };
+    const diff = diffOpenFiche(base, { ...mine, ...(date ? {} : { date: base.date }), ...(chosen ? {} : { pax: base.pax }) }, formOf(fresh));
+    const labels: Record<string, string> = { heure: 'Heure', lieu: 'Lieu', remarques: 'Remarques', date: 'Date', pax: 'PAX' };
     for (const c of diff.conflicts) {
+      // Une pastille se lit comme sur la pastille, pas comme sa clé de comparaison.
+      const [shownMine, shownTheirs] = c.key === 'pax' && chosen
+        ? [paxLabelOf(chosen), paxLabelOf(paxOfEntry(fresh))]
+        : [norm(c.mine), norm(c.theirs)];
       const choice = await choiceDialog({
         title: 'Champ modifié dans un autre onglet',
-        message: `Champ « ${labels[c.key] ?? c.key} » : votre valeur « ${norm(c.mine)} » / autre onglet « ${norm(c.theirs)} ».`,
+        message: `Champ « ${labels[c.key] ?? c.key} » : votre valeur « ${shownMine} » / autre onglet « ${shownTheirs} ».`,
         options: [
           { value: 'mine', label: 'Garder la mienne' },
           { value: 'theirs', label: "Prendre l'autre" },
@@ -791,6 +884,8 @@ export const UI: UIContract = {
       toast('Entrée supprimée dans un autre onglet : modification NON enregistrée.', { kind: 'error' });
       return;
     }
+    // La pastille s'écrit en bloc : nom, mode et couleur ensemble, ou rien (« Prendre l'autre »).
+    if (chosen && 'pax' in updated) Object.assign(updated, chosen);
     // R22 — stockage plein : ne pas fermer la modale ni annoncer un succès.
     if (Object.keys(updated).length && !LogManager.updateEntry(id, updated as Partial<PctacLogEntry>)) {
       toast('Stockage plein : modification NON enregistrée.', { kind: 'error' });

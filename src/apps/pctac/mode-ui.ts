@@ -237,6 +237,23 @@ function applyModeSwitch(id: PctacModeId, group?: HTMLElement | null): void {
 }
 
 /**
+ * Bouton d'une pastille Pax, SANS rôle ARIA : chaque rangée pose le sien (radio
+ * à la saisie, `aria-pressed` dans « Modifier l'entrée »). Une couleur (`bg`,
+ * `fg`) ne se pose qu'en variables : `.selected` les consomme, un
+ * `style.background` inline peindrait la pastille en permanence.
+ */
+export function paxChipButton(key: string, label: string, cls = '', bg?: string, fg?: string): HTMLButtonElement {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = cls ? `pax-select-option ${cls}` : 'pax-select-option';
+    btn.dataset.pax = key;
+    btn.textContent = label;
+    if (bg) btn.style.setProperty('--pax-chip-bg', bg);
+    if (fg) btn.style.setProperty('--pax-chip-fg', fg);
+    return btn;
+}
+
+/**
  * Insère (ou retire) la cinquième pastille Pax de la situation courante dans
  * `#pax_select_container`, AVANT `#openCreatePaxBtn`. Hors de sa situation, la
  * pastille est ABSENTE du DOM (jamais `display:none`) : la navigation aux
@@ -252,17 +269,9 @@ export function syncSituationPaxChip(): void {
     container.querySelectorAll<HTMLElement>('.pax-select-option.situation').forEach((el) => el.remove());
     const extra = currentMode().extraPaxChip;
     if (!extra) return;
-    const btn = document.createElement('button');
-    btn.type = 'button';
+    const btn = paxChipButton(extra.key, extra.label, 'situation', extra.color, extra.fontColor);
     btn.setAttribute('role', 'radio');
     btn.setAttribute('aria-checked', 'false');
-    btn.className = 'pax-select-option situation';
-    btn.dataset.pax = extra.key;
-    btn.textContent = extra.label;
-    // Couleur en variables seulement : `.situation.selected` la consomme. Un
-    // `style.background` inline peindrait la pastille en permanence.
-    btn.style.setProperty('--pax-chip-bg', extra.color);
-    btn.style.setProperty('--pax-chip-fg', extra.fontColor);
     const addBtn = document.getElementById('openCreatePaxBtn');
     if (addBtn) container.insertBefore(btn, addBtn);
     else container.appendChild(btn);

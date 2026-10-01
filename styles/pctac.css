@@ -1084,8 +1084,10 @@
            parent pour un rendu identique aux anciens <span>, SANS toucher à
            `font-size`/`font-weight` (posés par .pax-select-option, qui doit
            rester prioritaire — un `font: inherit` les écraserait). L'icône du
-           bouton d'ajout garde sa police dédiée. */
-        .pax-select-option[role="radio"] {
+           bouton d'ajout garde sa police dédiée. Même chose pour les boutons à
+           `aria-pressed` de « Modifier l'entrée » (`#edit_pax_select`). */
+        .pax-select-option[role="radio"],
+        #edit_pax_select .pax-select-option {
             font-family: inherit;
             line-height: inherit;
             /* Neutralise la règle globale `button` (uppercase, letter-spacing) :
@@ -1129,6 +1131,25 @@
             background: var(--pax-chip-bg) !important;
             color: var(--pax-chip-fg);
             border-color: var(--pax-chip-bg);
+        }
+
+        /* Retours terrain 2026-10-02 — « Modifier l'entrée » : intervenants
+           personnalisés et valeur historique prennent leur couleur de variables,
+           comme la cinquième pastille. L'id l'emporte sur `[data-pax="Oscar"]
+           .selected` : un intervenant nommé « Oscar » garde sa couleur au lieu de
+           prendre le vert de la pastille Oscar. */
+        #edit_pax_select .pax-select-option.custom.selected,
+        #edit_pax_select .pax-select-option.legacy.selected {
+            background: var(--pax-chip-bg) !important;
+            color: var(--pax-chip-fg);
+            border-color: var(--pax-chip-bg);
+        }
+
+        /* Dans la fenêtre, les pastilles gardent leur largeur et passent à la ligne
+           sans s'étirer : une pastille seule sur sa ligne (valeur historique) ne
+           prendrait sinon toute la largeur, puis déborderait en s'agrandissant. */
+        #edit_pax_select .pax-select-option {
+            flex: 0 0 auto;
         }
 
         .add-btn {
@@ -1200,6 +1221,10 @@
             .action-btn-small {
                 min-width: 40px;
                 min-height: 40px;
+            }
+            /* Pastilles PAX de « Modifier l'entrée » : cible tactile de 44 px. */
+            #edit_pax_select .pax-select-option {
+                min-height: 44px;
             }
             .plan-draw-color {
                 position: relative;
