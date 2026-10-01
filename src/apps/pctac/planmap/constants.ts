@@ -10,6 +10,7 @@
  */
 
 import type { StyleSpecification } from 'maplibre-gl';
+import { IGN_METROPOLE, ignLayers, ignSources } from '@shared/ign-territoires.js';
 import { esc } from '@shared/ui-platform.js';
 import type { GeoBBox, LidarLayerId, PlanEntityKind } from './types.js';
 
@@ -65,11 +66,22 @@ export const ENTITY_COLORS: Record<PlanEntityKind, string> = {
  * renvoie PAS de tuile (contrairement à la BD ORTHO qui renvoie du JPEG blanc
  * opaque — cf. le piège documenté sur `ign-ortho`). Un trou de couverture laisse
  * donc simplement l'imagerie en dessous visible : l'overlay est sûr à tout zoom.
+ *
+ * OUTRE-MER (sonde Géoplateforme du 2026-10-02) : le LiDAR HD n'est servi qu'en
+ * Guadeloupe (971) et à La Réunion (974) ; ailleurs (972, 973, 975, 976, 977, 978)
+ * la Géoplateforme ne rend que des tuiles vides puis 404. Le bouton LiDAR n'est donc
+ * PAS grisé hors couverture : sans source déclarée sur ces territoires l'overlay est
+ * transparent et l'imagerie reste visible, exactement comme sur un bloc métropolitain
+ * pas encore survolé. Les sources sont déclinées par territoire (`@shared/ign-territoires`).
  * ===================================================================== */
 
-/** Emprise commune des flux IGN métropolitains (BD ORTHO, LiDAR HD, Plan IGN,
- *  courbes) : évite de requêter la Géoplateforme loin hors de France. */
-export const FRANCE_TILE_BOUNDS: [number, number, number, number] = [-5.6, 41.1, 9.8, 51.3];
+/** Emprise commune des flux IGN MÉTROPOLITAINS (BD ORTHO, LiDAR HD, Plan IGN,
+ *  courbes) : évite de requêter la Géoplateforme loin hors de France.
+ *  Retours terrain 2026-10-02 : l'outre-mer (DROM, Saint-Pierre-et-Miquelon,
+ *  Saint-Martin, Saint-Barthélemy) a ses propres rectangles et ses propres sources
+ *  (`-971`…), générés par `@shared/ign-territoires` : MapLibre n'accepte qu'un
+ *  rectangle par source. Cette emprise-ci reste celle des ids de base. */
+export const FRANCE_TILE_BOUNDS: [number, number, number, number] = IGN_METROPOLE.bounds;
 
 /** Zoom max de la pyramide WMTS des ombrages LiDAR HD (grille PM).
  *  z18 ≈ 0,6 m/px, cohérent avec un produit à 50 cm. Au-delà MapLibre
@@ -125,20 +137,21 @@ export function geopfWmtsTileUrl(wmtsLayer: string): string {
         + '&TILEMATRIX={z}&TILECOL={x}&TILEROW={y}';
 }
 
-/** Les 3 sources raster LiDAR HD, prêtes à être fusionnées dans `RASTER_STYLE`. */
+/** Les 3 sources raster LiDAR HD, prêtes à être fusionnées dans `RASTER_STYLE`.
+ *  Une par territoire où l'IGN SERT le LiDAR HD : la métropole, la Guadeloupe et La
+ *  Réunion (sonde 2026-10-02 — ailleurs outre-mer : tuile vide puis 404, rien à
+ *  afficher, donc rien à requêter). Voir `@shared/ign-territoires`. */
 function lidarSources(): StyleSpecification['sources'] {
     const out: StyleSpecification['sources'] = {};
     for (const id of LIDAR_LAYER_IDS) {
         const def = LIDAR_HD_LAYERS[id];
-        out[def.sourceId] = {
-            type: 'raster',
+        Object.assign(out, ignSources('lidar', def.sourceId, {
             tiles: [geopfWmtsTileUrl(def.wmtsLayer)],
             tileSize: 256,
             minzoom: LIDAR_MIN_ZOOM,
             maxzoom: LIDAR_MAX_ZOOM,
-            bounds: FRANCE_TILE_BOUNDS,
             attribution: 'LiDAR HD © IGN / Géoplateforme',
-        };
+        }));
     }
     return out;
 }
@@ -150,20 +163,19 @@ export const LIDAR_OPACITY_OVER_IMAGERY = 0.85;
 export const LIDAR_OPACITY_OVER_TOPO = 0.45;
 
 /** Les 3 couches raster LiDAR HD, MASQUÉES par défaut : tant qu'aucune n'est
- *  visible, MapLibre ne requête aucune tuile (coût réseau nul à l'arrêt). */
+ *  visible, MapLibre ne requête aucune tuile (coût réseau nul à l'arrêt). Une
+ *  couche par territoire servi (`lidar-mnt`, `lidar-mnt-971`, `lidar-mnt-974`…) :
+ *  les bascules visent `ignLayerIds('lidar', …)`, jamais le seul id de base. */
 function lidarLayers(): StyleSpecification['layers'] {
-    return LIDAR_LAYER_IDS.map((id) => ({
-        id: LIDAR_HD_LAYERS[id].sourceId,
-        type: 'raster' as const,
-        source: LIDAR_HD_LAYERS[id].sourceId,
-        layout: { visibility: 'none' as const },
+    return LIDAR_LAYER_IDS.flatMap((id) => ignLayers('lidar', LIDAR_HD_LAYERS[id].sourceId, () => ({
+        layout: { visibility: 'none' },
         paint: {
             // 0.85 : l'ombrage domine (lecture du micro-relief) tout en laissant
             // transparaître l'imagerie pour garder les repères visuels.
             'raster-opacity': 0.85,
             'raster-fade-duration': 300,
         },
-    }));
+    })));
 }
 
 /* =====================================================================
@@ -217,15 +229,17 @@ export const RASTER_STYLE: StyleSpecification = {
         // z11 (cf. raster-opacity) — là la vue est dominée par du sol FR, donc pas de
         // blanc ; à plus bas zoom Esri reste seul (et le 20 cm ne se voit pas avant ~z13).
         // `bounds` évite en plus de requêter l'IGN loin hors de France.
-        'ign-ortho': {
-            type: 'raster',
+        // Retours terrain 2026-10-02 : une source par territoire (métropole `ign-ortho`,
+        // outre-mer `ign-ortho-971`…), même URL, même minzoom, même fondu. Le piège est
+        // le même outre-mer (sondé : la même tuile blanche de 1651 o, en mer et chez les
+        // voisins) et reste traité de la même façon.
+        ...ignSources('ortho', 'ign-ortho', {
             tiles: ['https://data.geopf.fr/tms/1.0.0/HR.ORTHOIMAGERY.ORTHOPHOTOS/{z}/{x}/{y}.jpeg'],
             tileSize: 256,
             minzoom: 11,
             maxzoom: 19,
-            bounds: [-5.6, 41.1, 9.8, 51.3],
             attribution: 'BD ORTHO © IGN / Géoplateforme'
-        },
+        }),
         'terrain-dem': {
             type: 'raster-dem',
             tiles: ['https://elevation-tiles-prod.s3.amazonaws.com/terrarium/{z}/{x}/{y}.png'],
@@ -251,31 +265,28 @@ export const RASTER_STYLE: StyleSpecification = {
             attribution: 'BD TOPO © IGN / Géoplateforme'
         },
         // Fond topographique COULEUR de l'IGN — recouvre l'imagerie quand actif.
-        planign: {
-            type: 'raster',
+        // Servi dans les 8 territoires d'outre-mer (sonde 2026-10-02) : `planign-971`…
+        ...ignSources('planign', 'planign', {
             tiles: [geopfWmtsTileUrl(PLANIGN_WMTS_LAYER)],
             tileSize: 256,
             maxzoom: 19,
-            bounds: FRANCE_TILE_BOUNDS,
             attribution: 'Plan IGN v2 © IGN / Géoplateforme'
-        },
+        }),
         // Courbes de niveau — PNG transparent, superposable à n'importe quel fond.
-        contours: {
-            type: 'raster',
+        // Servies sauf en Guyane (973) et à Saint-Pierre-et-Miquelon (975) : pas de source.
+        ...ignSources('contours', 'contours', {
             tiles: [geopfWmtsTileUrl(CONTOURS_WMTS_LAYER)],
             tileSize: 256,
             minzoom: CONTOURS_MIN_ZOOM,
             maxzoom: 18,
-            bounds: FRANCE_TILE_BOUNDS,
             attribution: 'Courbes de niveau © IGN / Géoplateforme'
-        },
+        }),
         // Ombrages LiDAR HD (WMTS Géoplateforme, sans clé) — cf. bloc ci-dessus.
         ...lidarSources()
     },
     layers: [
         { id: 'satellite', type: 'raster', source: 'satellite' },
-        {
-            id: 'ign-ortho', type: 'raster', source: 'ign-ortho',
+        ...ignLayers('ortho', 'ign-ortho', () => ({
             paint: {
                 // Fusion seamless Esri → IGN : fondu progressif au zoom sur la bande
                 // z11→z13 (l'IGN monte en transparence par-dessus Esri puis devient
@@ -285,25 +296,23 @@ export const RASTER_STYLE: StyleSpecification = {
                 'raster-opacity': ['interpolate', ['linear'], ['zoom'], 11, 0, 13, 1],
                 'raster-fade-duration': 500
             }
-        },
+        })),
         // Fond topo COULEUR : au-dessus de l'imagerie (il la remplace), sous les
         // ombrages LiDAR (qui viennent l'ombrer) — masqué par défaut.
-        {
-            id: 'planign', type: 'raster', source: 'planign',
+        ...ignLayers('planign', 'planign', () => ({
             layout: { visibility: 'none' },
             paint: { 'raster-fade-duration': 300 }
-        },
+        })),
         // Overlays LiDAR HD : AU-DESSUS de l'imagerie, mais déclarés ICI (dans le
         // style) donc SOUS toutes les couches ajoutées après `load` — dessins,
         // formes, bâtiments 3D, noms de rues (cf. draw-layers.ts, map-core.ts).
         ...lidarLayers(),
         // Courbes de niveau : au-dessus des ombrages, pour rester lisibles quel
         // que soit le fond — masquées par défaut.
-        {
-            id: 'contours', type: 'raster', source: 'contours',
+        ...ignLayers('contours', 'contours', () => ({
             layout: { visibility: 'none' },
             paint: { 'raster-opacity': 0.9, 'raster-fade-duration': 300 }
-        }
+        }))
     ]
 };
 
@@ -319,7 +328,9 @@ export const RASTER_STYLE: StyleSpecification = {
 export const OFFLINE_MAP_CACHE = 'pctac-map-v2';
 // planMap.js:124
 export const SAT_TILE_TEMPLATE = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
-// Métropole + marge (DOM-TOM exclus du cache de base, trop dispersés).
+// Métropole + marge. Le pré-cache de FOND (zoom 0→8, `prefetchFranceTiles`) reste
+// métropolitain : l'outre-mer se télécharge par zone (AOI), dont les sources IGN sont
+// déclinées par territoire (`@shared/ign-territoires`), sans filtre « métropole ».
 // planMap.js:126
 export const FRANCE_BBOX: GeoBBox = { west: -5.6, south: 41.1, east: 9.8, north: 51.3 };
 // Clé de l'index des AOI confirmées (Persist) : remplace le flag binaire.

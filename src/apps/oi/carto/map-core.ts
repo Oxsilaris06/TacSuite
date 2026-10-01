@@ -99,6 +99,7 @@ import type { AddLayerObject, MapMouseEvent, MapTouchEvent, SkySpecification } f
 import { COORDS_NOT_READ, looksLikeCoordinates, parseCoordinateInput, parseDecimalCoords } from '@shared/coords.js';
 import { confirmDialog, toast } from '@shared/feedback.js';
 import { esc as escapeHtml } from '@shared/ui-platform.js';
+import { ignLayerIds } from '@shared/ign-territoires.js';
 import { createMapOverlays, mountOverlayControls } from '@shared/map-overlays.js';
 import { Store } from '@oi/init.js';
 
@@ -641,10 +642,13 @@ export const MapCoreMethods = {
         if (!this.map) return;
         const opacity = this.planIgnOn ? LIDAR_OPACITY_OVER_TOPO : LIDAR_OPACITY_OVER_IMAGERY;
         for (const id of LIDAR_LAYER_IDS) {
-            const layerId = LIDAR_HD_LAYERS[id].sourceId;
-            if (!this.map.getLayer(layerId)) continue;
-            this.map.setLayoutProperty(layerId, 'visibility', this.lidarLayer === id ? 'visible' : 'none');
-            this.map.setPaintProperty(layerId, 'raster-opacity', opacity);
+            // Une couche par territoire servi (métropole, Guadeloupe, La Réunion) : mêmes
+            // bascules et même opacité partout — retours terrain 2026-10-02.
+            for (const layerId of ignLayerIds('lidar', LIDAR_HD_LAYERS[id].sourceId)) {
+                if (!this.map.getLayer(layerId)) continue;
+                this.map.setLayoutProperty(layerId, 'visibility', this.lidarLayer === id ? 'visible' : 'none');
+                this.map.setPaintProperty(layerId, 'raster-opacity', opacity);
+            }
         }
         this._updateLidarBtn();
     },
@@ -699,11 +703,17 @@ export const MapCoreMethods = {
 
     _applyTopoVisibility(this: OICartoInternal): void {
         if (!this.map) return;
-        if (this.map.getLayer('planign')) {
-            this.map.setLayoutProperty('planign', 'visibility', this.planIgnOn ? 'visible' : 'none');
+        // Fond topo et courbes existent par territoire servi (`planign-971`…) : la
+        // bascule vise TOUS les ids, sinon l'outre-mer resterait sur l'imagerie.
+        for (const layerId of ignLayerIds('planign', 'planign')) {
+            if (this.map.getLayer(layerId)) {
+                this.map.setLayoutProperty(layerId, 'visibility', this.planIgnOn ? 'visible' : 'none');
+            }
         }
-        if (this.map.getLayer('contours')) {
-            this.map.setLayoutProperty('contours', 'visibility', this.contoursOn ? 'visible' : 'none');
+        for (const layerId of ignLayerIds('contours', 'contours')) {
+            if (this.map.getLayer(layerId)) {
+                this.map.setLayoutProperty(layerId, 'visibility', this.contoursOn ? 'visible' : 'none');
+            }
         }
         // Le fond conditionne l'opacité de l'ombrage LiDAR (cf. _applyLidarVisibility).
         this._applyLidarVisibility();

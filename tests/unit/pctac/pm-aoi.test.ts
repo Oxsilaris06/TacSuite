@@ -38,6 +38,7 @@ vi.mock('@shared/power-lines.js', async (orig) => ({
     prefetchPowerLines: prefetchPowerLinesMock,
 }));
 
+import { ignLayerIds } from '@shared/ign-territoires.js';
 import { AoiMethods } from '@pctac/planmap/aoi.js';
 import { AOI_INDEX_KEY, AOI_MAX_TILES } from '@pctac/planmap/constants.js';
 import { estimateTileCount, prefetchTiles, styleTileTemplates } from '@pctac/planmap/tiles.js';
@@ -328,6 +329,43 @@ describe('_confirmAoi (planMap.js:5414-5451) — quota et confirmation', () => {
         await AoiMethods._confirmAoi.call(state, makeBbox());
 
         expect(state._runAoiDownload).not.toHaveBeenCalled();
+    });
+
+    // Retours terrain 2026-10-02 : chaque couche IGN est déclinée par territoire
+    // (`planign-971`, `lidar-mns-974`…). L'AOI doit embarquer TOUTES les déclinaisons
+    // de la couche active, sinon une zone tracée aux Antilles partirait sans son
+    // fond topo (la tuile de la métropole ne couvre pas la Guadeloupe).
+    it('embarque les couches IGN ACTIVES, déclinées par territoire servi — et elles seules', async () => {
+        const state = makeFakeState(null);
+        Object.assign(state, { lidarLayer: 'mns', planIgnOn: true, contoursOn: true });
+        styleTileTemplatesMock.mockReturnValue([makeTemplate()]);
+        estimateTileCountMock.mockReturnValue(500);
+
+        await AoiMethods._confirmAoi.call(state, makeBbox());
+
+        const ids = styleTileTemplatesMock.mock.calls[0]![0] as string[];
+        expect(ids).toEqual([
+            ...ignLayerIds('lidar', 'lidar-mns'),
+            ...ignLayerIds('planign', 'planign'),
+            ...ignLayerIds('contours', 'contours'),
+        ]);
+        expect(ids).toContain('lidar-mns-971');
+        expect(ids).toContain('planign-973');
+        expect(ids).toContain('contours-972');
+        // Pas d'ombrage MNT/MNH (inactifs), pas de courbes là où l'IGN n'en sert pas.
+        expect(ids).not.toContain('lidar-mnt');
+        expect(ids).not.toContain('contours-973');
+    });
+
+    it('aucune couche IGN active ⇒ aucune source supplémentaire demandée', async () => {
+        const state = makeFakeState(null);
+        Object.assign(state, { lidarLayer: null, planIgnOn: false, contoursOn: false });
+        styleTileTemplatesMock.mockReturnValue([makeTemplate()]);
+        estimateTileCountMock.mockReturnValue(500);
+
+        await AoiMethods._confirmAoi.call(state, makeBbox());
+
+        expect(styleTileTemplatesMock).toHaveBeenCalledWith([]);
     });
 
     it('lance _runAoiDownload(bbox, AOI_MIN_Z, AOI_MAX_Z, templates, tileCount) si l\'utilisateur confirme (confirmDialog, R2-T2a ex-confirm())', async () => {

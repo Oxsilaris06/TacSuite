@@ -20,6 +20,7 @@ import {
     VIEW_KEY,
     escHtml,
 } from '../../../src/apps/pctac/planmap/constants.js';
+import { ignLayerId, ignLayerIds, ignTerritories } from '@shared/ign-territoires.js';
 import { SafeMethods, createPlanMapState } from '../../../src/apps/pctac/planmap/state.js';
 import type { PlanMapInternal } from '../../../src/apps/pctac/planmap/types.js';
 
@@ -281,30 +282,63 @@ describe('constants.ts — ENTITY_COLORS (planMap.js:35-39)', () => {
     });
 });
 
-describe('constants.ts — RASTER_STYLE (planMap.js:43-113 + overlays LiDAR HD)', () => {
-    it('5 sources planMap.js + les 3 sources LiDAR HD', () => {
+describe('constants.ts — RASTER_STYLE (planMap.js:43-113 + overlays IGN, métropole + outre-mer)', () => {
+    // Les ids de la MÉTROPOLE sont le contrat historique (tout le code existant les
+    // vise) ; l'outre-mer (retours terrain 2026-10-02) s'y ajoute en `<id>-<code>`.
+    const LIDAR_IDS = ['lidar-mnt', 'lidar-mns', 'lidar-mnh'];
+
+    it('sources : 5 sources planMap.js + fonds/overlays IGN, un jeu par territoire servi', () => {
         expect(Object.keys(RASTER_STYLE.sources)).toEqual([
             'satellite',
-            'ign-ortho',
+            ...ignLayerIds('ortho', 'ign-ortho'),
             'terrain-dem',
             'openfreemap',
             'bdtopo',
-            // Ajout hors planMap.js : ombrages LiDAR HD (constants.ts).
-            'planign',
-            'contours',
-            'lidar-mnt',
-            'lidar-mns',
-            'lidar-mnh',
+            // Ajouts hors planMap.js : fond topo, courbes, ombrages LiDAR HD.
+            ...ignLayerIds('planign', 'planign'),
+            ...ignLayerIds('contours', 'contours'),
+            ...LIDAR_IDS.flatMap((id) => ignLayerIds('lidar', id)),
         ]);
+    });
+
+    it('la métropole garde ses ids historiques ; l\'outre-mer est déclaré là où la sonde l\'a vu servi', () => {
+        const ids = Object.keys(RASTER_STYLE.sources);
+        for (const id of ['ign-ortho', 'planign', 'contours', ...LIDAR_IDS]) expect(ids).toContain(id);
+        // Servis (sonde Géoplateforme du 2026-10-02).
+        for (const id of ['ign-ortho-971', 'ign-ortho-973', 'ign-ortho-978', 'planign-975', 'contours-974', 'lidar-mnt-971', 'lidar-mnh-974']) {
+            expect(ids, id).toContain(id);
+        }
+        // NON servis : aucune source (pas de requêtes inutiles vers l'IGN).
+        for (const id of ['contours-973', 'contours-975', 'lidar-mnt-972', 'lidar-mns-976', 'lidar-mnt-978']) {
+            expect(ids, id).not.toContain(id);
+        }
     });
 
     // L'ORDRE est le contrat visuel : la couleur en bas (imagerie puis fond topo),
     // le relief au milieu (ombrages LiDAR), les lignes toujours lisibles au-dessus.
-    it('2 couches planMap.js + fond topo + 3 ombrages + courbes, dans cet ordre', () => {
-        expect(RASTER_STYLE.layers).toHaveLength(7);
+    // Les territoires d'une même famille ne se recouvrent jamais : seul l'ordre
+    // ENTRE familles compte.
+    it('couches : satellite, ortho, fond topo, 3 ombrages, courbes — familles contiguës dans cet ordre', () => {
         expect(RASTER_STYLE.layers.map((l) => l.id)).toEqual([
-            'satellite', 'ign-ortho', 'planign', 'lidar-mnt', 'lidar-mns', 'lidar-mnh', 'contours',
+            'satellite',
+            ...ignLayerIds('ortho', 'ign-ortho'),
+            ...ignLayerIds('planign', 'planign'),
+            ...LIDAR_IDS.flatMap((id) => ignLayerIds('lidar', id)),
+            ...ignLayerIds('contours', 'contours'),
         ]);
+    });
+
+    it('chaque couche vise sa source, et chaque source IGN a exactement sa couche', () => {
+        const sources = RASTER_STYLE.sources as Record<string, { bounds?: number[] }>;
+        for (const l of RASTER_STYLE.layers) {
+            if (l.type !== 'raster') continue;
+            expect(sources[l.source], l.id).toBeDefined();
+        }
+        const layerSources = RASTER_STYLE.layers.map((l) => ('source' in l ? l.source : ''));
+        for (const id of Object.keys(sources)) {
+            if (!sources[id]?.bounds) continue; // satellite, DEM, vecteurs : hors sujet
+            expect(layerSources.filter((s) => s === id), id).toHaveLength(1);
+        }
     });
 
     it('glyphs OpenFreeMap', () => {
@@ -315,6 +349,48 @@ describe('constants.ts — RASTER_STYLE (planMap.js:43-113 + overlays LiDAR HD)'
         const ign = RASTER_STYLE.sources['ign-ortho'] as { bounds?: number[]; minzoom?: number };
         expect(ign.bounds).toEqual([-5.6, 41.1, 9.8, 51.3]);
         expect(ign.minzoom).toBe(11);
+    });
+
+    // PIÈGE des tuiles blanches (cf. commentaire `ign-ortho`) : hors couverture
+    // l'IGN rend un JPEG BLANC opaque (1651 o, observé aussi en mer et chez les
+    // voisins de l'outre-mer). Il est traité PAR TERRITOIRE comme en métropole :
+    // minzoom 11 et fondu 11→13, jamais d'ortho plein pot à bas zoom.
+    it('ortho outre-mer : bounds du territoire, minzoom 11, maxzoom 19, fondu 11→13 comme la métropole', () => {
+        const metro = RASTER_STYLE.sources['ign-ortho'] as { tiles: string[]; tileSize: number; maxzoom: number; attribution: string };
+        const metroLayer = RASTER_STYLE.layers.find((l) => l.id === 'ign-ortho') as { paint?: unknown };
+        for (const t of ignTerritories('ortho')) {
+            const id = ignLayerId('ign-ortho', t);
+            const src = RASTER_STYLE.sources[id] as { type: string; tiles: string[]; tileSize: number; minzoom: number; maxzoom: number; bounds: number[]; attribution: string };
+            expect(src.type, id).toBe('raster');
+            expect(src.bounds, id).toEqual(t.bounds);
+            expect(src.minzoom, id).toBe(11);
+            expect(src.maxzoom, id).toBe(19);
+            expect(src.tiles, id).toEqual(metro.tiles);
+            expect(src.tileSize, id).toBe(metro.tileSize);
+            expect(src.attribution, id).toBe(metro.attribution);
+            const layer = RASTER_STYLE.layers.find((l) => l.id === id) as { source: string; paint?: unknown };
+            expect(layer.source, id).toBe(id);
+            expect(layer.paint, id).toEqual(metroLayer.paint);
+        }
+    });
+
+    it('Plan IGN, courbes, ombrages : mêmes zooms et même visibilité initiale (masqués) dans chaque territoire', () => {
+        const familles: [string, 'planign' | 'contours' | 'lidar', { minzoom?: number; maxzoom?: number }][] = [
+            ['planign', 'planign', { maxzoom: 19 }],
+            ['contours', 'contours', { minzoom: 11, maxzoom: 18 }],
+            ['lidar-mnt', 'lidar', { minzoom: 8, maxzoom: 18 }],
+        ];
+        for (const [base, famille, zooms] of familles) {
+            for (const t of ignTerritories(famille)) {
+                const id = ignLayerId(base, t);
+                const src = RASTER_STYLE.sources[id] as { bounds: number[]; minzoom?: number; maxzoom?: number };
+                expect(src.bounds, id).toEqual(t.bounds);
+                expect(src.minzoom, id).toBe(zooms.minzoom);
+                expect(src.maxzoom, id).toBe(zooms.maxzoom);
+                const layer = RASTER_STYLE.layers.find((l) => l.id === id) as { layout?: { visibility?: string } };
+                expect(layer.layout?.visibility, id).toBe('none');
+            }
+        }
     });
 });
 

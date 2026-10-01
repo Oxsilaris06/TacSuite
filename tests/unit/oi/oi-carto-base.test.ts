@@ -27,25 +27,32 @@ import {
 	oiIconForMember,
 	oiNormalize,
 } from '@oi/carto/constants.js';
+import { ignLayerId, ignLayerIds, ignTerritories } from '@shared/ign-territoires.js';
 
 describe('constants.ts — OI_CARTO_RASTER_STYLE (oi_cartographie.js:23-48 + overlays IGN hors littéral)', () => {
-	it('version 8, 4 sources planMap.js + planign/contours/3 LiDAR, 7 couches, glyphs OpenFreeMap', () => {
+	// Les ids de la MÉTROPOLE sont le contrat historique ; l'outre-mer (retours
+	// terrain 2026-10-02) s'y ajoute en `<id>-<code>` (cf. @shared/ign-territoires).
+	const LIDAR_IDS = ['lidar-mnt', 'lidar-mns', 'lidar-mnh'];
+
+	it('version 8, sources planMap.js + fonds/overlays IGN (un jeu par territoire servi), glyphs OpenFreeMap', () => {
 		expect(OI_CARTO_RASTER_STYLE.version).toBe(8);
 		expect(OI_CARTO_RASTER_STYLE.glyphs).toBe('https://tiles.openfreemap.org/fonts/{fontstack}/{range}.pbf');
 		expect(Object.keys(OI_CARTO_RASTER_STYLE.sources)).toEqual([
 			'satellite',
-			'ign-ortho',
+			...ignLayerIds('ortho', 'ign-ortho'),
 			'terrain-dem',
 			'openfreemap',
-			'planign',
-			'contours',
-			'lidar-mnt',
-			'lidar-mns',
-			'lidar-mnh',
+			...ignLayerIds('planign', 'planign'),
+			...ignLayerIds('contours', 'contours'),
+			...LIDAR_IDS.flatMap((id) => ignLayerIds('lidar', id)),
 		]);
-		expect(OI_CARTO_RASTER_STYLE.layers).toHaveLength(7);
+		// Couches : satellite, ortho, fond topo, 3 ombrages, courbes — familles contiguës.
 		expect(OI_CARTO_RASTER_STYLE.layers.map((l) => l.id)).toEqual([
-			'satellite', 'ign-ortho', 'planign', 'lidar-mnt', 'lidar-mns', 'lidar-mnh', 'contours',
+			'satellite',
+			...ignLayerIds('ortho', 'ign-ortho'),
+			...ignLayerIds('planign', 'planign'),
+			...LIDAR_IDS.flatMap((id) => ignLayerIds('lidar', id)),
+			...ignLayerIds('contours', 'contours'),
 		]);
 		expect(OI_CARTO_RASTER_STYLE.layers[0]).toEqual({ id: 'satellite', type: 'raster', source: 'satellite' });
 		expect(OI_CARTO_RASTER_STYLE.layers[1]).toEqual({
@@ -57,6 +64,46 @@ describe('constants.ts — OI_CARTO_RASTER_STYLE (oi_cartographie.js:23-48 + ove
 				'raster-fade-duration': 500,
 			},
 		});
+	});
+
+	it('même carte des couvertures que PC-Tac : servi là où la sonde l\'a vu, rien ailleurs', () => {
+		const ids = Object.keys(OI_CARTO_RASTER_STYLE.sources);
+		for (const id of ['ign-ortho-971', 'ign-ortho-973', 'planign-975', 'contours-974', 'contours-978', 'lidar-mnt-971', 'lidar-mnh-974']) {
+			expect(ids, id).toContain(id);
+		}
+		for (const id of ['contours-973', 'contours-975', 'lidar-mnt-972', 'lidar-mns-976', 'lidar-mnt-978']) {
+			expect(ids, id).not.toContain(id);
+		}
+	});
+
+	it('chaque couche vise sa source, et chaque source IGN a exactement sa couche', () => {
+		const sources = OI_CARTO_RASTER_STYLE.sources as Record<string, { bounds?: number[] }>;
+		for (const l of OI_CARTO_RASTER_STYLE.layers) expect(sources['source' in l ? l.source : ''], l.id).toBeDefined();
+		const layerSources = OI_CARTO_RASTER_STYLE.layers.map((l) => ('source' in l ? l.source : ''));
+		for (const id of Object.keys(sources)) {
+			if (!sources[id]?.bounds) continue;
+			expect(layerSources.filter((x) => x === id), id).toHaveLength(1);
+		}
+	});
+
+	// PIÈGE des tuiles blanches : traité PAR TERRITOIRE comme en métropole (minzoom
+	// 11 + fondu 11→13 — une ortho plein pot à bas zoom masquerait Esri en blanc).
+	it('ortho outre-mer : bounds du territoire, minzoom 11, maxzoom 19, fondu 11→13 comme la métropole', () => {
+		const metro = OI_CARTO_RASTER_STYLE.sources['ign-ortho'] as { tiles: string[]; tileSize: number; attribution: string };
+		const metroLayer = OI_CARTO_RASTER_STYLE.layers.find((l) => l.id === 'ign-ortho') as { paint?: unknown };
+		for (const t of ignTerritories('ortho')) {
+			const id = ignLayerId('ign-ortho', t);
+			const src = OI_CARTO_RASTER_STYLE.sources[id] as { tiles: string[]; tileSize: number; minzoom: number; maxzoom: number; bounds: number[]; attribution: string };
+			expect(src.bounds, id).toEqual(t.bounds);
+			expect(src.minzoom, id).toBe(11);
+			expect(src.maxzoom, id).toBe(19);
+			expect(src.tiles, id).toEqual(metro.tiles);
+			expect(src.tileSize, id).toBe(metro.tileSize);
+			expect(src.attribution, id).toBe(metro.attribution);
+			const layer = OI_CARTO_RASTER_STYLE.layers.find((l) => l.id === id) as { source: string; paint?: unknown };
+			expect(layer.source, id).toBe(id);
+			expect(layer.paint, id).toEqual(metroLayer.paint);
+		}
 	});
 
 	it('source satellite : tuiles ArcGIS World_Imagery, tileSize 256, maxzoom 19', () => {
@@ -120,6 +167,29 @@ describe('constants.ts — OI_CARTO_RASTER_STYLE (oi_cartographie.js:23-48 + ove
 		}
 	});
 
+	// Sonde 2026-10-02 : l'IGN sert le LiDAR HD en Guadeloupe et à La Réunion (et
+	// nulle part ailleurs outre-mer). Même service, mêmes zooms, même opacité.
+	it('LiDAR HD outre-mer : Guadeloupe et La Réunion seulement, mêmes zooms et même opacité', () => {
+		for (const id of LIDAR_LAYER_IDS) {
+			const def = LIDAR_HD_LAYERS[id];
+			expect(ignLayerIds('lidar', def.sourceId)).toEqual([def.sourceId, def.sourceId + '-971', def.sourceId + '-974']);
+			for (const t of ignTerritories('lidar')) {
+				const sid = ignLayerId(def.sourceId, t);
+				const src = OI_CARTO_RASTER_STYLE.sources[sid] as { tiles: string[]; bounds?: number[]; minzoom?: number; maxzoom?: number };
+				expect(src.tiles, sid).toEqual([geopfWmtsTileUrl(def.wmtsLayer)]);
+				expect(src.bounds, sid).toEqual(t.bounds);
+				expect(src.minzoom, sid).toBe(LIDAR_MIN_ZOOM);
+				expect(src.maxzoom, sid).toBe(LIDAR_MAX_ZOOM);
+				const layer = OI_CARTO_RASTER_STYLE.layers.find((l) => l.id === sid) as {
+					source: string; layout?: { visibility?: string }; paint?: { 'raster-opacity'?: number };
+				};
+				expect(layer.source, sid).toBe(sid);
+				expect(layer.layout?.visibility, sid).toBe('none');
+				expect(layer.paint?.['raster-opacity'], sid).toBe(LIDAR_OPACITY_OVER_IMAGERY);
+			}
+		}
+	});
+
 	it('source planign : Plan IGN v2, masquée par défaut', () => {
 		const src = OI_CARTO_RASTER_STYLE.sources.planign as { type: string; tiles: string[]; bounds?: number[] };
 		expect(src.type).toBe('raster');
@@ -129,6 +199,20 @@ describe('constants.ts — OI_CARTO_RASTER_STYLE (oi_cartographie.js:23-48 + ove
 		expect(layer.layout?.visibility).toBe('none');
 	});
 
+	it('Plan IGN outre-mer : une source et une couche masquée par territoire (les 8)', () => {
+		expect(ignTerritories('planign')).toHaveLength(9);
+		for (const t of ignTerritories('planign')) {
+			const id = ignLayerId('planign', t);
+			const src = OI_CARTO_RASTER_STYLE.sources[id] as { tiles: string[]; bounds?: number[]; maxzoom?: number };
+			expect(src.tiles, id).toEqual([geopfWmtsTileUrl(PLANIGN_WMTS_LAYER)]);
+			expect(src.bounds, id).toEqual(t.bounds);
+			expect(src.maxzoom, id).toBe(19);
+			const layer = OI_CARTO_RASTER_STYLE.layers.find((l) => l.id === id) as { source: string; layout?: { visibility?: string } };
+			expect(layer.source, id).toBe(id);
+			expect(layer.layout?.visibility, id).toBe('none');
+		}
+	});
+
 	it('source contours : RGE ALTI vectorisé, minzoom CONTOURS_MIN_ZOOM, masquée par défaut', () => {
 		const src = OI_CARTO_RASTER_STYLE.sources.contours as { type: string; tiles: string[]; minzoom?: number };
 		expect(src.type).toBe('raster');
@@ -136,6 +220,24 @@ describe('constants.ts — OI_CARTO_RASTER_STYLE (oi_cartographie.js:23-48 + ove
 		expect(src.minzoom).toBe(CONTOURS_MIN_ZOOM);
 		const layer = OI_CARTO_RASTER_STYLE.layers.find((l) => l.id === 'contours') as { layout?: { visibility?: string } };
 		expect(layer.layout?.visibility).toBe('none');
+	});
+
+	it('courbes outre-mer : servies sauf en Guyane et à Saint-Pierre-et-Miquelon, mêmes zooms et même opacité', () => {
+		expect(ignTerritories('contours').map((t) => t.code).sort()).toEqual(['971', '972', '974', '976', '977', '978', 'FR']);
+		for (const t of ignTerritories('contours')) {
+			const id = ignLayerId('contours', t);
+			const src = OI_CARTO_RASTER_STYLE.sources[id] as { tiles: string[]; bounds?: number[]; minzoom?: number; maxzoom?: number };
+			expect(src.tiles, id).toEqual([geopfWmtsTileUrl(CONTOURS_WMTS_LAYER)]);
+			expect(src.bounds, id).toEqual(t.bounds);
+			expect(src.minzoom, id).toBe(CONTOURS_MIN_ZOOM);
+			expect(src.maxzoom, id).toBe(18);
+			const layer = OI_CARTO_RASTER_STYLE.layers.find((l) => l.id === id) as {
+				source: string; layout?: { visibility?: string }; paint?: { 'raster-opacity'?: number };
+			};
+			expect(layer.source, id).toBe(id);
+			expect(layer.layout?.visibility, id).toBe('none');
+			expect(layer.paint?.['raster-opacity'], id).toBe(0.9);
+		}
 	});
 });
 

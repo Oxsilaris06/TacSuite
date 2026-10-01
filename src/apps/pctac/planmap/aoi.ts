@@ -29,6 +29,7 @@ import type { MapMouseEvent, MapTouchEvent } from 'maplibre-gl';
 
 import { AOI_INDEX_KEY, AOI_MAX_TILES, LIDAR_HD_LAYERS } from './constants.js';
 import { estimateTileCount, prefetchTiles, styleTileTemplates } from './tiles.js';
+import { ignLayerIds } from '@shared/ign-territoires.js';
 import { prefetchPowerLines } from '@shared/power-lines.js';
 import type {
     AoiFramingHandlers,
@@ -189,10 +190,12 @@ export const AoiMethods = {
         // celles qui servent sur le terrain (relief sous couvert, fond topo,
         // courbes). On n'embarque QUE les couches actives, pour ne pas gonfler le
         // volume de qui ne les affiche pas. Hors planMap.js.
+        // Chaque couche IGN existe par territoire servi (métropole, `-971`…) : on
+        // embarque toutes ses déclinaisons, `enumerateTiles` ne gardant que celle de la zone.
         const extraSources: string[] = [];
-        if (this.lidarLayer) extraSources.push(LIDAR_HD_LAYERS[this.lidarLayer].sourceId);
-        if (this.planIgnOn) extraSources.push('planign');
-        if (this.contoursOn) extraSources.push('contours');
+        if (this.lidarLayer) extraSources.push(...ignLayerIds('lidar', LIDAR_HD_LAYERS[this.lidarLayer].sourceId));
+        if (this.planIgnOn) extraSources.push(...ignLayerIds('planign', 'planign'));
+        if (this.contoursOn) extraSources.push(...ignLayerIds('contours', 'contours'));
         const templates: TileTemplate[] = styleTileTemplates(extraSources);
         if (!templates.length) { toast('Aucune source cartographique disponible.', { kind: 'error' }); return; }
         const minZ = this.AOI_MIN_Z, maxZ = this.AOI_MAX_Z;

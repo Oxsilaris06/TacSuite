@@ -53,6 +53,7 @@ vi.mock('@pctac/planmap/tiles.js', () => ({
 const toastSpy = vi.hoisted(() => vi.fn());
 vi.mock('@shared/feedback.js', () => ({ toast: toastSpy }));
 
+import { ignLayerIds } from '@shared/ign-territoires.js';
 import {
     CONTOURS_KEY,
     LIDAR_KEY,
@@ -710,6 +711,36 @@ describe('Overlays LiDAR HD — _applyLidarVisibility / _setLidarLayer / _cycleL
         }
     });
 
+    // Retours terrain 2026-10-02 : l'ombrage existe aussi en Guadeloupe et à La
+    // Réunion (couches `lidar-*-971` / `-974`). Mêmes bascules, même opacité.
+    it('_applyLidarVisibility() applique la même bascule et la même opacité à chaque territoire servi', () => {
+        const map = makeFakeMap({ getLayer: vi.fn(() => ({})) });
+        const fake = makeFakeThis({ map, lidarLayer: 'mns', planIgnOn: true });
+
+        MapCoreMethods._applyLidarVisibility.call(fake);
+
+        for (const suffixe of ['', '-971', '-974']) {
+            expect(map.setLayoutProperty).toHaveBeenCalledWith('lidar-mnt' + suffixe, 'visibility', 'none');
+            expect(map.setLayoutProperty).toHaveBeenCalledWith('lidar-mns' + suffixe, 'visibility', 'visible');
+            expect(map.setLayoutProperty).toHaveBeenCalledWith('lidar-mnh' + suffixe, 'visibility', 'none');
+            expect(map.setPaintProperty).toHaveBeenCalledWith('lidar-mns' + suffixe, 'raster-opacity', LIDAR_OPACITY_OVER_TOPO);
+        }
+        // Territoires sans LiDAR (Martinique, Guyane…) : aucune couche, donc jamais visée.
+        const touched = map.setLayoutProperty.mock.calls.map((c) => c[0]);
+        expect(touched).not.toContain('lidar-mns-972');
+        expect(touched).not.toContain('lidar-mns-973');
+    });
+
+    it('_applyLidarVisibility() ignore une couche territoriale absente du style (getLayer faux)', () => {
+        const map = makeFakeMap({ getLayer: vi.fn((id: string) => (id === 'lidar-mnt-971' ? {} : undefined)) });
+        const fake = makeFakeThis({ map, lidarLayer: 'mnt' });
+
+        MapCoreMethods._applyLidarVisibility.call(fake);
+
+        expect(map.setLayoutProperty).toHaveBeenCalledTimes(1);
+        expect(map.setLayoutProperty).toHaveBeenCalledWith('lidar-mnt-971', 'visibility', 'visible');
+    });
+
     it('_applyLidarVisibility() sans carte ⇒ ne jette pas', () => {
         const fake = makeFakeThis({ map: null });
         expect(() => MapCoreMethods._applyLidarVisibility.call(fake)).not.toThrow();
@@ -812,6 +843,44 @@ describe('Fond topo & courbes — _applyTopoVisibility / _togglePlanIgn / _toggl
 
         expect(map.setLayoutProperty).toHaveBeenCalledWith('planign', 'visibility', 'visible');
         expect(map.setLayoutProperty).toHaveBeenCalledWith('contours', 'visibility', 'none');
+    });
+
+    // Retours terrain 2026-10-02 : un fond topo et des courbes PAR territoire servi.
+    // Une bascule qui ne viserait que `planign` / `contours` laisserait les Antilles
+    // sur l'imagerie quand l'utilisateur demande le Plan IGN.
+    it('_applyTopoVisibility() bascule le Plan IGN et les courbes dans CHAQUE territoire servi', () => {
+        const map = makeFakeMap({ getLayer: vi.fn(() => ({})) });
+        const fake = makeFakeThis({ map, planIgnOn: true, contoursOn: false });
+
+        MapCoreMethods._applyTopoVisibility.call(fake);
+
+        for (const id of ignLayerIds('planign', 'planign')) {
+            expect(map.setLayoutProperty).toHaveBeenCalledWith(id, 'visibility', 'visible');
+        }
+        for (const id of ignLayerIds('contours', 'contours')) {
+            expect(map.setLayoutProperty).toHaveBeenCalledWith(id, 'visibility', 'none');
+        }
+        // Les 8 territoires pour le fond topo ; la Guyane et SPM n'ont pas de courbes.
+        const touched = map.setLayoutProperty.mock.calls.map((c) => c[0]);
+        expect(touched).toContain('planign-973');
+        expect(touched).toContain('planign-975');
+        expect(touched).toContain('contours-978');
+        expect(touched).not.toContain('contours-973');
+        expect(touched).not.toContain('contours-975');
+    });
+
+    it('_applyTopoVisibility() : courbes visibles ⇒ toutes les couches de courbes passent visibles', () => {
+        const map = makeFakeMap({ getLayer: vi.fn(() => ({})) });
+        const fake = makeFakeThis({ map, planIgnOn: false, contoursOn: true });
+
+        MapCoreMethods._applyTopoVisibility.call(fake);
+
+        for (const id of ignLayerIds('contours', 'contours')) {
+            expect(map.setLayoutProperty).toHaveBeenCalledWith(id, 'visibility', 'visible');
+        }
+        for (const id of ignLayerIds('planign', 'planign')) {
+            expect(map.setLayoutProperty).toHaveBeenCalledWith(id, 'visibility', 'none');
+        }
     });
 
     // Le couplage qui fait tout l'intérêt du mode : sur le Plan IGN l'ombrage
