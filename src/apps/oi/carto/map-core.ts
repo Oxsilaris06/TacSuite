@@ -99,6 +99,8 @@ import type { AddLayerObject, MapMouseEvent, MapTouchEvent, SkySpecification } f
 import { COORDS_NOT_READ, looksLikeCoordinates, parseCoordinateInput, parseDecimalCoords } from '@shared/coords.js';
 import { confirmDialog, toast } from '@shared/feedback.js';
 import { esc as escapeHtml } from '@shared/ui-platform.js';
+import { ignOrthoMapOptions } from '@shared/ign-ortho.js';
+import { ignLayerIds, ignUnservedAt } from '@shared/ign-territoires.js';
 import { createMapOverlays, mountOverlayControls } from '@shared/map-overlays.js';
 import { Store } from '@oi/init.js';
 
@@ -184,6 +186,9 @@ export const MapCoreMethods = {
             pitch: savedView.pitch || 0,
             bearing: savedView.bearing || 0,
             preserveDrawingBuffer: true, // requis pour la future capture (Lot A3)
+            // Ortho IGN d'outre-mer : le blanc « hors couverture » devient transparent
+            // (retours terrain 2026-10-02, cf. `@shared/ign-ortho`) — parité PC-Tac.
+            ...ignOrthoMapOptions(maplibregl),
         });
         this.map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'top-left');
         this.map.addControl(new maplibregl.ScaleControl({ maxWidth: 120, unit: 'metric' }), 'bottom-right');
@@ -641,10 +646,13 @@ export const MapCoreMethods = {
         if (!this.map) return;
         const opacity = this.planIgnOn ? LIDAR_OPACITY_OVER_TOPO : LIDAR_OPACITY_OVER_IMAGERY;
         for (const id of LIDAR_LAYER_IDS) {
-            const layerId = LIDAR_HD_LAYERS[id].sourceId;
-            if (!this.map.getLayer(layerId)) continue;
-            this.map.setLayoutProperty(layerId, 'visibility', this.lidarLayer === id ? 'visible' : 'none');
-            this.map.setPaintProperty(layerId, 'raster-opacity', opacity);
+            // Une couche par territoire servi (métropole, Guadeloupe, La Réunion) : mêmes
+            // bascules et même opacité partout — retours terrain 2026-10-02.
+            for (const layerId of ignLayerIds('lidar', LIDAR_HD_LAYERS[id].sourceId)) {
+                if (!this.map.getLayer(layerId)) continue;
+                this.map.setLayoutProperty(layerId, 'visibility', this.lidarLayer === id ? 'visible' : 'none');
+                this.map.setPaintProperty(layerId, 'raster-opacity', opacity);
+            }
         }
         this._updateLidarBtn();
     },
@@ -666,7 +674,10 @@ export const MapCoreMethods = {
         this._setLidarLayer(next);
         if (next) {
             const def = LIDAR_HD_LAYERS[next];
-            toast(def.label + ' — ' + def.hint, { kind: 'info' });
+            // Retours terrain 2026-10-02 : hors Guadeloupe et La Réunion, l'IGN ne sert pas le LiDAR HD.
+            const c = this.map.getCenter();
+            const absent = ignUnservedAt('lidar', c.lng, c.lat);
+            toast(def.label + ' — ' + def.hint + (absent ? ` (non servi par l'IGN : ${absent})` : ''), { kind: 'info' });
         } else {
             toast('Ombrage LiDAR HD masqué', { kind: 'info' });
         }
@@ -699,11 +710,17 @@ export const MapCoreMethods = {
 
     _applyTopoVisibility(this: OICartoInternal): void {
         if (!this.map) return;
-        if (this.map.getLayer('planign')) {
-            this.map.setLayoutProperty('planign', 'visibility', this.planIgnOn ? 'visible' : 'none');
+        // Fond topo et courbes existent par territoire servi (`planign-971`…) : la
+        // bascule vise TOUS les ids, sinon l'outre-mer resterait sur l'imagerie.
+        for (const layerId of ignLayerIds('planign', 'planign')) {
+            if (this.map.getLayer(layerId)) {
+                this.map.setLayoutProperty(layerId, 'visibility', this.planIgnOn ? 'visible' : 'none');
+            }
         }
-        if (this.map.getLayer('contours')) {
-            this.map.setLayoutProperty('contours', 'visibility', this.contoursOn ? 'visible' : 'none');
+        for (const layerId of ignLayerIds('contours', 'contours')) {
+            if (this.map.getLayer(layerId)) {
+                this.map.setLayoutProperty(layerId, 'visibility', this.contoursOn ? 'visible' : 'none');
+            }
         }
         // Le fond conditionne l'opacité de l'ombrage LiDAR (cf. _applyLidarVisibility).
         this._applyLidarVisibility();
@@ -723,7 +740,10 @@ export const MapCoreMethods = {
         this.contoursOn = !this.contoursOn;
         this._applyTopoVisibility();
         this._saveView();
-        toast(this.contoursOn ? 'Courbes de niveau affichées' : 'Courbes de niveau masquées', { kind: 'info' });
+        // Retours terrain 2026-10-02 : l'IGN ne sert pas les courbes en Guyane ni à Saint-Pierre-et-Miquelon.
+        const c = this.map.getCenter();
+        const absent = this.contoursOn ? ignUnservedAt('contours', c.lng, c.lat) : null;
+        toast(this.contoursOn ? 'Courbes de niveau affichées' + (absent ? ` (non servies par l'IGN : ${absent})` : '') : 'Courbes de niveau masquées', { kind: 'info' });
     },
 
     /** Applique les deux bascules restaurées depuis la vue (posées par `_init`, cf. `load`). */

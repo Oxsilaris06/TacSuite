@@ -311,7 +311,7 @@ export function pctacTutoData(): TutoData {
             "LiDAR HD — MNH (hauteur)",
             "Ombrage LiDAR HD masqué"
           ],
-          tip: "Le programme LiDAR HD est deploye par blocs : hors zone couverte l'ombrage n'apparait pas et l'imagerie reste visible. L'ombrage actif au moment d'un telechargement hors-ligne part avec la zone."
+          tip: "Le programme LiDAR HD est deploye par blocs : hors zone couverte l'ombrage n'apparait pas et l'imagerie reste visible. Outre-mer, l'IGN ne le sert qu'en Guadeloupe et a La Reunion. L'ombrage actif au moment d'un telechargement hors-ligne part avec la zone."
         },
         {
           title: "Fond topographique couleur et courbes de niveau",
@@ -323,7 +323,7 @@ export function pctacTutoData(): TutoData {
             "Afficher les courbes de niveau",
             "Masquer les courbes de niveau"
           ],
-          tip: "Chaque bascule est memorisee separement, et seules les couches actives partent dans un telechargement hors-ligne."
+          tip: "Chaque bascule est memorisee separement, et seules les couches actives partent dans un telechargement hors-ligne. Le Plan IGN couvre la metropole et tout l'outre-mer (DROM, Saint-Pierre-et-Miquelon, Saint-Martin, Saint-Barthelemy) ; les courbes de niveau y sont servies sauf en Guyane et a Saint-Pierre-et-Miquelon."
         },
         {
           title: "Consulter la legende",
