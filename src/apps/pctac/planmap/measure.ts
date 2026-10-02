@@ -44,16 +44,24 @@
  *      une entrée d'historique) et l'outil RESTE actif : le toucher suivant en
  *      démarre une nouvelle, de n'importe où. Seul « Quitter » (`_cancelMeasure`)
  *      en sort, et abandonne la ligne en cours. Une ligne de moins de 2 points
- *      est abandonnée sans rien persister.
+ *      est abandonnée sans rien persister. Le 2e clic d'un double-clic (MapLibre :
+ *      click, click, dblclick) ne pose pas de sommet (`MEASURE_DUP_PX`) : sinon
+ *      le dblclick validerait une ligne de ~0 m.
  *   2. Aimant (`_measureSnapTarget`, `MEASURE_SNAP_PX`) : un point posé près
  *      d'un sommet de dessin ou d'un pion s'y accroche exactement ; en mode
  *      réticule, c'est le point du réticule qui s'accroche. Bouton « Aimant »
- *      (actif par défaut).
- *   3. Lecture d'un dessin (`_measureClick`) : sans ligne en cours, toucher un
- *      trait, un rectangle ou un cercle affiche sa longueur, ou son périmètre et
- *      sa surface, dans la barre, sans poser de point.
+ *      (actif par défaut). Un trait n'accroche que par ses deux extrémités
+ *      (`snapCandidates`, geo.ts) : ses points intermédiaires, un tous les 4 px,
+ *      accrocheraient partout et interdiraient d'en lire la longueur.
+ *   3. Lecture d'un dessin (`_measureClick`) : sans ligne en cours, toucher le
+ *      CONTOUR d'un trait, d'un rectangle ou d'un cercle (zone de touche du trait,
+ *      jamais le remplissage : l'intérieur d'une zone dessinée doit rester un
+ *      endroit où poser un point) affiche sa longueur, ou son périmètre et sa
+ *      surface, dans la barre, sans poser de point.
  *   4. Dessins inertes : `_startMeasure` désélectionne la forme active ; les
- *      gardes `drawTool` de shapes-gestures.ts / shapes-render.ts font le reste.
+ *      gardes `drawTool` de shapes-gestures.ts et de shapes-render.ts font le
+ *      reste, cadenas des formes compris (`_renderShapeLocks`, rafraîchi à
+ *      l'entrée et à la sortie de la mesure : ils laissent passer le toucher).
  *
  * Source : `GStart-main/modules/pctac/planMap.js`
  * (lecture seule).
@@ -72,6 +80,13 @@ import type { LngLatTuple, PlanMapInternal, PlanShape } from './types.js';
  */
 export const MEASURE_SNAP_PX = 18;
 
+/**
+ * Un point posé à moins de ce nombre de pixels ÉCRAN du dernier sommet n'en pose
+ * pas un autre (retours terrain 2026-10-02) : c'est le 2e clic d'un double-clic,
+ * que le système tolère à quelques pixels du 1er. Moitié du rayon de l'aimant.
+ */
+export const MEASURE_DUP_PX = MEASURE_SNAP_PX / 2;
+
 export const MeasureMethods = {
     /** Démarre une nouvelle mesure (réinitialise l'état + UI). */
     // planMap.js:2297-2312 — retours terrain 2026-10-02 : `snap`, désélection, hint
@@ -88,6 +103,9 @@ export const MeasureMethods = {
         // Les dessins ne captent plus le toucher pendant la mesure : une forme
         // restée sélectionnée garderait ses poignées, sa roue et son pincement.
         this._deselectShape();
+        // Leurs cadenas (marqueurs DOM posés sur la carte) captent aussi le toucher :
+        // inertes tant que `_measureState` existe (`_renderShapeLocks`).
+        this._renderShapeLocks();
         // Réticule central réutilisé (le même que le mode précision dessin).
         const crosshair = document.getElementById('plan_draw_crosshair');
         if (crosshair) crosshair.classList.toggle('active', this._measureState.reticle);
@@ -99,13 +117,25 @@ export const MeasureMethods = {
     },
 
     /** Ajoute un sommet à la mesure en cours. */
-    // planMap.js:2316-2327 — retours terrain 2026-10-02 : un point posé efface la lecture d'un dessin
+    // planMap.js:2316-2327 — retours terrain 2026-10-02 : un point posé efface la lecture d'un dessin ;
+    // le 2e clic d'un double-clic n'en pose pas
     _measureAddVertex(this: PlanMapInternal, lngLat: LngLatTuple): void {
         const st = this._measureState;
         if (!st) return;
         // Évite les doublons exacts (double-événement tactile).
         const last = st.vertices[st.vertices.length - 1];
         if (last && last[0] === lngLat[0] && last[1] === lngLat[1]) return;
+        // Double-clic : MapLibre envoie click, click, dblclick, et le 2e clic tombe à quelques
+        // pixels du 1er. Il poserait un 2e sommet, et le dblclick validerait alors une ligne de
+        // ~0 m (shape persistée, entrée d'historique, étiquette « 0 m »). La proximité se juge
+        // ICI, à la pose, au zoom où le point est visé : à la validation, un dézoom aurait
+        // rapproché des sommets voulus et la ligne se serait perdue en silence.
+        if (last && this.map) {
+            const map = this.map;
+            const a = map.project({ lng: last[0], lat: last[1] });
+            const b = map.project({ lng: lngLat[0], lat: lngLat[1] });
+            if (Math.hypot(a.x - b.x, a.y - b.y) < MEASURE_DUP_PX) return;
+        }
         // `.slice()` sur un tuple élargit en `number[]` (TS) : cast déjà pratiqué
         // pour la même raison dans legacy.ts (SPEC-PLANMAP-SPLIT §6.3).
         st.vertices.push(lngLat.slice() as LngLatTuple);
@@ -147,9 +177,11 @@ export const MeasureMethods = {
      * `null` (aucun candidat assez près, aimant coupé, pas de carte). Candidats :
      * cf. `snapCandidates` (geo.ts). Retours terrain 2026-10-02, décision 2.
      */
-    // ponytail: relit formes et pions et projette chaque sommet à chaque appel
-    // (réticule : à chaque `move` de la carte) ; au-delà de quelques milliers de
-    // sommets, mettre la liste en cache et la préfiltrer par boîte lng/lat.
+    // ponytail: relit formes et pions dans le stockage et projette chaque candidat à
+    // chaque appel (souris : à chaque `mousemove`, réticule : à chaque `move`). Les
+    // traits n'offrent que leurs 2 extrémités, donc le coût suit le nombre de
+    // formes, pas de points ; au-delà de quelques centaines de formes, mettre la
+    // liste en cache (invalidée par `_renderShapes`) et la préfiltrer par boîte lng/lat.
     _measureSnapTarget(this: PlanMapInternal, lngLat: LngLatTuple): LngLatTuple | null {
         const st = this._measureState;
         if (!st || !this.map || st.snap === false) return null;
@@ -171,9 +203,10 @@ export const MeasureMethods = {
      * Toucher ou clic carte en mode mesure (câblé par `_onMapClick`, pins.ts).
      * L'aimant passe d'abord : près d'un sommet de dessin ou d'un pion, le point
      * s'y accroche et démarre ou prolonge la ligne. Sinon, SANS ligne en cours,
-     * toucher un trait, un rectangle ou un cercle affiche sa mesure dans la barre
-     * sans poser de point (aimant coupé : lecture partout). Tout le reste pose un
-     * sommet. Retours terrain 2026-10-02, décisions 2 et 3.
+     * toucher le CONTOUR d'un trait, d'un rectangle ou d'un cercle affiche sa
+     * mesure dans la barre sans poser de point (aimant coupé : lecture sur tout
+     * le contour). Tout le reste pose un sommet, l'intérieur d'une zone dessinée
+     * compris. Retours terrain 2026-10-02, décisions 1, 2 et 3.
      */
     _measureClick(this: PlanMapInternal, lngLat: LngLatTuple, point: PointLike): void {
         const st = this._measureState;
@@ -182,8 +215,10 @@ export const MeasureMethods = {
         if (!snapped && !st.vertices.length && this.map) {
             let text = '';
             try {
-                // Mêmes zones de touche que la sélection d'une forme (draw-layers.ts).
-                const hits = this.map.queryRenderedFeatures(point, { layers: ['plan-shapes-fill', 'plan-shapes-line-hit'] });
+                // Le contour seulement : la couche 'plan-shapes-line-hit' borde aussi les rectangles et les
+                // cercles. Le remplissage ('plan-shapes-fill') couvre TOUT l'intérieur d'une zone dessinée
+                // (bouclage, périmètre) : s'il valait lecture, on n'y poserait plus jamais de point.
+                const hits = this.map.queryRenderedFeatures(point, { layers: ['plan-shapes-line-hit'] });
                 const shapes = this._loadShapes();
                 // Les mesures posées et les anneaux n'ont pas de `shapeId` : ils ne se lisent pas.
                 for (const f of hits) {
@@ -445,9 +480,11 @@ export const MeasureMethods = {
             const last = verts[verts.length - 1];
             if (!last || last[0] !== ret[0] || last[1] !== ret[1]) verts.push(ret);
         }
-        // La ligne est figée (ou abandonnée si < 2 points) : l'état repart à vide.
+        // La ligne est figée (ou abandonnée si < 2 points) : l'état repart à vide,
+        // et une lecture de dessin restée affichée n'a plus lieu d'être.
         st.vertices = [];
         st.cursor = null;
+        this._measureShowInfo('');
         if (verts.length >= 2) {
             const total = this._measureTotalMeters(verts);
             const shape: PlanShape = {
@@ -495,6 +532,9 @@ export const MeasureMethods = {
         const viewPlan = document.getElementById('view-plan');
         if (viewPlan && !this.drawPrecisionMode) viewPlan.classList.remove('drawing-active');
         this._hideHint();
+        // `_measureState` est vidé (et `drawTool` change juste après, dans `_setTool`) : les
+        // cadenas des formes reprennent le toucher (`_renderShapeLocks`).
+        this._renderShapeLocks();
     },
 
     // ----- ANNEAUX D'ENGAGEMENT (50/100/200 m) -----

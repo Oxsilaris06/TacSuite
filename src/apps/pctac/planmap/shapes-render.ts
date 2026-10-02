@@ -31,7 +31,9 @@
  * ni `inset:` dans leur `style.cssText` — c'est MapLibre qui positionne
  * l'élément via `transform`. `_renderShapeLocks` ne construit aucun style lui-
  * même (délégué à `_makeLockBadge`/`_applyLockBadgeStyle` de `pins.ts`, dont le
- * variant `'marker'` n'ajoute pas non plus `position:`, cf. planMap.js:1265-1267).
+ * variant `'marker'` n'ajoute pas non plus `position:`, cf. planMap.js:1265-1267),
+ * hormis `style.pointerEvents` (retours terrain 2026-10-02 : inerte pendant la
+ * mesure) — jamais `position:` ni `inset:`.
  *
  * ⚠ INVARIANT VERROU PAR-FORME (SPEC-PLANMAP-SPLIT §5.4) :
  *   - `_toggleShapeLock(shapeId, reopenWheel = true)` — le défaut `true` est
@@ -260,7 +262,12 @@ export const ShapesRenderMethods = {
             let entry = shapeLockMarkers.get(s.id);
             if (!entry) {
                 const shapeId = s.id;
-                const el = this._makeLockBadge(!!s.locked, () => this._toggleShapeLock(shapeId, false), 'marker');
+                const el = this._makeLockBadge(!!s.locked, () => {
+                    // Retours terrain 2026-10-02 : les dessins sont inertes pendant la mesure, leur
+                    // cadenas aussi (un clic ne doit pas modifier la donnée persistée).
+                    if (this.drawTool === 'measure') return;
+                    this._toggleShapeLock(shapeId, false);
+                }, 'marker');
                 const m = new maplibregl.Marker({ element: el, anchor: 'center', offset: [0, -20] })
                     .setLngLat(c).addTo(map);
                 entry = { marker: m, el, locked: !!s.locked };
@@ -272,6 +279,11 @@ export const ShapesRenderMethods = {
                     entry.locked = !!s.locked;
                 }
             }
+            // Retours terrain 2026-10-02 : pendant la mesure, le cadenas ne capte plus le toucher, qui
+            // traverse jusqu'à la carte (le point se pose, ou s'accroche, dessous). `_measureState` et
+            // non `drawTool` : `_clearMeasureState` le vide AVANT que `_setTool` change d'outil, et
+            // relance ce rendu à ce moment-là. Posé après `_applyLockBadgeStyle`, qui réécrit le style.
+            entry.el.style.pointerEvents = this._measureState ? 'none' : 'auto';
         }
         for (const [id, entry] of shapeLockMarkers) {
             if (seen.has(id)) continue;
