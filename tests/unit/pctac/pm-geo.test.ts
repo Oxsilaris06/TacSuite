@@ -391,15 +391,41 @@ describe('geo.ts — snapCandidates (aimant de la mesure, retours terrain 2026-1
         expect(snapCandidates([], [])).toEqual([]);
     });
 
+    it('tracé à main levée (plusieurs points) : seules ses DEUX extrémités accrochent, jamais les points intermédiaires', () => {
+        // L'outil Trait échantillonne un point tous les 4 px d'écran (draw-tools.ts) : si chacun
+        // accrochait, le moindre toucher sur le trait s'accrocherait et sa longueur ne se lirait jamais.
+        const freehand: PlanShape = { id: 'f', type: 'line', coords: [[0, 0], [0.1, 0], [0.2, 0.1], [0.3, 0.1], [0.4, 0.2]] };
+        expect(snapCandidates([freehand], [])).toEqual([[0, 0], [0.4, 0.2]]);
+    });
+
+    it('trait droit (2 points) : les deux points accrochent ; trait à 1 point : un seul candidat, sans doublon', () => {
+        expect(snapCandidates([{ id: 's', type: 'line', coords: [[1, 1], [2, 2]] }], [])).toEqual([[1, 1], [2, 2]]);
+        expect(snapCandidates([{ id: 'p', type: 'line', coords: [[3, 3]] }], [])).toEqual([[3, 3]]);
+        expect(snapCandidates([{ id: 'e', type: 'line', coords: [] }, { id: 'n', type: 'line' }], [])).toEqual([]);
+    });
+
+    it('mesure posée : TOUS ses sommets accrochent (posés à la main, donc voulus), contrairement au tracé à main levée', () => {
+        const measure: PlanShape = { id: 'm', type: 'measure', coords: [[0, 0], [1, 0], [1, 1], [2, 1]] };
+        expect(snapCandidates([measure], [])).toEqual([[0, 0], [1, 0], [1, 1], [2, 1]]);
+    });
+
     it('données forgées (archive) : tout ce qui n\'est pas un couple de nombres finis à latitude valide est ignoré', () => {
         const forged = [
-            { id: 'x', type: 'line', coords: [null, [Number.NaN, 1], 'x', [1, 2], [1], [3, 200], [4, -91], [5, 90], [6, -90]] },
+            { id: 'x', type: 'measure', coords: [null, [Number.NaN, 1], 'x', [1, 2], [1], [3, 200], [4, -91], [5, 90], [6, -90]] },
             { id: 'y', type: 'circle', center: ['a', 'b'] },
             { id: 'z', type: 'rectangle' },
         ] as unknown as PlanShape[];
         const pins = [{ lng: Number.NaN, lat: 1 }, { lng: 'a', lat: 2 }, { lng: 7, lat: 95 }] as unknown as { lng: number; lat: number }[];
         // `map.project` jette sur une latitude hors de [-90 ; 90] : ces points ne doivent jamais lui parvenir.
         expect(snapCandidates(forged, pins)).toEqual([[1, 2], [5, 90], [6, -90]]);
+    });
+
+    it('données forgées sur un trait : une extrémité invalide est écartée, l\'autre garde son accroche', () => {
+        const forged = [
+            { id: 'a', type: 'line', coords: [[1, 1], 'x', [2, 2], [3, 200]] },
+            { id: 'b', type: 'line', coords: [null, [4, 4], [5, 5], [Number.NaN, 0]] },
+        ] as unknown as PlanShape[];
+        expect(snapCandidates(forged, [])).toEqual([[1, 1]]);
     });
 });
 

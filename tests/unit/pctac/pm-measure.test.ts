@@ -13,10 +13,12 @@
  * sont mockées via `vi.fn()`, comme dans pm-drawlayers.test.ts.
  *
  * Évolution « retours terrain 2026-10-02 » (mesure du PC-Tac) : les blocs
- * « rester en mode », « aimant », « lecture d'un dessin » et « dessins inertes »
- * en bas de fichier ne sont plus des comportements de `planMap.js` mais les
- * décisions de Nico du 02/10 ; les tests de `_finishMeasure` et du libellé de
- * la barre ont été recalés en conséquence.
+ * « rester en mode », « aimant », « lecture d'un dessin », « double-clic » et
+ * « dessins inertes » en bas de fichier ne sont plus des comportements de
+ * `planMap.js` mais les décisions de Nico du 02/10 (et les corrections de la
+ * revue neuve : lecture sur le contour seul, tracé à main levée, double-clic,
+ * cadenas) ; les tests de `_finishMeasure` et du libellé de la barre ont été
+ * recalés en conséquence.
  *
  * Marker MapLibre : `this.map` reste `null` (ou un objet minimal sans
  * `getCanvasContainer`) dans la plupart des tests pour ne JAMAIS traverser le
@@ -30,7 +32,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Marker } from 'maplibre-gl';
 
 import { GeoMethods, haversineMeters, shapeMeasureText } from '../../../src/apps/pctac/planmap/geo.js';
-import { MEASURE_SNAP_PX, MeasureMethods } from '../../../src/apps/pctac/planmap/measure.js';
+import { MEASURE_DUP_PX, MEASURE_SNAP_PX, MeasureMethods } from '../../../src/apps/pctac/planmap/measure.js';
 import { createPlanMapState } from '../../../src/apps/pctac/planmap/state.js';
 import type { LngLatTuple, PlanMapInternal, PlanPin, PlanShape } from '../../../src/apps/pctac/planmap/types.js';
 
@@ -45,6 +47,7 @@ interface FakeMocks {
     renderPreview: ReturnType<typeof vi.fn>;
     clearPreview: ReturnType<typeof vi.fn>;
     deselectShape: ReturnType<typeof vi.fn>;
+    renderShapeLocks: ReturnType<typeof vi.fn>;
 }
 
 /** Construit un `this` factice conforme à `PlanMapInternal` pour `MeasureMethods`. */
@@ -63,6 +66,7 @@ function makeFakeThis(opts: { shapes?: PlanShape[]; pins?: PlanPin[]; map?: unkn
         renderPreview: vi.fn(),
         clearPreview: vi.fn(),
         deselectShape: vi.fn(),
+        renderShapeLocks: vi.fn(),
     };
 
     const base = {
@@ -78,6 +82,7 @@ function makeFakeThis(opts: { shapes?: PlanShape[]; pins?: PlanPin[]; map?: unkn
         _loadShapes: (): PlanShape[] => stored,
         _loadPins: (): PlanPin[] => opts.pins ?? [],
         _deselectShape: mocks.deselectShape,
+        _renderShapeLocks: mocks.renderShapeLocks,
         _saveShapes: mocks.saveShapes,
         _renderShapes: mocks.renderShapes,
         _refreshUndoRedoButtons: mocks.refreshUndoRedoButtons,
@@ -638,14 +643,19 @@ describe('_renderCommittedMeasures (planMap.js:2672-2704)', () => {
 
 /**
  * Carte factice : 1° = 1000 px (0,01° = 10 px), pour des écarts lisibles en
- * pixels ; `queryRenderedFeatures` rend `hits` quel que soit le point.
+ * pixels ; `queryRenderedFeatures` rend `hits` quel que soit le point et le
+ * filtre de couches. Avec `layerHits`, elle se comporte comme la vraie : seules
+ * les entités des couches DEMANDÉES sont rendues (le remplissage d'un
+ * rectangle n'est pas la zone de touche de son contour).
  */
-function makeMap(opts: { center?: LngLatTuple; hits?: unknown[] } = {}) {
+function makeMap(opts: { center?: LngLatTuple; hits?: unknown[]; layerHits?: Record<string, unknown[]> } = {}) {
     const center = opts.center ?? [0, 0];
+    const { layerHits } = opts;
     return {
         project: vi.fn((ll: { lng: number; lat: number }) => ({ x: ll.lng * 1000, y: ll.lat * 1000 })),
         getCenter: vi.fn(() => ({ lng: center[0], lat: center[1] })),
-        queryRenderedFeatures: vi.fn((): unknown[] => opts.hits ?? []),
+        queryRenderedFeatures: vi.fn((_point?: unknown, query?: { layers?: string[] }): unknown[] =>
+            layerHits ? (query?.layers ?? []).flatMap((l) => layerHits[l] ?? []) : (opts.hits ?? [])),
     };
 }
 
@@ -764,7 +774,7 @@ describe('aimant — _measureSnapTarget (retours terrain 2026-10-02, décision 2
 
     it('données forgées (archive) : coordonnées non numériques, centre incomplet, latitude hors bornes : ignorés sans jeter', () => {
         const forged = [
-            { id: 'f1', type: 'line', coords: [null, [Number.NaN, 1], 'x', [10, 20], [10, 200]] },
+            { id: 'f1', type: 'measure', coords: [null, [Number.NaN, 1], 'x', [10, 20], [10, 200]] },
             { id: 'f2', type: 'circle', center: ['a', 'b'] },
             { id: 'f3', type: 'rectangle' },
         ] as unknown as PlanShape[];
@@ -845,9 +855,9 @@ describe('lecture d\'un dessin au toucher (retours terrain 2026-10-02, décision
     const RECT: PlanShape = { id: 'r1', type: 'rectangle', color: '#ef4444', coords: [[0, 0], [0.1, 0], [0.1, 0.1], [0, 0.1], [0, 0]] };
     const CIRCLE: PlanShape = { id: 'c1', type: 'circle', color: '#ef4444', center: [5, 5], edge: [5.05, 5], coords: [[5.05, 5], [5, 5.05], [4.95, 5], [5, 4.95], [5.05, 5]] };
 
-    function readFake(shapes: PlanShape[], hits: unknown[], extra: { vertices?: LngLatTuple[]; snap?: boolean } = {}) {
+    function readFake(shapes: PlanShape[], hits: unknown[], extra: { vertices?: LngLatTuple[]; snap?: boolean; layerHits?: Record<string, unknown[]> } = {}) {
         document.body.innerHTML = '<div><div id="plan_map"></div></div>';
-        const map = makeMap({ hits });
+        const map = makeMap(extra.layerHits ? { hits, layerHits: extra.layerHits } : { hits });
         const made = makeFakeThis({ shapes, map });
         made.fake._renderMeasureLabels = vi.fn();
         made.fake._measureState = { vertices: extra.vertices ?? [], cursor: null, reticle: false, snap: extra.snap ?? true };
@@ -886,10 +896,48 @@ describe('lecture d\'un dessin au toucher (retours terrain 2026-10-02, décision
         expect(fake._measureState?.vertices).toEqual([]);
     });
 
-    it('interroge les couches de sélection (remplissage + zone de touche du trait) au point touché', () => {
+    it('interroge la seule zone de touche du contour (jamais le remplissage) au point touché', () => {
         const { fake, map } = readFake([LINE], hit('l1'));
         fake._measureClick([0.05, 0], TAP);
-        expect(map.queryRenderedFeatures).toHaveBeenCalledWith(TAP, { layers: ['plan-shapes-fill', 'plan-shapes-line-hit'] });
+        expect(map.queryRenderedFeatures).toHaveBeenCalledWith(TAP, { layers: ['plan-shapes-line-hit'] });
+    });
+
+    it('un toucher À L\'INTÉRIEUR d\'un rectangle ou d\'un cercle (remplissage seul, hors contour) démarre une ligne', () => {
+        // Décision 1 : « le toucher suivant démarre une NOUVELLE ligne depuis n'importe quel point ».
+        // Le remplissage couvre tout l'intérieur d'une zone dessinée (bouclage, périmètre) : s'il valait
+        // lecture, on ne pourrait plus y poser de point, ni au toucher ni à la souris.
+        const { fake, info } = readFake([RECT, CIRCLE], [], { layerHits: { 'plan-shapes-fill': [...hit('r1'), ...hit('c1')] } });
+        fake._measureClick([0.05, 0.05], TAP);
+        expect(fake._measureState?.vertices).toEqual([[0.05, 0.05]]);
+        expect(info().hidden).toBe(true);
+    });
+
+    it('le même rectangle touché SUR son contour se lit toujours (zone de touche du trait)', () => {
+        const { fake, info } = readFake([RECT], [], { layerHits: { 'plan-shapes-fill': hit('r1'), 'plan-shapes-line-hit': hit('r1') } });
+        fake._measureClick([0.05, 0.0002], TAP);
+        expect(info().textContent).toBe(shapeMeasureText(RECT));
+        expect(fake._measureState?.vertices).toEqual([]);
+    });
+
+    describe('tracé à main levée (un point tous les 4 px, draw-tools.ts)', () => {
+        const FREEHAND: PlanShape = { id: 'lf', type: 'line', color: '#ef4444', coords: Array.from({ length: 51 }, (_, i): LngLatTuple => [deg(4 * i), 0]) };
+
+        it('touché en son milieu, aimant actif : se lit (ses points intermédiaires n\'accrochent pas)', () => {
+            // S'ils accrochaient (18 px), le moindre toucher sur le trait démarrerait une ligne
+            // et sa longueur ne se lirait qu'aimant coupé : la décision 3 serait lettre morte.
+            const { fake, info } = readFake([FREEHAND], hit('lf'));
+            fake._measureClick([deg(101), 0], TAP);
+            expect(info().textContent).toBe(shapeMeasureText(FREEHAND));
+            expect(info().textContent).toContain('Longueur');
+            expect(fake._measureState?.vertices).toEqual([]);
+        });
+
+        it('ses deux extrémités accrochent toujours : la ligne démarre à son bout', () => {
+            const { fake } = readFake([FREEHAND], hit('lf'));
+            fake._measureClick([deg(200 + 3), 0], TAP);
+            fake._measureClick([deg(-3), 0], TAP);
+            expect(fake._measureState?.vertices).toEqual([[deg(200), 0], [0, 0]]);
+        });
     });
 
     it('avec une ligne en cours, le toucher pose un sommet : aucune lecture', () => {
@@ -938,6 +986,15 @@ describe('lecture d\'un dessin au toucher (retours terrain 2026-10-02, décision
         expect(info().textContent).toBe(shapeMeasureText(LINE));
     });
 
+    it('« Valider la ligne » efface une lecture restée affichée', () => {
+        const { fake, info } = readFake([LINE], hit('l1'));
+        fake._measureClick([0.05, 0.0002], TAP);
+        expect(info().hidden).toBe(false);
+        fake._finishMeasure();
+        expect(info().hidden).toBe(true);
+        expect(info().textContent).toBe('');
+    });
+
     it('le point suivant efface la lecture', () => {
         const { fake, map, info } = readFake([LINE], hit('l1'));
         fake._measureClick([0.05, 0.0002], TAP);
@@ -962,6 +1019,71 @@ describe('lecture d\'un dessin au toucher (retours terrain 2026-10-02, décision
     });
 });
 
+describe('double-clic : le 2e clic ne pose pas de sommet (retours terrain 2026-10-02, décision 1)', () => {
+    // MapLibre envoie click, click, dblclick : `_measureClick` voit deux clics à quelques pixels
+    // l'un de l'autre, puis map-core.ts valide la ligne (`_finishMeasure`) sur le dblclick.
+    const TAP: [number, number] = [0, 0];
+
+    it('sur un point vide, sans ligne en cours : aucune ligne de ~0 m n\'est persistée (ni entrée d\'historique)', () => {
+        const { fake, mocks, shapes } = snapFake();
+        fake._measureClick([2, 3], TAP);
+        fake._measureClick([2 + deg(1), 3 - deg(1)], TAP);
+        expect(fake._measureState?.vertices).toEqual([[2, 3]]);
+        fake._finishMeasure();
+        expect(mocks.pushHistory).not.toHaveBeenCalled();
+        expect(mocks.saveShapes).not.toHaveBeenCalled();
+        expect(shapes()).toEqual([]);
+        expect(fake._measureState?.vertices).toEqual([]);
+        expect(mocks.setTool).not.toHaveBeenCalled();
+    });
+
+    it('au bout d\'une ligne en cours : elle est validée SANS dernier tronçon de ~0 m', () => {
+        const { fake, mocks, shapes } = snapFake();
+        fake._measureClick([2, 3], TAP);
+        fake._measureClick([2.1, 3], TAP);
+        fake._measureClick([2.1, 3.1], TAP);
+        fake._measureClick([2.1 + deg(2), 3.1], TAP);
+        fake._finishMeasure();
+        expect(shapes()[0]?.coords).toEqual([[2, 3], [2.1, 3], [2.1, 3.1]]);
+        expect(mocks.pushHistory).toHaveBeenCalledTimes(1);
+    });
+
+    it('un point posé à MEASURE_DUP_PX ou plus du précédent est un vrai sommet', () => {
+        expect(MEASURE_DUP_PX).toBeLessThan(MEASURE_SNAP_PX);
+        const { fake } = snapFake();
+        fake._measureAddVertex([0, 0]);
+        fake._measureAddVertex([deg(MEASURE_DUP_PX - 1), 0]);
+        expect(fake._measureState?.vertices).toHaveLength(1);
+        fake._measureAddVertex([deg(MEASURE_DUP_PX + 1), 0]);
+        expect(fake._measureState?.vertices).toHaveLength(2);
+    });
+
+    it('le bouton « Point » du réticule est concerné aussi : la carte à quelques pixels du dernier sommet n\'en pose pas un second', () => {
+        const { fake } = snapFake({ center: [deg(3), 0], reticle: true });
+        fake._measureAddVertex([0, 0]);
+        fake._measureAddVertex(fake._measureReticlePoint());
+        expect(fake._measureState?.vertices).toEqual([[0, 0]]);
+    });
+
+    it('la proximité se juge au moment de la POSE : un dézoom avant « Valider la ligne » ne fait perdre aucun sommet', () => {
+        const { fake, shapes } = snapFake();
+        fake._measureAddVertex([0, 0]);
+        fake._measureAddVertex([0.05, 0]);   // 50 px à ce zoom : un vrai tronçon
+        const map = fake.map as unknown as ReturnType<typeof makeMap>;
+        map.project.mockImplementation((ll: { lng: number; lat: number }) => ({ x: ll.lng * 10, y: ll.lat * 10 }));   // zoom arrière : 0,5 px
+        fake._finishMeasure();
+        expect(shapes()[0]?.coords).toEqual([[0, 0], [0.05, 0]]);
+    });
+
+    it('sans carte, seul le doublon exact est écarté (rien à projeter)', () => {
+        const { fake } = makeFakeThis();
+        fake._measureState = { vertices: [], cursor: null, reticle: false };
+        fake._measureAddVertex([2, 3]);
+        fake._measureAddVertex([2 + deg(1), 3]);
+        expect(fake._measureState.vertices).toHaveLength(2);
+    });
+});
+
 describe('barre de mesure — « Valider la ligne » et « Aimant » (retours terrain 2026-10-02)', () => {
     const btn = (key: string): HTMLButtonElement => {
         const el = document.querySelector<HTMLButtonElement>(`#plan_measure_controls button[data-measure="${key}"]`);
@@ -971,7 +1093,7 @@ describe('barre de mesure — « Valider la ligne » et « Aimant » (retours te
 
     function barFake() {
         document.body.innerHTML = '<div><div id="plan_map"></div></div>';
-        const made = makeFakeThis({ map: {} });
+        const made = makeFakeThis({ map: makeMap() });
         made.fake._renderMeasureLabels = vi.fn();
         made.fake._measureState = { vertices: [], cursor: null, reticle: false, snap: true };
         made.fake._buildMeasureControls();
@@ -1064,5 +1186,27 @@ describe('dessins inertes pendant la mesure (retours terrain 2026-10-02, décisi
         fake._selectedShapeId = 's1';
         fake._startMeasure(false);
         expect(mocks.deselectShape).toHaveBeenCalledTimes(1);
+    });
+
+    // Le cadenas d'une forme verrouillée est un marqueur DOM au-dessus de la carte : il capterait le
+    // toucher. `_renderShapeLocks` (shapes-render.ts) le rend inerte tant que `_measureState` existe ;
+    // encore faut-il le rafraîchir à l'entrée et à la sortie, l'état ayant alors déjà changé.
+    it('démarrer la mesure rafraîchit les cadenas des formes APRÈS avoir posé l\'état (ils laissent passer le toucher)', () => {
+        const { fake, mocks } = makeFakeThis();
+        const seen: boolean[] = [];
+        mocks.renderShapeLocks.mockImplementation(() => { seen.push(fake._measureState !== null); });
+        fake._startMeasure(false);
+        expect(seen.length).toBeGreaterThan(0);
+        expect(seen.at(-1)).toBe(true);
+    });
+
+    it('quitter la mesure rafraîchit les cadenas APRÈS avoir vidé l\'état (ils reprennent le toucher)', () => {
+        const { fake, mocks } = makeFakeThis();
+        fake._measureState = { vertices: [], cursor: null, reticle: false };
+        const seen: boolean[] = [];
+        mocks.renderShapeLocks.mockImplementation(() => { seen.push(fake._measureState !== null); });
+        fake._cancelMeasure();
+        expect(seen.length).toBeGreaterThan(0);
+        expect(seen.at(-1)).toBe(false);
     });
 });

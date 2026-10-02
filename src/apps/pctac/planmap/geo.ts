@@ -155,10 +155,11 @@ export function circleDiameter(s: PlanShape): number {
 
 /**
  * Points d'accroche de l'aimant de la mesure (retours terrain 2026-10-02) :
- * points des traits, rectangles et mesures posées, centre des cercles et des
- * anneaux d'engagement, puis pions. Les textes n'en offrent pas. Donnée
- * persistée, donc possiblement forgée par une archive : tout ce qui n'est pas
- * un couple de nombres finis, latitude comprise entre -90 et 90, est écarté
+ * les DEUX EXTRÉMITÉS des traits (celles de leurs poignées), tous les sommets
+ * des rectangles et des mesures posées, le centre des cercles et des anneaux
+ * d'engagement, puis les pions. Les textes n'en offrent pas. Donnée persistée,
+ * donc possiblement forgée par une archive : tout ce qui n'est pas un couple
+ * de nombres finis, latitude comprise entre -90 et 90, est écarté
  * (`map.project` jette sur une latitude hors bornes).
  */
 export function snapCandidates(shapes: readonly PlanShape[], pins: readonly { lng: number; lat: number }[]): LngLatTuple[] {
@@ -169,7 +170,14 @@ export function snapCandidates(shapes: readonly PlanShape[], pins: readonly { ln
         if (typeof lng === 'number' && typeof lat === 'number' && Number.isFinite(lng) && Number.isFinite(lat) && Math.abs(lat) <= 90) out.push([lng, lat]);
     };
     for (const s of shapes) {
-        if (s.type === 'line' || s.type === 'rectangle' || s.type === 'measure') {
+        if (s.type === 'line') {
+            // L'outil Trait échantillonne un point tous les 4 px d'écran (draw-tools.ts) : si chacun
+            // accrochait (18 px), le moindre toucher sur le trait s'y accrocherait et sa longueur ne
+            // se lirait jamais. Seules les extrémités accrochent ; un trait droit n'en a que deux.
+            const pts = Array.isArray(s.coords) ? s.coords : [];
+            add(pts[0]);
+            if (pts.length > 1) add(pts[pts.length - 1]);
+        } else if (s.type === 'rectangle' || s.type === 'measure') {
             for (const c of Array.isArray(s.coords) ? s.coords : []) add(c);
         } else if (s.type === 'circle' || s.type === 'measure-rings') {
             add(s.center);
