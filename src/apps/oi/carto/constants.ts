@@ -35,7 +35,7 @@ import { IGN_METROPOLE, ignLayers, ignSources } from '@shared/ign-territoires.js
 /** Emprise commune des flux IGN MÉTROPOLITAINS (ids de base). Retours terrain
  *  2026-10-02 : l'outre-mer a ses propres rectangles et sources (`-971`…), générés
  *  par `@shared/ign-territoires` — MapLibre n'accepte qu'un rectangle par source. */
-export const FRANCE_TILE_BOUNDS: [number, number, number, number] = IGN_METROPOLE.bounds;
+export const FRANCE_TILE_BOUNDS: [number, number, number, number] = [...IGN_METROPOLE.bounds];
 
 /** Zoom max de la pyramide WMTS des ombrages LiDAR HD (grille PM). */
 export const LIDAR_MAX_ZOOM = 18;
