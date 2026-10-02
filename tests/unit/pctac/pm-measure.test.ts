@@ -2,7 +2,7 @@
  * pm-measure.test.ts — Comportement OBSERVÉ de `modules/pctac/planMap.js`
  * (GStart-main, 5596 LOC, lecture seule) pour le paquet `pm-measure` :
  * `planmap/measure.ts` (15 méthodes MESURE, planMap.js:2297-2704,
- * SPEC-PLANMAP-SPLIT.md §4.9, §5.9, §9).
+ * SPEC-PLANMAP-SPLIT.md §4.9, §5.9, §9 ; + 3 méthodes d'évolution, cf. ci-dessous).
  *
  * `this` FACTICE, jamais `new maplibregl.Map` (SPEC-PCTAC-CONVERSION §8.4) :
  * `createPlanMapState()` fournit les 57 clés par défaut ; `GeoMethods` (réel,
@@ -11,6 +11,12 @@
  * soient authentiques plutôt que re-mockés ; `MeasureMethods` sous test est
  * réel. Les dépendances CROISÉES (draw-tools.ts, shapes-render.ts, chrome.ts)
  * sont mockées via `vi.fn()`, comme dans pm-drawlayers.test.ts.
+ *
+ * Évolution « retours terrain 2026-10-02 » (mesure du PC-Tac) : les blocs
+ * « rester en mode », « aimant », « lecture d'un dessin » et « dessins inertes »
+ * en bas de fichier ne sont plus des comportements de `planMap.js` mais les
+ * décisions de Nico du 02/10 ; les tests de `_finishMeasure` et du libellé de
+ * la barre ont été recalés en conséquence.
  *
  * Marker MapLibre : `this.map` reste `null` (ou un objet minimal sans
  * `getCanvasContainer`) dans la plupart des tests pour ne JAMAIS traverser le
@@ -23,10 +29,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Marker } from 'maplibre-gl';
 
-import { GeoMethods, haversineMeters } from '../../../src/apps/pctac/planmap/geo.js';
-import { MeasureMethods } from '../../../src/apps/pctac/planmap/measure.js';
+import { GeoMethods, haversineMeters, shapeMeasureText } from '../../../src/apps/pctac/planmap/geo.js';
+import { MEASURE_SNAP_PX, MeasureMethods } from '../../../src/apps/pctac/planmap/measure.js';
 import { createPlanMapState } from '../../../src/apps/pctac/planmap/state.js';
-import type { LngLatTuple, PlanMapInternal, PlanShape } from '../../../src/apps/pctac/planmap/types.js';
+import type { LngLatTuple, PlanMapInternal, PlanPin, PlanShape } from '../../../src/apps/pctac/planmap/types.js';
 
 interface FakeMocks {
     setTool: ReturnType<typeof vi.fn>;
@@ -38,10 +44,11 @@ interface FakeMocks {
     hideHint: ReturnType<typeof vi.fn>;
     renderPreview: ReturnType<typeof vi.fn>;
     clearPreview: ReturnType<typeof vi.fn>;
+    deselectShape: ReturnType<typeof vi.fn>;
 }
 
 /** Construit un `this` factice conforme à `PlanMapInternal` pour `MeasureMethods`. */
-function makeFakeThis(opts: { shapes?: PlanShape[]; map?: unknown } = {}): { fake: PlanMapInternal; mocks: FakeMocks; shapes: () => PlanShape[] } {
+function makeFakeThis(opts: { shapes?: PlanShape[]; pins?: PlanPin[]; map?: unknown } = {}): { fake: PlanMapInternal; mocks: FakeMocks; shapes: () => PlanShape[] } {
     const state = createPlanMapState();
     let stored: PlanShape[] = opts.shapes ?? [];
 
@@ -55,6 +62,7 @@ function makeFakeThis(opts: { shapes?: PlanShape[]; map?: unknown } = {}): { fak
         hideHint: vi.fn(),
         renderPreview: vi.fn(),
         clearPreview: vi.fn(),
+        deselectShape: vi.fn(),
     };
 
     const base = {
@@ -68,6 +76,8 @@ function makeFakeThis(opts: { shapes?: PlanShape[]; map?: unknown } = {}): { fak
         _setTool: mocks.setTool,
         _pushHistory: mocks.pushHistory,
         _loadShapes: (): PlanShape[] => stored,
+        _loadPins: (): PlanPin[] => opts.pins ?? [],
+        _deselectShape: mocks.deselectShape,
         _saveShapes: mocks.saveShapes,
         _renderShapes: mocks.renderShapes,
         _refreshUndoRedoButtons: mocks.refreshUndoRedoButtons,
@@ -100,6 +110,15 @@ describe('_startMeasure (planMap.js:2297-2312)', () => {
         expect(fake._measureState?.cursor).toBeNull();
         expect(fake._measureState?.reticle).toBe(true);
         expect(mocks.showHint).toHaveBeenCalledTimes(1);
+    });
+
+    it('l\'aimant démarre actif et le hint annonce « Valider la ligne » (plus « Terminer »)', () => {
+        const { fake, mocks } = makeFakeThis();
+        fake._startMeasure(false);
+        expect(fake._measureState?.snap).toBe(true);
+        const hint = String(mocks.showHint.mock.calls[0]?.[0]);
+        expect(hint).toContain('Valider la ligne');
+        expect(hint).not.toContain('Terminer');
     });
 
     it('active la classe "active" du réticule et "drawing-active" sur la vue quand reticle=true', () => {
@@ -260,8 +279,10 @@ describe('_buildMeasureControls / _updateMeasureControls / _removeMeasureControl
         expect(bar).not.toBeNull();
         const labels = Array.from(bar?.querySelectorAll('button') ?? []).map((b) => b.textContent ?? '');
         expect(labels.some((t) => t.includes('Point'))).toBe(true);
-        expect(labels.some((t) => t.includes('Terminer'))).toBe(true);
+        expect(labels.some((t) => t.includes('Valider la ligne'))).toBe(true);
+        expect(labels.some((t) => t.includes('Aimant'))).toBe(true);
         expect(labels.some((t) => t.includes('Quitter'))).toBe(true);
+        expect(labels.some((t) => t.includes('Terminer'))).toBe(false);
     });
 
     it('sans reticle, pas de bouton "Point"', () => {
@@ -334,30 +355,33 @@ describe('_measureUndoVertex (planMap.js:2497-2504)', () => {
     });
 });
 
-describe('_finishMeasure (planMap.js:2506-2537)', () => {
+describe('_finishMeasure — valide la ligne et RESTE en mode mesure (décision « retours terrain 2026-10-02 »)', () => {
     it('sans _measureState : appelle _setTool(null) et ne jette pas', () => {
         const { fake, mocks } = makeFakeThis();
         expect(() => fake._finishMeasure()).not.toThrow();
         expect(mocks.setTool).toHaveBeenCalledWith(null);
     });
 
-    it('avec 1 seul sommet (sans réticule) : ANNULE, aucune shape écrite, état remis à zéro', () => {
+    it('avec 1 seul sommet (sans réticule) : abandonne la ligne SANS persister, l\'outil reste actif', () => {
         const { fake, mocks, shapes } = makeFakeThis();
         fake._measureState = { vertices: [[2.35, 48.85]], cursor: null, reticle: false };
 
         fake._finishMeasure();
 
+        expect(mocks.pushHistory).not.toHaveBeenCalled();
         expect(mocks.saveShapes).not.toHaveBeenCalled();
         expect(shapes()).toEqual([]);
-        expect(fake._measureState).toBeNull();
-        expect(mocks.setTool).toHaveBeenCalledWith(null);
+        expect(fake._measureState).not.toBeNull();
+        expect(fake._measureState?.vertices).toEqual([]);
+        expect(mocks.setTool).not.toHaveBeenCalled();
     });
 
-    it('avec 2+ sommets : persiste une shape "measure" avec un totalM cohérent (Haversine réelle)', () => {
-        const { fake, mocks, shapes } = makeFakeThis();
+    it('avec 2+ sommets : persiste une shape "measure" (totalM Haversine réelle) et l\'outil reste actif', () => {
+        const { fake, mocks, shapes } = makeFakeThis({ map: {} });
+        fake._renderMeasureLabels = vi.fn();
         const a: LngLatTuple = [2.35, 48.85];
         const b: LngLatTuple = [2.36, 48.86];
-        fake._measureState = { vertices: [a, b], cursor: null, reticle: false };
+        fake._measureState = { vertices: [a, b], cursor: [2.4, 48.9], reticle: false };
         fake.drawColor = '#3b82f6';
 
         fake._finishMeasure();
@@ -373,15 +397,65 @@ describe('_finishMeasure (planMap.js:2506-2537)', () => {
         expect(shape.color).toBe('#3b82f6');
         expect(shape.coords).toEqual([a, b]);
         expect(shape.totalM).toBeCloseTo(haversineMeters(a, b), 6);
-        expect(fake._measureState).toBeNull();
-        expect(mocks.setTool).toHaveBeenCalledWith(null);
+        // L'outil reste actif : l'état survit, la ligne repart de zéro.
+        expect(fake._measureState).not.toBeNull();
+        expect(fake._measureState?.vertices).toEqual([]);
+        expect(fake._measureState?.cursor).toBeNull();
+        expect(mocks.setTool).not.toHaveBeenCalled();
         expect(mocks.renderShapes).toHaveBeenCalledTimes(1);
         expect(mocks.refreshUndoRedoButtons).toHaveBeenCalledTimes(1);
+        // La preview pointillée et les étiquettes live de la ligne figée sont effacées
+        // (le tracé plein et les étiquettes persistées prennent le relais).
+        expect(mocks.clearPreview).toHaveBeenCalled();
+        expect(fake._renderMeasureLabels).toHaveBeenLastCalledWith([], false);
+    });
+
+    it('la barre, le hint et le réticule survivent à la validation (seul « Quitter » ferme l\'outil)', () => {
+        document.body.innerHTML = '<div><div id="plan_map"></div></div>';
+        const { fake, mocks } = makeFakeThis();
+        fake._startMeasure(false);
+        fake._measureAddVertex([2.35, 48.85]);
+        fake._measureAddVertex([2.36, 48.86]);
+        mocks.hideHint.mockClear();
+
+        fake._finishMeasure();
+
+        expect(document.getElementById('plan_measure_controls')).not.toBeNull();
+        expect(mocks.hideHint).not.toHaveBeenCalled();
+    });
+
+    it('une ligne validée = UNE entrée d\'historique ; la suivante repart de n\'importe où et en ajoute une seconde', () => {
+        const { fake, mocks, shapes } = makeFakeThis();
+        fake._measureState = { vertices: [], cursor: null, reticle: false };
+        let t = 0;
+        vi.spyOn(Date, 'now').mockImplementation(() => (t += 1000));
+
+        fake._measureAddVertex([2.35, 48.85]);
+        fake._measureAddVertex([2.36, 48.86]);
+        fake._finishMeasure();
+        // Nouvelle ligne : aucun lien avec la première (autre endroit, autre longueur).
+        fake._measureAddVertex([5, 45]);
+        fake._measureAddVertex([5.1, 45]);
+        fake._measureAddVertex([5.1, 45.1]);
+        fake._finishMeasure();
+
+        expect(mocks.pushHistory).toHaveBeenCalledTimes(2);
+        expect(shapes().map((x) => x.coords?.length)).toEqual([2, 3]);
+        expect(new Set(shapes().map((x) => x.id)).size).toBe(2);
+        expect(mocks.setTool).not.toHaveBeenCalled();
+    });
+
+    it('valider une ligne vide ne persiste rien et ne jette pas (double-clic sans point)', () => {
+        const { fake, mocks } = makeFakeThis();
+        fake._measureState = { vertices: [], cursor: null, reticle: false };
+        expect(() => fake._finishMeasure()).not.toThrow();
+        expect(mocks.saveShapes).not.toHaveBeenCalled();
+        expect(fake._measureState).not.toBeNull();
     });
 
     it('en mode réticule, le centre de carte courant complète un sommet unique déjà posé', () => {
-        const getCenter = vi.fn(() => ({ lng: 3, lat: 46 }));
-        const { fake, shapes } = makeFakeThis({ map: { getCenter } });
+        // Carte complète (`project`) : la ligne figée devient aussitôt candidate de l'aimant.
+        const { fake, shapes } = makeFakeThis({ map: makeMap({ center: [3, 46] }) });
         fake._measureState = { vertices: [[2, 45]], cursor: null, reticle: true };
 
         fake._finishMeasure();
@@ -390,14 +464,37 @@ describe('_finishMeasure (planMap.js:2506-2537)', () => {
         expect(shape).toBeDefined();
         if (!shape) return;
         expect(shape.coords).toEqual([[2, 45], [3, 46]]);
+        expect(fake._measureState?.vertices).toEqual([]);
+    });
+
+    it('en mode réticule, un sommet unique et un centre inchangé : abandon, l\'outil reste actif', () => {
+        const { fake, mocks } = makeFakeThis({ map: makeMap({ center: [2, 45] }) });
+        fake._measureState = { vertices: [[2, 45]], cursor: null, reticle: true };
+
+        fake._finishMeasure();
+
+        expect(mocks.saveShapes).not.toHaveBeenCalled();
+        expect(fake._measureState).not.toBeNull();
+        expect(mocks.setTool).not.toHaveBeenCalled();
     });
 });
 
-describe('_cancelMeasure (planMap.js:2539-2543)', () => {
+describe('_cancelMeasure (planMap.js:2539-2543) — « Quitter »', () => {
     it('nettoie _measureState et appelle _setTool(null)', () => {
         const { fake, mocks } = makeFakeThis();
         fake._measureState = { vertices: [[0, 0]], cursor: null, reticle: false };
         fake._cancelMeasure();
+        expect(fake._measureState).toBeNull();
+        expect(mocks.setTool).toHaveBeenCalledWith(null);
+    });
+
+    it('Quitter avec une ligne de 2+ points l\'ABANDONNE (rien de persisté, pas d\'historique)', () => {
+        const { fake, mocks, shapes } = makeFakeThis();
+        fake._measureState = { vertices: [[0, 0], [1, 1], [2, 2]], cursor: null, reticle: false };
+        fake._cancelMeasure();
+        expect(shapes()).toEqual([]);
+        expect(mocks.saveShapes).not.toHaveBeenCalled();
+        expect(mocks.pushHistory).not.toHaveBeenCalled();
         expect(fake._measureState).toBeNull();
         expect(mocks.setTool).toHaveBeenCalledWith(null);
     });
@@ -531,5 +628,441 @@ describe('_renderCommittedMeasures (planMap.js:2672-2704)', () => {
         fake._renderMeasureLabels = vi.fn();
         fake._renderCommittedMeasures();
         expect(fake._renderMeasureLabels).not.toHaveBeenCalled();
+    });
+});
+
+/* ─────────────────────────────────────────────────────────────────────────
+ * Évolution « retours terrain 2026-10-02 » : aimant, lecture d'un dessin,
+ * barre (Valider la ligne / Aimant), dessins inertes.
+ * ───────────────────────────────────────────────────────────────────── */
+
+/**
+ * Carte factice : 1° = 1000 px (0,01° = 10 px), pour des écarts lisibles en
+ * pixels ; `queryRenderedFeatures` rend `hits` quel que soit le point.
+ */
+function makeMap(opts: { center?: LngLatTuple; hits?: unknown[] } = {}) {
+    const center = opts.center ?? [0, 0];
+    return {
+        project: vi.fn((ll: { lng: number; lat: number }) => ({ x: ll.lng * 1000, y: ll.lat * 1000 })),
+        getCenter: vi.fn(() => ({ lng: center[0], lat: center[1] })),
+        queryRenderedFeatures: vi.fn((): unknown[] => opts.hits ?? []),
+    };
+}
+
+/** Pixels écran → degrés de la carte factice. */
+const deg = (px: number): number => px / 1000;
+
+const SNAP_LINE: PlanShape = { id: 'l1', type: 'line', color: '#ef4444', coords: [[10, 20], [10.1, 20.1]] };
+const SNAP_RECT: PlanShape = { id: 'r1', type: 'rectangle', color: '#ef4444', coords: [[1, 1], [1.1, 1], [1.1, 1.1], [1, 1.1], [1, 1]] };
+const SNAP_CIRCLE: PlanShape = {
+    id: 'c1', type: 'circle', color: '#ef4444', center: [5, 5], edge: [5.1, 5],
+    coords: [[5.1, 5], [5, 5.1], [4.9, 5], [5, 4.9], [5.1, 5]],
+};
+const SNAP_MEASURE: PlanShape = { id: 'm1', type: 'measure', color: '#22d3ee', coords: [[7, 7], [7.5, 7.5]], totalM: 1 };
+const SNAP_RINGS: PlanShape = {
+    id: 'g1', type: 'measure-rings', color: '#22d3ee', center: [8, 8],
+    rings: [{ radiusM: 50, coords: [[8.05, 8], [8, 8.05], [8.05, 8]] }],
+};
+const SNAP_TEXT: PlanShape = { id: 't1', type: 'text', color: '#fff', text: 'x', coords: [[9, 9]] };
+const SNAP_PIN: PlanPin = { id: 'p1', lng: 3, lat: 4 };
+
+/** `this` factice en mode mesure sur la carte factice (étiquettes live neutralisées). */
+function snapFake(opts: { shapes?: PlanShape[]; pins?: PlanPin[]; center?: LngLatTuple; snap?: boolean; reticle?: boolean } = {}) {
+    const mapOpts: { center?: LngLatTuple } = {};
+    if (opts.center) mapOpts.center = opts.center;
+    const made = makeFakeThis({ shapes: opts.shapes ?? [], pins: opts.pins ?? [], map: makeMap(mapOpts) });
+    made.fake._measureState = { vertices: [], cursor: null, reticle: opts.reticle ?? false, snap: opts.snap ?? true };
+    made.fake._renderMeasureLabels = vi.fn();
+    return made;
+}
+
+describe('aimant — _measureSnapTarget (retours terrain 2026-10-02, décision 2)', () => {
+    const inside = MEASURE_SNAP_PX - 2;
+    const outside = MEASURE_SNAP_PX + 2;
+
+    it('le seuil est une constante nommée de 16 à 20 px', () => {
+        expect(MEASURE_SNAP_PX).toBeGreaterThanOrEqual(16);
+        expect(MEASURE_SNAP_PX).toBeLessThanOrEqual(20);
+    });
+
+    it('un point sous le seuil d\'un sommet de trait s\'y accroche EXACTEMENT (copie des coordonnées)', () => {
+        const { fake } = snapFake({ shapes: [SNAP_LINE] });
+        const r = fake._measureSnapTarget([10 + deg(inside), 20]);
+        expect(r).toEqual([10, 20]);
+        expect(r).not.toBe(SNAP_LINE.coords?.[0]);
+    });
+
+    it('au-delà du seuil : aucun accrochage', () => {
+        const { fake } = snapFake({ shapes: [SNAP_LINE] });
+        expect(fake._measureSnapTarget([10 + deg(outside), 20])).toBeNull();
+    });
+
+    it('la distance se mesure en pixels écran dans les deux axes', () => {
+        const { fake } = snapFake({ shapes: [SNAP_LINE] });
+        // 14 px en x et 14 px en y : 19,8 px de distance, au-dessus du seuil.
+        expect(fake._measureSnapTarget([10 + deg(14), 20 + deg(14)])).toBeNull();
+        expect(fake._measureSnapTarget([10 + deg(8), 20 + deg(8)])).toEqual([10, 20]);
+    });
+
+    it('choisit le sommet le plus proche parmi plusieurs candidats', () => {
+        const near: PlanShape = { id: 'l2', type: 'line', color: '#ef4444', coords: [[10, 20], [10.01, 20]] };
+        const { fake } = snapFake({ shapes: [near] });
+        expect(fake._measureSnapTarget([10.008, 20])).toEqual([10.01, 20]);
+    });
+
+    it('accroche les sommets de rectangle, le centre des cercles, les sommets de mesure posée, le centre des anneaux et les pions', () => {
+        const { fake } = snapFake({ shapes: [SNAP_RECT, SNAP_CIRCLE, SNAP_MEASURE, SNAP_RINGS], pins: [SNAP_PIN] });
+        const targets: LngLatTuple[] = [[1.1, 1.1], [1, 1.1], [5, 5], [7.5, 7.5], [8, 8], [3, 4]];
+        for (const t of targets) {
+            expect(fake._measureSnapTarget([t[0] + deg(3), t[1] - deg(3)]), `cible ${t.join(',')}`).toEqual(t);
+        }
+    });
+
+    it('cercle : seul le CENTRE accroche (ni le point de bord, ni le contour)', () => {
+        const { fake } = snapFake({ shapes: [SNAP_CIRCLE] });
+        expect(fake._measureSnapTarget([5.1 + deg(2), 5])).toBeNull();
+        expect(fake._measureSnapTarget([5 + deg(2), 5])).toEqual([5, 5]);
+    });
+
+    it('anneaux d\'engagement : seul le centre accroche, pas le contour des anneaux', () => {
+        const { fake } = snapFake({ shapes: [SNAP_RINGS] });
+        expect(fake._measureSnapTarget([8.05 + deg(2), 8])).toBeNull();
+        expect(fake._measureSnapTarget([8 + deg(2), 8])).toEqual([8, 8]);
+    });
+
+    it('texte : pas d\'aimant', () => {
+        const { fake } = snapFake({ shapes: [SNAP_TEXT] });
+        expect(fake._measureSnapTarget([9 + deg(2), 9])).toBeNull();
+    });
+
+    it('aimant coupé (bouton « Aimant ») : aucun accrochage', () => {
+        const { fake } = snapFake({ shapes: [SNAP_LINE], snap: false });
+        expect(fake._measureSnapTarget([10, 20])).toBeNull();
+    });
+
+    it('aimant jamais touché (champ absent, mesure ouverte avant la décision) : actif', () => {
+        const { fake } = snapFake({ shapes: [SNAP_LINE] });
+        fake._measureState = { vertices: [], cursor: null, reticle: false };
+        expect(fake._measureSnapTarget([10, 20])).toEqual([10, 20]);
+    });
+
+    it('sans carte ou sans mesure en cours : null, sans jeter', () => {
+        const noMap = makeFakeThis({ shapes: [SNAP_LINE] }).fake;
+        noMap._measureState = { vertices: [], cursor: null, reticle: false };
+        expect(noMap._measureSnapTarget([10, 20])).toBeNull();
+        const noState = makeFakeThis({ shapes: [SNAP_LINE], map: makeMap() }).fake;
+        expect(noState._measureSnapTarget([10, 20])).toBeNull();
+    });
+
+    it('aucun candidat : la carte n\'est même pas interrogée', () => {
+        const map = makeMap();
+        const { fake } = makeFakeThis({ map });
+        fake._measureState = { vertices: [], cursor: null, reticle: false };
+        expect(fake._measureSnapTarget([0, 0])).toBeNull();
+        expect(map.project).not.toHaveBeenCalled();
+    });
+
+    it('données forgées (archive) : coordonnées non numériques, centre incomplet, latitude hors bornes : ignorés sans jeter', () => {
+        const forged = [
+            { id: 'f1', type: 'line', coords: [null, [Number.NaN, 1], 'x', [10, 20], [10, 200]] },
+            { id: 'f2', type: 'circle', center: ['a', 'b'] },
+            { id: 'f3', type: 'rectangle' },
+        ] as unknown as PlanShape[];
+        const { fake } = snapFake({ shapes: forged, pins: [{ id: 'p', lng: Number.NaN, lat: 1 }] });
+        // La carte réelle jette sur une latitude hors de [-90 ; 90] : le point forgé ne doit jamais lui parvenir.
+        const map = fake.map as unknown as ReturnType<typeof makeMap>;
+        map.project.mockImplementation((ll: { lng: number; lat: number }) => {
+            if (Math.abs(ll.lat) > 90) throw new RangeError('Invalid LngLat latitude value: must be between -90 and 90');
+            return { x: ll.lng * 1000, y: ll.lat * 1000 };
+        });
+        expect(fake._measureSnapTarget([10 + deg(1), 20])).toEqual([10, 20]);
+    });
+});
+
+describe('aimant — réticule, curseur et pose (retours terrain 2026-10-02, décision 2)', () => {
+    it('_measureReticlePoint : le centre de carte voisin d\'un sommet s\'y accroche', () => {
+        const { fake } = snapFake({ shapes: [SNAP_LINE], center: [10.005, 20], reticle: true });
+        expect(fake._measureReticlePoint()).toEqual([10, 20]);
+    });
+
+    it('_measureReticlePoint : aimant coupé, le centre reste exact', () => {
+        const { fake } = snapFake({ shapes: [SNAP_LINE], center: [10.005, 20], reticle: true, snap: false });
+        expect(fake._measureReticlePoint()).toEqual([10.005, 20]);
+    });
+
+    it('le bouton « Point » pose le point du réticule accroché', () => {
+        document.body.innerHTML = '<div><div id="plan_map"></div></div>';
+        const { fake } = snapFake({ shapes: [SNAP_LINE], center: [10.005, 20], reticle: true });
+        fake._buildMeasureControls();
+        const point = Array.from(document.querySelectorAll('#plan_measure_controls button')).find((b) => b.textContent?.includes('Point'));
+        point?.dispatchEvent(new MouseEvent('click'));
+        expect(fake._measureState?.vertices).toEqual([[10, 20]]);
+    });
+
+    it('« Valider la ligne » complète la ligne avec le centre accroché (sommet implicite du réticule)', () => {
+        const { fake, shapes } = snapFake({ shapes: [SNAP_LINE], center: [10.005, 20], reticle: true });
+        fake._measureState = { vertices: [[0, 0]], cursor: null, reticle: true, snap: true };
+        fake._finishMeasure();
+        expect(shapes().at(-1)?.coords).toEqual([[0, 0], [10, 20]]);
+    });
+
+    it('l\'aperçu du réticule s\'arrête sur le sommet accroché', () => {
+        const { fake, mocks } = snapFake({ shapes: [SNAP_LINE], center: [10.005, 20], reticle: true });
+        fake._measureState = { vertices: [[0, 0]], cursor: null, reticle: true, snap: true };
+        fake._renderMeasurePreview();
+        expect(mocks.renderPreview).toHaveBeenCalledWith(expect.objectContaining({
+            geometry: { type: 'LineString', coordinates: [[0, 0], [10, 20]] },
+        }));
+    });
+
+    it('le segment élastique de la souris suit l\'aimant', () => {
+        const { fake } = snapFake({ shapes: [SNAP_LINE] });
+        fake._measureState = { vertices: [[0, 0]], cursor: null, reticle: false, snap: true };
+        fake._measureUpdateCursor([10 + deg(6), 20 + deg(2)]);
+        expect(fake._measureState.cursor).toEqual([10, 20]);
+        fake._measureUpdateCursor([50, 50]);
+        expect(fake._measureState.cursor).toEqual([50, 50]);
+    });
+
+    it('un clic carte près d\'un sommet pose EXACTEMENT ce sommet', () => {
+        const { fake } = snapFake({ shapes: [SNAP_LINE], pins: [SNAP_PIN] });
+        fake._measureClick([10.1 + deg(5), 20.1 - deg(5)], [0, 0]);
+        fake._measureClick([3 - deg(4), 4], [0, 0]);
+        expect(fake._measureState?.vertices).toEqual([[10.1, 20.1], [3, 4]]);
+    });
+
+    it('aimant coupé : le clic garde sa position', () => {
+        const { fake } = snapFake({ shapes: [SNAP_LINE], snap: false });
+        fake._measureClick([10 + deg(5), 20], [0, 0]);
+        expect(fake._measureState?.vertices).toEqual([[10.005, 20]]);
+    });
+});
+
+describe('lecture d\'un dessin au toucher (retours terrain 2026-10-02, décision 3)', () => {
+    const TAP: [number, number] = [120, 80];
+    const hit = (id: string): unknown[] => [{ properties: { shapeId: id } }];
+    const LINE: PlanShape = { id: 'l1', type: 'line', color: '#ef4444', coords: [[0, 0], [0.1, 0]] };
+    const RECT: PlanShape = { id: 'r1', type: 'rectangle', color: '#ef4444', coords: [[0, 0], [0.1, 0], [0.1, 0.1], [0, 0.1], [0, 0]] };
+    const CIRCLE: PlanShape = { id: 'c1', type: 'circle', color: '#ef4444', center: [5, 5], edge: [5.05, 5], coords: [[5.05, 5], [5, 5.05], [4.95, 5], [5, 4.95], [5.05, 5]] };
+
+    function readFake(shapes: PlanShape[], hits: unknown[], extra: { vertices?: LngLatTuple[]; snap?: boolean } = {}) {
+        document.body.innerHTML = '<div><div id="plan_map"></div></div>';
+        const map = makeMap({ hits });
+        const made = makeFakeThis({ shapes, map });
+        made.fake._renderMeasureLabels = vi.fn();
+        made.fake._measureState = { vertices: extra.vertices ?? [], cursor: null, reticle: false, snap: extra.snap ?? true };
+        made.fake._buildMeasureControls();
+        const info = (): HTMLElement => {
+            const el = document.querySelector<HTMLElement>('#plan_measure_controls [data-measure="info"]');
+            if (!el) throw new Error('indicateur absent de la barre');
+            return el;
+        };
+        return { ...made, map, info };
+    }
+
+    it('un trait touché, sans ligne en cours : affiche sa longueur et ne pose AUCUN point', () => {
+        const { fake, info } = readFake([LINE], hit('l1'));
+        fake._measureClick([0.05, 0.0002], TAP);
+        expect(info().hidden).toBe(false);
+        expect(info().textContent).toBe(shapeMeasureText(LINE));
+        expect(info().textContent).toContain('Longueur');
+        expect(fake._measureState?.vertices).toEqual([]);
+    });
+
+    it('un rectangle touché affiche son périmètre et sa surface', () => {
+        const { fake, info } = readFake([RECT], hit('r1'));
+        fake._measureClick([0.05, 0.05], TAP);
+        expect(info().textContent).toBe(shapeMeasureText(RECT));
+        expect(info().textContent).toContain('Périmètre');
+        expect(info().textContent).toContain('Surface');
+        expect(fake._measureState?.vertices).toEqual([]);
+    });
+
+    it('un cercle touché affiche son périmètre et sa surface', () => {
+        const { fake, info } = readFake([CIRCLE], hit('c1'));
+        fake._measureClick([5.03, 5], TAP);
+        expect(info().textContent).toBe(shapeMeasureText(CIRCLE));
+        expect(info().textContent).toContain('Surface');
+        expect(fake._measureState?.vertices).toEqual([]);
+    });
+
+    it('interroge les couches de sélection (remplissage + zone de touche du trait) au point touché', () => {
+        const { fake, map } = readFake([LINE], hit('l1'));
+        fake._measureClick([0.05, 0], TAP);
+        expect(map.queryRenderedFeatures).toHaveBeenCalledWith(TAP, { layers: ['plan-shapes-fill', 'plan-shapes-line-hit'] });
+    });
+
+    it('avec une ligne en cours, le toucher pose un sommet : aucune lecture', () => {
+        const { fake, info } = readFake([LINE], hit('l1'), { vertices: [[0.2, 0.2]] });
+        fake._measureClick([0.05, 0.0002], TAP);
+        expect(fake._measureState?.vertices).toEqual([[0.2, 0.2], [0.05, 0.0002]]);
+        expect(info().hidden).toBe(true);
+    });
+
+    it('l\'aimant prime : près d\'un sommet du dessin, le toucher démarre la ligne à ce sommet', () => {
+        const { fake, info } = readFake([LINE], hit('l1'));
+        fake._measureClick([deg(5), 0], TAP);
+        expect(fake._measureState?.vertices).toEqual([[0, 0]]);
+        expect(info().hidden).toBe(true);
+    });
+
+    it('aimant coupé : le même toucher près d\'un sommet lit le dessin', () => {
+        const { fake, info } = readFake([LINE], hit('l1'), { snap: false });
+        fake._measureClick([deg(5), 0], TAP);
+        expect(info().textContent).toBe(shapeMeasureText(LINE));
+        expect(fake._measureState?.vertices).toEqual([]);
+    });
+
+    it('une mesure posée ou un anneau (aucun shapeId) ne se lit pas : le toucher pose un sommet', () => {
+        const { fake, info } = readFake([SNAP_MEASURE, SNAP_RINGS], [{ properties: {} }, { properties: null }]);
+        fake._measureClick([0.5, 0.5], TAP);
+        expect(fake._measureState?.vertices).toEqual([[0.5, 0.5]]);
+        expect(info().hidden).toBe(true);
+    });
+
+    it('un texte ne se lit pas : le toucher pose un sommet', () => {
+        const { fake } = readFake([SNAP_TEXT], hit('t1'));
+        fake._measureClick([0.5, 0.5], TAP);
+        expect(fake._measureState?.vertices).toEqual([[0.5, 0.5]]);
+    });
+
+    it('une forme absente du stockage (relecture distante en cours) : le toucher pose un sommet', () => {
+        const { fake } = readFake([LINE], hit('fantome'));
+        fake._measureClick([0.5, 0.5], TAP);
+        expect(fake._measureState?.vertices).toEqual([[0.5, 0.5]]);
+    });
+
+    it('la première forme lisible sous le doigt gagne (un anneau sans id ne la masque pas)', () => {
+        const { fake, info } = readFake([LINE], [{ properties: {} }, ...hit('l1')]);
+        fake._measureClick([0.05, 0.0002], TAP);
+        expect(info().textContent).toBe(shapeMeasureText(LINE));
+    });
+
+    it('le point suivant efface la lecture', () => {
+        const { fake, map, info } = readFake([LINE], hit('l1'));
+        fake._measureClick([0.05, 0.0002], TAP);
+        expect(info().hidden).toBe(false);
+        map.queryRenderedFeatures.mockImplementation((): unknown[] => []);
+        fake._measureClick([0.5, 0.5], TAP);
+        expect(info().hidden).toBe(true);
+        expect(fake._measureState?.vertices).toEqual([[0.5, 0.5]]);
+    });
+
+    it('une carte dont le style n\'est pas chargé (queryRenderedFeatures jette) retombe sur la pose d\'un sommet', () => {
+        const { fake, map } = readFake([LINE], hit('l1'));
+        map.queryRenderedFeatures.mockImplementation(() => { throw new Error('Style is not done loading'); });
+        expect(() => fake._measureClick([0.5, 0.5], TAP)).not.toThrow();
+        expect(fake._measureState?.vertices).toEqual([[0.5, 0.5]]);
+    });
+
+    it('sans mesure en cours ni barre : ne jette pas', () => {
+        const { fake } = makeFakeThis();
+        expect(() => fake._measureClick([0, 0], TAP)).not.toThrow();
+        expect(() => fake._measureShowInfo('x')).not.toThrow();
+    });
+});
+
+describe('barre de mesure — « Valider la ligne » et « Aimant » (retours terrain 2026-10-02)', () => {
+    const btn = (key: string): HTMLButtonElement => {
+        const el = document.querySelector<HTMLButtonElement>(`#plan_measure_controls button[data-measure="${key}"]`);
+        if (!el) throw new Error(`bouton ${key} absent de la barre`);
+        return el;
+    };
+
+    function barFake() {
+        document.body.innerHTML = '<div><div id="plan_map"></div></div>';
+        const made = makeFakeThis({ map: {} });
+        made.fake._renderMeasureLabels = vi.fn();
+        made.fake._measureState = { vertices: [], cursor: null, reticle: false, snap: true };
+        made.fake._buildMeasureControls();
+        return made;
+    }
+
+    it('« Valider la ligne » et « Annuler dernier » n\'apparaissent qu\'avec une ligne en cours', () => {
+        const { fake } = barFake();
+        expect(btn('finish').style.display).toBe('none');
+        expect(btn('finish').textContent).toContain('Valider la ligne');
+        fake._measureAddVertex([1, 1]);
+        expect(btn('finish').style.display).toBe('inline-flex');
+        fake._measureUndoVertex();
+        expect(btn('finish').style.display).toBe('none');
+    });
+
+    it('« Valider la ligne » fige la ligne : persistée, outil actif, bouton masqué', () => {
+        const { fake, mocks, shapes } = barFake();
+        fake._measureAddVertex([1, 1]);
+        fake._measureAddVertex([1.1, 1]);
+        btn('finish').click();
+        expect(shapes()).toHaveLength(1);
+        expect(mocks.pushHistory).toHaveBeenCalledTimes(1);
+        expect(mocks.setTool).not.toHaveBeenCalled();
+        expect(fake._measureState?.vertices).toEqual([]);
+        expect(btn('finish').style.display).toBe('none');
+    });
+
+    it('« Annuler dernier » ne retire que le dernier point de la ligne en cours (jamais une ligne figée)', () => {
+        const { fake, shapes } = barFake();
+        fake._measureAddVertex([1, 1]);
+        fake._measureAddVertex([1.1, 1]);
+        fake._finishMeasure();
+        fake._measureAddVertex([2, 2]);
+        fake._measureAddVertex([2.1, 2]);
+        btn('undo').click();
+        expect(fake._measureState?.vertices).toEqual([[2, 2]]);
+        expect(shapes()).toHaveLength(1);
+        btn('undo').click();
+        expect(fake._measureState?.vertices).toEqual([]);
+        expect(shapes()).toHaveLength(1);
+    });
+
+    it('« Aimant » démarre actif (aria-pressed) et bascule l\'aimant à chaque appui', () => {
+        const { fake } = barFake();
+        expect(btn('snap').getAttribute('aria-pressed')).toBe('true');
+        expect(btn('snap').style.textDecoration).toBe('none');
+        btn('snap').click();
+        expect(fake._measureState?.snap).toBe(false);
+        expect(btn('snap').getAttribute('aria-pressed')).toBe('false');
+        // Coupé : barré, pas seulement grisé (plein soleil, gants), et le titre le dit.
+        expect(btn('snap').style.textDecoration).toBe('line-through');
+        expect(btn('snap').title).toContain('coupé');
+        btn('snap').click();
+        expect(fake._measureState?.snap).toBe(true);
+        expect(btn('snap').getAttribute('aria-pressed')).toBe('true');
+        expect(btn('snap').style.textDecoration).toBe('none');
+        expect(btn('snap').title).toContain('actif');
+    });
+
+    it('« Aimant » ne ferme pas la barre ni ne pose de point', () => {
+        const { fake, mocks } = barFake();
+        btn('snap').click();
+        expect(fake._measureState?.vertices).toEqual([]);
+        expect(mocks.setTool).not.toHaveBeenCalled();
+        expect(document.getElementById('plan_measure_controls')).not.toBeNull();
+    });
+
+    it('l\'indicateur de lecture est masqué à l\'ouverture et annoncé aux lecteurs d\'écran', () => {
+        barFake();
+        const info = document.querySelector<HTMLElement>('#plan_measure_controls [data-measure="info"]');
+        expect(info?.hidden).toBe(true);
+        expect(info?.getAttribute('role')).toBe('status');
+    });
+
+    it('_measureShowInfo affiche puis masque la lecture', () => {
+        const { fake } = barFake();
+        fake._measureShowInfo('Longueur : 12 m');
+        const info = document.querySelector<HTMLElement>('#plan_measure_controls [data-measure="info"]');
+        expect(info?.hidden).toBe(false);
+        expect(info?.textContent).toBe('Longueur : 12 m');
+        fake._measureShowInfo('');
+        expect(info?.hidden).toBe(true);
+    });
+});
+
+describe('dessins inertes pendant la mesure (retours terrain 2026-10-02, décision 4)', () => {
+    it('démarrer la mesure désélectionne la forme (poignées, roue, pincement) pour qu\'aucune ne reste active', () => {
+        const { fake, mocks } = makeFakeThis();
+        fake._selectedShapeId = 's1';
+        fake._startMeasure(false);
+        expect(mocks.deselectShape).toHaveBeenCalledTimes(1);
     });
 });

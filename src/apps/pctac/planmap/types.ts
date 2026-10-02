@@ -10,7 +10,7 @@
  * (lecture seule).
  */
 
-import type { Map as MapLibreMap, Marker, LngLat, MapMouseEvent, MapTouchEvent, MapLayerMouseEvent, MapLayerTouchEvent } from 'maplibre-gl';
+import type { Map as MapLibreMap, Marker, LngLat, MapMouseEvent, MapTouchEvent, MapLayerMouseEvent, MapLayerTouchEvent, PointLike } from 'maplibre-gl';
 import type { PlanMapContract, PlanMapPinSummary } from '@shared/types/contracts.js';
 import type { MapPersistenceAdapter } from '@shared/map-persistence.js';
 import type { MapOverlays } from '@shared/map-overlays.js';
@@ -226,8 +226,12 @@ export interface ShapeGestureState {
     startPx?: { x: number; y: number } | undefined;
 }
 
-/** État de mesure en cours (planMap.js:2299-2304). */
-export interface MeasureState { vertices: LngLatTuple[]; cursor: LngLatTuple | null; reticle: boolean }
+/**
+ * État de mesure en cours (planMap.js:2299-2304). `snap` (retours terrain
+ * 2026-10-02) : aimant aux sommets de dessin et aux pions ; `false` = coupé par
+ * le bouton « Aimant », absent = actif (défaut).
+ */
+export interface MeasureState { vertices: LngLatTuple[]; cursor: LngLatTuple | null; reticle: boolean; snap?: boolean | undefined }
 
 /** Options de `_openInlinePanel` (planMap.js:3759). */
 export interface InlinePanelOptions {
@@ -491,11 +495,14 @@ export interface PlanMapInternal extends PlanMapState, PlanMapContract {
     _loadShapes(): PlanShape[];
     _saveShapes(list: readonly PlanShape[]): void;
 
-    /* --- measure.ts (15) --- */
+    /* --- measure.ts (15 + 3 : retours terrain 2026-10-02) --- */
     _startMeasure(isMobile: boolean): void;
     _measureAddVertex(lngLat: LngLatTuple): void;
     _measureUpdateCursor(lngLat: LngLatTuple): void;
     _measureReticlePoint(): LngLatTuple;
+    _measureSnapTarget(lngLat: LngLatTuple): LngLatTuple | null;
+    _measureClick(lngLat: LngLatTuple, point: PointLike): void;
+    _measureShowInfo(text: string): void;
     _renderMeasurePreview(): void;
     _renderMeasureLabels(pts: readonly LngLatTuple[], committed: boolean): void;
     _buildMeasureControls(): void;

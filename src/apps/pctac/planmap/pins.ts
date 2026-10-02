@@ -83,10 +83,12 @@ export const PinsMethods = {
     _onMapClick(this: PlanMapInternal, e: MapMouseEvent): void {
         // Tracé du carroyage en cours : ce clic lui appartient (map-overlays).
         if (this.overlays?.isCapturing()) return;
-        // Outil mesure : chaque clic/tap pose un sommet (machine d'états dédiée).
-        // On le traite AVANT la garde drawTool ci-dessous.
+        // Outil mesure : chaque clic/tap pose un sommet (machine d'états dédiée),
+        // sauf un dessin touché sans ligne en cours, qui se lit (retours terrain
+        // 2026-10-02 : l'aimant et cette lecture se décident dans `_measureClick`,
+        // d'où le point écran). On le traite AVANT la garde drawTool ci-dessous.
         if (this.drawTool === 'measure') {
-            if (this._measureState) this._measureAddVertex([e.lngLat.lng, e.lngLat.lat]);
+            if (this._measureState) this._measureClick([e.lngLat.lng, e.lngLat.lat], e.point);
             return;
         }
         // Pendant le drawing, les clics sont gérés par mousedown/up
