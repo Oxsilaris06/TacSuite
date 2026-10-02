@@ -29,6 +29,14 @@
  * sert réellement. Un écart (couche servie mais absente de la table, ou l'inverse)
  * fait échouer le script : c'est le signal de mettre la table à jour (ex. le LiDAR HD
  * qui arrive en Martinique). Demande Node ≥ 22.18 (import natif du .ts).
+ * Une couche est « servie » si la PLUS GROSSE des 9 tuiles z14 autour de la ville de
+ * référence dépasse 1,7 Ko : une seule tuile de courbes de niveau sur une ville plate
+ * peut peser moins que ce seuil sans que la couche soit absente.
+ *
+ * Dernière section : la tuile VIDE de l'ortho (JPEG blanc rendu hors couverture) doit
+ * toujours peser `IGN_BLANK_TILE_BYTES` octets (`src/shared/ign-ortho.ts`). Si l'IGN
+ * ré-encode cette tuile, le détourage reste correct mais perd son raccourci (un
+ * décodage de plus par tuile vide) : le script le signale.
  */
 
 const WMTS_LAYERS = {
@@ -126,11 +134,19 @@ if (!territoires) {
             let servie = false;
             let detail = '';
             try {
-                const res = await fetch(urlOf(Z, lon2tile(lon, Z), lat2tile(lat, Z)));
-                const type = res.headers.get('content-type') || '';
-                const bytes = res.ok ? (await res.arrayBuffer()).byteLength : 0;
-                servie = res.ok && type.startsWith('image/') && bytes > 1700;
-                detail = `HTTP ${res.status} ${bytes} o`;
+                // Plus grosse tuile d'un quadrillage 3×3 autour de la ville (cf. en-tête).
+                let max = 0;
+                const statuts = new Set();
+                for (let dx = -1; dx <= 1; dx++) {
+                    for (let dy = -1; dy <= 1; dy++) {
+                        const res = await fetch(urlOf(Z, lon2tile(lon, Z) + dx, lat2tile(lat, Z) + dy));
+                        statuts.add(res.status);
+                        const type = res.headers.get('content-type') || '';
+                        if (res.ok && type.startsWith('image/')) max = Math.max(max, (await res.arrayBuffer()).byteLength);
+                    }
+                }
+                servie = max > 1700;
+                detail = `HTTP ${[...statuts].join('/')} max ${max} o (9 tuiles)`;
             } catch (e) {
                 detail = String(e);
             }
@@ -139,6 +155,22 @@ if (!territoires) {
             console.log(`    ${t.code.padEnd(3)} ${t.label.padEnd(26)} ${servie ? 'servie ' : 'absente'}  ${detail}${accord ? '' : '   ← ÉCART avec la table : mettre ign-territoires.ts à jour'}`);
         }
     }
+}
+
+// ── Tuile vide de l'ortho ────────────────────────────────────────────────────
+// Une tuile z13 en mer, entre Grande-Terre et Marie-Galante (971) : hors couverture, donc
+// la tuile vide. Son poids est la constante `IGN_BLANK_TILE_BYTES` du détourage.
+{
+    const { readFileSync } = await import('node:fs');
+    const src = readFileSync(new URL('../src/shared/ign-ortho.ts', import.meta.url), 'utf8');
+    const attendu = Number(/IGN_BLANK_TILE_BYTES\s*=\s*(\d+)/.exec(src)?.[1]);
+    const z = 13;
+    const res = await fetch(`https://data.geopf.fr/tms/1.0.0/HR.ORTHOIMAGERY.ORTHOPHOTOS/${z}/${lon2tile(-61.3, z)}/${lat2tile(16.05, z)}.jpeg`).catch(() => null);
+    const bytes = res && res.ok ? (await res.arrayBuffer()).byteLength : 0;
+    const accord = bytes === attendu;
+    if (!accord) anyFailure = true;
+    console.log(`\n=== Tuile vide de l'ortho (z${z}, en mer au large de la Guadeloupe) ===`);
+    console.log(`    ${bytes} o servis, IGN_BLANK_TILE_BYTES = ${attendu} ${accord ? '✔' : '   ← ÉCART : mettre ign-ortho.ts à jour (le détourage reste correct, mais sans son raccourci)'}`);
 }
 
 process.exit(anyFailure ? 1 : 0);
