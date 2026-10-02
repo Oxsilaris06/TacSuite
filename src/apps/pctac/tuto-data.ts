@@ -551,12 +551,14 @@ export function pctacTutoData(): TutoData {
         },
         {
           title: "Modifier une forme via le menu radial",
-          body: "Un appui court sur une forme ouvre une roue contextuelle titree selon le type ('Trait', 'Rectangle', 'Cercle', 'Texte' ou 'Forme'). Elle propose 'Ajouter texte'/'Modifier texte', l'epaisseur du trait ('Épaisseur -' / 'Épaisseur +') ou la police ('Taille -' / 'Taille +'), 'Verrouiller'/'Deverrouiller' et 'Supprimer'. Sur un cercle apparait aussi 'Afficher diamètre'/'Masquer diamètre'.",
+          body: "Un toucher sur une forme la sélectionne, un double toucher ouvre une roue contextuelle titree selon le type ('Trait', 'Rectangle', 'Cercle', 'Texte' ou 'Forme'). Elle propose 'Ajouter texte'/'Modifier texte', l'epaisseur du trait ('Épaisseur -' / 'Épaisseur +') ou la police ('Taille -' / 'Taille +'), 'Verrouiller'/'Deverrouiller' et 'Supprimer'. Sur un rectangle ou un cercle, 'Remplissage -' / 'Remplissage +' règlent l'opacité du fond, jusqu'au contour seul. Ces zones restent sous les traits, textes et pions, qui gardent la priorité au toucher ; glisser sur une zone non sélectionnée déplace la carte. Sur un cercle apparait aussi 'Afficher diamètre'/'Masquer diamètre'.",
           terms: [
             "Ajouter texte",
             "Modifier texte",
             "Épaisseur -",
             "Épaisseur +",
+            "Remplissage -",
+            "Remplissage +",
             "Taille -",
             "Taille +",
             "Afficher diamètre",

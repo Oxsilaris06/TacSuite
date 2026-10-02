@@ -159,13 +159,20 @@ describe('fumée — DOM/source absents (planMap.js:2846-3487)', () => {
 
     it('outil mesure actif : toucher un dessin ne démarre AUCUN geste (retours terrain 2026-10-02, décision 4)', () => {
         const { fake } = makeFakeThis({ shapes: [makeShape({ id: 's1', type: 'line', coords: [[0, 0], [1, 1]] })] });
-        fake.drawTool = 'measure';
-        const start = vi.spyOn(fake, '_startShapeGesture');
+        // La cible vient de `_shapeTargetAt` (queryRenderedFeatures), plus de `e.features`.
+        vi.mocked(assertNonNull(fake.map).queryRenderedFeatures).mockReturnValue([{ properties: { shapeId: 's1' } }] as never);
+        const start = vi.spyOn(fake, '_startShapeGesture').mockImplementation(() => {});
         const preventDefault = vi.fn();
         const e = {
-            originalEvent: { preventDefault }, preventDefault, lngLat: { lng: 0, lat: 0 },
-            features: [{ properties: { shapeId: 's1' } }],
+            originalEvent: { preventDefault }, preventDefault, point: { x: 0, y: 0 }, lngLat: { lng: 0, lat: 0 },
         } as unknown as MapLayerMouseEvent;
+        // Témoin : hors mesure, le même toucher sur le trait sélectionné démarre bien le geste.
+        fake._selectedShapeId = 's1';
+        ShapesGesturesMethods._shapePointerDown.call(fake, e);
+        expect(start).toHaveBeenCalledTimes(1);
+        start.mockClear(); preventDefault.mockClear();
+        fake._gesture = null; fake._selectedShapeId = null;
+        fake.drawTool = 'measure';
         ShapesGesturesMethods._shapePointerDown.call(fake, e);
         expect(start).not.toHaveBeenCalled();
         // Pas de preventDefault : la carte garde son déplacement natif pendant la mesure.
