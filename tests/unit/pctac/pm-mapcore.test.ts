@@ -53,6 +53,23 @@ vi.mock('@pctac/planmap/tiles.js', () => ({
 const toastSpy = vi.hoisted(() => vi.fn());
 vi.mock('@shared/feedback.js', () => ({ toast: toastSpy }));
 
+// `maplibre-gl` factice (jamais de WebGL sous jsdom) : la classe `Map` garde ses
+// options, pour prouver le branchement de l'ortho IGN d'outre-mer dans `init()`
+// (retours terrain 2026-10-02) ; seules les méthodes que `init()` appelle existent.
+const { mapOptions, addProtocolSpy } = vi.hoisted(() => ({
+    mapOptions: [] as Record<string, unknown>[],
+    addProtocolSpy: vi.fn(),
+}));
+vi.mock('maplibre-gl', () => {
+    class FakeMap {
+        constructor(options: Record<string, unknown>) { mapOptions.push(options); }
+        addControl(): void {}
+        on(): void {}
+    }
+    class FakeControl {}
+    return { default: { Map: FakeMap, NavigationControl: FakeControl, ScaleControl: FakeControl, addProtocol: addProtocolSpy } };
+});
+
 import { ignLayerIds } from '@shared/ign-territoires.js';
 import {
     CONTOURS_KEY,
@@ -60,6 +77,7 @@ import {
     LIDAR_OPACITY_OVER_IMAGERY,
     LIDAR_OPACITY_OVER_TOPO,
     PLANIGN_KEY,
+    RASTER_STYLE,
     VIEW_KEY,
 } from '../../../src/apps/pctac/planmap/constants.js';
 import { MapCoreMethods } from '../../../src/apps/pctac/planmap/map-core.js';
@@ -514,6 +532,26 @@ describe('smoke — méthodes restantes de map-core.ts', () => {
     it('init() déjà initialisé ⇒ sort immédiatement (idempotent)', () => {
         const fake = makeFakeThis({ initialized: true });
         expect(() => MapCoreMethods.init.call(fake)).not.toThrow();
+    });
+
+    // Retours terrain 2026-10-02 : hors couverture l'IGN rend du blanc opaque ; les
+    // tuiles d'ortho d'outre-mer sont donc détourées (`@shared/ign-ortho`), et la
+    // carte doit être construite avec ces options (protocole + réécriture des URL).
+    it('init() construit la carte avec le protocole `ignortho` : tuiles d\'ortho d\'outre-mer réécrites, métropole inchangée', () => {
+        document.body.innerHTML = '<div id="plan_map"></div>';
+        mapOptions.length = 0;
+        addProtocolSpy.mockClear();
+        const fake = makeFakeThis({ _initOverlays: vi.fn() });
+        MapCoreMethods.init.call(fake);
+        expect(fake.initialized).toBe(true);
+        expect(addProtocolSpy).toHaveBeenCalledWith('ignortho', expect.any(Function));
+        expect(mapOptions).toHaveLength(1);
+        expect(mapOptions[0]?.style).toBe(RASTER_STYLE);
+        const transform = mapOptions[0]?.transformRequest as (url: string) => { url: string } | undefined;
+        const ortho = (z: number, x: number, y: number) => `https://data.geopf.fr/tms/1.0.0/HR.ORTHOIMAGERY.ORTHOPHOTOS/${z}/${x}/${y}.jpeg`;
+        // Pointe-à-Pitre (971) et Paris, à z14.
+        expect(transform(ortho(14, 5391, 7442))).toEqual({ url: ortho(14, 5391, 7442).replace('https://', 'ignortho://') });
+        expect(transform(ortho(14, 8296, 5635))).toBeUndefined();
     });
 
     it('refresh() non initialisé ⇒ délègue à init()', () => {

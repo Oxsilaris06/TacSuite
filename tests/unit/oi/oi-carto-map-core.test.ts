@@ -18,12 +18,11 @@
  * `maplibre-gl` est mocké (`vi.mock` + `vi.hoisted`) pour piloter
  * `typeof maplibregl?.Map !== 'function'` (garde de `open()`, oi_cartographie.js:297) —
  * seul moyen de tester cette branche : le vrai paquet npm expose toujours
- * `.Map`. Le mock n'expose QUE `.Map` (getter piloté par `mapLibreState.hasMap`) :
- * `_init()`'s construction réelle (`new maplibregl.Map(...)`,
- * `NavigationControl`, `ScaleControl`) N'EST JAMAIS EXERCÉE — seule la garde
- * amont (`#oi_carto_map` absent → retour immédiat) est testée, même politique
- * que `@pctac/planmap/map-core.ts` (pm-mapcore.test.ts : smoke tests
- * DOM-absent/déjà-initialisé UNIQUEMENT sur `init()`).
+ * `.Map`. Le mock expose `.Map` (getter piloté par `mapLibreState.hasMap`), des
+ * contrôles factices et `addProtocol` (espion) : `_init()` construit une carte
+ * FACTICE (classe qui n'enregistre que ses options, jamais de WebGL) — assez pour
+ * prouver le branchement de l'ortho IGN d'outre-mer (retours terrain 2026-10-02),
+ * pas pour tester le rendu.
  *
  * jsdom 30 n'implémente PAS `HTMLDialogElement.showModal()`/`.close()`
  * (vérifié : `typeof d.showModal === 'undefined'`) — stubbés par test quand
@@ -40,18 +39,35 @@ vi.mock('@shared/feedback.js', () => ({
     toast: toastSpy,
 }));
 
-const { mapLibreState } = vi.hoisted(() => ({ mapLibreState: { hasMap: true } }));
-
-// Mock minimal de 'maplibre-gl' : seul `.Map` est lu par map-core.ts en dehors
-// de `_init()` (jamais exercé, cf. note de tête de fichier) — `.Map` piloté
-// par `mapLibreState.hasMap` pour tester la garde `open()` (oi_cartographie.js:297).
-vi.mock('maplibre-gl', () => ({
-    default: {
-        get Map() {
-            return mapLibreState.hasMap ? class {} : undefined;
-        },
-    },
+const { mapLibreState, mapOptions, addProtocolSpy } = vi.hoisted(() => ({
+    mapLibreState: { hasMap: true },
+    /** Options reçues par chaque `new maplibregl.Map(...)` factice. */
+    mapOptions: [] as Record<string, unknown>[],
+    addProtocolSpy: vi.fn(),
 }));
+
+// Mock minimal de 'maplibre-gl' : `.Map` piloté par `mapLibreState.hasMap` pour
+// tester la garde `open()` (oi_cartographie.js:297) ; la classe factice garde ses
+// options (branchement de l'ortho IGN, cf. `_init`) et n'a que les deux méthodes
+// que `_init()` appelle sur la carte.
+vi.mock('maplibre-gl', () => {
+    class FakeMap {
+        constructor(options: Record<string, unknown>) { mapOptions.push(options); }
+        addControl(): void {}
+        on(): void {}
+    }
+    class FakeControl {}
+    return {
+        default: {
+            get Map() {
+                return mapLibreState.hasMap ? FakeMap : undefined;
+            },
+            NavigationControl: FakeControl,
+            ScaleControl: FakeControl,
+            addProtocol: addProtocolSpy,
+        },
+    };
+});
 
 import { ignLayerIds } from '@shared/ign-territoires.js';
 import { LIDAR_OPACITY_OVER_IMAGERY, LIDAR_OPACITY_OVER_TOPO } from '../../../src/apps/oi/carto/constants.js';
@@ -356,8 +372,8 @@ describe('close (oi_cartographie.js:313-316)', () => {
 });
 
 // ---------------------------------------------------------------------------
-// 3. _init (oi_cartographie.js:318-360) — smoke UNIQUEMENT (jamais
-//    `new maplibregl.Map`, cf. note de tête de fichier)
+// 3. _init (oi_cartographie.js:318-360) — smoke + branchement de l'ortho IGN
+//    (carte FACTICE : jamais de WebGL, cf. note de tête de fichier)
 // ---------------------------------------------------------------------------
 
 describe('_init (oi_cartographie.js:318-360) — smoke', () => {
@@ -366,6 +382,25 @@ describe('_init (oi_cartographie.js:318-360) — smoke', () => {
         expect(() => MapCoreMethods._init.call(fake)).not.toThrow();
         expect(fake.initialized).toBe(false);
         expect(fake.map).toBeNull();
+    });
+
+    // Retours terrain 2026-10-02 : hors couverture l'IGN rend du blanc opaque ; les
+    // tuiles d'ortho d'outre-mer sont donc détourées (`@shared/ign-ortho`), et la
+    // carte de l'OI doit être construite avec ces options comme celle de PC-Tac.
+    it('construit la carte avec le protocole `ignortho` : tuiles d\'ortho d\'outre-mer réécrites, métropole inchangée', () => {
+        document.body.innerHTML = '<div id="oi_carto_map"></div>';
+        mapOptions.length = 0;
+        addProtocolSpy.mockClear();
+        const fake = makeFakeThis({ _initOverlays: vi.fn() });
+        MapCoreMethods._init.call(fake);
+        expect(fake.initialized).toBe(true);
+        expect(addProtocolSpy).toHaveBeenCalledWith('ignortho', expect.any(Function));
+        expect(mapOptions).toHaveLength(1);
+        const transform = mapOptions[0]?.transformRequest as (url: string) => { url: string } | undefined;
+        const ortho = (z: number, x: number, y: number) => `https://data.geopf.fr/tms/1.0.0/HR.ORTHOIMAGERY.ORTHOPHOTOS/${z}/${x}/${y}.jpeg`;
+        // Pointe-à-Pitre (971) et Paris, à z14.
+        expect(transform(ortho(14, 5391, 7442))).toEqual({ url: ortho(14, 5391, 7442).replace('https://', 'ignortho://') });
+        expect(transform(ortho(14, 8296, 5635))).toBeUndefined();
     });
 });
 

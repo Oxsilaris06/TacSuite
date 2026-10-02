@@ -352,9 +352,10 @@ describe('constants.ts — RASTER_STYLE (planMap.js:43-113 + overlays IGN, métr
     });
 
     // PIÈGE des tuiles blanches (cf. commentaire `ign-ortho`) : hors couverture
-    // l'IGN rend un JPEG BLANC opaque (1651 o, observé aussi en mer et chez les
-    // voisins de l'outre-mer). Il est traité PAR TERRITOIRE comme en métropole :
-    // minzoom 11 et fondu 11→13, jamais d'ortho plein pot à bas zoom.
+    // l'IGN rend un JPEG BLANC opaque. Chaque territoire garde le minzoom 11 et le
+    // fondu 11→13 de la métropole (fusion Esri → IGN : jamais d'ortho plein pot à bas
+    // zoom) ; le blanc lui-même est rendu transparent à l'affichage, pour l'outre-mer
+    // (`@shared/ign-ortho`, testé dans ign-ortho.test.ts et branché dans map-core).
     it('ortho outre-mer : bounds du territoire, minzoom 11, maxzoom 19, fondu 11→13 comme la métropole', () => {
         const metro = RASTER_STYLE.sources['ign-ortho'] as { tiles: string[]; tileSize: number; maxzoom: number; attribution: string };
         const metroLayer = RASTER_STYLE.layers.find((l) => l.id === 'ign-ortho') as { paint?: unknown };

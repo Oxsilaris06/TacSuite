@@ -77,6 +77,7 @@ import { prefetchFranceTiles } from './tiles.js';
 import { scopedKey } from '@pctac/modes.js';
 import type { LidarLayerId, PlanMapInternal, PlanView } from './types.js';
 import { confirmDialog, toast } from '@shared/feedback.js';
+import { ignOrthoMapOptions } from '@shared/ign-ortho.js';
 import { ignLayerIds } from '@shared/ign-territoires.js';
 import { createMapOverlays, mountOverlayControls, type OverlayState } from '@shared/map-overlays.js';
 
@@ -107,7 +108,10 @@ export const MapCoreMethods = {
             zoom: savedView.zoom,
             pitch: savedView.pitch || 0,
             bearing: savedView.bearing || 0,
-            preserveDrawingBuffer: true // requis pour la capture screenshot
+            preserveDrawingBuffer: true, // requis pour la capture screenshot
+            // Ortho IGN d'outre-mer : le blanc « hors couverture » devient transparent
+            // (retours terrain 2026-10-02, cf. `@shared/ign-ortho`).
+            ...ignOrthoMapOptions(maplibregl)
         });
         // NavigationControl avec boussole + bouton pitch visualisé
         this.map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'top-left');

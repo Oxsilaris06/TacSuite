@@ -223,16 +223,21 @@ export const RASTER_STYLE: StyleSpecification = {
             attribution: 'Tiles © Esri'
         },
         // Ortho HD IGN 20 cm (BD ORTHO, Géoplateforme, SANS clé, schéma XYZ vérifié).
-        // PIÈGE : hors couverture (étranger/mer dans la grille) l'IGN renvoie une tuile
-        // JPEG BLANCHE OPAQUE (~1.6 Ko), pas un 404 → elle masquerait Esri. Comme on ne
-        // peut pas filtrer une tuile raster blanche, on n'affiche l'IGN qu'à partir du
-        // z11 (cf. raster-opacity) — là la vue est dominée par du sol FR, donc pas de
-        // blanc ; à plus bas zoom Esri reste seul (et le 20 cm ne se voit pas avant ~z13).
-        // `bounds` évite en plus de requêter l'IGN loin hors de France.
+        // PIÈGE : hors couverture (étranger/mer dans la grille) l'IGN renvoie un JPEG BLANC
+        // OPAQUE, pas un 404 : soit une tuile vide (1651 o), soit une tuile de bord mi-imagerie
+        // mi-blanc → il masquerait Esri. En métropole la couverture déborde en mer : on s'est
+        // contenté de n'afficher l'IGN qu'à partir du z11 (cf. raster-opacity) — là la vue est
+        // dominée par du sol FR, donc peu de blanc ; à plus bas zoom Esri reste seul (et le
+        // 20 cm ne se voit pas avant ~z13). `bounds` évite en plus de requêter l'IGN loin hors
+        // de France.
         // Retours terrain 2026-10-02 : une source par territoire (métropole `ign-ortho`,
-        // outre-mer `ign-ortho-971`…), même URL, même minzoom, même fondu. Le piège est
-        // le même outre-mer (sondé : la même tuile blanche de 1651 o, en mer et chez les
-        // voisins) et reste traité de la même façon.
+        // outre-mer `ign-ortho-971`…), même URL, même minzoom, même fondu. Outre-mer
+        // l'hypothèse « dominée par du sol » est FAUSSE : la couverture colle à la terre, donc
+        // à z13 22 à 55 % des tuiles d'un rectangle sont vides et jusqu'à 65 % sont des tuiles
+        // de bord. Le blanc y est rendu TRANSPARENT à l'affichage (protocole
+        // `ignortho`, cf. `@shared/ign-ortho`, branché dans `init()` de map-core.ts) ; minzoom
+        // 11 et fondu 11→13 ne servent plus qu'à la fusion Esri → IGN. La métropole n'est pas
+        // touchée : la neige alpine y est du blanc légitime.
         ...ignSources('ortho', 'ign-ortho', {
             tiles: ['https://data.geopf.fr/tms/1.0.0/HR.ORTHOIMAGERY.ORTHOPHOTOS/{z}/{x}/{y}.jpeg'],
             tileSize: 256,

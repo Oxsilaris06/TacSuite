@@ -99,6 +99,7 @@ import type { AddLayerObject, MapMouseEvent, MapTouchEvent, SkySpecification } f
 import { COORDS_NOT_READ, looksLikeCoordinates, parseCoordinateInput, parseDecimalCoords } from '@shared/coords.js';
 import { confirmDialog, toast } from '@shared/feedback.js';
 import { esc as escapeHtml } from '@shared/ui-platform.js';
+import { ignOrthoMapOptions } from '@shared/ign-ortho.js';
 import { ignLayerIds } from '@shared/ign-territoires.js';
 import { createMapOverlays, mountOverlayControls } from '@shared/map-overlays.js';
 import { Store } from '@oi/init.js';
@@ -185,6 +186,9 @@ export const MapCoreMethods = {
             pitch: savedView.pitch || 0,
             bearing: savedView.bearing || 0,
             preserveDrawingBuffer: true, // requis pour la future capture (Lot A3)
+            // Ortho IGN d'outre-mer : le blanc « hors couverture » devient transparent
+            // (retours terrain 2026-10-02, cf. `@shared/ign-ortho`) — parité PC-Tac.
+            ...ignOrthoMapOptions(maplibregl),
         });
         this.map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'top-left');
         this.map.addControl(new maplibregl.ScaleControl({ maxWidth: 120, unit: 'metric' }), 'bottom-right');
