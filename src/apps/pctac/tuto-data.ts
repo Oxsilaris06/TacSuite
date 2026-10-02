@@ -617,14 +617,15 @@ export function pctacTutoData(): TutoData {
       steps: [
         {
           title: "Mesurer distance et azimut",
-          body: "Active 'Mesurer distance / azimut' dans le dock puis pose des points sur la carte : chaque segment affiche sa distance et son azimut en trois lectures constantes — nord vrai, nord magnétique (déclinaison WMM calculée hors ligne) et millièmes OTAN — par exemple « 123° V · 121° M · 2187 ‰ ». Le total est préfixé par 'Σ'. La barre flottante propose 'Point' (pose sous réticule), 'Annuler dernier', 'Terminer' et 'Quitter'. Un double-clic termine aussi la mesure.",
+          body: "Active 'Mesurer distance / azimut' dans le dock puis pose des points sur la carte : chaque segment affiche sa distance et son azimut en trois lectures constantes — nord vrai, nord magnétique (déclinaison WMM calculée hors ligne) et millièmes OTAN — par exemple « 123° V · 121° M · 2187 ‰ ». Le total est préfixé par 'Σ'. La barre flottante propose 'Point' (pose sous réticule), 'Annuler dernier' (retire le dernier point de la ligne en cours), 'Valider la ligne' (fige la ligne : l'outil reste actif et le toucher suivant en démarre une nouvelle), 'Aimant' (accroche les points aux sommets des dessins et aux pions) et 'Quitter' (ferme l'outil). Un double-clic valide aussi la ligne. Sans ligne en cours, toucher un dessin affiche sa longueur (trait) ou son périmètre et sa surface (rectangle, cercle).",
           terms: [
             "Mesurer distance / azimut",
             "Point",
             "Annuler dernier",
-            "Terminer",
+            "Valider la ligne",
+            "Aimant",
             "Quitter",
-            "Mesure : touche la carte pour poser des points. Double-clic ou « Terminer » pour finir.",
+            "Mesure : touche la carte pour poser des points. « Valider la ligne » la fige.",
             "M indisponible"
           ],
           selector: "#plan_draw_dock",

@@ -155,6 +155,23 @@ describe('fumée — DOM/source absents (planMap.js:2846-3487)', () => {
         expect(() => ShapesGesturesMethods._shapePointerDown.call(fake, e)).not.toThrow();
     });
 
+    it('outil mesure actif : toucher un dessin ne démarre AUCUN geste (retours terrain 2026-10-02, décision 4)', () => {
+        const { fake } = makeFakeThis({ shapes: [makeShape({ id: 's1', type: 'line', coords: [[0, 0], [1, 1]] })] });
+        fake.drawTool = 'measure';
+        const start = vi.spyOn(fake, '_startShapeGesture');
+        const preventDefault = vi.fn();
+        const e = {
+            originalEvent: { preventDefault }, preventDefault, lngLat: { lng: 0, lat: 0 },
+            features: [{ properties: { shapeId: 's1' } }],
+        } as unknown as MapLayerMouseEvent;
+        ShapesGesturesMethods._shapePointerDown.call(fake, e);
+        expect(start).not.toHaveBeenCalled();
+        // Pas de preventDefault : la carte garde son déplacement natif pendant la mesure.
+        expect(preventDefault).not.toHaveBeenCalled();
+        expect(fake._gesture).toBeNull();
+        expect(fake._selectedShapeId).toBeNull();
+    });
+
     it('_startShapeGesture ne jette pas sans carte', () => {
         const { fake } = makeFakeThis({ withMap: false });
         expect(() => ShapesGesturesMethods._startShapeGesture.call(fake, 's1', { lng: 0, lat: 0 }, null)).not.toThrow();
