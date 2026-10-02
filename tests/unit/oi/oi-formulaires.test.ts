@@ -96,8 +96,37 @@ function stubCrossModuleWindow(): void {
     window.removeImage = vi.fn(async () => { /* stub */ });
 }
 
+/**
+ * Suit les `setTimeout` RÉELS armés pendant un test ; l'appel rendu les annule et
+ * remet le `setTimeout` d'origine. `vi.resetModules()` n'annule pas les minuteurs de
+ * l'instance de module abandonnée : le débounce de 500 ms de `syncDomToStore`
+ * (armé par `loadFormData` et `resetActivePage`) puis l'écriture différée de 250 ms
+ * de son Store se déclenchaient pendant un test ULTÉRIEUR. Au démarrage du (e) ils
+ * ré-écrivaient localStorage avec le DOM vierge, par-dessus la session importée
+ * (« expected '' to be '2026-08-01' ») : échec intermittent selon la durée des tests
+ * précédents, donc de la charge de la machine (3 passes isolées sur 10 en échec, load ≈ 30).
+ * Même rationale que le `afterEach` de tests/setup.ts, qui ne flushe que le Store courant.
+ */
+function trackTimers(): () => void {
+    const realSet = globalThis.setTimeout;
+    const realClear = globalThis.clearTimeout;
+    const armed = new Set<ReturnType<typeof setTimeout>>();
+    globalThis.setTimeout = ((...args: Parameters<typeof setTimeout>) => {
+        const id = realSet(...args);
+        armed.add(id);
+        return id;
+    }) as typeof setTimeout;
+    return () => {
+        globalThis.setTimeout = realSet;
+        armed.forEach((id) => realClear(id));
+    };
+}
+
 describe('oi-formulaires — persistance du formulaire OI', () => {
+    let stopTrackingTimers: () => void;
+
     beforeEach(() => {
+        stopTrackingTimers = trackTimers();
         setupDom();
         localStorage.clear();
         vi.resetModules();
@@ -107,6 +136,8 @@ describe('oi-formulaires — persistance du formulaire OI', () => {
         vi.restoreAllMocks();
         vi.unstubAllGlobals();
         vi.useRealTimers();
+        // APRÈS `useRealTimers` : il rend le `setTimeout` suiveur, que l'on remplace par l'original.
+        stopTrackingTimers();
     });
 
     describe('(a) syncDomToStore — identité débouncée / immédiate (formulaires.js:386-393)', () => {
