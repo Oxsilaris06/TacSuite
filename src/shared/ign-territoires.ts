@@ -95,6 +95,22 @@ export function ignTerritories(family: IgnFamily): IgnTerritory[] {
     return [IGN_METROPOLE, ...IGN_OUTRE_MER.filter((t) => servis.includes(t.code))];
 }
 
+/** Territoire (métropole comprise) dont le rectangle contient le point, ou `null` hors de tous. */
+export function ignTerritoryAt(lng: number, lat: number): IgnTerritory | null {
+    return [IGN_METROPOLE, ...IGN_OUTRE_MER].find(({ bounds: [w, s, e, n] }) => lng >= w && lng <= e && lat >= s && lat <= n) ?? null;
+}
+
+/**
+ * Libellé du territoire où la famille N'EST PAS servie au point donné ; `null` si elle l'est
+ * (ou si le point est hors de tout territoire : on ne sait rien de la zone). Dit pourquoi une
+ * couche activée n'affiche rien. Le LiDAR HD est déclaré servi en métropole même si sa
+ * couverture y est partielle (déploiement par blocs : cf. le tutoriel).
+ */
+export function ignUnservedAt(family: IgnFamily, lng: number, lat: number): string | null {
+    const t = ignTerritoryAt(lng, lat);
+    return t && !ignTerritories(family).includes(t) ? t.label : null;
+}
+
 /** Id de source/couche d'un territoire : l'id de base en métropole, `<base>-<code>` ailleurs. */
 export function ignLayerId(baseId: string, territory: IgnTerritory): string {
     return territory.code === IGN_METROPOLE.code ? baseId : `${baseId}-${territory.code}`;

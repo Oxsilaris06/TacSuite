@@ -22,6 +22,8 @@ import {
     ignLayers,
     ignSources,
     ignTerritories,
+    ignTerritoryAt,
+    ignUnservedAt,
 } from '@shared/ign-territoires.js';
 
 /** Ville de référence de chaque territoire (WGS84, lon/lat) — celles de la sonde. */
@@ -170,5 +172,51 @@ describe('ignSources / ignLayers — une source et une couche par territoire ser
         }
         expect(layers[0]!.layout).not.toBe(layers[1]!.layout);
         expect(layers[0]!.paint).not.toBe(layers[1]!.paint);
+    });
+});
+
+// Retours terrain 2026-10-02 : l'utilisateur qui active les courbes de niveau en Guyane ne
+// voyait rien, sans explication (la Géoplateforme ne les sert pas là). Les bascules des deux
+// cartes lisent cette aide pour le dire, d'après le centre de la carte (calcul local).
+describe('ignTerritoryAt / ignUnservedAt — où une famille de couches n\'est pas servie', () => {
+    it.each(Object.entries(VILLES))('%s : ignTerritoryAt trouve le territoire de %s', (code, [, lon, lat]) => {
+        expect(ignTerritoryAt(lon, lat)?.code).toBe(code);
+    });
+
+    it('la métropole et les points hors de tout territoire', () => {
+        expect(ignTerritoryAt(2.3522, 48.8566)).toBe(IGN_METROPOLE);
+        expect(ignTerritoryAt(8.7386, 41.9192)).toBe(IGN_METROPOLE); // Ajaccio
+        expect(ignTerritoryAt(-40, 30)).toBeNull(); // Atlantique
+        expect(ignTerritoryAt(165.4, -21.2)).toBeNull(); // Nouvelle-Calédonie : hors périmètre
+    });
+
+    it('courbes de niveau : non servies en Guyane et à Saint-Pierre-et-Miquelon, servies ailleurs', () => {
+        expect(ignUnservedAt('contours', -52.326, 4.9372)).toBe('Guyane');
+        expect(ignUnservedAt('contours', -56.1773, 46.7766)).toBe('Saint-Pierre-et-Miquelon');
+        expect(ignUnservedAt('contours', -61.5331, 16.2411)).toBeNull(); // Guadeloupe
+        expect(ignUnservedAt('contours', 2.3522, 48.8566)).toBeNull(); // métropole
+    });
+
+    it('LiDAR HD : servi en Guadeloupe et à La Réunion, absent des autres territoires d\'outre-mer', () => {
+        expect(ignUnservedAt('lidar', -61.5331, 16.2411)).toBeNull();
+        expect(ignUnservedAt('lidar', 55.4481, -20.8789)).toBeNull();
+        expect(ignUnservedAt('lidar', -61.0588, 14.6161)).toBe('Martinique');
+        expect(ignUnservedAt('lidar', 45.2278, -12.7806)).toBe('Mayotte');
+        expect(ignUnservedAt('lidar', -63.0824, 18.0679)).toBe('Saint-Martin');
+    });
+
+    it('en métropole la couverture du LiDAR HD est partielle par construction : jamais d\'avertissement', () => {
+        expect(ignUnservedAt('lidar', 5.8, 45.35)).toBeNull();
+    });
+
+    it('ortho et Plan IGN sont servis partout : jamais d\'avertissement', () => {
+        for (const [, lon, lat] of Object.values(VILLES)) {
+            expect(ignUnservedAt('ortho', lon, lat)).toBeNull();
+            expect(ignUnservedAt('planign', lon, lat)).toBeNull();
+        }
+    });
+
+    it('hors de tout territoire : pas d\'avertissement (on ne sait rien de la zone)', () => {
+        expect(ignUnservedAt('contours', -40, 30)).toBeNull();
     });
 });
