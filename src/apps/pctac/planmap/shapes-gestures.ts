@@ -223,7 +223,7 @@ export const ShapesGesturesMethods = {
     _shapeTargetAt(this: PlanMapInternal, point: PointLike): ShapeTargetHit | null {
         if (!this.map) return null;
         const target = pickShapeTarget(
-            this.map.queryRenderedFeatures(point, { layers: SHAPE_HIT_LAYERS }),
+            this.map.queryRenderedFeatures(point, { layers: [...SHAPE_HIT_LAYERS] }),
             this._selectedShapeId,
         );
         const shape = target && this._loadShapes().find(x => x.id === target.id);
