@@ -86,8 +86,9 @@ describe('constants.ts — OI_CARTO_RASTER_STYLE (oi_cartographie.js:23-48 + ove
 		}
 	});
 
-	// PIÈGE des tuiles blanches : traité PAR TERRITOIRE comme en métropole (minzoom
-	// 11 + fondu 11→13 — une ortho plein pot à bas zoom masquerait Esri en blanc).
+	// PIÈGE des tuiles blanches : chaque territoire garde le minzoom 11 et le fondu 11→13 de
+	// la métropole (fusion Esri → IGN) ; le blanc lui-même est rendu transparent à
+	// l'affichage pour l'outre-mer (`@shared/ign-ortho`, ign-ortho.test.ts, map-core).
 	it('ortho outre-mer : bounds du territoire, minzoom 11, maxzoom 19, fondu 11→13 comme la métropole', () => {
 		const metro = OI_CARTO_RASTER_STYLE.sources['ign-ortho'] as { tiles: string[]; tileSize: number; attribution: string };
 		const metroLayer = OI_CARTO_RASTER_STYLE.layers.find((l) => l.id === 'ign-ortho') as { paint?: unknown };

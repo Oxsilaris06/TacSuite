@@ -34,6 +34,13 @@
  *                        `bdtopo` de PC-Tac n'a pas de `bounds` : rien à décliner ici.
  * Si l'IGN étend un jour une famille, c'est `OUTRE_MER_SERVI` qui change — une ligne.
  *
+ * HORS COUVERTURE, L'ORTHO REND DU BLANC OPAQUE (200 + JPEG blanc, pas un 404), à
+ * l'intérieur même de ces rectangles : tuile vide de 1651 o, ou tuile de bord mi-imagerie
+ * mi-blanc. Resserrer les rectangles île par île économiserait des requêtes en pleine mer
+ * mais pas ce blanc, qui entoure chaque île (la couverture colle à la terre) : il est donc
+ * rendu transparent à l'affichage, dans `@shared/ign-ortho` (mesures et limites dans son
+ * en-tête).
+ *
  * Aucune position de l'utilisateur ne sort de l'appareil : le choix du territoire
  * est fait par MapLibre, localement, d'après le rectangle des tuiles à afficher.
  */
