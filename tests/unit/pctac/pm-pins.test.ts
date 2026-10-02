@@ -417,6 +417,24 @@ describe('_onMapClick (planMap.js:1156-1188)', () => {
         expect(pins[0]?.label).toBe('Poste');
         expect(fake.pendingFreePin).toBeNull();
     });
+
+    it('un clic qui pose un ping est marqué consommé (preventDefault) : la zone d\'arrière-plan tapée n\'est pas sélectionnée en plus (retours terrain 2026-10-02)', () => {
+        const entity = makeFakeThis({ pendingEntityPin: { kind: 'adv', id: 'adv-1' }, _hideHint: vi.fn() });
+        const e1 = { lngLat: { lng: 2.1, lat: 48.1 }, preventDefault: vi.fn() } as unknown as MapMouseEvent;
+        PinsMethods._onMapClick.call(entity, e1);
+        expect(e1.preventDefault).toHaveBeenCalledTimes(1);
+
+        const free = makeFakeThis({ pendingFreePin: { label: 'Poste', color: '#ef4444', kind: 'Adv', icon: 'flag' } });
+        const e2 = { lngLat: { lng: 2.1, lat: 48.1 }, preventDefault: vi.fn() } as unknown as MapMouseEvent;
+        PinsMethods._onMapClick.call(free, e2);
+        expect(e2.preventDefault).toHaveBeenCalledTimes(1);
+
+        // Aucun ping armé : le clic n'est PAS consommé, les autres écoutes restent libres d'agir.
+        const idle = makeFakeThis();
+        const e3 = { lngLat: { lng: 2.1, lat: 48.1 }, preventDefault: vi.fn() } as unknown as MapMouseEvent;
+        PinsMethods._onMapClick.call(idle, e3);
+        expect(e3.preventDefault).not.toHaveBeenCalled();
+    });
 });
 
 describe('_renderPins — réconciliation par ID + INVARIANT 2b (draggable, planMap.js:1494-1565)', () => {

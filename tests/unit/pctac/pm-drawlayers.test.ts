@@ -114,6 +114,8 @@ describe('_initDrawingLayers (planMap.js:1665-1827)', () => {
         expect(layerIds).toEqual([
             'buildings-3d',
             'plan-shapes-fill',
+            // Retours terrain 2026-10-02 : le contour des zones a sa couche, SOUS les traits.
+            'plan-shapes-zone-line',
             'plan-shapes-line-hit',
             'plan-shapes-line',
             'plan-shapes-text-hit',
@@ -130,9 +132,9 @@ describe('_initDrawingLayers (planMap.js:1665-1827)', () => {
 
         expect(() => DrawLayersMethods._initDrawingLayers.call(state)).not.toThrow();
         expect(errSpy).toHaveBeenCalledWith('[PlanMap] couche bâtiments 3D échec:', expect.any(Error));
-        // 7 tentatives d'addLayer au total (buildings-3d qui jette est comptée,
-        // + les 6 couches shapes/preview qui suivent, non interrompues).
-        expect(map.addLayer).toHaveBeenCalledTimes(7);
+        // 8 tentatives d'addLayer au total (buildings-3d qui jette est comptée,
+        // + les 7 couches shapes/preview qui suivent, non interrompues).
+        expect(map.addLayer).toHaveBeenCalledTimes(8);
         expect(map.addSource).toHaveBeenCalledTimes(2);
     });
 

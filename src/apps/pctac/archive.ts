@@ -36,7 +36,8 @@ import {
     scopeCarriesImages,
     type ApplyScopeReport,
 } from '@pctac/import-scope.js';
-import { GPX_INDEX_KEY, GRID_KEY, OVERLAYS_KEY, PINS_KEY } from '@pctac/planmap/constants.js';
+import { GPX_INDEX_KEY, GRID_KEY, OVERLAYS_KEY, PINS_KEY, SHAPES_KEY } from '@pctac/planmap/constants.js';
+import { isFillOpacity } from '@pctac/planmap/geo.js';
 import { safePinColor, safePinIcon } from '@pctac/planmap/pin-safe.js';
 import { recordTombstone } from '@pctac/tombstones.js';
 import { archiveSizeVerdict, zipEntrySizes } from '@shared/archive-limits.js';
@@ -212,7 +213,8 @@ export function findUnsafeId(dataJson: Record<string, unknown>): string | null {
  * des intervenants personnalisés sont normalisés (`#rrggbb`, sinon couleur par
  * défaut). Le rendu pose déjà la couleur par l'API DOM ; ici, on évite qu'une
  * valeur forgée vive dans le stockage et reparte dans un export. Les valeurs
- * qui ne sont pas un tableau JSON sont laissées à la liste blanche.
+ * qui ne sont pas un tableau JSON sont laissées à la liste blanche. Même
+ * frontière pour l'opacité de fond des zones du plan (`fillOpacity`, [0, 1]).
  */
 export function sanitizeImportColors(dataJson: Record<string, string>): Record<string, string> {
     const fallback = FREE_MODE_COLORS[0]?.hex ?? '';
@@ -259,6 +261,24 @@ export function sanitizeImportColors(dataJson: Record<string, string>): Record<s
                 if (changed) dataJson[PINS_KEY] = JSON.stringify(list);
             }
         } catch { /* liste illisible : la liste blanche et findUnsafeId font le reste */ }
+    }
+    // Retours terrain 2026-10-02 — zones du plan : l'opacité du fond (`fillOpacity`) est un
+    // nombre dans [0, 1]. Toute autre valeur (hors bornes, texte, null, objet) est RETIRÉE :
+    // la zone retombe sur 0.18 plutôt que de vivre dans le stockage et d'être réexportée.
+    const rawShapes = dataJson[SHAPES_KEY];
+    if (typeof rawShapes === 'string') {
+        try {
+            const list = JSON.parse(rawShapes) as unknown;
+            if (Array.isArray(list)) {
+                let changed = false;
+                for (const item of list) {
+                    if (!item || typeof item !== 'object') continue;
+                    const rec = item as Record<string, unknown>;
+                    if ('fillOpacity' in rec && !isFillOpacity(rec.fillOpacity)) { delete rec.fillOpacity; changed = true; }
+                }
+                if (changed) dataJson[SHAPES_KEY] = JSON.stringify(list);
+            }
+        } catch { /* liste illisible : rien à normaliser, la liste blanche reste la frontière */ }
     }
     return dataJson;
 }
