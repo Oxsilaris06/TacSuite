@@ -78,7 +78,7 @@ import { scopedKey } from '@pctac/modes.js';
 import type { LidarLayerId, PlanMapInternal, PlanView } from './types.js';
 import { confirmDialog, toast } from '@shared/feedback.js';
 import { ignOrthoMapOptions } from '@shared/ign-ortho.js';
-import { ignLayerIds } from '@shared/ign-territoires.js';
+import { ignLayerIds, ignUnservedAt } from '@shared/ign-territoires.js';
 import { createMapOverlays, mountOverlayControls, type OverlayState } from '@shared/map-overlays.js';
 
 export const MapCoreMethods = {
@@ -542,7 +542,10 @@ export const MapCoreMethods = {
         this._setLidarLayer(next);
         if (next) {
             const def = LIDAR_HD_LAYERS[next];
-            toast(def.label + ' — ' + def.hint, { kind: 'info' });
+            // Retours terrain 2026-10-02 : hors Guadeloupe et La Réunion, l'IGN ne sert pas le LiDAR HD.
+            const c = this.map.getCenter();
+            const absent = ignUnservedAt('lidar', c.lng, c.lat);
+            toast(def.label + ' — ' + def.hint + (absent ? ` (non servi par l'IGN : ${absent})` : ''), { kind: 'info' });
         } else {
             toast('Ombrage LiDAR HD masqué', { kind: 'info' });
         }
@@ -610,7 +613,10 @@ export const MapCoreMethods = {
         this.contoursOn = !this.contoursOn;
         this._applyTopoVisibility();
         try { localStorage.setItem(scopedKey(CONTOURS_KEY), this.contoursOn ? '1' : '0'); } catch { /* non bloquant */ }
-        toast(this.contoursOn ? 'Courbes de niveau affichées' : 'Courbes de niveau masquées', { kind: 'info' });
+        // Retours terrain 2026-10-02 : l'IGN ne sert pas les courbes en Guyane ni à Saint-Pierre-et-Miquelon.
+        const c = this.map.getCenter();
+        const absent = this.contoursOn ? ignUnservedAt('contours', c.lng, c.lat) : null;
+        toast(this.contoursOn ? 'Courbes de niveau affichées' + (absent ? ` (non servies par l'IGN : ${absent})` : '') : 'Courbes de niveau masquées', { kind: 'info' });
     },
 
     /* ----- CARROYAGE / MGRS / LIGNES ÉLECTRIQUES (`@shared/map-overlays`) -----

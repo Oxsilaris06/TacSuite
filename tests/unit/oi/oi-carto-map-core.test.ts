@@ -1581,6 +1581,48 @@ describe('Fond topo & courbes — _applyTopoVisibility / _togglePlanIgn / _toggl
         expect(fake.planIgnOn).toBe(true);
     });
 
+    // Retours terrain 2026-10-02 : la Géoplateforme ne sert pas les courbes en Guyane ni à
+    // Saint-Pierre-et-Miquelon ; sans mot, l'utilisateur active les courbes et ne voit rien.
+    describe('message « non servi ici » (centre de la carte, calcul local)', () => {
+        const cayenne = { getCenter: vi.fn(() => ({ lng: -52.326, lat: 4.9372 })) };
+        const pointeAPitre = { getCenter: vi.fn(() => ({ lng: -61.5331, lat: 16.2411 })) };
+
+        it('_toggleContours() en Guyane : le message dit que l\'IGN ne les sert pas là', () => {
+            toastSpy.mockClear();
+            MapCoreMethods._toggleContours.call(makeFakeThis({ map: makeFakeMap(cayenne) }));
+            expect(toastSpy).toHaveBeenCalledWith('Courbes de niveau affichées (non servies par l\'IGN : Guyane)', { kind: 'info' });
+        });
+
+        it('_toggleContours() en Guadeloupe (servi) ou en métropole : message inchangé', () => {
+            toastSpy.mockClear();
+            MapCoreMethods._toggleContours.call(makeFakeThis({ map: makeFakeMap(pointeAPitre) }));
+            MapCoreMethods._toggleContours.call(makeFakeThis({ map: makeFakeMap() }));
+            expect(toastSpy).toHaveBeenNthCalledWith(1, 'Courbes de niveau affichées', { kind: 'info' });
+            expect(toastSpy).toHaveBeenNthCalledWith(2, 'Courbes de niveau affichées', { kind: 'info' });
+        });
+
+        it('_toggleContours() qui MASQUE les courbes en Guyane : pas d\'avertissement', () => {
+            toastSpy.mockClear();
+            MapCoreMethods._toggleContours.call(makeFakeThis({ map: makeFakeMap(cayenne), contoursOn: true }));
+            expect(toastSpy).toHaveBeenCalledWith('Courbes de niveau masquées', { kind: 'info' });
+        });
+
+        it('_cycleLidarLayer() en Martinique : le message dit que l\'IGN ne sert pas le LiDAR HD là', () => {
+            toastSpy.mockClear();
+            const map = makeFakeMap({ getCenter: vi.fn(() => ({ lng: -61.0588, lat: 14.6161 })) });
+            MapCoreMethods._cycleLidarLayer.call(makeFakeThis({ map, _setLidarLayer: MapCoreMethods._setLidarLayer }));
+            expect(toastSpy).toHaveBeenCalledTimes(1);
+            expect(String(toastSpy.mock.calls[0]?.[0])).toMatch(/ \(non servi par l'IGN : Martinique\)$/);
+        });
+
+        it('_cycleLidarLayer() en Guadeloupe ou en métropole : message inchangé', () => {
+            toastSpy.mockClear();
+            MapCoreMethods._cycleLidarLayer.call(makeFakeThis({ map: makeFakeMap(pointeAPitre), _setLidarLayer: MapCoreMethods._setLidarLayer }));
+            MapCoreMethods._cycleLidarLayer.call(makeFakeThis({ map: makeFakeMap(), _setLidarLayer: MapCoreMethods._setLidarLayer }));
+            for (const call of toastSpy.mock.calls) expect(String(call[0])).not.toContain('non servi');
+        });
+    });
+
     it('les deux bascules sans carte ⇒ aucun changement d\'état', () => {
         const fake = makeFakeThis({ map: null });
 
