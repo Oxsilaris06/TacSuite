@@ -90,7 +90,7 @@ export function ignTerritories(family: IgnFamily): IgnTerritory[] {
 
 /** Id de source/couche d'un territoire : l'id de base en métropole, `<base>-<code>` ailleurs. */
 export function ignLayerId(baseId: string, territory: IgnTerritory): string {
-    return territory === IGN_METROPOLE ? baseId : `${baseId}-${territory.code}`;
+    return territory.code === IGN_METROPOLE.code ? baseId : `${baseId}-${territory.code}`;
 }
 
 /** Tous les ids (métropole + territoires servis) d'une famille — la cible de toute bascule. */
@@ -105,7 +105,7 @@ export type IgnSourceSpec = Omit<RasterSourceSpecification, 'type' | 'bounds' | 
 export function ignSources(family: IgnFamily, baseId: string, spec: IgnSourceSpec): Record<string, RasterSourceSpecification> {
     const out: Record<string, RasterSourceSpecification> = {};
     for (const t of ignTerritories(family)) {
-        out[ignLayerId(baseId, t)] = { type: 'raster', ...spec, tiles: [...spec.tiles], bounds: t.bounds };
+        out[ignLayerId(baseId, t)] = { type: 'raster', ...spec, tiles: [...spec.tiles], bounds: [...t.bounds] };
     }
     return out;
 }

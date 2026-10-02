@@ -81,7 +81,7 @@ export const ENTITY_COLORS: Record<PlanEntityKind, string> = {
  *  Saint-Martin, Saint-Barthélemy) a ses propres rectangles et ses propres sources
  *  (`-971`…), générés par `@shared/ign-territoires` : MapLibre n'accepte qu'un
  *  rectangle par source. Cette emprise-ci reste celle des ids de base. */
-export const FRANCE_TILE_BOUNDS: [number, number, number, number] = IGN_METROPOLE.bounds;
+export const FRANCE_TILE_BOUNDS: [number, number, number, number] = [...IGN_METROPOLE.bounds];
 
 /** Zoom max de la pyramide WMTS des ombrages LiDAR HD (grille PM).
  *  z18 ≈ 0,6 m/px, cohérent avec un produit à 50 cm. Au-delà MapLibre
