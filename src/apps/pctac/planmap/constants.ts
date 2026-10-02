@@ -41,7 +41,9 @@ export const OVERLAYS_KEY = 'pcTacPlanOverlays';
 // terrain 2026-10-02 : UNE requête sur toutes ces couches, puis priorité aux objets
 // (`pickShapeTarget`) — et non plus un écouteur délégué par couche, où le fond de
 // zone, enregistré en premier, passait devant les traits.
-export const SHAPE_HIT_LAYERS: string[] = ['plan-shapes-fill', 'plan-shapes-line-hit', 'plan-shapes-text-hit'];
+// `readonly` : jamais muté par erreur ; MapLibre veut un `string[]` mutable, d'où `[...SHAPE_HIT_LAYERS]`
+// aux appels de `queryRenderedFeatures`.
+export const SHAPE_HIT_LAYERS: readonly string[] = ['plan-shapes-fill', 'plan-shapes-line-hit', 'plan-shapes-text-hit'];
 
 // Code couleur — strictement aligné sur la légende affichée
 // (--danger-red, --civil-yellow, --inter-blue, --ao-green dans pctac2.html)

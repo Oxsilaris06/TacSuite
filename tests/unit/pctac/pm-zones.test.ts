@@ -540,6 +540,64 @@ describe('appui long — une zone ne bloque pas la pose d’un ping', () => {
     });
 });
 
+describe('curseur au survol — « grab » seulement quand le glisser déplace la forme', () => {
+    /** Survol de la couche `layerId` (fond de zone par défaut) ; le canevas factice rend le curseur lisible. */
+    function hover(opts: { shapes: PlanShape[]; selected?: string | null; hits: unknown[]; layerId?: string; drawTool?: 'line' }) {
+        const { fake, map } = makeLayersThis({ shapes: opts.shapes, selected: opts.selected ?? null });
+        const canvas = { style: { cursor: '' } };
+        map.getCanvas.mockReturnValue(canvas);
+        map.queryRenderedFeatures.mockReturnValue(opts.hits);
+        if (opts.drawTool) fake.drawTool = opts.drawTool;
+        fake._initDrawingLayers();
+        const layerId = opts.layerId ?? 'plan-shapes-fill';
+        const call = map.on.mock.calls.find((c) => c[0] === 'mouseenter' && c[1] === layerId);
+        if (!call) throw new Error(`aucun mouseenter posé sur ${layerId}`);
+        (call[2] as (e: unknown) => void)({ point: { x: 40, y: 50 } });
+        return { map, canvas, leave: map.on.mock.calls.find((c) => c[0] === 'mouseleave' && c[1] === layerId)?.[2] as () => void };
+    }
+
+    it('zone NON sélectionnée : le glisser y panote la carte, donc pas de « grab » (le clic la sélectionne : « pointer »)', () => {
+        const { canvas } = hover({ shapes: [BIG], hits: [zoneF('big', 1_000)] });
+        expect(canvas.style.cursor).toBe('pointer');
+    });
+
+    it('zone SÉLECTIONNÉE : « grab », le glisser la déplace', () => {
+        const { canvas } = hover({ shapes: [BIG], selected: 'big', hits: [zoneF('big', 1_000)] });
+        expect(canvas.style.cursor).toBe('grab');
+    });
+
+    it('zone sélectionnée mais FIGÉE : rien à déplacer, « pointer »', () => {
+        const { canvas } = hover({ shapes: [{ ...BIG, locked: true }], selected: 'big', hits: [zoneF('big', 1_000)] });
+        expect(canvas.style.cursor).toBe('pointer');
+    });
+
+    it('un trait sous la zone : « grab » (l’objet prime sur la zone, comme au toucher)', () => {
+        const { canvas } = hover({ shapes: [BIG, LINE], hits: [zoneF('big', 1_000), lineF('l1')] });
+        expect(canvas.style.cursor).toBe('grab');
+    });
+
+    it('survol d’un trait (sa zone de détection) : « grab » comme avant', () => {
+        const { canvas } = hover({ shapes: [LINE], hits: [lineF('l1')], layerId: 'plan-shapes-line-hit' });
+        expect(canvas.style.cursor).toBe('grab');
+    });
+
+    it('forme absente du stockage (supprimée dans un autre onglet) : « grab » comme avant, rien de plus fin à dire', () => {
+        const { canvas } = hover({ shapes: [], hits: [zoneF('gone', 1_000)] });
+        expect(canvas.style.cursor).toBe('grab');
+    });
+
+    it('outil de dessin actif : le curseur de l’outil n’est pas touché', () => {
+        const { canvas } = hover({ shapes: [BIG], hits: [zoneF('big', 1_000)], drawTool: 'line' });
+        expect(canvas.style.cursor).toBe('');
+    });
+
+    it('en quittant la forme, le curseur est rendu à la carte', () => {
+        const { canvas, leave } = hover({ shapes: [BIG], hits: [zoneF('big', 1_000)] });
+        leave();
+        expect(canvas.style.cursor).toBe('');
+    });
+});
+
 // ============================================================
 // 4. Couches : zones dessous, opacité par zone
 // ============================================================

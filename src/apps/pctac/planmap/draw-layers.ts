@@ -210,9 +210,14 @@ export const DrawLayersMethods = {
         map.on('mousedown', onShapeDown);
         map.on('touchstart', onShapeDown);
         SHAPE_HIT_LAYERS.forEach(layerId => {
-            // Curseur indicatif au survol
-            map.on('mouseenter', layerId, () => {
-                if (!this.drawTool && !this.moveState && !this._gesture) map.getCanvas().style.cursor = 'grab';
+            // Curseur indicatif au survol : « grab » = le glisser déplace la forme. Une zone
+            // d'arrière-plan qui ne saisit pas le geste (non sélectionnée, ou figée) ne le promet
+            // pas : le glisser y panote la carte, seul le clic agit (« pointer ») — retours
+            // terrain 2026-10-02.
+            map.on('mouseenter', layerId, (e) => {
+                if (this.drawTool || this.moveState || this._gesture) return;
+                const hit = this._shapeTargetAt(e.point);
+                map.getCanvas().style.cursor = hit && !hit.grab ? 'pointer' : 'grab';
             });
             map.on('mouseleave', layerId, () => {
                 if (!this.drawTool && !this.moveState && !this._gesture) map.getCanvas().style.cursor = '';
@@ -242,7 +247,7 @@ export const DrawLayersMethods = {
                 [e.point.x - 12, e.point.y - 12],
                 [e.point.x + 12, e.point.y + 12],
             ];
-            const hits = map.queryRenderedFeatures(bbox, { layers: SHAPE_HIT_LAYERS });
+            const hits = map.queryRenderedFeatures(bbox, { layers: [...SHAPE_HIT_LAYERS] });
             if (hits.length) {
                 // Zone d'arrière-plan tapée SANS avoir saisi le geste (non sélectionnée, ou figée) :
                 // le tap la sélectionne, le double tap ouvre sa roue (mêmes règles que le geste
@@ -460,7 +465,7 @@ export const DrawLayersMethods = {
             lp = null;
         };
         const isOnFeature = (point: PointLike) => {
-            const hits = map.queryRenderedFeatures(point, { layers: SHAPE_HIT_LAYERS });
+            const hits = map.queryRenderedFeatures(point, { layers: [...SHAPE_HIT_LAYERS] });
             // Une zone (arrière-plan) ne bloque pas la pose d'un ping ; si elle a saisi le geste,
             // `_gesture` le dit déjà (retours terrain 2026-10-02). Trait, texte, mesure : bloquent.
             return hits.some(f => !(f.properties && f.properties.zone === true));
