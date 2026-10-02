@@ -21,16 +21,20 @@ import {
     circleDiameter,
     circlePolygon,
     coordAt,
+    formatArea,
     formatBearing,
     formatDistance,
     geoEdgeNorth,
     haversineMeters,
     measureTotalMeters,
     parseGps,
+    polygonAreaM2,
     rectPolygon,
     shapeAnchor,
     shapeCentroid,
     shapeCoords,
+    shapeMeasureText,
+    snapCandidates,
     trueBearing,
 } from '../../../src/apps/pctac/planmap/geo.js';
 import {
@@ -337,6 +341,131 @@ describe('geo.ts — GeoMethods (délégation one-liner, sans this, planMap.js �
         expect(GeoMethods._shapeAnchor(s)).toEqual(shapeAnchor(s));
         expect(GeoMethods._circleDiameter(s)).toBe(circleDiameter(s));
         expect(GeoMethods._measureTotalMeters([[0, 0], [0, 1]])).toBe(measureTotalMeters([[0, 0], [0, 1]]));
+    });
+});
+
+describe('geo.ts — formatArea / polygonAreaM2 (déplacés de pdf-export, retours terrain 2026-10-02)', () => {
+    it('formatArea : vide hors domaine, puis m², ha, km² (point décimal de l\'écran, comme formatDistance)', () => {
+        for (const bad of [0, -5, Number.NaN, Infinity]) expect(formatArea(bad), String(bad)).toBe('');
+        expect(formatArea(950)).toBe('950 m²');
+        expect(formatArea(7854)).toBe('7 854 m²');
+        expect(formatArea(9999.4)).toBe('9 999 m²');
+        expect(formatArea(10_000)).toBe('1.00 ha');
+        expect(formatArea(25_000)).toBe('2.50 ha');
+        expect(formatArea(2_500_000)).toBe('2.50 km²');
+    });
+
+    it('polygonAreaM2 : moins de 3 sommets → 0', () => {
+        expect(polygonAreaM2([])).toBe(0);
+        expect(polygonAreaM2([[0, 0], [1, 1]])).toBe(0);
+    });
+
+    it('polygonAreaM2 : rectangle de 50 m × 80 m ≈ 4000 m², quel que soit le sens de parcours', () => {
+        const mPerDeg = 6371000 * Math.PI / 180;
+        const ring = rectPolygon([0, 0], [50 / mPerDeg, 80 / mPerDeg]);
+        expect(polygonAreaM2(ring)).toBeCloseTo(4000, 1);
+        expect(polygonAreaM2(ring.slice().reverse())).toBeCloseTo(4000, 1);
+    });
+});
+
+describe('geo.ts — snapCandidates (aimant de la mesure, retours terrain 2026-10-02)', () => {
+    it('traits, rectangles et mesures posées : leurs sommets ; cercles et anneaux : le centre ; pions ; textes : rien', () => {
+        const shapes: PlanShape[] = [
+            { id: 'a', type: 'line', coords: [[1, 2], [3, 4]] },
+            { id: 'b', type: 'rectangle', coords: [[0, 0], [1, 0], [1, 1], [0, 1], [0, 0]] },
+            { id: 'c', type: 'circle', center: [5, 5], edge: [6, 5], coords: [[6, 5], [5, 6]] },
+            { id: 'd', type: 'measure', coords: [[7, 7], [8, 8]] },
+            { id: 'e', type: 'measure-rings', center: [9, 9], rings: [{ radiusM: 50, coords: [[9.1, 9]] }] },
+            { id: 'f', type: 'text', coords: [[10, 10]] },
+        ];
+        expect(snapCandidates(shapes, [{ lng: 11, lat: 12 }])).toEqual([
+            [1, 2], [3, 4],
+            [0, 0], [1, 0], [1, 1], [0, 1], [0, 0],
+            [5, 5],
+            [7, 7], [8, 8],
+            [9, 9],
+            [11, 12],
+        ]);
+    });
+
+    it('aucune donnée : liste vide', () => {
+        expect(snapCandidates([], [])).toEqual([]);
+    });
+
+    it('tracé à main levée (plusieurs points) : seules ses DEUX extrémités accrochent, jamais les points intermédiaires', () => {
+        // L'outil Trait échantillonne un point tous les 4 px d'écran (draw-tools.ts) : si chacun
+        // accrochait, le moindre toucher sur le trait s'accrocherait et sa longueur ne se lirait jamais.
+        const freehand: PlanShape = { id: 'f', type: 'line', coords: [[0, 0], [0.1, 0], [0.2, 0.1], [0.3, 0.1], [0.4, 0.2]] };
+        expect(snapCandidates([freehand], [])).toEqual([[0, 0], [0.4, 0.2]]);
+    });
+
+    it('trait droit (2 points) : les deux points accrochent ; trait à 1 point : un seul candidat, sans doublon', () => {
+        expect(snapCandidates([{ id: 's', type: 'line', coords: [[1, 1], [2, 2]] }], [])).toEqual([[1, 1], [2, 2]]);
+        expect(snapCandidates([{ id: 'p', type: 'line', coords: [[3, 3]] }], [])).toEqual([[3, 3]]);
+        expect(snapCandidates([{ id: 'e', type: 'line', coords: [] }, { id: 'n', type: 'line' }], [])).toEqual([]);
+    });
+
+    it('mesure posée : TOUS ses sommets accrochent (posés à la main, donc voulus), contrairement au tracé à main levée', () => {
+        const measure: PlanShape = { id: 'm', type: 'measure', coords: [[0, 0], [1, 0], [1, 1], [2, 1]] };
+        expect(snapCandidates([measure], [])).toEqual([[0, 0], [1, 0], [1, 1], [2, 1]]);
+    });
+
+    it('données forgées (archive) : tout ce qui n\'est pas un couple de nombres finis à latitude valide est ignoré', () => {
+        const forged = [
+            { id: 'x', type: 'measure', coords: [null, [Number.NaN, 1], 'x', [1, 2], [1], [3, 200], [4, -91], [5, 90], [6, -90]] },
+            { id: 'y', type: 'circle', center: ['a', 'b'] },
+            { id: 'z', type: 'rectangle' },
+        ] as unknown as PlanShape[];
+        const pins = [{ lng: Number.NaN, lat: 1 }, { lng: 'a', lat: 2 }, { lng: 7, lat: 95 }] as unknown as { lng: number; lat: number }[];
+        // `map.project` jette sur une latitude hors de [-90 ; 90] : ces points ne doivent jamais lui parvenir.
+        expect(snapCandidates(forged, pins)).toEqual([[1, 2], [5, 90], [6, -90]]);
+    });
+
+    it('données forgées sur un trait : une extrémité invalide est écartée, l\'autre garde son accroche', () => {
+        const forged = [
+            { id: 'a', type: 'line', coords: [[1, 1], 'x', [2, 2], [3, 200]] },
+            { id: 'b', type: 'line', coords: [null, [4, 4], [5, 5], [Number.NaN, 0]] },
+        ] as unknown as PlanShape[];
+        expect(snapCandidates(forged, [])).toEqual([[1, 1]]);
+    });
+});
+
+describe('geo.ts — shapeMeasureText (lecture d\'un dessin touché, retours terrain 2026-10-02)', () => {
+    const mPerDeg = 6371000 * Math.PI / 180;
+
+    it('trait : longueur du tracé', () => {
+        const line: PlanShape = { id: 'l', type: 'line', coords: [[0, 0], [0.01, 0]] };
+        expect(shapeMeasureText(line)).toBe('Longueur : 1.11 km');
+    });
+
+    it('trait à main levée : somme de tous les tronçons', () => {
+        const line: PlanShape = { id: 'l', type: 'line', coords: [[0, 0], [30 / mPerDeg, 0], [30 / mPerDeg, 40 / mPerDeg]] };
+        expect(shapeMeasureText(line)).toBe('Longueur : 70 m');
+    });
+
+    it('trait de longueur nulle : « 0 m », jamais une valeur vide', () => {
+        expect(shapeMeasureText({ id: 'l', type: 'line', coords: [[1, 1], [1, 1]] })).toBe('Longueur : 0 m');
+    });
+
+    it('rectangle de 50 m × 80 m : périmètre 260 m, surface 4 000 m²', () => {
+        const rect: PlanShape = { id: 'r', type: 'rectangle', coords: rectPolygon([0, 0], [50 / mPerDeg, 80 / mPerDeg]) };
+        expect(shapeMeasureText(rect)).toBe('Périmètre : 260 m · Surface : 4 000 m²');
+    });
+
+    it('cercle de 100 m de diamètre : périmètre 314 m (π d), surface 7 854 m² (π r²)', () => {
+        const center: LngLatTuple = [2, 48];
+        const circle: PlanShape = { id: 'c', type: 'circle', center, edge: geoEdgeNorth(center, 50) };
+        expect(shapeMeasureText(circle)).toBe('Périmètre : 314 m · Surface : 7 854 m²');
+    });
+
+    it('cercle sans rayon exploitable : « 0 m » et « 0 m² », jamais une valeur vide', () => {
+        expect(shapeMeasureText({ id: 'c', type: 'circle' })).toBe('Périmètre : 0 m · Surface : 0 m²');
+    });
+
+    it('texte, mesure posée, anneaux : rien à lire (chaîne vide)', () => {
+        expect(shapeMeasureText({ id: 't', type: 'text', coords: [[1, 1]] })).toBe('');
+        expect(shapeMeasureText({ id: 'm', type: 'measure', coords: [[0, 0], [1, 1]], totalM: 5 })).toBe('');
+        expect(shapeMeasureText({ id: 'g', type: 'measure-rings', center: [1, 1] })).toBe('');
     });
 });
 

@@ -1901,8 +1901,8 @@ test('thème clair : le champ actif reste lisible (fond clair au focus)', async 
 });
 
 // ============================================================================
-// Téléphone : la barre de la mesure (Point, Annuler dernier, Terminer,
-// Quitter) tient dans la carte ; centrée sans retour à la ligne, elle
+// Téléphone : la barre de la mesure (Point, Annuler dernier, Valider la ligne,
+// Aimant, Quitter) tient dans la carte ; centrée sans retour à la ligne, elle
 // débordait des deux côtés (« Point » et « Quitter » coupés).
 // ============================================================================
 test('mesure sur téléphone : tous les boutons de la barre restent dans l’écran', async ({ page }) => {

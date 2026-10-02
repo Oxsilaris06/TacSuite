@@ -8,6 +8,10 @@
  * (délégation one-liner, sans `this` : ces méthodes n'en ont pas besoin) et
  * les deux helpers `shapeCoords`/`coordAt` imposés par §6.3.
  *
+ * Retours terrain 2026-10-02 (mesure) : `formatArea`/`polygonAreaM2` (déplacés
+ * de pdf-export.ts, qui les gardait en privé), `snapCandidates` et
+ * `shapeMeasureText`. Fonctions pures hors table §4.2 : pas de `GeoMethods`.
+ *
  * Source : `GStart-main/modules/pctac/planMap.js`
  * (lecture seule).
  */
@@ -109,6 +113,33 @@ export function formatDistance(m: number): string {
     return `${(m / 1000).toFixed(1)} km`;
 }
 
+/**
+ * Surface lisible : m² jusqu'à 1 ha, puis ha, puis km². Point décimal de
+ * l'écran, comme `formatDistance` ; le PDF la met à la française (pdf-export.ts).
+ */
+export function formatArea(m2: number): string {
+    if (!isFinite(m2) || m2 <= 0) return '';
+    if (m2 < 10_000) return `${String(Math.round(m2)).replace(/\B(?=(\d{3})+(?!\d))/g, ' ')} m²`;
+    return m2 < 1_000_000 ? `${(m2 / 10_000).toFixed(2)} ha` : `${(m2 / 1_000_000).toFixed(2)} km²`;
+}
+
+/**
+ * Surface d'un polygone [lng, lat] en m², projection locale équirectangulaire
+ * (sphère de `haversineMeters`). ponytail: exacte à l'échelle d'un plan
+ * tactique ; au-delà de quelques kilomètres, passer à une aire géodésique.
+ */
+export function polygonAreaM2(coords: readonly LngLatTuple[]): number {
+    if (coords.length < 3) return 0;
+    const rad = Math.PI / 180;
+    const k = Math.cos((coords.reduce((s, c) => s + c[1], 0) / coords.length) * rad);
+    let twice = 0;
+    coords.forEach(([x1, y1], i) => {
+        const [x2, y2] = coords[(i + 1) % coords.length] ?? [x1, y1];
+        twice += x1 * k * y2 - x2 * k * y1;
+    });
+    return (Math.abs(twice) / 2) * (6371000 * rad) ** 2;
+}
+
 // planMap.js:2731-2735 (méthode _circleDiameter)
 // ⚠ `!c || !e` est de la logique VIVANTE de l'original (pas une garde de
 // corruption) : accès indexés bruts `coords[0]`/`coords[idx]` (typés
@@ -120,6 +151,60 @@ export function circleDiameter(s: PlanShape): number {
     const e = s.edge || coords[Math.floor(coords.length / 4)];
     if (!c || !e) return 0;
     return haversineMeters(c, e) * 2;
+}
+
+/**
+ * Points d'accroche de l'aimant de la mesure (retours terrain 2026-10-02) :
+ * les DEUX EXTRÉMITÉS des traits (celles de leurs poignées), tous les sommets
+ * des rectangles et des mesures posées, le centre des cercles et des anneaux
+ * d'engagement, puis les pions. Les textes n'en offrent pas. Donnée persistée,
+ * donc possiblement forgée par une archive : tout ce qui n'est pas un couple
+ * de nombres finis, latitude comprise entre -90 et 90, est écarté
+ * (`map.project` jette sur une latitude hors bornes).
+ */
+export function snapCandidates(shapes: readonly PlanShape[], pins: readonly { lng: number; lat: number }[]): LngLatTuple[] {
+    const out: LngLatTuple[] = [];
+    const add = (c: unknown): void => {
+        if (!Array.isArray(c)) return;
+        const [lng, lat] = c as unknown[];
+        if (typeof lng === 'number' && typeof lat === 'number' && Number.isFinite(lng) && Number.isFinite(lat) && Math.abs(lat) <= 90) out.push([lng, lat]);
+    };
+    for (const s of shapes) {
+        if (s.type === 'line') {
+            // L'outil Trait échantillonne un point tous les 4 px d'écran (draw-tools.ts) : si chacun
+            // accrochait (18 px), le moindre toucher sur le trait s'y accrocherait et sa longueur ne
+            // se lirait jamais. Seules les extrémités accrochent ; un trait droit n'en a que deux.
+            const pts = Array.isArray(s.coords) ? s.coords : [];
+            add(pts[0]);
+            if (pts.length > 1) add(pts[pts.length - 1]);
+        } else if (s.type === 'rectangle' || s.type === 'measure') {
+            for (const c of Array.isArray(s.coords) ? s.coords : []) add(c);
+        } else if (s.type === 'circle' || s.type === 'measure-rings') {
+            add(s.center);
+        }
+    }
+    for (const p of pins) add([p.lng, p.lat]);
+    return out;
+}
+
+/**
+ * Lecture d'un dessin touché pendant la mesure (retours terrain 2026-10-02) :
+ * longueur d'un trait, périmètre et surface d'un rectangle ou d'un cercle ;
+ * chaîne vide pour le reste (texte, mesure posée, anneaux : rien à lire).
+ */
+export function shapeMeasureText(s: PlanShape): string {
+    const dist = (m: number): string => formatDistance(m) || '0 m';
+    const area = (m2: number): string => formatArea(m2) || '0 m²';
+    if (s.type === 'line') return `Longueur : ${dist(measureTotalMeters(shapeCoords(s)))}`;
+    if (s.type === 'rectangle') {
+        const ring = shapeCoords(s);
+        return `Périmètre : ${dist(measureTotalMeters(ring))} · Surface : ${area(polygonAreaM2(ring))}`;
+    }
+    if (s.type === 'circle') {
+        const d = circleDiameter(s);
+        return `Périmètre : ${dist(Math.PI * d)} · Surface : ${area(Math.PI * (d / 2) ** 2)}`;
+    }
+    return '';
 }
 
 // planMap.js:3067-3077 (méthode _shapeCentroid)

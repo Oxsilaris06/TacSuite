@@ -248,6 +248,60 @@ describe('_renderShapeLocks (planMap.js:3088-3120) — réconciliation par id', 
 });
 
 // ============================================================
+// _renderShapeLocks — mesure en cours (retours terrain 2026-10-02, décision 4) :
+// les dessins ne captent plus le toucher, leur cadenas non plus.
+// ============================================================
+describe('_renderShapeLocks — pendant la mesure (retours terrain 2026-10-02, décision 4)', () => {
+    const locked = (): PlanShape => makeShape({ id: 's1', type: 'circle', locked: true, center: [2, 48], edge: [2, 48.01] });
+    /** Rappel de bascule transmis à `_makeLockBadge` pour la forme `s1` (ce que déclenche un clic sur le cadenas). */
+    const onToggleOf = (mocks: FakeMocks): (() => void) => {
+        const cb = mocks.makeLockBadge.mock.calls[0]?.[1];
+        if (typeof cb !== 'function') throw new Error('rappel du cadenas absent');
+        return cb as () => void;
+    };
+
+    it('un clic sur le cadenas pendant la mesure ne verrouille ni ne déverrouille rien (donnée persistée intacte)', () => {
+        const { fake, mocks, shapes } = makeFakeThis({ shapes: [locked()] });
+        fake.drawTool = 'measure';
+        fake._renderShapeLocks();
+        onToggleOf(mocks)();
+        expect(shapes()[0]?.locked).toBe(true);
+        expect(mocks.saveShapes).not.toHaveBeenCalled();
+        expect(mocks.pushHistory).not.toHaveBeenCalled();
+    });
+
+    it('hors mesure, le même clic bascule le verrou comme avant (garde non régressée)', () => {
+        const { fake, mocks, shapes } = makeFakeThis({ shapes: [locked()] });
+        fake._renderShapeLocks();
+        onToggleOf(mocks)();
+        expect(shapes()[0]?.locked).toBe(false);
+        expect(mocks.saveShapes).toHaveBeenCalledTimes(1);
+    });
+
+    it('le cadenas laisse passer le toucher à la carte tant que la mesure est ouverte, puis le reprend à sa fermeture', () => {
+        const { fake } = makeFakeThis({ shapes: [locked()] });
+        fake._renderShapeLocks();
+        const el = fake._shapeLockMarkers?.get('s1')?.el;
+        expect(el).toBeDefined();
+        expect(el?.style.pointerEvents).toBe('auto');
+
+        fake._measureState = { vertices: [], cursor: null, reticle: false };
+        fake._renderShapeLocks();
+        expect(el?.style.pointerEvents).toBe('none');
+
+        // Un cadenas créé PENDANT la mesure (relecture distante, ligne validée) naît inerte.
+        fake._loadShapes = (): PlanShape[] => [locked(), makeShape({ id: 's2', type: 'circle', locked: true, center: [3, 48], edge: [3, 48.01] })];
+        fake._renderShapeLocks();
+        expect(fake._shapeLockMarkers?.get('s2')?.el.style.pointerEvents).toBe('none');
+
+        fake._measureState = null;
+        fake._renderShapeLocks();
+        expect(el?.style.pointerEvents).toBe('auto');
+        expect(fake._shapeLockMarkers?.get('s2')?.el.style.pointerEvents).toBe('auto');
+    });
+});
+
+// ============================================================
 // _toggleShapeLock — invariant §5.4 : défaut reopenWheel = true
 // ============================================================
 describe('_toggleShapeLock (planMap.js:4319-4334) — défaut reopenWheel', () => {
