@@ -177,6 +177,73 @@ describe('importFile — liste blanche et récapitulatif', () => {
     });
 });
 
+describe('plan — opacité de remplissage des zones (retours terrain 2026-10-02)', () => {
+    const SHAPES_KEY = 'pcTacPlanShapes';
+    const readShapes = (): Record<string, unknown>[] => JSON.parse(localStorage.getItem(SHAPES_KEY) ?? '[]') as Record<string, unknown>[];
+
+    it('import : une opacité valide (0..1, bornes comprises) est conservée, le reste de la forme intact', async () => {
+        const shapes = [
+            { id: 'z0', type: 'rectangle', color: '#ef4444', coords: [[0, 0], [1, 1]], fillOpacity: 0 },
+            { id: 'z1', type: 'circle', fillOpacity: 0.45, strokeWidth: 5, locked: true },
+            { id: 'z2', type: 'rectangle', fillOpacity: 1 },
+            { id: 'z3', type: 'rectangle' },
+        ];
+        const file = await buildZip({ appName: 'PC TAC', version: 1 }, { [SHAPES_KEY]: JSON.stringify(shapes) });
+        await expect(Archive.importFile(file)).resolves.toMatchObject({ ok: true });
+        expect(readShapes()).toEqual(shapes);
+    });
+
+    it('import : une opacité forgée (hors bornes, texte, null, objet, tableau) est retirée → la zone retombe sur 0.18', async () => {
+        const shapes = [
+            { id: 'a', type: 'rectangle', fillOpacity: 1.5 },
+            { id: 'b', type: 'rectangle', fillOpacity: -0.2 },
+            { id: 'c', type: 'circle', fillOpacity: '0.5' },
+            { id: 'd', type: 'circle', fillOpacity: null },
+            { id: 'e', type: 'circle', fillOpacity: { valueOf: 1 } },
+            { id: 'f', type: 'circle', fillOpacity: [0.5] },
+            { id: 'g', type: 'rectangle', fillOpacity: 0.3, color: '#22c55e' },
+        ];
+        const file = await buildZip({ appName: 'PC TAC', version: 1 }, { [SHAPES_KEY]: JSON.stringify(shapes) });
+        await expect(Archive.importFile(file)).resolves.toMatchObject({ ok: true });
+        const out = readShapes();
+        for (const id of ['a', 'b', 'c', 'd', 'e', 'f']) {
+            const s = out.find((x) => x.id === id);
+            expect(s, id).toBeDefined();
+            expect('fillOpacity' in (s ?? {}), id).toBe(false);
+        }
+        // Une valeur saine à côté n'est pas touchée.
+        expect(out.find((x) => x.id === 'g')).toEqual({ id: 'g', type: 'rectangle', fillOpacity: 0.3, color: '#22c55e' });
+    });
+
+    it('import : une liste de formes illisible ou une entrée qui n’est pas un objet ne fait pas échouer l’import', async () => {
+        const broken = await buildZip({ appName: 'PC TAC', version: 1 }, { [SHAPES_KEY]: 'pas du json' });
+        await expect(Archive.importFile(broken)).resolves.toMatchObject({ ok: true });
+        const odd = await buildZip({ appName: 'PC TAC', version: 1 }, { [SHAPES_KEY]: JSON.stringify([null, 'x', 3, { id: 'ok', type: 'circle', fillOpacity: 0.3 }]) });
+        await expect(Archive.importFile(odd)).resolves.toMatchObject({ ok: true });
+        expect(readShapes().find((x) => x && typeof x === 'object' && x.id === 'ok')).toEqual({ id: 'ok', type: 'circle', fillOpacity: 0.3 });
+    });
+
+    it('export puis import : l’opacité (dont 0 = contour seul) survit à l’aller-retour', async () => {
+        const shapes = [
+            { id: 'z1', type: 'circle', center: [2, 48], edge: [2, 48.01], fillOpacity: 0 },
+            { id: 'z2', type: 'rectangle', coords: [[2, 48], [2.1, 48.1]], fillOpacity: 0.6 },
+            { id: 'z3', type: 'rectangle', coords: [[2, 48], [2.1, 48.1]] },
+        ];
+        localStorage.setItem(SHAPES_KEY, JSON.stringify(shapes));
+        let blob: Blob | null = null;
+        vi.spyOn(URL, 'createObjectURL').mockImplementation((b) => { blob = b as Blob; return 'blob:x'; });
+        vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
+        vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+        await expect(Archive.exportZip()).resolves.toBe(true);
+        vi.restoreAllMocks();
+        expect(blob).not.toBeNull();
+
+        localStorage.clear();
+        await expect(Archive.importFile(new File([blob as unknown as Blob], 'aller-retour.pctac.zip'))).resolves.toMatchObject({ ok: true });
+        expect(readShapes()).toEqual(shapes);
+    });
+});
+
 describe('exportZip — nom de fichier lisible (décision 32)', () => {
     it('nomme l’archive d’après le libellé de la situation, sans nom de personne', async () => {
         localStorage.setItem(PCTAC_MODE_KEY, 'forcene');

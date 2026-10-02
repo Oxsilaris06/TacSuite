@@ -318,6 +318,18 @@ export const WheelsMethods = {
                   action: () => this._adjustStrokeWidth(s.id, +1), keepOpen: true },
             );
         }
+        if (s.type === 'rectangle' || s.type === 'circle') {
+            // Zones : transparence du fond, zone par zone (0 = contour seul). Même mécanisme que
+            // l'épaisseur — retours terrain 2026-10-02.
+            opts.push(
+                { id: 'fillless', icon: 'invert_colors_off', label: 'Remplissage -',
+                  color: '#fff', bg: 'rgba(120,120,120,0.95)',
+                  action: () => this._adjustFillOpacity(s.id, -1), keepOpen: true },
+                { id: 'fillmore', icon: 'format_color_fill', label: 'Remplissage +',
+                  color: '#fff', bg: 'rgba(120,120,120,0.95)',
+                  action: () => this._adjustFillOpacity(s.id, +1), keepOpen: true },
+            );
+        }
         if (s.type === 'circle') {
             const diaOn = (s.showDiameter !== false) && this._diameterGlobal;
             opts.push({

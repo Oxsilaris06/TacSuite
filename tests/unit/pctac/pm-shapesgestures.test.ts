@@ -60,6 +60,8 @@ function makeFakeMap() {
     return {
         project: vi.fn((ll: { lng: number; lat: number }) => ({ x: ll.lng * 100, y: ll.lat * 100 })),
         unproject: vi.fn((p: [number, number]) => ({ lng: p[0] / 100, lat: p[1] / 100 })),
+        // `_shapePointerDown` interroge lui-même les couches de formes (retours terrain 2026-10-02).
+        queryRenderedFeatures: vi.fn((): unknown[] => []),
         getCanvas: vi.fn(() => canvas),
         on: vi.fn(),
         off: vi.fn(),
@@ -150,7 +152,7 @@ describe('fumée — DOM/source absents (planMap.js:2846-3487)', () => {
     it('_shapePointerDown ne jette pas sans feature ciblée', () => {
         const { fake } = makeFakeThis();
         const e = {
-            originalEvent: undefined, features: undefined, preventDefault: vi.fn(), lngLat: { lng: 0, lat: 0 },
+            originalEvent: undefined, point: { x: 0, y: 0 }, preventDefault: vi.fn(), lngLat: { lng: 0, lat: 0 },
         } as unknown as MapLayerMouseEvent;
         expect(() => ShapesGesturesMethods._shapePointerDown.call(fake, e)).not.toThrow();
     });

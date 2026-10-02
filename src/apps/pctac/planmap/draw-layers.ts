@@ -17,8 +17,12 @@
  * ⚠ INVARIANT (SPEC-PLANMAP-SPLIT §1.2 piège 1) : `_initDrawingLayers` fixe
  * l'ORDRE des `addSource`/`addLayer` (empilement visuel) et la couche de
  * bâtiments 3D. NE RÉORDONNE RIEN, ne renomme aucun id de source ni de couche
- * — ils sont référencés par nom depuis 5 autres sous-modules (shapes-render,
- * shapes-gestures, draw-tools, measure, capture).
+ * — ils sont référencés par nom depuis d'autres sous-modules (shapes-render,
+ * shapes-gestures, draw-tools, gpx, `SHAPE_HIT_LAYERS`).
+ * Retours terrain 2026-10-02 (« arrière-plan + priorité ») : les zones sont
+ * DESSOUS — fond (`plan-shapes-fill`), puis leur contour
+ * (`plan-shapes-zone-line`), PUIS la détection des traits, les traits et les
+ * textes. Les traces GPX restent insérées sous `plan-shapes-fill` (gpx.ts).
  *
  * ⚠ INVARIANT (piège 2) : `_handleDrawMove`/`_handleDrawUp` (déclarées dans
  * `draw-tools.ts`) sont appelées ici avec un OBJET SYNTHÉTIQUE `{ lngLat: … }`
@@ -51,13 +55,13 @@
  */
 
 import type {
-    MapLayerMouseEvent,
-    MapLayerTouchEvent,
     MapMouseEvent,
     MapTouchEvent,
     PointLike,
 } from 'maplibre-gl';
 
+import { SHAPE_HIT_LAYERS } from './constants.js';
+import { ZONE_FILL_DEFAULT } from './geo.js';
 import type { LngLatObj, LngLatTuple, PlanMapInternal, PlanMapState } from './types.js';
 import { toast } from '@shared/feedback.js';
 
@@ -115,7 +119,22 @@ export const DrawLayersMethods = {
             ],
             paint: {
                 'fill-color': ['coalesce', ['get', 'color'], '#ef4444'],
-                'fill-opacity': 0.18,
+                // Opacité PAR ZONE (retours terrain 2026-10-02) : `fillOpacity`, 0 = contour
+                // seul. Sans propriété (anneaux d'engagement, features d'avant) : 0.18.
+                'fill-opacity': ['coalesce', ['get', 'fillOpacity'], ZONE_FILL_DEFAULT],
+            },
+        });
+        // Contour des ZONES : sa propre couche, sous la détection et les traits — une zone
+        // ne passe jamais devant un trait, une flèche ou une mesure (retours terrain 2026-10-02).
+        map.addLayer({
+            id: 'plan-shapes-zone-line',
+            type: 'line',
+            source: 'plan-shapes-src',
+            filter: ['==', ['get', 'zone'], true],
+            paint: {
+                'line-color': ['coalesce', ['get', 'color'], '#ef4444'],
+                'line-width': ['coalesce', ['get', 'strokeWidth'], 3],
+                'line-opacity': 0.9,
             },
         });
         map.addLayer({
@@ -133,8 +152,9 @@ export const DrawLayersMethods = {
             id: 'plan-shapes-line',
             type: 'line',
             source: 'plan-shapes-src',
-            // Lignes uniquement (pas les zones hit-test des textes)
-            filter: ['!=', ['get', 'isText'], true],
+            // Traits, mesures et anneaux (ni les zones hit-test des textes, ni les contours de
+            // zone : ils ont leur couche, dessous)
+            filter: ['all', ['!=', ['get', 'isText'], true], ['!=', ['get', 'zone'], true]],
             paint: {
                 'line-color': ['coalesce', ['get', 'color'], '#ef4444'],
                 // Épaisseur pilotée par la donnée (réglable via la roue : Épaisseur -/+)
@@ -182,13 +202,22 @@ export const DrawLayersMethods = {
         //  - Tap court & immobile → menu contextuel (Déplacer/Redim/Texte/Suppr)
         //  - Drag (mouvement > 6px) → déplacement direct, mobile + PC
         //  - Sans hit sur une forme → la carte panote normalement (maplibre natif)
-        const layers = ['plan-shapes-fill', 'plan-shapes-line-hit', 'plan-shapes-text-hit'];
-        layers.forEach(layerId => {
-            map.on('mousedown', layerId, this._safe((e: MapLayerMouseEvent | MapLayerTouchEvent) => this._shapePointerDown(e), 'shapeDown'));
-            map.on('touchstart', layerId, this._safe((e: MapLayerMouseEvent | MapLayerTouchEvent) => this._shapePointerDown(e), 'shapeDown'));
-            // Curseur indicatif au survol
-            map.on('mouseenter', layerId, () => {
-                if (!this.drawTool && !this.moveState && !this._gesture) map.getCanvas().style.cursor = 'grab';
+        //  - Zone d'arrière-plan non sélectionnée → la carte panote aussi (tap → `click` ci-dessous)
+        // Une SEULE écoute (retours terrain 2026-10-02) : `_shapePointerDown` interroge lui-même
+        // toutes les couches de formes puis tranche objet / zone ; une écoute déléguée par couche
+        // laissait le fond de zone, enregistré en premier, passer devant les traits.
+        const onShapeDown = this._safe((e: MapMouseEvent | MapTouchEvent) => this._shapePointerDown(e), 'shapeDown');
+        map.on('mousedown', onShapeDown);
+        map.on('touchstart', onShapeDown);
+        SHAPE_HIT_LAYERS.forEach(layerId => {
+            // Curseur indicatif au survol : « grab » = le glisser déplace la forme. Une zone
+            // d'arrière-plan qui ne saisit pas le geste (non sélectionnée, ou figée) ne le promet
+            // pas : le glisser y panote la carte, seul le clic agit (« pointer ») — retours
+            // terrain 2026-10-02.
+            map.on('mouseenter', layerId, (e) => {
+                if (this.drawTool || this.moveState || this._gesture) return;
+                const hit = this._shapeTargetAt(e.point);
+                map.getCanvas().style.cursor = hit && !hit.grab ? 'pointer' : 'grab';
             });
             map.on('mouseleave', layerId, () => {
                 if (!this.drawTool && !this.moveState && !this._gesture) map.getCanvas().style.cursor = '';
@@ -218,10 +247,24 @@ export const DrawLayersMethods = {
                 [e.point.x - 12, e.point.y - 12],
                 [e.point.x + 12, e.point.y + 12],
             ];
-            const hits = map.queryRenderedFeatures(bbox, {
-                layers: ['plan-shapes-fill', 'plan-shapes-line-hit', 'plan-shapes-text-hit'],
-            });
-            if (hits.length) return;
+            const hits = map.queryRenderedFeatures(bbox, { layers: [...SHAPE_HIT_LAYERS] });
+            if (hits.length) {
+                // Zone d'arrière-plan tapée SANS avoir saisi le geste (non sélectionnée, ou figée) :
+                // le tap la sélectionne, le double tap ouvre sa roue (mêmes règles que le geste
+                // de forme). Ni pendant qu'une roue est ouverte (appui long à la souris, relâché),
+                // ni si ce clic a déjà posé un ping (`_onMapClick` l'a marqué consommé), ni s'il
+                // vient d'un autre élément posé sur la carte (poignée, pastille, panneau : le clic
+                // leur appartient) — le NOM d'une zone, lui, fait partie de la zone.
+                const from = e.originalEvent && e.originalEvent.target;
+                const onOther = from instanceof Element
+                    && !!from.closest('.maplibregl-marker, .plan-wheel, .plan-inline-panel')
+                    && !from.closest('.plan-shape-text');
+                if (!this._activeWheel && !e.defaultPrevented && !onOther) {
+                    const hit = this._shapeTargetAt(e.point);
+                    if (hit && !hit.grab) this._tapShape(hit.id, e.lngLat);
+                }
+                return;
+            }
             if (this._selectedShapeId) this._deselectShape();
         });
 
@@ -422,10 +465,10 @@ export const DrawLayersMethods = {
             lp = null;
         };
         const isOnFeature = (point: PointLike) => {
-            const hits = map.queryRenderedFeatures(point, {
-                layers: ['plan-shapes-fill', 'plan-shapes-line-hit', 'plan-shapes-text-hit'],
-            });
-            return hits.length > 0;
+            const hits = map.queryRenderedFeatures(point, { layers: [...SHAPE_HIT_LAYERS] });
+            // Une zone (arrière-plan) ne bloque pas la pose d'un ping ; si elle a saisi le geste,
+            // `_gesture` le dit déjà (retours terrain 2026-10-02). Trait, texte, mesure : bloquent.
+            return hits.some(f => !(f.properties && f.properties.zone === true));
         };
         const showRing = (clientX: number, clientY: number) => {
             const ring = document.createElement('div');

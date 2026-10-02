@@ -103,6 +103,9 @@ export const PinsMethods = {
             });
             this.pendingEntityPin = null;
             this._hideHint();
+            // Ce clic a posé le ping : les autres écoutes `click` (zone d'arrière-plan tapée,
+            // draw-layers.ts) ne doivent pas y réagir — retours terrain 2026-10-02.
+            if (e.preventDefault) e.preventDefault();
             return;
         }
         if (this.pendingFreePin) {
@@ -115,6 +118,7 @@ export const PinsMethods = {
             });
             this.pendingFreePin = null;
             this._hideHint();
+            if (e.preventDefault) e.preventDefault(); // idem : clic consommé par la pose du ping
         }
     },
 

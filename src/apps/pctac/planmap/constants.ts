@@ -37,6 +37,15 @@ export const GRID_KEY = 'pcTacPlanGrid';
 // réglages d'affichage, gardés au reset comme les autres réglages du plan.
 export const OVERLAYS_KEY = 'pcTacPlanOverlays';
 
+// Couches de dessin que le doigt peut viser : fond des zones, détection des traits
+// (corridor de 28 px, contours de zone compris), détection des textes. Retours
+// terrain 2026-10-02 : UNE requête sur toutes ces couches, puis priorité aux objets
+// (`pickShapeTarget`) — et non plus un écouteur délégué par couche, où le fond de
+// zone, enregistré en premier, passait devant les traits.
+// `readonly` : jamais muté par erreur ; MapLibre veut un `string[]` mutable, d'où `[...SHAPE_HIT_LAYERS]`
+// aux appels de `queryRenderedFeatures`.
+export const SHAPE_HIT_LAYERS: readonly string[] = ['plan-shapes-fill', 'plan-shapes-line-hit', 'plan-shapes-text-hit'];
+
 // Code couleur — strictement aligné sur la légende affichée
 // (--danger-red, --civil-yellow, --inter-blue, --ao-green dans pctac2.html)
 // planMap.js:35-39
