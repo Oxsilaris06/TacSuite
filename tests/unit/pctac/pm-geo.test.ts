@@ -14,6 +14,7 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { ignLayerIds } from '@shared/ign-territoires.js';
 import { SAT_TILE_TEMPLATE } from '../../../src/apps/pctac/planmap/constants.js';
 import {
     GeoMethods,
@@ -381,9 +382,14 @@ describe('tiles.ts — tileUrl (planMap.js:168-170) — code mort conservé, tou
 });
 
 describe('tiles.ts — styleTileTemplates (planMap.js:132-155)', () => {
-    it('extrait satellite / ign-ortho / terrain-dem de RASTER_STYLE', () => {
+    // L'ortho IGN est déclinée par territoire (retours terrain 2026-10-02) : la
+    // liste de BASE embarque donc la métropole ET chaque territoire d'outre-mer,
+    // sans quoi une zone hors-ligne tracée aux Antilles n'aurait que l'imagerie Esri.
+    const BASE_IDS = ['satellite', ...ignLayerIds('ortho', 'ign-ortho'), 'terrain-dem'];
+
+    it('extrait satellite / ign-ortho (métropole + outre-mer) / terrain-dem de RASTER_STYLE', () => {
         const templates = styleTileTemplates();
-        expect(templates.map(t => t.id).sort()).toEqual(['ign-ortho', 'satellite', 'terrain-dem']);
+        expect(templates.map(t => t.id)).toEqual(BASE_IDS);
 
         const sat = templates.find(t => t.id === 'satellite');
         expect(sat).toBeDefined();
@@ -400,12 +406,22 @@ describe('tiles.ts — styleTileTemplates (planMap.js:132-155)', () => {
             expect(ign.maxzoom).toBe(19);
             expect(ign.bounds).toEqual([-5.6, 41.1, 9.8, 51.3]);
         }
+
+        // Chaque territoire garde le MÊME modèle d'URL et ses propres bornes.
+        const gp = templates.find(t => t.id === 'ign-ortho-971');
+        expect(gp).toBeDefined();
+        if (gp && ign) {
+            expect(gp.url).toBe(ign.url);
+            expect(gp.minzoom).toBe(11);
+            expect(gp.bounds).toEqual([-61.85, 15.8, -60.95, 16.55]);
+        }
     });
 
     // Hors planMap.js : embarquement de l'ombrage LiDAR HD actif dans une AOI.
+    // `_confirmAoi` passe TOUS les ids de la famille (métropole + territoires servis).
     it('extraSourceIds ajoute la source demandée (ombrage LiDAR HD) à la liste', () => {
         const templates = styleTileTemplates(['lidar-mnt']);
-        expect(templates.map(t => t.id)).toEqual(['satellite', 'ign-ortho', 'terrain-dem', 'lidar-mnt']);
+        expect(templates.map(t => t.id)).toEqual([...BASE_IDS, 'lidar-mnt']);
 
         const lidar = templates.find(t => t.id === 'lidar-mnt');
         expect(lidar).toBeDefined();
@@ -421,12 +437,58 @@ describe('tiles.ts — styleTileTemplates (planMap.js:132-155)', () => {
 
     it('extraSourceIds accepte plusieurs sources (fond topo + courbes + ombrage)', () => {
         const ids = styleTileTemplates(['planign', 'contours', 'lidar-mnt']).map(t => t.id);
-        expect(ids).toEqual(['satellite', 'ign-ortho', 'terrain-dem', 'planign', 'contours', 'lidar-mnt']);
+        expect(ids).toEqual([...BASE_IDS, 'planign', 'contours', 'lidar-mnt']);
     });
 
     it('extraSourceIds inconnu du style ⇒ ignoré (liste de base inchangée)', () => {
-        expect(styleTileTemplates(['inexistante']).map(t => t.id))
-            .toEqual(['satellite', 'ign-ortho', 'terrain-dem']);
+        expect(styleTileTemplates(['inexistante']).map(t => t.id)).toEqual(BASE_IDS);
+    });
+
+    // Aucune emprise « métropole » ne filtre le hors-ligne : une AOI part avec la
+    // couche de SON territoire, et seulement celle-là (les rectangles sont disjoints).
+    describe('zone hors-ligne en outre-mer', () => {
+        const ZONES: Record<string, GeoBBox> = {
+            'Pointe-à-Pitre (971)': { west: -61.56, south: 16.22, east: -61.5, north: 16.26 },
+            'Fort-de-France (972)': { west: -61.08, south: 14.6, east: -61.04, north: 14.63 },
+            'Cayenne (973)': { west: -52.35, south: 4.91, east: -52.3, north: 4.95 },
+            'Saint-Denis (974)': { west: 55.43, south: -20.9, east: 55.47, north: -20.86 },
+            'Saint-Pierre (975)': { west: -56.2, south: 46.76, east: -56.15, north: 46.79 },
+            'Mamoudzou (976)': { west: 45.21, south: -12.8, east: 45.25, north: -12.76 },
+            'Gustavia (977)': { west: -62.87, south: 17.88, east: -62.83, north: 17.91 },
+            'Marigot (978)': { west: -63.1, south: 18.05, east: -63.06, north: 18.09 },
+        };
+
+        it.each(Object.entries(ZONES))('%s : l\'ortho IGN du territoire est énumérée, et elle seule', (_nom, bbox) => {
+            const tuiles = enumerateTiles(bbox, 13, 14, styleTileTemplates()).map(t => t.url);
+            const ortho = tuiles.filter(u => u.includes('HR.ORTHOIMAGERY.ORTHOPHOTOS'));
+            expect(ortho.length).toBeGreaterThan(0);
+            // Un seul template IGN a produit ces tuiles : celui de la zone.
+            const orthoTemplates = styleTileTemplates().filter(t => t.id.startsWith('ign-ortho'));
+            const producteurs = orthoTemplates.filter(t => enumerateTiles(bbox, 13, 14, [t]).length > 0);
+            expect(producteurs).toHaveLength(1);
+        });
+
+        it('une zone en métropole ne coûte rien de plus qu\'avant (aucune tuile des territoires)', () => {
+            const paris: GeoBBox = { west: 2.2, south: 48.8, east: 2.5, north: 48.9 };
+            const tous = styleTileTemplates();
+            const metropoleSeule = tous.filter(t => !t.id.startsWith('ign-ortho-'));
+            expect(estimateTileCount(paris, 11, 13, tous)).toBe(estimateTileCount(paris, 11, 13, metropoleSeule));
+            // Référence historique (test de propriété ci-dessous) : 106 tuiles sat+ign z11-13.
+            expect(estimateTileCount(paris, 11, 13, tous.filter(t => t.id === 'satellite' || t.id === 'ign-ortho'))).toBe(106);
+        });
+
+        it('courbes de niveau : embarquées à Fort-de-France, jamais en Guyane (non servie)', () => {
+            const courbes = styleTileTemplates(ignLayerIds('contours', 'contours')).filter(t => t.id.startsWith('contours'));
+            expect(estimateTileCount(ZONES['Fort-de-France (972)']!, 13, 14, courbes)).toBeGreaterThan(0);
+            expect(estimateTileCount(ZONES['Cayenne (973)']!, 13, 14, courbes)).toBe(0);
+        });
+
+        it('ombrage LiDAR HD : embarqué à Pointe-à-Pitre et à Saint-Denis, pas à Fort-de-France', () => {
+            const lidar = styleTileTemplates(ignLayerIds('lidar', 'lidar-mnt')).filter(t => t.id.startsWith('lidar-mnt'));
+            expect(estimateTileCount(ZONES['Pointe-à-Pitre (971)']!, 13, 14, lidar)).toBeGreaterThan(0);
+            expect(estimateTileCount(ZONES['Saint-Denis (974)']!, 13, 14, lidar)).toBeGreaterThan(0);
+            expect(estimateTileCount(ZONES['Fort-de-France (972)']!, 13, 14, lidar)).toBe(0);
+        });
     });
 });
 

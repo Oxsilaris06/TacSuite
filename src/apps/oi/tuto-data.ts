@@ -651,7 +651,7 @@ export const oiTutoData: TutoData = {
             "Basculer vue 2D / 3D relief"
           ],
           selector: "#oi_carto_btn_layers",
-          tip: "Le programme LiDAR HD est déployé par blocs : hors zone couverte, l'ombrage n'apparaît pas et l'imagerie reste visible. Si le relief 3D est indisponible, un message « Relief 3D indisponible (réseau ?)... » s'affiche."
+          tip: "Le programme LiDAR HD est déployé par blocs : hors zone couverte, l'ombrage n'apparaît pas et l'imagerie reste visible. Outre-mer, l'IGN ne le sert qu'en Guadeloupe et à La Réunion ; le Plan IGN couvre tous les territoires (DROM, Saint-Pierre-et-Miquelon, Saint-Martin, Saint-Barthélemy), les courbes de niveau aussi sauf en Guyane et à Saint-Pierre-et-Miquelon. Si le relief 3D est indisponible, un message « Relief 3D indisponible (réseau ?)... » s'affiche."
         },
         {
           title: "Ouvrir le tiroir « Plus »",

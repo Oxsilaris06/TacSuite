@@ -18,6 +18,10 @@ export const OTHER_TILE_HOSTS =
  * successeur de l'API Adresse, décision 35). Une recherche d'adresse est une
  * donnée VOLATILE : la mettre en cache 30 jours rendrait des résultats périmés
  * et ferait servir « Paris » pour une requête suivante.
+ *
+ * Le routage se fait par HÔTE et par CHEMIN, jamais par emprise : une tuile
+ * d'outre-mer (Guadeloupe, La Réunion…) est cachée comme une tuile de métropole
+ * (retours terrain 2026-10-02, vérifié par `tests/unit/sw-tile-route.test.ts`).
  */
 export function isTileRequest(url: URL): boolean {
     if (url.hostname === 'data.geopf.fr') {

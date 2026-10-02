@@ -14,6 +14,7 @@
  */
 
 import type { Map as MaplibreMap, MapGeoJSONFeature, PointLike, StyleSpecification } from 'maplibre-gl';
+import { IGN_METROPOLE, ignLayers, ignSources } from '@shared/ign-territoires.js';
 
 /* =====================================================================
  * OVERLAYS IGN — LiDAR HD (ombrages) + fond Plan IGN couleur + courbes de
@@ -23,14 +24,18 @@ import type { Map as MaplibreMap, MapGeoJSONFeature, PointLike, StyleSpecificati
  * FEUILLE (cf. en-tête de fichier) : aucun type importé de `./types.js` —
  * les unions de string ci-dessous sont réécrites localement (structurellement
  * identiques à `OiCartoLidarLayerId`, `types.ts`), pas de dépendance croisée.
+ * Seule dépendance : la table des emprises IGN (métropole + outre-mer) et le
+ * générateur de sources, PARTAGÉS avec PC-Tac (`@shared/ign-territoires`).
  *
  * Empilement contractuel (ordre dans `OI_CARTO_RASTER_STYLE.layers`) :
  *   satellite -> ign-ortho -> planign -> ombrages LiDAR -> contours
  * la couleur en bas, le relief au milieu, les lignes toujours lisibles au-dessus.
  * ===================================================================== */
 
-/** Emprise commune des flux IGN métropolitains. */
-export const FRANCE_TILE_BOUNDS: [number, number, number, number] = [-5.6, 41.1, 9.8, 51.3];
+/** Emprise commune des flux IGN MÉTROPOLITAINS (ids de base). Retours terrain
+ *  2026-10-02 : l'outre-mer a ses propres rectangles et sources (`-971`…), générés
+ *  par `@shared/ign-territoires` — MapLibre n'accepte qu'un rectangle par source. */
+export const FRANCE_TILE_BOUNDS: [number, number, number, number] = [...IGN_METROPOLE.bounds];
 
 /** Zoom max de la pyramide WMTS des ombrages LiDAR HD (grille PM). */
 export const LIDAR_MAX_ZOOM = 18;
@@ -94,37 +99,35 @@ export function geopfWmtsTileUrl(wmtsLayer: string): string {
         + '&TILEMATRIX={z}&TILECOL={x}&TILEROW={y}';
 }
 
-/** Les 3 sources raster LiDAR HD, prêtes à être fusionnées dans `OI_CARTO_RASTER_STYLE`. */
+/** Les 3 sources raster LiDAR HD, prêtes à être fusionnées dans `OI_CARTO_RASTER_STYLE`.
+ *  Une par territoire où l'IGN SERT le LiDAR HD : la métropole, la Guadeloupe et La
+ *  Réunion (sonde 2026-10-02 — voir `@shared/ign-territoires`). */
 function lidarSources(): StyleSpecification['sources'] {
     const out: StyleSpecification['sources'] = {};
     for (const id of LIDAR_LAYER_IDS) {
         const def = LIDAR_HD_LAYERS[id];
-        out[def.sourceId] = {
-            type: 'raster',
+        Object.assign(out, ignSources('lidar', def.sourceId, {
             tiles: [geopfWmtsTileUrl(def.wmtsLayer)],
             tileSize: 256,
             minzoom: LIDAR_MIN_ZOOM,
             maxzoom: LIDAR_MAX_ZOOM,
-            bounds: FRANCE_TILE_BOUNDS,
             attribution: 'LiDAR HD © IGN / Géoplateforme',
-        };
+        }));
     }
     return out;
 }
 
 /** Les 3 couches raster LiDAR HD, MASQUÉES par défaut : tant qu'aucune n'est
- *  visible, MapLibre ne requête aucune tuile (coût réseau nul à l'arrêt). */
+ *  visible, MapLibre ne requête aucune tuile (coût réseau nul à l'arrêt). Une
+ *  couche par territoire servi : les bascules visent `ignLayerIds('lidar', …)`. */
 function lidarLayers(): StyleSpecification['layers'] {
-    return LIDAR_LAYER_IDS.map((id) => ({
-        id: LIDAR_HD_LAYERS[id].sourceId,
-        type: 'raster' as const,
-        source: LIDAR_HD_LAYERS[id].sourceId,
-        layout: { visibility: 'none' as const },
+    return LIDAR_LAYER_IDS.flatMap((id) => ignLayers('lidar', LIDAR_HD_LAYERS[id].sourceId, () => ({
+        layout: { visibility: 'none' },
         paint: {
             'raster-opacity': LIDAR_OPACITY_OVER_IMAGERY,
             'raster-fade-duration': 300,
         },
-    }));
+    })));
 }
 
 /**
@@ -148,22 +151,29 @@ export const OI_CARTO_RASTER_STYLE: StyleSpecification = {
             attribution: 'Tiles © Esri',
         },
         // Ortho HD IGN 20 cm (BD ORTHO, Géoplateforme, SANS clé, schéma XYZ vérifié).
-        // PIÈGE : hors couverture (étranger/mer dans la grille) l'IGN renvoie une tuile
-        // JPEG BLANCHE OPAQUE (~1.6 Ko), pas un 404 → elle masquerait Esri. Comme on ne
-        // peut pas filtrer une tuile raster blanche, on n'affiche l'IGN qu'à partir du
-        // z11 (cf. raster-opacity) — là la vue est dominée par du sol FR, donc pas de
-        // blanc ; à plus bas zoom Esri reste seul (et le 20 cm ne se voit pas avant ~z13).
-        // `bounds` évite en plus de requêter l'IGN loin hors de France.
+        // PIÈGE : hors couverture (étranger/mer dans la grille) l'IGN renvoie un JPEG BLANC
+        // OPAQUE, pas un 404 : soit une tuile vide (1651 o), soit une tuile de bord mi-imagerie
+        // mi-blanc → il masquerait Esri. En métropole la couverture déborde en mer : on s'est
+        // contenté de n'afficher l'IGN qu'à partir du z11 (cf. raster-opacity) — là la vue est
+        // dominée par du sol FR, donc peu de blanc ; à plus bas zoom Esri reste seul (et le
+        // 20 cm ne se voit pas avant ~z13). `bounds` évite en plus de requêter l'IGN loin hors
+        // de France.
         // Aligné sur PC-Tac (@pctac/planmap/constants.ts, RASTER_STYLE).
-        'ign-ortho': {
-            type: 'raster',
+        // Retours terrain 2026-10-02 : une source par territoire (métropole `ign-ortho`,
+        // outre-mer `ign-ortho-971`…), même URL, même minzoom, même fondu. Outre-mer
+        // l'hypothèse « dominée par du sol » est FAUSSE : la couverture colle à la terre, donc
+        // à z13 22 à 55 % des tuiles d'un rectangle sont vides et jusqu'à 65 % sont des tuiles
+        // de bord. Le blanc y est rendu TRANSPARENT à l'affichage (protocole
+        // `ignortho`, cf. `@shared/ign-ortho`, branché dans `_init()` de map-core.ts) ; minzoom
+        // 11 et fondu 11→13 ne servent plus qu'à la fusion Esri → IGN. La métropole n'est pas
+        // touchée : la neige alpine y est du blanc légitime.
+        ...ignSources('ortho', 'ign-ortho', {
             tiles: ['https://data.geopf.fr/tms/1.0.0/HR.ORTHOIMAGERY.ORTHOPHOTOS/{z}/{x}/{y}.jpeg'],
             tileSize: 256,
             minzoom: 11,
             maxzoom: 19,
-            bounds: [-5.6, 41.1, 9.8, 51.3],
             attribution: 'BD ORTHO © IGN / Géoplateforme',
-        },
+        }),
         'terrain-dem': {
             type: 'raster-dem',
             tiles: ['https://elevation-tiles-prod.s3.amazonaws.com/terrarium/{z}/{x}/{y}.png'],
@@ -178,31 +188,28 @@ export const OI_CARTO_RASTER_STYLE: StyleSpecification = {
             attribution: '© OpenFreeMap © OpenStreetMap',
         },
         // Fond topographique COULEUR de l'IGN — recouvre l'imagerie quand actif.
-        planign: {
-            type: 'raster',
+        // Servi dans les 8 territoires d'outre-mer (sonde 2026-10-02) : `planign-971`…
+        ...ignSources('planign', 'planign', {
             tiles: [geopfWmtsTileUrl(PLANIGN_WMTS_LAYER)],
             tileSize: 256,
             maxzoom: 19,
-            bounds: FRANCE_TILE_BOUNDS,
             attribution: 'Plan IGN v2 © IGN / Géoplateforme',
-        },
+        }),
         // Courbes de niveau — PNG transparent, superposable à n'importe quel fond.
-        contours: {
-            type: 'raster',
+        // Servies sauf en Guyane (973) et à Saint-Pierre-et-Miquelon (975) : pas de source.
+        ...ignSources('contours', 'contours', {
             tiles: [geopfWmtsTileUrl(CONTOURS_WMTS_LAYER)],
             tileSize: 256,
             minzoom: CONTOURS_MIN_ZOOM,
             maxzoom: 18,
-            bounds: FRANCE_TILE_BOUNDS,
             attribution: 'Courbes de niveau © IGN / Géoplateforme',
-        },
+        }),
         // Ombrages LiDAR HD (WMTS Géoplateforme, sans clé) — cf. bloc ci-dessus.
         ...lidarSources(),
     },
     layers: [
         { id: 'satellite', type: 'raster', source: 'satellite' },
-        {
-            id: 'ign-ortho', type: 'raster', source: 'ign-ortho',
+        ...ignLayers('ortho', 'ign-ortho', () => ({
             paint: {
                 // Fusion seamless Esri → IGN : fondu progressif au zoom sur la bande
                 // z11→z13 (l'IGN monte en transparence par-dessus Esri puis devient
@@ -212,25 +219,23 @@ export const OI_CARTO_RASTER_STYLE: StyleSpecification = {
                 'raster-opacity': ['interpolate', ['linear'], ['zoom'], 11, 0, 13, 1],
                 'raster-fade-duration': 500,
             },
-        },
+        })),
         // Fond topo COULEUR : au-dessus de l'imagerie (il la remplace), sous les
         // ombrages LiDAR (qui viennent l'ombrer) — masqué par défaut.
-        {
-            id: 'planign', type: 'raster', source: 'planign',
+        ...ignLayers('planign', 'planign', () => ({
             layout: { visibility: 'none' },
             paint: { 'raster-fade-duration': 300 },
-        },
+        })),
         // Overlays LiDAR HD : AU-DESSUS de l'imagerie, mais déclarés ICI (dans le
         // style) donc SOUS toutes les couches ajoutées après `load` — dessins,
         // formes, bâtiments 3D, noms de rues (cf. draw.ts, map-core.ts).
         ...lidarLayers(),
         // Courbes de niveau : au-dessus des ombrages, pour rester lisibles quel
         // que soit le fond — masquées par défaut.
-        {
-            id: 'contours', type: 'raster', source: 'contours',
+        ...ignLayers('contours', 'contours', () => ({
             layout: { visibility: 'none' },
             paint: { 'raster-opacity': 0.9, 'raster-fade-duration': 300 },
-        },
+        })),
     ],
 };
 

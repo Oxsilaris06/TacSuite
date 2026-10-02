@@ -53,12 +53,31 @@ vi.mock('@pctac/planmap/tiles.js', () => ({
 const toastSpy = vi.hoisted(() => vi.fn());
 vi.mock('@shared/feedback.js', () => ({ toast: toastSpy }));
 
+// `maplibre-gl` factice (jamais de WebGL sous jsdom) : la classe `Map` garde ses
+// options, pour prouver le branchement de l'ortho IGN d'outre-mer dans `init()`
+// (retours terrain 2026-10-02) ; seules les méthodes que `init()` appelle existent.
+const { mapOptions, addProtocolSpy } = vi.hoisted(() => ({
+    mapOptions: [] as Record<string, unknown>[],
+    addProtocolSpy: vi.fn(),
+}));
+vi.mock('maplibre-gl', () => {
+    class FakeMap {
+        constructor(options: Record<string, unknown>) { mapOptions.push(options); }
+        addControl(): void {}
+        on(): void {}
+    }
+    class FakeControl {}
+    return { default: { Map: FakeMap, NavigationControl: FakeControl, ScaleControl: FakeControl, addProtocol: addProtocolSpy } };
+});
+
+import { ignLayerIds } from '@shared/ign-territoires.js';
 import {
     CONTOURS_KEY,
     LIDAR_KEY,
     LIDAR_OPACITY_OVER_IMAGERY,
     LIDAR_OPACITY_OVER_TOPO,
     PLANIGN_KEY,
+    RASTER_STYLE,
     VIEW_KEY,
 } from '../../../src/apps/pctac/planmap/constants.js';
 import { MapCoreMethods } from '../../../src/apps/pctac/planmap/map-core.js';
@@ -515,6 +534,26 @@ describe('smoke — méthodes restantes de map-core.ts', () => {
         expect(() => MapCoreMethods.init.call(fake)).not.toThrow();
     });
 
+    // Retours terrain 2026-10-02 : hors couverture l'IGN rend du blanc opaque ; les
+    // tuiles d'ortho d'outre-mer sont donc détourées (`@shared/ign-ortho`), et la
+    // carte doit être construite avec ces options (protocole + réécriture des URL).
+    it('init() construit la carte avec le protocole `ignortho` : tuiles d\'ortho d\'outre-mer réécrites, métropole inchangée', () => {
+        document.body.innerHTML = '<div id="plan_map"></div>';
+        mapOptions.length = 0;
+        addProtocolSpy.mockClear();
+        const fake = makeFakeThis({ _initOverlays: vi.fn() });
+        MapCoreMethods.init.call(fake);
+        expect(fake.initialized).toBe(true);
+        expect(addProtocolSpy).toHaveBeenCalledWith('ignortho', expect.any(Function));
+        expect(mapOptions).toHaveLength(1);
+        expect(mapOptions[0]?.style).toBe(RASTER_STYLE);
+        const transform = mapOptions[0]?.transformRequest as (url: string) => { url: string } | undefined;
+        const ortho = (z: number, x: number, y: number) => `https://data.geopf.fr/tms/1.0.0/HR.ORTHOIMAGERY.ORTHOPHOTOS/${z}/${x}/${y}.jpeg`;
+        // Pointe-à-Pitre (971) et Paris, à z14.
+        expect(transform(ortho(14, 5391, 7442))).toEqual({ url: ortho(14, 5391, 7442).replace('https://', 'ignortho://') });
+        expect(transform(ortho(14, 8296, 5635))).toBeUndefined();
+    });
+
     it('refresh() non initialisé ⇒ délègue à init()', () => {
         const init = vi.fn();
         const renderPins = vi.fn();
@@ -710,6 +749,36 @@ describe('Overlays LiDAR HD — _applyLidarVisibility / _setLidarLayer / _cycleL
         }
     });
 
+    // Retours terrain 2026-10-02 : l'ombrage existe aussi en Guadeloupe et à La
+    // Réunion (couches `lidar-*-971` / `-974`). Mêmes bascules, même opacité.
+    it('_applyLidarVisibility() applique la même bascule et la même opacité à chaque territoire servi', () => {
+        const map = makeFakeMap({ getLayer: vi.fn(() => ({})) });
+        const fake = makeFakeThis({ map, lidarLayer: 'mns', planIgnOn: true });
+
+        MapCoreMethods._applyLidarVisibility.call(fake);
+
+        for (const suffixe of ['', '-971', '-974']) {
+            expect(map.setLayoutProperty).toHaveBeenCalledWith('lidar-mnt' + suffixe, 'visibility', 'none');
+            expect(map.setLayoutProperty).toHaveBeenCalledWith('lidar-mns' + suffixe, 'visibility', 'visible');
+            expect(map.setLayoutProperty).toHaveBeenCalledWith('lidar-mnh' + suffixe, 'visibility', 'none');
+            expect(map.setPaintProperty).toHaveBeenCalledWith('lidar-mns' + suffixe, 'raster-opacity', LIDAR_OPACITY_OVER_TOPO);
+        }
+        // Territoires sans LiDAR (Martinique, Guyane…) : aucune couche, donc jamais visée.
+        const touched = map.setLayoutProperty.mock.calls.map((c) => c[0]);
+        expect(touched).not.toContain('lidar-mns-972');
+        expect(touched).not.toContain('lidar-mns-973');
+    });
+
+    it('_applyLidarVisibility() ignore une couche territoriale absente du style (getLayer faux)', () => {
+        const map = makeFakeMap({ getLayer: vi.fn((id: string) => (id === 'lidar-mnt-971' ? {} : undefined)) });
+        const fake = makeFakeThis({ map, lidarLayer: 'mnt' });
+
+        MapCoreMethods._applyLidarVisibility.call(fake);
+
+        expect(map.setLayoutProperty).toHaveBeenCalledTimes(1);
+        expect(map.setLayoutProperty).toHaveBeenCalledWith('lidar-mnt-971', 'visibility', 'visible');
+    });
+
     it('_applyLidarVisibility() sans carte ⇒ ne jette pas', () => {
         const fake = makeFakeThis({ map: null });
         expect(() => MapCoreMethods._applyLidarVisibility.call(fake)).not.toThrow();
@@ -814,6 +883,44 @@ describe('Fond topo & courbes — _applyTopoVisibility / _togglePlanIgn / _toggl
         expect(map.setLayoutProperty).toHaveBeenCalledWith('contours', 'visibility', 'none');
     });
 
+    // Retours terrain 2026-10-02 : un fond topo et des courbes PAR territoire servi.
+    // Une bascule qui ne viserait que `planign` / `contours` laisserait les Antilles
+    // sur l'imagerie quand l'utilisateur demande le Plan IGN.
+    it('_applyTopoVisibility() bascule le Plan IGN et les courbes dans CHAQUE territoire servi', () => {
+        const map = makeFakeMap({ getLayer: vi.fn(() => ({})) });
+        const fake = makeFakeThis({ map, planIgnOn: true, contoursOn: false });
+
+        MapCoreMethods._applyTopoVisibility.call(fake);
+
+        for (const id of ignLayerIds('planign', 'planign')) {
+            expect(map.setLayoutProperty).toHaveBeenCalledWith(id, 'visibility', 'visible');
+        }
+        for (const id of ignLayerIds('contours', 'contours')) {
+            expect(map.setLayoutProperty).toHaveBeenCalledWith(id, 'visibility', 'none');
+        }
+        // Les 8 territoires pour le fond topo ; la Guyane et SPM n'ont pas de courbes.
+        const touched = map.setLayoutProperty.mock.calls.map((c) => c[0]);
+        expect(touched).toContain('planign-973');
+        expect(touched).toContain('planign-975');
+        expect(touched).toContain('contours-978');
+        expect(touched).not.toContain('contours-973');
+        expect(touched).not.toContain('contours-975');
+    });
+
+    it('_applyTopoVisibility() : courbes visibles ⇒ toutes les couches de courbes passent visibles', () => {
+        const map = makeFakeMap({ getLayer: vi.fn(() => ({})) });
+        const fake = makeFakeThis({ map, planIgnOn: false, contoursOn: true });
+
+        MapCoreMethods._applyTopoVisibility.call(fake);
+
+        for (const id of ignLayerIds('contours', 'contours')) {
+            expect(map.setLayoutProperty).toHaveBeenCalledWith(id, 'visibility', 'visible');
+        }
+        for (const id of ignLayerIds('planign', 'planign')) {
+            expect(map.setLayoutProperty).toHaveBeenCalledWith(id, 'visibility', 'none');
+        }
+    });
+
     // Le couplage qui fait tout l'intérêt du mode : sur le Plan IGN l'ombrage
     // s'efface pour laisser lire les couleurs, sur l'imagerie il domine.
     it('l\'opacité de l\'ombrage LiDAR suit le fond : 0,45 sur Plan IGN, 0,85 sur imagerie', () => {
@@ -857,6 +964,48 @@ describe('Fond topo & courbes — _applyTopoVisibility / _togglePlanIgn / _toggl
         expect(fake.contoursOn).toBe(true);
         expect(localStorage.getItem(CONTOURS_KEY)).toBe('1');
         expect(fake.planIgnOn).toBe(true);
+    });
+
+    // Retours terrain 2026-10-02 : la Géoplateforme ne sert pas les courbes en Guyane ni à
+    // Saint-Pierre-et-Miquelon ; sans mot, l'utilisateur active les courbes et ne voit rien.
+    describe('message « non servi ici » (centre de la carte, calcul local)', () => {
+        const cayenne = { getCenter: vi.fn(() => ({ lng: -52.326, lat: 4.9372 })) };
+        const pointeAPitre = { getCenter: vi.fn(() => ({ lng: -61.5331, lat: 16.2411 })) };
+
+        it('_toggleContours() en Guyane : le message dit que l\'IGN ne les sert pas là', () => {
+            toastSpy.mockClear();
+            MapCoreMethods._toggleContours.call(makeFakeThis({ map: makeFakeMap(cayenne) }));
+            expect(toastSpy).toHaveBeenCalledWith('Courbes de niveau affichées (non servies par l\'IGN : Guyane)', { kind: 'info' });
+        });
+
+        it('_toggleContours() en Guadeloupe (servi) ou en métropole : message inchangé', () => {
+            toastSpy.mockClear();
+            MapCoreMethods._toggleContours.call(makeFakeThis({ map: makeFakeMap(pointeAPitre) }));
+            MapCoreMethods._toggleContours.call(makeFakeThis({ map: makeFakeMap() }));
+            expect(toastSpy).toHaveBeenNthCalledWith(1, 'Courbes de niveau affichées', { kind: 'info' });
+            expect(toastSpy).toHaveBeenNthCalledWith(2, 'Courbes de niveau affichées', { kind: 'info' });
+        });
+
+        it('_toggleContours() qui MASQUE les courbes en Guyane : pas d\'avertissement', () => {
+            toastSpy.mockClear();
+            MapCoreMethods._toggleContours.call(makeFakeThis({ map: makeFakeMap(cayenne), contoursOn: true }));
+            expect(toastSpy).toHaveBeenCalledWith('Courbes de niveau masquées', { kind: 'info' });
+        });
+
+        it('_cycleLidarLayer() en Martinique : le message dit que l\'IGN ne sert pas le LiDAR HD là', () => {
+            toastSpy.mockClear();
+            const map = makeFakeMap({ getCenter: vi.fn(() => ({ lng: -61.0588, lat: 14.6161 })) });
+            MapCoreMethods._cycleLidarLayer.call(makeFakeThis({ map, _setLidarLayer: MapCoreMethods._setLidarLayer }));
+            expect(toastSpy).toHaveBeenCalledTimes(1);
+            expect(String(toastSpy.mock.calls[0]?.[0])).toMatch(/ \(non servi par l'IGN : Martinique\)$/);
+        });
+
+        it('_cycleLidarLayer() en Guadeloupe ou en métropole : message inchangé', () => {
+            toastSpy.mockClear();
+            MapCoreMethods._cycleLidarLayer.call(makeFakeThis({ map: makeFakeMap(pointeAPitre), _setLidarLayer: MapCoreMethods._setLidarLayer }));
+            MapCoreMethods._cycleLidarLayer.call(makeFakeThis({ map: makeFakeMap(), _setLidarLayer: MapCoreMethods._setLidarLayer }));
+            for (const call of toastSpy.mock.calls) expect(String(call[0])).not.toContain('non servi');
+        });
     });
 
     it('les deux bascules sans carte ⇒ aucun changement d\'état', () => {

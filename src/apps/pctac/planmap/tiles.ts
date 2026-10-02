@@ -12,24 +12,31 @@
  * (lecture seule).
  */
 
+import { ignLayerIds } from '@shared/ign-territoires.js';
 import { FRANCE_BBOX, OFFLINE_MAP_CACHE, RASTER_STYLE, SAT_TILE_TEMPLATE } from './constants.js';
 import type { GeoBBox, PrefetchOptions, PrefetchProgress, PrefetchResult, TileTemplate } from './types.js';
 
-/** Sources toujours embarquées dans un téléchargement hors-ligne. */
+/** Sources toujours embarquées dans un téléchargement hors-ligne. L'ortho IGN est
+ *  déclinée par territoire (retours terrain 2026-10-02) : on embarque la métropole ET
+ *  chaque territoire d'outre-mer. `enumerateTiles` ne retient que les tuiles qui
+ *  coupent le `bounds` de chaque source, donc une zone n'embarque que l'ortho de
+ *  SON territoire — aucun filtre « métropole » sur le hors-ligne. */
 // planMap.js:135 (liste inline de _styleTileTemplates)
-export const BASE_TILE_SOURCE_IDS: readonly string[] = ['satellite', 'ign-ortho', 'terrain-dem'];
+export const BASE_TILE_SOURCE_IDS: readonly string[] = ['satellite', ...ignLayerIds('ortho', 'ign-ortho'), 'terrain-dem'];
 
 /**
  * Construit la LISTE des templates XYZ réellement actifs, lue depuis RASTER_STYLE.
  * On ne code en dur aucune URL : on extrait l'imagerie Esri (satellite), l'IGN BD
  * ORTHO (ign-ortho) et le DEM (terrain-dem) tels que déclarés dans le style. Chaque
  * template porte ses bornes de zoom (minzoom/maxzoom) et son `bounds` éventuel afin
- * de ne pas requêter une source hors de sa couverture (ex. IGN hors métropole).
+ * de ne pas requêter une source hors de sa couverture (ex. IGN hors de son territoire).
  *
  * @param extraSourceIds  sources supplémentaires à embarquer — sert à ajouter
  *   l'ombrage LiDAR HD actif au téléchargement d'une AOI (hors planMap.js) sans
  *   imposer les trois ombrages à tous les téléchargements. Les identifiants
  *   inconnus du style sont simplement ignorés (même garde que les autres).
+ *   Une couche IGN étant déclinée par territoire, l'appelant passe TOUTES ses
+ *   déclinaisons (`ignLayerIds(famille, id)`), pas le seul id de métropole.
  */
 // planMap.js:132-155 (fonction _styleTileTemplates)
 export function styleTileTemplates(extraSourceIds: readonly string[] = []): TileTemplate[] {
