@@ -10,7 +10,7 @@
  * (lecture seule).
  */
 
-import type { Map as MapLibreMap, Marker, LngLat, MapMouseEvent, MapTouchEvent, MapLayerMouseEvent, MapLayerTouchEvent } from 'maplibre-gl';
+import type { Map as MapLibreMap, Marker, LngLat, MapMouseEvent, MapTouchEvent, PointLike } from 'maplibre-gl';
 import type { PlanMapContract, PlanMapPinSummary } from '@shared/types/contracts.js';
 import type { MapPersistenceAdapter } from '@shared/map-persistence.js';
 import type { MapOverlays } from '@shared/map-overlays.js';
@@ -101,6 +101,12 @@ export interface PlanShape {
     /** Rotation du NOM en degrés (0..359). Absent = 0. */
     labelRot?: number | undefined;
     strokeWidth?: number | undefined;
+    /**
+     * Opacité du FOND d'une zone (`rectangle`, `circle`), 0..1. ABSENT = 0.18
+     * (valeur d'avant le réglage : aucune migration des formes enregistrées),
+     * 0 = contour seul. Validée à l'import d'archive (nombre fini dans [0, 1]).
+     */
+    fillOpacity?: number | undefined;
     locked?: boolean | undefined;
     showDiameter?: boolean | undefined;
     /** `measure` uniquement. */ totalM?: number | undefined;
@@ -171,6 +177,14 @@ export interface ResolvedPin { label: string; color: string; kind: string }
 
 /** Entrée du cache de cadenas de forme (planMap.js:3105). */
 export interface ShapeLockEntry { marker: Marker; el: HTMLElement; locked: boolean }
+
+/**
+ * Forme visée sous le doigt (retours terrain 2026-10-02) : `zone` = rectangle ou
+ * cercle, d'arrière-plan ; tout le reste (trait, texte) est un objet, prioritaire.
+ */
+export interface ShapeTarget { id: string; zone: boolean }
+/** `grab` : la pression saisit le geste de forme (sinon la carte panote, le tap sélectionne). */
+export interface ShapeTargetHit extends ShapeTarget { grab: boolean }
 
 /** Poignée de manipulation (planMap.js:3203-3231). */
 export type HandleRole = 'move' | 'corner' | 'edge' | 'endpoint' | 'textresize' | 'label' | 'labelrot';
@@ -517,13 +531,17 @@ export interface PlanMapInternal extends PlanMapState, PlanMapContract {
     _renderShapeLocks(): void;
     _adjustFontSize(shapeId: string, delta: number): void;
     _adjustStrokeWidth(shapeId: string, delta: number): void;
+    _adjustFillOpacity(shapeId: string, delta: number): void;
     _toggleShapeDiameter(shapeId: string): void;
     _toggleShapeLock(shapeId: string, reopenWheel?: boolean): void;
     _shapePixelBounds(s: PlanShape): { width: number; height: number };
     _renderShapeTexts(): void;
 
-    /* --- shapes-gestures.ts (15) --- */
-    _shapePointerDown(e: MapLayerMouseEvent | MapLayerTouchEvent): void;
+    /* --- shapes-gestures.ts (15, + 3 zones d'arrière-plan) --- */
+    _shapePointerDown(e: MapMouseEvent | MapTouchEvent): void;
+    _shapeTargetAt(point: PointLike): ShapeTargetHit | null;
+    _shapeGrabsPress(s: PlanShape): boolean;
+    _tapShape(shapeId: string, lngLat: LngLatObj): void;
     _startShapeGesture(shapeId: string, startLngLat: LngLatObj, originalEvent: Event | null): void;
     _suppressDblZoom(): void;
     _openShapeContextMenu(shapeId: string, lngLat: LngLatObj | null): void;

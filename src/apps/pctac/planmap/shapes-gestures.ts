@@ -11,7 +11,8 @@
  * méthodes `ShapesGesturesMethods` de la table §4.11 de
  * docs/SPEC-PLANMAP-SPLIT.md (port VERBATIM de `modules/pctac/planMap.js`,
  * GStart-main, lecture seule) :
- *   - :2846 `_shapePointerDown`        (ICI — entrée par couches carte)
+ *   - :2846 `_shapePointerDown`        (ICI — entrée unique : interroge les
+ *     couches de formes, objet d'abord puis plus petite zone)
  *   - :2871 `_startShapeGesture`       (délègue à `startShapeDragGesture`)
  *   - :2991 `_suppressDblZoom`         (ICI)
  *   - :3007 `_openShapeContextMenu`    (ICI)
@@ -26,6 +27,10 @@
  *   - :3233 `_renderHandles`           (délègue à `renderShapeHandles`)
  *   - :3292 `_startHandleGesture`      (délègue à `startHandleGesture`)
  *   - :3481 `_updateFloatingToolbarPos` (ICI)
+ *   - (hors planMap.js) `_shapeTargetAt`, `_shapeGrabsPress`, `_tapShape`,
+ *     `pickShapeTarget` — « arrière-plan + priorité », retours terrain
+ *     2026-10-02 : une zone (rectangle, cercle) ne saisit le geste qu'une fois
+ *     sélectionnée ; sinon la carte panote et le tap la sélectionne (`click`).
  *
  * Restent aussi côté PC-Tac : la fenêtre de double-tap 350 ms (état
  * `this._lastShapeTap`, callback `onTap` de l'injection) et la suppression du
@@ -58,11 +63,11 @@
 import maplibregl from 'maplibre-gl';
 import type {
     Map as MapLibreMap,
-    MapLayerMouseEvent,
-    MapLayerTouchEvent,
+    MapMouseEvent,
     MapTouchEvent,
     Marker,
     MarkerOptions,
+    PointLike,
 } from 'maplibre-gl';
 
 import {
@@ -74,13 +79,53 @@ import {
 } from '@shared/shape-gestures.js';
 import type { ShapeGestureDeps } from '@shared/shape-gestures.js';
 
+import { SHAPE_HIT_LAYERS } from './constants.js';
 import type {
     HandleRole,
     LngLatObj,
     PlanMapInternal,
     PlanShape,
     ShapeHandle,
+    ShapeTarget,
+    ShapeTargetHit,
 } from './types.js';
+
+/** Ce que la carte renvoie d'une feature de forme : seules ses propriétés comptent ici. */
+export interface ShapeFeatureLike { properties?: Record<string, unknown> | null | undefined }
+
+/**
+ * Forme visée parmi les features sous le doigt (retours terrain 2026-10-02,
+ * « arrière-plan + priorité ») : un OBJET (trait, texte) prime toujours sur une
+ * ZONE (rectangle, cercle) ; entre zones, la plus petite surface gagne — une
+ * zone entièrement contenue dans une autre reste donc attrapable. Les features
+ * sans `shapeId` (mesures, anneaux) ne sont pas sélectionnables : elles ne
+ * bloquent rien. La sélection cyclique d'avant est conservée entre OBJETS (le
+ * premier, déjà sélectionné, cède au suivant) ; une zone sélectionnée ne la
+ * subit pas, elle reste déplaçable sous le doigt.
+ */
+export function pickShapeTarget(features: readonly ShapeFeatureLike[], selectedId: string | null): ShapeTarget | null {
+    const objects: string[] = [];
+    const zones: { id: string; area: number }[] = [];
+    for (const f of features) {
+        const p = f.properties;
+        const id = p ? p.shapeId : undefined;
+        if (typeof id !== 'string' || !id) continue;
+        // Une même forme revient une fois par tuile : dédoublonnée.
+        if (p && p.zone === true) {
+            if (!zones.some(z => z.id === id)) zones.push({ id, area: Number(p.area) || 0 });
+        } else if (!objects.includes(id)) {
+            objects.push(id);
+        }
+    }
+    const first = objects[0];
+    if (first !== undefined) {
+        const next = objects[1];
+        return { id: first === selectedId && next !== undefined ? next : first, zone: false };
+    }
+    // À surface égale, la première (la plus haute, côté carte) garde la main.
+    const smallest = zones.reduce<{ id: string; area: number } | null>((best, z) => (best && best.area <= z.area ? best : z), null);
+    return smallest ? { id: smallest.id, zone: true } : null;
+}
 
 /**
  * Injection PC-Tac de la machine partagée : accès formes/persistance/rendu
@@ -116,20 +161,7 @@ function gestureDeps(self: PlanMapInternal, map: MapLibreMap): ShapeGestureDeps<
         // Double tap / double-clic = ouverture de la roue d'options.
         // On neutralise le zoom double-clic natif de MapLibre le temps de la fenêtre.
         // (planMap.js:2948-2970 — fenêtre 350 ms, état `_lastShapeTap`)
-        onTap: (shapeId, startLngLat) => {
-            // Tracé du carroyage en cours : ce tap lui appartient (map-overlays).
-            if (self.overlays?.isCapturing()) return;
-            self._suppressDblZoom();
-            const now = Date.now();
-            const prev = self._lastShapeTap;
-            if (prev && prev.id === shapeId && (now - prev.t) < 350) {
-                self._lastShapeTap = null;
-                self._openShapeContextMenu(shapeId, startLngLat);
-            } else {
-                self._lastShapeTap = { id: shapeId, t: now };
-                self._selectShape(shapeId);
-            }
-        },
+        onTap: (shapeId, startLngLat) => self._tapShape(shapeId, startLngLat),
         shapeCentroid: s => self._shapeCentroid(s),
         deselectShape: () => self._deselectShape(),
         canStartHandleGesture: () => !(self.drawTool || self.moveState || self._gesture),
@@ -155,8 +187,10 @@ export const ShapesGesturesMethods = {
     // déterminer s'il s'agit d'un drag, et au pointerup soit applique le drag
     // (déjà rendu live), soit ouvre le menu contextuel.
 
-    // planMap.js:2846-2863
-    _shapePointerDown(this: PlanMapInternal, e: MapLayerMouseEvent | MapLayerTouchEvent): void {
+    // planMap.js:2846-2863 — réécrit (retours terrain 2026-10-02) : une SEULE écoute carte
+    // (plus une par couche, où le fond de zone passait devant les traits), qui interroge
+    // toutes les couches de formes puis tranche : objet d'abord, plus petite zone ensuite.
+    _shapePointerDown(this: PlanMapInternal, e: MapMouseEvent | MapTouchEvent): void {
         if (this.drawTool) return;          // outil de dessin actif : on ignore
         if (this.moveState) return;         // déjà une transformation en cours
         if (this._gesture) return;          // déjà un geste en cours
@@ -169,24 +203,64 @@ export const ShapesGesturesMethods = {
         // expose `closest`), même principe que draw-layers.ts:453.
         const target = oe && oe.target instanceof Element ? oe.target : null;
         if (target && target.closest('.plan-pin')) return;
-        const features = e.features;
-        if (!features || !features.length) return;
-
-        // Sélection cyclique sur écran tactile lorsque plusieurs formes sont superposées ou proches :
-        // Si la forme supérieure est DÉJÀ sélectionnée, choisir la suivante sous le pointeur.
-        let targetFeat = features[0];
-        if (features.length > 1 && targetFeat && targetFeat.properties && targetFeat.properties.shapeId === this._selectedShapeId) {
-            const nextFeat = features.find(f => f.properties && f.properties.shapeId && f.properties.shapeId !== this._selectedShapeId);
-            if (nextFeat) targetFeat = nextFeat;
-        }
-
-        if (!targetFeat || !targetFeat.properties) return;
-        const id = targetFeat.properties.shapeId;
-        if (!id) return;
+        // Sélection cyclique conservée entre objets superposés (cf. `pickShapeTarget`).
+        const hit = this._shapeTargetAt(e.point);
+        // Rien de sélectionnable, ou zone d'arrière-plan qui ne saisit pas le geste (non
+        // sélectionnée, ou figée) : on ne touche à rien, MapLibre panote. Le tap qui suit
+        // sélectionne la zone via le `click` carte (draw-layers.ts).
+        if (!hit || !hit.grab) return;
         // Empêche maplibre de démarrer le pan natif sur cette pression
         if (e.preventDefault) e.preventDefault();
         if (e.originalEvent && e.originalEvent.preventDefault) e.originalEvent.preventDefault();
-        this._startShapeGesture(id, e.lngLat, e.originalEvent);
+        this._startShapeGesture(hit.id, e.lngLat, e.originalEvent);
+    },
+
+    /**
+     * Forme sélectionnable sous `point` (objet d'abord, sinon la plus petite zone) et
+     * `grab` : saisit-elle la pression ? Interroge TOUTES les couches de formes d'un coup.
+     * `null` = rien de sélectionnable (ou forme disparue du stockage entre-temps).
+     */
+    _shapeTargetAt(this: PlanMapInternal, point: PointLike): ShapeTargetHit | null {
+        if (!this.map) return null;
+        const target = pickShapeTarget(
+            this.map.queryRenderedFeatures(point, { layers: SHAPE_HIT_LAYERS }),
+            this._selectedShapeId,
+        );
+        const shape = target && this._loadShapes().find(x => x.id === target.id);
+        return target && shape ? { ...target, grab: this._shapeGrabsPress(shape) } : null;
+    },
+
+    /**
+     * Cette forme saisit-elle la pression (geste de déplacement) ? Un objet, oui. Une zone
+     * d'arrière-plan seulement une fois SÉLECTIONNÉE et si elle peut bouger : une zone
+     * figée (verrou par forme ou global) n'a rien à déplacer, le glisser panote alors la
+     * carte plutôt que de rester sans effet. Retours terrain 2026-10-02.
+     */
+    _shapeGrabsPress(this: PlanMapInternal, s: PlanShape): boolean {
+        if (s.type !== 'rectangle' && s.type !== 'circle') return true;
+        return s.id === this._selectedShapeId && !s.locked && !this._locked;
+    },
+
+    /**
+     * Tap (sans glissement) sur une forme : simple tap = sélection (poignées, déplaçable),
+     * double tap (350 ms) = roue d'options. On neutralise le zoom double-clic natif de
+     * MapLibre le temps de la fenêtre. Partagé par le geste de forme (`onTap`) et par le
+     * `click` carte d'une zone d'arrière-plan qui n'a pas saisi le geste.
+     */
+    // planMap.js:2948-2970 — fenêtre 350 ms, état `_lastShapeTap`
+    _tapShape(this: PlanMapInternal, shapeId: string, lngLat: LngLatObj): void {
+        // Tracé du carroyage en cours : ce tap lui appartient (map-overlays).
+        if (this.overlays?.isCapturing()) return;
+        this._suppressDblZoom();
+        const now = Date.now();
+        const prev = this._lastShapeTap;
+        if (prev && prev.id === shapeId && (now - prev.t) < 350) {
+            this._lastShapeTap = null;
+            this._openShapeContextMenu(shapeId, lngLat);
+        } else {
+            this._lastShapeTap = { id: shapeId, t: now };
+            this._selectShape(shapeId);
+        }
     },
 
     /**

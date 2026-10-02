@@ -17,6 +17,9 @@
  *   - :4319 `_toggleShapeLock`     — verrou PAR FORME (indépendant du verrou global)
  *   - :4746 `_shapePixelBounds`    — bounding-box pixels d'une forme au zoom courant
  *   - :4769 `_renderShapeTexts`    — annotations texte des formes (HTML markers)
+ *   - (hors planMap.js) `_adjustFillOpacity` — +/- fond d'une zone, retours
+ *     terrain 2026-10-02 ; `_renderShapes` y écrit aussi les zones EN PREMIER
+ *     (rendues dessous) avec `zone`/`area`/`fillOpacity`.
  *
  * Corps VERBATIM (SPEC-PLANMAP-SPLIT §1.2-1.3) : seules des adaptations de
  * TYPAGE strict sont apportées (capture `const map = this.map;` après un
@@ -54,7 +57,7 @@
 import maplibregl from 'maplibre-gl';
 import type { GeoJSONSource } from 'maplibre-gl';
 
-import { coordAt, shapeCoords } from './geo.js';
+import { ZONE_FILL_LEVELS, coordAt, polygonAreaM2, shapeCoords, zoneFillOpacity } from './geo.js';
 import { scopedKey } from '@pctac/modes.js';
 import type { PlanMapInternal, PlanShape } from './types.js';
 
@@ -69,11 +72,25 @@ export const ShapesRenderMethods = {
         if (!src) return;
         const list = this._loadShapes();
         const features: GeoJSON.Feature[] = [];
+        // Retours terrain 2026-10-02 : les zones (rectangle, cercle) sont un ARRIÈRE-PLAN.
+        // Écrites AVANT tout le reste de la source, elles sont rendues dessous ; entre
+        // elles la plus grande passe en premier, pour que la petite, posée dedans, reste
+        // visible. `zone`/`area` servent aussi au toucher (`pickShapeTarget`) : objet
+        // d'abord, puis la plus petite zone.
+        const zones: { area: number; feature: GeoJSON.Feature }[] = [];
         for (const s of list) {
             if (s.type === 'line') {
                 features.push({ type: 'Feature', id: s.id, geometry: { type: 'LineString', coordinates: shapeCoords(s) }, properties: { color: s.color, shapeId: s.id, strokeWidth: s.strokeWidth || 3 } });
             } else if (s.type === 'rectangle' || s.type === 'circle') {
-                features.push({ type: 'Feature', id: s.id, geometry: { type: 'Polygon', coordinates: [shapeCoords(s)] }, properties: { color: s.color, shapeId: s.id, strokeWidth: s.strokeWidth || 3 } });
+                const ring = shapeCoords(s);
+                const area = polygonAreaM2(ring);
+                zones.push({
+                    area,
+                    feature: {
+                        type: 'Feature', id: s.id, geometry: { type: 'Polygon', coordinates: [ring] },
+                        properties: { color: s.color, shapeId: s.id, strokeWidth: s.strokeWidth || 3, zone: true, area, fillOpacity: zoneFillOpacity(s) },
+                    },
+                });
             } else if (s.type === 'text') {
                 // Petite zone "hit" invisible autour du point pour rendre le clic possible.
                 // Carré de ~14 px à l'écran, projeté en degrés.
@@ -121,7 +138,9 @@ export const ShapesRenderMethods = {
                 }
             }
         }
-        src.setData({ type: 'FeatureCollection', features });
+        // Tri stable : à surface égale, l'ordre de dessin est conservé.
+        zones.sort((a, b) => b.area - a.area);
+        src.setData({ type: 'FeatureCollection', features: [...zones.map(z => z.feature), ...features] });
         // Toujours synchroniser texte / diamètres / handles / toolbar avec les formes
         this._renderShapeTexts();
         this._renderDiameters();
@@ -309,6 +328,28 @@ export const ShapesRenderMethods = {
         this._refreshUndoRedoButtons();
     },
 
+    /**
+     * Fond d'une zone (rectangle / cercle) : palier suivant (delta > 0) ou précédent
+     * de `ZONE_FILL_LEVELS`, 0 = contour seul. Retours terrain 2026-10-02. Une valeur
+     * hors paliers (importée) va au palier strictement voisin ; au bout de l'échelle,
+     * rien ne bouge et l'historique n'est pas encombré.
+     */
+    _adjustFillOpacity(this: PlanMapInternal, shapeId: string, delta: number): void {
+        const list = this._loadShapes();
+        const s = list.find(x => x.id === shapeId);
+        if (!s || (s.type !== 'rectangle' && s.type !== 'circle')) return;
+        const cur = zoneFillOpacity(s);
+        const next = delta < 0
+            ? [...ZONE_FILL_LEVELS].reverse().find(v => v < cur)
+            : ZONE_FILL_LEVELS.find(v => v > cur);
+        if (next === undefined) return;
+        this._pushHistory();
+        s.fillOpacity = next;
+        this._saveShapes(list);
+        this._renderShapes();      // repeint aussi les poignées
+        this._refreshUndoRedoButtons();
+    },
+
     // planMap.js:3516-3527
     _toggleShapeDiameter(this: PlanMapInternal, shapeId: string): void {
         const list = this._loadShapes();
@@ -455,6 +496,11 @@ export const ShapesRenderMethods = {
             const shapeId = s.id;
             const onTextPointerDown = (ev: PointerEvent | TouchEvent): void => {
                 if (this.drawTool || this.moveState || this._gesture) return;
+                // Nom d'une zone d'arrière-plan non sélectionnée (ou figée) : comme la zone,
+                // il ne saisit pas le geste — la carte panote, le tap sélectionne la zone
+                // par `click` (retours terrain 2026-10-02).
+                const current = this._loadShapes().find(x => x.id === shapeId);
+                if (current && !this._shapeGrabsPress(current)) return;
                 ev.preventDefault();
                 ev.stopPropagation();
                 // Convertit la position pointeur → lngLat carte

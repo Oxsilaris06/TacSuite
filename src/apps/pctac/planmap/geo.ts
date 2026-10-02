@@ -210,6 +210,44 @@ export function geoEdgeNorth(center: LngLatTuple, radiusM: number): LngLatTuple 
     return sharedGeoEdgeNorth(center, radiusM);
 }
 
+/* ─── Zones (rectangle, cercle) : fond de plan ──────────────────────────────
+ * Retours terrain 2026-10-02 : une zone est un ARRIÈRE-PLAN (dessous, jamais
+ * prioritaire au toucher), et son remplissage se règle zone par zone. */
+
+/** Opacité du fond d'une zone quand `fillOpacity` est absent : la valeur d'avant le réglage. */
+export const ZONE_FILL_DEFAULT = 0.18;
+
+/** Paliers de la roue « Remplissage -/+ » : du contour seul (0) au fond marqué. */
+export const ZONE_FILL_LEVELS: readonly number[] = [0, 0.08, ZONE_FILL_DEFAULT, 0.3, 0.45, 0.6];
+
+/** Nombre dans [0, 1] (NaN et ±Infinity exclus) : seule opacité acceptée, au stockage comme à l'import. */
+export function isFillOpacity(v: unknown): v is number {
+    return typeof v === 'number' && v >= 0 && v <= 1;
+}
+
+/** Opacité du fond d'une zone : la valeur enregistrée si elle est valide, sinon 0.18 (formes antérieures). */
+export function zoneFillOpacity(s: PlanShape): number {
+    return isFillOpacity(s.fillOpacity) ? s.fillOpacity : ZONE_FILL_DEFAULT;
+}
+
+/**
+ * Surface d'un polygone [lng, lat] en m², projection locale équirectangulaire
+ * (sphère de `haversineMeters`). ponytail: exacte à l'échelle d'un plan
+ * tactique ; au-delà de quelques kilomètres, passer à une aire géodésique.
+ * Sert au tri des zones (la plus petite gagne) et à l'export PDF.
+ */
+export function polygonAreaM2(coords: readonly LngLatTuple[]): number {
+    if (coords.length < 3) return 0;
+    const rad = Math.PI / 180;
+    const k = Math.cos((coords.reduce((s, c) => s + c[1], 0) / coords.length) * rad);
+    let twice = 0;
+    coords.forEach(([x1, y1], i) => {
+        const [x2, y2] = coords[(i + 1) % coords.length] ?? [x1, y1];
+        twice += x1 * k * y2 - x2 * k * y1;
+    });
+    return (Math.abs(twice) / 2) * (6371000 * rad) ** 2;
+}
+
 /**
  * Les 12 méthodes de `PlanMapInternal`, en one-liners délégant à la fonction
  * pure homonyme. Pas de paramètre `this` : ces méthodes n'en ont pas besoin

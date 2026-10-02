@@ -57,7 +57,7 @@ import { GpxStore } from '@pctac/image-store.js';
 import { scopedKey } from '@pctac/modes.js';
 import { Persist } from '@shared/persist.js';
 import { GPX_INDEX_KEY, SHAPES_KEY } from '@pctac/planmap/constants.js';
-import { circleDiameter, formatDistance, measureTotalMeters, shapeCoords } from '@pctac/planmap/geo.js';
+import { circleDiameter, formatDistance, measureTotalMeters, polygonAreaM2, shapeCoords } from '@pctac/planmap/geo.js';
 import type { LngLatTuple, PlanGpxTrack, PlanShape } from '@pctac/planmap/types.js';
 import { EMOJI_SEQUENCE, findUnsupported, replaceUnsupported, splitFontRuns, type FontCandidate } from '@shared/pdf-glyphs.js';
 import { EXTRA_FONT_KEYS, glyphTester, loadExtraFontVfs } from '@shared/pdf-fonts/index.js';
@@ -530,23 +530,6 @@ export function formatArea(m2: number): string {
     if (!isFinite(m2) || m2 <= 0) return '';
     if (m2 < 10_000) return `${String(Math.round(m2)).replace(/\B(?=(\d{3})+(?!\d))/g, ' ')} m²`;
     return m2 < 1_000_000 ? `${(m2 / 10_000).toFixed(2).replace('.', ',')} ha` : `${(m2 / 1_000_000).toFixed(2).replace('.', ',')} km²`;
-}
-
-/**
- * Surface d'un polygone [lng, lat] en m², projection locale équirectangulaire
- * (sphère de `haversineMeters`). ponytail: exacte à l'échelle d'un plan
- * tactique ; au-delà de quelques kilomètres, passer à une aire géodésique.
- */
-function polygonAreaM2(coords: readonly LngLatTuple[]): number {
-    if (coords.length < 3) return 0;
-    const rad = Math.PI / 180;
-    const k = Math.cos((coords.reduce((s, c) => s + c[1], 0) / coords.length) * rad);
-    let twice = 0;
-    coords.forEach(([x1, y1], i) => {
-        const [x2, y2] = coords[(i + 1) % coords.length] ?? [x1, y1];
-        twice += x1 * k * y2 - x2 * k * y1;
-    });
-    return (Math.abs(twice) / 2) * (6371000 * rad) ** 2;
 }
 
 /**
