@@ -126,7 +126,8 @@ export const MapCoreMethods = {
             this.map.on('load', this._safe(() => this._enable3D(false), 'load:3D'));
         }
         this.map.on('click', this._safe((e: MapMouseEvent) => this._onMapClick(e), 'mapClick'));
-        // Double-clic : termine une mesure en cours (sinon comportement zoom natif).
+        // Double-clic : valide la ligne de mesure en cours, l'outil RESTE actif
+        // (retours terrain 2026-10-02 ; sinon comportement zoom natif).
         this.map.on('dblclick', this._safe((e: MapMouseEvent) => {
             if (this.drawTool === 'measure' && this._measureState) {
                 if (e.preventDefault) e.preventDefault();

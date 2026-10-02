@@ -75,7 +75,7 @@ function makeFakeThis(overrides: Partial<PlanMapInternal> = {}): PlanMapInternal
         _showHint: vi.fn(),
         _hideHint: vi.fn(),
         _openPingOptionsWheel: vi.fn(),
-        _measureAddVertex: vi.fn(),
+        _measureClick: vi.fn(),
         ...overrides,
     } as PlanMapInternal;
 }
@@ -370,17 +370,26 @@ describe('_addPin / _removePin / _loadPins / _savePins — CRUD (planMap.js:1190
 
 describe('_onMapClick (planMap.js:1156-1188)', () => {
     function makeClick(lng: number, lat: number): MapMouseEvent {
-        // Fixture partielle (même idiome que pm-drawtools.test.ts) : seul
-        // `e.lngLat` est lu par `_onMapClick`.
-        return { lngLat: { lng, lat } } as unknown as MapMouseEvent;
+        // Fixture partielle (même idiome que pm-drawtools.test.ts) : seuls
+        // `e.lngLat` (et `e.point`, en mode mesure) sont lus par `_onMapClick`.
+        return { lngLat: { lng, lat }, point: { x: 5, y: 6 } } as unknown as MapMouseEvent;
     }
 
-    it('mode mesure : délègue à _measureAddVertex et sort (pas de ping créé)', () => {
-        const measureAddVertex = vi.fn();
-        const fake = makeFakeThis({ drawTool: 'measure', _measureState: { vertices: [], cursor: null, reticle: false }, _measureAddVertex: measureAddVertex });
+    it('mode mesure : délègue à _measureClick (position + point écran) et sort (pas de ping créé)', () => {
+        // Retours terrain 2026-10-02 : l'aimant et la lecture d'un dessin se
+        // décident dans `_measureClick` (measure.ts), qui a besoin du point écran.
+        const measureClick = vi.fn();
+        const fake = makeFakeThis({ drawTool: 'measure', _measureState: { vertices: [], cursor: null, reticle: false }, _measureClick: measureClick });
         PinsMethods._onMapClick.call(fake, makeClick(1, 2));
-        expect(measureAddVertex).toHaveBeenCalledWith([1, 2]);
+        expect(measureClick).toHaveBeenCalledWith([1, 2], { x: 5, y: 6 });
         expect(fake._loadPins()).toEqual([]);
+    });
+
+    it('mode mesure sans mesure en cours : ne fait rien', () => {
+        const measureClick = vi.fn();
+        const fake = makeFakeThis({ drawTool: 'measure', _measureClick: measureClick });
+        PinsMethods._onMapClick.call(fake, makeClick(1, 2));
+        expect(measureClick).not.toHaveBeenCalled();
     });
 
     it('drawTool actif (hors mesure) : clic ignoré', () => {
