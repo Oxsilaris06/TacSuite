@@ -15,7 +15,8 @@
     "lint": "eslint .",
     "gen:pdf-fonts": "node scripts/gen-pdf-fonts.mjs",
     "test:pdf": "node tests/pdf/verify-structure.mjs",
-    "check": "npm run typecheck && npm run lint && npm run test && npm run test:pdf"
+    "test:pdf:gate": "node tests/pdf/generate-from-fixture.mjs tests/pdf/fixtures/long-case.json --out=${TMPDIR:-/tmp}/tacsuite-gate-long-case.pdf && node tests/pdf/verify-structure.mjs ${TMPDIR:-/tmp}/tacsuite-gate-long-case.pdf --lenient --fixture=tests/pdf/fixtures/long-case.json && node tests/pdf/generate-from-fixture.mjs tests/pdf/fixtures/volumetric-stress.json --out=${TMPDIR:-/tmp}/tacsuite-gate-volumetric-stress.pdf && node tests/pdf/verify-structure.mjs ${TMPDIR:-/tmp}/tacsuite-gate-volumetric-stress.pdf --photos=58 --fixture=tests/pdf/fixtures/volumetric-stress.json && node tests/pdf/generate-from-fixture.mjs tests/pdf/fixtures/real-shape.json --out=${TMPDIR:-/tmp}/tacsuite-gate-real-shape.pdf && node tests/pdf/verify-structure.mjs ${TMPDIR:-/tmp}/tacsuite-gate-real-shape.pdf --lenient --photos=2 --fixture=tests/pdf/fixtures/real-shape.json",
+    "check": "npm run typecheck && npm run lint && npm run test && npm run test:pdf:gate"
   },
   "dependencies": {
     "@fontsource/inter": "5.3.0",
