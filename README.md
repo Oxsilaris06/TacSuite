@@ -49,6 +49,27 @@ npm run build
 
 Tests, déploiement et polices des PDF : [docs/DEVELOPPEMENT.md](docs/DEVELOPPEMENT.md).
 
+### Gate de clôture
+
+```bash
+~/.ai/bin/gate-tampon npm run check    # typecheck, lint, tests unitaires, PDF des trois fixtures
+```
+
+`npm run check` enchaîne `typecheck`, `lint`, `test` et `test:pdf:gate` (génération puis contrôle
+structurel des trois fixtures de `tests/pdf/fixtures/`, 18/18 requis) ; il exige `pdfinfo`
+(paquet `poppler-utils`) et un `node_modules` installé après le dernier `package-lock.json`.
+La copie conforme de la CI, avec les contrôles de prérequis, est `~/.ai/bin/gate-tacsuite`.
+
+### Serveur local
+
+```bash
+./scripts/dev.sh          # Vite sur 0.0.0.0:9678, journal dans ~/.cache/tacsuite-serve-dev.log
+```
+
+Le lanceur refuse de doubler un serveur déjà sur le port et écrit son PID dans
+`~/.cache/tacsuite-dev.pid`. Pour l'arrêter : `kill "$(cat ~/.cache/tacsuite-dev.pid)"` — jamais
+`pkill`/`killall` ni `pgrep -f`, qui visent toute la machine.
+
 ## Crédits
 
 Cartographie : MapLibre GL. Polices des PDF : Oswald, JetBrains Mono, Noto Sans et Noto Sans Arabic (SIL Open Font License 1.1).
