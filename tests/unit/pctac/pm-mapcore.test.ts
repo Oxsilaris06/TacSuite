@@ -548,6 +548,8 @@ describe('smoke — méthodes restantes de map-core.ts', () => {
         expect(addProtocolSpy).toHaveBeenCalledWith('ignortho', expect.any(Function));
         expect(mapOptions).toHaveLength(1);
         expect(mapOptions[0]?.style).toBe(RASTER_STYLE);
+        // MapLibre 6.15 : le pivot de rotation revient au pointeur (geste de la v5).
+        expect(mapOptions[0]?.dragRotate).toEqual({ around: 'pointer' });
         const transform = mapOptions[0]?.transformRequest as (url: string) => { url: string } | undefined;
         const ortho = (z: number, x: number, y: number) => `https://data.geopf.fr/tms/1.0.0/HR.ORTHOIMAGERY.ORTHOPHOTOS/${z}/${x}/${y}.jpeg`;
         // Pointe-à-Pitre (971) et Paris, à z14.

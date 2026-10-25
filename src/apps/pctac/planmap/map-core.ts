@@ -105,6 +105,10 @@ export const MapCoreMethods = {
         this.map = new maplibregl.Map({
             container: 'plan_map',
             style: RASTER_STYLE,
+            // Pivot de rotation au POINTEUR (MapLibre 6.15) : la v5 tournait autour
+            // du point saisi, la v6 autour du centre de l'écran — on rend le geste
+            // d'origine (retours terrain).
+            dragRotate: { around: 'pointer' },
             center: savedView.center,
             zoom: savedView.zoom,
             pitch: savedView.pitch || 0,
