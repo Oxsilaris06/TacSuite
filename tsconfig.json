@@ -18,11 +18,10 @@
     "isolatedModules": true,
     "skipLibCheck": true,
     "noEmit": true,
-    "baseUrl": ".",
     "paths": {
-      "@shared/*": ["src/shared/*"],
-      "@pctac/*": ["src/apps/pctac/*"],
-      "@oi/*": ["src/apps/oi/*"]
+      "@shared/*": ["./src/shared/*"],
+      "@pctac/*": ["./src/apps/pctac/*"],
+      "@oi/*": ["./src/apps/oi/*"]
     }
   },
   "include": [
