@@ -67,7 +67,7 @@
  *    branche inatteignable en pratique (même idiome que
  *    `@pctac/planmap/chrome.ts`, `_searchAddress`) ;
  *  - `_searchAddress` géocode par `geocodeAddress` (`@pctac/planmap/search.ts`) :
- *    BAN de l'IGN d'abord, Nominatim en repli seulement (revue du 2026-10-28).
+ *    Nominatim d'abord, BAN de l'IGN en repli seulement (revue du 2026-10-28).
  *    L'original interrogeait Nominatim seul ; chaque libellé est échappé par
  *    `escapeHtml`, sans repli sur le texte brut ;
  *  - `const map = this.map;` avant `setTimeout(() => map.resize(), 60)` dans
@@ -539,7 +539,7 @@ export const MapCoreMethods = {
             });
         } catch (e) {
             console.error('[OICarto] géocodage échec:', e);
-            // geocodeAddress ne jette que sur l'échec du repli Nominatim (« HTTP 429 »…).
+            // geocodeAddress ne jette que si Nominatim échoue et que la BAN ne rend rien (« HTTP 429 »…).
             const msg = (e instanceof Error && /^HTTP (429|403)$/.test(e.message))
                 ? 'Quota de recherche atteint. Réessayez dans un instant.'
                 : 'Erreur réseau. Vérifiez la connexion.';

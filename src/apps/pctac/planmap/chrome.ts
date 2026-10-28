@@ -353,7 +353,7 @@ export const ChromeMethods = {
     //
     // Décision 35 (lot C) : la saisie est d'abord essayée comme COORDONNÉES
     // (décimal, DMS, MGRS, case du carroyage actif) — aucun appel réseau dans
-    // ce cas ; sinon géocodage BAN puis Nominatim (`./search.js`).
+    // ce cas ; sinon géocodage Nominatim puis BAN (`./search.js`).
     async _searchAddress(this: PlanMapInternal): Promise<void> {
         const input = document.getElementById('plan_address_input') as HTMLInputElement | null;
         const resultsBox = document.getElementById('plan_search_results');
@@ -417,7 +417,7 @@ export const ChromeMethods = {
             return;
         }
 
-        // 2) Géocodage d'adresse : BAN d'abord, Nominatim en repli.
+        // 2) Géocodage d'adresse : Nominatim d'abord, BAN en repli.
         resultsBox.innerHTML = '<em style="color: var(--text-muted);">Recherche…</em>';
         try {
             const hits = await geocodeAddress(q);

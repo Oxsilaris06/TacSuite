@@ -2,11 +2,13 @@
  * search.ts — Géocodage d'adresse du plan (décision 35, lot C).
  * ===========================================================================
  *
- * Ordre imposé : d'abord la Base Adresse Nationale servie par la
- * Géoplateforme de l'IGN (`https://data.geopf.fr/geocodage/search`, successeur
- * de `api-adresse.data.gouv.fr`, CORS ouvert, réponse GeoJSON) ; Nominatim
- * SEULEMENT si la BAN ne rend rien ou échoue (réseau, délai de 5 s, statut
- * non 200). La recherche de coordonnées (décimal, DMS, MGRS, case) est
+ * Ordre imposé (Nico, 2026-10-28) : d'abord Nominatim (OpenStreetMap), qui
+ * connaît les lieux nommés (gendarmerie, gare, commerce) et l'étranger ; la
+ * Base Adresse Nationale de la Géoplateforme IGN
+ * (`https://data.geopf.fr/geocodage/search`, CORS ouvert, réponse GeoJSON)
+ * SEULEMENT si Nominatim ne rend rien ou échoue (réseau, délai de 5 s, statut
+ * non 200, quota 429). La BAN ne connaît que des adresses : sur un nom de
+ * lieu, elle rendait des homonymes jugés imprécis. La recherche de coordonnées (décimal, DMS, MGRS, case) est
  * traitée EN AMONT par `parseCoordinateInput` (@shared/coords.ts) : aucun
  * appel réseau dans ce cas.
  *
@@ -16,16 +18,17 @@
 
 import { looksLikeCoordinates } from '@shared/coords.js';
 
-/** Endpoint BAN (Géoplateforme IGN). */
+/** Endpoint de repli BAN (Géoplateforme IGN). */
 export const BAN_ENDPOINT = 'https://data.geopf.fr/geocodage/search';
-/** Endpoint de repli (hors France, ou BAN indisponible). */
+/** Endpoint principal (Nominatim, OpenStreetMap). */
 export const NOMINATIM_ENDPOINT = 'https://nominatim.openstreetmap.org/search';
 /** Délai maximal par requête avant repli (exigence : 5 s). */
 export const GEOCODE_TIMEOUT_MS = 5000;
 /**
  * B4 (revue du 25/09) — en dessous de ce score, la BAN rend des homonymes
  * français d'une adresse étrangère (« Genève gare Cornavin » → Vierzon, 0,4) :
- * ce n'est pas une réponse. Nominatim est alors consulté, la BAN reste en repli.
+ * ce n'est pas une réponse sûre. Ces résultats sont marqués `weak` et classés
+ * après les autres.
  */
 export const BAN_MIN_SCORE = 0.5;
 
@@ -116,10 +119,9 @@ export async function fetchWithTimeout(
 }
 
 /**
- * Géocode une adresse : BAN d'abord, Nominatim en repli. Retourne `[]` si les
- * deux ne rendent rien ; JETTE seulement si Nominatim lui-même échoue
- * (l'appelant affiche alors l'erreur réseau). Une BAN en erreur, vide ou en
- * délai est silencieusement remplacée par Nominatim.
+ * Géocode une adresse : Nominatim d'abord, BAN en repli. Retourne `[]` si les
+ * deux ne rendent rien. JETTE seulement si Nominatim échoue ET que la BAN ne
+ * rend rien : l'appelant affiche alors l'erreur de Nominatim (« HTTP 429 »…).
  */
 export async function geocodeAddress(
     q: string,
@@ -130,25 +132,28 @@ export async function geocodeAddress(
     // Des coordonnées ne partent jamais au géocodage : la position ne serait
     // révélée à l'IGN ou à Nominatim sans nécessité (Nico 2026-09-26).
     if (!query || looksLikeCoordinates(query)) return [];
-    // B4 — résultats BAN sous le seuil : gardés en repli, marqués `weak`.
-    let weak: GeocodeHit[] = [];
+    let nominatimError: unknown = null;
     try {
-        const r = await fetchWithTimeout(banSearchUrl(query), fetchImpl, timeoutMs, { 'Accept-Language': 'fr' });
-        if (r.ok) {
-            const hits = parseBanResults(await r.json());
-            if (hits.some((h) => (h.score ?? 1) >= BAN_MIN_SCORE)) return hits;
-            weak = hits.map((h) => ({ ...h, weak: true }));
-        }
-    } catch {
-        // BAN injoignable, en délai ou en erreur : on bascule sur Nominatim.
-    }
-    try {
-        const r2 = await fetchWithTimeout(nominatimSearchUrl(query), fetchImpl, timeoutMs, { 'Accept-Language': 'fr' });
-        if (!r2.ok) throw new Error('HTTP ' + r2.status);
-        const hits = parseNominatimResults(await r2.json());
-        return hits.length ? [...hits, ...weak] : weak;
+        const r = await fetchWithTimeout(nominatimSearchUrl(query), fetchImpl, timeoutMs, { 'Accept-Language': 'fr' });
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        const hits = parseNominatimResults(await r.json());
+        if (hits.length) return hits;
     } catch (e) {
-        if (weak.length) return weak;
-        throw e;
+        nominatimError = e;
     }
+    let ban: GeocodeHit[] = [];
+    try {
+        const r2 = await fetchWithTimeout(banSearchUrl(query), fetchImpl, timeoutMs, { 'Accept-Language': 'fr' });
+        if (r2.ok) ban = parseBanResults(await r2.json());
+    } catch {
+        // BAN injoignable aussi : seule l'erreur de Nominatim compte.
+    }
+    if (!ban.length) {
+        if (nominatimError) throw nominatimError;
+        return [];
+    }
+    // B4 — sous le seuil, marqué faible et classé après les résultats sûrs.
+    const sure = ban.filter((h) => (h.score ?? 1) >= BAN_MIN_SCORE);
+    const weak = ban.filter((h) => (h.score ?? 1) < BAN_MIN_SCORE).map((h) => ({ ...h, weak: true }));
+    return [...sure, ...weak];
 }

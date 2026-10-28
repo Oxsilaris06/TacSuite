@@ -1042,51 +1042,49 @@ describe('_searchAddress (oi_cartographie.js:567-612)', () => {
         expect(document.getElementById('oi_carto_search_results')?.innerHTML).toContain('48.85660, 2.35220');
     });
 
-    it('BAN d’abord (adresse française) : Nominatim n’est pas consulté', async () => {
-        const input = document.getElementById('oi_carto_address_input') as HTMLInputElement;
-        input.value = '12 rue de la Paix';
-        const ban = {
-            features: [{ properties: { label: '12 Rue de la Paix 75002 Paris', score: 0.9 }, geometry: { coordinates: [2.331, 48.869] } }],
-        };
-        const fetchSpy = vi.fn<(url: string, init?: RequestInit) => Promise<unknown>>(() => Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(ban) }));
-        vi.stubGlobal('fetch', fetchSpy);
-        const map = makeFakeMap();
-
-        await MapCoreMethods._searchAddress.call(makeFakeThis({ map }));
-
-        expect(fetchSpy).toHaveBeenCalledTimes(1);
-        expect(fetchSpy.mock.calls[0]?.[0]).toMatch(/^https:\/\/data\.geopf\.fr\/geocodage\/search\?q=12%20rue%20de%20la%20Paix/);
-        const resultsBox = document.getElementById('oi_carto_search_results');
-        expect(resultsBox?.textContent).toContain('12 Rue de la Paix 75002 Paris');
-        resultsBox?.querySelector<HTMLDivElement>('[data-idx="0"]')?.click();
-        expect(map.flyTo).toHaveBeenCalledWith({ center: [2.331, 48.869], zoom: 17, speed: 1.4 });
-    });
-
-    it('BAN sans réponse utile : repli Nominatim, rend les résultats, clic centre la carte', async () => {
+    it('Nominatim d’abord : rend les résultats, la BAN n’est pas consultée, clic centre la carte', async () => {
         const input = document.getElementById('oi_carto_address_input') as HTMLInputElement;
         input.value = '12 rue de la Paix';
         const list = [
             { display_name: 'Résultat 1', lon: '2.33', lat: '48.87' },
             { display_name: 'Résultat 2', lon: '2.34', lat: '48.86' },
         ];
-        // La même réponse sert aux deux appels : la BAN n'y lit aucun Feature, Nominatim deux lieux.
         const fetchSpy = vi.fn<(url: string, init?: RequestInit) => Promise<unknown>>(() => Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(list) }));
         vi.stubGlobal('fetch', fetchSpy);
         const map = makeFakeMap();
-        const fake = makeFakeThis({ map });
 
-        await MapCoreMethods._searchAddress.call(fake);
+        await MapCoreMethods._searchAddress.call(makeFakeThis({ map }));
 
-        expect(fetchSpy).toHaveBeenCalledTimes(2);
-        expect(fetchSpy.mock.calls[1]?.[0]).toBe('https://nominatim.openstreetmap.org/search?format=json&limit=5&q=12%20rue%20de%20la%20Paix');
+        expect(fetchSpy).toHaveBeenCalledTimes(1);
+        expect(fetchSpy.mock.calls[0]?.[0]).toBe('https://nominatim.openstreetmap.org/search?format=json&limit=5&q=12%20rue%20de%20la%20Paix');
         const resultsBox = document.getElementById('oi_carto_search_results');
         expect(resultsBox?.querySelectorAll('.oi-carto-search-result')).toHaveLength(2);
         expect(resultsBox?.textContent).toContain('Résultat 1');
 
-        const first = resultsBox?.querySelector<HTMLDivElement>('[data-idx="0"]');
-        first?.click();
+        resultsBox?.querySelector<HTMLDivElement>('[data-idx="0"]')?.click();
         expect(map.flyTo).toHaveBeenCalledWith({ center: [2.33, 48.87], zoom: 17, speed: 1.4 });
         expect(resultsBox?.innerHTML).toBe('');
+    });
+
+    it('Nominatim vide : repli BAN, rend ses résultats', async () => {
+        const input = document.getElementById('oi_carto_address_input') as HTMLInputElement;
+        input.value = '12 rue de la Paix';
+        const ban = {
+            features: [{ properties: { label: '12 Rue de la Paix 75002 Paris', score: 0.9 }, geometry: { coordinates: [2.331, 48.869] } }],
+        };
+        const fetchSpy = vi.fn<(url: string, init?: RequestInit) => Promise<unknown>>((url) =>
+            Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(url.includes('nominatim') ? [] : ban) }));
+        vi.stubGlobal('fetch', fetchSpy);
+        const map = makeFakeMap();
+
+        await MapCoreMethods._searchAddress.call(makeFakeThis({ map }));
+
+        expect(fetchSpy).toHaveBeenCalledTimes(2);
+        expect(fetchSpy.mock.calls[1]?.[0]).toMatch(/^https:\/\/data\.geopf\.fr\/geocodage\/search\?q=12%20rue%20de%20la%20Paix/);
+        const resultsBox = document.getElementById('oi_carto_search_results');
+        expect(resultsBox?.textContent).toContain('12 Rue de la Paix 75002 Paris');
+        resultsBox?.querySelector<HTMLDivElement>('[data-idx="0"]')?.click();
+        expect(map.flyTo).toHaveBeenCalledWith({ center: [2.331, 48.869], zoom: 17, speed: 1.4 });
     });
 
     it('aucun résultat ⇒ message "Aucun résultat."', async () => {
