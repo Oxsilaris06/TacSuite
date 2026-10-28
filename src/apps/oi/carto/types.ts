@@ -266,6 +266,8 @@ export interface OICartoInternal extends OICartoContract {
      * avec la vue (`OiCartoViewState.contoursOn`).
      */
     contoursOn: boolean;
+    /** Pointeur sur l'adresse cherchée (parité PC-Tac, `@shared/search-marker`). */
+    searchMarker: Marker | null;
     /** Carroyage, grille MGRS, lignes électriques (`@shared/map-overlays`). */
     overlays?: MapOverlays | null | undefined;
     /**
@@ -345,6 +347,7 @@ export interface OICartoInternal extends OICartoContract {
     // --- Recherche adresse / GPS Nominatim (map-core.ts) ---
     _parseGps(str: string): { lat: number; lng: number } | null; // :557
     _searchAddress(): Promise<void>; // :567
+    _placeSearchMarker(lng: number, lat: number, label?: string | null): void;
 
     // --- PINS — membres PATRACDVR + pins OI dédiés (pins.ts) ---
     _openPingModal(): void; // :618

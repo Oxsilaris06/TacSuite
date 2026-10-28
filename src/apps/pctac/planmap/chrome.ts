@@ -50,11 +50,11 @@
  * (lecture seule).
  */
 
-import * as maplibregl from 'maplibre-gl';
 
 import { escHtml, GPX_PLAY_SPEEDS } from './constants.js';
 import { showBusy, hideBusy } from '@pctac/busy.js';
 import { COORDS_NOT_READ, looksLikeCoordinates, parseCoordinateInput } from '@shared/coords.js';
+import { placeSearchMarker } from '@shared/search-marker.js';
 import { geocodeAddress, type GeocodeHit } from './search.js';
 import type { PlanMapInternal } from './types.js';
 
@@ -464,63 +464,12 @@ export const ChromeMethods = {
         }
     },
 
-    /** Pose (ou déplace) un pointeur précis sur l'adresse cherchée.
-     *  Pulse animé pour attirer l'œil. Le marker reste jusqu'à la prochaine
-     *  recherche ; on le retire si l'utilisateur clique dessus. */
+    /** Pose (ou déplace) un pointeur précis sur l'adresse cherchée
+     *  (`@shared/search-marker.ts`, partagé avec la cartographie de l'OI). */
     // planMap.js:894-943
     _placeSearchMarker(this: PlanMapInternal, lng: number, lat: number, label?: string | null): void {
         if (!this.map) return;
-        // planMap.js:895 — capture en const : fait traverser le narrowing
-        // non-null de `this.map` à la fermeture `el.onclick` plus bas (même
-        // principe que draw-layers.ts, SPEC-PLANMAP-SPLIT §1.2).
-        const map = this.map;
-        if (this.searchMarker) {
-            this.searchMarker.remove();
-            this.searchMarker = null;
-        }
-        const el = document.createElement('div');
-        el.style.cssText = `
-            position: relative; width: 32px; height: 32px; cursor: pointer;
-        `;
-        el.innerHTML = `
-            <div style="
-                position: absolute; inset: 0;
-                border-radius: 50%;
-                background: rgba(59,130,246,0.35);
-                animation: pctacPulse 1.6s ease-out infinite;
-            "></div>
-            <div style="
-                position: absolute; left: 50%; top: 50%;
-                transform: translate(-50%, -50%);
-                width: 14px; height: 14px;
-                background: #3b82f6;
-                border: 3px solid #fff;
-                border-radius: 50%;
-                box-shadow: 0 0 6px rgba(0,0,0,0.6);
-            "></div>
-        `;
-        // Injecte le keyframe une seule fois
-        if (!document.getElementById('pctac-pulse-style')) {
-            const s = document.createElement('style');
-            s.id = 'pctac-pulse-style';
-            s.textContent = `@keyframes pctacPulse {
-                0% { transform: scale(0.6); opacity: 0.9; }
-                100% { transform: scale(2.2); opacity: 0; }
-            }`;
-            document.head.appendChild(s);
-        }
-        const popup = label
-            ? new maplibregl.Popup({ offset: 18, closeButton: true }).setHTML(
-                `<div style="font-family: var(--font-ui); font-size: 0.9em; max-width: 260px;">${escHtml(label)}</div>`)
-            : null;
-        const m = new maplibregl.Marker({ element: el, anchor: 'center' }).setLngLat([lng, lat]);
-        if (popup) m.setPopup(popup);
-        m.addTo(map);
-        el.onclick = (ev) => {
-            ev.stopPropagation();
-            if (popup) popup.addTo(map);
-        };
-        this.searchMarker = m;
+        this.searchMarker = placeSearchMarker(this.map, this.searchMarker, lng, lat, label);
     },
 
     /** Ouvre/ferme le dock de dessin réductible */

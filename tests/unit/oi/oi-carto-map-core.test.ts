@@ -126,6 +126,7 @@ function makeFakeThis(overrides: Record<string, unknown> = {}): OICartoInternal 
         lidarLayer: null,
         planIgnOn: false,
         contoursOn: false,
+        searchMarker: null,
 
         // Enveloppe `_safe` neutre : n'attrape rien, retourne `fn` telle quelle.
         _safe: vi.fn((fn: (...a: never[]) => unknown) => fn),
@@ -144,6 +145,7 @@ function makeFakeThis(overrides: Record<string, unknown> = {}): OICartoInternal 
         _hideHint: vi.fn(),
         _parseGps: vi.fn(() => null),
         _searchAddress: vi.fn(async () => {}),
+        _placeSearchMarker: vi.fn(),
         _toggle3D: vi.fn(),
         _enable3D: vi.fn(),
         _disable3D: vi.fn(),
@@ -1129,6 +1131,41 @@ describe('_searchAddress (oi_cartographie.js:567-612)', () => {
         await MapCoreMethods._searchAddress.call(fake);
 
         expect(document.getElementById('oi_carto_search_results')?.textContent).toContain('Erreur réseau');
+    });
+
+    it('pointeur sur l’adresse (parité PC-Tac) : posé au point GPS, au point DMS et au résultat choisi', async () => {
+        const input = document.getElementById('oi_carto_address_input') as HTMLInputElement;
+        const place = vi.fn();
+        const map = makeFakeMap();
+        const fake = makeFakeThis({ map, _placeSearchMarker: place, _parseGps: MapCoreMethods._parseGps });
+
+        input.value = '48.8566, 2.3522';
+        await MapCoreMethods._searchAddress.call(fake);
+        expect(place).toHaveBeenLastCalledWith(2.3522, 48.8566, 'GPS 48.85660, 2.35220');
+
+        input.value = `48°51'24"N 2°21'08"E`;
+        await MapCoreMethods._searchAddress.call(fake);
+        expect(place).toHaveBeenCalledTimes(2);
+
+        input.value = '12 rue de la Paix';
+        vi.stubGlobal('fetch', vi.fn(() => Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve([{ display_name: 'Résultat 1', lon: '2.33', lat: '48.87' }]) })));
+        await MapCoreMethods._searchAddress.call(fake);
+        expect(place).toHaveBeenCalledTimes(2); // la liste seule ne pose rien : l'opérateur choisit
+        document.querySelector<HTMLDivElement>('#oi_carto_search_results [data-idx="0"]')?.click();
+        expect(place).toHaveBeenLastCalledWith(2.33, 48.87, 'Résultat 1');
+    });
+
+    it('échec du géocodage : le pointeur précédent est retiré (localisation périmée)', async () => {
+        const input = document.getElementById('oi_carto_address_input') as HTMLInputElement;
+        input.value = 'adresse';
+        vi.stubGlobal('fetch', vi.fn(() => Promise.reject(new Error('network down'))));
+        const remove = vi.fn();
+        const fake = makeFakeThis({ searchMarker: { remove } });
+
+        await MapCoreMethods._searchAddress.call(fake);
+
+        expect(remove).toHaveBeenCalledTimes(1);
+        expect(fake.searchMarker).toBeNull();
     });
 
     it('fetch rejette (réseau coupé) ⇒ message générique réseau, ne jette pas', async () => {

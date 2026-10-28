@@ -101,6 +101,7 @@ import { ignLayerIds, ignUnservedAt } from '@shared/ign-territoires.js';
 import { createMapOverlays, mountOverlayControls } from '@shared/map-overlays.js';
 import { Store } from '@oi/init.js';
 import { geocodeAddress } from '@pctac/planmap/search.js';
+import { placeSearchMarker } from '@shared/search-marker.js';
 
 import {
     LIDAR_HD_LAYERS,
@@ -495,6 +496,7 @@ export const MapCoreMethods = {
         const gps = this._parseGps(q);
         if (gps) {
             if (this.map) this.map.flyTo({ center: [gps.lng, gps.lat], zoom: 17, speed: 1.4 });
+            this._placeSearchMarker(gps.lng, gps.lat, `GPS ${gps.lat.toFixed(5)}, ${gps.lng.toFixed(5)}`);
             resultsBox.innerHTML = `<div class="oi-carto-search-result">Point GPS centré : ${gps.lat.toFixed(5)}, ${gps.lng.toFixed(5)}</div>`;
             return;
         }
@@ -505,6 +507,7 @@ export const MapCoreMethods = {
         if (coord?.kind === 'point' || coord?.kind === 'cell') {
             if (this.map) this.map.flyTo({ center: [coord.lng, coord.lat], zoom: 17, speed: 1.4 });
             const what = coord.kind === 'cell' ? `Case ${coord.cell}` : coord.label;
+            this._placeSearchMarker(coord.lng, coord.lat, what);
             resultsBox.innerHTML = `<div class="oi-carto-search-result">Point centré : ${escapeHtml(what)}</div>`;
             return;
         }
@@ -534,17 +537,27 @@ export const MapCoreMethods = {
                     // `list` — branche inatteignable en pratique.
                     if (!item) return;
                     if (this.map) this.map.flyTo({ center: [item.lng, item.lat], zoom: 17, speed: 1.4 });
+                    this._placeSearchMarker(item.lng, item.lat, item.label);
                     resultsBox.innerHTML = '';
                 };
             });
         } catch (e) {
             console.error('[OICarto] géocodage échec:', e);
+            // Pointeur précédent retiré : localisation périmée (parité PC-Tac).
+            this.searchMarker?.remove();
+            this.searchMarker = null;
             // geocodeAddress ne jette que si Nominatim échoue et que la BAN ne rend rien (« HTTP 429 »…).
             const msg = (e instanceof Error && /^HTTP (429|403)$/.test(e.message))
                 ? 'Quota de recherche atteint. Réessayez dans un instant.'
                 : 'Erreur réseau. Vérifiez la connexion.';
             resultsBox.innerHTML = `<em style="color: var(--danger-red);">${msg}</em>`;
         }
+    },
+
+    /** Pose (ou déplace) le pointeur sur l'adresse cherchée (`@shared/search-marker`). */
+    _placeSearchMarker(this: OICartoInternal, lng: number, lat: number, label?: string | null): void {
+        if (!this.map) return;
+        this.searchMarker = placeSearchMarker(this.map, this.searchMarker, lng, lat, label);
     },
 
     /* ----- OVERLAY NOMS DE RUES (vectoriel OpenFreeMap, keyless) -----
