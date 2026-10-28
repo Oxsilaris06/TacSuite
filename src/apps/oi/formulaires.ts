@@ -226,7 +226,7 @@ function addDynamicField(containerId: string, value: string = ''): void {
     const item = document.createElement('div');
     item.className = 'dynamic-list-item';
     const fieldId = `dyn_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
-    item.innerHTML = `<label for="${fieldId}" class="sr-only">Champ dynamique</label><input type="text" id="${fieldId}" class="dynamic-input" value="${esc(value)}" oninput="syncDomToStore()"><button type="button" class="remove-btn" onclick="this.parentElement.remove(); syncDomToStore();" aria-label="Supprimer le champ"><span class="material-symbols-outlined">close</span></button>`;
+    item.innerHTML = `<label for="${fieldId}" class="sr-only">Champ dynamique</label><input type="text" id="${fieldId}" class="dynamic-input" value="${esc(value)}" data-action="sync-dom-to-store"><button type="button" class="remove-btn" data-action="remove-parent" aria-label="Supprimer le champ"><span class="material-symbols-outlined">close</span></button>`;
     container.appendChild(item);
 }
 
@@ -322,7 +322,7 @@ function addMeField(value: string = '', containerId: string = 'me_container', fr
     const meIndex = currentItems.length + 1;
     const fieldId = `me_${containerId}_${meIndex}_${Date.now()}`;
     const safeVal = esc(value);
-    item.innerHTML = `<label for="${fieldId}">ME${meIndex}:</label><input type="text" id="${fieldId}" name="${fieldId}" class="me-input" value="${safeVal}" oninput="syncDomToStore()"><button type="button" class="remove-btn" onclick="this.parentElement.remove(); syncDomToStore();" aria-label="Supprimer ce moyen employé"><span class="material-symbols-outlined">close</span></button>`;
+    item.innerHTML = `<label for="${fieldId}">ME${meIndex}:</label><input type="text" id="${fieldId}" name="${fieldId}" class="me-input" value="${safeVal}" data-action="sync-dom-to-store"><button type="button" class="remove-btn" data-action="remove-parent" aria-label="Supprimer ce moyen employé"><span class="material-symbols-outlined">close</span></button>`;
     container.appendChild(item);
 }
 
@@ -340,7 +340,7 @@ function addMaField(value: string = '', containerId: string = 'ma_container'): v
     const safeVal = esc(value);
     const item = document.createElement('div');
     item.className = 'dynamic-list-item';
-    item.innerHTML = `<label for="${fieldId}">MA${maIndex}:</label><textarea id="${fieldId}" name="${fieldId}" class="ma-input" rows="4" placeholder="Décrire le mode d'action envisagé..." oninput="syncDomToStore()">${safeVal}</textarea><button type="button" class="remove-btn" onclick="this.parentElement.remove(); syncDomToStore();" aria-label="Supprimer ce mode d'action"><span class="material-symbols-outlined">close</span></button>`;
+    item.innerHTML = `<label for="${fieldId}">MA${maIndex}:</label><textarea id="${fieldId}" name="${fieldId}" class="ma-input" rows="4" placeholder="Décrire le mode d'action envisagé..." data-action="sync-dom-to-store">${safeVal}</textarea><button type="button" class="remove-btn" data-action="remove-parent" aria-label="Supprimer ce mode d'action"><span class="material-symbols-outlined">close</span></button>`;
     container.appendChild(item);
 }
 
@@ -386,12 +386,12 @@ function addTimeEvent(type_from_load?: string, hour_from_load: string = '', desc
 
     item.innerHTML = `
                 <label for="${selectId}" class="sr-only">Type d'événement</label>
-                <select id="${selectId}" class="time-type-select" onchange="syncDomToStore()">${optionsHtml}</select>
+                <select id="${selectId}" class="time-type-select" data-action="sync-dom-to-store">${optionsHtml}</select>
                 <label for="${hourId}" class="sr-only">Heure</label>
-                <input type="time" id="${hourId}" class="time-hour-input" value="${esc(hour)}" onchange="syncDomToStore()">
+                <input type="time" id="${hourId}" class="time-hour-input" value="${esc(hour)}" data-action="sync-dom-to-store">
                 <label for="${descId}" class="sr-only">Description</label>
-                <input type="text" id="${descId}" class="time-description-input" placeholder="Description" value="${esc(desc)}" oninput="syncDomToStore()">
-                <button type="button" class="remove-btn" onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation()" onclick="this.parentElement.remove(); syncDomToStore();" aria-label="Supprimer cet événement"><span class="material-symbols-outlined">close</span></button>`;
+                <input type="text" id="${descId}" class="time-description-input" placeholder="Description" value="${esc(desc)}" data-action="sync-dom-to-store">
+                <button type="button" class="remove-btn" data-action="remove-parent" aria-label="Supprimer cet événement"><span class="material-symbols-outlined">close</span></button>`;
     container.appendChild(item);
 }
 
@@ -463,8 +463,8 @@ function addAdversary(data: OiAdversary | null = null): void {
         <div class="collapsible-header">
             <h3 class="adv-title">${title}</h3>
             <div style="display: flex; gap: 10px; align-items: center;">
-                <div onclick="event.stopPropagation()">
-                    <button type="button" class="remove-btn" onclick="removeAdversary('${id}')" title="Supprimer cet adversaire" aria-label="Supprimer cet adversaire"><span class="material-symbols-outlined">close</span></button>
+                <div data-no-toggle>
+                    <button type="button" class="remove-btn" data-action="remove-adversary" data-id="${id}" title="Supprimer cet adversaire" aria-label="Supprimer cet adversaire"><span class="material-symbols-outlined">close</span></button>
                 </div>
                 <span class="material-symbols-outlined">expand_more</span>
             </div>
@@ -473,7 +473,7 @@ function addAdversary(data: OiAdversary | null = null): void {
 
             <!-- SECTION : Photos & signalement visuel (repliable pour se concentrer sur la saisie) -->
             <section class="adv-section adv-collapsible" data-collapsed="false">
-                <button type="button" class="adv-section-head adv-section-toggle" aria-expanded="true" aria-label="Replier ou déplier les photos" onclick="toggleAdvSection(this)">
+                <button type="button" class="adv-section-head adv-section-toggle" aria-expanded="true" aria-label="Replier ou déplier les photos" data-action="toggle-adv-section">
                     <span class="material-symbols-outlined" aria-hidden="true">photo_camera</span>
                     <h4>Photos &amp; signalement</h4>
                     <span class="adv-section-hint">replier</span>
@@ -483,18 +483,18 @@ function addAdversary(data: OiAdversary | null = null): void {
                     <div class="adv-section-body-inner">
                         <label for="input_main_${id}">Photo principale&nbsp;:</label>
                         <div id="photo_main_${id}" class="image-preview-container single-photo photo-display-area" data-is-single="true" data-no-caption style="margin-bottom: 5px;"></div>
-                        <button type="button" class="add-btn adv-photo-btn" onclick="document.getElementById('input_main_${id}').click()"><span class="material-symbols-outlined" aria-hidden="true">add_a_photo</span> Photo principale</button>
-                        <input type="file" id="input_main_${id}" name="input_main_${id}" class="sr-only-input" accept="image/*" onchange="handleFileChange(this, 'photo_main_${id}', true)">
+                        <button type="button" class="add-btn adv-photo-btn" data-action="trigger-file-input" data-target="input_main_${id}"><span class="material-symbols-outlined" aria-hidden="true">add_a_photo</span> Photo principale</button>
+                        <input type="file" id="input_main_${id}" name="input_main_${id}" class="sr-only-input" accept="image/*" data-action="handle-file-change" data-preview-container="photo_main_${id}" data-single="true">
 
                         <label for="input_extra_${id}">Photos supplémentaires&nbsp;:</label>
                         <div id="photo_extra_${id}" class="image-preview-container extra-photos photo-display-area" style="margin-bottom: 5px;"></div>
-                        <button type="button" class="add-btn adv-photo-btn" onclick="document.getElementById('input_extra_${id}').click()"><span class="material-symbols-outlined" aria-hidden="true">add_photo_alternate</span> Photos supplémentaires</button>
-                        <input type="file" id="input_extra_${id}" name="input_extra_${id}" class="sr-only-input" accept="image/*" multiple onchange="handleFileChange(this, 'photo_extra_${id}', false)">
+                        <button type="button" class="add-btn adv-photo-btn" data-action="trigger-file-input" data-target="input_extra_${id}"><span class="material-symbols-outlined" aria-hidden="true">add_photo_alternate</span> Photos supplémentaires</button>
+                        <input type="file" id="input_extra_${id}" name="input_extra_${id}" class="sr-only-input" accept="image/*" multiple data-action="handle-file-change" data-preview-container="photo_extra_${id}" data-single="false">
 
                         <label for="input_renforts_${id}" class="adv-sublabel-danger"><span class="material-symbols-outlined">group_add</span> Renforts potentiels&nbsp;:</label>
                         <div id="photo_renforts_${id}" class="image-preview-container photo-display-area" style="margin-bottom: 5px;"></div>
-                        <button type="button" class="add-btn adv-photo-btn" onclick="document.getElementById('input_renforts_${id}').click()"><span class="material-symbols-outlined" aria-hidden="true">add</span> Photo(s) renforts</button>
-                        <input type="file" id="input_renforts_${id}" class="sr-only-input" accept="image/*" multiple onchange="handleFileChange(this, 'photo_renforts_${id}', false)">
+                        <button type="button" class="add-btn adv-photo-btn" data-action="trigger-file-input" data-target="input_renforts_${id}"><span class="material-symbols-outlined" aria-hidden="true">add</span> Photo(s) renforts</button>
+                        <input type="file" id="input_renforts_${id}" class="sr-only-input" accept="image/*" multiple data-action="handle-file-change" data-preview-container="photo_renforts_${id}" data-single="false">
                     </div>
                 </div>
             </section>
@@ -504,18 +504,18 @@ function addAdversary(data: OiAdversary | null = null): void {
                 <div class="adv-section-head"><span class="material-symbols-outlined">badge</span><h4>Identité</h4></div>
                 <div class="oi-fields-grid">
                     <label for="nom_adv_${id}">Nom / Prénom&nbsp;:</label>
-                    <input type="text" id="nom_adv_${id}" name="nom_adv_${id}" class="adv-field" data-field="nom_adversaire" placeholder="Nom et prénom" maxlength="200" value="${nameValSafe}" oninput="updateAdvTitle('${id}', this.value); syncDomToStore()">
+                    <input type="text" id="nom_adv_${id}" name="nom_adv_${id}" class="adv-field" data-field="nom_adversaire" placeholder="Nom et prénom" maxlength="200" value="${nameValSafe}" data-action="update-adv-title" data-id="${id}">
 
                     <label for="naissance_adv_${id}">Naissance&nbsp;:</label>
                     <div class="adv-duo">
-                        <input type="date" id="naissance_adv_${id}" name="naissance_adv_${id}" class="adv-field" data-field="date_naissance" value="${e(data?.date_naissance)}" oninput="syncDomToStore()">
-                        <input type="text" id="lieu_adv_${id}" name="lieu_adv_${id}" class="adv-field" data-field="lieu_naissance" placeholder="Lieu de naissance" value="${e(data?.lieu_naissance)}" oninput="syncDomToStore()">
+                        <input type="date" id="naissance_adv_${id}" name="naissance_adv_${id}" class="adv-field" data-field="date_naissance" value="${e(data?.date_naissance)}" data-action="sync-dom-to-store">
+                        <input type="text" id="lieu_adv_${id}" name="lieu_adv_${id}" class="adv-field" data-field="lieu_naissance" placeholder="Lieu de naissance" value="${e(data?.lieu_naissance)}" data-action="sync-dom-to-store">
                     </div>
 
                     <label for="stature_adv_${id}">Stature / Ethnie&nbsp;:</label>
                     <div class="adv-duo">
-                        <input type="text" id="stature_adv_${id}" name="stature_adv_${id}" class="adv-field" data-field="stature_adversaire" placeholder="Taille, corpulence" value="${e(data?.stature_adversaire)}" oninput="syncDomToStore()">
-                        <select id="ethnie_adv_${id}" name="ethnie_adv_${id}" class="adv-field" data-field="ethnie_adversaire" onchange="syncDomToStore()">
+                        <input type="text" id="stature_adv_${id}" name="stature_adv_${id}" class="adv-field" data-field="stature_adversaire" placeholder="Taille, corpulence" value="${e(data?.stature_adversaire)}" data-action="sync-dom-to-store">
+                        <select id="ethnie_adv_${id}" name="ethnie_adv_${id}" class="adv-field" data-field="ethnie_adversaire" data-action="sync-dom-to-store">
                             <option value="" ${!data?.ethnie_adversaire ? 'selected' : ''} disabled>Ethnie</option>
                             <option ${data?.ethnie_adversaire === 'Caucasien' ? 'selected' : ''}>Caucasien</option>
                             <option ${data?.ethnie_adversaire === 'Nord africain' ? 'selected' : ''}>Nord africain</option>
@@ -525,16 +525,16 @@ function addAdversary(data: OiAdversary | null = null): void {
                     </div>
 
                     <label for="signes_adv_${id}">Signes particuliers&nbsp;:</label>
-                    <input type="text" id="signes_adv_${id}" name="signes_adv_${id}" class="adv-field" data-field="signes_particuliers" placeholder="Tatouages, cicatrices, lunettes…" value="${e(data?.signes_particuliers)}" oninput="syncDomToStore()">
+                    <input type="text" id="signes_adv_${id}" name="signes_adv_${id}" class="adv-field" data-field="signes_particuliers" placeholder="Tatouages, cicatrices, lunettes…" value="${e(data?.signes_particuliers)}" data-action="sync-dom-to-store">
 
                     <label for="sitfam_adv_${id}">Situation familiale&nbsp;:</label>
-                    <input type="text" id="sitfam_adv_${id}" name="sitfam_adv_${id}" class="adv-field" data-field="situation_familiale" placeholder="Célibataire, en couple, enfants…" value="${e(data?.situation_familiale)}" oninput="syncDomToStore()">
+                    <input type="text" id="sitfam_adv_${id}" name="sitfam_adv_${id}" class="adv-field" data-field="situation_familiale" placeholder="Célibataire, en couple, enfants…" value="${e(data?.situation_familiale)}" data-action="sync-dom-to-store">
 
                     <label for="profession_adv_${id}">Profession&nbsp;:</label>
-                    <input type="text" id="profession_adv_${id}" name="profession_adv_${id}" class="adv-field" data-field="profession_adversaire" placeholder="Activité professionnelle" value="${e(data?.profession_adversaire)}" oninput="syncDomToStore()">
+                    <input type="text" id="profession_adv_${id}" name="profession_adv_${id}" class="adv-field" data-field="profession_adversaire" placeholder="Activité professionnelle" value="${e(data?.profession_adversaire)}" data-action="sync-dom-to-store">
 
                     <label for="domicile_adv_${id}">Domicile&nbsp;:</label>
-                    <textarea id="domicile_adv_${id}" name="domicile_adv_${id}" class="adv-field" data-field="domicile_adversaire" rows="2" placeholder="Adresse, étage, particularités d'accès…" oninput="syncDomToStore()">${e(data?.domicile_adversaire)}</textarea>
+                    <textarea id="domicile_adv_${id}" name="domicile_adv_${id}" class="adv-field" data-field="domicile_adversaire" rows="2" placeholder="Adresse, étage, particularités d'accès…" data-action="sync-dom-to-store">${e(data?.domicile_adversaire)}</textarea>
                 </div>
             </section>
 
@@ -543,22 +543,22 @@ function addAdversary(data: OiAdversary | null = null): void {
                 <div class="adv-section-head danger"><span class="material-symbols-outlined">gpp_maybe</span><h4>Évaluation de la menace</h4></div>
                 <div class="oi-fields-grid">
                     <label for="antecedents_adv_${id}">Antécédents&nbsp;:</label>
-                    <textarea id="antecedents_adv_${id}" name="antecedents_adv_${id}" class="adv-field" data-field="antecedents_adversaire" rows="2" placeholder="Judiciaires, comportementaux…" oninput="syncDomToStore()">${e(data?.antecedents_adversaire)}</textarea>
+                    <textarea id="antecedents_adv_${id}" name="antecedents_adv_${id}" class="adv-field" data-field="antecedents_adversaire" rows="2" placeholder="Judiciaires, comportementaux…" data-action="sync-dom-to-store">${e(data?.antecedents_adversaire)}</textarea>
 
                     <label class="adv-chip-label">État d'esprit&nbsp;:</label>
                     <div id="esprit_${id}" class="chip-container full-row" data-options='["Serein", "Hostile", "Conciliant", "Sur ses gardes"]'></div>
 
                     <label for="attitude_adv_${id}">Attitude connue&nbsp;:</label>
-                    <textarea id="attitude_adv_${id}" name="attitude_adv_${id}" class="adv-field" data-field="attitude_adversaire" rows="2" placeholder="Comportement observé, réactions…" oninput="syncDomToStore()">${e(data?.attitude_adversaire)}</textarea>
+                    <textarea id="attitude_adv_${id}" name="attitude_adv_${id}" class="adv-field" data-field="attitude_adversaire" rows="2" placeholder="Comportement observé, réactions…" data-action="sync-dom-to-store">${e(data?.attitude_adversaire)}</textarea>
 
                     <label class="adv-chip-label">Volume (renfort)&nbsp;:</label>
                     <div id="volume_${id}" class="chip-container full-row" data-options='["Seul", "Famille", "BO", "Conjointe", "2-3", "4+"]'></div>
 
                     <label for="substances_adv_${id}">Substances&nbsp;:</label>
-                    <input type="text" id="substances_adv_${id}" name="substances_adv_${id}" class="adv-field" data-field="substances_adversaire" placeholder="Stupéfiants, alcool, traitement…" value="${e(data?.substances_adversaire)}" oninput="syncDomToStore()">
+                    <input type="text" id="substances_adv_${id}" name="substances_adv_${id}" class="adv-field" data-field="substances_adversaire" placeholder="Stupéfiants, alcool, traitement…" value="${e(data?.substances_adversaire)}" data-action="sync-dom-to-store">
 
                     <label for="armes_adv_${id}">Armes connues&nbsp;:</label>
-                    <input type="text" id="armes_adv_${id}" name="armes_adv_${id}" class="adv-field" data-field="armes_connues" placeholder="Type, nombre, accessibilité…" value="${e(data?.armes_connues)}" oninput="syncDomToStore()">
+                    <input type="text" id="armes_adv_${id}" name="armes_adv_${id}" class="adv-field" data-field="armes_connues" placeholder="Type, nombre, accessibilité…" value="${e(data?.armes_connues)}" data-action="sync-dom-to-store">
                 </div>
             </section>
 
@@ -568,11 +568,11 @@ function addAdversary(data: OiAdversary | null = null): void {
 
                 <label class="adv-block-label">Moyens employés (ME)&nbsp;:</label>
                 <div id="me_${id}" class="me-container"></div>
-                <button type="button" class="add-btn" onclick="addMeField('', 'me_${id}')"><span class="material-symbols-outlined" aria-hidden="true">add</span> Moyen employé</button>
+                <button type="button" class="add-btn" data-action="add-me-field" data-container="me_${id}"><span class="material-symbols-outlined" aria-hidden="true">add</span> Moyen employé</button>
 
                 <label class="adv-block-label" style="margin-top: 18px;">Véhicules&nbsp;:</label>
                 <div id="vehicules_${id}" class="vehicules-container"></div>
-                <button type="button" class="add-btn" onclick="addDynamicField('vehicules_${id}')"><span class="material-symbols-outlined" aria-hidden="true">add</span> Véhicule</button>
+                <button type="button" class="add-btn" data-action="add-dynamic-field" data-container="vehicules_${id}"><span class="material-symbols-outlined" aria-hidden="true">add</span> Véhicule</button>
             </section>
 
             <!-- SECTION : Modes d'action — dernier bloc de la fiche (PDF : page dédiée juste
@@ -580,7 +580,7 @@ function addAdversary(data: OiAdversary | null = null): void {
             <section class="adv-section">
                 <div class="adv-section-head"><span class="material-symbols-outlined">psychology</span><h4>Modes d'action</h4></div>
                 <div id="ma_${id}" class="ma-container"></div>
-                <button type="button" class="add-btn" onclick="addMaField('', 'ma_${id}')"><span class="material-symbols-outlined" aria-hidden="true">add</span> Mode d'action</button>
+                <button type="button" class="add-btn" data-action="add-ma-field" data-container="ma_${id}"><span class="material-symbols-outlined" aria-hidden="true">add</span> Mode d'action</button>
             </section>
         </div>
     `;
@@ -648,8 +648,8 @@ function addHypothesis(val: string = ''): void {
     div.style.marginBottom = '10px';
     div.innerHTML = `
         <label for="${id}" class="sr-only">Hypothèse</label>
-        <input type="text" id="${id}" class="hypothese-input" value="${val.replace(/"/g, '&quot;')}" placeholder="Saisir une hypothèse..." oninput="syncDomToStore()" style="flex-grow: 1; padding: 10px; border-radius: 8px; border: 1px solid var(--border-color); background-color: var(--bg-body); color: var(--text-primary);">
-        <button type="button" class="remove-btn" onclick="this.parentElement.remove(); syncDomToStore()" style="padding: 0 10px;" title="Supprimer" aria-label="Supprimer cette hypothèse"><span class="material-symbols-outlined">close</span></button>
+        <input type="text" id="${id}" class="hypothese-input" value="${val.replace(/"/g, '&quot;')}" placeholder="Saisir une hypothèse..." data-action="sync-dom-to-store" style="flex-grow: 1; padding: 10px; border-radius: 8px; border: 1px solid var(--border-color); background-color: var(--bg-body); color: var(--text-primary);">
+        <button type="button" class="remove-btn" data-action="remove-parent" style="padding: 0 10px;" title="Supprimer" aria-label="Supprimer cette hypothèse"><span class="material-symbols-outlined">close</span></button>
     `;
     container.appendChild(div);
     syncDomToStore();
@@ -1082,11 +1082,11 @@ async function loadFormData(): Promise<boolean> {
                                         <input type="text" class="photo-title-input" maxlength="${OI_PHOTO_CAPTION_MAX}" aria-label="Légende de la photo"
                                             value="${esc(imgData.customTitle || '')}"
                                             style="width: 100%; margin-top: 5px; background: var(--bg-interactive); border: 1px solid var(--border-color); color: var(--text-primary); border-radius: 4px; padding: 2px 5px; font-size: 0.8em;"
-                                            oninput="syncDomToStore()">
+                                            data-action="sync-dom-to-store">
                                         <div style="display: flex; gap: 5px; margin-top: 5px;">
-                                            <button type="button" class="add-btn" style="background-color: var(--accent-blue); padding: 4px 8px;" onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation()" onclick="openAnnotationModal(this.closest('.image-preview-item').querySelector('.image-preview').id)" aria-label="Annoter la photo"><span class="material-symbols-outlined" style="font-size: 1.2em;">edit</span></button>
-                                            ${isEffrac ? `<button type="button" class="add-btn" style="background-color: var(--effraction-gold); padding: 4px 8px;" onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation()" onclick="openEffractionToolsModal(this.closest('.image-preview-item').querySelector('.image-preview').id)" aria-label="Sélectionner les outils d'effraction"><span class="material-symbols-outlined" style="font-size: 1.2em;">hardware</span></button>` : ''}
-                                            <button type="button" class="remove-btn" style="padding: 4px 8px;" onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation()" onclick="removeImage(this.closest('.image-preview-item').querySelector('.image-preview').id, this.closest('.image-preview-item'))" aria-label="Supprimer la photo">&times;</button>
+                                            <button type="button" class="add-btn" style="background-color: var(--accent-blue); padding: 4px 8px;" data-action="annotate-photo" aria-label="Annoter la photo"><span class="material-symbols-outlined" style="font-size: 1.2em;">edit</span></button>
+                                            ${isEffrac ? `<button type="button" class="add-btn" style="background-color: var(--effraction-gold); padding: 4px 8px;" data-action="effraction-tools-photo" aria-label="Sélectionner les outils d'effraction"><span class="material-symbols-outlined" style="font-size: 1.2em;">hardware</span></button>` : ''}
+                                            <button type="button" class="remove-btn" style="padding: 4px 8px;" data-action="remove-photo" aria-label="Supprimer la photo">&times;</button>
                                         </div>`;
                             // Photo principale d'adversaire : jamais de légende (Nico 09-26).
                             if (previewContainer.hasAttribute('data-no-caption')) interactiveItem.querySelector('.photo-title-input')?.remove();

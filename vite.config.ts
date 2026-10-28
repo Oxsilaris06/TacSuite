@@ -57,14 +57,11 @@ const devServerGuard: Plugin = {
 // GitHub Pages ne permet pas d'en-tête HTTP : c'est une balise <meta>, d'où l'absence
 // de frame-ancestors. connect-src reste ouvert à https: parce que l'URL du relais OsmAnd
 // et le serveur Tchap se saisissent ; 127.0.0.1 et localhost servent au relais local.
-// 'wasm-unsafe-eval' : décodeur HEIC (heic-to). Le Générateur d'OI garde 'unsafe-inline'
-// tant que ses gestionnaires `onclick=` générés (articulation, formulaires, médias) ne
-// sont pas convertis ; un hachage dans sa liste désactiverait 'unsafe-inline'.
+// 'wasm-unsafe-eval' : décodeur HEIC (heic-to). Aucune page n'a 'unsafe-inline' pour les
+// scripts : les gestionnaires passent par la délégation `data-action`.
 const INLINE_SCRIPT = /<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/g;
-export function withCsp(html: string, path: string): string {
-  const inline = path.startsWith('/oi/')
-    ? ["'unsafe-inline'"]
-    : [...html.matchAll(INLINE_SCRIPT)].map((m) => `'sha256-${createHash('sha256').update(m[1] ?? '').digest('base64')}'`);
+export function withCsp(html: string): string {
+  const inline = [...html.matchAll(INLINE_SCRIPT)].map((m) => `'sha256-${createHash('sha256').update(m[1] ?? '').digest('base64')}'`);
   const policy = [
     "default-src 'self'",
     ["script-src 'self' 'wasm-unsafe-eval'", ...inline].join(' '),
@@ -85,7 +82,7 @@ export function withCsp(html: string, path: string): string {
 const csp: Plugin = {
   name: 'tacsuite-csp',
   apply: 'build',
-  transformIndexHtml: { order: 'post', handler: (html, ctx) => withCsp(html, ctx.path) },
+  transformIndexHtml: { order: 'post', handler: (html) => withCsp(html) },
 };
 
 // Multi-page app: portail + PC-Tac + Generateur d'OI.

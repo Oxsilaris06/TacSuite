@@ -147,6 +147,11 @@ import { buildLogsHtml } from '@oi/log-window.js';
             logWindow.document.open();
             logWindow.document.write(html);
             logWindow.document.close();
+            // La fenêtre hérite de la CSP de l'OI : pas d'onclick inline, branché d'ici.
+            logWindow.document.getElementById('clearLogsBtn')?.addEventListener('click', () => {
+                logWindow.localStorage.removeItem('gstart_captured_logs');
+                logWindow.location.reload();
+            });
         }
     };
 })();
@@ -240,9 +245,19 @@ mountAnnotationModal({ memberTool: true });
  * §12.4 — Délégation `data-action` (décision identique à PC-Tac,
  * SPEC-PCTAC-CONVERSION.md §3.2). Trois listeners délégués sur `document`
  * (click / input / change), posés une fois, table `action → handler` ici.
- * Portée : les 63 attributs statiques retirés de `oi/index.html`.
+ * Portée : les 63 attributs statiques retirés de `oi/index.html`, puis les
+ * gestionnaires générés en innerHTML (articulation, formulaires, médias,
+ * PATRAC), retirés le 2026-10-28 pour la CSP stricte : un `onclick="…"`
+ * généré ne s'exécuterait plus en production.
  * ─────────────────────────────────────────────────────────────────────────
  */
+
+/** Identifiant de la photo d'un bouton de vignette (`.image-preview-item`). */
+function photoOf(el: HTMLElement): { id: string; item: HTMLElement } | null {
+    const item = el.closest<HTMLElement>('.image-preview-item');
+    const id = item?.querySelector('.image-preview')?.id;
+    return item && id ? { id, item } : null;
+}
 
 type OiActionHandler = (el: HTMLElement) => void;
 
@@ -310,6 +325,45 @@ const oiClickActions: Record<string, OiActionHandler> = {
     'clone-member-from-context': () => { window.cloneMemberFromContext(); },
     // index.html:768
     'delete-member-from-context': () => { window.deleteMemberFromContext(); },
+    // Gestionnaires générés (2026-10-28).
+    'remove-block': (el) => {
+        const sel = el.dataset.selector;
+        if (sel) window.removeBlockEl(el, sel);
+    },
+    'remove-parent': (el) => { el.parentElement?.remove(); window.syncDomToStore(); },
+    'remove-closest': (el) => {
+        const sel = el.dataset.closest;
+        if (sel) el.closest(sel)?.remove();
+        window.syncDomToStore();
+    },
+    'add-effraction-hypothesis': (el) => {
+        const id = el.dataset.block;
+        if (id) window.addEffractionHypothesis(id);
+    },
+    'annotate-photo': (el) => {
+        const p = photoOf(el);
+        if (p) void window.openAnnotationModal(p.id);
+    },
+    'effraction-tools-photo': (el) => {
+        const p = photoOf(el);
+        if (p) window.openEffractionToolsModal(p.id);
+    },
+    'remove-photo': (el) => {
+        const p = photoOf(el);
+        if (p) void window.removeImage(p.id, p.item);
+    },
+    'remove-adversary': (el) => {
+        const id = el.dataset.id;
+        if (id) window.removeAdversary(id);
+    },
+    'toggle-adv-section': (el) => { window.toggleAdvSection(el); },
+    'add-me-field': (el) => { window.addMeField('', el.dataset.container); },
+    'add-ma-field': (el) => { window.addMaField('', el.dataset.container); },
+    'add-dynamic-field': (el) => {
+        const c = el.dataset.container;
+        if (c) window.addDynamicField(c);
+    },
+    'rename-vehicle': (el) => { window.renameVehicle(el); },
     // R4-a (D2, « une seule voie d'output PDF ») : `print-oi-high-quality`
     // (#printHqBtn → printOiHighQuality() → print-view.ts/print-style.ts,
     // voie B) RETIRÉE. On imprime désormais le PDF vectoriel (téléchargé ou
@@ -320,6 +374,11 @@ const oiClickActions: Record<string, OiActionHandler> = {
 const oiInputActions: Record<string, OiActionHandler> = {
     // 18 sites (formulaire texte/textarea) — index.html:286-370, 599-617
     'sync-dom-to-store': () => { window.syncDomToStore(); },
+    'update-adv-title': (el) => {
+        const id = el.dataset.id;
+        if (id) window.updateAdvTitle(id, (el as HTMLInputElement).value);
+        window.syncDomToStore();
+    },
     // Curseur de rotation de l'annotation : câblé par `mountAnnotationModal`.
 };
 
@@ -486,7 +545,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         const cont = document.querySelector('.container');
         if (cont) {
             cont.addEventListener('click', (event) => {
-                const header = (event.target as HTMLElement).closest('.collapsible-header');
+                const target = event.target as HTMLElement;
+                // Titre éditable et boutons de l'en-tête (ancien `event.stopPropagation()` inline).
+                if (target.closest('[data-no-toggle]')) return;
+                const header = target.closest('.collapsible-header');
                 if (header) {
                     const parent = header.parentElement;
                     if (parent && parent.classList.contains('collapsible-container')) parent.classList.toggle('open');

@@ -176,7 +176,7 @@ function addPatracdvrRow(vehicleName: string, members: readonly Partial<OiPatrac
 
     row.innerHTML = `
                 <div class="vehicle-header">
-                    <span class="vehicle-name" onclick="renameVehicle(this)" title="Cliquer pour renommer">${esc(vehicleName)}</span>
+                    <span class="vehicle-name" data-action="rename-vehicle" title="Cliquer pour renommer">${esc(vehicleName)}</span>
                     <button type="button" class="remove-btn" title="Supprimer le véhicule" aria-label="Supprimer le véhicule"><span class="material-symbols-outlined">close</span></button>
                 </div>
                 <div class="patracdvr-members-container"></div>`;
