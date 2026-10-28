@@ -1364,7 +1364,16 @@
             border-radius: var(--radius-md);
             border: 1px solid var(--border-color);
             box-shadow: var(--shadow-md);
-            transition: transform var(--transition-fast), box-shadow var(--transition-fast), border-color var(--transition-fast);
+            transition: transform var(--transition-fast), box-shadow var(--transition-fast), border-color var(--transition-fast), opacity 200ms var(--tac-ease-out);
+        }
+
+        /* Vignette ajoutée : fondu d'entrée. Exclut la vignette en cours de
+           glisser, réinsérée dans le DOM à chaque dépôt. */
+        @starting-style {
+            .image-preview-item:not(.dragging) {
+                opacity: 0;
+                transform: scale(0.96);
+            }
         }
 
         .image-preview-item:hover {

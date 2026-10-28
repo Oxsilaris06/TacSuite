@@ -285,6 +285,16 @@ function injectStyles(): void {
   background: rgba(0, 0, 0, 0.6);
   backdrop-filter: blur(4px);
 }
+/* Entrée : fondu et léger grossissement ; le translate de centrage reste. */
+.tac-confirm-dialog,
+.tac-confirm-dialog::backdrop {
+  transition: opacity 180ms var(--tac-ease-out, cubic-bezier(0.23, 1, 0.32, 1)),
+              transform 180ms var(--tac-ease-out, cubic-bezier(0.23, 1, 0.32, 1));
+}
+@starting-style {
+  .tac-confirm-dialog[open] { opacity: 0; transform: translate(-50%, -50%) scale(0.96); }
+  .tac-confirm-dialog[open]::backdrop { opacity: 0; }
+}
 .tac-confirm-title {
   margin: 0 0 var(--tac-space-2, 8px);
   font-size: 16px;
@@ -346,7 +356,7 @@ function injectStyles(): void {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .tac-toast { transition: none; }
+  .tac-toast, .tac-confirm-dialog, .tac-confirm-dialog::backdrop { transition: none; }
 }
 `;
   document.head.appendChild(style);
