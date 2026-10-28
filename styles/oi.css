@@ -1364,7 +1364,7 @@
             border-radius: var(--radius-md);
             border: 1px solid var(--border-color);
             box-shadow: var(--shadow-md);
-            transition: transform var(--transition-fast), box-shadow var(--transition-fast), border-color var(--transition-fast), opacity 200ms var(--tac-ease-out);
+            transition: transform var(--transition-fast), box-shadow var(--transition-fast), border-color var(--transition-fast), opacity 200ms var(--tac-ease-out, cubic-bezier(0.23, 1, 0.32, 1));
         }
 
         /* Vignette ajoutée : fondu d'entrée. Exclut la vignette en cours de

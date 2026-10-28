@@ -805,7 +805,7 @@
         @media (min-width: 1320px) {
             .mode-selector {
                 position: fixed;
-                left: max(16px, calc((100vw - 1000px) / 2 - 136px));
+                left: max(16px, calc(50% - 636px));
                 top: 60%;
                 transform: translateY(-50%);
                 width: 112px;
@@ -1646,10 +1646,12 @@
             padding: 30px;
             z-index: var(--z-dialog);
             box-shadow: var(--shadow-float), var(--inner-glow);
-            transition: opacity 200ms var(--tac-ease-out), transform 200ms var(--tac-ease-out);
+            transition: opacity 200ms var(--tac-ease-out, cubic-bezier(0.23, 1, 0.32, 1)),
+                        transform 200ms var(--tac-ease-out, cubic-bezier(0.23, 1, 0.32, 1));
         }
 
-        /* Entrée des modales natives (parité OI) : fondu et léger grossissement.
+        /* Entrée des modales natives : fondu et léger grossissement, même recette
+           que le dialogue de confirmation (`@shared/feedback.ts`).
            Le translate de centrage reste dans le transform de départ. */
         @starting-style {
             dialog.modal[open] {
@@ -1662,7 +1664,7 @@
         }
 
         dialog.modal::backdrop {
-            transition: opacity 200ms var(--tac-ease-out);
+            transition: opacity 200ms var(--tac-ease-out, cubic-bezier(0.23, 1, 0.32, 1));
         }
 
         /* Variante large pour les modales avec textes longs (logs, fiches) */

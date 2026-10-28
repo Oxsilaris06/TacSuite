@@ -22,6 +22,10 @@ export function placeSearchMarker(
     previous?.remove();
     const el = document.createElement('div');
     el.className = 'tac-search-marker';
+    // MapLibre pose `tabindex="0"` dès qu'un popup est lié : sans role ni nom,
+    // la tabulation tombe sur une div muette. Nommée par l'adresse cherchée.
+    el.setAttribute('role', 'button');
+    el.setAttribute('aria-label', label ? `Pointeur d'adresse : ${label}` : "Pointeur d'adresse");
     el.style.cssText = `
         position: relative; width: 32px; height: 32px; cursor: pointer;
     `;

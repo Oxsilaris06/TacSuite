@@ -492,6 +492,10 @@ export const MapCoreMethods = {
         if (!input || !resultsBox) return;
         const q = input.value.trim();
         if (!q) return;
+        // Jeton de séquence (parité PC-Tac, `chrome.ts`) : l'échec ou la réponse
+        // d'une recherche périmée ne doit ni purger le pointeur ni écraser la
+        // liste d'une recherche plus récente.
+        const seq = (this._searchSeq = (this._searchSeq || 0) + 1);
 
         const gps = this._parseGps(q);
         if (gps) {
@@ -519,6 +523,7 @@ export const MapCoreMethods = {
         resultsBox.innerHTML = '<em style="color: var(--text-muted);">Recherche…</em>';
         try {
             const list = await geocodeAddress(q);
+            if (seq !== this._searchSeq) return; // réponse périmée : ignorer
             if (!list.length) {
                 resultsBox.innerHTML = '<em style="color: var(--text-muted);">Aucun résultat.</em>';
                 return;
@@ -542,6 +547,7 @@ export const MapCoreMethods = {
                 };
             });
         } catch (e) {
+            if (seq !== this._searchSeq) return; // échec d'une recherche périmée : ignorer
             console.error('[OICarto] géocodage échec:', e);
             // Pointeur précédent retiré : localisation périmée (parité PC-Tac).
             this.searchMarker?.remove();

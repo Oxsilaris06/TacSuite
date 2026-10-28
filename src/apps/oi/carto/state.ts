@@ -162,6 +162,7 @@ export function createOICartoState(): Pick<
     | 'planIgnOn'
     | 'contoursOn'
     | 'searchMarker'
+    | '_searchSeq'
     | 'lastQuickPin'
     | '_wheelJustClosed'
     | 'persistence'
@@ -197,6 +198,7 @@ export function createOICartoState(): Pick<
         planIgnOn: false, // fond topographique couleur Plan IGN v2 (alignement PC-Tac, hors littéral)
         contoursOn: false, // overlay courbes de niveau (alignement PC-Tac, hors littéral)
         searchMarker: null, // pointeur sur l'adresse cherchée (parité PC-Tac)
+        _searchSeq: 0, // jeton de séquence de la recherche (parité PC-Tac)
         lastQuickPin: null, // dernier type posé par la roue de création (hors littéral — cf. types.ts)
         _wheelJustClosed: 0, // anti-réouverture de roue au clic de fermeture (parité PC-Tac)
         persistence: buildCartoPersistenceAdapter(), // R3-c, hors littéral (cf. ci-dessus)

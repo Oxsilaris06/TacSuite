@@ -35,6 +35,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 // R2-T2b : `alert()` natif → `toast` (`@shared/feedback.js`) mocké plutôt que
 // `vi.stubGlobal('alert', ...)`, même pattern que `pc-archive.test.ts`.
 const toastSpy = vi.hoisted(() => vi.fn());
+const { placeSearchMarkerSpy } = vi.hoisted(() => ({
+    placeSearchMarkerSpy: vi.fn(() => ({ remove: () => {} })),
+}));
+vi.mock('@shared/search-marker.js', () => ({ placeSearchMarker: placeSearchMarkerSpy }));
+
 vi.mock('@shared/feedback.js', () => ({
     toast: toastSpy,
 }));
@@ -146,6 +151,7 @@ function makeFakeThis(overrides: Record<string, unknown> = {}): OICartoInternal 
         _parseGps: vi.fn(() => null),
         _searchAddress: vi.fn(async () => {}),
         _placeSearchMarker: vi.fn(),
+        _searchSeq: 0,
         _toggle3D: vi.fn(),
         _enable3D: vi.fn(),
         _disable3D: vi.fn(),
@@ -1153,6 +1159,50 @@ describe('_searchAddress (oi_cartographie.js:567-612)', () => {
         expect(place).toHaveBeenCalledTimes(2); // la liste seule ne pose rien : l'opérateur choisit
         document.querySelector<HTMLDivElement>('#oi_carto_search_results [data-idx="0"]')?.click();
         expect(place).toHaveBeenLastCalledWith(2.33, 48.87, 'Résultat 1');
+    });
+
+    it('le pointeur de l’OI est exclu de la capture de carte (caméra : 6e argument true)', () => {
+        placeSearchMarkerSpy.mockClear();
+        const map = makeFakeMap();
+        const fake = makeFakeThis({ map, _placeSearchMarker: MapCoreMethods._placeSearchMarker });
+
+        MapCoreMethods._placeSearchMarker.call(fake, 2.33, 48.87, 'Paris');
+
+        expect(placeSearchMarkerSpy).toHaveBeenCalledWith(map, null, 2.33, 48.87, 'Paris', true);
+    });
+
+    it('échec d’une recherche périmée : le pointeur de la recherche récente survit', async () => {
+        const input = document.getElementById('oi_carto_address_input') as HTMLInputElement;
+        let failFirst: (e: Error) => void = () => {};
+        const pending = new Promise((_ok, ko) => { failFirst = ko as (e: Error) => void; });
+        let call = 0;
+        vi.stubGlobal('fetch', vi.fn(() => {
+            call += 1;
+            if (call === 1) return pending;
+            if (call === 2) {
+                return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve([{ display_name: 'Récent', lon: '2.40', lat: '48.90' }]) });
+            }
+            return Promise.reject(new Error('HTTP 500'));
+        }));
+        const remove = vi.fn();
+        const fake = makeFakeThis({ map: makeFakeMap(), _searchSeq: 0 });
+        fake._placeSearchMarker = vi.fn(() => { fake.searchMarker = { remove } as never; });
+
+        input.value = 'requête ancienne';
+        const first = MapCoreMethods._searchAddress.call(fake);
+        input.value = 'requête récente';
+        const second = MapCoreMethods._searchAddress.call(fake);
+        await second;
+        // L'OI ne pose rien sur la liste seule : c'est le choix de l'opérateur
+        // qui pose le pointeur (contrairement à PC-Tac, qui vole au premier).
+        document.querySelector<HTMLDivElement>('#oi_carto_search_results [data-idx="0"]')?.click();
+        expect(fake.searchMarker).not.toBeNull();
+
+        failFirst(new Error('HTTP 500')); // l'ancienne échoue APRÈS la récente
+        await first;
+
+        expect(remove).not.toHaveBeenCalled();
+        expect(fake.searchMarker).not.toBeNull();
     });
 
     it('échec du géocodage : le pointeur précédent est retiré (localisation périmée)', async () => {

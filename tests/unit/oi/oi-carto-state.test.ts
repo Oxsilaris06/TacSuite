@@ -193,6 +193,9 @@ describe('createOICartoState (oi_cartographie.js:270-282)', () => {
         expect(state.lidarLayer).toBeNull();
         expect(state.planIgnOn).toBe(false);
         expect(state.contoursOn).toBe(false);
+        // Pointeur d'adresse et jeton de séquence de recherche (parité PC-Tac).
+        expect(state.searchMarker).toBeNull();
+        expect(state._searchSeq).toBe(0);
     });
 
     it('deux appels produisent des références indépendantes (markers/history/redoStack)', () => {

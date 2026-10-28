@@ -268,6 +268,8 @@ export interface OICartoInternal extends OICartoContract {
     contoursOn: boolean;
     /** Pointeur sur l'adresse cherchée (parité PC-Tac, `@shared/search-marker`). */
     searchMarker: Marker | null;
+    /** Jeton de séquence de la recherche d'adresse (parité PC-Tac, `chrome.ts`). */
+    _searchSeq: number;
     /** Carroyage, grille MGRS, lignes électriques (`@shared/map-overlays`). */
     overlays?: MapOverlays | null | undefined;
     /**

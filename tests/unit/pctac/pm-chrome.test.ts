@@ -23,7 +23,10 @@
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import * as maplibregl from 'maplibre-gl';
+
 import { ChromeMethods } from '../../../src/apps/pctac/planmap/chrome.js';
+import { placeSearchMarker } from '../../../src/shared/search-marker.js';
 import type { PlanMapInternal } from '../../../src/apps/pctac/planmap/types.js';
 
 // ---------------------------------------------------------------------------
@@ -542,6 +545,35 @@ describe('_placeSearchMarker — construit un vrai maplibregl.Marker sans jeter 
 
         expect(previousRemove).toHaveBeenCalledTimes(1);
         expect(instance.searchMarker).not.toBeNull();
+    });
+
+    it('exclusion de la capture : posée sur demande (OI), jamais par défaut (PC-Tac)', () => {
+        const map = fakeMarkerMap();
+        const excluded = placeSearchMarker(map as never, null, 2.3522, 48.8566, 'Paris', true);
+        const kept = placeSearchMarker(map as never, null, 2.3522, 48.8566, 'Paris');
+
+        // `data-html2canvas-ignore` écarte le pointeur de la capture de carte qui
+        // part dans la photo « Carte » du PDF de l'OI (cf. `oi/carto/capture.ts`).
+        expect(excluded.getElement().hasAttribute('data-html2canvas-ignore')).toBe(true);
+        expect(kept.getElement().hasAttribute('data-html2canvas-ignore')).toBe(false);
+    });
+
+    it('un clic bascule le popup une seule fois et nomme le pointeur pour le clavier', () => {
+        const map = fakeMarkerMap();
+        // Espion neutralisé : la vraie bascule exigerait une carte complète (WebGL
+        // absent sous jsdom). L'ouverture réelle est vérifiée au navigateur ; ici
+        // on prouve qu'un clic ne déclenche qu'UNE bascule.
+        const toggle = vi.spyOn(maplibregl.Marker.prototype, 'togglePopup').mockReturnThis();
+        const marker = placeSearchMarker(map as never, null, 2.3522, 48.8566, 'Paris');
+
+        marker.getElement().click();
+
+        // `stopPropagation` coupe le gestionnaire de clic de la carte : la
+        // bascule native ne tourne pas, la nôtre doit donc la remplacer sans doubler.
+        expect(toggle).toHaveBeenCalledTimes(1);
+        // MapLibre pose `tabindex="0"` dès qu'un popup est lié : role + nom requis.
+        expect(marker.getElement().getAttribute('role')).toBe('button');
+        expect(marker.getElement().getAttribute('aria-label')).toContain('Paris');
     });
 
     it('sans label (label omis) : ne construit pas de popup, ne jette pas', () => {
