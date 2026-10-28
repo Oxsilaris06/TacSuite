@@ -140,13 +140,13 @@ function notify(): void {
 
 /**
  * Déplace la pastille active sous le segment sélectionné. Les quatre segments
- * ont la MÊME largeur (`grid-template-columns: repeat(4, 1fr)`) : seul un
- * `translateX` est nécessaire, jamais une animation de largeur — c'est la
- * seule forme qui tienne 60 images par seconde sans repeindre la mise en page.
+ * ont la MÊME taille : un `translate` d'un pas par segment suffit, jamais une
+ * animation de taille — seule forme qui tienne 60 images par seconde sans
+ * repeindre la mise en page. Le CSS choisit l'axe : horizontal en barre,
+ * vertical en deck latéral (fenêtre large).
  */
 function positionIndicator(group: HTMLElement, index: number): void {
-    const indicator = group.querySelector<HTMLElement>('.mode-selector-indicator');
-    if (indicator) indicator.style.transform = `translateX(${index * 100}%)`;
+    group.querySelector<HTMLElement>('.mode-selector-indicator')?.style.setProperty('--mode-index', String(index));
 }
 
 export function setMode(id: PctacModeId, group?: HTMLElement | null): void {
@@ -281,8 +281,8 @@ export function syncSituationPaxChip(): void {
  *  sélecteur devient un menu déroulant natif. */
 const MOBILE_SELECTOR_MQ = '(max-width: 520px)';
 
-/** Rangée de boutons radio (bureau). Les quatre segments ont la même largeur,
- *  la pastille active se déplace d'un simple `translateX`. */
+/** Rangée de boutons radio (bureau). Les quatre segments ont la même taille,
+ *  la pastille active se déplace d'un simple `translate`. */
 function buildRadioSelector(group: HTMLElement, active: PctacModeId): void {
     group.setAttribute('role', 'radiogroup');
     group.setAttribute('aria-label', 'Situation opérationnelle');
