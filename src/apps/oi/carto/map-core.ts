@@ -557,7 +557,7 @@ export const MapCoreMethods = {
     /** Pose (ou déplace) le pointeur sur l'adresse cherchée (`@shared/search-marker`). */
     _placeSearchMarker(this: OICartoInternal, lng: number, lat: number, label?: string | null): void {
         if (!this.map) return;
-        this.searchMarker = placeSearchMarker(this.map, this.searchMarker, lng, lat, label);
+        this.searchMarker = placeSearchMarker(this.map, this.searchMarker, lng, lat, label, true);
     },
 
     /* ----- OVERLAY NOMS DE RUES (vectoriel OpenFreeMap, keyless) -----

@@ -8,13 +8,16 @@ import * as maplibregl from 'maplibre-gl';
 import type { Map as MapLibreMap, Marker } from 'maplibre-gl';
 import { esc } from './ui-platform.js';
 
-/** Retire `previous` puis pose un nouveau pointeur ; rend le marker posé. */
+/** Retire `previous` puis pose un nouveau pointeur ; rend le marker posé.
+ *  `excludeFromCapture` : pointeur et popup ignorés par html2canvas (la
+ *  capture de carte de l'OI part dans le PDF, le pointeur n'y a pas sa place). */
 export function placeSearchMarker(
     map: MapLibreMap,
     previous: Marker | null,
     lng: number,
     lat: number,
     label?: string | null,
+    excludeFromCapture = false,
 ): Marker {
     previous?.remove();
     const el = document.createElement('div');
@@ -53,6 +56,10 @@ export function placeSearchMarker(
         ? new maplibregl.Popup({ offset: 18, closeButton: true }).setHTML(
             `<div style="font-family: var(--font-ui); font-size: 0.9em; max-width: 260px;">${esc(label)}</div>`)
         : null;
+    if (excludeFromCapture) {
+        el.setAttribute('data-html2canvas-ignore', '');
+        popup?.on('open', () => popup.getElement()?.setAttribute('data-html2canvas-ignore', ''));
+    }
     const m = new maplibregl.Marker({ element: el, anchor: 'center' }).setLngLat([lng, lat]);
     if (popup) m.setPopup(popup);
     m.addTo(map);
