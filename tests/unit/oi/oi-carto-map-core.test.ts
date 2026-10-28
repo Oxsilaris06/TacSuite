@@ -1048,7 +1048,7 @@ describe('_searchAddress (oi_cartographie.js:567-612)', () => {
         const ban = {
             features: [{ properties: { label: '12 Rue de la Paix 75002 Paris', score: 0.9 }, geometry: { coordinates: [2.331, 48.869] } }],
         };
-        const fetchSpy = vi.fn((_url: string, _init?: RequestInit) => Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(ban) }));
+        const fetchSpy = vi.fn<(url: string, init?: RequestInit) => Promise<unknown>>(() => Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(ban) }));
         vi.stubGlobal('fetch', fetchSpy);
         const map = makeFakeMap();
 
@@ -1070,7 +1070,7 @@ describe('_searchAddress (oi_cartographie.js:567-612)', () => {
             { display_name: 'Résultat 2', lon: '2.34', lat: '48.86' },
         ];
         // La même réponse sert aux deux appels : la BAN n'y lit aucun Feature, Nominatim deux lieux.
-        const fetchSpy = vi.fn((_url: string, _init?: RequestInit) => Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(list) }));
+        const fetchSpy = vi.fn<(url: string, init?: RequestInit) => Promise<unknown>>(() => Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(list) }));
         vi.stubGlobal('fetch', fetchSpy);
         const map = makeFakeMap();
         const fake = makeFakeThis({ map });
