@@ -485,6 +485,17 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const cancelCreatePaxBtn = document.getElementById('cancelCreatePaxBtn');
     if (cancelCreatePaxBtn) cancelCreatePaxBtn.onclick = () => UI.hideCreatePaxModal();
+    // Anciens onclick="" de pctac/index.html, refusés par la CSP de build.
+    const closeButtons: Array<[string, () => void]> = [
+        ['closeCreatePaxBtn', () => UI.hideCreatePaxModal()],
+        ['cancelEditBtn', () => UI.hideEditModal()],
+        ['cancelEditFriendBtn', () => UI.hideEditFriendModal()],
+        ['closeLightboxBtn', () => UI.closeLightbox()],
+    ];
+    for (const [id, close] of closeButtons) {
+        const btn = document.getElementById(id);
+        if (btn) btn.onclick = close;
+    }
 
     // U13 — Édition Ami (champs seuls)
     const confirmEditFriendBtn = document.getElementById('confirmEditFriendBtn');

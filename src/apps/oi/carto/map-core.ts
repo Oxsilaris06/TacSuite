@@ -66,14 +66,10 @@
  *    `data-idx` est posé par nous-mêmes sur les indices valides de `list`,
  *    branche inatteignable en pratique (même idiome que
  *    `@pctac/planmap/chrome.ts`, `_searchAddress`) ;
- *  - `(await r.json()) as NominatimResult[]` : typage du JSON externe (`any`
- *    interdit) — même idiome que `@pctac/planmap/chrome.ts` ;
- *  - `e instanceof Error && e.message === 'QUOTA'` (catch de `_searchAddress`,
- *    oi_cartographie.js:607) : `useUnknownInCatchVariables` type la variable de
- *    `catch` en `unknown` ; l'original teste `e && e.message === 'QUOTA'` sans
- *    narrowing — la seule façon d'obtenir `e.message === 'QUOTA'` est le
- *    `throw new Error('QUOTA')` du bloc `try` juste au-dessus (:586), donc
- *    strictement équivalent en observable ;
+ *  - `_searchAddress` géocode par `geocodeAddress` (`@pctac/planmap/search.ts`) :
+ *    BAN de l'IGN d'abord, Nominatim en repli seulement (revue du 2026-10-28).
+ *    L'original interrogeait Nominatim seul ; chaque libellé est échappé par
+ *    `escapeHtml`, sans repli sur le texte brut ;
  *  - `const map = this.map;` avant `setTimeout(() => map.resize(), 60)` dans
  *    `_updateFullscreenIcon` : la narrowing non-null de `this.map` (garde
  *    `if (this.map)` juste avant) ne traverse PAS une fermeture DIFFÉRÉE
@@ -104,6 +100,7 @@ import { ignOrthoMapOptions } from '@shared/ign-ortho.js';
 import { ignLayerIds, ignUnservedAt } from '@shared/ign-territoires.js';
 import { createMapOverlays, mountOverlayControls } from '@shared/map-overlays.js';
 import { Store } from '@oi/init.js';
+import { geocodeAddress } from '@pctac/planmap/search.js';
 
 import {
     LIDAR_HD_LAYERS,
@@ -113,13 +110,6 @@ import {
     OI_CARTO_RASTER_STYLE,
 } from './constants.js';
 import type { OICartoInternal, OiCartoLidarLayerId } from './types.js';
-
-/** Résultat Nominatim (endpoint `/search`) — seuls les champs lus par `_searchAddress`. */
-interface NominatimResult {
-    display_name: string;
-    lon: string;
-    lat: string;
-}
 
 /** Ferme le tiroir « Plus » (#oi_carto_more_tools) s'il est ouvert. Fonction de
  *  module (pas de `this`) : appelée depuis `_bindUi` (clic extérieur, Échap,
@@ -525,21 +515,13 @@ export const MapCoreMethods = {
 
         resultsBox.innerHTML = '<em style="color: var(--text-muted);">Recherche…</em>';
         try {
-            const url = `https://nominatim.openstreetmap.org/search?format=json&limit=5&q=${encodeURIComponent(q)}`;
-            const r = await fetch(url, { headers: { 'Accept-Language': 'fr' } });
-            if (!r.ok) {
-                if (r.status === 429 || r.status === 403) throw new Error('QUOTA');
-                throw new Error('HTTP ' + r.status);
-            }
-            // oi_cartographie.js:589 — typage du JSON externe (`any` interdit).
-            const list = (await r.json()) as NominatimResult[];
+            const list = await geocodeAddress(q);
             if (!list.length) {
                 resultsBox.innerHTML = '<em style="color: var(--text-muted);">Aucun résultat.</em>';
                 return;
             }
-            const esc = (s: string): string => (window.UIPlatform ? window.UIPlatform.esc(s) : s);
             resultsBox.innerHTML = list.map((item, i) =>
-                `<div class="oi-carto-search-result" data-idx="${i}">${esc(item.display_name)}</div>`,
+                `<div class="oi-carto-search-result" data-idx="${i}">${escapeHtml(item.label)}</div>`,
             ).join('');
             resultsBox.querySelectorAll<HTMLDivElement>('.oi-carto-search-result').forEach((div) => {
                 div.onclick = () => {
@@ -551,17 +533,14 @@ export const MapCoreMethods = {
                     // posé par nous-mêmes juste au-dessus sur les indices valides de
                     // `list` — branche inatteignable en pratique.
                     if (!item) return;
-                    if (this.map) this.map.flyTo({ center: [parseFloat(item.lon), parseFloat(item.lat)], zoom: 17, speed: 1.4 });
+                    if (this.map) this.map.flyTo({ center: [item.lng, item.lat], zoom: 17, speed: 1.4 });
                     resultsBox.innerHTML = '';
                 };
             });
         } catch (e) {
-            console.error('[OICarto] Nominatim échec:', e);
-            // oi_cartographie.js:607-609 — `e` typé `unknown` (catch strict) ;
-            // la seule façon d'obtenir `e.message === 'QUOTA'` est le
-            // `throw new Error('QUOTA')` du bloc `try` ci-dessus (cf. note de
-            // tête de fichier).
-            const msg = (e instanceof Error && e.message === 'QUOTA')
+            console.error('[OICarto] géocodage échec:', e);
+            // geocodeAddress ne jette que sur l'échec du repli Nominatim (« HTTP 429 »…).
+            const msg = (e instanceof Error && /^HTTP (429|403)$/.test(e.message))
                 ? 'Quota de recherche atteint. Réessayez dans un instant.'
                 : 'Erreur réseau. Vérifiez la connexion.';
             resultsBox.innerHTML = `<em style="color: var(--danger-red);">${msg}</em>`;

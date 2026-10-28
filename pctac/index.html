@@ -612,7 +612,7 @@
     <!-- MODALS -->
 
     <dialog class="modal pctac-modal-scroll-90" id="createPaxModal" aria-labelledby="createPaxModalTitle">
-        <button onclick="UI.hideCreatePaxModal()" class="pctac-modal-close-btn up-tap-target" aria-label="Fermer la fenêtre de création d'intervenant">
+        <button type="button" id="closeCreatePaxBtn" class="pctac-modal-close-btn up-tap-target" aria-label="Fermer la fenêtre de création d'intervenant">
             <span class="material-symbols-outlined pctac-icon-24">close</span>
         </button>
         <div class="pctac-create-pax-header">
@@ -680,7 +680,7 @@
             <textarea id="edit_remarques" rows="2" class="pctac-textarea-lg"></textarea>
         </div>
         <div class="pctac-actions-row">
-            <button type="button" class="add-btn pctac-btn-bg-input" onclick="UI.hideEditModal()">Annuler</button>
+            <button type="button" id="cancelEditBtn" class="add-btn pctac-btn-bg-input">Annuler</button>
             <button type="button" class="add-btn" id="confirmEditBtn">Enregistrer</button>
         </div>
     </dialog>
@@ -736,7 +736,7 @@
             <div><label for="edit_friend_mission">Mission</label><input type="text" id="edit_friend_mission" class="pctac-input-lg"></div>
         </div>
         <div class="pctac-actions-row">
-            <button type="button" class="add-btn pctac-btn-bg-input" onclick="UI.hideEditFriendModal()">Annuler</button>
+            <button type="button" id="cancelEditFriendBtn" class="add-btn pctac-btn-bg-input">Annuler</button>
             <button type="button" class="add-btn" id="confirmEditFriendBtn">Enregistrer</button>
         </div>
     </dialog>
@@ -795,7 +795,7 @@
         <button type="button" id="lightboxAnnotateBtn" class="pctac-lightbox-annotate-btn" hidden>
             <span class="material-symbols-outlined" aria-hidden="true">draw</span> Annoter
         </button>
-        <button type="button" onclick="UI.closeLightbox()" class="pctac-lightbox-close-btn" aria-label="Fermer l'aperçu photo" autofocus>
+        <button type="button" id="closeLightboxBtn" class="pctac-lightbox-close-btn" aria-label="Fermer l'aperçu photo" autofocus>
             <span class="material-symbols-outlined pctac-icon-40">close</span>
         </button>
     </dialog>

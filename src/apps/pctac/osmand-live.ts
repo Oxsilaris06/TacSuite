@@ -26,7 +26,6 @@ import { confirmDialog, toast } from '@shared/feedback.js';
 import { OSMAND_SENDER_PREFIX, acquireScreenWakeLock, forgetTchap, acquireSweep, registerRemoteOperator, releaseScreenWakeLock, releaseSweep, removeRemoteMembers, upsert } from '@pctac/tchap-live.js';
 
 const LS_KEY = 'pcTacOsmandRelay';
-const DEFAULT_URL = 'https://relais.example/osmand';
 /** Cadence nominale de sondage. */
 const POLL_MS = 5000;
 /** Recul en cas d'échec réseau : 5 s, 10 s, 20 s, 40 s, puis plafond 60 s. */
@@ -232,7 +231,7 @@ function persistFromInputs(): void {
 
 function wireUI(): void {
   if (!$('osm_url')) return;
-  const urlEl = $('osm_url'); if (urlEl instanceof HTMLInputElement) urlEl.value = cfg.url || DEFAULT_URL;
+  const urlEl = $('osm_url'); if (urlEl instanceof HTMLInputElement) urlEl.value = cfg.url || ''; // aucune URL par défaut : le relais de chaque unité se saisit (revue du 2026-10-28)
   const keyEl = $('osm_key'); if (keyEl instanceof HTMLInputElement) keyEl.value = cfg.key || '';
   $('osm_start')?.addEventListener('click', start);
   $('osm_stop')?.addEventListener('click', stop);

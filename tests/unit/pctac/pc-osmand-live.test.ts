@@ -114,6 +114,19 @@ afterEach(() => {
   delete (window as unknown as { PlanMap?: unknown }).PlanMap;
 });
 
+describe('OsmandLive — configuration', () => {
+  it('sans configuration enregistrée, l’URL du relais reste vide et le démarrage la réclame', async () => {
+    seedDom();
+    const mod = await import('@pctac/osmand-live.js');
+    mod.OsmandLive.wireUI();
+    expect((document.getElementById('osm_url') as HTMLInputElement).value).toBe('');
+    (document.getElementById('osm_key') as HTMLInputElement).value = 'read-key-test';
+    mod.OsmandLive.start();
+    expect(statusText()).toBe('URL du relais manquante.');
+    expect(calls).toHaveLength(0);
+  });
+});
+
 describe('OsmandLive — sondage du relais', () => {
   it('pousse chaque point par upsert(osmand:<id>) avec nom, fonction et libellé, puis avance `since`', async () => {
     vi.useFakeTimers();

@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { fileURLToPath, URL } from 'node:url';
 import { defineConfig, type Plugin } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
@@ -51,6 +52,42 @@ const devServerGuard: Plugin = {
   },
 };
 
+// Politique de sécurité du contenu (revue du 2026-10-28), posée dans chaque page au
+// BUILD seulement : le serveur de dev injecte son client HMR et ouvre un WebSocket.
+// GitHub Pages ne permet pas d'en-tête HTTP : c'est une balise <meta>, d'où l'absence
+// de frame-ancestors. connect-src reste ouvert à https: parce que l'URL du relais OsmAnd
+// et le serveur Tchap se saisissent ; 127.0.0.1 et localhost servent au relais local.
+// 'wasm-unsafe-eval' : décodeur HEIC (heic-to). Le Générateur d'OI garde 'unsafe-inline'
+// tant que ses gestionnaires `onclick=` générés (articulation, formulaires, médias) ne
+// sont pas convertis ; un hachage dans sa liste désactiverait 'unsafe-inline'.
+const INLINE_SCRIPT = /<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/g;
+export function withCsp(html: string, path: string): string {
+  const inline = path.startsWith('/oi/')
+    ? ["'unsafe-inline'"]
+    : [...html.matchAll(INLINE_SCRIPT)].map((m) => `'sha256-${createHash('sha256').update(m[1] ?? '').digest('base64')}'`);
+  const policy = [
+    "default-src 'self'",
+    ["script-src 'self' 'wasm-unsafe-eval'", ...inline].join(' '),
+    "worker-src 'self' blob:",
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data: blob: https:",
+    "font-src 'self' data:",
+    "connect-src 'self' https: data: blob: http://127.0.0.1:* http://localhost:*",
+    "media-src 'self' data: blob:",
+    "object-src 'none'",
+    "base-uri 'self'",
+    "form-action 'self'",
+  ].join('; ');
+  const meta = `<meta http-equiv="Content-Security-Policy" content="${policy}" />`;
+  return html.replace(/<meta charset="[^"]*"\s*\/?>/i, (m) => `${m}\n  ${meta}`);
+}
+
+const csp: Plugin = {
+  name: 'tacsuite-csp',
+  apply: 'build',
+  transformIndexHtml: { order: 'post', handler: (html, ctx) => withCsp(html, ctx.path) },
+};
+
 // Multi-page app: portail + PC-Tac + Generateur d'OI.
 // base est parametrable via TACSUITE_BASE (ex: '/TacSuite/' pour GitHub Pages).
 export default defineConfig({
@@ -81,6 +118,7 @@ export default defineConfig({
   },
   plugins: [
     devServerGuard,
+    csp,
     VitePWA({
       // SW maison (public/sw.ts) plutot qu'un SW genere : controle explicite
       // du routage (tuiles carto exclues, secours de navigation par page).
