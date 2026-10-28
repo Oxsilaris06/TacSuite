@@ -266,6 +266,16 @@ describe('mesure d’horloge', () => {
         expect(measured).toBeCloseTo(skew, 5);
     });
 
+    // Chromium journalise `net::ERR_ABORTED` pour une réponse dont le corps
+    // n'est jamais lu, même vide (HEAD) : vu au premier chargement de /pctac/.
+    it('lit le corps de la réponse, même non OK', async () => {
+        for (const status of [200, 503]) {
+            const res = new Response('', { status, headers: { Date: new Date(0).toUTCString() } });
+            await measureClockSkew((async () => res) as unknown as typeof fetch, 'https://x/', () => 0);
+            expect(res.bodyUsed).toBe(true);
+        }
+    });
+
     it('1 min 59 s : rien', async () => {
         const t0 = 1_000_000;
         const { calls, show } = captureShow();

@@ -256,6 +256,9 @@ export async function measureClockSkew(
         return null;
     }
     const end = now();
+    // Corps vide (HEAD), mais jamais lu : Chromium abandonne la requête et
+    // journalise `net::ERR_ABORTED` au premier chargement.
+    try { await res?.text(); } catch { /* corps illisible : la mesure n'en dépend pas */ }
     if (!res || !res.ok) return null;
     const header = res.headers && typeof res.headers.get === 'function' ? res.headers.get('Date') : null;
     if (!header) return null;
