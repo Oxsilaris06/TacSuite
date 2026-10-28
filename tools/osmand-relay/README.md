@@ -15,8 +15,14 @@ les points, les garde **en mémoire seulement**, et les rend à PC-Tac.
 ## Démarrer
 
 ```sh
+ALLOWED_ORIGINS=https://oxsilaris06.github.io \
+PUBLIC_BASE=https://relais.example/osmand \
 node tools/osmand-relay/relay.mjs
 ```
+
+Aucune adresse n'est écrite dans le code : sans `ALLOWED_ORIGINS`, le relais
+refuse de démarrer ; sans `PUBLIC_BASE`, `add` et `rotate` refusent d'afficher
+une URL.
 
 Écoute `127.0.0.1:9690` par défaut. Le fichier de jetons est créé à la demande
 à côté du script (`tools/osmand-relay/tokens.json`, **hors dépôt**, mode
@@ -28,9 +34,9 @@ Variables d'environnement reconnues :
 |---|---|---|
 | `PORT` | `9690` | port d'écoute (`127.0.0.1`) |
 | `TOKENS_FILE` | `tools/osmand-relay/tokens.json` | chemin du fichier de jetons |
-| `PUBLIC_BASE` | `https://relais.example/osmand` | base des URL OsmAnd affichées par `add` |
+| `PUBLIC_BASE` | aucun, **obligatoire** pour `add` et `rotate` | base des URL OsmAnd affichées, ex. `https://relais.example/osmand` |
 | `TTL_H` | `12` | purge des points reçus depuis plus de N heures |
-| `ALLOWED_ORIGINS` | origine Funnel + `https://oxsilaris06.github.io` | origines CORS autorisées, séparées par des virgules |
+| `ALLOWED_ORIGINS` | aucun, **obligatoire** : le relais refuse de démarrer sans | origines CORS autorisées, séparées par des virgules, ex. `https://oxsilaris06.github.io` |
 
 ## Opérateurs (CLI)
 

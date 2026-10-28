@@ -44,6 +44,7 @@ async function start(tokensFile: string, options: { now?: () => number; ttlH?: n
   const relay = await startRelay({
     tokensFile,
     port: 0,
+    allowedOrigins: ['https://autorisee.example'],
     log: () => { /* silencieux */ },
     ...(options.now ? { now: options.now } : {}),
     ...(options.ttlH !== undefined ? { ttlH: options.ttlH } : {}),
@@ -345,7 +346,7 @@ describe('Relais OsmAnd — divers', () => {
   it('CLI add/list/revoke écrit le fichier de jetons', () => {
     const { file } = makeTokensFile();
     const out = execFileSync(process.execPath, [RELAY_PATH, 'add', 'Martin', 'Medic'], {
-      env: { ...process.env, TOKENS_FILE: file }, encoding: 'utf8',
+      env: { ...process.env, TOKENS_FILE: file, PUBLIC_BASE: 'https://relais.example/osmand' }, encoding: 'utf8',
     });
     expect(out).toContain('Martin');
     expect(out).toContain('/p?t=');
@@ -356,13 +357,13 @@ describe('Relais OsmAnd — divers', () => {
     expect(token).toHaveLength(32);
 
     const list = execFileSync(process.execPath, [RELAY_PATH, 'list'], {
-      env: { ...process.env, TOKENS_FILE: file }, encoding: 'utf8',
+      env: { ...process.env, TOKENS_FILE: file, PUBLIC_BASE: 'https://relais.example/osmand' }, encoding: 'utf8',
     });
     expect(list).toContain('Martin');
     expect(list).not.toContain(token); // tronqué à 6 caractères
 
     execFileSync(process.execPath, [RELAY_PATH, 'revoke', token as string], {
-      env: { ...process.env, TOKENS_FILE: file }, encoding: 'utf8',
+      env: { ...process.env, TOKENS_FILE: file, PUBLIC_BASE: 'https://relais.example/osmand' }, encoding: 'utf8',
     });
     tokens = JSON.parse(fs.readFileSync(file, 'utf8')) as { operators: Record<string, { nom: string }> };
     expect(Object.keys(tokens.operators)).toHaveLength(0);
@@ -372,7 +373,7 @@ describe('Relais OsmAnd — divers', () => {
 describe('Relais OsmAnd — renouvellement après fuite (revue dev D-13)', () => {
   it('rotate-key remplace la readKey ; rotate remplace le jeton d’un opérateur en gardant son nom', () => {
     const { file } = makeTokensFile();
-    const env = { ...process.env, TOKENS_FILE: file };
+    const env = { ...process.env, TOKENS_FILE: file, PUBLIC_BASE: 'https://relais.example/osmand' };
     execFileSync(process.execPath, [RELAY_PATH, 'add', 'Martin', 'Medic'], { env, encoding: 'utf8' });
     const before = JSON.parse(fs.readFileSync(file, 'utf8')) as { readKey: string; operators: Record<string, { nom: string }> };
     const oldToken = Object.keys(before.operators)[0] as string;
@@ -421,5 +422,39 @@ describe('Relais OsmAnd — mémoire bornée des compteurs', () => {
     relay.reloadTokens();
     relay.purge();
     expect(relay.buckets.size).toBe(0);
+  });
+});
+
+describe('Relais OsmAnd — aucune adresse par défaut (revue du 2026-10-28)', () => {
+  it('le relais refuse de démarrer sans origine autorisée', async () => {
+    const { file } = makeTokensFile();
+    const saved = process.env.ALLOWED_ORIGINS;
+    delete process.env.ALLOWED_ORIGINS;
+    try {
+      await expect(startRelay({ tokensFile: file, port: 0, log: () => { /* silencieux */ } })).rejects.toThrow('ALLOWED_ORIGINS');
+    } finally {
+      if (saved !== undefined) process.env.ALLOWED_ORIGINS = saved;
+    }
+  });
+
+  it('add refuse sans PUBLIC_BASE et n’écrit aucun jeton', () => {
+    const { file } = makeTokensFile();
+    const env: NodeJS.ProcessEnv = { ...process.env, TOKENS_FILE: file };
+    delete env.PUBLIC_BASE;
+    let stderr = '';
+    try {
+      execFileSync(process.execPath, [RELAY_PATH, 'add', 'Martin', 'Medic'], { env, encoding: 'utf8', stdio: 'pipe' });
+    } catch (e) {
+      stderr = String((e as { stderr?: unknown }).stderr);
+    }
+    expect(stderr).toContain('PUBLIC_BASE');
+    const tokens = JSON.parse(fs.readFileSync(file, 'utf8')) as { operators: Record<string, unknown> };
+    expect(Object.keys(tokens.operators)).toHaveLength(0);
+  });
+
+  it('le code et la notice ne citent aucun hôte réel', () => {
+    for (const f of ['relay.mjs', 'README.md']) {
+      expect(fs.readFileSync(path.resolve(process.cwd(), 'tools/osmand-relay', f), 'utf8'), f).not.toMatch(/ts\.net/);
+    }
   });
 });

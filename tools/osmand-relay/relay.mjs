@@ -37,12 +37,9 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 /* ─── réglages par défaut (surchargeables par options ou variables d'env) ── */
 
 const DEFAULT_TOKENS_FILE = path.join(HERE, 'tokens.json');
-const DEFAULT_BASE = 'https://relais.example/osmand';
-const DEFAULT_ALLOWED_ORIGINS = [
-  'https://relais.example',
-  // Origine GitHub Pages du dépôt (base `/TacSuite/` ⇒ origine seule).
-  'https://oxsilaris06.github.io',
-];
+// Aucune adresse par défaut (revue du 2026-10-28) : l'adresse publique du relais
+// (PUBLIC_BASE) et les origines CORS (ALLOWED_ORIGINS) se donnent à chaque
+// déploiement, jamais dans le code publié.
 const DEFAULT_TTL_H = 12;
 
 /** Points conservés au plus par opérateur (les plus anciens sortent). */
@@ -162,10 +159,11 @@ function num(value) {
 export function createRelay(options = {}) {
   const tokensFile = options.tokensFile ?? process.env.TOKENS_FILE ?? DEFAULT_TOKENS_FILE;
   const ttlH = Number(options.ttlH ?? process.env.TTL_H ?? DEFAULT_TTL_H);
-  const allowedOrigins = options.allowedOrigins
-    ?? parseOrigins(process.env.ALLOWED_ORIGINS)
-    ?? DEFAULT_ALLOWED_ORIGINS;
-  const base = options.base ?? process.env.PUBLIC_BASE ?? DEFAULT_BASE;
+  const allowedOrigins = options.allowedOrigins ?? parseOrigins(process.env.ALLOWED_ORIGINS);
+  if (!allowedOrigins?.length) {
+    throw new Error('ALLOWED_ORIGINS manquant : origines autorisées à lire les positions, séparées par des virgules');
+  }
+  const base = options.base ?? process.env.PUBLIC_BASE ?? '';
   const now = typeof options.now === 'function' ? options.now : () => Date.now();
   const log = typeof options.log === 'function' ? options.log : (line) => process.stdout.write(`${line}\n`);
 
@@ -397,9 +395,13 @@ function osmAndUrl(base, token) {
 
 function cli(argv) {
   const file = process.env.TOKENS_FILE || DEFAULT_TOKENS_FILE;
-  const base = process.env.PUBLIC_BASE || DEFAULT_BASE;
+  const base = process.env.PUBLIC_BASE || '';
   const cmd = argv[2];
   if (!cmd) return 'serve';
+  if ((cmd === 'add' || cmd === 'rotate') && !base) {
+    process.stderr.write('PUBLIC_BASE manquant : adresse publique du relais, ex. https://relais.example/osmand\n');
+    return 'error';
+  }
 
   const tokens = loadTokensFile(file);
 
