@@ -221,7 +221,11 @@ export const PinsMethods = {
         // + `noUncheckedIndexedAccess`/`exactOptionalPropertyTypes`) mais toujours
         // renseignés pour un ping libre (posé par `_quickPlacePing`) — repli `''` neutre en observable (même principe que
         // `coordAt`, SPEC-PLANMAP-SPLIT.md §6.3).
-        return { label: pin.label ?? '', color: pin.color ?? '', kind: pin.kind || 'libre' };
+        // Texte saisi (« Modifier texte du ping », `_editPinText`) = libellé effectif :
+        // la carte l'affiche à la place de `pin.label` (`_buildPinVisual`), et l'export
+        // PDF doit lire le même libellé (CONTRAT C2, « PLAN TACTIQUE - LISTE DES POINTS »).
+        const text = typeof pin.text === 'string' ? pin.text.trim() : '';
+        return { label: text || (pin.label ?? ''), color: pin.color ?? '', kind: pin.kind || 'libre' };
     },
 
     // Signature légère d'un ping : tout ce qui change le rendu visuel ou le binding.

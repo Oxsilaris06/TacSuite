@@ -159,7 +159,10 @@ de l'extérieur) restent internes au module TS et seront spécifiés en **P2.A0*
  non initialisée, `html2canvas` absent, vue masquée, canvas de largeur 0 après
  2 rAF, ou capture déjà en cours (`_captureBusy`).
 - `getPinsSummary()` (CONTRAT C2) → `PlanMapPinSummary[]`, `[]` en cas d'échec,
- jamais d'exception.
+ jamais d'exception. `label` = **libellé effectif** du point : le texte saisi par
+ l'utilisateur (« Modifier texte du ping », champ `pin.text`) s'il existe, sinon le
+ nom de l'icône (`pin.label`, posé par `_quickPlacePing`) ; pour un point d'entité,
+ le nom de la fiche. Même règle qu'à l'écran (`_buildPinVisual`).
 
 **Stratégie de façade.** `src/apps/pctac/plan-map/index.ts` (ou équivalent P2.A0)
 exporte l'objet ; `window.PlanMap = PlanMap` est conservé tant que

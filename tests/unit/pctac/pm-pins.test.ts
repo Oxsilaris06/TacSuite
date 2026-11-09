@@ -300,6 +300,22 @@ describe('_resolvePin', () => {
         const resolved = PinsMethods._resolvePin(makePin({ id: 'p1', label: 'Poste', color: '#111', kind: undefined }));
         expect(resolved).toEqual({ label: 'Poste', color: '#111', kind: 'libre' });
     });
+
+    it('ping libre avec texte saisi → le texte prime sur le nom de l\'icône', () => {
+        const resolved = PinsMethods._resolvePin(makePin({ id: 'p1', label: 'Observation', text: 'Portail nord' }));
+        expect(resolved.label).toBe('Portail nord');
+    });
+
+    it('texte vide ou blanc → repli sur le nom de l\'icône', () => {
+        expect(PinsMethods._resolvePin(makePin({ id: 'p1', label: 'Observation', text: '   ' })).label).toBe('Observation');
+        expect(PinsMethods._resolvePin(makePin({ id: 'p2', label: 'Gendarmerie', text: '' })).label).toBe('Gendarmerie');
+    });
+
+    it('pin d\'entité portant un texte → le nom de la fiche reste prioritaire', () => {
+        Storage.saveCollection(ADVERSARIES_KEY, [{ id: 'adv-4', nom: 'Dupont', prenom: 'Jean' }]);
+        const pin = makePin({ id: 'p1', entityRef: { kind: 'adv', id: 'adv-4' }, text: 'texte libre' });
+        expect(PinsMethods._resolvePin(pin).label).toBe('Dupont Jean');
+    });
 });
 
 describe('getPinsSummary — CONTRAT C2 : ne jette jamais, [] en cas d\'échec', () => {
@@ -314,6 +330,16 @@ describe('getPinsSummary — CONTRAT C2 : ne jette jamais, [] en cas d\'échec',
             { label: 'A', lat: 1, lng: 2, diameterM: 500, mgrs: '31N CB 88736 10547', cell: null },
             { label: 'B', lat: 3, lng: 4, diameterM: null, mgrs: '31N FD 11129 31643', cell: null },
         ]);
+    });
+
+    it('libellé effectif : texte du ping prioritaire, nom d\'icône en repli (liste des points du PDF)', () => {
+        const fake = makeFakeThis();
+        fake._savePins([
+            makePin({ id: 'p1', label: 'Observation', text: 'Portail nord', lat: 1, lng: 2 }),
+            makePin({ id: 'p2', label: 'Gendarmerie', lat: 3, lng: 4 }),
+        ]);
+        const summary = PinsMethods.getPinsSummary.call(fake);
+        expect(summary.map((s) => s.label)).toEqual(['Portail nord', 'Gendarmerie']);
     });
 
     it('case du carroyage : fournie par les surcouches quand un carroyage couvre le ping', () => {
