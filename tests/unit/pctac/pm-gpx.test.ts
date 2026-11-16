@@ -16,11 +16,16 @@ import type { GpxTrackData, LngLatTuple, PlanGpxTrack, PlanMapInternal } from '.
 
 /** Contenu du magasin GPX simulé, réinitialisé à chaque test. */
 const gpxDisk = new Map<string, GpxTrackData>();
+/** Panne d'écriture simulée (quota) pour un test ciblé. */
+let gpxPutFails = false;
 
 vi.mock('@pctac/image-store.js', () => ({
     ImageStore: {},
     GpxStore: {
-        put: async (id: string, track: GpxTrackData): Promise<void> => { gpxDisk.set(id, track); },
+        put: async (id: string, track: GpxTrackData): Promise<void> => {
+            if (gpxPutFails) throw new Error('quota');
+            gpxDisk.set(id, track);
+        },
         get: async (id: string): Promise<GpxTrackData | null> => gpxDisk.get(id) ?? null,
         delete: async (id: string): Promise<void> => { gpxDisk.delete(id); },
         clear: async (): Promise<void> => { gpxDisk.clear(); },
@@ -324,6 +329,21 @@ describe('_importGpxFiles', () => {
         expect(index).toHaveLength(1);
         expect(Object.keys(index[0] ?? {}).sort()).toEqual(['color', 'endedAt', 'id', 'name', 'startedAt', 'visible']);
         expect(map.data.features).toHaveLength(2);
+    });
+
+    it("échec d'écriture : la trace n'est ni gardée ni indexée, l'utilisateur est averti", async () => {
+        gpxPutFails = true;
+        const alert = vi.spyOn(window, 'alert').mockImplementation(() => {});
+        const fake = makeFakeThis(makeFakeMap());
+        try {
+            await fake._importGpxFiles([gpxFile('rando.gpx', GPX_TRACK)]);
+            expect(fake._gpxTracks).toHaveLength(0);
+            expect(localStorage.getItem(GPX_INDEX_KEY)).toBeNull();
+            expect(alert).toHaveBeenCalledTimes(1);
+        } finally {
+            gpxPutFails = false;
+            alert.mockRestore();
+        }
     });
 
     it("à défaut de nom dans le fichier, retombe sur le nom de fichier sans l'extension", async () => {

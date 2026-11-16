@@ -638,6 +638,7 @@ export const GpxMethods = {
         if (!files || !files.length) return;
         let added = 0;
         let rejected = 0;
+        let storeFailed = 0;
         for (const file of files) {
             // 1) Plafond de TAILLE avant toute lecture (coût mémoire du texte).
             const size = typeof file.size === 'number' && Number.isFinite(file.size) ? file.size : 0;
@@ -672,11 +673,25 @@ export const GpxMethods = {
             const data: GpxTrackData = { coords: parsed.segments, times: parsed.times };
             this._gpxCoords[id] = data;
             this._gpxTracks.push(track);
-            try { await GpxStore.put(id, data); } catch { /* la trace reste en mémoire pour la séance */ }
+            try {
+                await GpxStore.put(id, data);
+            } catch {
+                // Sans écriture, la trace disparaîtrait au rechargement : on la
+                // retire tout de suite et on ne l'indexe pas.
+                this._gpxTracks = this._gpxTracks.filter((t) => t.id !== id);
+                delete this._gpxCoords[id];
+                storeFailed++;
+                continue;
+            }
             added++;
         }
         if (added) { saveIndex(this._gpxTracks); this._renderGpxLayers(); this._fitGpxTracks(); }
         this._renderGpxList();
+        if (storeFailed) {
+            window.alert(storeFailed === 1
+                ? "Trace GPX non enregistrée (stockage plein) : elle n'a pas été importée."
+                : `${storeFailed} traces GPX non enregistrées (stockage plein) : elles n'ont pas été importées.`);
+        }
         if (rejected) {
             window.alert(rejected === 1
                 ? 'Fichier ignoré : ce n\'est pas un GPX exploitable (aucun point de tracé).'
