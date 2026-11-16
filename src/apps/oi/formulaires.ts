@@ -1664,6 +1664,9 @@ async function applyArchiveImport(parsed: OiParsedArchiveOk, cats: readonly OiIm
     try {
         if (importImages && dbManager) {
             if (!dbManager.db) { try { await dbManager.init(); } catch { /* … */ } }
+            if (!dbManager.db) {
+                throw new Error('Photos indisponibles (IndexedDB bloquée) : import annulé, rien n’a été modifié.');
+            }
             if (dbManager.db) {
                 // Photos en place illisibles : l'import est annulé, rien n'est touché.
                 try {
@@ -1718,6 +1721,10 @@ async function applyArchiveImport(parsed: OiParsedArchiveOk, cats: readonly OiIm
                     }
                 }
             }
+        }
+
+        if (importImages && (!dbManager || !dbManager.db)) {
+            throw new Error('Photos indisponibles (IndexedDB bloquée) : import annulé, rien n’a été modifié.');
         }
 
         try {
