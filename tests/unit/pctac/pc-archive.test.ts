@@ -213,6 +213,14 @@ describe('Archive — window.Archive posé au scope module (archive.js:459)', ()
 });
 
 describe('importFile — validation du manifest AVANT toute modification (archive.js:129-147)', () => {
+  it('refuse un .json legacy de plus de 32 Mo sans le lire (B-ARC-03)', async () => {
+    const text = vi.fn(async () => '{}');
+    const file = { name: 'gros.json', size: 33 * 1024 * 1024, text } as unknown as File;
+
+    await expect(Archive.importFile(file)).rejects.toThrow(/trop volumineux/);
+    expect(text).not.toHaveBeenCalled();
+  });
+
   it('refuse une archive sans manifest.json et ne modifie pas localStorage', async () => {
     localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify([{ id: '1', heure: '10:00', pax: 'X', paxMode: 'standard', lieu: '', remarques: '' }]));
     localStorage.setItem('pcTacPlanLocked', 'true');

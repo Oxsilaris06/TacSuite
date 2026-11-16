@@ -334,6 +334,16 @@ const COLLECTION_KEYS = [
 /** Version de format d'archive écrite par `exportZip` (`manifest.version`). */
 export const ARCHIVE_VERSION = 1;
 
+/** B-ARC-03 : plafond d'un .json legacy lu en entier (session PC-Tac ou OI). */
+const LEGACY_JSON_MAX_BYTES = 32 * 1024 * 1024;
+
+function refuseLegacyJsonTooBig(file: File): void {
+    if (typeof file.size === 'number' && file.size > LEGACY_JSON_MAX_BYTES) {
+        const mo = (file.size / (1024 * 1024)).toFixed(0);
+        throw new Error(`Fichier JSON trop volumineux (${mo} Mo, 32 Mo au plus). Aucune donnée modifiée.`);
+    }
+}
+
 /**
  * K3 : nom RÉELLEMENT donné au dernier téléchargement d'archive réussi. Sert à
  * la confirmation du RESET, qui nommait un fichier calculé avant l'export alors
@@ -813,6 +823,7 @@ export const Archive: ArchiveContract = {
         // Compat : fichier JSON legacy
         // archive.js:118-122
         if (name.endsWith('.json')) {
+            refuseLegacyJsonTooBig(file);
             const text = await file.text();
             const obj: unknown = JSON.parse(text); // JSON désérialisé, gardé par _importLegacyJson
             const legacy = await this._importLegacyJson(obj);
@@ -1220,6 +1231,7 @@ export const Archive: ArchiveContract = {
 
         // --- Lecture & validation de la source ---
         if (name.endsWith('.json')) {
+            refuseLegacyJsonTooBig(file);
             // Session OI legacy : champs uniquement (les photos vivent dans IndexedDB,
             // hors du .json — elles ne peuvent donc pas être transférées par ce format).
             let txt: string;
