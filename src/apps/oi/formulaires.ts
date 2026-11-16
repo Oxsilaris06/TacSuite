@@ -1224,14 +1224,18 @@ window.checkCoherence = checkCoherence; // formulaires.js:859
  * formulaires.js:866-882
  */
 function exportSession(): void {
-    syncDomToStore();
+    // A-SESSION-01 : la version débouncée laissait la dernière frappe hors du JSON.
+    immediateSync();
+    Store.flush();
     const data = localStorage.getItem(LOCAL_STORAGE_KEY);
     if (data) {
         const blob = new Blob([data], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `OI_Session_${new Date().toISOString().slice(0, 10)}.json`;
+        const d = new Date();
+        const date = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        a.download = `OI_Session_${date}.json`;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
