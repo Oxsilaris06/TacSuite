@@ -56,7 +56,8 @@ function run(fn: (() => void | Promise<void>) | undefined): void {
 
 /**
  * Supprime un élément de collection avec annulation. Retourne `false` si
- * l'élément est introuvable (aucun toast : rien n'a été supprimé).
+ * l'élément est introuvable ou si le stockage refuse l'écriture (aucun toast
+ * d'annulation : rien n'a été supprimé).
  */
 export function undoableDelete(opts: UndoableDeleteOptions): boolean {
     const modeId = currentModeId(); // A11 — situation figée à la suppression
@@ -65,9 +66,12 @@ export function undoableDelete(opts: UndoableDeleteOptions): boolean {
     const removed = index === -1 ? undefined : list[index];
     if (!removed) return false;
     const next = list.filter((item) => item.id !== opts.id);
-    Storage.saveCollection(opts.key, next, modeId);
-    run(opts.refresh);
     const noun = opts.message.includes('Photo') ? 'Photo' : 'Fiche';
+    if (!Storage.saveCollection(opts.key, next, modeId)) {
+        toast(`Stockage plein : ${noun.toLowerCase()} non enregistrée. Rien n'a été supprimé.`, { kind: 'error' });
+        return false;
+    }
+    run(opts.refresh);
     const restore = (): void => {
         const current = Storage.loadCollection(opts.key, modeId);
         // C9 (R14) — l'élément a pu être RECRÉÉ sous le même id entre-temps

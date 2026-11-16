@@ -183,6 +183,21 @@ describe('Revue du 25/09 — pierres tombales, situation figée, stockage plein 
     persistModeId('forcene');
   });
 
+  it('B-DEL-01 : quota à la suppression → élément toujours là, message d’échec, pas d’annulation', () => {
+    Storage.saveCollection(PHOTOS_KEY, [{ id: 'a' }, { id: 'b' }]);
+    const refresh = vi.fn();
+    const spy = vi.spyOn(Storage, 'saveCollection').mockReturnValueOnce(false);
+
+    const done = undoableDelete({ key: PHOTOS_KEY, id: 'a', message: 'Photo supprimée', refresh });
+
+    expect(done).toBe(false);
+    expect(Storage.loadCollection(PHOTOS_KEY).map((i) => i.id)).toEqual(['a', 'b']);
+    expect(refresh).not.toHaveBeenCalled();
+    expect([...document.querySelectorAll('.tac-toast')].some((t) => /non enregistrée/i.test(t.textContent ?? ''))).toBe(true);
+    expect(document.querySelector('.tac-toast button[data-tac-toast-action="undo"]')).toBeNull();
+    spy.mockRestore();
+  });
+
   it('A9 : stockage plein à « Annuler » : rien de perdu, message, nouvel essai possible', () => {
     Storage.saveCollection(PHOTOS_KEY, [{ id: 'a' }, { id: 'b' }]);
     undoableDelete({ key: PHOTOS_KEY, id: 'a', message: 'Photo supprimée', refresh: () => {} });
