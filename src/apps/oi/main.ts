@@ -159,6 +159,7 @@ import { buildLogsHtml } from '@oi/log-window.js';
 // ── §12.1 étape 1bis — Service Worker (PWA). Voir écart assumé n°2 : même
 // traitement que src/apps/pctac/main.ts §5.3 étape 1 (P4.B). ──────────────
 import { registerServiceWorker } from '@shared/register-sw.js';
+import { toast } from '@shared/feedback.js';
 registerServiceWorker('oi');
 
 // ── §12.1 étape 2 — Polices auto-hébergées (zéro CDN Google Fonts, P0.FIX). ─
@@ -444,7 +445,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     initPdfLoaderOrb();
     try {
         // §12.3 étape 1 — Initialiser IndexedDB. 4.html:4540
-        if (window.dbManager) await window.dbManager.init();
+        // A-START-01 : l'échec d'IndexedDB ne concerne que les photos ; il ne
+        // doit pas empêcher le chargement du formulaire ni le câblage de l'UI.
+        try {
+            if (window.dbManager) await window.dbManager.init();
+        } catch (e) {
+            console.error('IndexedDB indisponible, photos désactivées:', e);
+            toast('Stockage des photos indisponible : la saisie reste utilisable.', { kind: 'error' });
+        }
 
         // §12.3 étape 2 — Charger les données. 4.html:4543
         if (typeof window.loadFormData === 'function') await window.loadFormData();
