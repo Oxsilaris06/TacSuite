@@ -319,6 +319,30 @@ describe('_loadView / _saveView (oi_cartographie.js:374-393)', () => {
         expect(view).toEqual({ center: [2.3522, 48.8566], zoom: 5 });
     });
 
+    it('_loadView avec une vue corrompue ⇒ France entière par défaut', () => {
+        const fake = makeFakeThis();
+        Store.state.formData.cartography = {
+            view: { center: [null, null], zoom: null },
+            pins: [],
+            shapes: [],
+        } as unknown as NonNullable<typeof Store.state.formData.cartography>;
+
+        const view = PersistMethods._loadView.call(fake);
+
+        expect(view).toEqual({ center: [2.3522, 48.8566], zoom: 5 });
+    });
+
+    it('_loadView avec zoom, pitch ou bearing hors bornes ⇒ France entière par défaut', () => {
+        const fake = makeFakeThis();
+        Store.state.formData.cartography = {
+            view: { center: [2.3522, 48.8566], zoom: 99, pitch: 120, bearing: -10 },
+            pins: [],
+            shapes: [],
+        } as unknown as NonNullable<typeof Store.state.formData.cartography>;
+
+        expect(PersistMethods._loadView.call(fake)).toEqual({ center: [2.3522, 48.8566], zoom: 5 });
+    });
+
     it('_saveView sans carte (this.map === null) ⇒ ne crée pas formData.cartography, ne jette pas', () => {
         const fake = makeFakeThis({ map: null });
 

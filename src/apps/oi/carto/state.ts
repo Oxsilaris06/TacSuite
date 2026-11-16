@@ -257,7 +257,17 @@ export const PersistMethods = {
     // que lire la valeur brute (ou `null`) sans jeter.
     _loadView(this: OICartoInternal): OiCartoViewState {
         const v = this.persistence.loadView();
-        if (v && Array.isArray(v.center)) return v;
+        const finite = (n: unknown): n is number => typeof n === 'number' && Number.isFinite(n);
+        const ok = ((): boolean => {
+            if (!v || !Array.isArray(v.center) || v.center.length !== 2) return false;
+            const [lng, lat] = v.center;
+            if (!finite(lng) || !finite(lat) || Math.abs(lng) > 180 || Math.abs(lat) > 90) return false;
+            if (!finite(v.zoom) || v.zoom < 0 || v.zoom > 24) return false;
+            if (v.pitch !== undefined && (!finite(v.pitch) || v.pitch < 0 || v.pitch > 85)) return false;
+            if (v.bearing !== undefined && (!finite(v.bearing) || v.bearing < 0 || v.bearing > 360)) return false;
+            return true;
+        })();
+        if (ok && v) return v;
         return { center: [2.3522, 48.8566], zoom: 5 }; // France entière par défaut
     },
 
