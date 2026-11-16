@@ -1389,6 +1389,13 @@ function stop(userInitiated: boolean): void {
     // que les positions last-known (IndexedDB) réapparaissent en « stale » —
     // sinon le removeMember ci-dessus vient d'effacer l'affichage hors-ligne.
     rehydratePending = true;
+    // Carte déjà montée : réafficher tout de suite les dernières positions
+    // connues, sans attendre une action utilisateur qui ne viendra peut-être
+    // jamais (B-TCH-01).
+    if (window.PlanMap?.map) {
+      rehydratePending = false;
+      void rehydrateFromDisk();
+    }
   }
   // Arrêt sur ERREUR (réseau/token) : on CONSERVE l'état persisté — c'est lui qui
   // permet de réafficher les dernières positions connues au redémarrage hors-ligne.

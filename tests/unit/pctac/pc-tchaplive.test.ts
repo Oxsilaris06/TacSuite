@@ -483,6 +483,24 @@ describe('TchapLive — péremption des positions réhydratées', () => {
     expect(createdMarkers).toHaveLength(1);
   });
 
+  it('stop(false) après réhydratation : la position connue est réaffichée (B-TCH-01)', async () => {
+    seedConnectedSession();
+    stubPlanMap();
+    const { factory } = makeFakeIndexedDb([persistedRecord('@reprise:example.org', 60 * 1000)]);
+    vi.stubGlobal('indexedDB', factory);
+    vi.stubGlobal('fetch', (async (_i: RequestInfo | URL, init: RequestInit | undefined) =>
+      hangingResponse(init)) as unknown as typeof fetch);
+
+    const mod = await import('@pctac/tchap-live.js');
+    await flushMicrotasks(60);
+    expect(createdMarkers.filter((m) => !m.removed)).toHaveLength(1);
+
+    mod.TchapLive.stop(false);
+    await flushMicrotasks(60);
+
+    expect(createdMarkers.filter((m) => !m.removed)).toHaveLength(1);
+  });
+
   it("un marqueur réhydraté qui franchit le plafond À L'ÉCRAN finit par être retiré", async () => {
     // Sans plafond dans sweepStates, une position réhydratée juste sous le
     // seuil resterait affichée à vie : `stale` est exempté du balayage « lost ».
