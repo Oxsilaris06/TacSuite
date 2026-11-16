@@ -1242,6 +1242,13 @@ window.exportSession = exportSession;
  */
 function importSession(file: File): void {
     if (!file) return;
+    // A-IMPORT-01 : refus AVANT FileReader (un JSON de plusieurs Go bloque l'onglet).
+    const SESSION_MAX_BYTES = 20 * 1024 * 1024;
+    if (typeof file.size === 'number' && file.size > SESSION_MAX_BYTES) {
+        const mo = (file.size / (1024 * 1024)).toFixed(0);
+        toast(`Fichier de session trop volumineux (${mo} Mo, 20 Mo au plus).`, { kind: 'error' });
+        return;
+    }
     const reader = new FileReader();
     reader.onload = () => {
         try {
@@ -1275,7 +1282,11 @@ function importSession(file: File): void {
             // le temps au message d'être visible avant que le reload ne coupe le rendu.
             setTimeout(() => location.reload(), 600);
         } catch (err) {
-            toast('Erreur: Fichier de session invalide.', { kind: 'error' });
+            const quota = err instanceof DOMException
+                && (err.name === 'QuotaExceededError' || err.name === 'NS_ERROR_DOM_QUOTA_REACHED');
+            toast(quota
+                ? 'Erreur: espace de stockage insuffisant pour importer cette session.'
+                : 'Erreur: Fichier de session invalide.', { kind: 'error' });
             console.error(err);
         }
     };
