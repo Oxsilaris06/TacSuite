@@ -498,7 +498,10 @@ export interface PctacLegacyLogJson {
 
 /** Résultat de `LogManager.importJson` (logManager.js:129). */
 export interface PctacImportJsonResult {
-    success: true;
+    /** Faux si le stockage a refusé l'écriture (quota) : rien n'a été importé. */
+    success: boolean;
+    /** Message d'échec quand `success` est faux. */
+    error?: string | undefined;
     /** Nombre d'entrées RÉELLEMENT ajoutées (après déduplication par `id`). */
     count: number;
     logs: PctacLogEntry[];

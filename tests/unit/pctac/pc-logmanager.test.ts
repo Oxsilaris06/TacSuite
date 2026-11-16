@@ -372,6 +372,34 @@ describe('LogManager.importJson — déduplication par id', () => {
   });
 });
 
+describe('LogManager.importJson — date et échec d’écriture (audit du 15/11, B-LOG-01)', () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  it('conserve la date d’une entrée legacy', () => {
+    const result = LogManager.importJson({
+      metadata: { appName: 'PC Tac Log' },
+      logEntries: [{ id: 'd1', heure: '09:00', pax: 'Alice', date: '2026-11-15' }],
+    });
+    expect(result.logs[0]?.date).toBe('2026-11-15');
+  });
+
+  it('quota à l’écriture : pas de succès annoncé', () => {
+    const spy = vi.spyOn(Storage, 'saveLogData').mockReturnValue(false);
+    try {
+      const result = LogManager.importJson({
+        metadata: { appName: 'PC Tac Log' },
+        logEntries: [{ id: 'q1', heure: '09:00', pax: 'Alice' }],
+      });
+      expect(result.success).toBe(false);
+      expect(result.count).toBe(0);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+});
+
 describe('LogManager.importJson — fallback couleur (paxMode recalculé d\'ABORD)', () => {
   beforeEach(() => {
     localStorage.clear();

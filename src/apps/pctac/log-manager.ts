@@ -244,6 +244,7 @@ export const LogManager: LogManagerContract = {
           paxColor: entry.paxColor || fallbackColor,
           lieu: entry.lieu || '',
           remarques: entry.remarques || '',
+          ...(entry.date ? { date: entry.date } : {}),
         };
       });
 
@@ -253,8 +254,11 @@ export const LogManager: LogManagerContract = {
       const newEntries = validatedEntries.filter((e) => !knownIds.has(e.id));
       const mergedLogs = [...currentLogs, ...newEntries];
 
-      // logManager.js:128 — persistance du journal fusionné
-      Storage.saveLogData(mergedLogs);
+      // logManager.js:128 — persistance du journal fusionné. Quota : ne jamais
+      // annoncer un import que le stockage n'a pas accepté.
+      if (!Storage.saveLogData(mergedLogs)) {
+        return { success: false, count: 0, logs: currentLogs, error: 'Stockage plein : import non enregistré.' };
+      }
 
       // logManager.js:129 — résultat
       return { success: true, count: newEntries.length, logs: mergedLogs };
