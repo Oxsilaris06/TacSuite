@@ -727,6 +727,7 @@ export const Archive: ArchiveContract = {
                     try {
                         const dataUrl = await ImageStore.get(id);
                         if (dataUrl) imagesFolder.file(`${id}.txt`, dataUrl);
+                        else if (expectedIds.has(id)) unreadable += 1;
                     } catch (e) {
                         if (expectedIds.has(id)) unreadable += 1;
                         console.warn('[Archive] image illisible:', id, e);
@@ -738,16 +739,20 @@ export const Archive: ArchiveContract = {
             // vivant en IndexedDB. Les ids viennent de l'index localStorage,
             // déjà embarqué dans data.json ci-dessus.
             const gpxFolder = zip.folder('gpx');
+            let missingGpx = 0;
             if (gpxFolder) {
                 for (const id of gpxTrackIds()) {
                     try {
                         const track = await GpxStore.get(id);
                         if (track) gpxFolder.file(`${id}.json`, JSON.stringify(track));
+                        else { missingGpx += 1; console.warn('[Archive] trace GPX absente:', id); }
                     } catch {
+                        missingGpx += 1;
                         console.warn('[Archive] trace GPX absente:', id);
                     }
                 }
             }
+            const missingFiles = unreadable + missingGpx;
 
             // 3) Manifest
             // archive.js:92-96
@@ -756,8 +761,8 @@ export const Archive: ArchiveContract = {
                 version: 1,
                 situation: currentModeId(),
                 createdAt: new Date().toISOString(),
-                // V4 — archive PARTIELLE (photos illisibles) : marquée, l'opérateur garde tout le reste.
-                ...(unreadable > 0 ? { incomplete: unreadable } : {}),
+                // V4 — archive PARTIELLE (fichiers attendus illisibles) : marquée, l'opérateur garde tout le reste.
+                ...(missingFiles > 0 ? { incomplete: missingFiles } : {}),
             }, null, 2));
 
             const blob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE', compressionOptions: { level: 6 } });
@@ -776,8 +781,12 @@ export const Archive: ArchiveContract = {
             // pas une photo absente : l'archive partielle est téléchargée (main
             // courante, fiches, autres photos), mais l'export est déclaré incomplet,
             // et le RESET n'efface rien sur cette foi.
-            if (unreadable > 0) {
-                toast(`Archive INCOMPLÈTE téléchargée : ${unreadable} photo${unreadable > 1 ? 's' : ''} illisible${unreadable > 1 ? 's' : ''}. Rien n'a été effacé.`, { kind: 'error', duration: 8000 });
+            if (missingFiles > 0) {
+                const details = [
+                    unreadable > 0 ? `${unreadable} photo${unreadable > 1 ? 's' : ''} illisible${unreadable > 1 ? 's' : ''}` : '',
+                    missingGpx > 0 ? `${missingGpx} trace${missingGpx > 1 ? 's' : ''} GPX absente${missingGpx > 1 ? 's' : ''}` : '',
+                ].filter(Boolean).join(' et ');
+                toast(`Archive INCOMPLÈTE téléchargée : ${details}. Rien n'a été effacé.`, { kind: 'error', duration: 8000 });
                 return false;
             }
             return true;

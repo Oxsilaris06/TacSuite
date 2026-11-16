@@ -32,6 +32,8 @@ vi.mock('@pctac/import-scope.js', async (orig) => ({
 
 import { Archive } from '@pctac/archive.js';
 import { PCTAC_MODE_KEY } from '@pctac/modes.js';
+import { Storage } from '@pctac/storage.js';
+import { GPX_INDEX_KEY } from '@pctac/planmap/constants.js';
 
 async function makeZip(images: Record<string, string>): Promise<File> {
     const zip = new JSZip();
@@ -77,5 +79,19 @@ describe('K3 : lastExportFileName', () => {
         expect(Archive.lastExportFileName()).toBe(download);
         expect(Archive.lastExportFileName()).toMatch(/\.pctac\.zip$/);
         vi.restoreAllMocks();
+    });
+});
+
+describe('B-ARC-02 : export déclaré complet avec des fichiers attendus absents', () => {
+    it('photo attendue sans blob → export incomplet et refusé', async () => {
+        Storage.saveCollection(ADVERSARIES_KEY, [{ id: 'a1', nom: 'X', hasImage: true }]);
+        await expect(Archive.exportZip()).resolves.toBe(false);
+        expect(toastSpy).toHaveBeenCalledWith(expect.stringContaining('INCOMPLÈTE'), expect.anything());
+    });
+
+    it('trace GPX attendue sans blob → export incomplet et refusé', async () => {
+        localStorage.setItem(GPX_INDEX_KEY, JSON.stringify([{ id: 'g1', name: 'Trace' }]));
+        await expect(Archive.exportZip()).resolves.toBe(false);
+        expect(toastSpy).toHaveBeenCalledWith(expect.stringContaining('INCOMPLÈTE'), expect.anything());
     });
 });
