@@ -150,6 +150,9 @@ function loadTokensFile(file) {
   if (changed) {
     try { writeTokensFile(file, tokens); } catch { /* lecture seule : on continue en mémoire */ }
   }
+  // B-REL-03 : un fichier existant en 0644/0660 doit être resserré même sans
+  // réécriture (le fichier contient les jetons opérateurs).
+  try { fs.chmodSync(file, 0o600); } catch { /* best-effort (FS sans chmod) */ }
   return tokens;
 }
 

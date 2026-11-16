@@ -516,3 +516,12 @@ describe('Relais OsmAnd — message de démarrage (B-REL-02)', () => {
     }
   });
 });
+
+describe('Relais OsmAnd — mode de tokens.json (B-REL-03)', () => {
+  it('un fichier existant en 0644 est resserré en 0600 au chargement', async () => {
+    const { file } = makeTokensFile({ [OP_TOKEN]: { nom: 'Dupont', fonction: 'Inter' } });
+    fs.chmodSync(file, 0o644);
+    await start(file);
+    expect(fs.statSync(file).mode & 0o777).toBe(0o600);
+  });
+});
