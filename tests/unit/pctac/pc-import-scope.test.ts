@@ -236,6 +236,40 @@ describe('demande de portée', () => {
         expect(result?.categories).toHaveLength(IMPORT_CATEGORIES.length);
     });
 
+    it('deux ouvertures puis un change : refresh n’est appelé qu’une fois (B-IMP-02)', async () => {
+        document.body.innerHTML = `<dialog id="importScopeModal">
+            <div class="import-scope-intro"></div>
+            <input type="checkbox" data-import-category="adversaires" checked>
+            <button id="importScopeConfirm"></button><button id="importScopeCancel"></button>
+        </dialog>`;
+        const modal = document.getElementById('importScopeModal') as HTMLDialogElement;
+        modal.showModal = vi.fn();
+        modal.close = vi.fn();
+        const desc = Object.getOwnPropertyDescriptor(HTMLButtonElement.prototype, 'disabled');
+        let sets = 0;
+        const spy = vi.spyOn(HTMLButtonElement.prototype, 'disabled', 'set').mockImplementation(function (this: HTMLButtonElement, value: boolean) {
+            sets++;
+            desc?.set?.call(this, value);
+        });
+        try {
+            const first = askImportScope();
+            (document.getElementById('importScopeCancel') as HTMLButtonElement).click();
+            await first;
+
+            const second = askImportScope();
+            sets = 0;
+            const box = modal.querySelector('input[data-import-category]') as HTMLInputElement;
+            box.checked = false;
+            box.dispatchEvent(new Event('change', { bubbles: true }));
+            expect(sets).toBe(1);
+
+            (document.getElementById('importScopeCancel') as HTMLButtonElement).click();
+            await second;
+        } finally {
+            spy.mockRestore();
+        }
+    });
+
     it('rend null quand la confirmation est refusée', async () => {
         confirmSpy.mockResolvedValue(false);
         expect(await askImportScope()).toBeNull();

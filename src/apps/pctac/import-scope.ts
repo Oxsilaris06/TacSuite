@@ -365,13 +365,17 @@ export async function askImportScope(targetMode?: PctacModeId): Promise<ImportSc
         const refresh = (): void => {
             if (confirmBtn) confirmBtn.disabled = selected().length === 0;
         };
-        boxes.forEach((b) => b.addEventListener('change', refresh));
+        // B-IMP-02 : une seule délégation par ouverture, retirée en fermant.
+        // (Avant : un écouteur `change` par case, jamais retiré.)
+        const onChange = (): void => refresh();
+        modal.addEventListener('change', onChange);
         refresh();
 
         let settled = false;
         const finish = (value: ImportScope | null): void => {
             if (settled) return;
             settled = true;
+            modal.removeEventListener('change', onChange);
             modal.close();
             resolve(value);
         };
