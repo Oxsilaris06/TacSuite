@@ -132,8 +132,8 @@ function loadTokensFile(file) {
   let parsed;
   try {
     parsed = JSON.parse(raw);
-  } catch (e) {
-    throw new Error(`tokens.json illisible (${file}) : ${e.message}. Fichier conservé, relais arrêté.`);
+  } catch {
+    throw new Error(`tokens.json illisible (${file}) : JSON invalide. Fichier conservé, relais arrêté.`);
   }
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
     throw new Error(`tokens.json invalide (${file}) : objet attendu. Fichier conservé, relais arrêté.`);

@@ -479,4 +479,16 @@ describe('Relais OsmAnd — tokens.json illisible (audit du 15/11, B-REL-01)', (
     await expect(start(file)).rejects.toThrow(/tokens\.json illisible/);
     expect(fs.readFileSync(file, 'utf8')).toBe('{"readKey":"tronqué"');
   });
+
+  it("ne recopie pas un fragment du fichier dans l'erreur (revue du lot 1)", async () => {
+    const { file } = makeTokensFile({ [OP_TOKEN]: { nom: 'Dupont', fonction: 'Inter' } });
+    fs.writeFileSync(file, 'SECRETKEY0123456789');
+
+    const error = await start(file).then(
+      () => null,
+      (e: Error) => e,
+    );
+    expect(error?.message).toMatch(/tokens\.json illisible/);
+    expect(error?.message).not.toContain('SECRETKEY');
+  });
 });
