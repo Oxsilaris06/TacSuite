@@ -126,10 +126,11 @@ export const PinsMethods = {
     _addPin(this: PlanMapInternal, pin: PlanPin): void {
         const pins = this._loadPins();
         pins.push(pin);
-        this._savePins(pins);
+        const saved = this._savePins(pins);
         this._renderPins();
-        // C5 : pose d'un pin d'entité → main courante (jamais bloquant).
-        if (pin.entityRef) logMapAction(`Ping posé : ${this._resolvePin(pin).label}`);
+        // C5 : pose d'un pin d'entité → main courante, seulement si l'écriture
+        // a réussi (sinon le point n'existe pas et le journal mentirait).
+        if (saved && pin.entityRef) logMapAction(`Ping posé : ${this._resolvePin(pin).label}`);
     },
 
     // planMap.js:1197-1201
@@ -137,10 +138,10 @@ export const PinsMethods = {
         const all = this._loadPins();
         const gone = all.find(p => p.id === id);
         const pins = all.filter(p => p.id !== id);
-        this._savePins(pins);
+        const saved = this._savePins(pins);
         this._renderPins();
         // C5 : suppression d'un pin d'entité → main courante (jamais bloquant).
-        if (gone?.entityRef) logMapAction(`Ping retiré : ${this._resolvePin(gone).label}`);
+        if (saved && gone?.entityRef) logMapAction(`Ping retiré : ${this._resolvePin(gone).label}`);
     },
 
     /**
@@ -172,13 +173,13 @@ export const PinsMethods = {
                 const list = this._loadPins();
                 if (list.some(p => p.id === snapshot.id)) return; // déjà remis (double annulation)
                 list.push(snapshot);
-                this._savePins(list);
+                const saved = this._savePins(list);
                 this._renderPins();
                 // R27 : le retrait a déjà été journalisé au moment de la
                 // suppression ; comme « Annuler » le rétablit, on journalise le
                 // rétablissement — sinon la main courante (et le PDF) affirmerait
                 // un « Ping retiré » qui n'a pas eu lieu.
-                if (snapshot.entityRef) logMapAction(`Ping rétabli : ${this._resolvePin(snapshot).label}`);
+                if (saved && snapshot.entityRef) logMapAction(`Ping rétabli : ${this._resolvePin(snapshot).label}`);
             },
         });
     },
@@ -195,8 +196,8 @@ export const PinsMethods = {
     // R3-c : idem, délègue à `this.persistence.savePins` — garde QuotaExceededError
     // (événement 'pctac:quota' non bloquant, ne jette jamais). Pas d'alert ici : la
     // persistance des pings ne doit pas bloquer le déplacement tactile sur le terrain.
-    _savePins(this: PlanMapInternal, pins: readonly PlanPin[]): void {
-        this.persistence.savePins(pins);
+    _savePins(this: PlanMapInternal, pins: readonly PlanPin[]): boolean {
+        return this.persistence.savePins(pins);
     },
 
     // planMap.js:1216-1226

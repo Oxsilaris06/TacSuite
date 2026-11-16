@@ -475,7 +475,7 @@ export interface PlanMapInternal extends PlanMapState, PlanMapContract {
     _removePin(id: string): void;
     _requestRemovePin(id: string): Promise<void>;
     _loadPins(): PlanPin[];
-    _savePins(pins: readonly PlanPin[]): void;
+    _savePins(pins: readonly PlanPin[]): boolean;
     _resolvePin(pin: PlanPin): ResolvedPin;
     _pinSignature(pin: PlanPin): string;
     _applyLockBadgeStyle(badge: HTMLElement, locked: boolean, variant: 'corner' | 'marker'): void;

@@ -374,6 +374,24 @@ describe('getPinsSummary — CONTRAT C2 : ne jette jamais, [] en cas d\'échec',
     });
 });
 
+describe('B-PLAN-01 : écriture refusée, journal mensonger', () => {
+    it('quota : _savePins rend false, le ping reste absent et n’est pas journalisé', () => {
+        const fake = makeFakeThis();
+        const addEntry = vi.fn();
+        const saved = vi.spyOn(fake.persistence, 'savePins').mockReturnValue(false);
+        (window as unknown as { LogManager?: { addEntry: typeof addEntry } }).LogManager = { addEntry };
+        try {
+            fake._addPin(makePin({ id: 'q1', entityRef: { kind: 'adv', id: 'a1' } }));
+            expect(fake._savePins([])).toBe(false);
+            expect(fake._loadPins()).toHaveLength(0);
+            expect(addEntry).not.toHaveBeenCalled();
+        } finally {
+            saved.mockRestore();
+            delete (window as unknown as { LogManager?: unknown }).LogManager;
+        }
+    });
+});
+
 describe('_addPin / _removePin / _loadPins / _savePins — CRUD (planMap.js:1190-1214)', () => {
     it('_addPin ajoute et persiste (round-trip via _loadPins)', () => {
         const fake = makeFakeThis();
