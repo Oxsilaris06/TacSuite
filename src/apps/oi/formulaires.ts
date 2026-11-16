@@ -1494,7 +1494,13 @@ async function importArchive(file: File): Promise<void> {
     const parsed = await window.parseArchive(file);
     if (!parsed.ok) { toast(parsed.error, { kind: 'error' }); return; }
     // 2) Détection des catégories réellement présentes + modale de sélection.
-    const cats = detectImportCategories(parsed);
+    let cats: OiImportCategory[];
+    try {
+        cats = detectImportCategories(parsed);
+    } catch {
+        toast('Archive invalide : listes mal formées.', { kind: 'error' });
+        return;
+    }
     if (!cats.length) { toast("L'archive ne contient aucune donnée importable.", { kind: 'error' }); return; }
     const selectedIds = await showImportSelectModal(cats);
     if (!selectedIds || !selectedIds.length) return; // annulé, fermé, ou rien coché
@@ -1518,13 +1524,18 @@ interface OiImportCategoryInternal extends OiImportCategory {
     countOf?: (oi: OiFormData, imgN: number) => number;
 }
 
+/** Liste sûre : une valeur non tableau est traitée comme vide (A-ARC-04). */
+function asList<T>(value: unknown): T[] {
+    return Array.isArray(value) ? value as T[] : [];
+}
+
 const IMPORT_CATEGORIES: OiImportCategoryInternal[] = [
     { id: 'champs', label: 'Champs texte (situation, mission, environnement…)', icon: 'description', rest: true },
-    { id: 'adversaires', label: 'Adversaires', icon: 'person_search', keys: ['adversaries'], unit: 'adversaire', countOf: (o) => (o.adversaries || []).length },
-    { id: 'photos', label: 'Photos HD (annotations, légendes)', icon: 'photo_camera', keys: ['dynamic_photos'], images: true, unit: 'photo', countOf: (o, imgN) => (o.dynamic_photos && Object.values(o.dynamic_photos).some((list) => Array.isArray(list) && list.length > 0) ? imgN : 0) },
-    { id: 'membres', label: 'Membres PATRACDVR (+ Configuration Unité)', icon: 'groups', keys: ['patracdvr_unassigned', 'patracdvr_rows', 'options'], unit: 'membre', countOf: (o) => ((o.patracdvr_unassigned || []).length + (o.patracdvr_rows || []).reduce((s, r) => s + r.members.length, 0)) },
-    { id: 'articulation', label: 'Articulation MOICP / ZMSPCP / Effraction', icon: 'account_tree', keys: ['moicp_blocks', 'zmspcp_blocks', 'effraction_blocks', 'rame_vl_order', 'colonne_progression_order', 'ordre_penetration_order'], unit: 'bloc', countOf: (o) => ((o.moicp_blocks || []).length + (o.zmspcp_blocks || []).length + (o.effraction_blocks || []).length) },
-    { id: 'cartographie', label: 'Cartographie (carte, pings, dessins)', icon: 'map', keys: ['cartography'], unit: 'élément', countOf: (o) => { const c: Partial<OiCartographyState> = o.cartography || {}; return (c.pins || []).length + (c.shapes || []).length; } }
+    { id: 'adversaires', label: 'Adversaires', icon: 'person_search', keys: ['adversaries'], unit: 'adversaire', countOf: (o) => asList(o.adversaries).length },
+    { id: 'photos', label: 'Photos HD (annotations, légendes)', icon: 'photo_camera', keys: ['dynamic_photos'], images: true, unit: 'photo', countOf: (o, imgN) => (o.dynamic_photos && typeof o.dynamic_photos === 'object' && Object.values(o.dynamic_photos).some((list) => Array.isArray(list) && list.length > 0) ? imgN : 0) },
+    { id: 'membres', label: 'Membres PATRACDVR (+ Configuration Unité)', icon: 'groups', keys: ['patracdvr_unassigned', 'patracdvr_rows', 'options'], unit: 'membre', countOf: (o) => (asList(o.patracdvr_unassigned).length + asList<{ members?: unknown }>(o.patracdvr_rows).reduce((s, r) => s + asList(r?.members).length, 0)) },
+    { id: 'articulation', label: 'Articulation MOICP / ZMSPCP / Effraction', icon: 'account_tree', keys: ['moicp_blocks', 'zmspcp_blocks', 'effraction_blocks', 'rame_vl_order', 'colonne_progression_order', 'ordre_penetration_order'], unit: 'bloc', countOf: (o) => (asList(o.moicp_blocks).length + asList(o.zmspcp_blocks).length + asList(o.effraction_blocks).length) },
+    { id: 'cartographie', label: 'Cartographie (carte, pings, dessins)', icon: 'map', keys: ['cartography'], unit: 'élément', countOf: (o) => { const c: Partial<OiCartographyState> = o.cartography && typeof o.cartography === 'object' ? o.cartography : {}; return asList(c.pins).length + asList(c.shapes).length; } }
 ];
 
 // formulaires.js:1102-1106
@@ -1540,6 +1551,18 @@ function _imgCountInZip(zip: JSZip): number {
 function detectImportCategories(parsed: OiParsedArchiveOk): OiImportCategory[] {
     let oi: OiFormData = {};
     try { oi = (JSON.parse(parsed.dataJson[OI_ARCHIVE_KEYS[0]] || '{}') as OiFormData) || {}; } catch { oi = {}; }
+    // A-ARC-04 : les listes attendues doivent être des tableaux ; une archive
+    // forgée (`patracdvr_rows: 5`) est refusée avec un message, pas un TypeError.
+    const arrayKeys = ['adversaries', 'patracdvr_unassigned', 'patracdvr_rows', 'moicp_blocks', 'zmspcp_blocks',
+        'effraction_blocks', 'rame_vl_order', 'colonne_progression_order', 'ordre_penetration_order'] as const;
+    for (const key of arrayKeys) {
+        const value = (oi as Record<string, unknown>)[key];
+        if (value != null && !Array.isArray(value)) throw new Error(`liste ${key} invalide`);
+    }
+    for (const key of ['dynamic_photos', 'cartography', 'options'] as const) {
+        const value = (oi as Record<string, unknown>)[key];
+        if (value != null && (typeof value !== 'object' || Array.isArray(value))) throw new Error(`objet ${key} invalide`);
+    }
     // JUSTIFICATION cast : OiParsedArchiveOk.zip est typé `unknown` par le contrat
     // (découplage vis-à-vis de la forme exacte de JSZip) ; on sait ici qu'il
     // s'agit bien de l'instance produite par parseArchive.
