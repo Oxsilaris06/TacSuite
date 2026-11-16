@@ -458,3 +458,25 @@ describe('Relais OsmAnd — aucune adresse par défaut (revue du 2026-10-28)', (
     }
   });
 });
+
+describe('Relais OsmAnd — tokens.json illisible (audit du 15/11, B-REL-01)', () => {
+  it('reloadTokens conserve les opérateurs et ne réécrit pas le fichier', async () => {
+    const { file } = makeTokensFile({ [OP_TOKEN]: { nom: 'Dupont', fonction: 'Inter' } });
+    const relay = await start(file);
+    fs.writeFileSync(file, '{"readKey":"tronqué"');
+    const before = fs.readFileSync(file, 'utf8');
+
+    relay.reloadTokens();
+
+    expect(Object.keys(relay.state.tokens.operators)).toEqual([OP_TOKEN]);
+    expect(fs.readFileSync(file, 'utf8')).toBe(before);
+  });
+
+  it('un fichier illisible au démarrage fait refuser le relais sans le réécrire', async () => {
+    const { file } = makeTokensFile({ [OP_TOKEN]: { nom: 'Dupont', fonction: 'Inter' } });
+    fs.writeFileSync(file, '{"readKey":"tronqué"');
+
+    await expect(start(file)).rejects.toThrow(/tokens\.json illisible/);
+    expect(fs.readFileSync(file, 'utf8')).toBe('{"readKey":"tronqué"');
+  });
+});

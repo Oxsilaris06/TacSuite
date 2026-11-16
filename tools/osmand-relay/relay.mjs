@@ -115,30 +115,39 @@ function writeTokensFile(file, tokens) {
 /**
  * Charge tokens.json. Le fichier est HORS dépôt et créé à la demande :
  *  - absent → créé avec une readKey neuve ;
- *  - présent sans readKey → readKey ajoutée ;
- *  - toujours en mode 0600.
+ *  - illisible (JSON invalide, forme inattendue) → ERREUR, fichier jamais
+ *    réécrit : un fichier tronqué ne doit pas effacer les jetons opérateurs ;
+ *  - présent sans readKey → readKey ajoutée (opérateurs conservés).
  */
 function loadTokensFile(file) {
-  let tokens = null;
+  let raw;
   try {
-    const raw = fs.readFileSync(file, 'utf8');
-    const parsed = JSON.parse(raw);
-    if (parsed && typeof parsed === 'object') {
-      tokens = {
-        readKey: typeof parsed.readKey === 'string' ? parsed.readKey : '',
-        operators: parsed.operators && typeof parsed.operators === 'object' ? parsed.operators : {},
-      };
-    }
-  } catch {
-    tokens = null;
+    raw = fs.readFileSync(file, 'utf8');
+  } catch (e) {
+    if (e?.code !== 'ENOENT') throw e;
+    const created = { readKey: crypto.randomBytes(32).toString('hex'), operators: {} };
+    try { writeTokensFile(file, created); } catch { /* lecture seule : on continue en mémoire */ }
+    return created;
   }
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (e) {
+    throw new Error(`tokens.json illisible (${file}) : ${e.message}. Fichier conservé, relais arrêté.`);
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error(`tokens.json invalide (${file}) : objet attendu. Fichier conservé, relais arrêté.`);
+  }
+  const tokens = {
+    readKey: typeof parsed.readKey === 'string' ? parsed.readKey : '',
+    operators: parsed.operators && typeof parsed.operators === 'object' ? parsed.operators : {},
+  };
   let changed = false;
-  if (!tokens) { tokens = { readKey: '', operators: {} }; changed = true; }
   if (!tokens.readKey || tokens.readKey.length !== 64) {
     tokens.readKey = crypto.randomBytes(32).toString('hex');
     changed = true;
   }
-  if (changed || !fs.existsSync(file)) {
+  if (changed) {
     try { writeTokensFile(file, tokens); } catch { /* lecture seule : on continue en mémoire */ }
   }
   return tokens;
