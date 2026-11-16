@@ -195,8 +195,10 @@ const StoreBase: OiStoreContract = {
     saveToStorage(): void {
         try {
             localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(this.state.formData));
+            window.dispatchEvent(new CustomEvent('oi:saved'));
         } catch (e) {
             console.error('LocalStorage Error:', e);
+            window.dispatchEvent(new CustomEvent('oi:save-failed'));
             // init.js:154 — `useUnknownInCatchVariables` impose de vérifier le
             // type avant d'accéder à `.name` ; QuotaExceededError est un
             // DOMException dans tous les moteurs — comportement identique.

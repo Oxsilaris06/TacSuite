@@ -869,16 +869,22 @@ function syncDomToStoreCore(): void {
     }
 }
 
-/** U21 — « ✓ Enregistré HH:MM » au niveau app, rafraîchi à chaque autosave. */
-function updateAppAutosave(): void {
+/** U21 — badge autosave : « … » tant que l'écriture différée n'a pas abouti. */
+function updateAppAutosave(ok: boolean | null = null): void {
     const el = document.getElementById('appAutosave');
     if (!el) return;
     const now = new Date();
     const hh = String(now.getHours()).padStart(2, '0');
     const mn = String(now.getMinutes()).padStart(2, '0');
-    el.textContent = `\u2713 Enregistré ${hh}:${mn}`;
+    el.textContent = ok === null
+        ? '\u23F3 Enregistrement…'
+        : ok
+            ? `\u2713 Enregistré ${hh}:${mn}`
+            : `\u26A0 Non enregistré ${hh}:${mn}`;
     el.classList.add('show');
 }
+window.addEventListener('oi:saved', () => updateAppAutosave(true));
+window.addEventListener('oi:save-failed', () => updateAppAutosave(false));
 
 // formulaires.js:551-742
 async function loadFormData(): Promise<boolean> {
