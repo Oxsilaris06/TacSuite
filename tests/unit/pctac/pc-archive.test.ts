@@ -33,6 +33,7 @@ const imageStoreState = vi.hoisted(() => ({
   store: new Map<string, string>(),
   failDeleteManyOnce: false,
   deleteThenFailOnce: false,
+  failPutOnce: false,
 }));
 
 const gpxState = new Map<string, unknown>();
@@ -51,6 +52,10 @@ vi.mock('@pctac/image-store.js', () => {
     ImageStore: {
       async put(id: string, dataUrl: string): Promise<void> {
         if (!id || !dataUrl) return;
+        if (imageStoreState.failPutOnce) {
+          imageStoreState.failPutOnce = false;
+          throw new Error('IDB pleine (simulation de test)');
+        }
         store.set(id, dataUrl);
       },
       async get(id: string): Promise<string | null> {
@@ -195,6 +200,7 @@ beforeEach(() => {
   imageStoreState.store.clear();
   imageStoreState.failDeleteManyOnce = false;
   imageStoreState.deleteThenFailOnce = false;
+  imageStoreState.failPutOnce = false;
   confirmSpy.mockClear();
   confirmSpy.mockImplementation(async () => true);
   toastSpy.mockClear();
@@ -600,3 +606,23 @@ describe('exportZip — retour boolean (décision 32)', () => {
   });
 });
 
+
+describe('import en remplacement — écriture des photos en échec (audit du 15/11, B-ARC-01)', () => {
+  it('remplacement intégral, ImageStore.put rejette → anciennes images restaurées, import ok:false', async () => {
+    Storage.saveCollection(ADVERSARIES_KEY, [{ id: 'a1', nom: 'Existant', hasImage: true }]);
+    await ImageStore.put('a1', 'data:image/png;base64,AAA=');
+    imageStoreState.failPutOnce = true;
+
+    const file = await buildPctacZip({
+      data: { [ADVERSARIES_KEY]: JSON.stringify([{ id: 'zzz', nom: 'Archive' }]) },
+      images: { 'zzz.txt': 'data:image/png;base64,ZZZ=' },
+    });
+
+    const result = await Archive.importFile(file);
+
+    expect(result.ok).toBe(false);
+    expect(await ImageStore.get('a1')).toBe('data:image/png;base64,AAA=');
+    const fiches = JSON.parse(localStorage.getItem(ADVERSARIES_KEY) ?? '[]') as Array<{ id: string }>;
+    expect(fiches.map((f) => f.id)).toEqual(['a1']);
+  });
+});

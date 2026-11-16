@@ -1003,8 +1003,18 @@ export const Archive: ArchiveContract = {
             await Promise.all(tasks);
         }
         if (imgError) {
-            // Les photos sont best-effort : un échec partiel ne justifie pas de jeter
-            // l'import du localStorage déjà validé. On prévient sans rollback.
+            if (scope.full) {
+                // B-ARC-01 : en remplacement intégral, les anciennes images ont
+                // été retirées avant l'écriture. Un échec laisserait la
+                // situation sans ses photos : on remet le snapshot complet et
+                // l'import échoue franchement.
+                await rollback();
+                console.warn('[Archive] images non restaurées, rollback effectué:', imgError);
+                toast("Échec de l'import (photos non restaurées). Vos données précédentes ont été conservées.", { kind: 'error' });
+                return { ok: false, error: imgError };
+            }
+            // Import partiel : les photos restent best-effort, les données
+            // locales déjà validées ne sont pas jetées.
             console.warn('[Archive] certaines images non restaurées:', imgError);
             toast("Import terminé, mais certaines photos n'ont pas pu être restaurées (stockage). Les fiches sont intactes.", { kind: 'error' });
         }
