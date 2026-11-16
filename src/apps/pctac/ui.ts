@@ -910,7 +910,7 @@ export const UI: UIContract = {
     const dl = document.getElementById('lieu_suggestions');
     if (!dl) return;
     const hist = LogManager.getLieuHistory();
-    dl.innerHTML = hist.map((l) => `<option value="${l.replace(/"/g, '&quot;')}">`).join('');
+    dl.innerHTML = hist.map((l) => `<option value="${esc(l)}">`).join('');
   },
 
   /**
