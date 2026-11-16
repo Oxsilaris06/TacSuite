@@ -1493,7 +1493,7 @@ interface OiImportCategoryInternal extends OiImportCategory {
 const IMPORT_CATEGORIES: OiImportCategoryInternal[] = [
     { id: 'champs', label: 'Champs texte (situation, mission, environnement…)', icon: 'description', rest: true },
     { id: 'adversaires', label: 'Adversaires', icon: 'person_search', keys: ['adversaries'], unit: 'adversaire', countOf: (o) => (o.adversaries || []).length },
-    { id: 'photos', label: 'Photos HD (annotations, légendes)', icon: 'photo_camera', keys: ['dynamic_photos'], images: true, unit: 'photo', countOf: (_o, imgN) => imgN },
+    { id: 'photos', label: 'Photos HD (annotations, légendes)', icon: 'photo_camera', keys: ['dynamic_photos'], images: true, unit: 'photo', countOf: (o, imgN) => (o.dynamic_photos && Object.values(o.dynamic_photos).some((list) => Array.isArray(list) && list.length > 0) ? imgN : 0) },
     { id: 'membres', label: 'Membres PATRACDVR (+ Configuration Unité)', icon: 'groups', keys: ['patracdvr_unassigned', 'patracdvr_rows', 'options'], unit: 'membre', countOf: (o) => ((o.patracdvr_unassigned || []).length + (o.patracdvr_rows || []).reduce((s, r) => s + r.members.length, 0)) },
     { id: 'articulation', label: 'Articulation MOICP / ZMSPCP / Effraction', icon: 'account_tree', keys: ['moicp_blocks', 'zmspcp_blocks', 'effraction_blocks', 'rame_vl_order', 'colonne_progression_order', 'ordre_penetration_order'], unit: 'bloc', countOf: (o) => ((o.moicp_blocks || []).length + (o.zmspcp_blocks || []).length + (o.effraction_blocks || []).length) },
     { id: 'cartographie', label: 'Cartographie (carte, pings, dessins)', icon: 'map', keys: ['cartography'], unit: 'élément', countOf: (o) => { const c: Partial<OiCartographyState> = o.cartography || {}; return (c.pins || []).length + (c.shapes || []).length; } }
@@ -1608,9 +1608,17 @@ async function applyArchiveImport(parsed: OiParsedArchiveOk, cats: readonly OiIm
 
     // SEC-1 : une référence de photo à id forgé est retirée avant tout stockage.
     const photos = oiCurrent.dynamic_photos;
+    const referencedPhotoIds = new Set<string>();
     if (photos && typeof photos === 'object') {
         for (const [k, list] of Object.entries(photos as Record<string, unknown>)) {
             if (Array.isArray(list)) (photos as Record<string, unknown>)[k] = list.filter((p) => isSafeId((p as { id?: unknown } | null)?.id));
+        }
+        for (const list of Object.values(photos as Record<string, unknown>)) {
+            if (!Array.isArray(list)) continue;
+            for (const p of list) {
+                const id = (p as { id?: unknown } | null)?.id;
+                if (typeof id === 'string') referencedPhotoIds.add(id);
+            }
         }
     }
 
@@ -1691,10 +1699,11 @@ async function applyArchiveImport(parsed: OiParsedArchiveOk, cats: readonly OiIm
             throw new Error("Espace de stockage insuffisant (quota localStorage). Données d'origine restaurées.");
         }
 
-        // Formulaire écrit : les anciennes photos absentes de l'archive partent.
+        // Formulaire écrit : les anciennes photos absentes de l'archive partent,
+        // sauf celles encore référencées par la session (A-ARC-01).
         if (beforeKeys && dbManager) {
             for (const key of beforeKeys) {
-                if (!written.has(key)) { try { await dbManager.deleteItem(key); } catch { /* best-effort */ } }
+                if (!written.has(key) && !referencedPhotoIds.has(key)) { try { await dbManager.deleteItem(key); } catch { /* best-effort */ } }
             }
         }
 
