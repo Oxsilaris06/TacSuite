@@ -1423,8 +1423,22 @@ export const Archive: ArchiveContract = {
             advAdds.push(item);
             advAdded++;
         }
-        if (advAdded || advMerged) Storage.saveCollection(ADVERSARIES_KEY, applyDeltas(Storage.loadCollection(ADVERSARIES_KEY), advMergedById, advAdds));
-        if (photoAdds.length) Storage.saveCollection(PHOTOS_KEY, applyDeltas(Storage.loadCollection(PHOTOS_KEY), new Map(), photoAdds));
+        let writeFailed = false;
+        let writeError = '';
+        const noteWrite = (ok: boolean, message: string): boolean => {
+            if (!ok) { writeFailed = true; if (!writeError) writeError = message; }
+            return ok;
+        };
+        const advWriteOk = !(advAdded || advMerged)
+            || noteWrite(Storage.saveCollection(ADVERSARIES_KEY, applyDeltas(Storage.loadCollection(ADVERSARIES_KEY), advMergedById, advAdds)), 'adversaires non enregistrés (stockage plein)');
+        if (!advWriteOk) {
+            // Rien n'a été persisté : les blobs écrits pour ces fiches ne doivent
+            // pas rester orphelins derrière une galerie qui ne les référence pas.
+            try { await ImageStore.deleteMany(advAdds.flatMap((a) => [String(a.id), `${a.id}_sync`, `${a.id}_orig`])); }
+            catch { /* best-effort */ }
+        } else if (photoAdds.length) {
+            noteWrite(Storage.saveCollection(PHOTOS_KEY, applyDeltas(Storage.loadCollection(PHOTOS_KEY), new Map(), photoAdds)), 'galerie non enregistrée (stockage plein)');
+        }
 
         // --- 2) Équipe PATRACDVR → pcTacCustomPax (couleurs distinctes) ---
         const paxList = Storage.loadCollection(CUSTOM_PAX_KEY);
@@ -1459,7 +1473,7 @@ export const Archive: ArchiveContract = {
             paxList.push({ id: 'oi_pax_' + Date.now().toString(36) + '_' + i, name: trig, color: nextColor() });
             paxAdded++;
         });
-        if (paxAdded) Storage.saveCollection(CUSTOM_PAX_KEY, paxList);
+        if (paxAdded) noteWrite(Storage.saveCollection(CUSTOM_PAX_KEY, paxList), 'intervenants non enregistrés (stockage plein)');
 
         // --- 2 bis) TOUTES les photos de l'OI → galerie Photos (A6) ---
         // La photo PRINCIPALE de chaque adversaire est déjà passée par la fiche
@@ -1472,6 +1486,7 @@ export const Archive: ArchiveContract = {
         const photoById = new Map(Storage.loadCollection(PHOTOS_KEY).map((p) => [p.id, p]));
         // A3 — entrées mises à jour ou ajoutées, appliquées à la liste relue à l'écriture.
         const galleryChanges = new Map<string, PctacCollectionItem>();
+        const galleryNewIds: string[] = [];
         let galleryAdded = 0, galleryUpdated = 0, galleryPreserved = 0;
         // Anciennes photos « Baptême Terrain » par bloc ZMSPCP : un seul champ,
         // numéroté comme dans l'OI.
@@ -1549,10 +1564,16 @@ export const Archive: ArchiveContract = {
                 }
                 galleryChanges.set(pcId, item);
                 if (existing) galleryUpdated++;
-                else { photoById.set(pcId, item); galleryAdded++; }
+                else { photoById.set(pcId, item); galleryNewIds.push(pcId); galleryAdded++; }
             }
         }
-        if (galleryChanges.size) Storage.saveCollection(PHOTOS_KEY, applyDeltas(Storage.loadCollection(PHOTOS_KEY), galleryChanges, []));
+        if (galleryChanges.size) {
+            const galleryOk = noteWrite(Storage.saveCollection(PHOTOS_KEY, applyDeltas(Storage.loadCollection(PHOTOS_KEY), galleryChanges, [])), 'photos non enregistrées (stockage plein)');
+            if (!galleryOk && galleryNewIds.length) {
+                try { await ImageStore.deleteMany(galleryNewIds.flatMap((id) => [id, `${id}_orig`])); }
+                catch { /* best-effort */ }
+            }
+        }
         // C5/C12 : la photo reprise d'une fusion a son entrée de galerie. Traité
         // APRÈS la dernière écriture de `photoList` : `syncMergedGallery` relit
         // le stockage et ne doit pas être écrasé par un `photoList` périmé.
@@ -1581,7 +1602,11 @@ export const Archive: ArchiveContract = {
         // un doublon ignoré (elle est comptée `advMerged`), et « garder les
         // deux »/« ouvrir l'existante » conservent la fiche. Le champ reste à 0
         // pour ne pas casser le message de `main.ts` (paxSkipped, lui, compte).
-        return { ok: true, advAdded, advPhotos, advSkipped: 0, advMerged, paxAdded, paxSkipped, gridImported, galleryAdded, galleryUpdated, galleryPreserved };
+        return {
+            ok: !writeFailed,
+            ...(writeFailed ? { error: writeError } : {}),
+            advAdded, advPhotos, advSkipped: 0, advMerged, paxAdded, paxSkipped, gridImported, galleryAdded, galleryUpdated, galleryPreserved,
+        };
     },
 };
 

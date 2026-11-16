@@ -86,6 +86,25 @@ describe('R9 : fusion d’un adversaire OI dans une fiche existante', () => {
     });
 });
 
+describe('B-OI-01 : succès annoncé malgré une écriture refusée', () => {
+    it('saveCollection en échec → ok:false et blobs non persistés supprimés', async () => {
+        const realSave = Storage.saveCollection.bind(Storage);
+        const spy = vi.spyOn(Storage, 'saveCollection').mockImplementation((key, data, modeId) =>
+            key === ADVERSARIES_KEY ? false : realSave(key, data, modeId));
+
+        try {
+            const res = await Archive.importOiArchive(await oiZip({
+                adversaries: [{ id: 'a1', nom_adversaire: 'Jean Dupont' }],
+                dynamic_photos: { photo_main_a1: [{ id: 'img_9' }] },
+            }, { img_9: 'PHOTO' }));
+            expect(res.ok).toBe(false);
+            expect(imageStoreState.store.size).toBe(0);
+        } finally {
+            spy.mockRestore();
+        }
+    });
+});
+
 describe('R7 : MIME forgé dans images.json', () => {
     it('ne produit jamais d’attribut injectable', async () => {
         await Archive.importOiArchive(await oiZip({ dynamic_photos: { photo_itin_ext_b1: [{ id: 'img_1' }] } }, { img_1: 'x' }, { img_1: 'image/png" onerror="window.__pwn=1' }));

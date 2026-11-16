@@ -624,11 +624,18 @@ document.addEventListener('DOMContentLoaded', async () => {
 
                 const parts = Utils.oiImportSummaryParts(res);
                 const skipped = (res.advSkipped || 0) + (res.paxSkipped || 0);
-                toast(
-                    `Passerelle OI → PC TAC : ${parts.join(', ')} importé(s) avec succès.`
-                    + (skipped ? ` ${skipped} doublon(s) déjà présent(s) ignoré(s).` : ''),
-                    { kind: 'success' },
-                );
+                if (!res.ok) {
+                    toast(
+                        `Passerelle OI → PC TAC : import incomplet${res.error ? ` (${res.error})` : ''}.`,
+                        { kind: 'error' },
+                    );
+                } else {
+                    toast(
+                        `Passerelle OI → PC TAC : ${parts.join(', ')} importé(s) avec succès.`
+                        + (skipped ? ` ${skipped} doublon(s) déjà présent(s) ignoré(s).` : ''),
+                        { kind: 'success' },
+                    );
+                }
             } catch (err) {
                 console.error('[OI→PCTAC] import échec:', err);
                 toast('Import OI impossible : ' + (err instanceof Error ? err.message : String(err)), { kind: 'error' });

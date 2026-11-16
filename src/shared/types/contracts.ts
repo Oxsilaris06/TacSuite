@@ -547,7 +547,10 @@ export type ArchiveImportResult =
 
 /** Résultat de la passerelle OI → PC-Tac (archive.js:455). */
 export interface ArchiveOiImportResult {
-    ok: true;
+    /** Faux dès qu'une écriture de l'import a été refusée (quota) : rien ne doit être annoncé comme importé. */
+    ok: boolean;
+    /** Message d'échec quand `ok` est faux. */
+    error?: string | undefined;
     /** Adversaires ajoutés depuis l'étape 2 de l'OI. */
     advAdded: number;
     /** Photos d'adversaire restaurées dans IndexedDB (réellement conservées). */
