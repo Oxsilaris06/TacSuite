@@ -134,14 +134,12 @@ export async function handleFileChange(
     const previewContainer = document.getElementById(previewContainerId);
     if (!previewContainer) return 0;
 
-    if (isSingle) {
-        const existingImages = previewContainer.querySelectorAll<HTMLElement>('.image-preview');
-        for (const img of existingImages) {
-            // Supprimer l'image, en passant l'élément parent pour suppression
-            await removeImage(img.id, img.closest<HTMLElement>('.image-preview-item'));
-        }
-        previewContainer.innerHTML = '';
-    }
+    // A-MEDIA-01 : l'ancienne photo n'est retirée qu'après validation et
+    // enregistrement de la nouvelle (plus bas) ; un fichier refusé ou une
+    // confirmation annulée laisse le champ intact.
+    const existingImages = isSingle
+        ? Array.from(previewContainer.querySelectorAll<HTMLElement>('.image-preview'))
+        : [];
 
     // medias.js:40 — capture locale (`files`) : `HTMLInputElement.files` est
     // `FileList | null` côté TS, jamais gardé dans l'original.
@@ -152,6 +150,7 @@ export async function handleFileChange(
     const room = photoRoom(previewContainer);
     let overLimit = 0;
     let added = 0;
+    const addedIds: string[] = [];
     if (files.length > 0) {
         // U26 — état de chargement pendant l'import (compression + IndexedDB) :
         // input désactivé, conteneur aria-busy, compteur visuel minimal.
@@ -238,11 +237,27 @@ export async function handleFileChange(
                 if (previewContainer.hasAttribute('data-no-caption')) interactiveItem.querySelector('.photo-title-input')?.remove();
                 previewContainer.appendChild(interactiveItem);
                 added++;
+                addedIds.push(previewImgId);
 
             } catch (error) {
                 console.error("Erreur lors du stockage de l'image (IndexedDB) - Persistance indisponible:", error);
                 // OI3 — fail-loud : ne pas perdre une photo en silence.
                 toast("Échec d'enregistrement d'une photo (stockage saturé/indisponible). Exportez votre session puis réessayez.", { kind: 'error' });
+            }
+        }
+        // A-MEDIA-01 : remplacer seulement après un ajout réussi, et rendre le
+        // champ à son état d'origine si la confirmation de suppression est annulée.
+        if (isSingle && added > 0) {
+            for (const img of existingImages) {
+                await removeImage(img.id, img.closest<HTMLElement>('.image-preview-item'));
+                if (document.getElementById(img.id)) {
+                    for (const id of addedIds) {
+                        document.getElementById(`${id}_item`)?.remove();
+                        try { await dbManager.deleteItem(id); } catch { /* blobs orphelins tolérés */ }
+                    }
+                    added = 0;
+                    break;
+                }
             }
         }
         // U26 — fin d'import : restauration + bilan unique.
