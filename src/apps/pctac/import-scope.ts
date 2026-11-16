@@ -156,6 +156,26 @@ export function mergeCollectionJson(localRaw: string | null, incomingRaw: string
     return mergeCollectionReport(localRaw, incomingRaw).json;
 }
 
+/** Longueur maximale de l'historique des lieux (`addLieuToHistory`, 30). */
+const STRING_LIST_MAX = 30;
+
+/**
+ * B-IMP-01 : fusion d'une liste de chaînes (`pcTacLieuHistory`) par ensemble
+ * insensible à la casse, bornée à 30, sans doublon à chaque réimport.
+ */
+function mergeStringList(local: readonly string[], incoming: readonly string[]): string[] {
+    const out: string[] = [];
+    const seen = new Set<string>();
+    for (const value of [...local, ...incoming]) {
+        const key = value.trim().toLocaleLowerCase('fr');
+        if (!key || seen.has(key)) continue;
+        seen.add(key);
+        out.push(value);
+        if (out.length >= STRING_LIST_MAX) break;
+    }
+    return out;
+}
+
 /** Détail d'une fusion de collection, pour le récapitulatif d'import. */
 export interface CollectionMergeReport {
     json: string | null;
@@ -215,6 +235,9 @@ export function mergeCollectionReport(
         const added = Array.isArray(incoming)
             ? incoming.filter((i): i is Record<string, unknown> => !!i && typeof i === 'object')
             : [];
+        if (Array.isArray(incoming) && incoming.every((i): i is string => typeof i === 'string')) {
+            return { json: JSON.stringify(mergeStringList([], incoming)), added: [], replaced: [], skipped: [] };
+        }
         return { json: incomingRaw, added, replaced: [], skipped: [] };
     }
 
@@ -227,6 +250,10 @@ export function mergeCollectionReport(
         return { json: localRaw, added: [], replaced: [], skipped: [] };
     }
     if (!Array.isArray(incoming)) return { json: localRaw, added: [], replaced: [], skipped: [] };
+    const allStrings = (list: readonly unknown[]): list is string[] => list.every((i) => typeof i === 'string');
+    if (allStrings(incoming) && (!Array.isArray(local) || allStrings(local))) {
+        return { json: JSON.stringify(mergeStringList(Array.isArray(local) ? local : [], incoming)), added: [], replaced: [], skipped: [] };
+    }
     if (!Array.isArray(local)) {
         // Pas de liste locale : l'archive fait foi, tout est « ajouté ».
         const added = incoming.filter((i): i is Record<string, unknown> => !!i && typeof i === 'object');

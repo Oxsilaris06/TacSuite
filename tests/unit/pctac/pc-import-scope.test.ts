@@ -71,6 +71,14 @@ describe('catégories', () => {
 });
 
 describe('fusion', () => {
+    it('deux fusions de la même archive ne dupliquent pas l’historique des lieux (B-IMP-01)', () => {
+        const distant = JSON.stringify(['Paris', 'Lyon']);
+        const once = mergeCollectionJson(null, distant);
+        const twice = mergeCollectionJson(once, distant);
+
+        expect(JSON.parse(twice ?? 'null') as string[]).toEqual(['Paris', 'Lyon']);
+    });
+
     it('ajoute ce qui manque et garde la version locale sur un conflit', () => {
         const local = JSON.stringify([item('1', 'local'), item('2', 'local')]);
         const distant = JSON.stringify([item('2', 'distant'), item('3', 'distant')]);
