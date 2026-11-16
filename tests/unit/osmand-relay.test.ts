@@ -13,7 +13,7 @@ import http from 'node:http';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { startRelay, clientIp, type Relay } from '../../tools/osmand-relay/relay.mjs';
@@ -490,5 +490,29 @@ describe('Relais OsmAnd — tokens.json illisible (audit du 15/11, B-REL-01)', (
     );
     expect(error?.message).toMatch(/tokens\.json illisible/);
     expect(error?.message).not.toContain('SECRETKEY');
+  });
+});
+
+describe('Relais OsmAnd — message de démarrage (B-REL-02)', () => {
+  it('le CLI serve affiche l’adresse une fois le serveur à l’écoute', async () => {
+    const { file } = makeTokensFile();
+    const child = spawn(process.execPath, [RELAY_PATH], {
+      env: { ...process.env, TOKENS_FILE: file, ALLOWED_ORIGINS: 'https://autorisee.example', PORT: '0' },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    let out = '';
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error(`aucun message de démarrage (sortie : ${out})`)), 3000);
+        child.stdout.on('data', (chunk: Buffer) => {
+          out += chunk.toString();
+          if (out.includes('Relais OsmAnd')) { clearTimeout(timer); resolve(); }
+        });
+        child.on('error', (err) => { clearTimeout(timer); reject(err); });
+      });
+      expect(out).toMatch(/Relais OsmAnd sur http:\/\/127\.0\.0\.1:\d+/);
+    } finally {
+      child.kill();
+    }
   });
 });

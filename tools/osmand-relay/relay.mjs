@@ -474,10 +474,10 @@ if (invokedDirectly) {
   const action = cli(process.argv);
   if (action === 'serve') {
     startRelay().then((relay) => {
-      relay.server.on('listening', () => {
-        process.stdout.write(`Relais OsmAnd sur http://${relay.host}:${relay.port}\n`);
-        process.stdout.write(`Écoute /p, /positions, /health (le Funnel retire le préfixe /osmand).\n`);
-      });
+      // `startRelay` rend la main APRÈS `listening` : un écouteur posé ici ne
+      // se déclencherait jamais (B-REL-02).
+      process.stdout.write(`Relais OsmAnd sur http://${relay.host}:${relay.port}\n`);
+      process.stdout.write(`Écoute /p, /positions, /health (le Funnel retire le préfixe /osmand).\n`);
     }).catch((err) => {
       process.stderr.write(`échec du démarrage : ${err?.message || err}\n`);
       process.exit(1);
