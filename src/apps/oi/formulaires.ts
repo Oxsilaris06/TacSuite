@@ -883,6 +883,7 @@ function updateAppAutosave(): void {
 // formulaires.js:551-742
 async function loadFormData(): Promise<boolean> {
     window.isFormLoading = true;
+    let loadedOk = false;
     try {
         // Suppression de cleanupObjectUrls car nous n'utilisons plus de Blobs pour les vignettes
         // Utilisation de la clé isolée
@@ -899,7 +900,9 @@ async function loadFormData(): Promise<boolean> {
         // JUSTIFICATION unknown : JSON.parse renvoie `any` dans lib.es5 ; OiFormData
         // n'a qu'un index signature `unknown` ⇒ la valeur parsée est structurellement
         // compatible sans validation de forme supplémentaire (identique à l'original).
-        const data = JSON.parse(dataString) as OiFormData;
+        const parsed: unknown = JSON.parse(dataString);
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('Données OI invalides');
+        const data = parsed as OiFormData;
 
         // Chargement des options de configuration
         if (data.options) {
@@ -1097,6 +1100,7 @@ async function loadFormData(): Promise<boolean> {
                 }
             }
         }
+        loadedOk = true;
         return true;
 
     } catch (e) {
@@ -1109,7 +1113,9 @@ async function loadFormData(): Promise<boolean> {
         // Final sync once everything is in DOM
         if (typeof window.updateArticulationDisplay === 'function') window.updateArticulationDisplay();
         if (typeof window.syncAllThumbnails === 'function') window.syncAllThumbnails();
-        syncDomToStore();
+        // A-LOAD-01 : un chargement échoué laisse un DOM partiel ; le réécrire
+        // remplacerait la session par ce formulaire incomplet.
+        if (loadedOk) syncDomToStore();
     }
 }
 
