@@ -82,8 +82,10 @@ function goToStep(n: number): void {
 
 		// navigation.js:41-43
 		Store.state.currentStep = n;
-		localStorage.setItem('oiWizardStep', String(n));
-		try { localStorage.setItem('oiVisitedSteps', JSON.stringify(Array.from(visitedSteps))); } catch { /* quota */ }
+		try {
+			localStorage.setItem('oiWizardStep', String(n));
+			localStorage.setItem('oiVisitedSteps', JSON.stringify(Array.from(visitedSteps)));
+		} catch { /* quota ou stockage bloqué : l'écran change quand même */ }
 
 		// navigation.js:44
 		showStep(n);

@@ -292,6 +292,21 @@ describe('oi-navigation', () => {
 			setItemSpy.mockRestore();
 		});
 
+		it('setItem oiWizardStep jette : l’étape change quand même (A-NAV-01)', () => {
+			const realSet = localStorage.setItem.bind(localStorage);
+			const spy = vi.spyOn(localStorage, 'setItem').mockImplementation((k: string, v: string) => {
+				if (k === 'oiWizardStep') throw new DOMException('plein', 'QuotaExceededError');
+				realSet(k, v);
+			});
+			try {
+				window.goToStep(3);
+				expect(Store.state.currentStep).toBe(3);
+				expect(must(oiState.steps[3], 'steps[3]').classList.contains('active')).toBe(true);
+			} finally {
+				spy.mockRestore();
+			}
+		});
+
 		it('devrait changer l\'affichage des étapes (effet observable de showStep)', () => {
 			window.goToStep(2);
 			expect(Store.state.currentStep).toBe(2);
