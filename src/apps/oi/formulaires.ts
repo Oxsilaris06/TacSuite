@@ -1697,6 +1697,7 @@ async function applyArchiveImport(parsed: OiParsedArchiveOk, cats: readonly OiIm
     let beforeKeys: Set<string> | null = null;
     const written = new Set<string>();
     const overwritten = new Map<string, Blob>(); // même id réécrit : ancienne version, remise sur échec
+    const backupKeys = new Set<string>(); // A-ARC-02 : copie IDB avant écrasement
     let imgFail = 0;
     let imgRaw = 0; // R7 : gardées sans ré-encodage, donc EXIF/GPS possible
     try {
@@ -1748,7 +1749,14 @@ async function applyArchiveImport(parsed: OiParsedArchiveOk, cats: readonly OiIm
                             }
                             if (beforeKeys.has(k) && !overwritten.has(k)) {
                                 const old = await dbManager.getItem(k);
-                                if (old) overwritten.set(k, old);
+                                if (old) {
+                                    overwritten.set(k, old);
+                                    // A-ARC-02 : si l'onglet meurt avant l'écriture
+                                    // de tactical_oi_data, l'original reste récupérable.
+                                    const bak = k + '.bak-import';
+                                    await dbManager.putItem(bak, old);
+                                    backupKeys.add(bak);
+                                }
                             }
                             await dbManager.putItem(k, aStocker);
                             written.add(k);
@@ -1779,6 +1787,10 @@ async function applyArchiveImport(parsed: OiParsedArchiveOk, cats: readonly OiIm
                 if (!written.has(key) && !referencedPhotoIds.has(key)) { try { await dbManager.deleteItem(key); } catch { /* best-effort */ } }
             }
         }
+        // Import écrit : les copies de sécurité ne servent plus.
+        if (dbManager) {
+            for (const bak of backupKeys) { try { await dbManager.deleteItem(bak); } catch { /* best-effort */ } }
+        }
 
         if (Store && typeof Store.loadFromStorage === 'function') {
             try { Store.loadFromStorage(); } catch { /* … */ }
@@ -1801,6 +1813,7 @@ async function applyArchiveImport(parsed: OiParsedArchiveOk, cats: readonly OiIm
             try {
                 for (const key of written) if (!beforeKeys.has(key)) await dbManager.deleteItem(key);
                 for (const [key, blob] of overwritten) await dbManager.putItem(key, blob);
+                for (const bak of backupKeys) await dbManager.deleteItem(bak);
             } catch (err) { console.error('[OI Archive] photos d’origine non remises:', err); }
         }
         toast("Erreur d'import : " + (e instanceof Error ? e.message : String(e)), { kind: 'error' });

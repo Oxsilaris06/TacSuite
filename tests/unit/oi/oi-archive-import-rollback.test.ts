@@ -96,6 +96,21 @@ describe('import .oi.zip : les photos en place ne sont jamais perdues sur un éc
         expect([...store.keys()]).toEqual(['img_new']);
     });
 
+    it('A-ARC-02 : même identifiant réécrit, l’ancien blob est sauvegardé avant l’écriture du formulaire', async () => {
+        const store = await fakeImageDb({ img_new: 'ancienne' });
+        let backupAtWrite = false;
+        const realSet = localStorage.setItem.bind(localStorage);
+        vi.spyOn(localStorage, 'setItem').mockImplementation((k: string, v: string) => {
+            if (k === 'tactical_oi_data' && v.includes('img_new')) backupAtWrite = backupAtWrite || store.has('img_new.bak-import');
+            realSet(k, v);
+        });
+
+        await runImport(await archive({ 'img_new.bin': 'nouvelle' }));
+
+        expect(backupAtWrite).toBe(true);
+        expect(store.has('img_new.bak-import')).toBe(false);
+    });
+
     it('photos en place illisibles : import annulé, rien n’est effacé', async () => {
         const store = await fakeImageDb({ img_old: 'ancienne' });
         const { dbManager } = await import('@oi/init.js');
