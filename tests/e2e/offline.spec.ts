@@ -67,13 +67,18 @@ test.describe('PWA offline', () => {
             const page = await context.newPage();
             const response = await page.goto(url, { waitUntil: 'domcontentloaded' });
 
-            // Le SW sert la page précachée (200) ; à défaut, secours texte (503) —
-            // dans tous les cas, jamais une erreur de navigation réseau brute.
-            expect([200, 503]).toContain(response?.status());
+            // Le SW sert la page précachée (200). Un 503 est le secours texte :
+            // il ne prouve pas que l'application s'ouvre hors ligne (B-E2E-01).
+            expect(response?.status()).toBe(200);
 
-            // Le DOM a du contenu réel (pas une page d'erreur vide du navigateur).
-            const bodyHtml = await page.locator('body').innerHTML();
-            expect(bodyHtml.length).toBeGreaterThan(50);
+            // Marqueur applicatif stable, absent du secours texte du SW.
+            if (url === '/pctac/') {
+                await expect(page.locator('#modeSelector')).toBeVisible({ timeout: 10_000 });
+            } else if (url === '/oi/') {
+                await expect(page.locator('.wizard-step.active').first()).toBeVisible({ timeout: 10_000 });
+            } else {
+                await expect(page.locator('body')).toBeVisible();
+            }
 
             await page.close();
         }
