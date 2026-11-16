@@ -29,7 +29,13 @@ describe('recordTombstone / readTombstones', () => {
   });
 
   it('bornée : au-delà du plafond, les plus anciennes sortent', () => {
-    for (let i = 0; i < TOMBSTONES_MAX + 5; i++) recordTombstone(PHOTOS_KEY, `p${i}`, 'forcene', new Date(1_700_000_000_000 + i));
+    const seeded = Array.from({ length: TOMBSTONES_MAX }, (_, i) => ({
+      id: `${PHOTOS_KEY}:p${i}`, key: PHOTOS_KEY, itemId: `p${i}`,
+      deletedAt: new Date(1_700_000_000_000 + i).toISOString(),
+      updatedAt: new Date(1_700_000_000_000 + i).toISOString(),
+    }));
+    localStorage.setItem(scopedKey(DELETED_KEY, 'forcene'), JSON.stringify(seeded));
+    for (let i = TOMBSTONES_MAX; i < TOMBSTONES_MAX + 5; i++) recordTombstone(PHOTOS_KEY, `p${i}`, 'forcene', new Date(1_700_000_000_000 + i));
     const list = readTombstones('forcene');
     expect(list).toHaveLength(TOMBSTONES_MAX);
     expect(list[0]?.itemId).toBe('p5');
