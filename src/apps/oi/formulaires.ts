@@ -1832,6 +1832,17 @@ async function resetAllData(keepPatrac: boolean = true): Promise<void> {
         };
     }
 
+    // A-RESET-01 : vider IndexedDB d'abord ; si la purge rejette, la session
+    // reste intacte et l'autosave reprend (isFormLoading remis à faux).
+    try {
+        if (dbManager) await dbManager.clearAllImages();
+    } catch (e) {
+        window.isFormLoading = false;
+        console.error('Erreur de réinitialisation (IndexedDB):', e);
+        toast("Réinitialisation impossible : les photos n'ont pas pu être effacées, aucune donnée n'a été supprimée.", { kind: 'error' });
+        return;
+    }
+
     // Clear everything
     localStorage.removeItem(LOCAL_STORAGE_KEY);
     // Audit du 26/09 : le journal de l'OI (gardé sur l'appareil, 500 lignes)
@@ -1839,7 +1850,6 @@ async function resetAllData(keepPatrac: boolean = true): Promise<void> {
     // prochaine écriture débouncée le réécrirait.
     localStorage.removeItem('gstart_captured_logs');
     if (Array.isArray(window.__capturedLogs)) window.__capturedLogs.length = 0;
-    if (dbManager) await dbManager.clearAllImages();
 
     if (patracBackup) {
         Store.state.formData = patracBackup;
