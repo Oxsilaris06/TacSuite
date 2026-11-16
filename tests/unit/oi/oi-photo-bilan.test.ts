@@ -78,6 +78,25 @@ describe('photoBilanText — ce que l’utilisateur lit', () => {
         expect(photoBilanText(formData())).toMatch(/^1 photo non intégrée :\n.*image illisible/);
     });
 
+    it('une métadonnée héritée sans customTitle ne fait pas jeter le bilan', () => {
+        notePhotoIssue('img_legacy', 'absente');
+        const fd = {
+            dynamic_photos: { photo_main_x: [{ id: 'img_legacy' }] },
+        } as unknown as OiFormData;
+
+        expect(() => photoBilanText(fd)).not.toThrow();
+        expect(photoBilanText(fd) ?? '').toContain('Photo');
+    });
+
+    it('un champ dynamic_photos non tableau ne fait pas jeter le bilan', () => {
+        notePhotoIssue('img_legacy', 'absente');
+        const fd = {
+            dynamic_photos: { photo_main_x: { id: 'img_legacy' } },
+        } as unknown as OiFormData;
+
+        expect(() => photoBilanText(fd)).not.toThrow();
+    });
+
     it('une nouvelle génération repart d’un bilan vide', () => {
         notePhotoIssue('img_face', 'absente');
         resetPhotoBilan();

@@ -51,13 +51,15 @@ export function notePhotoIssue(id: string, issue: PhotoIssue): void {
 
 function photoLabel(formData: OiFormData, id: string): string {
     if (id === 'custom_pdf_background') return 'Fond personnalisé';
-    for (const [field, metas] of Object.entries(formData.dynamic_photos ?? {})) {
-        const index = metas.findIndex((m) => m.id === id);
+    for (const [field, rawMetas] of Object.entries(formData.dynamic_photos ?? {})) {
+        const metas = Array.isArray(rawMetas) ? rawMetas : [];
+        const index = metas.findIndex((m) => m && typeof m === 'object' && m.id === id);
         const meta = metas[index];
         if (!meta) continue;
         const section = SECTIONS.find(([re]) => re.test(field))?.[1] ?? 'OI';
         // Sans légende : le nom par défaut que le formulaire affiche (Nico 09-26).
-        const name = meta.customTitle.trim() || `${photoFieldLabel(field)} (${index + 1}/${metas.length})`;
+        const title = typeof meta.customTitle === 'string' ? meta.customTitle.trim() : '';
+        const name = title || `${photoFieldLabel(field)} (${index + 1}/${metas.length})`;
         return `« ${name} » (${section})`;
     }
     return 'Photo';
