@@ -30,6 +30,8 @@ const JSON_MAX = 128 * MB;
 const ENTRY_RATIO_FLOOR = 32 * MB;
 /** Taux par entrée : un JSON ordinaire se compresse 5 à 20 fois, une bombe des centaines. */
 const ENTRY_MAX_RATIO = 50;
+/** Plafond absolu par entrée, indépendant du taux (A-ARC-06). */
+const ENTRY_MAX = 512 * MB;
 
 const REFUSED = 'Aucune donnée modifiée.';
 
@@ -43,6 +45,9 @@ export function archiveSizeVerdict(entries: ReadonlyArray<{ name: string; size: 
     for (const e of entries) {
         if (e.name.endsWith('.json') && e.size > JSON_MAX) {
             return `Archive refusée : le fichier JSON « ${e.name.slice(0, 60)} » est trop gros (${fmt(e.size)}, limite ${fmt(JSON_MAX)}). ${REFUSED}`;
+        }
+        if (e.size > ENTRY_MAX) {
+            return `Archive refusée : contenu trop volumineux (« ${e.name.slice(0, 60)} » : ${fmt(e.size)}, limite ${fmt(ENTRY_MAX)}). ${REFUSED}`;
         }
         if (e.compressed !== undefined && e.size > ENTRY_RATIO_FLOOR && e.size > ENTRY_MAX_RATIO * Math.max(e.compressed, 1)) {
             return `Archive refusée : contenu décompressé trop volumineux (« ${e.name.slice(0, 60)} » : ${fmt(e.size)} pour ${fmt(e.compressed)} compressés). ${REFUSED}`;

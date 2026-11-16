@@ -1426,6 +1426,10 @@ window.exportArchive = exportArchive;
 async function parseArchive(file: File): Promise<OiParsedArchive> {
     if (!file) return { ok: false, error: 'Aucun fichier sélectionné.' };
     if (file.size === 0) return { ok: false, error: 'Archive vide (0 octet) : fichier illisible.' };
+    // A-ARC-06 : refus AVANT lecture du zip entier en mémoire.
+    if (file.size > 300 * 1024 * 1024) {
+        return { ok: false, error: 'Archive trop volumineuse (300 Mo au plus) : import refusé avant lecture.' };
+    }
     if (typeof JSZip !== 'function') return { ok: false, error: "JSZip indisponible (réseau ?). Impossible de lire l'archive." };
 
     let zip: JSZip;

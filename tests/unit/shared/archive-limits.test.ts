@@ -29,6 +29,11 @@ describe('archiveSizeVerdict', () => {
     expect(archiveSizeVerdict([{ name: 'gpx/t1.json', size: 300 * MB }], 290 * MB)).toMatch(/JSON/);
   });
 
+  it('refuse une seule entrée de 3,5 Go non compressible (A-ARC-06)', () => {
+    const size = 3.5 * 1024 * MB;
+    expect(archiveSizeVerdict([{ name: 'images/x.bin', size, compressed: size }], size)).toMatch(/trop volumineux/);
+  });
+
   it('refuse au-delà du plafond absolu', () => {
     const entries = Array.from({ length: 5 }, (_, i) => ({ name: `images/p${i}.bin`, size: 1024 * MB }));
     expect(archiveSizeVerdict(entries, 5 * 1024 * MB)).toMatch(/trop volumineux/);
