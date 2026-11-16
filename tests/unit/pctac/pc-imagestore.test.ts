@@ -111,6 +111,23 @@ describe('ImageStore (P2.CONV)', () => {
     expect(localStorage.getItem('pcTacIdbMigratedV1')).toBe('1');
   });
 
+  it('migration : une entrée sans id garde son data URL (B-IMG-01)', async () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (globalThis as any).indexedDB = {
+      open(): IDBOpenDBRequest {
+        return { result: {}, onsuccess: null, onerror: null } as unknown as IDBOpenDBRequest;
+      },
+    } as unknown as IDBFactory;
+    localStorage.setItem('pcTacPhotos', JSON.stringify([{ data: 'data:image/png;base64,QUJD' }]));
+
+    const mod = await import('@pctac/image-store.js');
+    await mod.ImageStore.migrateFromLocalStorage();
+
+    const list = JSON.parse(localStorage.getItem('pcTacPhotos') ?? '[]') as Array<{ data?: string; hasImage?: boolean }>;
+    expect(list[0]?.data).toBe('data:image/png;base64,QUJD');
+    expect(list[0]?.hasImage).not.toBe(true);
+  });
+
   it('window.ImageStore est posé au scope module', async () => {
     // Mock minimal
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

@@ -255,9 +255,11 @@ export const ImageStore: ImageStoreContract = {
       for (const item of items) {
         const val = (item as Record<string, unknown>)[field];
         if (typeof val === 'string' && val.startsWith('data:')) {
+          const id = item.id;
+          // B-IMG-01 : sans id, `put` ne fait rien ; ne jamais effacer la data URL.
+          if (typeof id !== 'string' || !id) continue;
           try {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            await this.put(item.id as any, val);
+            await this.put(id, val);
             delete (item as Record<string, unknown>)[field];
             (item as Record<string, unknown>).hasImage = true;
             changed = true;
