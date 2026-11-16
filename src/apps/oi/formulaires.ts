@@ -1321,6 +1321,29 @@ async function exportArchive(): Promise<void> {
         const dataStr = JSON.stringify(data, null, 2);
         zip.file('data.json', dataStr);
 
+        // Ids de photos RÉFÉRENCÉS par la session : une archive ne doit jamais
+        // les annoncer sans leur blob (A-ARC-05).
+        const referencedImageIds = (): Set<string> => {
+            const ids = new Set<string>();
+            try {
+                const parsed: unknown = JSON.parse(data[OI_ARCHIVE_KEYS[0]] ?? '{}');
+                const dyn = parsed && typeof parsed === 'object'
+                    ? (parsed as { dynamic_photos?: unknown }).dynamic_photos
+                    : undefined;
+                if (dyn && typeof dyn === 'object') {
+                    Object.values(dyn as Record<string, unknown>).forEach((list) => {
+                        if (!Array.isArray(list)) return;
+                        list.forEach((entry) => {
+                            const id = entry && typeof entry === 'object' ? (entry as { id?: unknown }).id : undefined;
+                            if (typeof id === 'string' && id) ids.add(id);
+                        });
+                    });
+                }
+            } catch { /* data.json non exploitable : le contrôle porte sur ce qui est lisible */ }
+            return ids;
+        };
+        const expectedImageIds = referencedImageIds();
+
         // 3) Images (Blobs IndexedDB) -> octets bruts + table des types MIME
         const imageMeta: Record<string, string> = {};
         const imagesFolder = zip.folder('images');
@@ -1351,6 +1374,11 @@ async function exportArchive(): Promise<void> {
             }
         }
         zip.file('images.json', JSON.stringify(imageMeta, null, 2));
+        const missingImages = [...expectedImageIds].filter((id) => !(id in imageMeta));
+        if (missingImages.length) {
+            toast(`Archive incomplète : ${missingImages.length} photo(s) référencée(s) manquante(s). Export refusé.`, { kind: 'error' });
+            return;
+        }
 
         // 4) Manifest
         zip.file('manifest.json', JSON.stringify({
