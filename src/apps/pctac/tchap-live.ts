@@ -361,7 +361,9 @@ function loadCfg(): TlCfg {
   if (c && typeof c === 'object') { c.assign = c.assign || {}; return c; }
   return { assign: {} };
 }
-function persist(): void { Persist.set(LS_KEY, cfg); }
+function persist(): void {
+  if (!Persist.set(LS_KEY, cfg).ok) toast('Stockage plein : réglages Tchap non enregistrés.', { kind: 'error' });
+}
 
 /* ─── résilience : état last-known persisté (IndexedDB) ────────────────────
  * Store dédié, helper IndexedDB interne (NE PAS toucher imageStore.js). On y

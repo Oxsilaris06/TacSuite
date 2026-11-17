@@ -73,7 +73,9 @@ const known = new Set<string>();
  *  trace. Borné par opérateur. */
 const seenTs = new Map<string, Set<number>>();
 
-function saveCfg(): void { Persist.set(LS_KEY, cfg); }
+function saveCfg(): void {
+  if (!Persist.set(LS_KEY, cfg).ok) toast('Stockage plein : réglages OsmAnd non enregistrés.', { kind: 'error' });
+}
 
 function normalizeUrl(u: string): string { return u.replace(/\/+$/, ''); }
 

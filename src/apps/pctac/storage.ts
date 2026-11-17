@@ -266,10 +266,10 @@ export const Storage: PctacStorageContract = {
    * PIÈGE : écrit assoc[color] = label (indexé par couleur).
    * (storage.js:54-58)
    */
-  saveTpAssociation(label: string, color: string): void {
+  saveTpAssociation(label: string, color: string): boolean {
     const assoc = this.getTpAssociations();
     assoc[color] = label; // Clé = couleur, pas label
-    Persist.set(scopedKey(TP_ASSOC_KEY), assoc);
+    return Persist.set(scopedKey(TP_ASSOC_KEY), assoc).ok;
   },
 
   /**

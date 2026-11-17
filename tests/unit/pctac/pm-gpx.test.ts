@@ -34,9 +34,10 @@ vi.mock('@pctac/image-store.js', () => ({
 
 /** Réponse de la confirmation destructrice, pilotée par chaque test. */
 let confirmAnswer = true;
+const toastSpy = vi.hoisted(() => vi.fn());
 vi.mock('@shared/feedback.js', () => ({
     confirmDialog: async (): Promise<boolean> => confirmAnswer,
-    toast: (): void => {},
+    toast: toastSpy,
 }));
 
 vi.mock('maplibre-gl', () => {
@@ -94,6 +95,7 @@ const GPX_TRACK = `<?xml version="1.0"?>
 </gpx>`;
 
 beforeEach(() => {
+    toastSpy.mockClear();
     gpxDisk.clear();
     localStorage.clear();
     document.body.innerHTML = '';
@@ -666,6 +668,52 @@ describe('actions groupées', () => {
         }
         return fake;
     }
+
+    describe('stockage plein', () => {
+        function quotaFull() {
+            return vi.spyOn(localStorage, 'setItem').mockImplementation(() => {
+                const err = new Error('quota');
+                err.name = 'QuotaExceededError';
+                throw err;
+            });
+        }
+
+        it("un changement d'index non écrit prévient l'utilisateur", () => {
+            const fake = withTracks();
+            const setItem = quotaFull();
+            try {
+                fake._setAllGpxVisible();
+                expect(toastSpy).toHaveBeenCalledWith(expect.stringContaining('Stockage plein'), { kind: 'error' });
+            } finally {
+                setItem.mockRestore();
+            }
+        });
+
+        it("l'ordre de la liste et le début de journée non écrits préviennent l'utilisateur", () => {
+            const fake = withTracks();
+            const root = document.createElement('div');
+            fake._closeInlinePanel = vi.fn();
+            fake._openInlinePanel = ((_ll: unknown, html: string, opts: { onMount?: (r: HTMLElement) => void }) => {
+                root.innerHTML = html;
+                opts.onMount?.(root);
+                return root;
+            }) as unknown as PlanMapInternal['_openInlinePanel'];
+            const setItem = quotaFull();
+            try {
+                fake._openGpxSettingsMenu();
+                root.querySelector<HTMLElement>('[data-act="sort"]')?.click();
+                expect(toastSpy).toHaveBeenCalledWith(expect.stringContaining('Stockage plein'), { kind: 'error' });
+                toastSpy.mockClear();
+                const input = root.querySelector<HTMLInputElement>('#plan_gpx_boundary');
+                if (!input) throw new Error('champ #plan_gpx_boundary absent');
+                input.value = '5';
+                input.dispatchEvent(new Event('change'));
+                expect(toastSpy).toHaveBeenCalledWith(expect.stringContaining('Stockage plein'), { kind: 'error' });
+            } finally {
+                setItem.mockRestore();
+            }
+        });
+    });
 
     it('tout masquer puis tout afficher, en une bascule', () => {
         const fake = withTracks();

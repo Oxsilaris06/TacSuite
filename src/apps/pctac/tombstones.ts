@@ -14,6 +14,7 @@
  */
 
 import { DELETED_KEY } from '@pctac/config.js';
+import { toast } from '@shared/feedback.js';
 import { Persist } from '@shared/persist.js';
 import { currentModeId, scopedKey, type PctacModeId } from '@pctac/modes.js';
 
@@ -44,13 +45,21 @@ export function readTombstones(modeId: PctacModeId = currentModeId()): Tombstone
     return raw.filter(isTombstone);
 }
 
-/** Pose (ou rafraîchit) la pierre de `itemId` dans `key`, pour la situation `modeId`. */
-export function recordTombstone(key: string, itemId: string, modeId: PctacModeId = currentModeId(), now: Date = new Date()): void {
+/**
+ * Pose (ou rafraîchit) la pierre de `itemId` dans `key`, pour la situation `modeId`.
+ * Rend `false` (et prévient l'utilisateur) si le stockage refuse l'écriture : la
+ * suppression pourrait alors revenir à la fusion d'une archive.
+ */
+export function recordTombstone(key: string, itemId: string, modeId: PctacModeId = currentModeId(), now: Date = new Date()): boolean {
     const iso = now.toISOString();
     const list = readTombstones(modeId).filter((t) => !(t.key === key && t.itemId === itemId));
     list.push({ id: `${key}:${itemId}`, key, itemId, deletedAt: iso, updatedAt: iso });
     if (list.length > TOMBSTONES_MAX) list.splice(0, list.length - TOMBSTONES_MAX);
-    Persist.set(scopedKey(DELETED_KEY, modeId), list);
+    if (!Persist.set(scopedKey(DELETED_KEY, modeId), list).ok) {
+        toast('Stockage plein : suppression non mémorisée, elle pourrait revenir à l\'import d\'une archive.', { kind: 'error' });
+        return false;
+    }
+    return true;
 }
 
 /**

@@ -146,6 +146,11 @@ export function undoableDeleteLog(id: string, message: string, refresh: () => vo
     return true;
 }
 
+/** Réécrit une clé nettoyée ; sans écriture, la référence morte survit au rechargement : on le dit. */
+function writeOrWarn(key: string, value: unknown): void {
+    if (!Persist.set(key, value).ok) toast('Stockage plein : références de la photo supprimée non nettoyées.', { kind: 'error' });
+}
+
 /** Purge des références photo d'un élément supprimé (pings du plan, board). */
 function purgeReferences(id: string, modeId: PctacModeId): void {
     const syncId = `${id}_sync`;
@@ -159,7 +164,7 @@ function purgeReferences(id: string, modeId: PctacModeId): void {
             }
         }
         if (touched) {
-            Persist.set(scopedKey(PINS_KEY, modeId), pins);
+            writeOrWarn(scopedKey(PINS_KEY, modeId), pins);
             if (window.PlanMap && window.PlanMap.initialized) window.PlanMap.refresh();
         }
     } catch { /* purge pings non bloquante */ }
@@ -185,7 +190,7 @@ function purgeReferences(id: string, modeId: PctacModeId): void {
             state.links = state.links.filter((l) => !l || (!matches(l.from) && !matches(l.to)));
             if (state.links.length !== before) touched = true;
         }
-        if (touched) Persist.set(scopedKey(DASHBOARD_KEY, modeId), state);
+        if (touched) writeOrWarn(scopedKey(DASHBOARD_KEY, modeId), state);
     } catch { /* purge board non bloquante */ }
 }
 

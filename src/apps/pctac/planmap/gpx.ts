@@ -34,7 +34,7 @@
 import * as maplibregl from 'maplibre-gl';
 
 import { GpxStore } from '@pctac/image-store.js';
-import { confirmDialog } from '@shared/feedback.js';
+import { confirmDialog, toast } from '@shared/feedback.js';
 import { Persist } from '@shared/persist.js';
 import { scopedKey } from '@pctac/modes.js';
 
@@ -192,8 +192,18 @@ function loadIndex(): PlanGpxTrack[] {
     return Array.isArray(raw) ? raw : [];
 }
 
-function saveIndex(list: readonly PlanGpxTrack[]): void {
-    Persist.set(scopedKey(GPX_INDEX_KEY), list);
+/**
+ * Écrit une clé GPX. Rend `false` et prévient l'utilisateur si le stockage la
+ * refuse (quota plein) : la modification disparaîtrait au rechargement.
+ */
+function persistOrWarn(key: string, value: unknown, what: string): boolean {
+    if (Persist.set(key, value).ok) return true;
+    toast(`Stockage plein : ${what} non enregistré.`, { kind: 'error' });
+    return false;
+}
+
+function saveIndex(list: readonly PlanGpxTrack[]): boolean {
+    return persistOrWarn(scopedKey(GPX_INDEX_KEY), list, 'changement des traces GPX');
 }
 
 function escHtml(s: string): string {
@@ -848,14 +858,14 @@ export const GpxMethods = {
             onMount: (root: HTMLElement) => {
                 const sort = root.querySelector<HTMLElement>('[data-act="sort"]');
                 if (sort) sort.onclick = () => {
-                    Persist.set(scopedKey(GPX_SORT_KEY), !recent);
+                    persistOrWarn(scopedKey(GPX_SORT_KEY), !recent, 'ordre de la liste');
                     this._closeInlinePanel();
                     this._renderGpxList();
                 };
                 const inp = root.querySelector<HTMLInputElement>('#plan_gpx_boundary');
                 if (inp) inp.onchange = () => {
                     const h = Math.max(0, Math.min(23, Math.floor(Number(inp.value) || 0)));
-                    Persist.set(scopedKey(GPX_DAY_BOUNDARY_KEY), h);
+                    persistOrWarn(scopedKey(GPX_DAY_BOUNDARY_KEY), h, 'début de journée');
                     this._renderGpxList();
                 };
             },

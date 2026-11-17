@@ -139,9 +139,9 @@ export const LogManager: LogManagerContract = {
    * Comparaison de doublons : INSENSIBLE À LA CASSE.
    * Via Persist (contrat projet) : jamais d'exception sur quota plein.
    */
-  addLieuToHistory(lieu: string): void {
+  addLieuToHistory(lieu: string): boolean {
     const trimmed = (lieu || '').trim();
-    if (!trimmed) return;
+    if (!trimmed) return true;
 
     // logManager.js:69 — Persist.get, fallback []
     const raw = Persist.get(scopedKey('pcTacLieuHistory'), { validator: Array.isArray, fallback: [] }) || [];
@@ -155,8 +155,12 @@ export const LogManager: LogManagerContract = {
     // logManager.js:72 — borne à 30
     if (hist.length > 30) hist = hist.slice(0, 30);
 
-    // logManager.js:73 — persiste (tolère quota plein)
-    Persist.set(scopedKey('pcTacLieuHistory'), hist);
+    // logManager.js:73 — persiste (tolère quota plein) ; l'échec est dit, jamais muet.
+    if (!Persist.set(scopedKey('pcTacLieuHistory'), hist).ok) {
+      toast('Stockage plein : lieu non mémorisé dans les suggestions.', { kind: 'error' });
+      return false;
+    }
+    return true;
   },
 
   /**

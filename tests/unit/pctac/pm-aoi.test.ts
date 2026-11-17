@@ -445,6 +445,22 @@ describe('_runAoiDownload (planMap.js:5454-5505) — invariant §5.10 : _aoiDown
         expect(state._aoiDownloadBusy).toBe(false);
     });
 
+    it("index non écrit (stockage plein) : la zone n'est pas annoncée comme enregistrée", async () => {
+        const state = makeFakeState(null);
+        prefetchTilesMock.mockResolvedValueOnce({ total: 10, ok: 10, fail: 0, aborted: false });
+        const setItem = vi.spyOn(localStorage, 'setItem').mockImplementation(() => {
+            const err = new Error('quota');
+            err.name = 'QuotaExceededError';
+            throw err;
+        });
+        try {
+            await AoiMethods._runAoiDownload.call(state, makeBbox(), 13, 18, [], 10);
+            expect(document.getElementById('plan_aoi_progress')?.textContent).toContain('Stockage plein');
+        } finally {
+            setItem.mockRestore();
+        }
+    });
+
     it('écrit dans pcTacAoiIndex une entrée avec les 8 champs attendus (bbox/minZ/maxZ/total/ok/fail/complete/ts)', async () => {
         const state = makeFakeState(null);
         const bbox: GeoBBox = { west: 1.1, south: 2.2, east: 3.3, north: 4.4 };

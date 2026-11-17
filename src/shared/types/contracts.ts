@@ -419,7 +419,7 @@ export interface PctacStorageContract {
      * (`assoc[color] = label`), pas par libellé.
      */
     getTpAssociations(): Record<string, string>;
-    saveTpAssociation(label: string, color: string): void;
+    saveTpAssociation(label: string, color: string): boolean;
     /**
      * Persiste une collection. Pose `updatedAt` sur les éléments nouveaux ou
      * modifiés (comparaison JSON sans ce champ) ; ne mute pas `data`. Rend
@@ -510,8 +510,8 @@ export interface PctacImportJsonResult {
 export interface LogManagerContract {
     /** `null` + `alert()` si PAX ou heure manquants (comportement d'origine conservé). */
     addEntry(data: PctacLogEntryInput): PctacLogEntry | null;
-    /** Historique LRU des lieux, max 30, clé `pcTacLieuHistory`. */
-    addLieuToHistory(lieu: string): void;
+    /** Historique LRU des lieux, max 30, clé `pcTacLieuHistory`. Rend `false` (toast) si le stockage refuse l'écriture. */
+    addLieuToHistory(lieu: string): boolean;
     getLieuHistory(): string[];
     /** Retourne le journal APRÈS suppression. */
     deleteEntry(id: string): PctacLogEntry[];

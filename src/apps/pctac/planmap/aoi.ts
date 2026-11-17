@@ -280,6 +280,7 @@ export const AoiMethods = {
         }
 
         // Persiste un INDEX des AOI confirmées (pas un flag binaire) avec son statut.
+        let indexNote = '';
         try {
             const index = Persist.get<AoiIndexEntry[]>(scopedKey(AOI_INDEX_KEY), { validator: Array.isArray, fallback: [] }) || [];
             index.push({
@@ -288,7 +289,7 @@ export const AoiMethods = {
                 complete: result.fail === 0,
                 ts: Date.now()
             });
-            Persist.set(scopedKey(AOI_INDEX_KEY), index);
+            if (!Persist.set(scopedKey(AOI_INDEX_KEY), index).ok) indexNote = ' Stockage plein : zone non enregistrée dans l\'index des zones hors-ligne.';
         } catch { /* persistance non bloquante */ }
 
         // Lignes électriques de la zone (décision Nico 2026-09-24 : gardées dans
@@ -308,9 +309,9 @@ export const AoiMethods = {
         }
 
         if (result.fail === 0) {
-            ui.setLabel(`Zone téléchargée : ${result.ok.toLocaleString('fr-FR')} tuiles en cache hors-ligne.${powerNote}`);
+            ui.setLabel(`Zone téléchargée : ${result.ok.toLocaleString('fr-FR')} tuiles en cache hors-ligne.${powerNote}${indexNote}`);
         } else {
-            ui.setLabel(`Terminé avec ${result.fail.toLocaleString('fr-FR')} tuile(s) manquante(s) (réseau). Relance pour compléter.`);
+            ui.setLabel(`Terminé avec ${result.fail.toLocaleString('fr-FR')} tuile(s) manquante(s) (réseau). Relance pour compléter.${indexNote}`);
         }
         setTimeout(() => ui.remove(), 3500);
         this._aoiDownloadBusy = false;
