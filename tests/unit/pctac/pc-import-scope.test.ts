@@ -270,6 +270,46 @@ describe('demande de portée', () => {
         }
     });
 
+    it('à la fermeture, aucun écouteur de la modale ne reste actif (B-IMP-02)', async () => {
+        document.body.innerHTML = `<dialog id="importScopeModal">
+            <div class="import-scope-intro"></div>
+            <input type="checkbox" data-import-category="adversaires" checked>
+            <button id="importScopeConfirm"></button><button id="importScopeCancel"></button>
+        </dialog>`;
+        const modal = document.getElementById('importScopeModal') as HTMLDialogElement;
+        modal.showModal = vi.fn();
+        modal.close = vi.fn();
+        // Un écouteur est « retiré » s'il est lié à un signal avorté ou rendu par removeEventListener.
+        const live = new Set<string>();
+        const tracked = [modal, document.getElementById('importScopeConfirm'), document.getElementById('importScopeCancel')] as EventTarget[];
+        const listeners = new Map<EventListenerOrEventListenerObject, string>();
+        let seq = 0;
+        for (const target of tracked) {
+            const add = target.addEventListener.bind(target);
+            const remove = target.removeEventListener.bind(target);
+            target.addEventListener = ((type: string, fn: EventListenerOrEventListenerObject, opts?: boolean | AddEventListenerOptions) => {
+                const id = `${(target as HTMLElement).id}:${type}:${seq++}`;
+                live.add(id);
+                listeners.set(fn, id);
+                const signal = typeof opts === 'object' ? opts.signal : undefined;
+                signal?.addEventListener('abort', () => live.delete(id));
+                add(type, fn, opts);
+            }) as typeof target.addEventListener;
+            target.removeEventListener = ((type: string, fn: EventListenerOrEventListenerObject, opts?: boolean | EventListenerOptions) => {
+                const id = listeners.get(fn);
+                if (id) live.delete(id);
+                remove(type, fn, opts);
+            }) as typeof target.removeEventListener;
+        }
+
+        const pending = askImportScope();
+        expect(live.size).toBeGreaterThan(0);
+        (document.getElementById('importScopeCancel') as HTMLButtonElement).click();
+        await pending;
+
+        expect([...live]).toEqual([]);
+    });
+
     it('rend null quand la confirmation est refusée', async () => {
         confirmSpy.mockResolvedValue(false);
         expect(await askImportScope()).toBeNull();

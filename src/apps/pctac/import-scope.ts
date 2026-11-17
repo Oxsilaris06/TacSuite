@@ -365,17 +365,18 @@ export async function askImportScope(targetMode?: PctacModeId): Promise<ImportSc
         const refresh = (): void => {
             if (confirmBtn) confirmBtn.disabled = selected().length === 0;
         };
-        // B-IMP-02 : une seule délégation par ouverture, retirée en fermant.
-        // (Avant : un écouteur `change` par case, jamais retiré.)
-        const onChange = (): void => refresh();
-        modal.addEventListener('change', onChange);
+        // B-IMP-02 : tous les écouteurs de cette ouverture partent ensemble à la
+        // fermeture (le bouton ni le `close` non consommés ne s'accumulent plus).
+        const ac = new AbortController();
+        const { signal } = ac;
+        modal.addEventListener('change', () => refresh(), { signal });
         refresh();
 
         let settled = false;
         const finish = (value: ImportScope | null): void => {
             if (settled) return;
             settled = true;
-            modal.removeEventListener('change', onChange);
+            ac.abort();
             modal.close();
             resolve(value);
         };
@@ -385,10 +386,10 @@ export async function askImportScope(targetMode?: PctacModeId): Promise<ImportSc
             if (categories.length === 0) return;
             const mode: ImportMode = modeInputs.find((i) => i.checked)?.value === 'replace' ? 'replace' : 'merge';
             finish({ categories, mode, full: isFull(categories, mode) });
-        }, { once: true });
-        cancelBtn?.addEventListener('click', () => finish(null), { once: true });
+        }, { signal });
+        cancelBtn?.addEventListener('click', () => finish(null), { signal });
         // Échap et clic sur le fond : un `close` non décidé vaut renoncement.
-        modal.addEventListener('close', () => finish(null), { once: true });
+        modal.addEventListener('close', () => finish(null), { signal });
 
         modal.showModal();
     });
