@@ -45,6 +45,15 @@ function injectStyles(): void {
   background: #000;
 }
 html.${OPEN_CLASS}, html.${OPEN_CLASS} body { overflow: hidden !important; }
+html.${OPEN_CLASS} :has(.${PSEUDO_CLASS}) {
+  animation: none !important;
+  transform: none !important;
+  filter: none !important;
+  backdrop-filter: none !important;
+  perspective: none !important;
+  contain: none !important;
+  will-change: auto !important;
+}
 `;
     document.head.appendChild(style);
 }
