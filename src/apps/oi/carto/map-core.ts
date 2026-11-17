@@ -43,11 +43,8 @@
  *    n'ont qu'UN type HTML possible dans `4.html` (vérifié :4898 `<dialog>`,
  *    :4908 `<input>`, :5072 `<select>`) — cast au type réel, aucun comportement
  *    changé ;
- *  - `document.fullscreenElement || (document as {...}).webkitFullscreenElement`
- *    et `container.requestFullscreen || (container as {...}).webkitRequestFullscreen` /
- *    `document.exitFullscreen || (document as {...}).webkitExitFullscreen` :
- *    vendor-prefixes absents du lib DOM standard TS — même cast que le
- *    précédent PC-Tac (`@pctac/planmap/chrome.ts`, `_toggleFullscreen`) ;
+ *  - plein écran délégué à `@shared/fullscreen` (préfixes webkit et repli CSS
+ *    pour l'iPhone, où Safari n'expose pas l'API Fullscreen) ;
  *  - `this.map.setSky(null as unknown as SkySpecification)` (`_disable3D`,
  *    oi_cartographie.js:1655) : le typage `maplibre-gl` déclare
  *    `setSky(sky: SkySpecification): this` (paramètre requis, sans `null`),
@@ -95,6 +92,7 @@ import type { AddLayerObject, MapMouseEvent, MapTouchEvent, SkySpecification } f
 
 import { COORDS_NOT_READ, looksLikeCoordinates, parseCoordinateInput, parseDecimalCoords } from '@shared/coords.js';
 import { confirmDialog, toast } from '@shared/feedback.js';
+import { FULLSCREEN_CHANGE_EVENT, fullscreenElement, toggleFullscreen } from '@shared/fullscreen.js';
 import { esc as escapeHtml } from '@shared/ui-platform.js';
 import { ignOrthoMapOptions } from '@shared/ign-ortho.js';
 import { ignLayerIds, ignUnservedAt } from '@shared/ign-territoires.js';
@@ -341,7 +339,7 @@ export const MapCoreMethods = {
 
         const btnFs = document.getElementById('oi_carto_btn_fullscreen');
         if (btnFs) btnFs.onclick = () => this._toggleFullscreen();
-        ['fullscreenchange', 'webkitfullscreenchange'].forEach((ev) =>
+        ['fullscreenchange', 'webkitfullscreenchange', FULLSCREEN_CHANGE_EVENT].forEach((ev) =>
             document.addEventListener(ev, () => this._updateFullscreenIcon()));
 
         const searchInput = document.getElementById('oi_carto_address_input');
@@ -426,22 +424,12 @@ export const MapCoreMethods = {
     _toggleFullscreen(this: OICartoInternal): void {
         const container = document.getElementById('oi_carto_map_wrap');
         if (!container) return;
-        // `webkitFullscreenElement` : vendor-prefix absent du lib DOM standard TS
-        // (cf. note de tête de fichier).
-        const fsEl = document.fullscreenElement || (document as { webkitFullscreenElement?: Element | null }).webkitFullscreenElement;
-        if (!fsEl) {
-            const req = container.requestFullscreen || (container as { webkitRequestFullscreen?: () => Promise<void> }).webkitRequestFullscreen;
-            if (req) req.call(container);
-        } else {
-            const exit = document.exitFullscreen || (document as { webkitExitFullscreen?: () => Promise<void> }).webkitExitFullscreen;
-            if (exit) exit.call(document);
-        }
+        void toggleFullscreen(container);
     },
 
     // oi_cartographie.js:528-538
     _updateFullscreenIcon(this: OICartoInternal): void {
-        const fsEl = document.fullscreenElement || (document as { webkitFullscreenElement?: Element | null }).webkitFullscreenElement;
-        const active = !!fsEl;
+        const active = !!fullscreenElement();
         const btn = document.getElementById('oi_carto_btn_fullscreen');
         if (btn) {
             btn.classList.toggle('active', active);

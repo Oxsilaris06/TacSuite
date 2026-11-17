@@ -112,7 +112,24 @@ export interface DeviceGuardDeps {
     isPersistBannerDismissed?: () => boolean;
     /** Mémorise la fermeture du bandeau de persistance pour la session. */
     onPersistBannerDismissed?: () => void;
+    /** Page ouverte dans un onglet Safari iOS (hors écran d'accueil) ? */
+    isIosBrowserTab?: () => boolean;
 }
+
+/** iOS n'accorde la persistance qu'aux apps ajoutées à l'écran d'accueil. */
+export function isIosBrowserTab(): boolean {
+    const ios = /iPhone|iPad|iPod/.test(navigator.userAgent)
+        || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    if (!ios) return false;
+    const standalone = (navigator as Navigator & { standalone?: boolean }).standalone === true
+        || window.matchMedia?.('(display-mode: standalone)').matches === true;
+    return !standalone;
+}
+
+const PERSIST_MESSAGE =
+    "Le stockage n'est pas persistant : le navigateur peut effacer vos données (stockage plein, inactivité) sans prévenir. Installez l'application ou exportez l'archive.";
+const PERSIST_MESSAGE_IOS =
+    "Le stockage n'est pas persistant : Safari peut effacer vos données sans prévenir. Sur iPhone, seule l'application installée le garde : touchez Partager, puis « Sur l'écran d'accueil », et ouvrez-la depuis son icône. Sinon, exportez l'archive.";
 
 function defaultExportArchive(): Promise<boolean> {
     // Import dynamique : `device-guard` reste léger au démarrage, et l'archive
@@ -134,8 +151,7 @@ export function showPersistenceBanner(deps: DeviceGuardDeps = {}): void {
     const exportArchive = deps.exportArchive ?? defaultExportArchive;
     const onDismiss = deps.onPersistBannerDismissed ?? markPersistBannerDismissed;
     show(PERSIST_BANNER_ID, {
-        message:
-            "Le stockage n'est pas persistant : le navigateur peut effacer vos données (stockage plein, inactivité) sans prévenir. Installez l'application ou exportez l'archive.",
+        message: (deps.isIosBrowserTab ?? isIosBrowserTab)() ? PERSIST_MESSAGE_IOS : PERSIST_MESSAGE,
         level: 'important',
         actions: [{ label: "Exporter l'archive", onClick: () => { void exportArchive(); } }],
         onDismiss,

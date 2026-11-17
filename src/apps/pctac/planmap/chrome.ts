@@ -29,10 +29,8 @@
  *    l'original enchaîne `.parentElement`/`.appendChild` sans garde
  *    intermédiaire (`_toggleFullscreen`, `_showHint`) — jamais déclenché en
  *    pratique (`#plan_map` existe toujours quand ces méthodes sont câblées) ;
- *  - `document.fullscreenElement || (document as {...}).webkitFullscreenElement`
- *    et `container.requestFullscreen || (container as {...}).webkitRequestFullscreen` :
- *    vendor-prefixes absents du lib DOM standard TS — même cast que
- *    `text-modal.ts` (`_mountModalInFullscreen`, planMap.js:4584) ;
+ *  - plein écran délégué à `@shared/fullscreen` (préfixes webkit et repli CSS
+ *    pour l'iPhone, où Safari n'expose pas l'API Fullscreen) ;
  *  - gardes `if (this.map)` / capture `const map = this.map;` avant les
  *    fermetures imbriquées : `this.map` est nullable dans le typage strict
  *    (`MapLibreMap | null`), jamais `null` en pratique (ces méthodes ne sont
@@ -53,6 +51,7 @@
 
 import { escHtml, GPX_PLAY_SPEEDS } from './constants.js';
 import { showBusy, hideBusy } from '@pctac/busy.js';
+import { FULLSCREEN_CHANGE_EVENT, fullscreenElement, toggleFullscreen } from '@shared/fullscreen.js';
 import { COORDS_NOT_READ, looksLikeCoordinates, parseCoordinateInput } from '@shared/coords.js';
 import { placeSearchMarker } from '@shared/search-marker.js';
 import { geocodeAddress, type GeocodeHit } from './search.js';
@@ -238,7 +237,7 @@ export const ChromeMethods = {
         const btnFs = document.getElementById('plan_btn_fullscreen');
         if (btnFs) btnFs.onclick = () => this._toggleFullscreen();
         // Maintenir l'icône à jour quel que soit le déclencheur (FAB ou touche Échap)
-        ['fullscreenchange', 'webkitfullscreenchange'].forEach((ev) =>
+        ['fullscreenchange', 'webkitfullscreenchange', FULLSCREEN_CHANGE_EVENT].forEach((ev) =>
             document.addEventListener(ev, () => this._updateFullscreenIcon()));
 
         const btn3d = document.getElementById('plan_btn_3d');
@@ -293,21 +292,12 @@ export const ChromeMethods = {
         // générale en tête de fichier (adaptation de TYPAGE PUR).
         const container = document.getElementById('plan_map')?.parentElement;
         if (!container) return;
-        // `webkitFullscreenElement` : vendor-prefix absent du lib DOM standard TS.
-        const fsEl = document.fullscreenElement || (document as { webkitFullscreenElement?: Element | null }).webkitFullscreenElement;
-        if (!fsEl) {
-            const req = container.requestFullscreen || (container as { webkitRequestFullscreen?: () => Promise<void> }).webkitRequestFullscreen;
-            if (req) req.call(container);
-        } else {
-            const exit = document.exitFullscreen || (document as { webkitExitFullscreen?: () => Promise<void> }).webkitExitFullscreen;
-            if (exit) exit.call(document);
-        }
+        void toggleFullscreen(container);
     },
 
     // planMap.js:782-795
     _updateFullscreenIcon(this: PlanMapInternal): void {
-        const fsEl = document.fullscreenElement || (document as { webkitFullscreenElement?: Element | null }).webkitFullscreenElement;
-        const active = !!fsEl;
+        const active = !!fullscreenElement();
         // Sortie de plein écran avec un modal déplacé → on le restaure à sa place.
         if (!active) this._restoreModalFromFullscreen();
         const btn = document.getElementById('plan_btn_fullscreen');

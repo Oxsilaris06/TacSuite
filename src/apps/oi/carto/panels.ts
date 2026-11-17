@@ -47,6 +47,7 @@ import { dbManager } from '@oi/init.js';
 import { photoFieldLabel } from '@oi/sections.js';
 import { formatCoordsClipboard, shortMgrs } from '@shared/coords.js';
 import { toast } from '@shared/feedback.js';
+import { exitFullscreen } from '@shared/fullscreen.js';
 import { esc } from '@shared/ui-platform.js';
 
 import { OI_ICON_CATALOG } from './constants.js';
@@ -95,9 +96,7 @@ async function openPhotoLightbox(photoId: string): Promise<void> {
     try {
         const blob = await dbManager.getItem(photoId);
         if (!blob) return;
-        if (document.fullscreenElement) {
-            try { await document.exitFullscreen(); } catch { /* best-effort */ }
-        }
+        await exitFullscreen();
         const src = URL.createObjectURL(blob);
         try {
             // PhotoSwipe exige width/height : l'Image est chargée pour les mesurer.

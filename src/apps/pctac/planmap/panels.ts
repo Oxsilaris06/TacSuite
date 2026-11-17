@@ -22,6 +22,7 @@ import { safePinColor, safePinGlyph } from './pin-safe.js';
 import { ADVERSARIES_KEY, FRIENDS_KEY, HOSTAGES_KEY, PHOTOS_KEY, PIN_ICONS, suggestPinIcons } from '@pctac/config.js';
 import { Storage } from '@pctac/storage.js';
 import { ImageStore } from '@pctac/image-store.js';
+import { exitFullscreen } from '@shared/fullscreen.js';
 import { ENTITY_COLORS, escHtml } from './constants.js';
 
 /**
@@ -34,9 +35,7 @@ async function openPhotoLightbox(photoId: string): Promise<void> {
     try {
         const src = await ImageStore.get(photoId);
         if (!src) return;
-        if (document.fullscreenElement) {
-            try { await document.exitFullscreen(); } catch { /* best-effort */ }
-        }
+        await exitFullscreen();
         const dims = await new Promise<{ w: number; h: number }>((resolve, reject) => {
             const im = new Image();
             im.onload = (): void => resolve({ w: im.naturalWidth, h: im.naturalHeight });

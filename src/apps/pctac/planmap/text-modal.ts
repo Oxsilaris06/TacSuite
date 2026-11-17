@@ -30,6 +30,7 @@
  * partagé, `<dialog>` natif).
  */
 
+import { fullscreenElement } from '@shared/fullscreen.js';
 import type { LngLatObj, PlanMapInternal } from './types.js';
 
 export const TextModalMethods = {
@@ -82,8 +83,7 @@ export const TextModalMethods = {
      */
     // planMap.js:4583
     _mountModalInFullscreen(this: PlanMapInternal, modal: HTMLElement): void {
-        // `webkitFullscreenElement` : vendor-prefix absent du lib DOM standard TS (planMap.js:4584).
-        const fsEl = document.fullscreenElement || (document as { webkitFullscreenElement?: Element | null }).webkitFullscreenElement;
+        const fsEl = fullscreenElement();
         if (!fsEl || !modal) return;
         if (fsEl.contains(modal)) return; // déjà dedans
         this._modalReparent = {

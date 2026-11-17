@@ -170,6 +170,16 @@ describe('showPersistenceBanner — fermeture mémorisée pour la session (A-3)'
         expect(calls).toHaveLength(1);
     });
 
+    it("onglet Safari iOS : explique l'ajout à l'écran d'accueil, seul moyen d'obtenir la persistance", () => {
+        const messages: string[] = [];
+        const show = vi.fn((_id: string, opts: { message: string }) => { messages.push(opts.message); });
+        showPersistenceBanner({ show: show as never, isPersistBannerDismissed: () => false, isIosBrowserTab: () => true });
+        expect(messages[0]).toContain("Sur l'écran d'accueil");
+
+        showPersistenceBanner({ show: show as never, isPersistBannerDismissed: () => false, isIosBrowserTab: () => false });
+        expect(messages[1]).toContain("Installez l'application ou exportez l'archive.");
+    });
+
     it('utilise sessionStorage par défaut et saute si déjà fermé', () => {
         sessionStorage.setItem('pcTacPersistBannerDismissed', '1');
         const { calls, show } = bannerShow();
