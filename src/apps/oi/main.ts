@@ -223,7 +223,7 @@ import '@oi/pdf-engine-v2.js';
 import '@oi/presentation.js';
 import '@oi/navigation.js';
 import '@oi/medias.js';
-import '@oi/formulaires.js';
+import { restoreInterruptedImport } from '@oi/formulaires.js';
 import '@oi/patrac.js';
 import '@oi/articulation.js';
 import '@oi/drag-drop.js';
@@ -453,6 +453,9 @@ document.addEventListener('DOMContentLoaded', async () => {
             console.error('IndexedDB indisponible, photos désactivées:', e);
             toast('Stockage des photos indisponible : la saisie reste utilisable.', { kind: 'error' });
         }
+
+        // A-ARC-02 : un import interrompu a pu laisser une copie de photo écrasée.
+        try { await restoreInterruptedImport(); } catch (e) { console.warn('restoreInterruptedImport:', e); }
 
         // §12.3 étape 2 — Charger les données. 4.html:4543
         if (typeof window.loadFormData === 'function') await window.loadFormData();

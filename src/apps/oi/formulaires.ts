@@ -1661,6 +1661,40 @@ function showImportSelectModal(cats: readonly OiImportCategory[]): Promise<strin
     });
 }
 
+/** Suffixe de la copie d'une photo écrasée par un import (A-ARC-02). */
+const BAK_IMPORT_SUFFIX = '.bak-import';
+/** Posé avant la première photo écrasée, retiré dès que le formulaire importé est écrit. */
+const IMPORT_PENDING_KEY = 'oi.import-en-cours';
+
+/**
+ * Démarrage : une copie `<id>.bak-import` encore présente prouve qu'un import a
+ * été interrompu (onglet tué) avant de la supprimer. Si le formulaire importé
+ * n'a pas été écrit (marqueur présent), elle remplace la photo qu'elle
+ * sauvegardait ; sinon l'import a abouti et la copie est seulement jetée. Une
+ * copie qui ne peut pas être remise reste en place, avec le marqueur.
+ */
+export async function restoreInterruptedImport(): Promise<void> {
+    if (!dbManager || !dbManager.db) return;
+    let pending = false;
+    try { pending = localStorage.getItem(IMPORT_PENDING_KEY) === '1'; } catch { /* lecture impossible : import réputé abouti */ }
+    let keys: IDBValidKey[];
+    try { keys = await dbManager.getAllKeys(); } catch { return; }
+    let restored = 0;
+    let failed = 0;
+    for (const bak of keys.map(String).filter((k) => k.endsWith(BAK_IMPORT_SUFFIX))) {
+        try {
+            const blob = pending ? await dbManager.getItem(bak) : undefined;
+            if (blob) {
+                await dbManager.putItem(bak.slice(0, -BAK_IMPORT_SUFFIX.length), blob);
+                restored++;
+            }
+            await dbManager.deleteItem(bak);
+        } catch (err) { failed++; console.warn('[OI Archive] copie d’import non remise:', bak, err); }
+    }
+    if (pending && failed === 0) { try { localStorage.removeItem(IMPORT_PENDING_KEY); } catch { /* … */ } }
+    if (restored) toast(`Import interrompu : ${restored} photo(s) d’origine restaurée(s).`, { kind: 'info' });
+}
+
 /** Importe UNIQUEMENT les catégories cochées (fusion non destructive du reste). */
 // formulaires.js:1177-1241
 async function applyArchiveImport(parsed: OiParsedArchiveOk, cats: readonly OiImportCategory[], selectedIds: readonly string[]): Promise<void> {
@@ -1723,6 +1757,9 @@ async function applyArchiveImport(parsed: OiParsedArchiveOk, cats: readonly OiIm
                 } catch {
                     throw new Error('photos en place illisibles, rien n’a été modifié.');
                 }
+                try { localStorage.setItem(IMPORT_PENDING_KEY, '1'); } catch {
+                    throw new Error("Espace de stockage insuffisant (quota localStorage) : import annulé, rien n'a été modifié.");
+                }
                 // JUSTIFICATION cast : cf. detectImportCategories.
                 const zip = parsed.zip as JSZip;
                 const imagesFolder = zip.folder('images');
@@ -1763,7 +1800,7 @@ async function applyArchiveImport(parsed: OiParsedArchiveOk, cats: readonly OiIm
                                     overwritten.set(k, old);
                                     // A-ARC-02 : si l'onglet meurt avant l'écriture
                                     // de tactical_oi_data, l'original reste récupérable.
-                                    const bak = k + '.bak-import';
+                                    const bak = k + BAK_IMPORT_SUFFIX;
                                     await dbManager.putItem(bak, old);
                                     backupKeys.add(bak);
                                 }
@@ -1785,6 +1822,7 @@ async function applyArchiveImport(parsed: OiParsedArchiveOk, cats: readonly OiIm
 
         try {
             localStorage.setItem(KEY, JSON.stringify(oiCurrent));
+            try { localStorage.removeItem(IMPORT_PENDING_KEY); } catch { /* … */ }
         } catch {
             if (snapshot === null) localStorage.removeItem(KEY); else localStorage.setItem(KEY, snapshot);
             throw new Error("Espace de stockage insuffisant (quota localStorage). Données d'origine restaurées.");
@@ -1824,6 +1862,7 @@ async function applyArchiveImport(parsed: OiParsedArchiveOk, cats: readonly OiIm
                 for (const key of written) if (!beforeKeys.has(key)) await dbManager.deleteItem(key);
                 for (const [key, blob] of overwritten) await dbManager.putItem(key, blob);
                 for (const bak of backupKeys) await dbManager.deleteItem(bak);
+                localStorage.removeItem(IMPORT_PENDING_KEY);
             } catch (err) { console.error('[OI Archive] photos d’origine non remises:', err); }
         }
         toast("Erreur d'import : " + (e instanceof Error ? e.message : String(e)), { kind: 'error' });
