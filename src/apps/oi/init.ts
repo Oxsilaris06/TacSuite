@@ -11,6 +11,7 @@
  */
 import { toast } from '@shared/feedback.js';
 import { setAnnotationHost } from '@shared/annotation-host.js';
+import { initPersistenceGuard, type PersistenceDeps } from '@shared/storage-persistence.js';
 
 import type {
     OiDbManagerContract,
@@ -533,3 +534,20 @@ window.DEFAULTS = DEFAULTS;
         console.warn('💡 Pour utiliser toutes les fonctionnalités, lancez un serveur HTTP local:\n   python3 -m http.server 8000\n   puis ouvrez: http://localhost:8000/4.html');
     }
 })();
+
+// --- Persistance du stockage (décision 28) ---
+/**
+ * Demande la persistance du stockage au démarrage de l'OI. Elle vaut pour toute
+ * l'origine : sans cet appel, un utilisateur qui n'ouvre que l'OI ne la demande
+ * jamais. L'export d'archive du bandeau réutilise `window.exportArchive`.
+ * Ne jette jamais.
+ */
+export function initStorageGuard(deps: PersistenceDeps = {}): void {
+    void initPersistenceGuard({
+        ...deps,
+        exportArchive: deps.exportArchive ?? (async () => {
+            await window.exportArchive?.();
+            return true;
+        }),
+    });
+}

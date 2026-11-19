@@ -160,6 +160,7 @@ import { buildLogsHtml } from '@oi/log-window.js';
 // traitement que src/apps/pctac/main.ts §5.3 étape 1 (P4.B). ──────────────
 import { registerServiceWorker } from '@shared/register-sw.js';
 import { toast } from '@shared/feedback.js';
+import { initStorageGuard } from '@oi/init.js';
 registerServiceWorker('oi');
 
 // ── §12.1 étape 2 — Polices auto-hébergées (zéro CDN Google Fonts, P0.FIX). ─
@@ -443,6 +444,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Sphère d'attente du chargeur PDF. Posée AVANT toute étape : une
     // génération déclenchée tôt doit la trouver en place.
     initPdfLoaderOrb();
+    // Persistance du stockage (décision 28) : la demande vaut pour l'origine,
+    // donc l'OI la fait à son tour. Fire-and-forget, ne bloque rien.
+    initStorageGuard();
     try {
         // §12.3 étape 1 — Initialiser IndexedDB. 4.html:4540
         // A-START-01 : l'échec d'IndexedDB ne concerne que les photos ; il ne
