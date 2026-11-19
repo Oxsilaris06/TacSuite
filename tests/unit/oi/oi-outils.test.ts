@@ -549,6 +549,10 @@ describe('reencodeImageViaCanvasForPdf', () => {
 describe('isFullscreen / toggleFullscreen / updateFullscreenIcon', () => {
     afterEach(() => {
         Object.defineProperty(document, 'fullscreenElement', { value: null, configurable: true });
+        document.documentElement.className = '';
+        delete (document.documentElement as unknown as { requestFullscreen?: unknown }).requestFullscreen;
+        delete (document.documentElement as unknown as { webkitRequestFullscreen?: unknown }).webkitRequestFullscreen;
+        delete (document as unknown as { exitFullscreen?: unknown }).exitFullscreen;
     });
 
     it('isFullscreen : lit document.fullscreenElement en priorité', () => {
@@ -569,7 +573,10 @@ describe('isFullscreen / toggleFullscreen / updateFullscreenIcon', () => {
 
     it('toggleFullscreen : pas en plein écran ⇒ appelle requestFullscreen() du documentElement', () => {
         Object.defineProperty(document, 'fullscreenElement', { value: null, configurable: true });
-        const reqSpy = vi.fn(() => Promise.resolve());
+        const reqSpy = vi.fn(() => {
+            Object.defineProperty(document, 'fullscreenElement', { value: document.documentElement, configurable: true });
+            return Promise.resolve();
+        });
         document.documentElement.requestFullscreen = reqSpy;
 
         toggleFullscreen();
@@ -588,19 +595,28 @@ describe('isFullscreen / toggleFullscreen / updateFullscreenIcon', () => {
         expect(exitSpy).toHaveBeenCalledTimes(1);
     });
 
-    it('toggleFullscreen : replie sur mozRequestFullScreen si requestFullscreen absent', () => {
+    it('toggleFullscreen : replie sur webkitRequestFullscreen si requestFullscreen absent', () => {
         Object.defineProperty(document, 'fullscreenElement', { value: null, configurable: true });
-        const original = document.documentElement.requestFullscreen;
         (document.documentElement as unknown as { requestFullscreen?: unknown }).requestFullscreen = undefined;
-        const mozSpy = vi.fn();
-        (document.documentElement as unknown as { mozRequestFullScreen?: () => void }).mozRequestFullScreen = mozSpy;
+        const webkitSpy = vi.fn(() => {
+            Object.defineProperty(document, 'fullscreenElement', { value: document.documentElement, configurable: true });
+        });
+        (document.documentElement as unknown as { webkitRequestFullscreen?: () => void }).webkitRequestFullscreen = webkitSpy;
 
         toggleFullscreen();
 
-        expect(mozSpy).toHaveBeenCalledTimes(1);
+        expect(webkitSpy).toHaveBeenCalledTimes(1);
+    });
 
-        document.documentElement.requestFullscreen = original;
-        delete (document.documentElement as unknown as { mozRequestFullScreen?: () => void }).mozRequestFullScreen;
+    it('toggleFullscreen : API absente ⇒ repli tac-pseudo-fullscreen posé sur documentElement', async () => {
+        Object.defineProperty(document, 'fullscreenElement', { value: null, configurable: true });
+        (document.documentElement as unknown as { requestFullscreen?: unknown }).requestFullscreen = undefined;
+        (document.documentElement as unknown as { webkitRequestFullscreen?: unknown }).webkitRequestFullscreen = undefined;
+
+        toggleFullscreen();
+        await Promise.resolve();
+
+        expect(document.documentElement.classList.contains('tac-pseudo-fullscreen')).toBe(true);
     });
 
     it('updateFullscreenIcon : actif ⇒ fullscreen_exit + titre', () => {

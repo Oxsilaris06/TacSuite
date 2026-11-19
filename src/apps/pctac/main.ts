@@ -84,6 +84,7 @@ import '@pctac/osmand-live.js'; // géoloc équipe via relais OsmAnd → même u
 // NB : dashboard.js (board relationnel) est VOLONTAIREMENT débranché — inefficace
 // en l'état, mis de côté. Ne pas réimporter sans décision explicite.
 import { Persist } from '@shared/persist.js';
+import { FULLSCREEN_CHANGE_EVENT } from '@shared/fullscreen.js';
 import { registerServiceWorker } from '@shared/register-sw.js';
 import { initDeviceGuard } from '@pctac/device-guard.js';
 import { confirmDialog, toast } from '@shared/feedback.js';
@@ -654,6 +655,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (fullscreenToggle) {
         fullscreenToggle.onclick = () => { void UI.toggleFullscreen(); };
         document.addEventListener('fullscreenchange', () => UI.updateFullscreenIcon());
+        document.addEventListener(FULLSCREEN_CHANGE_EVENT, () => UI.updateFullscreenIcon());
     }
 
     // §5.3 étape 22 — Saturation localStorage : Persist émet 'pctac:quota' au lieu

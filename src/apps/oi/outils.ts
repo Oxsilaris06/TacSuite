@@ -48,9 +48,8 @@
  *    est nullable côté TS (jamais gardé dans l'original) ; un `reject`/`throw`
  *    minimal réutilise le même chemin d'erreur que les autres échecs déjà
  *    gérés par ces fonctions — jamais emprunté en pratique.
- *  - `isFullscreen`/`toggleFullscreen` : vendor prefixes non déclarés par
- *    lib.dom.d.ts (`webkitFullscreenElement`, `mozRequestFullScreen`, …) —
- *    même idiome que `@pctac/ui.ts:826-828` (précédent déjà validé).
+ *  - `isFullscreen`/`toggleFullscreen` : délèguent au module partagé
+ *    `@shared/fullscreen.js` (plein écran natif, puis repli `tac-pseudo-fullscreen`).
  *  - `toggleDock` : `localStorage.setItem('dockCollapsed', String(dockCollapsed))`
  *    — `Storage.setItem` exige une `string` ; `String(boolean)` reproduit la
  *    coercion DOMString native que l'original obtenait implicitement (même
@@ -66,6 +65,7 @@ import type { PDFDocument, PDFImage } from 'pdf-lib';
 
 import { Store } from '@oi/init.js';
 import { photoFieldLabel } from '@oi/sections.js';
+import { fullscreenElement, toggleFullscreen as toggleContainerFullscreen } from '@shared/fullscreen.js';
 
 // ==================== Utils.js ====================
 
@@ -473,56 +473,14 @@ export async function reencodeImageViaCanvasForPdf(pdfDoc: PDFDocument, imageByt
 
 // ==================== UI.js ====================
 
-/**
- * outils.js:364-390 — accès typés aux API plein écran préfixées (vendor),
- * non déclarées par lib.dom.d.ts. Même idiome que `@pctac/ui.ts:826-828`
- * (précédent déjà validé par un `tsc --noEmit` vide).
- */
-interface OiVendorFullscreenDocumentElement extends HTMLElement {
-    mozRequestFullScreen?: () => void;
-    webkitRequestFullscreen?: () => void;
-    msRequestFullscreen?: () => void;
-}
-interface OiVendorFullscreenDocument extends Document {
-    webkitFullscreenElement?: Element | null;
-    mozFullScreenElement?: Element | null;
-    msFullscreenElement?: Element | null;
-    mozCancelFullScreen?: () => void;
-    webkitExitFullscreen?: () => void;
-    msExitFullscreen?: () => void;
-}
-
 // outils.js:364-366
-export function isFullscreen(): Element | null | undefined {
-    const doc = document as OiVendorFullscreenDocument;
-    return document.fullscreenElement || doc.webkitFullscreenElement || doc.mozFullScreenElement || doc.msFullscreenElement;
+export function isFullscreen(): Element | null {
+    return fullscreenElement();
 }
 
 // outils.js:368-390
 export function toggleFullscreen(): void {
-    if (!isFullscreen()) {
-        const docEl = document.documentElement as OiVendorFullscreenDocumentElement;
-        if (docEl.requestFullscreen) {
-            docEl.requestFullscreen();
-        } else if (docEl.mozRequestFullScreen) { /* Firefox */
-            docEl.mozRequestFullScreen();
-        } else if (docEl.webkitRequestFullscreen) { /* Chrome, Safari and Opera */
-            docEl.webkitRequestFullscreen();
-        } else if (docEl.msRequestFullscreen) { /* IE/Edge */
-            docEl.msRequestFullscreen();
-        }
-    } else {
-        const doc = document as OiVendorFullscreenDocument;
-        if (document.exitFullscreen) {
-            document.exitFullscreen();
-        } else if (doc.mozCancelFullScreen) { /* Firefox */
-            doc.mozCancelFullScreen();
-        } else if (doc.webkitExitFullscreen) { /* Chrome, Safari and Opera */
-            doc.webkitExitFullscreen();
-        } else if (doc.msExitFullscreen) { /* IE/Edge */
-            doc.msExitFullscreen();
-        }
-    }
+    void toggleContainerFullscreen(document.documentElement);
 }
 window.toggleFullscreen = toggleFullscreen; // outils.js:368 — posée explicitement (cf. en-tête de fichier)
 

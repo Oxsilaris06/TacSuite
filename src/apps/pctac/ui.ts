@@ -70,6 +70,7 @@ import { LogManager } from '@pctac/log-manager.js';
 import { choiceDialog } from '@pctac/choice-dialog.js';
 import { diffOpenFiche } from '@pctac/fiche-conflict.js';
 import { esc } from '@shared/ui-platform.js';
+import { fullscreenElement, toggleFullscreen as toggleContainerFullscreen } from '@shared/fullscreen.js';
 import { confirmDialog, isBackdropClick, promptDialog, toast } from '@shared/feedback.js';
 import { currentMode, currentModeId, paxChipKeys, paxChipLabel, photoCategoryLabel } from '@pctac/modes.js';
 import { paxChipButton } from '@pctac/mode-ui.js';
@@ -1447,22 +1448,12 @@ export const UI: UIContract = {
 
   // ui.js:676-680
   toggleFullscreen(): void {
-    // Vendor-prefixes absents du lib DOM standard TS, même idiome que
-    // planmap/chrome.ts (_toggleFullscreen).
-    const isFullscreen = document.fullscreenElement
-      || (document as { webkitFullscreenElement?: Element | null }).webkitFullscreenElement
-      || (document as { mozFullScreenElement?: Element | null }).mozFullScreenElement
-      || (document as { msFullscreenElement?: Element | null }).msFullscreenElement;
-    if (!isFullscreen) { if (document.documentElement.requestFullscreen) document.documentElement.requestFullscreen(); } else { if (document.exitFullscreen) document.exitFullscreen(); }
+    void toggleContainerFullscreen(document.documentElement);
   },
 
   // ui.js:682-685
   updateFullscreenIcon(): void {
-    const isFullscreen = document.fullscreenElement
-      || (document as { webkitFullscreenElement?: Element | null }).webkitFullscreenElement
-      || (document as { mozFullScreenElement?: Element | null }).mozFullScreenElement
-      || (document as { msFullscreenElement?: Element | null }).msFullscreenElement;
-    if (this.elements.fullscreenIcon) this.elements.fullscreenIcon.textContent = isFullscreen ? 'fullscreen_exit' : 'fullscreen';
+    if (this.elements.fullscreenIcon) this.elements.fullscreenIcon.textContent = fullscreenElement() ? 'fullscreen_exit' : 'fullscreen';
   },
 
   // ui.js:687-693
