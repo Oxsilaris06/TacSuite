@@ -81,7 +81,10 @@ export async function toggleFullscreen(container: HTMLElement): Promise<void> {
     const el = container as WebkitElement;
     const req = el.requestFullscreen || el.webkitRequestFullscreen;
     if (req) {
-        try { await req.call(el); return; } catch { /* refusé : repli */ }
+        try { await req.call(el); } catch { /* refusé : repli */ }
+        // L'API peut être présente et ne rien faire (Safari iPhone) : seule
+        // la présence effective de `fullscreenElement` prouve le succès.
+        if (fullscreenElement()) return;
     }
     setPseudo(container, true);
 }
