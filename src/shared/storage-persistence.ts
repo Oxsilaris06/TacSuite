@@ -74,7 +74,7 @@ export function isIosBrowserTab(): boolean {
 export const PERSIST_MESSAGE =
     "Le stockage n'est pas persistant : le navigateur peut effacer vos données (stockage plein, inactivité) sans prévenir. Installez l'application ou exportez l'archive.";
 export const PERSIST_MESSAGE_IOS =
-    "Le stockage n'est pas persistant : Safari peut effacer vos données sans prévenir. Sur iPhone, seule l'application installée le garde : touchez Partager, puis « Sur l'écran d'accueil », et ouvrez-la depuis son icône. Sinon, exportez l'archive.";
+    "Le stockage n'est pas persistant : Safari peut effacer vos données sans prévenir. Sur iPhone, seule l'application installée le garde : touchez Partager, puis « Sur l'écran d'accueil », et ouvrez-la depuis son icône. Les données de cet onglet ne passent pas dans l'application installée : exportez l'archive avant de l'installer, puis importez-la dans l'application. Sinon, exportez l'archive.";
 
 /**
  * Affiche le bandeau de persistance refusée (ou d'API absente). Ne réapparaît

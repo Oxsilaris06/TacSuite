@@ -6,7 +6,7 @@
  * d'horloge (seuil 2 min, avance et retard, pas d'en-tête, hors ligne).
  */
 
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
     CLOCK_TOLERANCE_MS,
@@ -15,6 +15,7 @@ import {
     checkClock,
     detectPrivateMode,
     ensurePersistence,
+    initPersistenceGuard,
     measureClockSkew,
     mountStorageBadge,
     runDeviceGuard,
@@ -180,6 +181,32 @@ describe('showPersistenceBanner — fermeture mémorisée pour la session (A-3)'
         expect(messages[1]).toContain("Installez l'application ou exportez l'archive.");
     });
 
+    it("onglet Safari iOS : prévient que le stockage de l'onglet ne passe pas dans l'application installée", () => {
+        const messages: string[] = [];
+        const actions: string[] = [];
+        const show = vi.fn((_id: string, opts: {
+            message: string;
+            actions?: Array<{ label: string; onClick: () => void }>;
+        }) => {
+            messages.push(opts.message);
+            for (const a of opts.actions ?? []) actions.push(a.label);
+        });
+        showPersistenceBanner({
+            show: show as never,
+            isPersistBannerDismissed: () => false,
+            isIosBrowserTab: () => true,
+            exportArchive: async () => true,
+        });
+        // Séparation des stockages : les données de l'onglet ne passent pas
+        // dans l'application installée.
+        expect(messages[0]).toContain("ne passent pas dans l'application installée");
+        // Geste : exporter AVANT d'installer, puis importer dans l'application.
+        expect(messages[0]).toContain("avant de l'installer");
+        expect(messages[0]).toContain('importez');
+        // L'action d'export reste offerte.
+        expect(actions).toContain("Exporter l'archive");
+    });
+
     it('utilise sessionStorage par défaut et saute si déjà fermé', () => {
         sessionStorage.setItem('pcTacPersistBannerDismissed', '1');
         const { calls, show } = bannerShow();
@@ -249,6 +276,46 @@ describe('runDeviceGuard — persistance et navigation privée', () => {
             fetchFn: failingFetch(),
         });
         expect(calls.some((c) => c.id === 'device-private')).toBe(false);
+    });
+});
+
+describe('application installée (standalone) — persist() redemandé, pastille réelle', () => {
+    afterEach(() => {
+        delete (navigator as unknown as Record<string, unknown>).standalone;
+    });
+
+    function installedApp(): void {
+        Object.defineProperty(navigator, 'standalone', { value: true, configurable: true });
+    }
+
+    it('persisted() faux puis persist() accordé : persist() appelé une fois, pastille true', async () => {
+        installedApp();
+        const dock = document.createElement('div');
+        document.body.appendChild(dock);
+        const persist = vi.fn(async () => true);
+        await initPersistenceGuard({
+            storageManager: { persisted: async () => false, persist },
+            show: vi.fn() as never,
+            dock,
+            exportArchive: async () => true,
+        });
+        expect(persist).toHaveBeenCalledOnce();
+        expect(dock.querySelector<HTMLElement>(`#${STORAGE_BADGE_ID}`)?.dataset.persisted).toBe('true');
+    });
+
+    it('persist() refusé : la pastille reflète le refus', async () => {
+        installedApp();
+        const dock = document.createElement('div');
+        document.body.appendChild(dock);
+        const persist = vi.fn(async () => false);
+        await initPersistenceGuard({
+            storageManager: { persisted: async () => false, persist },
+            show: vi.fn() as never,
+            dock,
+            exportArchive: async () => true,
+        });
+        expect(persist).toHaveBeenCalledOnce();
+        expect(dock.querySelector<HTMLElement>(`#${STORAGE_BADGE_ID}`)?.dataset.persisted).toBe('false');
     });
 });
 
