@@ -30,6 +30,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Install poppler-utils (required by tests/pdf/verify-structure.mjs)
+        run: sudo apt-get update && sudo apt-get install -y poppler-utils
+
       - name: Check (typecheck, lint, tests, PDF)
         run: npm run check
 
